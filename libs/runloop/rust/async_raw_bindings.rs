@@ -709,6 +709,10 @@ unsafe extern "C" {
     pub fn monad_async_task_destroy(task: monad_async_task) -> monad_c_result;
 }
 unsafe extern "C" {
+    #[doc = "! \\brief Check that the task's metadata matches the lists it is in etc."]
+    pub fn monad_async_task_debug_validate(task: monad_async_task);
+}
+unsafe extern "C" {
     #[doc = " \\brief Initiate the transfer of a task's context's execution to a different\ntype of executor.\n\nThis function suspends the execution of the task and requests its executor to\noptionally take a copy of the public information of the task into `opt_save` so\nit can be restored later (this preserves tick counts etc), detach the task from\nthe executor, and then invoke the supplied function with the now 'naked' task.\nAnother type of executor may then overwrite the bytes after `monad_context_task`\nup to `MONAD_CONTEXT_TASK_ALLOCATION_SIZE`. If you need to pass your `to_invoke`\nadditional state, remember there is a `user_ptr` in `monad_context_task`.\n\nRemember that when the context resumes execution in the new executor, anything\nrelated to `monad_async_*` no longer applies. You can choose the return value of\nthis function by setting `task->head.derived.result` before resuming the\ncontext.\n\nIf your context wishes to return to this executor later, consider using\n`monad_async_task_from_foreign_context()` followed by\n`monad_async_task_attach()`."]
     pub fn monad_async_task_suspend_save_detach_and_invoke(
         task: monad_async_task,
@@ -1153,7 +1157,7 @@ impl Default for monad_async_socket_head {
 #[doc = "! \\brief The public attributes of an open socket"]
 pub type monad_async_socket = *mut monad_async_socket_head;
 unsafe extern "C" {
-    #[doc = " \\brief EXPENSIVE Create a socket. See `man socket` to explain parameters.\n\nAt least one malloc is performed, and possibly more."]
+    #[doc = " \\brief EXPENSIVE Create a socket. See `man socket` to explain parameters.\n\nNote that `SO_LINGER` is set to zero to enable hard socket closes. If you want\ndifferent, create your own socket manually and add it to io_uring via\n`monad_async_task_socket_create_from_existing_fd()`.\n\nAt least one malloc is performed, and possibly more."]
     pub fn monad_async_task_socket_create(
         sock: *mut monad_async_socket,
         task: monad_async_task,
@@ -1201,7 +1205,7 @@ unsafe extern "C" {
     ) -> monad_c_result;
 }
 unsafe extern "C" {
-    #[doc = " \\brief CANCELLATION POINT Suspend execution of the task if there is no\npending connection on the socket until there is a new connection. See `man\naccept4` to explain parameters.\n\nNote that if `SOCK_CLOEXEC` is set in the flags, io_uring will fail the request\n(this is non-obvious, cost me half a day of debugging, so I document it here)"]
+    #[doc = " \\brief CANCELLATION POINT Suspend execution of the task if there is no\npending connection on the socket until there is a new connection. See `man\naccept4` to explain parameters.\n\nNote that `SO_LINGER` is set to zero to enable hard socket closes, which you\ngenerally want as a server.\n\nNote that if `SOCK_CLOEXEC` is set in the flags, io_uring will fail the request\n(this is non-obvious, cost me half a day of debugging, so I document it here)"]
     pub fn monad_async_task_socket_accept(
         connected_sock: *mut monad_async_socket,
         task: monad_async_task,

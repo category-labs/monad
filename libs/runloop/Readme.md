@@ -266,6 +266,11 @@ static monad_c_result mytask(monad_async_task task)
 
 ## Todo
 
+- Integrated socket i/o timeout would be real nice to have. io_uring timeouts
+need a second SQE as well as being quite slow, and we don't currently have the
+ability to fetch two consecutive SQEs without possibility of them getting split.
+Perhaps investigate `SO_SNDTIMEO` and `SO_RCVTIMEO` which are actually somewhat
+useful on Linux?
 - Need to test cancellation works at every possible lifecycle and suspend state
 a task can have.
     - Also need to test cancellation of individual i/o, which isn't the same as

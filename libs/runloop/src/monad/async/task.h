@@ -244,6 +244,9 @@ BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_create(
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result
 monad_async_task_destroy(monad_async_task task);
 
+//! \brief Check that the task's metadata matches the lists it is in etc.
+extern void monad_async_task_debug_validate(monad_async_task task);
+
 /*! \brief Initiate the transfer of a task's context's execution to a different
 type of executor.
 

@@ -108,4 +108,9 @@ request until the i/o completes anyway, then you gets lots of added
 overhead for no actual gain. This is particularly the case for non-direct
 i.e. kernel cached i/o.
 
-
+If you attempt to exit a task with i/o initiated still pending or with
+i/o completed not reaped, the program will abort. This ensures you don't
+accidentally orphan i/o, which as it writes into its i/o status would mean
+potential memory corruption. If you stack unwind an i/o status before it
+completes, you may see an Address Sanitiser failure as you would be writing
+into freed stack or memory.

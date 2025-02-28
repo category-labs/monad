@@ -814,6 +814,13 @@ static inline monad_c_result monad_async_executor_run_impl(
                         for (int is_large_page = 0; is_large_page < 2;
                              is_large_page++) {
                             if (ex->registered_buffers[0]
+                                            .buffer[is_large_page]
+                                            .count -
+                                        ex->registered_buffers[0]
+                                            .buffer[is_large_page]
+                                            .buf_ring_count >
+                                    0 &&
+                                ex->registered_buffers[0]
                                         .buffer[is_large_page]
                                         .free == nullptr &&
                                 ex->registered_buffers[0]
@@ -1075,130 +1082,41 @@ static inline monad_c_result monad_async_executor_run_impl(
                     }
                 }
                 else if (iostatus != nullptr) {
-                    // result contains the pointer to the task which is to
-                    // receive the i/o completion. It gets overwritten by the
-                    // actual result of the i/o below, and that result will
-                    // never be a valid pointer, so this check should be
-                    // reliable.
-                    task = (struct monad_async_task_impl *)iostatus->task_;
-                    struct monad_async_task_registered_io_buffer *tofill =
-                        iostatus->tofill_;
-                    assert(task != nullptr);
-#if MONAD_ASYNC_EXECUTOR_PRINTING
-                    printf(
-                        "*** %u. Executor %p gets result of i/o %p "
-                        "initiated "
-                        "by task %p (cpu priority=%d, i/o priority=%d) "
-                        "completed = %p is_suspended_for_io = %d "
-                        "is_suspended_sqe_exhaustion = %d "
-                        "is_suspended_sqe_exhaustion_wr = %d "
-                        "is_suspended_io_buffer_exhaustion = %d "
-                        "is_suspended_max_concurrency = %d "
-                        "is_suspended_awaiting = %d is_suspended_completed = "
-                        "%d\n",
-                        i,
-                        (void *)ex,
-                        (void *)iostatus,
-                        (void *)task,
-                        (int)monad_async_task_effective_cpu_priority(task),
-                        (int)task->head.priority.io,
-                        (void *)task->completed,
-                        atomic_load_explicit(
-                            &task->head.is_suspended_for_io,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_sqe_exhaustion,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_sqe_exhaustion_wr,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_io_buffer_exhaustion,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_max_concurrency,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_awaiting,
-                            memory_order_acquire),
-                        atomic_load_explicit(
-                            &task->head.is_suspended_completed,
-                            memory_order_acquire));
-                    fflush(stdout);
-#endif
-                    assert(0 == memcmp(task->magic, "MNASTASK", 8));
-                    LIST_REMOVE(
-                        task->io_submitted, iostatus, &task->head.io_submitted);
-                    LIST_APPEND(
-                        task->io_completed,
-                        iostatus,
-                        &task->head.io_completed_not_reaped);
-#ifndef NDEBUG
-                    if (iostatus->cancel_ != nullptr) {
-                        (void)iostatus->cancel_(&task->head, iostatus, true);
-                    }
-#endif
-                    iostatus->cancel_ = nullptr;
-                    iostatus->ticks_when_completed =
-                        get_ticks_count(memory_order_relaxed);
-                    if (cqe->res < 0) {
-                        iostatus->result = monad_c_make_failure(-cqe->res);
-                    }
-                    else {
-                        iostatus->result = monad_c_make_success(cqe->res);
-                    }
-                    if (cqe->flags & IORING_CQE_F_BUFFER) {
-                        if (tofill == nullptr) {
-                            fprintf(
-                                stderr,
-                                "FATAL: io_uring chooses buffer but tofill was "
-                                "not set!\n");
-                            abort();
-                        }
-                        tofill->index =
-                            (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT);
-                        tofill->iov[0] = ex->registered_buffers[0]
-                                             .buffers[tofill->index - 1];
-                        ex->head.registered_buffers.total_claimed++;
-                        ex->head.registered_buffers.ticks_last_claim =
-                            get_ticks_count(memory_order_relaxed);
-                    }
-                    if (cqe->res < 0 && tofill != nullptr) {
-                        // There is failure, and either the buffer came from
-                        // io_uring or we allocated it and it needs to be freed
-                        // as we own it
-                        MONAD_CHECK_RESULT(
-                            monad_async_task_release_registered_io_buffer(
-                                &task->head, tofill->index));
-                        memset(tofill, 0, sizeof(*tofill));
-                    }
-                    if (atomic_load_explicit(
-                            &task->head.is_suspended_awaiting,
-                            memory_order_acquire) &&
-                        task->completed != nullptr) {
-                        // If completed is set, it means the task is suspended
-                        // on an iostatus based i/o and wants to be resumed. If
-                        // completed is null, it means the task is suspended on
-                        // a non-iostatus based i/o and it does not want to be
-                        // resumed by iostatus i/o.
-                        assert(atomic_load_explicit(
-                            &task->head.is_suspended_for_io,
-                            memory_order_acquire));
+                    // Annoyingly, cancellation CQEs of i/o can arrive
+                    // immediately after the completion of i/o
+                    if (monad_async_is_io_in_progress(iostatus)) {
+                        // result contains the pointer to the task which is to
+                        // receive the i/o completion. It gets overwritten by
+                        // the actual result of the i/o below, and that result
+                        // will never be a valid pointer, so this check should
+                        // be reliable.
+                        task = (struct monad_async_task_impl *)iostatus->task_;
+                        struct monad_async_task_registered_io_buffer *tofill =
+                            iostatus->tofill_;
+                        assert(task != nullptr);
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                         printf(
-                            "*** %u. Executor %p handles result of i/o %p "
-                            "initiated by task %p by executing resume task "
-                            "(which may demur). "
-                            "completed = %p is_suspended_sqe_exhaustion = %d "
+                            "*** %u. Executor %p gets result of i/o %p "
+                            "initiated "
+                            "by task %p (cpu priority=%d, i/o priority=%d) "
+                            "completed = %p is_suspended_for_io = %d "
+                            "is_suspended_sqe_exhaustion = %d "
                             "is_suspended_sqe_exhaustion_wr = %d "
                             "is_suspended_io_buffer_exhaustion = %d "
                             "is_suspended_max_concurrency = %d "
-                            "is_suspended_awaiting = %d\n",
+                            "is_suspended_awaiting = %d is_suspended_completed "
+                            "= "
+                            "%d\n",
                             i,
                             (void *)ex,
                             (void *)iostatus,
                             (void *)task,
+                            (int)monad_async_task_effective_cpu_priority(task),
+                            (int)task->head.priority.io,
                             (void *)task->completed,
+                            atomic_load_explicit(
+                                &task->head.is_suspended_for_io,
+                                memory_order_acquire),
                             atomic_load_explicit(
                                 &task->head.is_suspended_sqe_exhaustion,
                                 memory_order_acquire),
@@ -1213,13 +1131,115 @@ static inline monad_c_result monad_async_executor_run_impl(
                                 memory_order_acquire),
                             atomic_load_explicit(
                                 &task->head.is_suspended_awaiting,
+                                memory_order_acquire),
+                            atomic_load_explicit(
+                                &task->head.is_suspended_completed,
                                 memory_order_acquire));
                         fflush(stdout);
 #endif
-                        *task->completed = iostatus;
-                        task->completed = nullptr;
-                        cqe->res = (int)task->head.io_completed_not_reaped;
-                        goto resume_task;
+                        assert(0 == memcmp(task->magic, "MNASTASK", 8));
+                        LIST_REMOVE(
+                            task->io_submitted,
+                            iostatus,
+                            &task->head.io_submitted);
+                        LIST_APPEND(
+                            task->io_completed,
+                            iostatus,
+                            &task->head.io_completed_not_reaped);
+#ifndef NDEBUG
+                        if (iostatus->cancel_ != nullptr) {
+                            (void)iostatus->cancel_(
+                                &task->head, iostatus, true);
+                        }
+#endif
+                        iostatus->cancel_ = nullptr;
+                        iostatus->ticks_when_completed =
+                            get_ticks_count(memory_order_relaxed);
+                        if (cqe->res < 0) {
+                            iostatus->result = monad_c_make_failure(-cqe->res);
+                        }
+                        else {
+                            iostatus->result = monad_c_make_success(cqe->res);
+                        }
+                        if (cqe->flags & IORING_CQE_F_BUFFER) {
+                            if (tofill == nullptr) {
+                                fprintf(
+                                    stderr,
+                                    "FATAL: io_uring chooses buffer but tofill "
+                                    "was "
+                                    "not set!\n");
+                                abort();
+                            }
+                            tofill->index =
+                                (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT);
+                            tofill->iov[0] = ex->registered_buffers[0]
+                                                 .buffers[tofill->index - 1];
+                            ex->head.registered_buffers.total_claimed++;
+                            ex->head.registered_buffers.ticks_last_claim =
+                                get_ticks_count(memory_order_relaxed);
+                        }
+                        if (cqe->res < 0 && tofill != nullptr) {
+                            // There is failure, and either the buffer came from
+                            // io_uring or we allocated it and it needs to be
+                            // freed as we own it
+                            if (tofill->index != 0) {
+                                MONAD_CHECK_RESULT(
+                                    monad_async_task_release_registered_io_buffer(
+                                        &task->head, tofill->index));
+                            }
+                            memset(tofill, 0, sizeof(*tofill));
+                        }
+                        if (atomic_load_explicit(
+                                &task->head.is_suspended_awaiting,
+                                memory_order_acquire) &&
+                            task->completed != nullptr) {
+                            // If completed is set, it means the task is
+                            // suspended on an iostatus based i/o and wants to
+                            // be resumed. If completed is null, it means the
+                            // task is suspended on a non-iostatus based i/o and
+                            // it does not want to be resumed by iostatus i/o.
+                            assert(atomic_load_explicit(
+                                &task->head.is_suspended_for_io,
+                                memory_order_acquire));
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                            printf(
+                                "*** %u. Executor %p handles result of i/o %p "
+                                "initiated by task %p by executing resume task "
+                                "(which may demur). "
+                                "completed = %p is_suspended_sqe_exhaustion = "
+                                "%d "
+                                "is_suspended_sqe_exhaustion_wr = %d "
+                                "is_suspended_io_buffer_exhaustion = %d "
+                                "is_suspended_max_concurrency = %d "
+                                "is_suspended_awaiting = %d\n",
+                                i,
+                                (void *)ex,
+                                (void *)iostatus,
+                                (void *)task,
+                                (void *)task->completed,
+                                atomic_load_explicit(
+                                    &task->head.is_suspended_sqe_exhaustion,
+                                    memory_order_acquire),
+                                atomic_load_explicit(
+                                    &task->head.is_suspended_sqe_exhaustion_wr,
+                                    memory_order_acquire),
+                                atomic_load_explicit(
+                                    &task->head
+                                         .is_suspended_io_buffer_exhaustion,
+                                    memory_order_acquire),
+                                atomic_load_explicit(
+                                    &task->head.is_suspended_max_concurrency,
+                                    memory_order_acquire),
+                                atomic_load_explicit(
+                                    &task->head.is_suspended_awaiting,
+                                    memory_order_acquire));
+                            fflush(stdout);
+#endif
+                            *task->completed = iostatus;
+                            task->completed = nullptr;
+                            cqe->res = (int)task->head.io_completed_not_reaped;
+                            goto resume_task;
+                        }
                     }
                 }
                 else if (magic == EXECUTOR_EVENTFD_READY_IO_URING_DATA_MAGIC) {
@@ -1515,7 +1535,7 @@ static inline monad_c_result monad_async_executor_run_impl(
         ssize_t items_processed = launch_pending_tasks_state.items +
                                   resume_tasks_state.items +
                                   resume_max_concurrent_io_tasks_state.items;
-        if (items_processed > 0) {
+        if (items_processed > 0 || max_items <= 0) {
             return monad_c_make_success((intptr_t)items_processed);
         }
     }
@@ -1791,6 +1811,108 @@ void monad_async_executor_task_detach(monad_context_task task_)
 }
 
 /****************************************************************************/
+
+void monad_async_task_debug_validate(monad_async_task task)
+{
+    (void)task;
+#ifndef NDEBUG
+    if (!monad_async_task_has_exited(task)) {
+        struct monad_async_executor_impl *ex =
+            (struct monad_async_executor_impl *)atomic_load_explicit(
+                &task->current_executor, memory_order_acquire);
+        struct monad_async_task_impl *p = (struct monad_async_task_impl *)task;
+        // Exactly one of these must be set
+        assert(
+            (atomic_load_explicit(
+                 &task->is_awaiting_dispatch, memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_pending_launch, memory_order_acquire) +
+             atomic_load_explicit(&task->is_running, memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_suspended_for_io, memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_suspended_sqe_exhaustion, memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_suspended_sqe_exhaustion_wr, memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_suspended_io_buffer_exhaustion,
+                 memory_order_acquire) +
+             atomic_load_explicit(
+                 &task->is_suspended_max_concurrency, memory_order_acquire)) ==
+                1 ||
+            atomic_load_explicit(
+                &task->is_suspended_completed, memory_order_acquire));
+        if (atomic_load_explicit(
+                &task->is_pending_launch, memory_order_acquire)) {
+            atomic_lock(&ex->lock);
+            if (atomic_load_explicit(
+                    &task->is_pending_launch, memory_order_acquire)) {
+                LIST_CHECK(ex->tasks_pending_launch, p);
+            }
+            atomic_unlock(&ex->lock);
+        }
+        if (atomic_load_explicit(&task->is_running, memory_order_acquire)) {
+            LIST_CHECK(
+                ex->tasks_running[monad_async_task_effective_cpu_priority(p)],
+                p);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_for_io, memory_order_acquire)) {
+            // Exactly one of these must be set
+            assert(
+                (atomic_load_explicit(
+                     &task->is_suspended_awaiting, memory_order_acquire) +
+                 atomic_load_explicit(
+                     &task->is_suspended_completed, memory_order_acquire)) ==
+                1);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_sqe_exhaustion, memory_order_acquire)) {
+            LIST_CHECK(
+                ex->tasks_suspended_submission_ring
+                    [monad_async_task_effective_cpu_priority(p)],
+                p);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_sqe_exhaustion_wr, memory_order_acquire)) {
+            LIST_CHECK(
+                ex->tasks_suspended_submission_wr_ring
+                    [monad_async_task_effective_cpu_priority(p)],
+                p);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_io_buffer_exhaustion,
+                memory_order_acquire)) {
+            if (atomic_load_explicit(
+                    &task->is_suspended_awaiting, memory_order_acquire)) {
+                LIST_CHECK(
+                    ex->registered_buffers[p->io_buffer_awaiting_is_for_write]
+                        .buffer[p->io_buffer_awaiting_is_for_large_page]
+                        .tasks_awaiting,
+                    &p->io_buffer_awaiting);
+            }
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_max_concurrency, memory_order_acquire)) {
+            LIST_CHECK(ex->max_io_concurrency, &p->max_concurrent_io_awaiting);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_awaiting, memory_order_acquire)) {
+            LIST_CHECK(
+                ex->tasks_suspended_awaiting
+                    [monad_async_task_effective_cpu_priority(p)],
+                p);
+        }
+        if (atomic_load_explicit(
+                &task->is_suspended_completed, memory_order_acquire)) {
+            LIST_CHECK(
+                ex->tasks_suspended_completed
+                    [monad_async_task_effective_cpu_priority(p)],
+                p);
+        }
+    }
+#endif
+}
 
 monad_c_result monad_async_task_attach(
     monad_async_executor ex_, monad_async_task task_,
@@ -2153,6 +2275,24 @@ static monad_c_result monad_async_task_set_priorities_impl(
                 task,
                 &ex->head.tasks_suspended);
         }
+        if (atomic_load_explicit(
+                &task->head.is_suspended_sqe_exhaustion,
+                memory_order_acquire)) {
+            LIST_REMOVE_ATOMIC_COUNTER(
+                ex->tasks_suspended_submission_ring
+                    [monad_async_task_effective_cpu_priority(task)],
+                task,
+                &ex->head.tasks_suspended_sqe_exhaustion);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_sqe_exhaustion_wr,
+                     memory_order_acquire)) {
+            LIST_REMOVE_ATOMIC_COUNTER(
+                ex->tasks_suspended_submission_wr_ring
+                    [monad_async_task_effective_cpu_priority(task)],
+                task,
+                &ex->head.tasks_suspended_sqe_exhaustion);
+        }
     }
     if (cpu != monad_async_priority_unchanged) {
         task->head.priority.cpu = cpu;
@@ -2189,6 +2329,24 @@ static monad_c_result monad_async_task_set_priorities_impl(
                 task,
                 &ex->head.tasks_suspended);
         }
+        if (atomic_load_explicit(
+                &task->head.is_suspended_sqe_exhaustion,
+                memory_order_acquire)) {
+            LIST_APPEND_ATOMIC_COUNTER(
+                ex->tasks_suspended_submission_ring
+                    [monad_async_task_effective_cpu_priority(task)],
+                task,
+                &ex->head.tasks_suspended_sqe_exhaustion);
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_sqe_exhaustion_wr,
+                     memory_order_acquire)) {
+            LIST_APPEND_ATOMIC_COUNTER(
+                ex->tasks_suspended_submission_wr_ring
+                    [monad_async_task_effective_cpu_priority(task)],
+                task,
+                &ex->head.tasks_suspended_sqe_exhaustion);
+        }
     }
     return monad_c_make_success(0);
 }
@@ -2203,6 +2361,9 @@ monad_c_result monad_async_task_set_priorities(
 monad_c_result monad_async_task_io_cancel(
     monad_async_task task_, monad_async_io_status *iostatus)
 {
+    if (!monad_async_is_io_in_progress(iostatus)) {
+        return monad_c_make_failure(ENOENT);
+    }
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (task != *(struct monad_async_task_impl **)&iostatus->result) {
         return monad_c_make_failure(ENOENT);
@@ -2275,10 +2436,9 @@ monad_c_result monad_async_task_suspend_for_duration(
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
     if (ns != monad_async_duration_infinite_non_cancelling &&
         task->please_cancel_status != please_cancel_not_invoked) {
-        if (task->please_cancel_status < please_cancel_invoked_seen) {
-            task->please_cancel_status = please_cancel_invoked_seen;
-        }
-        return monad_c_make_failure(ECANCELED);
+        // Don't return ECANCELED immediately, instead do a zero wait to allow
+        // anything code might be waiting on to run
+        ns = 0;
     }
     struct monad_async_executor_impl *ex =
         (struct monad_async_executor_impl *)atomic_load_explicit(

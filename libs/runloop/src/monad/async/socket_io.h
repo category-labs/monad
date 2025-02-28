@@ -26,6 +26,10 @@ typedef struct monad_async_socket_head
 
 /*! \brief EXPENSIVE Create a socket. See `man socket` to explain parameters.
 
+Note that `SO_LINGER` is set to zero to enable hard socket closes. If you want
+different, create your own socket manually and add it to io_uring via
+`monad_async_task_socket_create_from_existing_fd()`.
+
 At least one malloc is performed, and possibly more.
 */
 BOOST_OUTCOME_C_NODISCARD extern monad_c_result monad_async_task_socket_create(
@@ -86,6 +90,9 @@ monad_async_task_socket_transfer_to_uring(
 /*! \brief CANCELLATION POINT Suspend execution of the task if there is no
 pending connection on the socket until there is a new connection. See `man
 accept4` to explain parameters.
+
+Note that `SO_LINGER` is set to zero to enable hard socket closes, which you
+generally want as a server.
 
 Note that if `SOCK_CLOEXEC` is set in the flags, io_uring will fail the request
 (this is non-obvious, cost me half a day of debugging, so I document it here)

@@ -35,16 +35,16 @@ get_ticks_count(MONAD_CPP_STD memory_order rel)
     uint64_t value = 0;
     switch (rel) {
     case MONAD_CPP_STD memory_order_acquire:
-        __asm__ __volatile__("mrs %0, PMCCNTR_EL0; dsb"
+        __asm__ __volatile__("mrs %0, PMCCNTR_EL0; dsb sy"
                              : "=r"(value)); // NOLINT
         break;
     case MONAD_CPP_STD memory_order_release:
-        __asm__ __volatile__("dsb; mrs %0, PMCCNTR_EL0"
+        __asm__ __volatile__("dsb sy; mrs %0, PMCCNTR_EL0"
                              : "=r"(value)); // NOLINT
         break;
     case MONAD_CPP_STD memory_order_acq_rel:
     case MONAD_CPP_STD memory_order_seq_cst:
-        __asm__ __volatile__("dsb; mrs %0, PMCCNTR_EL0; dsb"
+        __asm__ __volatile__("dsb sy; mrs %0, PMCCNTR_EL0; dsb sy"
                              : "=r"(value)); // NOLINT
         break;
     default:

@@ -89,7 +89,12 @@ TEST(socket_io, unregistered_buffers)
                 to_result(monad_async_task_suspend_until_completed_io(
                               &completed, task, uint64_t(-1)))
                     .value();
-                to_result(status.result).value();
+                auto r = to_result(status.result);
+                if (!r) {
+                    if (r.assume_error() != errc::not_connected) {
+                        r.value();
+                    }
+                }
                 std::cout << "   Server has shutdown socket." << std::endl;
                 return monad_c_make_success(0);
             }
@@ -157,7 +162,12 @@ TEST(socket_io, unregistered_buffers)
                 to_result(monad_async_task_suspend_until_completed_io(
                               &completed, task, uint64_t(-1)))
                     .value();
-                to_result(status.result).value();
+                auto r = to_result(status.result);
+                if (!r) {
+                    if (r.assume_error() != errc::not_connected) {
+                        r.value();
+                    }
+                }
                 std::cout << "   Client has shutdown socket." << std::endl;
                 return monad_c_make_success(0);
             }
@@ -300,7 +310,12 @@ TEST(socket_io, registered_buffers)
                 to_result(monad_async_task_suspend_until_completed_io(
                               &completed, task, uint64_t(-1)))
                     .value();
-                to_result(status.result).value();
+                auto r = to_result(status.result);
+                if (!r) {
+                    if (r.assume_error() != errc::not_connected) {
+                        r.value();
+                    }
+                }
                 std::cout << "   Server has shutdown socket." << std::endl;
                 return monad_c_make_success(0);
             }
@@ -376,7 +391,12 @@ TEST(socket_io, registered_buffers)
                 to_result(monad_async_task_suspend_until_completed_io(
                               &completed, task, uint64_t(-1)))
                     .value();
-                to_result(status.result).value();
+                auto r = to_result(status.result);
+                if (!r) {
+                    if (r.assume_error() != errc::not_connected) {
+                        r.value();
+                    }
+                }
                 std::cout << "   Client has shutdown socket." << std::endl;
                 return monad_c_make_success(0);
             }

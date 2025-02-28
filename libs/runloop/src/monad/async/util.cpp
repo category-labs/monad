@@ -201,7 +201,11 @@ monad_async_executor_debug_string(monad_async_executor ex_)
                << " is_suspended_awaiting = "
                << task->head.is_suspended_awaiting
                << " is_suspended_completed = "
-               << task->head.is_suspended_completed;
+               << task->head.is_suspended_completed
+               << " io_submitted = " << task->head.io_submitted
+               << " io_completed_not_reaped = "
+               << task->head.io_completed_not_reaped
+               << " please_cancel_status = " << (int)task->please_cancel_status;
         };
         auto write_listn_contents = [&](auto const &list, int indent = 3) {
             ss << std::setw(indent) << "" << "items " << list.count;

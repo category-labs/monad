@@ -68,6 +68,24 @@ static inline bool monad_async_executor_has_work(monad_async_executor ex)
 #endif
 }
 
+//! \brief Returns total number of tasks in an executor
+static inline size_t monad_async_executor_task_count(monad_async_executor ex)
+{
+#ifdef __cplusplus
+    return ex->tasks_pending_launch.load(std::memory_order_relaxed) +
+           ex->tasks_running.load(std::memory_order_relaxed) +
+           ex->tasks_suspended_sqe_exhaustion.load(std::memory_order_relaxed) +
+           ex->tasks_suspended.load(std::memory_order_relaxed);
+#else
+    return atomic_load_explicit(
+               &ex->tasks_pending_launch, memory_order_relaxed) +
+           atomic_load_explicit(&ex->tasks_running, memory_order_relaxed) +
+           atomic_load_explicit(
+               &ex->tasks_suspended_sqe_exhaustion, memory_order_relaxed) +
+           atomic_load_explicit(&ex->tasks_suspended, memory_order_relaxed);
+#endif
+}
+
 //! \brief Attributes by which to construct an executor
 struct monad_async_executor_attr
 {

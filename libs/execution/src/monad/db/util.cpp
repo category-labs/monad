@@ -56,6 +56,31 @@
 #include <utility>
 #include <vector>
 
+MONAD_MPT_NAMESPACE_BEGIN
+
+byte_string ComputeAccountLeaf::compute(Node const &node)
+{
+    MONAD_ASSERT(node.has_value());
+
+    // this is the block number leaf
+    if (MONAD_UNLIKELY(node.value().empty())) {
+        return {};
+    }
+
+    auto encoded_account = node.value();
+    auto const acct = decode_account_db_ignore_address(encoded_account);
+    MONAD_ASSERT(!acct.has_error());
+    MONAD_ASSERT(encoded_account.empty());
+    bytes32_t storage_root = NULL_ROOT;
+    if (node.number_of_children()) {
+        MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+        std::copy_n(node.data().data(), sizeof(bytes32_t), storage_root.bytes);
+    }
+    return rlp::encode_account(acct.value(), storage_root);
+}
+
+MONAD_MPT_NAMESPACE_END
+
 MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
@@ -300,31 +325,6 @@ namespace
         }
     };
 
-    struct ComputeAccountLeaf
-    {
-        static byte_string compute(Node const &node)
-        {
-            MONAD_ASSERT(node.has_value());
-
-            // this is the block number leaf
-            if (MONAD_UNLIKELY(node.value().empty())) {
-                return {};
-            }
-
-            auto encoded_account = node.value();
-            auto const acct = decode_account_db_ignore_address(encoded_account);
-            MONAD_ASSERT(!acct.has_error());
-            MONAD_ASSERT(encoded_account.empty());
-            bytes32_t storage_root = NULL_ROOT;
-            if (node.number_of_children()) {
-                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
-                std::copy_n(
-                    node.data().data(), sizeof(bytes32_t), storage_root.bytes);
-            }
-            return rlp::encode_account(acct.value(), storage_root);
-        }
-    };
-
     struct ComputeStorageLeaf
     {
         static byte_string compute(Node const &node)
@@ -382,7 +382,7 @@ namespace
         compute(unsigned char *const buffer, Node *const node) override
         {
             MONAD_ASSERT(node->has_value());
-            return encode_two_pieces(
+            return compute_two_pieces(
                 buffer,
                 node->path_nibble_view(),
                 ComputeAccountLeaf::compute(*node),
@@ -407,7 +407,7 @@ namespace
             return 0;
         }
 
-        virtual unsigned compute_branch(unsigned char *, Node *) override
+        virtual unsigned compute_branch(unsigned char *, Node const *) override
         {
             return 0;
         }

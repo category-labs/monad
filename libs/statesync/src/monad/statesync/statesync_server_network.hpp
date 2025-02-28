@@ -114,4 +114,19 @@ void statesync_server_send_done(
             std::chrono::steady_clock::now() - start));
 }
 
+void statesync_server_send_proof(
+    monad_statesync_server_network *const net, uint64_t prefix,
+    unsigned char const *const v, uint64_t const size)
+{
+    net->obuf.push_back(SYNC_TYPE_PROOF);
+    net->obuf.append(
+        reinterpret_cast<unsigned char const *>(&prefix), sizeof(prefix));
+    uint64_t const size_ = size;
+    net->obuf.append(
+        reinterpret_cast<unsigned char const *>(&size_), sizeof(size_));
+    net->obuf.append(v, size);
+    send(net->fd, net->obuf);
+    net->obuf.clear();
+}
+
 MONAD_NAMESPACE_END

@@ -29,6 +29,7 @@ monad_statesync_client_context::monad_statesync_client_context(
              .sq_thread_cpu = get_nprocs() - 1,
              .dbname_paths = dbname_paths}}
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
+    , proofs(monad_statesync_client_prefixes(), monad::byte_string{})
     , progress(
           monad_statesync_client_prefixes(),
           {db.get_latest_block_id(), db.get_latest_block_id()})

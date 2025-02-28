@@ -81,7 +81,7 @@ void statesync_server_send_upsert(
 void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const done)
 {
-    monad_statesync_client_handle_done(net->cctx, done);
+    MONAD_ASSERT(monad_statesync_client_handle_done(net->cctx, done));
 }
 
 MONAD_NAMESPACE_BEGIN

@@ -1160,6 +1160,26 @@ uint64_t Db::get_history_length() const
     return is_on_disk() ? impl_->aux().version_history_length() : 1;
 }
 
+std::vector<byte_string> Db::get_proof_blocking(
+    NodeCursor cursor, byte_string (*on_leaf)(Node const &), NibblesView prefix,
+    bool root_is_subtrie)
+{
+    ProofOptions opts{
+        .prefix = prefix,
+        .leaf_nibbles_len = 256,
+        .root_is_subtrie = root_is_subtrie,
+    };
+    return monad::mpt::get_proof_blocking(impl_->aux(), cursor, on_leaf, opts);
+}
+
+Result<void> Db::verify_prefix_blocking(
+    NodeCursor cursor, NibblesView prefix, byte_string (*on_leaf)(Node const &),
+    byte_string_view encoded_proof)
+{
+    return monad::mpt::verify_prefix_blocking(
+        impl_->aux(), cursor, prefix, on_leaf, encoded_proof);
+}
+
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
     , root_cache(lru_size, chunk_offset_t::invalid_value())

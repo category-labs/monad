@@ -110,6 +110,14 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+    std::vector<byte_string> get_proof_blocking(
+        NodeCursor cursor, byte_string (*on_leaf)(Node const &),
+        NibblesView prefix, bool root_is_subtrie);
+
+    Result<void> verify_prefix_blocking(
+        NodeCursor cursor, NibblesView prefix,
+        byte_string (*on_leaf)(Node const &), byte_string_view encoded_proof);
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

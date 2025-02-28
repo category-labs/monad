@@ -33,8 +33,12 @@ bool monad_statesync_client_handle_upsert(
     struct monad_statesync_client_context *, uint64_t prefix,
     enum monad_sync_type, unsigned char const *, uint64_t);
 
-void monad_statesync_client_handle_done(
+bool monad_statesync_client_handle_done(
     struct monad_statesync_client_context *, struct monad_sync_done);
+
+void monad_statesync_client_handle_proof(
+    struct monad_statesync_client_context *, uint64_t, unsigned char const *,
+    uint64_t);
 
 bool monad_statesync_client_finalize(struct monad_statesync_client_context *);
 

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <span>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -34,17 +35,40 @@ namespace detail
     };
 }
 
+struct ComputeAccountLeaf
+{
+    static byte_string compute(Node const &node);
+};
+
 std::span<unsigned char> encode_empty_string(std::span<unsigned char> result);
 
 std::span<unsigned char>
 encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 
 std::span<unsigned char>
-encode_16_children(Node *, std::span<unsigned char> result);
+encode_16_children(Node const *, std::span<unsigned char> result);
 
-unsigned encode_two_pieces(
+using on_result_fn = std::function<void(byte_string_view)>;
+
+void encode_branch(Node const *, on_result_fn, bool const ignore_value = false);
+byte_string encode_branch(Node const *, bool const ignore_value = false);
+
+unsigned compute_two_pieces(
     unsigned char *const dest, NibblesView const path,
     byte_string_view const second, bool const has_value = false);
+
+void encode_two_pieces(
+    on_result_fn fn, NibblesView const path, byte_string_view const second,
+    bool const has_value);
+
+byte_string encode_two_pieces(
+    NibblesView const, byte_string_view const, bool const has_value = false);
+
+byte_string
+encode(Node const *const node, byte_string (*on_leaf)(Node const &));
+
+byte_string
+encode1(Node const *const node, byte_string (*on_leaf)(Node const &));
 
 struct Compute
 {
@@ -56,7 +80,8 @@ struct Compute
         std::optional<byte_string_view> value) = 0;
     //! compute hash_data inside node if hash_len > 0, which is the hash of all
     //! node's branches, return hash data length
-    virtual unsigned compute_branch(unsigned char *buffer, Node *node) = 0;
+    virtual unsigned
+    compute_branch(unsigned char *buffer, Node const *node) = 0;
     //! compute data of a trie rooted at node, put data to first argument and
     //! return data length
     virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
@@ -133,7 +158,7 @@ struct MerkleComputeBase : Compute
     }
 
     virtual unsigned
-    compute_branch(unsigned char *const buffer, Node *const node) override
+    compute_branch(unsigned char *const buffer, Node const *const node) override
     {
         MONAD_DEBUG_ASSERT(node->number_of_children());
         if (state.len) {
@@ -165,7 +190,7 @@ struct MerkleComputeBase : Compute
     compute(unsigned char *const buffer, Node *const node) override
     {
         if (node->has_value()) {
-            return encode_two_pieces(
+            return compute_two_pieces(
                 buffer,
                 node->path_nibble_view(),
                 TComputeLeafData::compute(*node),
@@ -175,7 +200,7 @@ struct MerkleComputeBase : Compute
         if (node->has_path()) {
             unsigned char reference[KECCAK256_SIZE];
             unsigned len = compute_branch(reference, node);
-            return encode_two_pieces(
+            return compute_two_pieces(
                 buffer, node->path_nibble_view(), {reference, len}, false);
         }
         return compute_branch(buffer, node);
@@ -189,7 +214,7 @@ protected:
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
-        return state.len = encode_two_pieces(
+        return state.len = compute_two_pieces(
                 state.buffer,
                 concat(single_child.branch, node->path_nibble_view()),
                 (node->has_value()
@@ -255,7 +280,8 @@ struct VarLenMerkleCompute : Compute
         return do_compute_len(children, value);
     }
 
-    virtual unsigned compute_branch(unsigned char *buffer, Node *node) override
+    virtual unsigned
+    compute_branch(unsigned char *buffer, Node const *node) override
     {
         // copy from internal state
         MONAD_DEBUG_ASSERT(node->number_of_children());
@@ -289,7 +315,7 @@ struct VarLenMerkleCompute : Compute
         // Ethereum leaf: leaf node hash without child
         if (node->number_of_children() == 0) {
             MONAD_ASSERT(node->has_value());
-            return encode_two_pieces(
+            return compute_two_pieces(
                 buffer,
                 node->path_nibble_view(),
                 LeafDataProcessor::process(node->value()),
@@ -299,7 +325,7 @@ struct VarLenMerkleCompute : Compute
         // rlp(encoded path, inline branch hash)
         if (node->has_path()) { // extension node, rlp encode with path too
             MONAD_ASSERT(node->bitpacked.data_len);
-            return encode_two_pieces(
+            return compute_two_pieces(
                 buffer,
                 node->path_nibble_view(),
                 node->data(),
@@ -372,7 +398,8 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
         return KECCAK256_SIZE;
     }
 
-    virtual unsigned compute_branch(unsigned char *buffer, Node *node) override
+    virtual unsigned
+    compute_branch(unsigned char *buffer, Node const *node) override
     {
         return Base::compute_branch(buffer, node);
     }
@@ -383,7 +410,7 @@ private:
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
-        return state.len = encode_two_pieces(
+        return state.len = compute_two_pieces(
                    state.buffer,
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */

@@ -37,7 +37,7 @@ namespace monad::test
             return 0;
         }
 
-        virtual unsigned compute_branch(unsigned char *, Node *) override
+        virtual unsigned compute_branch(unsigned char *, Node const *) override
         {
             return 0;
         }

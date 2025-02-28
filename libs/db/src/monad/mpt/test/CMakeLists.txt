@@ -42,6 +42,9 @@ add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")
 add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
 add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 
+# layer violation on this test so we can validate the proof
+target_link_libraries(merkle_trie_test PUBLIC monad_mpt2)
+
 # monad trie perf test
 add_executable(monad_trie_test "monad_trie_test.cpp")
 monad_compile_options(monad_trie_test)

@@ -8,6 +8,9 @@
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/traverse.hpp>
+#include <monad/mpt2/proof.hpp>
+#include <monad/rlp/encode.hpp>
+#include <monad/statesync/statesync_protocol.hpp>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
 
@@ -36,21 +39,15 @@ struct monad_statesync_server
         uint64_t size2);
     void (*statesync_server_send_done)(
         monad_statesync_server_network *, monad_sync_done);
+    void (*statesync_server_send_proof)(
+        monad_statesync_server_network *, uint64_t prefix,
+        unsigned char const *v, uint64_t size);
 };
 
 using namespace monad;
 using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
-{
-    byte_string bytes;
-    for (size_t i = 0; i < n_bytes; ++i) {
-        bytes.push_back((prefix >> ((n_bytes - i - 1) * 8)) & 0xff);
-    }
-    return bytes;
-}
 
 bool send_deletion(
     monad_statesync_server *const sync, monad_sync_request const &rq,
@@ -267,6 +264,7 @@ bool statesync_server_handle_request(
     }
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
+    auto const prefix = NibblesView{bytes};
     auto const root = db.load_root_for_version(rq.target);
     if (!root.is_valid()) {
         return false;
@@ -276,10 +274,37 @@ bool statesync_server_handle_request(
         return false;
     }
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Traverse traverse(sync, prefix, rq.from, rq.until);
     if (!db.traverse(finalized_root.value(), traverse, rq.target)) {
         return false;
     }
+    auto state_root =
+        db.find(finalized_root.value(), concat(STATE_NIBBLE), rq.target);
+    if (!state_root.has_value()) {
+        return false;
+    }
+    auto proof = db.get_proof_blocking(
+        state_root.value(), ComputeAccountLeaf::compute, prefix, true);
+    auto proofs_len = std::accumulate(
+        proof.begin(),
+        proof.end(),
+        0,
+        [](size_t const acc, byte_string const &elt) {
+            return acc + elt.size();
+        });
+    auto encoded_proof_len = rlp::list_length(proofs_len);
+    auto encoded_proof = byte_string{};
+    encoded_proof.resize(encoded_proof_len);
+    auto p = rlp::encode_list_metadata(encoded_proof, proofs_len).begin();
+    for (auto const &elt : proof) {
+        p = std::copy(elt.begin(), elt.end(), p);
+    }
+    auto merkle_root = keccak256(proof[0]);
+    auto res =
+        monad::mpt2::verify_proof(prefix, to_bytes(merkle_root), encoded_proof);
+    assert(res);
+    sync->statesync_server_send_proof(
+        sync->net, rq.prefix, encoded_proof.data(), encoded_proof.size());
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
 
     LOG_INFO(
@@ -330,14 +355,18 @@ struct monad_statesync_server *monad_statesync_server_create(
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
         uint64_t size2),
     void (*statesync_server_send_done)(
-        monad_statesync_server_network *, struct monad_sync_done))
+        monad_statesync_server_network *, struct monad_sync_done),
+    void (*statesync_server_send_proof)(
+        monad_statesync_server_network *, uint64_t prefix,
+        unsigned char const *v, uint64_t size))
 {
     return new monad_statesync_server(monad_statesync_server{
         .context = ctx,
         .net = net,
         .statesync_server_recv = statesync_server_recv,
         .statesync_server_send_upsert = statesync_server_send_upsert,
-        .statesync_server_send_done = statesync_server_send_done});
+        .statesync_server_send_done = statesync_server_send_done,
+        .statesync_server_send_proof = statesync_server_send_proof});
 }
 
 void monad_statesync_server_run_once(struct monad_statesync_server *const sync)

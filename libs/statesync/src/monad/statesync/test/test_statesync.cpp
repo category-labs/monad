@@ -112,8 +112,15 @@ namespace
         monad_statesync_server_network *const net, monad_sync_done const done)
     {
         if (done.success) {
-            monad_statesync_client_handle_done(net->cctx, done);
+            MONAD_ASSERT(monad_statesync_client_handle_done(net->cctx, done));
         }
+    }
+
+    void statesync_server_send_proof(
+        monad_statesync_server_network *const net, uint64_t prefix,
+        unsigned char const *const v, uint64_t const size)
+    {
+        monad_statesync_client_handle_proof(net->cctx, prefix, v, size);
     }
 
     struct StateSyncFixture : public ::testing::Test
@@ -158,7 +165,8 @@ namespace
                 &net,
                 &statesync_server_recv,
                 &statesync_server_send_upsert,
-                &statesync_server_send_done);
+                &statesync_server_send_done,
+                &statesync_server_send_proof);
         }
 
         void run()

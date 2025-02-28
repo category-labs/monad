@@ -33,7 +33,7 @@ struct DummyCompute final : Compute
         return len >= 32 ? 32 : len;
     }
 
-    virtual unsigned compute_branch(unsigned char *, Node *) override
+    virtual unsigned compute_branch(unsigned char *, Node const *) override
     {
         return 0;
     }

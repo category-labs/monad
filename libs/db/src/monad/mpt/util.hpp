@@ -7,6 +7,7 @@
 #include <monad/mpt/nibbles_view.hpp>
 
 #include <concepts>
+#include <tuple>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -278,6 +279,30 @@ inline byte_string serialize(V n)
     static_assert(std::endian::native == std::endian::little);
     auto arr = std::bit_cast<std::array<unsigned char, sizeof(V)>>(n);
     return byte_string{arr.data(), arr.size()};
+}
+
+inline unsigned
+get_common_prefix_length(NibblesView left_key, NibblesView right_key)
+{
+    auto const len = static_cast<unsigned>(
+        std::min(left_key.nibble_size(), right_key.nibble_size()));
+    for (unsigned i = 0; i < len; ++i) {
+        if (left_key.get(i) != right_key.get(i)) {
+            return i;
+        }
+    }
+    return len;
+}
+
+inline std::tuple<NibblesView, NibblesView, NibblesView>
+consume_common_prefix(NibblesView left_key, NibblesView right_key)
+{
+    unsigned const common_prefix_len =
+        get_common_prefix_length(left_key, right_key);
+    auto const common_prefix = left_key.substr(0, common_prefix_len);
+    auto const left_rem = left_key.substr(common_prefix_len);
+    auto const right_rem = left_key.substr(common_prefix_len);
+    return std::make_tuple(common_prefix, left_rem, right_rem);
 }
 
 MONAD_MPT_NAMESPACE_END

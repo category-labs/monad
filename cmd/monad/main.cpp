@@ -243,7 +243,8 @@ int main(int const argc, char const *argv[])
             &net.value(),
             &statesync_server_recv,
             &statesync_server_send_upsert,
-            &statesync_server_send_done);
+            &statesync_server_send_done,
+            &statesync_server_send_proof);
         sync_thread = std::jthread([&](std::stop_token const token) {
             pthread_setname_np(pthread_self(), "statesync thread");
             mpt::Db ro{mpt::ReadOnlyOnDiskDbConfig{

@@ -25,7 +25,7 @@ add_library(
 target_include_directories(monad_statesync PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 monad_compile_options(monad_statesync)
-target_link_libraries(monad_statesync PUBLIC monad_execution)
+target_link_libraries(monad_statesync PUBLIC monad_execution monad_mpt2)
 
 monad_add_test_folder("src/monad/statesync")
 

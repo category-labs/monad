@@ -16,7 +16,10 @@ struct monad_statesync_server *monad_statesync_server_create(
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
         uint64_t size2),
     void (*statesync_server_send_done)(
-        struct monad_statesync_server_network *, struct monad_sync_done));
+        struct monad_statesync_server_network *, struct monad_sync_done),
+    void (*statesync_server_send_proof)(
+        struct monad_statesync_server_network *, uint64_t prefix,
+        unsigned char const *v, uint64_t size));
 
 void monad_statesync_server_run_once(struct monad_statesync_server *);
 

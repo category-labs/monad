@@ -1,3 +1,5 @@
+#include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -8,16 +10,23 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/genesis.hpp>
+#include <monad/mpt/db_error.hpp>
+#include <monad/mpt2/node.hpp>
+#include <monad/mpt2/proof.hpp>
+#include <monad/mpt2/rlp/item.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_client_context.hpp>
 #include <monad/statesync/statesync_protocol.hpp>
 #include <monad/statesync/statesync_version.h>
+#include <quill/Quill.h>
+#include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
 #include <filesystem>
 
 using namespace monad;
 using namespace monad::mpt;
+using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
@@ -109,6 +118,24 @@ void monad_statesync_client_handle_target(
     }
 }
 
+Result<void> monad_statesync_client_verify_prefix(
+    monad_statesync_client_context *const ctx, NibblesView const key,
+    byte_string const &encoded_proof)
+{
+    BOOST_OUTCOME_TRY(
+        monad::mpt2::verify_proof(key, ctx->tgrt.state_root, encoded_proof));
+
+    auto version = ctx->db.get_latest_block_id();
+    auto root = ctx->db.load_root_for_version(version);
+    MONAD_ASSERT(root.is_valid());
+    auto res =
+        ctx->db.find(root, concat(finalized_nibbles, STATE_NIBBLE), version);
+    MONAD_ASSERT(res.has_value());
+    auto state_root = res.value();
+    return ctx->db.verify_prefix_blocking(
+        state_root, key, ComputeAccountLeaf::compute, encoded_proof);
+}
+
 bool monad_statesync_client_handle_upsert(
     monad_statesync_client_context *const ctx, uint64_t const prefix,
     monad_sync_type const type, unsigned char const *const val,
@@ -117,7 +144,7 @@ bool monad_statesync_client_handle_upsert(
     return ctx->protocol.at(prefix)->handle_upsert(ctx, type, val, size);
 }
 
-void monad_statesync_client_handle_done(
+bool monad_statesync_client_handle_done(
     monad_statesync_client_context *const ctx, monad_sync_done const msg)
 {
     MONAD_ASSERT(msg.success);
@@ -131,9 +158,16 @@ void monad_statesync_client_handle_done(
         ctx->protocol.at(msg.prefix)->send_request(ctx, msg.prefix);
     }
 
-    if (MONAD_UNLIKELY(monad_statesync_client_has_reached_target(ctx))) {
-        ctx->commit();
-    }
+    ctx->commit();
+
+    return true;
+}
+
+void monad_statesync_client_handle_proof(
+    monad_statesync_client_context *const ctx, uint64_t const prefix,
+    unsigned char const *const data, uint64_t const size)
+{
+    ctx->proofs[prefix] = {data, data + size};
 }
 
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
@@ -147,6 +181,23 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
     else if (!ctx->pending.empty()) {
         // missing code
+        return false;
+    }
+
+    auto failures = 0;
+    // if not syncing to genesis, verify all prefixes
+    if (tgrt.number != 0 && tgrt.number != ctx->db.get_latest_block_id()) {
+        for (auto i = 0ul; i < monad_statesync_client_prefixes(); ++i) {
+            auto bytes = from_prefix(i, monad_statesync_client_prefix_bytes());
+            auto key = NibblesView{bytes};
+            if (monad_statesync_client_verify_prefix(ctx, key, ctx->proofs[i])
+                    .has_error()) {
+                LOG_ERROR("prefix {} failed verification", i);
+                ++failures;
+            }
+        }
+    }
+    if (failures != 0) {
         return false;
     }
 
@@ -183,6 +234,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
             ctx->db.upsert(std::move(finalized_updates), v, false, false);
         }
     }
+
     ctx->db.update_finalized_block(tgrt.number);
 
     TrieDb db{ctx->db};

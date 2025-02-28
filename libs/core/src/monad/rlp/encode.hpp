@@ -125,36 +125,34 @@ constexpr size_t list_length(size_t const concatenated_size)
 }
 
 constexpr std::span<unsigned char>
-encode_list(std::span<unsigned char> d, byte_string_view const s)
+encode_list_metadata(std::span<unsigned char> d, size_t const concatenated_size)
 {
-    if (s.size() <= 55) {
-        d[0] = 0xC0 + static_cast<unsigned char>(s.size());
+    if (concatenated_size <= 55) {
+        d[0] = 0xC0 + static_cast<unsigned char>(concatenated_size);
         d = d.subspan(1);
-        if (d.size() < s.size()) {
-#ifdef NDEBUG
-            __builtin_unreachable();
-#else
-            abort();
-#endif
-        }
-        std::memcpy(d.data(), s.data(), s.size());
-        d = d.subspan(s.size());
     }
     else {
-        d[0] = 0xF7 + static_cast<unsigned char>(impl::length_length(s.size()));
+        d[0] = 0xF7 + static_cast<unsigned char>(
+                          impl::length_length(concatenated_size));
         d = d.subspan(1);
-        d = impl::encode_length(d, s.size());
-        if (d.size() < s.size()) {
-#ifdef NDEBUG
-            __builtin_unreachable();
-#else
-            abort();
-#endif
-        }
-        std::memcpy(d.data(), s.data(), s.size());
-        d = d.subspan(s.size());
+        d = impl::encode_length(d, concatenated_size);
     }
     return d;
+}
+
+constexpr std::span<unsigned char>
+encode_list(std::span<unsigned char> d, byte_string_view const s)
+{
+    d = encode_list_metadata(d, s.size());
+    if (d.size() < s.size()) {
+#ifdef NDEBUG
+        __builtin_unreachable();
+#else
+        abort();
+#endif
+    }
+    std::memcpy(d.data(), s.data(), s.size());
+    return d.subspan(s.size());
 }
 
 MONAD_RLP_NAMESPACE_END

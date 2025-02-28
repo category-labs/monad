@@ -21,6 +21,7 @@ enum monad_sync_type : uint8_t
     SYNC_TYPE_UPSERT_ACCOUNT_DELETE = 6,
     SYNC_TYPE_UPSERT_STORAGE_DELETE = 7,
     SYNC_TYPE_UPSERT_HEADER = 8,
+    SYNC_TYPE_PROOF = 9,
 };
 
 static_assert(sizeof(enum monad_sync_type) == 1);

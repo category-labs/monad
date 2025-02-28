@@ -118,6 +118,8 @@ add_library(
   "src/monad/event/event.h"
   "src/monad/event/event_iterator.h"
   "src/monad/event/event_iterator_inline.h"
+  "src/monad/event/event_metadata.c"
+  "src/monad/event/event_metadata.h"
   "src/monad/event/event_recorder.c"
   "src/monad/event/event_recorder.h"
   "src/monad/event/event_recorder_inline.h"

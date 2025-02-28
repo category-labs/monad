@@ -10,6 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <sys/types.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -69,12 +71,20 @@ struct monad_event_ring_control
 /// describing the layout of the event ring
 struct monad_event_ring_header
 {
+    char version[8];             ///< "RING_V01" versioning literal
+    uint8_t metadata_hash[32];   ///< Checks that event_types.h matches
     size_t ring_capacity;        ///< # entries in event descriptor array
     size_t payload_buf_size;     ///< Byte size of payload buffer
+    pid_t writer_pid;            ///< Process writing to the ring
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
 
 // clang-format on
+
+/// Map the shared memory for an event ring into our process' address space,
+/// given a filesystem path to the event ring's shared memory file
+int monad_event_ring_map(
+    struct monad_event_ring *, char const *file_path, int *pidfd);
 
 /// Remove an event ring's shared memory mappings from our process' address
 /// space
@@ -82,6 +92,12 @@ void monad_event_ring_unmap(struct monad_event_ring *);
 
 /// Return a description of the last error that occurred on this thread
 char const *monad_event_get_last_error();
+
+static uint8_t const MONAD_EVENT_RING_HEADER_VERSION[] = {
+    'R', 'I', 'N', 'G', '_', 'V', '0', '1'};
+
+#define MONAD_EVENT_DEFAULT_EXEC_EVENT_RING_PATH                               \
+    "/dev/hugepages/monad-exec-events"
 
 #ifdef __cplusplus
 } // extern "C"

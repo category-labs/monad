@@ -16,19 +16,19 @@
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_ring.h>
 
-static thread_local char g_error_buf[1024];
+thread_local char _g_monad_event_ring_error_buf[1024];
 static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
 
 #define FORMAT_ERRC(...)                                                       \
     monad_format_err(                                                          \
-        g_error_buf,                                                           \
-        sizeof(g_error_buf),                                                   \
+        _g_monad_event_ring_error_buf,                                         \
+        sizeof(_g_monad_event_ring_error_buf),                                 \
         &MONAD_SOURCE_LOCATION_CURRENT(),                                      \
         __VA_ARGS__)
 
 int monad_event_ring_init_size(
     uint8_t descriptors_shift, uint8_t payload_buf_shift,
-    struct monad_event_ring_size *size)
+    uint16_t context_large_pages, struct monad_event_ring_size *size)
 {
     // Do some basic input validation of the size; our main goal here is to
     // protect the event ring from being too small as it can create certain
@@ -62,6 +62,7 @@ int monad_event_ring_init_size(
     }
     size->descriptor_capacity = 1UL << descriptors_shift;
     size->payload_buf_size = 1UL << payload_buf_shift;
+    size->context_area_size = PAGE_2MB * context_large_pages;
     return 0;
 }
 
@@ -71,7 +72,7 @@ monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
     return PAGE_2MB +
            ring_size->descriptor_capacity *
                sizeof(struct monad_event_descriptor) +
-           ring_size->payload_buf_size;
+           ring_size->payload_buf_size + ring_size->context_area_size;
 }
 
 // A normal event ring is divided into sections, which are aligned to 2 MiB
@@ -84,9 +85,12 @@ monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
 //  .------------------.
 //  |  Payload buffer  |
 //  .------------------.
+//  |   Context area   |
+//  .------------------.
 int monad_event_ring_init_file(
-    struct monad_event_ring_size const *ring_size, int ring_fd,
-    off_t ring_offset, char const *error_name)
+    struct monad_event_ring_size const *ring_size,
+    enum monad_event_ring_type ring_type, uint8_t const *metadata_hash,
+    int ring_fd, off_t ring_offset, char const *error_name)
 {
     size_t ring_bytes;
     void *map_base;
@@ -125,8 +129,27 @@ int monad_event_ring_init_file(
             error_name,
             ring_size->payload_buf_size);
     }
+    if (ring_size->context_area_size > 0 &&
+        !stdc_has_single_bit(ring_size->context_area_size)) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` context area size %lu is invalid",
+            error_name,
+            ring_size->context_area_size);
+    }
+    if (ring_type == MONAD_EVENT_RING_TYPE_NONE ||
+        ring_type >= MONAD_EVENT_RING_TYPE_COUNT) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` has invalid ring type code %hu",
+            error_name,
+            ring_type);
+    }
 
     memset(&header, 0, sizeof header);
+    memcpy(header.magic, MONAD_EVENT_RING_HEADER_VERSION, sizeof header.magic);
+    memcpy(header.metadata_hash, metadata_hash, sizeof header.metadata_hash);
+    header.type = ring_type;
     header.size = *ring_size;
     ring_bytes = monad_event_ring_calc_storage(ring_size);
 
@@ -194,9 +217,18 @@ int monad_event_ring_mmap(
         MAP_SHARED | mmap_extra_flags,
         ring_fd,
         ring_offset);
-    if (event_ring->header == MAP_FAILED) {
+    if (header == MAP_FAILED) {
         return FORMAT_ERRC(
             errno, "mmap of event ring file `%s` header failed", error_name);
+    }
+    if (memcmp(
+            header->magic,
+            MONAD_EVENT_RING_HEADER_VERSION,
+            sizeof header->magic) != 0) {
+        return FORMAT_ERRC(
+            EPROTO,
+            "event ring file `%s` does not contain current magic number",
+            error_name);
     }
 
     // Map the ring descriptor array from the ring fd
@@ -275,6 +307,24 @@ int monad_event_ring_mmap(
         goto Error;
     }
 
+    if (header->size.context_area_size > 0) {
+        event_ring->context_area = mmap(
+            nullptr,
+            header->size.context_area_size,
+            mmap_prot,
+            MAP_SHARED | mmap_extra_flags,
+            ring_fd,
+            base_ring_data_offset +
+                (off_t)(descriptor_map_len + header->size.payload_buf_size));
+        if (event_ring->context_area == MAP_FAILED) {
+            rc = FORMAT_ERRC(
+                errno,
+                "mmap of event ring file `%s` context area failed",
+                error_name);
+            goto Error;
+        }
+    }
+
     return 0;
 
 Error:
@@ -294,6 +344,9 @@ void monad_event_ring_unmap(struct monad_event_ring *event_ring)
         }
         if (event_ring->payload_buf) {
             munmap(event_ring->payload_buf, 2 * header->size.payload_buf_size);
+        }
+        if (event_ring->context_area) {
+            munmap(event_ring->context_area, header->size.context_area_size);
         }
         munmap((void *)header, HEADER_SIZE);
     }
@@ -343,5 +396,10 @@ int monad_event_ring_init_recorder(
 
 char const *monad_event_ring_get_last_error()
 {
-    return g_error_buf;
+    return _g_monad_event_ring_error_buf;
 }
+
+char const *g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_COUNT] = {
+    [MONAD_EVENT_RING_TYPE_NONE] = "none",
+    [MONAD_EVENT_RING_TYPE_TEST] = "test",
+};

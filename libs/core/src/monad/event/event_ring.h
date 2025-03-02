@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <sys/types.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -21,6 +23,8 @@ struct monad_event_descriptor;
 struct monad_event_iterator;
 struct monad_event_recorder;
 struct monad_event_ring_header;
+
+enum monad_event_ring_type : uint16_t;
 
 // clang-format off
 
@@ -32,6 +36,7 @@ struct monad_event_ring
     struct monad_event_ring_header *header;     ///< Event ring metadata
     struct monad_event_descriptor *descriptors; ///< Event descriptor ring array
     uint8_t *payload_buf;                       ///< Payload buffer base address
+    void *context_area;                         ///< Ring-specific storage
 };
 
 /// Descriptor for an event; this fixed-size object describes the common
@@ -58,6 +63,7 @@ struct monad_event_ring_size
 {
     size_t descriptor_capacity; ///< # entries in event descriptor array
     size_t payload_buf_size;    ///< Byte size of payload buffer
+    size_t context_area_size;   ///< Byte size of context area section
 };
 
 /// Control registers of the event ring; resource allocation within an event
@@ -73,8 +79,21 @@ struct monad_event_ring_control
 /// Event ring shared memory files start with this header structure
 struct monad_event_ring_header
 {
+    char magic[6];                           ///< 'RINGvv', vv = version number
+    enum monad_event_ring_type type;         ///< Kind of event ring this is
+    uint8_t metadata_hash[32];               ///< Check that event types match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
+};
+
+/// Describes which event ring an event is recorded to; different categories
+/// of events are recorded to different rings, this identifies the integer
+/// namespace that the descriptor's `uint16_t event_type` field is drawn from
+enum monad_event_ring_type : uint16_t
+{
+    MONAD_EVENT_RING_TYPE_NONE,  ///< An invalid value
+    MONAD_EVENT_RING_TYPE_TEST,  ///< Used in simple automated tests
+    MONAD_EVENT_RING_TYPE_COUNT  ///< Total number of known event rings
 };
 
 // clang-format on
@@ -83,7 +102,7 @@ struct monad_event_ring_header
 /// on valid size limits; a "shift" is the power-of-2 exponent for a size
 int monad_event_ring_init_size(
     uint8_t descriptors_shift, uint8_t payload_buf_shift,
-    struct monad_event_ring_size *);
+    uint16_t context_large_pages, struct monad_event_ring_size *);
 
 /// Given the size parameters of an event ring, return the total number of
 /// bytes needed to store it in memory; can be used to ftruncate(2) a file
@@ -94,7 +113,8 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// processes later. Given an open file descriptor, this creates the event
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
-    struct monad_event_ring_size const *, int ring_fd, off_t ring_offset,
+    struct monad_event_ring_size const *, enum monad_event_ring_type,
+    uint8_t const *metadata_hash, int ring_fd, off_t ring_offset,
     char const *error_name);
 
 /// Given an open file descriptor which contains an initialized event ring at
@@ -119,6 +139,15 @@ int monad_event_ring_init_recorder(
 
 /// Return a description of the last error that occurred on this thread
 char const *monad_event_ring_get_last_error();
+
+/// This should be changed whenever anything binary-affecting in this file
+/// changes (e.g., any structure or enumeration value that is shared memory
+/// resident, e.g., `enum monad_event_ring_type`)
+constexpr uint8_t MONAD_EVENT_RING_HEADER_VERSION[] = {
+    'R', 'I', 'N', 'G', '0', '1'};
+
+/// Array of human-readable names for the event ring types
+extern char const *g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_COUNT];
 
 /*
  * Event size limits

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <latch>
 #include <print>
@@ -9,6 +10,7 @@
 #include <tuple>
 #include <vector>
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <string.h>
@@ -21,8 +23,10 @@
 #include <monad/event/event_iterator.h>
 #include <monad/event/event_recorder.h>
 #include <monad/event/event_ring.h>
+#include <monad/event/event_ring_util.h>
+#include <monad/event/test_event_types.h>
 
-constexpr uint64_t MaxPerfIterations = 1UL << 20;
+static uint8_t PERF_ITER_SHIFT = 20;
 
 // Running the tests with the reader disabled is a good measure of how
 // expensive the multithreaded lock-free recording in the writer is, without
@@ -43,22 +47,12 @@ static bool alloc_cpu(cpu_set_t *avail_cpus, cpu_set_t *out)
     return false;
 }
 
-// Event type code
-constexpr uint16_t TEST_COUNTER = 1;
-
-// Payload of the TEST_COUNTER event type
-struct test_counter_payload
-{
-    uint8_t writer_id;
-    uint64_t counter;
-};
-
 // A writer thread records TEST_COUNTER events as fast as possible, then prints
 // its average recording speed (in ns/event). Because of all the atomic
 // synchronization in the event ring control structure, writing time increases
-// as more concurrent writing threads are used. Accordingly, we divide
-// MaxPerfIterations by the number of writers, so that the test doesn't take
-// too long.
+// as more concurrent writing threads are used. Accordingly, we divide the
+// total number of iterations by the number of writers, so that the test doesn't
+// take too long.
 static void writer_main(
     monad_event_recorder *recorder, std::latch *latch, uint8_t writer_id,
     uint8_t writer_thread_count, uint32_t payload_size)
@@ -66,9 +60,10 @@ static void writer_main(
     using std::chrono::duration_cast, std::chrono::nanoseconds;
     std::byte local_payload_buf[1 << 14]{};
 
-    uint64_t const writer_iterations = MaxPerfIterations / writer_thread_count;
+    uint64_t const writer_iterations =
+        (1UL << PERF_ITER_SHIFT) / writer_thread_count;
     auto *const test_counter =
-        std::bit_cast<test_counter_payload *>(&local_payload_buf[0]);
+        std::bit_cast<monad_test_event_counter *>(&local_payload_buf[0]);
     test_counter->writer_id = writer_id;
     latch->arrive_and_wait();
     sleep(1);
@@ -81,7 +76,7 @@ static void writer_main(
 
         monad_event_descriptor *const event = monad_event_recorder_reserve(
             recorder, payload_size, &seqno, &ring_payload_buf);
-        event->event_type = TEST_COUNTER;
+        event->event_type = MONAD_TEST_EVENT_COUNTER;
         memcpy(ring_payload_buf, local_payload_buf, payload_size);
         monad_event_recorder_commit(event, seqno);
     }
@@ -103,11 +98,11 @@ static void writer_main(
 // that the sequence numbers are in order, that their payload size is correct,
 // etc.)
 [[maybe_unused]] static void reader_main(
-    struct monad_event_ring const *event_ring, std::latch *latch,
+    monad_event_ring const *event_ring, std::latch *latch,
     uint8_t writer_thread_count, uint32_t expected_len)
 {
     uint64_t const max_writer_iteration =
-        MaxPerfIterations / writer_thread_count;
+        (1UL << PERF_ITER_SHIFT) / writer_thread_count;
     alignas(64) monad_event_iterator iter;
     std::vector<uint64_t> expected_counters;
     expected_counters.resize(writer_thread_count, 0);
@@ -128,10 +123,11 @@ static void writer_main(
         EXPECT_EQ(last_seqno + 1, event.seqno);
         last_seqno = event.seqno;
 
-        ASSERT_EQ(TEST_COUNTER, event.event_type);
+        ASSERT_EQ(MONAD_TEST_EVENT_COUNTER, event.event_type);
         ASSERT_EQ(event.payload_size, expected_len);
-        auto const test_counter = *static_cast<test_counter_payload const *>(
-            monad_event_payload_peek(&iter, &event));
+        auto const test_counter =
+            *static_cast<monad_test_event_counter const *>(
+                monad_event_payload_peek(&iter, &event));
         ASSERT_TRUE(monad_event_payload_check(&iter, &event));
         ASSERT_GT(writer_thread_count, test_counter.writer_id);
         EXPECT_EQ(
@@ -146,45 +142,88 @@ class EventRecorderBulkTest
 protected:
     void SetUp() override
     {
-        constexpr char TEST_MEMFD_NAME[] = "memfd:event_recorder_test";
         constexpr uint8_t DESCRIPTORS_SHIFT = 20;
         constexpr uint8_t PAYLOAD_BUF_SHIFT = 28;
-        int const ring_fd =
-            memfd_create(TEST_MEMFD_NAME, MFD_CLOEXEC | MFD_HUGETLB);
 
-        monad_event_ring_size ring_size;
-        ASSERT_EQ(
-            0,
-            monad_event_ring_init_size(
-                DESCRIPTORS_SHIFT, PAYLOAD_BUF_SHIFT, &ring_size));
-        ASSERT_EQ(
-            0,
-            ftruncate(
-                ring_fd,
-                static_cast<off_t>(monad_event_ring_calc_storage(&ring_size))));
-        ASSERT_EQ(
-            0,
-            monad_event_ring_init_file(
-                &ring_size, ring_fd, 0, TEST_MEMFD_NAME));
+        int ring_fd;
+        char const *error_name;
+        int mmap_extra_flags = MAP_POPULATE;
 
+        if (char const *f = std::getenv("EVENT_RECORDER_FILE")) {
+            // When given an explicit file for an event ring via an environment
+            // variable, use that instead of memfd_create
+            constexpr mode_t FS_MODE =
+                S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+
+            // If the environment defines EVENT_RECORDER_FILE without a value,
+            // use the default value
+            fs_path_ =
+                strcmp(f, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_RING_PATH : f;
+
+            ring_fd =
+                open(fs_path_.c_str(), O_RDWR | O_CREAT | O_TRUNC, FS_MODE);
+            ASSERT_NE(-1, ring_fd);
+            error_name = fs_path_.c_str();
+
+            // Use MAP_HUGETLB only if the file is on a filesystem that
+            // supports it
+            bool fs_supports_hugetlb;
+            ASSERT_EQ(
+                0,
+                monad_check_path_supports_map_hugetlb(
+                    fs_path_.c_str(), &fs_supports_hugetlb));
+            mmap_extra_flags |= fs_supports_hugetlb ? MAP_HUGETLB : 0;
+        }
+        else {
+            // EVENT_RECORDER_FILE is not defined in the environment;
+            // use memfd_create
+            constexpr char TEST_MEM_FD_NAME[] = "memfd:event_recorder_test";
+            ring_fd = memfd_create(TEST_MEM_FD_NAME, MFD_CLOEXEC | MFD_HUGETLB);
+            ASSERT_NE(-1, ring_fd);
+            error_name = TEST_MEM_FD_NAME;
+            mmap_extra_flags |= MAP_HUGETLB;
+        }
+
+        monad_event_ring_simple_config const ring_config = {
+            .descriptors_shift = DESCRIPTORS_SHIFT,
+            .payload_buf_shift = PAYLOAD_BUF_SHIFT,
+            .context_large_pages = 0,
+            .ring_type = MONAD_EVENT_RING_TYPE_TEST,
+            .metadata_hash = g_monad_test_event_metadata_hash};
+        ASSERT_EQ(
+            0,
+            monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));
         ASSERT_EQ(
             0,
             monad_event_ring_mmap(
                 &event_ring_,
                 PROT_READ | PROT_WRITE,
-                MAP_POPULATE | MAP_HUGETLB,
+                mmap_extra_flags,
                 ring_fd,
                 0,
-                TEST_MEMFD_NAME));
+                error_name));
         (void)close(ring_fd);
+
+        if (char const *s = std::getenv("EVENT_RECORDER_ITER_SHIFT")) {
+            char *end;
+            unsigned long const u = strtoul(s, &end, 0);
+            ASSERT_EQ('\0', *end);
+            ASSERT_LT(u, 50);
+            PERF_ITER_SHIFT = static_cast<uint8_t>(u);
+        }
     }
 
     void TearDown() override
     {
         monad_event_ring_unmap(&event_ring_);
+        if (!empty(fs_path_)) {
+            (void)unlink(fs_path_.c_str());
+            fs_path_.clear();
+        }
     }
 
     monad_event_ring event_ring_ = {};
+    std::string fs_path_;
 };
 
 TEST_P(EventRecorderBulkTest, )
@@ -243,7 +282,7 @@ TEST_P(EventRecorderBulkTest, )
 
 // Running the full test every time is too slow so we usually leave the
 // `RUN_FULL_EVENT_RECORDER_TEST` macro undefined. If you manually define this
-// to 1 (and ideally increase MaxPerfIterations so that it's less noisy) you
+// to 1 (and ideally increase PERF_ITER_SHIFT so that it's less noisy) you
 // will get recorder performance micro-benchmarks for different combinations
 // of concurrent threads and payload sizes.
 

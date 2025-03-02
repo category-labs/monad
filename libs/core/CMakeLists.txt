@@ -114,10 +114,15 @@ add_library(
   # event
   "src/monad/event/event_iterator.h"
   "src/monad/event/event_iterator_inline.h"
+  "src/monad/event/event_metadata.h"
   "src/monad/event/event_recorder.h"
   "src/monad/event/event_recorder_inline.h"
   "src/monad/event/event_ring.c"
   "src/monad/event/event_ring.h"
+  "src/monad/event/event_ring_util.c"
+  "src/monad/event/event_ring_util.h"
+  "src/monad/event/test_event_types.h"
+  "src/monad/event/test_event_metadata.c"
   # fiber
   "src/monad/fiber/config.hpp"
   "src/monad/fiber/priority_algorithm.cpp"

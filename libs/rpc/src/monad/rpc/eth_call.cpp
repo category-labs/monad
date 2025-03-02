@@ -15,30 +15,57 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/util.hpp>
-#include <monad/rpc/eth_call.hpp>
+#include <monad/rpc/eth_call.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/types/incarnation.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <quill/Quill.h>
 
+#include <cstring>
 #include <filesystem>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 using namespace monad;
 
+struct monad_state_override
+{
+    using bytes = std::vector<uint8_t>;
+
+    struct monad_state_override_object
+    {
+        std::optional<bytes> balance{std::nullopt};
+        std::optional<uint64_t> nonce{std::nullopt};
+        std::optional<bytes> code{std::nullopt};
+        std::map<bytes, bytes> state{};
+        std::map<bytes, bytes> state_diff{};
+    };
+
+    std::map<bytes, monad_state_override_object> override_sets;
+};
+
 namespace
 {
+    static constexpr std::string_view BLOCKHASH_ERR_MSG =
+        "failure to initialize block hash buffer";
+
+    using StateOverrideObj = monad_state_override::monad_state_override_object;
+
     template <evmc_revision rev>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
-        Address const &sender, TrieDb &tdb, BlockHashBufferFinalized &buffer,
-        monad_state_override_set const &state_overrides)
+        Address const &sender, TrieDb &tdb,
+        std::shared_ptr<BlockHashBufferFinalized const> buffer,
+        monad_state_override const &state_overrides)
     {
         Transaction enriched_txn{txn};
 
@@ -163,7 +190,7 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;
         EvmcHost<rev> host{
-            call_tracer, tx_context, buffer, state, max_code_size};
+            call_tracer, tx_context, *buffer, state, max_code_size};
         return execute_impl_no_validation<rev>(
             state,
             host,
@@ -178,8 +205,8 @@ namespace
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const round, Address const &sender, TrieDb &tdb,
-        BlockHashBufferFinalized &buffer,
-        monad_state_override_set const &state_overrides)
+        std::shared_ptr<BlockHashBufferFinalized const> buffer,
+        monad_state_override const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
             eth_call_impl,
@@ -202,116 +229,158 @@ namespace monad
     quill::Logger *tracer = nullptr;
 }
 
-int monad_evmc_result::get_status_code() const
+monad_state_override *monad_state_override_create()
 {
-    return status_code;
+    monad_state_override *const m = new monad_state_override();
+
+    return m;
 }
 
-std::vector<uint8_t> monad_evmc_result::get_output_data() const
+void monad_state_override_destroy(monad_state_override *m)
 {
-    return output_data;
+    MONAD_ASSERT(m);
+    delete m;
 }
 
-std::string monad_evmc_result::get_message() const
+void add_override_address(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len)
 {
-    return message;
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+
+    MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
+    m->override_sets.emplace(address, StateOverrideObj());
 }
 
-int64_t monad_evmc_result::get_gas_used() const
+void set_override_balance(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
+    uint8_t const *balance, size_t balance_len)
 {
-    return gas_used;
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    MONAD_ASSERT(balance);
+    std::vector<uint8_t> b(balance, balance + balance_len);
+    m->override_sets[address].balance = std::move(b);
 }
 
-int64_t monad_evmc_result::get_gas_refund() const
+void set_override_nonce(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
+    uint64_t nonce)
 {
-    return gas_refund;
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    m->override_sets[address].nonce = nonce;
 }
 
-void monad_state_override_set::add_override_address(bytes const &address)
+void set_override_code(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
+    uint8_t const *code, size_t code_len)
 {
-    MONAD_ASSERT(override_sets.find(address) == override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    override_sets.emplace(address, monad_state_override_object());
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    MONAD_ASSERT(code);
+    std::vector<uint8_t> c(code, code + code_len);
+    m->override_sets[address].code = std::move(c);
 }
 
-void monad_state_override_set::set_override_balance(
-    bytes const &address, bytes const &balance)
+void set_override_state_diff(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
+    uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len)
 {
-    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    override_sets[address].balance = balance;
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    MONAD_ASSERT(key);
+    MONAD_ASSERT(key_len == sizeof(bytes32_t));
+    std::vector<uint8_t> k(key, key + key_len);
+
+    MONAD_ASSERT(value);
+    std::vector<uint8_t> v(value, value + value_len);
+
+    auto &state_object = m->override_sets[address].state_diff;
+    MONAD_ASSERT(state_object.find(k) == state_object.end());
+    state_object.emplace(k, std::move(v));
 }
 
-void monad_state_override_set::set_override_nonce(
-    bytes const &address, uint64_t const &nonce)
+void set_override_state(
+    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
+    uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len)
 {
-    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    override_sets[address].nonce = nonce;
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    std::vector<uint8_t> address(addr, addr + addr_len);
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    MONAD_ASSERT(key);
+    MONAD_ASSERT(key_len == sizeof(bytes32_t));
+    std::vector<uint8_t> k(key, key + key_len);
+
+    MONAD_ASSERT(value);
+    std::vector<uint8_t> v(value, value + value_len);
+
+    auto &state_object = m->override_sets[address].state;
+    MONAD_ASSERT(state_object.find(k) == state_object.end());
+    state_object.emplace(k, std::move(v));
 }
 
-void monad_state_override_set::set_override_code(
-    bytes const &address, bytes const &code)
+void monad_eth_call_result_release(monad_eth_call_result *result)
 {
-    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    override_sets[address].code = code;
+    MONAD_ASSERT(result);
+    if (result->output_data) {
+        delete result->output_data;
+    }
+
+    if (result->message) {
+        delete result->message;
+    }
+
+    delete result;
 }
 
-void monad_state_override_set::set_override_state_diff(
-    bytes const &address, bytes const &key, bytes const &value)
+struct monad_eth_call_executor
 {
-    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    auto &object = override_sets[address].state_diff;
-    MONAD_ASSERT(object.find(key) == object.end());
-    MONAD_ASSERT(key.size() == sizeof(bytes32_t));
-    object.emplace(key, value);
-}
-
-void monad_state_override_set::set_override_state(
-    bytes const &address, bytes const &key, bytes const &value)
-{
-    MONAD_ASSERT(override_sets.find(address) != override_sets.end());
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    auto &object = override_sets[address].state;
-    MONAD_ASSERT(object.find(key) == object.end());
-    MONAD_ASSERT(key.size() == sizeof(bytes32_t));
-    object.emplace(key, value);
-}
-
-// TODO: eth_call should take in a handle to db instead
-monad_evmc_result eth_call(
-    monad_chain_config const chain_config, std::vector<uint8_t> const &rlp_tx,
-    std::vector<uint8_t> const &rlp_header,
-    std::vector<uint8_t> const &rlp_sender, uint64_t const block_number,
-    uint64_t const round, std::string const &triedb_path,
-    monad_state_override_set const &state_overrides)
-{
-    byte_string_view rlp_tx_view(rlp_tx.begin(), rlp_tx.end());
-    auto const tx_result = rlp::decode_transaction(rlp_tx_view);
-    MONAD_ASSERT(!tx_result.has_error());
-    MONAD_ASSERT(rlp_tx_view.empty());
-    auto const tx = tx_result.value();
-
-    byte_string_view rlp_header_view(rlp_header.begin(), rlp_header.end());
-    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
-    MONAD_ASSERT(rlp_header_view.empty());
-    MONAD_ASSERT(!block_header_result.has_error());
-    auto const block_header = block_header_result.value();
-
-    byte_string_view rlp_sender_view(rlp_sender.begin(), rlp_sender.end());
-    auto const sender_result = rlp::decode_address(rlp_sender_view);
-    MONAD_ASSERT(rlp_sender_view.empty());
-    MONAD_ASSERT(!sender_result.has_error());
-    auto const sender = sender_result.value();
-
-    thread_local std::unique_ptr<mpt::Db> db{};
-    thread_local std::unique_ptr<TrieDb> tdb{};
-    thread_local std::optional<std::string> last_triedb_path{};
     using BlockHashCache = static_lru_cache<uint64_t, bytes32_t>;
-    thread_local BlockHashCache blockhash_cache{7200};
-    if (!last_triedb_path || *last_triedb_path != triedb_path) {
+
+    using DbGetPromise =
+        boost::fibers::promise<std::variant<byte_string, std::string>>;
+
+    fiber::PriorityPool pool_;
+
+    std::shared_ptr<mpt::Db> db_{};
+    std::shared_ptr<TrieDb> tdb_{};
+
+    BlockHashCache blockhash_cache_{7200};
+    std::shared_ptr<BlockHashBufferFinalized> last_buffer_{};
+    std::optional<uint64_t> last_block_number_{};
+
+    monad_eth_call_executor(
+        unsigned const num_fibers, std::string const &triedb_path)
+        : pool_{1, num_fibers}
+    {
         std::vector<std::filesystem::path> paths;
         if (std::filesystem::is_directory(triedb_path)) {
             for (auto const &file :
@@ -322,83 +391,234 @@ monad_evmc_result eth_call(
         else {
             paths.emplace_back(triedb_path);
         }
-        tdb.reset(); // reset in reverse order
-        db.reset(); // cannot create more than one rodb per thread at a time
-        db.reset(
-            new mpt::Db{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
-        tdb.reset(new TrieDb{*db});
-        last_triedb_path = triedb_path;
+
+        // create the db instances on the PriorityPool thread so all the thread
+        // local storage gets instantiated on the one thread its used
+        auto promise = std::make_shared<boost::fibers::promise<void>>();
+        pool_.submit(
+            0, [&paths = paths, &db = db_, &tdb = tdb_, promise = promise] {
+                db.reset(new mpt::Db{
+                    mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
+                tdb.reset(new TrieDb{*db});
+                promise->set_value();
+            });
+        promise->get_future().get();
+        return;
     }
 
-    thread_local std::unique_ptr<BlockHashBufferFinalized> buffer{};
-    thread_local std::optional<uint64_t> last_block_number{};
-    if (!last_block_number || *last_block_number != block_number) {
-        buffer.reset(new BlockHashBufferFinalized{});
-        BlockHashCache::ConstAccessor acc;
-        for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
-             b < block_number;
-             ++b) {
-            if (blockhash_cache.find(acc, b)) {
-                buffer->set(b, acc->second->val);
-                continue;
-            }
+    monad_eth_call_executor(monad_eth_call_executor const &) = delete;
+    monad_eth_call_executor &
+    operator=(monad_eth_call_executor const &) = delete;
 
-            auto const header = db->get(
-                mpt::concat(
-                    FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
-                b);
-            if (!header.has_value()) {
-                LOG_WARNING(
-                    "Could not query block header {} from TrieDb -- {}",
-                    b,
-                    header.error().message().c_str());
-                return {
-                    .status_code = EVMC_REJECTED,
-                    .message = "failure to initialize block hash buffer"};
-            }
-            auto const h = to_bytes(keccak256(header.value()));
-            buffer->set(b, h);
-            blockhash_cache.insert(b, h);
-        }
-        last_block_number = block_number;
+    // destroy the db instances on the same thread they were created,
+    // the PriorityPool thread
+    ~monad_eth_call_executor()
+    {
+        auto promise = std::make_shared<boost::fibers::promise<void>>();
+        pool_.submit(0, [&db = db_, &tdb = tdb_, promise = promise] {
+            tdb.reset();
+            db.reset();
+            promise->set_value();
+        });
+        promise->get_future().get();
     }
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
+    std::shared_ptr<BlockHashBufferFinalized const>
+    create_blockhash_buffer(uint64_t const block_number)
+    {
+        if (!last_block_number_ || *(last_block_number_) != block_number) {
+            last_buffer_.reset(new BlockHashBufferFinalized{});
+            BlockHashCache::ConstAccessor acc;
+            for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
+                 b < block_number;
+                 ++b) {
+                if (blockhash_cache_.find(acc, b)) {
+                    last_buffer_->set(b, acc->second->val);
+                    continue;
+                }
+
+                auto promise = std::make_shared<DbGetPromise>();
+                pool_.submit(0, [db = db_, b = b, promise = promise] {
+                    auto const h = db->get(
+                        mpt::concat(
+                            FINALIZED_NIBBLE,
+                            mpt::NibblesView{block_header_nibbles}),
+                        b);
+                    if (h.has_value()) {
+                        promise->set_value(byte_string{h.value()});
+                    }
+                    else {
+                        promise->set_value(
+                            std::string{h.error().message().c_str()});
+                    }
+                });
+                auto const header_result = promise->get_future().get();
+
+                if (auto header = std::get_if<0>(&header_result)) {
+                    auto const h = to_bytes(keccak256(*header));
+                    last_buffer_->set(b, h);
+                    blockhash_cache_.insert(b, h);
+                }
+                else {
+                    auto err = std::get<1>(header_result);
+                    LOG_WARNING(
+                        "Could not query block header {} from TrieDb -- {}",
+                        b,
+                        err.c_str());
+                    return nullptr;
+                }
+            }
+            last_block_number_ = block_number;
         }
-        MONAD_ASSERT(false);
-    }();
+        return last_buffer_;
+    }
 
-    evmc_revision const rev =
-        chain->get_revision(block_header.number, block_header.timestamp);
+    void execute_eth_call(
+        monad_chain_config chain_config, Transaction const &txn,
+        BlockHeader const &block_header, Address const &sender,
+        uint64_t const block_number, uint64_t const block_round,
+        monad_state_override const *overrides,
+        void (*complete)(monad_eth_call_result *, void *user), void *user)
+    {
+        monad_eth_call_result *const result = new monad_eth_call_result();
 
-    auto const result = eth_call_impl(
-        *chain,
-        rev,
+        auto blk_hash_buffer = create_blockhash_buffer(block_number);
+        if (blk_hash_buffer == nullptr) {
+            result->status_code = EVMC_REJECTED;
+            constexpr auto len = BLOCKHASH_ERR_MSG.size();
+            result->message = new char[len + 1];
+            std::strncpy(result->message, BLOCKHASH_ERR_MSG.data(), len);
+            result->message[len] = 0;
+            complete(result, user);
+            return;
+        }
+
+        pool_.submit(
+            0,
+            [chain_config = chain_config,
+             transaction = txn,
+             block_header = block_header,
+             block_number = block_number,
+             block_round = block_round,
+             sender = sender,
+             tdb = tdb_,
+             block_hash_buffer = blk_hash_buffer,
+             result = result,
+             complete = complete,
+             user = user,
+             state_overrides = overrides] {
+                auto chain = [chain_config] -> std::unique_ptr<Chain> {
+                    switch (chain_config) {
+                    case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                        return std::make_unique<EthereumMainnet>();
+                    case CHAIN_CONFIG_MONAD_DEVNET:
+                        return std::make_unique<MonadDevnet>();
+                    case CHAIN_CONFIG_MONAD_TESTNET:
+                        return std::make_unique<MonadTestnet>();
+                    }
+                    MONAD_ASSERT(false);
+                }();
+
+                evmc_revision const rev = chain->get_revision(
+                    block_header.number, block_header.timestamp);
+
+                auto const res = eth_call_impl(
+                    *chain,
+                    rev,
+                    transaction,
+                    block_header,
+                    block_number,
+                    block_round,
+                    sender,
+                    *tdb,
+                    block_hash_buffer,
+                    *state_overrides);
+
+                if (MONAD_UNLIKELY(res.has_error())) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message =
+                        new char[res.error().message().size() + 1];
+                    std::strcpy(result->message, res.error().message().c_str());
+                    complete(result, user);
+                    return;
+                }
+
+                auto const &res_value = res.assume_value();
+
+                result->status_code = res_value.status_code;
+                result->gas_used = static_cast<int64_t>(transaction.gas_limit) -
+                                   res_value.gas_left;
+                result->gas_refund = res_value.gas_refund;
+                result->output_data = new uint8_t[res_value.output_size];
+                result->output_data_len = res_value.output_size;
+                memcpy(
+                    (uint8_t *)result->output_data,
+                    res_value.output_data,
+                    res_value.output_size);
+
+                complete(result, user);
+            });
+    }
+};
+
+monad_eth_call_executor *
+monad_eth_call_executor_create(unsigned num_fibers, char const *dbpath)
+{
+    MONAD_ASSERT(dbpath);
+    std::string triedb_path(dbpath);
+
+    monad_eth_call_executor *const e =
+        new monad_eth_call_executor(num_fibers, triedb_path);
+
+    return e;
+}
+
+void monad_eth_call_executor_destroy(monad_eth_call_executor *e)
+{
+    MONAD_ASSERT(e);
+
+    delete e;
+}
+
+void monad_eth_call_executor_submit(
+    monad_eth_call_executor *const executor, monad_chain_config chain_config,
+    uint8_t const *rlp_txn, size_t rlp_txn_len, uint8_t const *rlp_header,
+    size_t rlp_header_len, uint8_t const *rlp_sender, size_t rlp_sender_len,
+    uint64_t block_number, uint64_t block_round,
+    monad_state_override const *overrides,
+    void (*complete)(monad_eth_call_result *result, void *user), void *user)
+{
+    MONAD_ASSERT(executor);
+
+    byte_string_view rlp_tx_view({rlp_txn, rlp_txn_len});
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    byte_string_view rlp_sender_view({rlp_sender, rlp_sender_len});
+
+    auto const tx_result = rlp::decode_transaction(rlp_tx_view);
+    MONAD_ASSERT(!tx_result.has_error());
+    MONAD_ASSERT(rlp_tx_view.empty());
+    auto const tx = tx_result.value();
+
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const block_header = block_header_result.value();
+
+    auto const sender_result = rlp::decode_address(rlp_sender_view);
+    MONAD_ASSERT(!sender_result.has_error());
+    MONAD_ASSERT(rlp_sender_view.empty());
+    auto const sender = sender_result.value();
+
+    MONAD_ASSERT(overrides);
+
+    executor->execute_eth_call(
+        chain_config,
         tx,
         block_header,
-        block_number,
-        round,
         sender,
-        *tdb,
-        *buffer,
-        state_overrides);
-    if (MONAD_UNLIKELY(result.has_error())) {
-        return {
-            .status_code = EVMC_REJECTED,
-            .message = result.error().message().c_str()};
-    }
-    auto const &res = result.assume_value();
-    return {
-        .status_code = res.status_code,
-        .output_data = {res.output_data, res.output_data + res.output_size},
-        .gas_used = static_cast<int64_t>(tx.gas_limit) - res.gas_left,
-        .gas_refund = res.gas_refund,
-    };
+        block_number,
+        block_round,
+        overrides,
+        complete,
+        user);
 }

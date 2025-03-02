@@ -1,3 +1,4 @@
+#include "event.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
 
@@ -11,6 +12,7 @@
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
+#include <monad/core/event/exec_event_ctypes.h>
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
@@ -106,6 +108,8 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    std::string exec_ring_config_spec = MONAD_EVENT_DEFAULT_EXEC_RING_PATH;
+    bool no_events = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
@@ -169,6 +173,18 @@ int main(int const argc, char const *argv[])
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(0, 1);
+    cli.add_option(
+           "--exec-ring",
+           exec_ring_config_spec,
+           "execution event ring configuration string")
+        ->type_name("<file-name>[:<descriptor-shift>:<buf-shift>]")
+        ->check([](std::string const &s) {
+            if (auto const r = try_parse_event_ring_config(s); !r) {
+                return r.error();
+            }
+            return std::string{};
+        });
+    cli.add_flag("--no-events", no_events, "disable all event recorders");
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -196,6 +212,15 @@ int main(int const argc, char const *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    // Initialize the event system
+    if (!no_events) {
+        auto config = try_parse_event_ring_config(exec_ring_config_spec);
+        MONAD_ASSERT(config, "not validated by CLI11?");
+        // TODO(ken): we don't do anything besides log if this fails to
+        //    initialize, and just continue without events. Should we exit?
+        (void)init_execution_event_recorder(*config);
+    }
 
 #ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;

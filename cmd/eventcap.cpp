@@ -4,6 +4,7 @@
  * Execution event capture utility
  */
 
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@
 #include <CLI/CLI.hpp>
 
 #include <monad/core/assert.h>
+#include <monad/core/event/exec_event_ctypes.h>
 #include <monad/event/event_iterator.h>
 #include <monad/event/event_metadata.h>
 #include <monad/event/event_ring.h>
@@ -53,6 +55,9 @@ struct MetadataTableEntry
             &g_monad_test_event_metadata_hash,
             std::span{g_monad_test_event_metadata},
         },
+    [MONAD_EVENT_RING_TYPE_EXEC] =
+        {&g_monad_exec_event_metadata_hash,
+         std::span{g_monad_exec_event_metadata}},
 };
 
 struct EventRingNameToDefaultPathEntry
@@ -65,9 +70,12 @@ struct EventRingNameToDefaultPathEntry
             g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_NONE],
             {},
         },
-    [MONAD_EVENT_RING_TYPE_TEST] = {
-        .name = g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_TEST],
-        .default_path = MONAD_EVENT_DEFAULT_TEST_RING_PATH}};
+    [MONAD_EVENT_RING_TYPE_TEST] =
+        {.name = g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_TEST],
+         .default_path = MONAD_EVENT_DEFAULT_TEST_RING_PATH},
+    [MONAD_EVENT_RING_TYPE_EXEC] = {
+        .name = g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_EXEC],
+        .default_path = MONAD_EVENT_DEFAULT_EXEC_RING_PATH}};
 
 static char const *get_default_path_for_event_ring_name(std::string_view name)
 {
@@ -83,6 +91,7 @@ static char const *get_default_path_for_event_ring_name(std::string_view name)
 struct mapped_event_ring
 {
     int ring_fd;
+    monad_event_ring_type ring_type;
     std::string origin_path;
     monad_event_ring event_ring;
     std::span<monad_event_metadata const> metadata_entries;
@@ -178,8 +187,39 @@ static void hexdump_event_payload(
     }
 }
 
+static char *format_exec_event_user_array(
+    monad_event_iterator const *iter, monad_event_descriptor const *event,
+    char *o)
+{
+    if (uint64_t const start_seqno = event->user[MONAD_FLOW_BLOCK_SEQNO]) {
+        monad_event_descriptor block_start_event;
+        std::optional<uint64_t> block_number;
+        if (monad_event_iterator_try_copy(
+                iter, start_seqno, &block_start_event)) {
+            auto const *const h =
+                std::bit_cast<monad_exec_block_header const *>(
+                    monad_event_payload_peek(iter, &block_start_event));
+            block_number = h->proposal.block_number;
+            if (!monad_event_payload_check(iter, &block_start_event)) {
+                block_number.reset();
+            }
+        }
+        if (block_number) {
+            o = std::format_to(o, " BLK: {}", *block_number);
+        }
+        else {
+            o = std::format_to(o, " BLK: <OVERWRITE>");
+        }
+    }
+    if (uint64_t const txn_id = event->user[MONAD_FLOW_TXN_ID]) {
+        o = std::format_to(o, " TXN: {}", txn_id - 1);
+    }
+    return o;
+}
+
 static void print_event(
-    monad_event_iterator *iter, monad_event_descriptor const *event,
+    monad_event_iterator *iter, monad_event_ring_type ring_type,
+    monad_event_descriptor const *event,
     std::span<monad_event_metadata const> metadata_entries, bool dump_payload,
     std::FILE *out)
 {
@@ -221,6 +261,25 @@ static void print_event(
         event->seqno,
         event->payload_size,
         event->payload_buf_offset);
+
+    // Print the `event->user` array. There are two different approaches:
+    //
+    //   1. For execution rings the program understands the meaning of these
+    //      values and prints them in an ergonomic way, e.g.,
+    //      `event->user[MONAD_FLOW_TXN_ID]` is a transaction index number
+    //      so it prints that as `TXN: <number>`
+    //
+    //   2. For all other rings, the hex value of each array element is
+    //      printed
+    if (ring_type == MONAD_EVENT_RING_TYPE_EXEC) {
+        o = format_exec_event_user_array(iter, event, o);
+    }
+    else {
+        o = std::format_to(o, " USER:");
+        for (uint64_t const u : event->user) {
+            o = std::format_to(o, " {0:#08x}", u);
+        }
+    }
     *o++ = '\n';
     std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
 
@@ -254,7 +313,7 @@ static void follow_thread_main(
             auto const event_metadata = mr.metadata_entries;
             switch (monad_event_iterator_try_next(&iter, &event)) {
             case MONAD_EVENT_NOT_READY:
-                if ((not_ready_count++ & ((1U << 20) - 1)) == 0) {
+                if ((not_ready_count++ & ((1U << 25) - 1)) == 0) {
                     std::fflush(out);
                     if (event_ring_is_abandoned(mr.ring_fd)) {
                         g_should_exit = 1;
@@ -277,7 +336,8 @@ static void follow_thread_main(
                 not_ready_count = 0;
                 break; // Handled in the main loop body
             }
-            print_event(&iter, &event, event_metadata, dump_payload, out);
+            print_event(
+                &iter, mr.ring_type, &event, event_metadata, dump_payload, out);
         }
     }
 }
@@ -305,7 +365,7 @@ int main(int argc, char **argv)
            event_ring_paths,
            "path to an event ring shared memory file")
         ->default_val(
-            g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_TEST]);
+            g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_EXEC]);
 
     try {
         cli.parse(argc, argv);
@@ -362,35 +422,36 @@ int main(int argc, char **argv)
         }
 
         // Ensure it's safe to dereference `MetadataTable[ring_type]`
-        monad_event_ring_type const ring_type = mr.event_ring.header->type;
-        if (std::to_underlying(ring_type) >= std::size(MetadataTable)) {
+        mr.ring_type = mr.event_ring.header->type;
+        if (std::to_underlying(mr.ring_type) >= std::size(MetadataTable)) {
             errx(
                 EX_CONFIG,
                 "do not have the metadata mapping for event ring `%s` type %hu",
                 mr.origin_path.c_str(),
-                ring_type);
+                mr.ring_type);
         }
 
         // Get the metadata hash we're compiled with, or substitute the zero
         // hash if the command line told us to
-        if (MetadataTable[ring_type].hash == nullptr) {
+        if (MetadataTable[mr.ring_type].hash == nullptr) {
             errx(
                 EX_CONFIG,
                 "event ring `%s` has type %hu, but we don't know its metadata "
                 "hash",
                 mr.origin_path.c_str(),
-                ring_type);
+                mr.ring_type);
         }
-        uint8_t const(&hash)[32] = *MetadataTable[ring_type].hash;
+        uint8_t const(&hash)[32] = *MetadataTable[mr.ring_type].hash;
 
         // Unlike simpler tools, we should be able to work with any type
-        if (monad_event_ring_check_type(&mr.event_ring, ring_type, hash) != 0) {
+        if (monad_event_ring_check_type(&mr.event_ring, mr.ring_type, hash) !=
+            0) {
             errx(
                 EX_SOFTWARE,
                 "event library error -- %s",
                 monad_event_ring_get_last_error());
         }
-        mr.metadata_entries = MetadataTable[ring_type].entries;
+        mr.metadata_entries = MetadataTable[mr.ring_type].entries;
         mr.start_seqno = start_seqno;
         if (print_header) {
             print_event_ring_header(

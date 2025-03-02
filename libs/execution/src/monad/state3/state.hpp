@@ -10,6 +10,7 @@
 #include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/keccak.hpp>
+#include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
@@ -25,11 +26,15 @@
 
 #include <algorithm>
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -100,7 +105,7 @@ public:
     {
     }
 
-    State(State &&) = delete;
+    State(State &&) = default;
     State(State const &) = delete;
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
@@ -551,6 +556,36 @@ public:
             account = Account{.incarnation = incarnation_};
         }
         account.value().incarnation = incarnation_;
+    }
+
+    // The "account size" of the state is the number of entries in the
+    // `Address -> AccountState` prestate mapping
+    size_t get_account_size() const
+    {
+        return size(original_);
+    }
+
+    // Given how original_ and current_ are formed, it is the case that
+    // KEYS(current_) is a subset of KEYS(original_); this implies that to
+    // visit all reads and writes of state data, we can walk the original_
+    // key-value pairs. For each key in original_, if it also exists in
+    // current_, then this account's state was also modified somehow (subject
+    // to an A -> B -> A problem). To avoid exposing the internals, the user
+    // passes a visitor which visits address, prestate, and modified state.
+    // Modified state will be set to nullptr if the account wasn't modified.
+    template <std::invocable<
+        Address const *, AccountState const *, AccountState const *>
+                  F>
+    void visit_accounts(F &&f) const
+    {
+        for (auto const &[address, original_state] : original_) {
+            AccountState const *current_state = nullptr;
+            if (auto const i = current_.find(address); i != end(current_)) {
+                current_state = std::addressof(i->second.recent());
+            }
+            std::invoke(
+                std::forward<F>(f), &address, &original_state, current_state);
+        }
     }
 };
 

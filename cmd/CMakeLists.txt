@@ -5,6 +5,8 @@ find_package(CLI11 REQUIRED)
 add_executable(
   monad
   monad/main.cpp
+  monad/event.cpp
+  monad/event.hpp
   monad/file_io.hpp
   monad/file_io.cpp
   monad/runloop_ethereum.cpp
@@ -38,5 +40,5 @@ target_compile_definitions(monad_cli
 add_executable(eventcap eventcap.cpp)
 monad_compile_options(eventcap)
 target_compile_options(eventcap PRIVATE -Wno-c99-designator)
-target_link_libraries(eventcap PRIVATE monad_core CLI11::CLI11)
+target_link_libraries(eventcap PRIVATE monad_execution monad_core CLI11::CLI11)
 target_compile_options(eventcap PRIVATE -Wno-missing-field-initializers)

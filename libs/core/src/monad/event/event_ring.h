@@ -93,6 +93,7 @@ enum monad_event_ring_type : uint16_t
 {
     MONAD_EVENT_RING_TYPE_NONE,  ///< An invalid value
     MONAD_EVENT_RING_TYPE_TEST,  ///< Used in simple automated tests
+    MONAD_EVENT_RING_TYPE_EXEC,  ///< Core execution events
     MONAD_EVENT_RING_TYPE_COUNT  ///< Total number of known event rings
 };
 

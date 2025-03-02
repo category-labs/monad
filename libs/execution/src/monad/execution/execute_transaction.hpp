@@ -6,6 +6,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/execution/trace/call_frame.hpp>
+#include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
 
@@ -20,7 +21,6 @@ struct BlockHeader;
 class BlockState;
 struct Chain;
 struct Receipt;
-class State;
 struct Transaction;
 
 template <evmc_revision rev>
@@ -28,6 +28,7 @@ struct EvmcHost;
 
 struct ExecutionResult
 {
+    State state;
     Receipt receipt;
     std::vector<CallFrame> call_frames;
 };

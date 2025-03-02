@@ -4,6 +4,7 @@
 #include <monad/core/likely.h>
 #include <monad/execution/trace/call_frame.hpp>
 
+#include <evmone/instructions_opcodes.hpp>
 #include <nlohmann/json.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -60,6 +61,26 @@ nlohmann::json to_json(CallFrame const &f)
     res["calls"] = nlohmann::json::array();
 
     return res;
+}
+
+evmone::Opcode get_call_frame_opcode(CallType type, uint32_t call_flags)
+{
+    using enum evmone::Opcode;
+    switch (type) {
+    case CallType::CALL:
+        return call_flags & EVMC_STATIC ? OP_STATICCALL : OP_CALL;
+    case CallType::CALLCODE:
+        return OP_CALLCODE;
+    case CallType::DELEGATECALL:
+        return OP_DELEGATECALL;
+    case CallType::CREATE:
+        return OP_CREATE;
+    case CallType::CREATE2:
+        return OP_CREATE2;
+    case CallType::SELFDESTRUCT:
+        return OP_SELFDESTRUCT;
+    }
+    std::unreachable();
 }
 
 MONAD_NAMESPACE_END

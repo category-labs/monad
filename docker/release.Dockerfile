@@ -82,3 +82,4 @@ FROM base as runner
 COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
 COPY --from=build /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build /src/build/cmd/monad /usr/local/bin/
+COPY --from=build /src/build/cmd/eventcap /usr/local/bin/

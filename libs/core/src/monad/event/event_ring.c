@@ -402,4 +402,5 @@ char const *monad_event_ring_get_last_error()
 char const *g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_COUNT] = {
     [MONAD_EVENT_RING_TYPE_NONE] = "none",
     [MONAD_EVENT_RING_TYPE_TEST] = "test",
+    [MONAD_EVENT_RING_TYPE_EXEC] = "exec",
 };

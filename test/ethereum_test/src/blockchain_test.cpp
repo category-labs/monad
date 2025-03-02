@@ -40,6 +40,7 @@
 #include <quill/bundled/fmt/format.h>
 #include <quill/detail/LogMacros.h>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <gtest/gtest.h>
@@ -207,8 +208,12 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
     BlockState block_state(db);
     EthereumMainnetRev const chain{rev};
-    auto const recovered_senders = recover_senders(block.transactions, *pool_);
-    std::vector<Address> senders(block.transactions.size());
+    size_t const transaction_count = block.transactions.size();
+    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
+        transaction_count);
+    auto const recovered_senders =
+        recover_senders(block.transactions, *pool_, txn_sync_barriers);
+    std::vector<Address> senders(transaction_count);
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
             senders[i] = recovered_senders[i].value();
@@ -220,7 +225,13 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<rev>(
-            chain, block, senders, block_state, block_hash_buffer, *pool_));
+            chain,
+            block,
+            senders,
+            block_state,
+            block_hash_buffer,
+            *pool_,
+            txn_sync_barriers));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {

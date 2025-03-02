@@ -1,4 +1,5 @@
 #include "runloop_monad.hpp"
+#include "event.hpp"
 #include "file_io.hpp"
 
 #include <monad/chain/chain.hpp>
@@ -7,9 +8,12 @@
 #include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/event/exec_event_recorder.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
+#include <monad/core/result.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
@@ -23,13 +27,16 @@
 #include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
 
 #include <chrono>
 #include <filesystem>
+#include <iterator>
 #include <optional>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -129,7 +136,7 @@ bool validate_delayed_execution_results(
     return true;
 }
 
-Result<std::pair<bytes32_t, uint64_t>> propose_block(
+Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
@@ -149,9 +156,12 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         is_first_block ? std::nullopt
                        : std::make_optional(consensus_header.parent_round()));
 
+    size_t const transaction_count = block.transactions.size();
+    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
+        transaction_count);
     auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool);
-    std::vector<Address> senders(block.transactions.size());
+        recover_senders(block.transactions, priority_pool, txn_sync_barriers);
+    std::vector<Address> senders(transaction_count);
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
             senders[i] = recovered_senders[i].value();
@@ -160,7 +170,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             return TransactionError::MissingSender;
         }
     }
+    BlockExecOutput exec_output;
     BlockState block_state(db);
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
@@ -170,7 +182,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             senders,
             block_state,
             block_hash_buffer,
-            priority_pool));
+            priority_pool,
+            txn_sync_barriers));
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -189,14 +203,14 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         block.transactions,
         block.ommers,
         block.withdrawals);
-    auto const output_header = db.read_eth_header();
+    exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
-    auto const block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(output_header)));
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
-    return std::make_pair(block_hash, output_header.gas_used);
+    return exec_output;
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -211,6 +225,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = finalized_block_num;
+    uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
     init_block_hash_chain_proposals(raw_db, block_hash_chain, start_block_num);
 
@@ -229,7 +244,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         uint64_t verified_block;
     };
 
-    std::deque<MonadConsensusBlockHeader> to_execute;
+    struct ToExecute
+    {
+        bytes32_t block_id;
+        MonadConsensusBlockHeader header;
+    };
+
+    std::deque<ToExecute> to_execute;
     std::deque<ToFinalize> to_finalize;
 
     MONAD_ASSERT(
@@ -249,6 +270,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         if (MONAD_LIKELY(id != bytes32_t{})) {
             do {
                 header = read_header(id, header_dir);
+
+                // Remember the current id before climbing to the parent
+                bytes32_t const this_id = id;
                 id = header.parent_id();
 
                 if (MONAD_UNLIKELY(header.seqno > end_block_num)) {
@@ -269,7 +293,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
                 if (!has_executed(raw_db, header)) {
                     MONAD_ASSERT(needs_finalize);
-                    to_execute.push_front(std::move(header));
+                    to_execute.emplace_front(this_id, std::move(header));
                 }
             }
             while (header.seqno - 1 > last_finalized_by_execution);
@@ -283,7 +307,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     header = read_header(id, header_dir);
                     if (header.seqno <= end_block_num &&
                         !has_executed(raw_db, header)) {
-                        to_execute.push_front(std::move(header));
+                        to_execute.emplace_front(id, std::move(header));
                     }
                     id = header.parent_id();
                 }
@@ -316,7 +340,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             continue;
         }
 
-        for (auto const &consensus_header : to_execute) {
+        for (auto const &[block_id, consensus_header] : to_execute) {
             auto const block_time_start = std::chrono::steady_clock::now();
 
             uint64_t const block_number =
@@ -328,12 +352,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(consensus_header.parent_round());
 
+            record_block_exec_start(
+                block_id,
+                chain_id,
+                consensus_header,
+                block_hash_buffer.get(consensus_header.seqno - 1),
+                ntxns);
+
             MONAD_ASSERT(validate_delayed_execution_results(
                 block_hash_buffer, consensus_header.delayed_execution_results));
 
             BOOST_OUTCOME_TRY(
-                auto const propose_result,
-                propose_block(
+                BlockExecOutput const exec_output,
+                record_block_exec_result(propose_block(
                     consensus_header,
                     Block{
                         .header = consensus_header.execution_inputs,
@@ -344,10 +375,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     chain,
                     db,
                     priority_pool,
-                    block_number == start_block_num));
-            auto const &[block_hash, gas_used] = propose_result;
+                    block_number == start_block_num)));
             block_hash_chain.propose(
-                block_hash,
+                exec_output.eth_block_hash,
                 consensus_header.round,
                 consensus_header.parent_round());
 
@@ -358,7 +388,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_number,
                 consensus_header.round,
                 ntxns,
-                gas_used,
+                exec_output.eth_header.gas_used,
                 block_time_start);
         }
 
@@ -371,6 +401,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             block_hash_chain.finalize(round);
             db.update_verified_block(verified_block);
             finalized_block_num = block;
+
+            auto const opt_consensus_header_rlp =
+                query_consensus_header(raw_db, block, finalized_nibbles);
+            MONAD_ASSERT_PRINTF(
+                opt_consensus_header_rlp,
+                "no db consensus header after finalization of %lu?",
+                block);
+            byte_string_view rlp_view{data(*opt_consensus_header_rlp)};
+            bytes32_t const &block_id = to_bytes(blake3(rlp_view));
+            auto const consensus_header_result =
+                rlp::decode_consensus_block_header(rlp_view);
+            MONAD_ASSERT(consensus_header_result.has_value())
+            record_block_finalized(block_id, consensus_header_result.value());
         }
     }
 

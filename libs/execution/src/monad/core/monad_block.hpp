@@ -74,6 +74,36 @@ struct MonadConsensusBlockHeader
         return qc.vote.round;
     }
 
+    static MonadConsensusBlockHeader from_eth_header_next(
+        BlockHeader const &eth_header, MonadConsensusBlockHeader const &prev,
+        bytes32_t const &prev_hash, unsigned execution_delay)
+    {
+        uint64_t const round = prev.round + 1;
+        uint64_t const verified_round =
+            round < execution_delay ? 0 : round - execution_delay;
+        return MonadConsensusBlockHeader{
+            .round = round,
+            .epoch = prev.epoch,
+            .qc =
+                MonadQuorumCertificate{
+                    .vote =
+                        MonadVote{
+                            .id = prev_hash,
+                            .round = prev.round,
+                            .epoch = prev.epoch,
+                            .parent_id = prev.qc.vote.id,
+                            .parent_round = prev.qc.vote.round},
+                    .signatures = {}},
+            .author = {},
+            .seqno = eth_header.number,
+            .timestamp_ns = eth_header.timestamp,
+            .round_signature = {},
+            .delayed_execution_results =
+                std::vector<BlockHeader>{BlockHeader{.number = verified_round}},
+            .execution_inputs = eth_header,
+            .block_body_id = {}};
+    }
+
     static MonadConsensusBlockHeader from_eth_header(
         BlockHeader const &eth_header,
         std::optional<uint64_t> const round_number = std::nullopt)

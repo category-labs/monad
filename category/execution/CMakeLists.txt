@@ -26,7 +26,9 @@ add_library(
   # ethereum/core
   "ethereum/core/account.hpp"
   "ethereum/core/address.hpp"
+  "ethereum/core/base_ctypes.h"
   "ethereum/core/block.hpp"
+  "ethereum/core/eth_ctypes.h"
   "ethereum/core/fmt/account_fmt.hpp"
   "ethereum/core/fmt/address_fmt.hpp"
   "ethereum/core/fmt/block_fmt.hpp"
@@ -76,6 +78,13 @@ add_library(
   "ethereum/db/trie_rodb.hpp"
   "ethereum/db/util.cpp"
   "ethereum/db/util.hpp"
+  # ethereum/event
+  "ethereum/event/exec_event_ctypes.h"
+  "ethereum/event/exec_event_ctypes_metadata.c"
+  "ethereum/event/exec_event_recorder.cpp"
+  "ethereum/event/exec_event_recorder.hpp"
+  "ethereum/event/record_txn_events.cpp"
+  "ethereum/event/record_txn_events.hpp"
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"

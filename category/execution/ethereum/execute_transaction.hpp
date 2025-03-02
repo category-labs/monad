@@ -6,6 +6,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 
 #include <evmc/evmc.h>
@@ -18,10 +19,10 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 struct BlockHeader;
+class BlockMetrics;
 class BlockState;
 struct Chain;
 struct Receipt;
-class State;
 struct Transaction;
 
 template <evmc_revision rev>
@@ -29,6 +30,7 @@ struct EvmcHost;
 
 struct ExecutionResult
 {
+    State state;
     Receipt receipt;
     std::vector<CallFrame> call_frames;
 };

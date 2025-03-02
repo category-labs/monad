@@ -1,4 +1,5 @@
 #include "runloop_monad.hpp"
+#include "event.hpp"
 #include "file_io.hpp"
 
 #include <category/core/assert.h>
@@ -14,6 +15,8 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -26,6 +29,7 @@
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/mpt/db.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
@@ -72,6 +76,40 @@ void log_tps(
 #pragma GCC diagnostic pop
 
 template <class MonadConsensusBlockHeader>
+void record_monad_block_qc(
+    MonadConsensusBlockHeader const &header, uint64_t finalized_block_num)
+{
+    // Before recording a QC for block B, we need to check if that block isn't
+    // already finalized. The reason for this check is the following sequence:
+    //
+    //   - we execute proposed block B1
+    //
+    //   - execution begins to fall behind, while consensus advances; B1
+    //     receives a QC (upon the proposal of B2) and B2 also received a QC
+    //     (upon proposal of B3), finalizing B1; the execution daemon is still
+    //     working on B1 during this time (or more likely, is restarting after
+    //     a crash that occurs immediately after B1 has executed)
+    //
+    //   - by the time execution is ready to execute another proposed block,
+    //     consensus has finalized B1; this is communicated to the execution
+    //     daemon, and finalize logic takes precedence and runs immediately,
+    //     emitting a BLOCK_FINALIZED event
+    //
+    //   - during the execution of B2, we'll see the QC for B1. Since it has
+    //     already been finalized, we'll skip it
+    uint64_t const vote_block_number = header.seqno - 1;
+    if (vote_block_number <= finalized_block_num) {
+        return;
+    }
+    auto const &vote = header.qc.vote;
+    monad_exec_block_qc const qc = {
+        .block_tag = {.id = vote.id, .block_number = vote_block_number},
+        .round = vote.round,
+        .epoch = vote.epoch};
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_QC, qc);
+}
+
+template <class MonadConsensusBlockHeader>
 bool has_executed(
     mpt::Db const &db, MonadConsensusBlockHeader const &header,
     bytes32_t const &block_id)
@@ -114,7 +152,7 @@ bool validate_delayed_execution_results(
 }
 
 template <class MonadConsensusBlockHeader>
-Result<std::pair<bytes32_t, uint64_t>> propose_block(
+Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
@@ -138,13 +176,18 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         block.header.number - 1,
         is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
+    size_t const transaction_count = block.transactions.size();
+    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
+        transaction_count);
+
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool);
+        recover_senders(block.transactions, priority_pool, txn_sync_barriers);
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
-    std::vector<Address> senders(block.transactions.size());
+
+    std::vector<Address> senders(transaction_count);
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
             senders[i] = recovered_senders[i].value();
@@ -153,8 +196,11 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             return TransactionError::MissingSender;
         }
     }
-    BlockState block_state(db, vm);
+
+    BlockExecOutput exec_output;
     BlockMetrics block_metrics;
+    BlockState block_state(db, vm);
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
@@ -165,7 +211,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             block_state,
             block_hash_buffer,
             priority_pool,
-            block_metrics));
+            block_metrics,
+            txn_sync_barriers));
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -189,12 +237,12 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
-    auto const output_header = db.read_eth_header();
+    exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
-    auto const block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(output_header)));
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -221,13 +269,14 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
-        output_header.gas_used,
-        output_header.gas_used /
+        exec_output.eth_header.gas_used,
+        exec_output.eth_header.gas_used /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-        output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
+        exec_output.eth_header.gas_used /
+            (uint64_t)std::max(1L, block_time.count()),
         db.print_stats());
 
-    return std::make_pair(block_hash, output_header.gas_used);
+    return exec_output;
 }
 
 template <class MonadConsensusBlockHeader, class Fn>
@@ -301,6 +350,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = finalized_block_num;
+    uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
 
     auto const body_dir = ledger_dir / "bodies";
@@ -322,7 +372,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     {
         uint64_t block;
         bytes32_t block_id;
-        uint64_t verified_block;
+        std::vector<uint64_t> verified_blocks;
     };
 
     std::deque<ToExecute> to_execute;
@@ -347,14 +397,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             end_block_num,
             [&raw_db, &to_execute, &to_finalize](
                 bytes32_t const &id, auto const &header) {
-                uint64_t const verified_block =
-                    header.delayed_execution_results.empty()
-                        ? mpt::INVALID_BLOCK_NUM
-                        : header.delayed_execution_results.back().number;
+                std::vector<uint64_t> verified_blocks;
+                for (BlockHeader const &h : header.delayed_execution_results) {
+                    verified_blocks.push_back(h.number);
+                }
                 to_finalize.push_front(ToFinalize{
                     .block = header.seqno,
                     .block_id = id,
-                    .verified_block = verified_block});
+                    .verified_blocks = std::move(verified_blocks)});
 
                 if (!has_executed(raw_db, header, id)) {
                     to_execute.push_front(
@@ -400,6 +450,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &chain,
              &vm,
              &priority_pool,
+             &finalized_block_num,
+             chain_id,
              start_block_num](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
@@ -412,12 +464,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(header.parent_id());
 
+            record_monad_block_qc(header, finalized_block_num);
+            record_block_exec_start(
+                block_id,
+                chain_id,
+                block_hash_buffer.get(header.seqno - 1),
+                header.execution_inputs,
+                header.block_round,
+                header.epoch,
+                ntxns);
+
             MONAD_ASSERT(validate_delayed_execution_results(
                 block_hash_buffer, header.delayed_execution_results));
 
             BOOST_OUTCOME_TRY(
-                auto const propose_result,
-                propose_block(
+                BlockExecOutput const exec_output,
+                record_block_exec_result(propose_block(
                     block_id,
                     header,
                     Block{
@@ -430,14 +492,21 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     db,
                     vm,
                     priority_pool,
-                    block_number == start_block_num));
-            auto const &[block_hash, gas_used] = propose_result;
+                    block_number == start_block_num)));
             block_hash_chain.propose(
-                block_hash, block_number, block_id, header.parent_id());
+                exec_output.eth_block_hash,
+                block_number,
+                block_id,
+                header.parent_id());
 
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
 
-            log_tps(block_number, block_id, ntxns, gas_used, block_time_start);
+            log_tps(
+                block_number,
+                block_id,
+                ntxns,
+                exec_output.eth_header.gas_used,
+                block_time_start);
 
             return outcome::success();
         };
@@ -450,17 +519,32 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 consensus_header));
         }
 
-        for (auto const &[block, block_id, verified_block] : to_finalize) {
+        for (auto const &[block, block_id, verified_blocks] : to_finalize) {
             LOG_INFO(
                 "Processing finalization for block {} with block_id {}",
                 block,
                 block_id);
             db.finalize(block, block_id);
             block_hash_chain.finalize(block_id);
-            if (verified_block != mpt::INVALID_BLOCK_NUM) {
-                db.update_verified_block(verified_block);
-            }
+            monad_exec_block_finalized const finalized_info = {
+                .id = block_id, .block_number = block};
+            record_exec_event(
+                std::nullopt, MONAD_EXEC_BLOCK_FINALIZED, finalized_info);
             finalized_block_num = block;
+
+            if (!verified_blocks.empty() &&
+                verified_blocks.back() != mpt::INVALID_BLOCK_NUM) {
+                db.update_verified_block(verified_blocks.back());
+            }
+            for (uint64_t b : verified_blocks) {
+                if (b == 0 || b == mpt::INVALID_BLOCK_NUM) {
+                    continue;
+                }
+                monad_exec_block_verified const verified_info = {
+                    .block_number = b};
+                record_exec_event(
+                    std::nullopt, MONAD_EXEC_BLOCK_VERIFIED, verified_info);
+            }
         }
     }
 

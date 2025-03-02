@@ -271,13 +271,19 @@ bool statesync_server_handle_request(
     if (!root.is_valid()) {
         return false;
     }
-    auto const finalized_root = db.find(root, finalized_nibbles, rq.target);
-    if (!finalized_root.has_value()) {
+    auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
+    if (!finalized_root_res.has_value()) {
         return false;
     }
+    auto const &finalized_root = finalized_root_res.value();
+    if (db.find(finalized_root, state_nibbles, rq.target).has_error() ||
+        db.find(finalized_root, code_nibbles, rq.target).has_error()) {
+        return false;
+    }
+
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
     Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
-    if (!db.traverse(finalized_root.value(), traverse, rq.target)) {
+    if (!db.traverse(finalized_root, traverse, rq.target)) {
         return false;
     }
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();

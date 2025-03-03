@@ -28,7 +28,8 @@ using namespace monad::test;
 
 struct monad_statesync_client
 {
-    std::deque<monad_sync_request> rqs;
+    std::deque<monad_sync_request> rqs{};
+    bool success{true};
 };
 
 struct monad_statesync_server_network
@@ -111,6 +112,7 @@ namespace
     void statesync_server_send_done(
         monad_statesync_server_network *const net, monad_sync_done const done)
     {
+        net->client->success &= done.success;
         if (done.success) {
             monad_statesync_client_handle_done(net->cctx, done);
         }
@@ -1059,6 +1061,16 @@ TEST_F(StateSyncFixture, update_contract_twice)
     run();
 
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, handle_request_from_bad_block)
+{
+    load_header(sdb, BlockHeader{.number = 0});
+    load_header(sdb, BlockHeader{.number = 1});
+    init();
+    handle_target(cctx, BlockHeader{.number = 1});
+    run();
+    EXPECT_FALSE(client.success);
 }
 
 TEST_F(StateSyncFixture, benchmark)

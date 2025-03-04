@@ -6,7 +6,7 @@
 
 using namespace monad;
 
-TEST(MonadRefund, testnet_fork)
+TEST(MonadChain, compute_gas_refund)
 {
     MonadTestnet monad_chain;
     Transaction tx{.gas_limit = 21'000};

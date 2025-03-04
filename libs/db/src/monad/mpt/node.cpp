@@ -569,9 +569,8 @@ void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_append, Node const &node,
     uint32_t const disk_size, unsigned const offset)
 {
-
+    MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     if (offset < Node::disk_size_bytes) { // serialize node disk size
-        MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
         MONAD_ASSERT(bytes_to_append <= disk_size - offset);
         unsigned const written =
             std::min(bytes_to_append, Node::disk_size_bytes - offset);

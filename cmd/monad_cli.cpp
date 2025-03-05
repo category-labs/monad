@@ -825,6 +825,7 @@ int interactive_impl(Db &db)
 int main(int argc, char *argv[])
 {
     std::vector<std::filesystem::path> dbname_paths{"test.db"};
+    std::optional<unsigned> sq_thread_cpu = std::nullopt;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -832,6 +833,12 @@ int main(int argc, char *argv[])
            dbname_paths,
            "A comma-separated list of previously created database paths")
         ->required();
+    cli.add_option(
+        "--sq_thread_cpu",
+        sq_thread_cpu,
+        "CPU core binding for the io_uring SQPOLL thread. Specifies the CPU "
+        "set for the kernel polling thread in SQPOLL mode. Defaults to "
+        "disabled SQPOLL mode.");
     try {
         cli.parse(argc, argv);
     }
@@ -848,7 +855,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = dbname_paths};
+    ReadOnlyOnDiskDbConfig const ro_config{
+        .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
 
     Db ro_db{ro_config};
 

@@ -819,7 +819,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         .depth = 1,
     };
 
-    constexpr uint64_t NUM_TXNS = 10;
+    constexpr uint64_t NUM_TXNS = 1000;
 
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};

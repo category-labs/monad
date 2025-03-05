@@ -16,9 +16,27 @@ using TraverseCallback = std::function<void(NibblesView, byte_string_view)>;
 class RangedGetMachine : public TraverseMachine
 {
     Nibbles path_;
-    NibblesView const min_;
-    NibblesView const max_;
+    Nibbles const min_;
+    Nibbles const max_;
     TraverseCallback callback_;
+
+private:
+    // This function is a looser version checking if min <= path < max. But it
+    // will also return true if we should continue traversing down. Suppose we
+    // have the range [0x00, 0x10] and we are at node 0x0. In that case the
+    // path's size is less than the min, check if it's as substring.
+    bool does_key_intersect_with_range(NibblesView const path)
+    {
+        bool const min_check = [this, path] {
+            if (path.nibble_size() < min_.nibble_size()) {
+                return NibblesView{min_}.starts_with(path);
+            }
+            else {
+                return (path >= min_);
+            }
+        }();
+        return min_check && (path < NibblesView{max_});
+    }
 
 public:
     RangedGetMachine(
@@ -35,8 +53,14 @@ public:
         if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
             return true;
         }
-        path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
 
+        auto next_path =
+            concat(NibblesView{path_}, branch, node.path_nibble_view());
+        if (!does_key_intersect_with_range(next_path)) {
+            return false;
+        }
+
+        path_ = std::move(next_path);
         if (node.has_value() && path_.nibble_size() >= min_.nibble_size()) {
             callback_(path_, node.value());
         }
@@ -58,21 +82,10 @@ public:
         path_ = path_view.substr(0, rem_size);
     }
 
-    bool should_visit(Node const &node, unsigned char const branch) override
+    bool should_visit(Node const &, unsigned char const branch) override
     {
-        auto const next_path =
-            concat(NibblesView{path_}, branch, node.path_nibble_view());
-
-        bool const min_check = [this, next_path = NibblesView{next_path}] {
-            if (next_path.nibble_size() < min_.nibble_size()) {
-                return min_.starts_with(next_path);
-            }
-            else {
-                return (next_path >= min_);
-            }
-        }();
-
-        return min_check && (next_path < max_);
+        auto const child = concat(NibblesView{path_}, branch);
+        return does_key_intersect_with_range(child);
     }
 
     std::unique_ptr<TraverseMachine> clone() const override

@@ -67,12 +67,22 @@ ARG GIT_COMMIT_HASH
 RUN test -n "$GIT_COMMIT_HASH"
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN CC=gcc-13 CXX=g++-13 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-  -DCMAKE_TOOLCHAIN_FILE:STRING=libs/core/toolchains/temp-strip-release.cmake \
-  -DCMAKE_BUILD_TYPE:STRING=Release \
-  -B build \
-  -G Ninja
+ARG CMAKE_BUILD_TYPE
+ENV CMAKE_BUILD_TYPE_OPTIONS="Release RelWithDebInfo Debug" 
+RUN echo "$CMAKE_BUILD_TYPE_OPTIONS" | grep -w "$CMAKE_BUILD_TYPE" || (echo "Invalid CMAKE_BUILD_TYPE: $CMAKE_BUILD_TYPE" && exit 1)
+# TODO: consolidate
+RUN if [ "$CMAKE_BUILD_TYPE" = "Release" ]; then \
+      CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+        -DCMAKE_TOOLCHAIN_FILE:STRING=libs/core/toolchains/temp-strip-release.cmake \
+        -B build \
+        -G Ninja; \
+    else \
+      CC=gcc-13 CXX=g++-13 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+        -B build \
+        -G Ninja; \
+    fi
 
 RUN VERBOSE=1 cmake \
   --build build \

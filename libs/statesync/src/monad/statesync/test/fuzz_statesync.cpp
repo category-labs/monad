@@ -21,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <stdio.h>
+#include <sys/sysinfo.h>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -256,7 +257,12 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     monad_statesync_client client;
     monad_statesync_client_context *const cctx =
         monad_statesync_client_context_create(
-            &cdbname_str, 1, "", &client, &statesync_send_request);
+            &cdbname_str,
+            1,
+            "",
+            static_cast<unsigned>(get_nprocs() - 1),
+            &client,
+            &statesync_send_request);
     std::filesystem::path sdbname{tmp_dbname()};
     OnDiskMachine machine;
     mpt::Db sdb{

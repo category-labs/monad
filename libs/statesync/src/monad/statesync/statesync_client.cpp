@@ -15,13 +15,17 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 
 using namespace monad;
 using namespace monad::mpt;
 
+unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
+
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
-    char const *const genesis_file, monad_statesync_client *sync,
+    char const *const genesis_file, unsigned const sq_thread_cpu,
+    monad_statesync_client *sync,
     void (*statesync_send_request)(
         monad_statesync_client *, monad_sync_request))
 {
@@ -29,7 +33,13 @@ monad_statesync_client_context *monad_statesync_client_context_create(
         dbname_paths, dbname_paths + len};
     MONAD_ASSERT(!paths.empty());
     return new monad_statesync_client_context{
-        paths, genesis_file, sync, statesync_send_request};
+        paths,
+        genesis_file,
+        sq_thread_cpu == MONAD_SQPOLL_DISABLED
+            ? std::nullopt
+            : std::make_optional(sq_thread_cpu),
+        sync,
+        statesync_send_request};
 }
 
 uint8_t monad_statesync_client_prefix_bytes()

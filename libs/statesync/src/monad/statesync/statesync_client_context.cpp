@@ -15,7 +15,9 @@ using namespace monad::mpt;
 
 monad_statesync_client_context::monad_statesync_client_context(
     std::vector<std::filesystem::path> const dbname_paths,
-    std::filesystem::path const genesis, monad_statesync_client *const sync,
+    std::filesystem::path const genesis,
+    std::optional<unsigned> const sq_thread_cpu,
+    monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
     : db{machine,
@@ -26,7 +28,7 @@ monad_statesync_client_context::monad_statesync_client_context(
              .rd_buffers = 8192,
              .wr_buffers = 32,
              .uring_entries = 128,
-             .sq_thread_cpu = get_nprocs() - 1,
+             .sq_thread_cpu = sq_thread_cpu,
              .dbname_paths = dbname_paths}}
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , progress(

@@ -7,12 +7,14 @@ extern "C"
 {
 #endif
 
+extern const unsigned MONAD_SQPOLL_DISABLED;
+
 struct monad_statesync_client;
 struct monad_statesync_client_context;
 
 struct monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *dbname_paths, size_t len, char const *genesis_file,
-    struct monad_statesync_client *,
+    unsigned sq_thread_cpu, struct monad_statesync_client *,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 

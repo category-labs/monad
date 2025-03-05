@@ -21,6 +21,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <sys/sysinfo.h>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -149,7 +150,12 @@ namespace
         {
             char const *const str = cdbname.c_str();
             cctx = monad_statesync_client_context_create(
-                &str, 1, genesis.c_str(), &client, &statesync_send_request);
+                &str,
+                1,
+                genesis.c_str(),
+                static_cast<unsigned>(get_nprocs() - 1),
+                &client,
+                &statesync_send_request);
             net = {.client = &client, .cctx = cctx};
             for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
                 monad_statesync_client_handle_new_peer(

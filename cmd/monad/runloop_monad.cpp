@@ -32,7 +32,11 @@
 #include <thread>
 #include <vector>
 
+#include <signal.h>
+
 namespace fs = std::filesystem;
+
+extern sig_atomic_t volatile g_monad_exit_signaled;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -170,7 +174,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,
     mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    uint64_t const end_block_num)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
 
@@ -193,7 +197,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;
     uint64_t const start_block_num = finalized_block_num;
-    while (finalized_block_num <= end_block_num && stop == 0) {
+    while (finalized_block_num <= end_block_num && g_monad_exit_signaled == 0) {
         auto const reader_res = reader.next();
         if (!reader_res.has_value()) {
             std::this_thread::sleep_for(SLEEP_TIME);

@@ -824,7 +824,7 @@ int interactive_impl(Db &db)
 
 int main(int argc, char *argv[])
 {
-    std::vector<std::filesystem::path> dbname_paths{"test.db"};
+    std::vector<std::filesystem::path> dbname_paths;
     std::optional<unsigned> sq_thread_cpu = std::nullopt;
 
     CLI::App cli{"monad_cli"};

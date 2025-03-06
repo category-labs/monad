@@ -39,6 +39,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <span>
 #include <spanstream>
 #include <stdexcept>
@@ -47,6 +48,7 @@
 #include <system_error>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -583,77 +585,39 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
 
 void do_node_stats(DbStateMachine &sm)
 {
-    struct DepthMetadata
+    std::unordered_map<std::vector<bool>, size_t> metadata;
+
+    class Traverse final : public TraverseMachine
     {
-        uint32_t node_count;
-        uint32_t leaf_count;
-        uint32_t branch_count;
-        std::vector<uint32_t> nibble_depth;
-    };
+        std::unordered_map<std::vector<bool>, size_t> &metadata_;
+        std::vector<bool> had_values_;
 
-    using TrieMetadata = std::vector<DepthMetadata>;
-    TrieMetadata metadata;
-
-    struct Traverse final : public TraverseMachine
-    {
-        TrieMetadata &metadata;
-        unsigned nibble_depth;
-        unsigned depth;
-        NibblesView const root;
-
-        Traverse(TrieMetadata &metadata_, NibblesView const root_ = {})
-            : metadata{metadata_}
-            , nibble_depth{0}
-            , depth{0}
-            , root{root_}
+    public:
+        explicit Traverse(
+            std::unordered_map<std::vector<bool>, size_t> &metadata)
+            : metadata_{metadata}
         {
         }
 
         Traverse(Traverse const &other) = default;
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool down(unsigned char const, Node const &node) override
         {
-            if (branch == INVALID_BRANCH) {
-                note(node);
-                return true;
-            }
-
-            ++depth;
-            nibble_depth += 1 + node.path_nibble_view().nibble_size();
-            note(node);
+            had_values_.push_back(node.has_value());
+            ++metadata_[had_values_];
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void up(unsigned char const, Node const &) override
         {
-            if (branch == INVALID_BRANCH) {
-                return;
-            }
-            unsigned const subtrahend =
-                1 + node.path_nibble_view().nibble_size();
-            MONAD_ASSERT(nibble_depth >= subtrahend);
-            nibble_depth -= subtrahend;
-            --depth;
+            had_values_.pop_back();
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
         {
             return std::make_unique<Traverse>(*this);
         }
-
-        void note(Node const &node)
-        {
-            metadata.resize(
-                std::max(metadata.size(), static_cast<size_t>(depth) + 1));
-
-            ++metadata[depth].node_count;
-            metadata[depth].leaf_count +=
-                static_cast<uint32_t>(node.value_len > 0);
-            metadata[depth].branch_count +=
-                static_cast<uint32_t>(node.number_of_children() > 0);
-            metadata[depth].nibble_depth.emplace_back(nibble_depth);
-        }
-    } traverse(metadata, concat(sm.curr_table_id));
+    } traverse(metadata);
 
     auto cursor_res = sm.db.find(
         concat(sm.curr_section_prefix, sm.curr_table_id), sm.curr_version);
@@ -664,6 +628,7 @@ void do_node_stats(DbStateMachine &sm)
                 "WARNING: Traverse finished early because version {} got "
                 "pruned from db history",
                 sm.curr_version);
+            return;
         }
     }
     else {
@@ -671,50 +636,46 @@ void do_node_stats(DbStateMachine &sm)
             "Error: can't start traverse because current version {} already "
             "got pruned from db history",
             sm.curr_version);
+        return;
     }
 
-    auto agg_stats = [](std::vector<uint32_t> const &data)
-        -> std::tuple<size_t, double, double> {
-        auto const size = static_cast<double>(data.size());
-        if (size == 0) {
-            return std::make_tuple(size, NAN, NAN);
+    std::vector<std::pair<size_t, std::vector<bool>>> sorted_metadata;
+    size_t total{0};
+    size_t leaves{0};
+    size_t branches{0};
+    for (auto const &[had_values, count] : metadata) {
+        sorted_metadata.emplace_back(count, had_values);
+        total += count;
+        if (had_values.back()) {
+            leaves += count;
         }
-        double const mean =
-            std::accumulate(data.begin(), data.end(), 0.0) / size;
-
-        double const pop_var = std::accumulate(
-                                   data.begin(),
-                                   data.end(),
-                                   0.0,
-                                   [mean](double acc, uint32_t const val) {
-                                       double const dev = val - mean;
-                                       return acc + dev * dev;
-                                   }) /
-                               size;
-
-        return std::make_tuple(size, mean, sqrt(pop_var));
-    };
+        else {
+            branches += count;
+        }
+    }
+    std::ranges::sort(sorted_metadata, std::ranges::greater());
 
     fmt::println(
-        "{:>5} {:>15} {:>15} {:>15} {:>20}",
-        "depth",
-        "# nodes",
-        "# leaves",
-        "# branches",
-        "nibble depth");
-    auto format_mean = [](double mean, double stddev) {
-        return std::isnan(mean) ? "N/A"
-                                : fmt::format("{:.2f} (±{:.2f})", mean, stddev);
-    };
-    for (unsigned depth = 0; depth < metadata.size(); ++depth) {
-        auto [_, mean_nd, stddev_nd] = agg_stats(metadata[depth].nibble_depth);
-        fmt::println(
-            "{:>5} {:>15} {:>15} {:>15} {:>20}",
-            depth,
-            metadata[depth].node_count,
-            metadata[depth].leaf_count,
-            metadata[depth].branch_count,
-            format_mean(mean_nd, stddev_nd));
+        "Statistics:\nTotal={}\nLeaves={}\nBranches={}\n",
+        total,
+        leaves,
+        branches);
+    if (total > 0) {
+        std::string out;
+        for (auto const &[count, had_values] : sorted_metadata) {
+            for (bool const has_value : had_values) {
+                out += has_value ? "L" : "B";
+            }
+            fmt::format_to(
+                std::back_inserter(out),
+                ",{},{},{},{:.2f}%\n",
+                had_values.size(),
+                std::ranges::count(had_values, true),
+                count,
+                ((double)count / (double)total) * 100);
+        }
+        fmt::println("path,depth,leaves,count,percentage");
+        fmt::println("{}", out);
     }
 }
 

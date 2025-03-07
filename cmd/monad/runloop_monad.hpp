@@ -26,9 +26,16 @@ namespace fiber
     class PriorityPool;
 }
 
-Result<std::pair<uint64_t, uint64_t>> runloop_monad(
+Result<std::pair<uint64_t, uint64_t>> runloop_monad_live(
     MonadChain const &, std::filesystem::path const &, mpt::Db &, Db &,
-    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
-    uint64_t, sig_atomic_t const volatile &);
+    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &,
+    uint64_t &block_num, uint64_t end_block_num,
+    sig_atomic_t const volatile &stop);
+
+Result<std::pair<uint64_t, uint64_t>> runloop_monad_replay(
+    MonadChain const &, std::filesystem::path const &, mpt::Db &, Db &,
+    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &,
+    uint64_t &block_num, uint64_t const end_block_num,
+    sig_atomic_t const volatile &stop);
 
 MONAD_NAMESPACE_END

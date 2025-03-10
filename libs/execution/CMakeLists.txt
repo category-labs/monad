@@ -31,6 +31,7 @@ add_library(
   "src/monad/chain/monad_testnet.hpp"
   # core
   "src/monad/core/account.hpp"
+  "src/monad/core/address.cpp"
   "src/monad/core/address.hpp"
   "src/monad/core/block.hpp"
   "src/monad/core/bytes.hpp"
@@ -108,6 +109,12 @@ add_library(
   "src/monad/execution/genesis.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
+  "src/monad/execution/staking/bls.hpp"
+  "src/monad/execution/staking/secp256k1.hpp"
+  "src/monad/execution/staking/storage.hpp"
+  "src/monad/execution/staking/validator.hpp"
+  "src/monad/execution/stateful_precompiles.cpp"
+  "src/monad/execution/stateful_precompiles.hpp"
   "src/monad/execution/switch_evmc_revision.hpp"
   "src/monad/execution/trace/call_frame.cpp"
   "src/monad/execution/trace/call_frame.hpp"
@@ -173,7 +180,8 @@ target_link_libraries(
   PUBLIC quill::quill
   PUBLIC silkpre
   PUBLIC unordered_dense
-  PUBLIC TBB::tbb)
+  PUBLIC TBB::tbb
+  PUBLIC blst::blst)
 monad_compile_options(monad_execution)
 
 target_link_options(monad_execution PRIVATE LINKER:-z,defs)

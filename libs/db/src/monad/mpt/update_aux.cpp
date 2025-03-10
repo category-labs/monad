@@ -1078,14 +1078,19 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
-    if (auto const min_valid_version = db_history_min_valid_version();
-        version > min_valid_version &&
-        min_valid_version != INVALID_BLOCK_ID /* at least one valid version */
-        && version - min_valid_version >= version_history_length()) {
+    auto const max_version = db_history_max_version();
+    auto const max_version_post_upsert = std::max(version, max_version);
+    if (max_version != INVALID_BLOCK_ID &&
+        max_version_post_upsert - db_history_min_valid_version() >=
+            version_history_length()) { // exceed history length
         // erase min_valid_version, must happen before upsert() because that
         // offset slot in ring buffer may be overwritten thus invalidated in
         // `upsert()`.
-        erase_version(min_valid_version);
+        erase_versions_up_to_and_including(
+            max_version_post_upsert - version_history_length());
+        MONAD_ASSERT(
+            max_version_post_upsert - db_history_min_valid_version() <
+            version_history_length());
     }
     curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
@@ -1161,7 +1166,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
     free_compacted_chunks();
 }
 
-void UpdateAuxImpl::erase_version(uint64_t const version)
+void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 {
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
@@ -1188,7 +1193,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
             MONAD_ASSERT(
                 version_to_erase != INVALID_BLOCK_ID &&
                 version_to_erase < max_version);
-            erase_version(version_to_erase);
+            erase_versions_up_to_and_including(version_to_erase);
             update_history_length_metadata(
                 std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
         }

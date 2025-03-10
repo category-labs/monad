@@ -182,8 +182,8 @@ class UpdateAuxImpl
     // clear root offsets of versions <= version
     void clear_root_offsets_up_to_and_including(uint64_t version);
     void release_unreferenced_chunks();
-    // clear all versions <= version
-    void erase_version(uint64_t version);
+    // clear all versions <= version, release unused disk space
+    void erase_versions_up_to_and_including(uint64_t version);
 
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).

@@ -64,7 +64,6 @@ namespace
             unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t)));
         return {fast_offset, slow_offset};
     }
-
 }
 
 // Define to avoid randomisation of free list chunks on pool creation
@@ -1171,7 +1170,6 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 {
     constexpr double upper_bound = 0.8;
     constexpr double lower_bound = 0.6;
-    constexpr uint64_t min_history_length = 256;
 
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
@@ -1182,20 +1180,20 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
         max_version - db_history_min_valid_version() + 1;
     auto const current_disk_usage = disk_usage();
     if (current_disk_usage > upper_bound &&
-        history_length_before > min_history_length) {
+        history_length_before > MIN_HISTORY_LENGTH) {
         while (disk_usage() > upper_bound &&
-               version_history_length() > min_history_length) {
+               version_history_length() > MIN_HISTORY_LENGTH) {
             auto const version_to_erase = db_history_min_valid_version();
             MONAD_ASSERT(
                 version_to_erase != INVALID_BLOCK_ID &&
                 version_to_erase < max_version);
             erase_version(version_to_erase);
             update_history_length_metadata(
-                std::max(max_version - version_to_erase, min_history_length));
+                std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
         }
         MONAD_ASSERT(
             disk_usage() <= upper_bound ||
-            version_history_length() == min_history_length);
+            version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
             "Adjust db history length down from %lu to %lu",
             history_length_before,

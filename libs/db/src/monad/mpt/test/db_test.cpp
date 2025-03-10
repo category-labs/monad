@@ -3,6 +3,7 @@
 #include <monad/async/config.hpp>
 #include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
+#include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -10,6 +11,8 @@
 #include <monad/core/result.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/core/unaligned.hpp>
+#include <monad/io/buffers.hpp>
+#include <monad/io/ring.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -285,11 +288,11 @@ namespace
         return ret;
     }
 
-    std::pair<std::vector<monad::byte_string>, std::vector<Update>>
+    std::pair<std::deque<monad::byte_string>, std::deque<Update>>
     prepare_random_updates(unsigned size)
     {
-        std::vector<monad::byte_string> bytes_alloc;
-        std::vector<Update> updates_alloc;
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
         for (size_t i = 0; i < size; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
             updates_alloc.push_back(Update{
@@ -756,6 +759,68 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
     auto const res2 = ro_db.get(NibblesView{k2}, block_id);
     ASSERT_TRUE(res2.has_value());
     EXPECT_EQ(res2.value(), k2);
+}
+
+TEST(DbTest, history_length_adjustment_never_under_min)
+{
+    auto const dbname = create_temp_file(4);
+    StateMachineAlwaysEmpty machine{};
+    OnDiskDbConfig config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname}};
+    Db db{machine, config};
+
+    constexpr unsigned nkeys = 1000;
+
+    // prepare updates with 8KB size value
+    std::deque<monad::byte_string> bytes_alloc;
+    std::deque<Update> updates_alloc;
+    auto const &large_value =
+        bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
+    for (size_t i = 0; i < nkeys; ++i) {
+        updates_alloc.push_back(Update{
+            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+            .value = large_value,
+            .incarnation = false,
+            .next = UpdateList{}});
+    }
+
+    // construct a read-only aux
+    monad::async::storage_pool::creation_flags pool_options;
+    pool_options.open_read_only = true;
+    monad::async::storage_pool pool(
+        config.dbname_paths,
+        monad::async::storage_pool::mode::open_existing,
+        pool_options);
+    monad::io::Ring read_ring{128};
+    monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
+        read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+    monad::async::AsyncIO ro_io(pool, read_buffers);
+    UpdateAux aux_reader{&ro_io};
+
+    auto batch_upsert_once = [&](uint64_t const version) {
+        UpdateList ls;
+        for (auto &u : updates_alloc) {
+            ls.push_front(u);
+        }
+        db.upsert(std::move(ls), version);
+    };
+    uint64_t block_id = 0;
+    while (db.get_history_length() != MIN_HISTORY_LENGTH) {
+        batch_upsert_once(block_id);
+        ++block_id;
+    }
+    auto const disk_usage_before = aux_reader.disk_usage();
+    while (aux_reader.disk_usage() == disk_usage_before) {
+        batch_upsert_once(block_id);
+        ++block_id;
+    }
+    // Db stops adjusting down history length at MIN_HISTORY_LENGTH
+    EXPECT_GT(aux_reader.disk_usage(), disk_usage_before);
+    EXPECT_EQ(db.get_history_length(), MIN_HISTORY_LENGTH);
+
+    remove(dbname);
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)

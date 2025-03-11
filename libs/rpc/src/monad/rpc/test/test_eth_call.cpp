@@ -62,7 +62,8 @@ namespace
         }
     };
 
-    struct callback_context {
+    struct callback_context
+    {
         monad_eth_call_result *result;
         boost::fibers::promise<void> promise;
 
@@ -72,7 +73,7 @@ namespace
         }
     };
 
-    void complete_callback(monad_eth_call_result * result, void * user)
+    void complete_callback(monad_eth_call_result *result, void *user)
     {
         auto c = (callback_context *)user;
 
@@ -121,7 +122,7 @@ TEST_F(EthCallFixture, simple_success_call)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -172,7 +173,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
@@ -225,9 +226,9 @@ TEST_F(EthCallFixture, on_proposed_block)
         consensus_header.round,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
-    
+
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -276,7 +277,7 @@ TEST_F(EthCallFixture, failed_to_read)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
@@ -325,7 +326,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
 
     std::string deployed_code =
@@ -399,7 +400,7 @@ TEST_F(EthCallFixture, from_contract_account)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void*)&ctx);
+        (void *)&ctx);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);

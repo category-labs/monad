@@ -371,8 +371,12 @@ struct monad_eth_call_executor
     fiber::PriorityPool pool_;
 
     std::shared_ptr<mpt::AsyncIOContext> async_io_{};
+    std::shared_ptr<mpt::Db> latest_db_{};
     std::shared_ptr<mpt::Db> db_{};
+    std::shared_ptr<TrieDb> latest_tdb_{};
     std::shared_ptr<TrieDb> tdb_{};
+
+    uint64_t last_latest_version_{0};
 
     BlockHashCache blockhash_cache_{7200};
     std::shared_ptr<BlockHashBufferFinalized> last_buffer_{};
@@ -401,12 +405,16 @@ struct monad_eth_call_executor
             [&paths = paths,
              &async_io = async_io_,
              &db = db_,
+             &latest_db = latest_db_,
              &tdb = tdb_,
+             &latest_tdb = latest_tdb_,
              promise = promise] {
                 async_io.reset(new mpt::AsyncIOContext{
                     mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
                 db.reset(new mpt::Db{*async_io});
+                latest_db.reset(new mpt::Db{*async_io});
                 tdb.reset(new TrieDb{*db});
+                latest_tdb.reset(new TrieDb{*latest_db});
                 promise->set_value();
             });
         promise->get_future().get();
@@ -424,7 +432,14 @@ struct monad_eth_call_executor
         auto promise = std::make_shared<boost::fibers::promise<void>>();
         pool_.submit(
             0,
-            [&async_io = async_io_, &db = db_, &tdb = tdb_, promise = promise] {
+            [&async_io = async_io_,
+             &db = db_,
+             &latest_db = latest_db_,
+             &tdb = tdb_,
+             &latest_tdb = latest_tdb_,
+             promise = promise] {
+                latest_tdb.reset();
+                latest_db.reset();
                 tdb.reset();
                 db.reset();
                 async_io.reset();
@@ -490,6 +505,10 @@ struct monad_eth_call_executor
         monad_state_override const *overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *user)
     {
+        if (block_number > last_latest_version_) {
+            last_latest_version_ = block_number;
+        }
+
         monad_eth_call_result *const result = new monad_eth_call_result();
 
         auto blk_hash_buffer = create_blockhash_buffer(block_number);
@@ -511,7 +530,7 @@ struct monad_eth_call_executor
              block_number = block_number,
              block_round = block_round,
              sender = sender,
-             tdb = tdb_,
+             tdb = block_number == last_latest_version_ ? latest_tdb_ : tdb_,
              block_hash_buffer = blk_hash_buffer,
              result = result,
              complete = complete,
@@ -566,7 +585,8 @@ struct monad_eth_call_executor
                         (uint8_t *)result->output_data,
                         res_value.output_data,
                         res_value.output_size);
-                } else {
+                }
+                else {
                     result->output_data = nullptr;
                     result->output_data_len = 0;
                 }

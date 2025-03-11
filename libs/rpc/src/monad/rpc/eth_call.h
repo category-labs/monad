@@ -67,7 +67,6 @@ void monad_eth_call_executor_submit(
     size_t rlp_txn_len, uint8_t const *rlp_header, size_t rlp_header_len,
     uint8_t const *rlp_sender, size_t rlp_sender_len, uint64_t block_number,
     uint64_t block_round, struct monad_state_override const *overrides,
-
     void (*complete)(monad_eth_call_result *, void *user), void *user);
 
 #ifdef __cplusplus

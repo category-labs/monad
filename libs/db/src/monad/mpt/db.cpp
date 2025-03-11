@@ -444,21 +444,29 @@ struct Db::RWOnDisk final : public Db::Impl
     std::mutex lock_;
     std::condition_variable cond_;
 
-    struct TrieDbWorker
+    struct DbAsyncWorker
     {
         RWOnDisk *parent;
-        UpdateAuxImpl &aux;
         AsyncIOContext async_io;
+        UpdateAux<> aux;
         bool const compaction;
         std::atomic<bool> sleeping{false}, done{false};
 
-        TrieDbWorker(
-            RWOnDisk *parent, UpdateAuxImpl &aux, OnDiskDbConfig const &options)
+        DbAsyncWorker(RWOnDisk *parent, OnDiskDbConfig const &options)
             : parent(parent)
-            , aux(aux)
             , async_io(options)
+            , aux{&async_io.io, options.fixed_history_length}
             , compaction{options.compaction}
         {
+            if (options.rewind_to_latest_finalized) {
+                auto const latest_block_id = aux.get_latest_finalized_version();
+                if (latest_block_id == INVALID_BLOCK_ID) {
+                    aux.clear_ondisk_db();
+                }
+                else {
+                    aux.rewind_to_version(latest_block_id);
+                }
+            }
         }
 
         // Runs in the triedb worker thread
@@ -640,70 +648,54 @@ struct Db::RWOnDisk final : public Db::Impl
         }
     };
 
-    UpdateAux<> aux_;
-    std::unique_ptr<TrieDbWorker> worker_;
+    std::unique_ptr<DbAsyncWorker> worker_;
     std::thread worker_thread_;
+    UpdateAux<> *aux_;
     StateMachine &machine_;
-    Node::UniquePtr root_; // owned by worker thread
+    Node::UniquePtr root_; // subtrie is owned by worker thread
     uint64_t root_version_{INVALID_BLOCK_ID};
     uint64_t unflushed_version_{INVALID_BLOCK_ID};
 
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
-        : worker_thread_([&] {
+        : worker_thread_([&, options = options] {
             {
                 std::unique_lock const g(lock_);
-                worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);
-                // This bit is unfortunately nasty, but we have to initialise
-                // aux_ from this thread
-                aux_.~UpdateAux<>();
-                new (&aux_) UpdateAux<>{
-                    &worker_->async_io.io, options.fixed_history_length};
-                if (options.rewind_to_latest_finalized) {
-                    auto const latest_block_id =
-                        aux_.get_latest_finalized_version();
-                    if (latest_block_id == INVALID_BLOCK_ID) {
-                        aux_.clear_ondisk_db();
-                    }
-                    else {
-                        aux_.rewind_to_version(latest_block_id);
-                    }
-                }
+                worker_ = std::make_unique<DbAsyncWorker>(this, options);
+                cond_.notify_one();
             }
             worker_->run();
             std::unique_lock const g(lock_);
             worker_.reset();
         })
-        , machine_{machine}
-        , root_([&] {
-            comms_.enqueue({});
-            while (comms_.size_approx() > 0) {
-                std::this_thread::yield();
-            }
-            std::unique_lock const g(lock_);
-            MONAD_ASSERT(worker_);
-            return aux_.get_latest_root_offset() != INVALID_OFFSET
-                       ? read_node_blocking(
-                             aux_,
-                             aux_.get_latest_root_offset(),
-                             aux_.db_history_max_version())
-                       : Node::UniquePtr{};
+        , aux_([&] {
+            std::unique_lock g(lock_);
+            cond_.wait(g, [this] { return worker_ != nullptr; });
+            return &(worker_->aux);
         }())
-        , root_version_(aux_.db_history_max_version())
+        , machine_{machine}
+        , root_{[&] {
+            MONAD_ASSERT(aux_);
+            return aux_->get_latest_root_offset() != INVALID_OFFSET
+                       ? read_node_blocking(
+                             *aux_,
+                             aux_->get_latest_root_offset(),
+                             aux_->db_history_max_version())
+                       : Node::UniquePtr{};
+        }()}
+        , root_version_(aux_->db_history_max_version())
         , unflushed_version_{INVALID_BLOCK_ID}
     {
     }
 
     ~RWOnDisk()
     {
-        aux_.unique_lock();
-        // must be destroyed before aux is destroyed
-        aux_.unset_io();
         {
             std::unique_lock const g(lock_);
             worker_->done.store(true, std::memory_order_release);
             cond_.notify_one();
         }
         worker_thread_.join();
+        aux_ = nullptr;
     }
 
     virtual Node::UniquePtr &root() override
@@ -713,7 +705,8 @@ struct Db::RWOnDisk final : public Db::Impl
 
     virtual UpdateAux<> &aux() override
     {
-        return aux_;
+        MONAD_ASSERT(aux_ != nullptr);
+        return *aux_;
     }
 
     // threadsafe
@@ -871,8 +864,8 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         if (src_version != root_version_) {
             root_ = read_node_blocking(
-                aux_,
-                aux_.get_root_offset_at_version(src_version),
+                *aux_,
+                aux_->get_root_offset_at_version(src_version),
                 src_version);
             root_version_ = src_version;
         }
@@ -882,9 +875,9 @@ struct Db::RWOnDisk final : public Db::Impl
             dest_root = std::move(root_);
         }
         else if (auto const root_offset =
-                     aux_.get_root_offset_at_version(dest_version);
+                     aux_->get_root_offset_at_version(dest_version);
                  root_offset != INVALID_OFFSET) {
-            dest_root = read_node_blocking(aux_, root_offset, dest_version);
+            dest_root = read_node_blocking(*aux_, root_offset, dest_version);
         }
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
@@ -909,23 +902,27 @@ struct Db::RWOnDisk final : public Db::Impl
 
     virtual void update_finalized_block(uint64_t const block_id) override
     {
-        aux_.set_latest_finalized_version(block_id);
+        MONAD_ASSERT(aux_);
+        aux_->set_latest_finalized_version(block_id);
     }
 
     virtual void update_verified_block(uint64_t const block_id) override
     {
-        MONAD_ASSERT(block_id <= aux_.db_history_max_version());
-        aux_.set_latest_verified_version(block_id);
+        MONAD_ASSERT(aux_);
+        MONAD_ASSERT(block_id <= aux_->db_history_max_version());
+        aux_->set_latest_verified_version(block_id);
     }
 
     virtual uint64_t get_latest_finalized_block_id() const override
     {
-        return aux_.get_latest_finalized_version();
+        MONAD_ASSERT(aux_);
+        return aux_->get_latest_finalized_version();
     }
 
     virtual uint64_t get_latest_verified_block_id() const override
     {
-        return aux_.get_latest_verified_version();
+        MONAD_ASSERT(aux_);
+        return aux_->get_latest_verified_version();
     }
 };
 

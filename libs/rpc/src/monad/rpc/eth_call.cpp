@@ -4,6 +4,7 @@
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
@@ -38,18 +39,16 @@ using namespace monad;
 
 struct monad_state_override
 {
-    using bytes = std::vector<uint8_t>;
-
     struct monad_state_override_object
     {
-        std::optional<bytes> balance{std::nullopt};
+        std::optional<byte_string> balance{std::nullopt};
         std::optional<uint64_t> nonce{std::nullopt};
-        std::optional<bytes> code{std::nullopt};
-        std::map<bytes, bytes> state{};
-        std::map<bytes, bytes> state_diff{};
+        std::optional<byte_string> code{std::nullopt};
+        std::map<byte_string, byte_string> state{};
+        std::map<byte_string, byte_string> state_diff{};
     };
 
-    std::map<bytes, monad_state_override_object> override_sets;
+    std::map<byte_string, monad_state_override_object> override_sets;
 };
 
 namespace
@@ -137,8 +136,7 @@ namespace
             }
 
             auto update_state =
-                [&](std::map<std::vector<uint8_t>, std::vector<uint8_t>> const
-                        &diff) {
+                [&](std::map<byte_string, byte_string> const &diff) {
                     for (auto const &[key, value] : diff) {
                         bytes32_t storage_key;
                         bytes32_t storage_value;
@@ -243,13 +241,14 @@ void monad_state_override_destroy(monad_state_override *m)
 }
 
 void add_override_address(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len)
 {
     MONAD_ASSERT(m);
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
 
     MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
     m->override_sets.emplace(address, StateOverrideObj());
@@ -263,11 +262,11 @@ void set_override_balance(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
-    std::vector<uint8_t> b(balance, balance + balance_len);
+    byte_string const b{balance, balance + balance_len};
     m->override_sets[address].balance = std::move(b);
 }
 
@@ -279,7 +278,7 @@ void set_override_nonce(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     m->override_sets[address].nonce = nonce;
@@ -293,11 +292,11 @@ void set_override_code(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(code);
-    std::vector<uint8_t> c(code, code + code_len);
+    byte_string const c{code, code + code_len};
     m->override_sets[address].code = std::move(c);
 }
 
@@ -309,15 +308,15 @@ void set_override_state_diff(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    std::vector<uint8_t> k(key, key + key_len);
+    byte_string const k{key, key + key_len};
 
     MONAD_ASSERT(value);
-    std::vector<uint8_t> v(value, value + value_len);
+    byte_string const v{value, value + value_len};
 
     auto &state_object = m->override_sets[address].state_diff;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
@@ -332,15 +331,15 @@ void set_override_state(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    std::vector<uint8_t> address(addr, addr + addr_len);
+    byte_string const address{addr, addr + addr_len};
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    std::vector<uint8_t> k(key, key + key_len);
+    byte_string const k{key, key + key_len};
 
     MONAD_ASSERT(value);
-    std::vector<uint8_t> v(value, value + value_len);
+    byte_string const v{value, value + value_len};
 
     auto &state_object = m->override_sets[address].state;
     MONAD_ASSERT(state_object.find(k) == state_object.end());

@@ -226,10 +226,11 @@ namespace
         }
     };
 
-    struct DummyTraverseMachine : public TraverseMachine
+    struct DummyTraverseMachine final : public TraverseMachine
     {
         size_t &num_leaves;
         Nibbles path{};
+        std::vector<std::chrono::steady_clock::time_point> *times{nullptr};
 
         explicit DummyTraverseMachine(size_t &num_leaves)
             : num_leaves(num_leaves)
@@ -244,6 +245,9 @@ namespace
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
             if (node.has_value()) {
+                if (times != nullptr && (num_leaves & 4095) == 0) {
+                    times->push_back(std::chrono::steady_clock::now());
+                }
                 ++num_leaves;
                 EXPECT_EQ(path.nibble_size(), KECCAK256_SIZE * 2);
             }
@@ -277,6 +281,9 @@ namespace
         void reset()
         {
             num_leaves = 0;
+            if (times != nullptr) {
+                times->clear();
+            }
         }
     };
 
@@ -893,26 +900,41 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
     // benchmark traverse
     size_t num_leaves_traversed = 0;
     DummyTraverseMachine traverse_machine{num_leaves_traversed};
+    std::vector<std::chrono::steady_clock::time_point> times;
+    times.reserve(1024);
+    traverse_machine.times = &times;
     auto begin = std::chrono::steady_clock::now();
     ASSERT_TRUE(db.traverse(db.root(), traverse_machine, 0));
-    EXPECT_EQ(num_leaves_traversed, nkeys);
     auto end = std::chrono::steady_clock::now();
+    EXPECT_EQ(num_leaves_traversed, nkeys);
+    ASSERT_FALSE(times.empty());
     auto const parallel_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
             .count();
+    auto const parallel_first_node_elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            times[times.size() / 8] - begin)
+            .count();
     std::cout << "RODb parallel traversal takes " << parallel_elapsed
-              << " ms, ";
+              << " us, 12.5% node took " << parallel_first_node_elapsed
+              << " us." << std::endl;
 
-    begin = std::chrono::steady_clock::now();
     traverse_machine.reset();
+    begin = std::chrono::steady_clock::now();
     ASSERT_TRUE(db.traverse_blocking(db.root(), traverse_machine, 0));
-    EXPECT_EQ(num_leaves_traversed, nkeys);
     end = std::chrono::steady_clock::now();
+    EXPECT_EQ(num_leaves_traversed, nkeys);
+    ASSERT_FALSE(times.empty());
     auto const blocking_elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
             .count();
-    std::cout << "RWDb blocking traversal takes " << blocking_elapsed << " ms."
-              << std::endl;
+    auto const blocking_first_node_elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            times[times.size() / 8] - begin)
+            .count();
+    std::cout << "RWDb blocking traversal takes " << blocking_elapsed
+              << " us, 12.5% node took " << blocking_first_node_elapsed
+              << " us." << std::endl;
 
     EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
 }

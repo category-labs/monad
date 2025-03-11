@@ -2,6 +2,7 @@
 
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
+#include <monad/core/assert.h>
 #include <monad/core/tl_tid.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
@@ -19,6 +20,8 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct TraverseMachine
 {
+    size_t level{0};
+
     virtual ~TraverseMachine() = default;
     // Implement the logic to decide when to stop, return true for continue,
     // false for stop
@@ -51,7 +54,9 @@ namespace detail
         UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
         TraverseMachine &traverse, uint64_t const version)
     {
+        ++traverse.level;
         if (!traverse.down(branch, node)) {
+            --traverse.level;
             return true;
         }
         for (unsigned char i = 0; i < 16; ++i) {
@@ -75,6 +80,7 @@ namespace detail
                 }
             }
         }
+        --traverse.level;
         traverse.up(branch, node);
         return true;
     }
@@ -141,6 +147,9 @@ namespace detail
                     // async read failure or stopping initiated
                     sender->version_expired_before_complete = true;
                     sender->reads_to_initiate.clear();
+                    sender->reads_to_initiate_sidx = 0;
+                    sender->reads_to_initiate_eidx = 0;
+                    sender->reads_to_initiate_count = 0;
                 }
                 else { // version is valid after reading the buffer
                     auto next_node_on_disk =
@@ -160,7 +169,7 @@ namespace detail
                 // `async_parallel_preorder_traverse_impl()` in current stack,
                 // which means traverse is still in progress
                 if (sender->within_recursion_count == 0 &&
-                    sender->reads_to_initiate.empty() &&
+                    sender->reads_to_initiate_count == 0 &&
                     sender->outstanding_reads == 0) {
                     traverse_state->completed(async::success());
                 }
@@ -179,7 +188,10 @@ namespace detail
         size_t const max_outstanding_reads;
         size_t outstanding_reads{0};
         size_t within_recursion_count{0};
-        boost::container::deque<receiver_t> reads_to_initiate{};
+        std::vector<boost::container::deque<receiver_t>> reads_to_initiate{20};
+        size_t reads_to_initiate_sidx{0}; // exclusive
+        size_t reads_to_initiate_eidx{0}; // inclusive
+        size_t reads_to_initiate_count{0};
         bool version_expired_before_complete{false};
 
         TraverseSender(
@@ -215,11 +227,25 @@ namespace detail
 
         void initiate_pending_reads()
         {
+            auto idx = reads_to_initiate_eidx;
             while (outstanding_reads < max_outstanding_reads &&
-                   !reads_to_initiate.empty()) {
-                async_read(aux, std::move(reads_to_initiate.front()));
-                ++outstanding_reads;
-                reads_to_initiate.pop_front();
+                   idx > reads_to_initiate_sidx) {
+                while (outstanding_reads < max_outstanding_reads &&
+                       !reads_to_initiate[idx].empty()) {
+                    async_read(aux, std::move(reads_to_initiate[idx].front()));
+                    ++outstanding_reads;
+                    reads_to_initiate[idx].pop_front();
+                    --reads_to_initiate_count;
+                }
+                if (reads_to_initiate[idx].empty() &&
+                    idx == reads_to_initiate_eidx) {
+                    --reads_to_initiate_eidx;
+                }
+                --idx;
+            }
+            if (reads_to_initiate_count == 0) {
+                reads_to_initiate_sidx = 0;
+                reads_to_initiate_eidx = 0;
             }
         }
     };
@@ -235,7 +261,8 @@ namespace detail
         MONAD_ASSERT(sender.within_recursion_count == 0);
 
         // complete async traverse if no outstanding ios
-        if (sender.reads_to_initiate.empty() && sender.outstanding_reads == 0) {
+        if (sender.reads_to_initiate_count == 0 &&
+            sender.outstanding_reads == 0) {
             traverse_state->completed(async::success());
         }
     }
@@ -245,10 +272,21 @@ namespace detail
         async::erased_connected_operation *traverse_state, Node const &node,
         TraverseMachine &machine, unsigned char const branch)
     {
+        // How many children are considered left side for depth first preference
+        // Two and four was benchmarked as slightly worse than three, so three
+        // appears to be the optimum.
+        static constexpr unsigned LEFT_SIDE = 3;
         sender.initiate_pending_reads();
+        // Detect if level (which is unsigned) has gone below zero. It never
+        // should if this code is correct. The choice of 256 is completely
+        // arbitrary and means nothing.
+        MONAD_ASSERT(machine.level < 256);
+        ++machine.level;
         if (!machine.down(branch, node)) {
+            --machine.level;
             return;
         }
+        unsigned children_read = 0;
         for (unsigned i = 0, idx = 0, bit = 1; idx < node.number_of_children();
              ++i, bit <<= 1) {
             if (node.mask & bit) {
@@ -261,6 +299,9 @@ namespace detail
                                 sender.version)) {
                             sender.version_expired_before_complete = true;
                             sender.reads_to_initiate.clear();
+                            sender.reads_to_initiate_sidx = 0;
+                            sender.reads_to_initiate_eidx = 0;
+                            sender.reads_to_initiate_count = 0;
                             return;
                         }
                         TraverseSender::receiver_t receiver(
@@ -269,10 +310,32 @@ namespace detail
                             (unsigned char)i,
                             node.fnext(idx),
                             machine.clone());
+                        unsigned const this_child_read = children_read++;
                         if (sender.outstanding_reads >=
                             sender.max_outstanding_reads) {
-                            sender.reads_to_initiate.emplace_back(
+                            // The deepest reads get highest priority
+                            size_t priority = machine.level;
+                            // Left side reads get a bit more priority
+                            if (this_child_read < LEFT_SIDE) {
+                                priority += LEFT_SIDE - this_child_read;
+                            }
+                            MONAD_DEBUG_ASSERT(priority > 0);
+                            if (priority >= sender.reads_to_initiate.size()) {
+                                sender.reads_to_initiate.resize(priority + 1);
+                            }
+                            if (priority > sender.reads_to_initiate_eidx) {
+                                if (sender.reads_to_initiate_eidx == 0) {
+                                    sender.reads_to_initiate_sidx =
+                                        priority - 1;
+                                }
+                                sender.reads_to_initiate_eidx = priority;
+                            }
+                            if (priority <= sender.reads_to_initiate_sidx) {
+                                sender.reads_to_initiate_sidx = priority - 1;
+                            }
+                            sender.reads_to_initiate[priority].emplace_back(
                                 std::move(receiver));
+                            ++sender.reads_to_initiate_count;
                             ++idx;
                             continue;
                         }

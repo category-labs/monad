@@ -351,11 +351,11 @@ void monad_eth_call_result_release(monad_eth_call_result *result)
 {
     MONAD_ASSERT(result);
     if (result->output_data) {
-        delete result->output_data;
+        delete[] result->output_data;
     }
 
     if (result->message) {
-        delete result->message;
+        delete[] result->message;
     }
 
     delete result;
@@ -549,12 +549,17 @@ struct monad_eth_call_executor
                 result->gas_used = static_cast<int64_t>(transaction.gas_limit) -
                                    res_value.gas_left;
                 result->gas_refund = res_value.gas_refund;
-                result->output_data = new uint8_t[res_value.output_size];
-                result->output_data_len = res_value.output_size;
-                memcpy(
-                    (uint8_t *)result->output_data,
-                    res_value.output_data,
-                    res_value.output_size);
+                if (res_value.output_size > 0) {
+                    result->output_data = new uint8_t[res_value.output_size];
+                    result->output_data_len = res_value.output_size;
+                    memcpy(
+                        (uint8_t *)result->output_data,
+                        res_value.output_data,
+                        res_value.output_size);
+                } else {
+                    result->output_data = nullptr;
+                    result->output_data_len = 0;
+                }
 
                 complete(result, user);
             });

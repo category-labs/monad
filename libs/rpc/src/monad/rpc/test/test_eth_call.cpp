@@ -63,15 +63,20 @@ namespace
     };
 
     struct callback_context {
-        monad_eth_call_result result;
+        monad_eth_call_result *result;
         boost::fibers::promise<void> promise;
+
+        ~callback_context()
+        {
+            monad_eth_call_result_release(result);
+        }
     };
 
     void complete_callback(monad_eth_call_result * result, void * user)
     {
         auto c = (callback_context *)user;
 
-        std::memcpy((void*)&c->result, result, sizeof(monad_eth_call_result));
+        c->result = result;
         c->promise.set_value();
     }
 }
@@ -119,7 +124,7 @@ TEST_F(EthCallFixture, simple_success_call)
         (void*)&ctx);
     f.get();
 
-    EXPECT_TRUE(ctx.result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -170,8 +175,8 @@ TEST_F(EthCallFixture, insufficient_balance)
         (void*)&ctx);
     f.get();
 
-    EXPECT_TRUE(ctx.result.status_code == EVMC_REJECTED);
-    EXPECT_TRUE(std::strcmp(ctx.result.message, "insufficient balance") == 0);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
+    EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -223,7 +228,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         (void*)&ctx);
     f.get();
     
-    EXPECT_TRUE(ctx.result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -274,7 +279,7 @@ TEST_F(EthCallFixture, failed_to_read)
         (void*)&ctx);
     f.get();
 
-    EXPECT_EQ(ctx.result.status_code, EVMC_REJECTED);
+    EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -333,11 +338,11 @@ TEST_F(EthCallFixture, contract_deployment_success)
         deployed_code_bytes.data(),
         deployed_code_bytes.data() + deployed_code_bytes.size()};
 
-    EXPECT_TRUE(ctx.result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
 
     std::vector<uint8_t> returned_code_vec(
-        ctx.result.output_data,
-        ctx.result.output_data + ctx.result.output_data_len);
+        ctx.result->output_data,
+        ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -397,8 +402,8 @@ TEST_F(EthCallFixture, from_contract_account)
         (void*)&ctx);
     f.get();
 
-    EXPECT_TRUE(ctx.result.status_code == EVMC_SUCCESS);
-    EXPECT_EQ(ctx.result.output_data_len, 0);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }

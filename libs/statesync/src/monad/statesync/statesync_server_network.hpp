@@ -34,6 +34,8 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    constexpr size_t SEND_BATCH_SIZE = 64 * 1024;
+
     void send(int const fd, byte_string_view const buf)
     {
         size_t nsent = 0;
@@ -80,7 +82,7 @@ void statesync_server_send_upsert(
         net->obuf.append(v2, size2);
     }
 
-    if (net->obuf.size() >= (1 << 30)) {
+    if (net->obuf.size() >= SEND_BATCH_SIZE) {
         send(net->fd, net->obuf);
         net->obuf.clear();
     }

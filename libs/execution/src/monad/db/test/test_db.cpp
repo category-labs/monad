@@ -91,16 +91,12 @@ namespace
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
-        static constexpr bool on_disk = false;
-
         InMemoryMachine machine;
         mpt::Db db{machine};
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
     {
-        static constexpr bool on_disk = true;
-
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
     };
@@ -660,22 +656,6 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
 TYPED_TEST(DBTest, to_json)
 {
-    std::filesystem::path dbname{};
-    if (this->on_disk) {
-        dbname = {
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_test_db_to_json"};
-    }
-    auto db = [&] {
-        if (this->on_disk) {
-            return mpt::Db{
-                this->machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
-        }
-        return mpt::Db{this->machine};
-    }();
-    TrieDb tdb{db};
-    load_db(tdb, 0);
-
     auto const expected_payload = nlohmann::json::parse(R"(
 {
   "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
@@ -746,16 +726,10 @@ TYPED_TEST(DBTest, to_json)
   }
 })");
 
-    if (this->on_disk) {
-        // also test to_json from a read only db
-        mpt::Db db2{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        auto ro_db = TrieDb{db2};
-        EXPECT_EQ(expected_payload, ro_db.to_json());
-    }
+    TrieDb tdb{this->db};
+    load_db(tdb, 0);
+
     EXPECT_EQ(expected_payload, tdb.to_json());
-    if (this->on_disk) {
-        std::filesystem::remove(dbname);
-    }
 }
 
 TYPED_TEST(DBTest, load_from_binary)

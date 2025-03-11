@@ -223,8 +223,8 @@ TEST_F(StateSyncFixture, sync_from_latest)
             {},
             MonadConsensusBlockHeader::from_eth_header(
                 BlockHeader{.number = N + 1}));
-        init();
     }
+    init();
     handle_target(
         cctx,
         BlockHeader{
@@ -265,25 +265,28 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
-    OnDiskMachine machine;
-    mpt::Db cdb{
-        machine,
-        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
-    TrieDb ctdb{cdb};
-    EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
-    EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
-    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
-    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
-    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code(), C_CODE);
-    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code(), D_CODE);
-    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code(), E_CODE);
-    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code(), H_CODE);
+    // Have to create rodb on a separate thread because we only allow one
+    // AsyncIO per thread at a time
+    std::thread reader{[cdbname = cdbname, tgrt = tgrt] {
+        OnDiskMachine machine;
+        mpt::Db cdb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {cdbname}}};
+        TrieDb ctdb{cdb};
+        EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
+        EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
+        EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
+        EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
+        EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code(), C_CODE);
+        EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code(), D_CODE);
+        EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code(), E_CODE);
+        EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code(), H_CODE);
 
-    auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
-    ASSERT_TRUE(raw.has_value());
-    auto const hdr = rlp::decode_block_header(raw.value());
-    ASSERT_TRUE(hdr.has_value());
-    EXPECT_EQ(hdr.value(), tgrt);
+        auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
+        ASSERT_TRUE(raw.has_value());
+        auto const hdr = rlp::decode_block_header(raw.value());
+        ASSERT_TRUE(hdr.has_value());
+        EXPECT_EQ(hdr.value(), tgrt);
+    }};
+    reader.join();
 }
 
 TEST_F(StateSyncFixture, sync_from_some)
@@ -302,8 +305,9 @@ TEST_F(StateSyncFixture, sync_from_some)
                 BlockHeader{.number = 1}, 0));
 
         read_genesis(genesis, stdb);
-        init();
     }
+    init();
+
     auto const root = sdb.load_root_for_version(0);
     ASSERT_TRUE(root.is_valid());
     auto const res =
@@ -486,8 +490,9 @@ TEST_F(StateSyncFixture, deletion_proposal)
         TrieDb tdb{db};
         read_genesis(genesis, tdb);
         read_genesis(genesis, stdb);
-        init();
     }
+    init();
+
     auto const root = sdb.load_root_for_version(0);
     ASSERT_TRUE(root.is_valid());
     auto const res =
@@ -543,8 +548,9 @@ TEST_F(StateSyncFixture, duplicate_deletion_round)
         TrieDb tdb{db};
         read_genesis(genesis, tdb);
         read_genesis(genesis, stdb);
-        init();
     }
+    init();
+
     auto const root = sdb.load_root_for_version(0);
     ASSERT_TRUE(root.is_valid());
     auto const res =
@@ -615,12 +621,15 @@ TEST_F(StateSyncFixture, ignore_unused_code)
         &net, SYNC_TYPE_UPSERT_CODE, code.data(), code.size(), nullptr, 0);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
-    OnDiskMachine machine;
-    mpt::Db cdb{
-        machine,
-        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
-    TrieDb ctdb{cdb};
-    EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code().empty());
+    // Have to create rodb on a separate thread because we only allow one
+    // AsyncIO per thread at a time
+    std::thread reader{[cdbname = cdbname, code_hash = code_hash] {
+        OnDiskMachine machine;
+        mpt::Db cdb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {cdbname}}};
+        TrieDb ctdb{cdb};
+        EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code().empty());
+    }};
+    reader.join();
 }
 
 TEST_F(StateSyncFixture, sync_one_account)

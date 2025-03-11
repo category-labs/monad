@@ -1022,7 +1022,8 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     uint64_t const block_id = 0x123;
 
     {
-        Db const db{machine, config};
+        db.~Db();
+        new (&db) Db(machine, config);
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
@@ -1034,7 +1035,8 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
 
     { // reopen the same db with append flag turned on
         config.append = true;
-        Db db{machine, config};
+        db.~Db();
+        new (&db) Db(machine, config);
         // db is still empty
         EXPECT_FALSE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
@@ -1059,15 +1061,16 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
 
     { // reopen the same db again, this time we will have a valid root loaded
         config.append = true;
-        Db const db{machine, config};
+        db.~Db();
+        new (&db) Db(machine, config);
         EXPECT_TRUE(db.root().is_valid());
         EXPECT_EQ(db.get_latest_block_id(), block_id);
         EXPECT_EQ(db.get_earliest_block_id(), block_id);
 
         Db const ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        EXPECT_TRUE(db.root().is_valid());
-        EXPECT_EQ(db.get_latest_block_id(), block_id);
-        EXPECT_EQ(db.get_earliest_block_id(), block_id);
+        EXPECT_TRUE(ro_db.root().is_valid());
+        EXPECT_EQ(ro_db.get_latest_block_id(), block_id);
+        EXPECT_EQ(ro_db.get_earliest_block_id(), block_id);
     }
 }
 
@@ -2071,9 +2074,10 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     config.append = true;
     while (config.fixed_history_length > end_history_length) {
         config.fixed_history_length = *config.fixed_history_length - 1;
-        Db new_db{machine, config};
-        EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
-        EXPECT_EQ(new_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
+        db.~Db();
+        new (&db) Db(machine, config);
+        EXPECT_EQ(db.get_history_length(), config.fixed_history_length);
+        EXPECT_EQ(db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
     }
 
     EXPECT_EQ(ro_db.get_history_length(), end_history_length);
@@ -2082,9 +2086,9 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     done.store(true, std::memory_order_release);
     reader.join();
     std::cout << "Writer finished. History length is shortened to "
-              << db.get_history_length() << ". Max version in rwdb is "
-              << db.get_latest_block_id() << ", min version in rwdb is "
-              << db.get_earliest_block_id() << std::endl;
+              << ro_db.get_history_length() << ". Max version in rwdb is "
+              << ro_db.get_latest_block_id() << ", min version in rwdb is "
+              << ro_db.get_earliest_block_id() << std::endl;
 }
 
 TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
@@ -2121,12 +2125,14 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
                     .has_value());
 
     // Reopen rwdb with a shorter history length
+
     config.fixed_history_length = DBTEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
-        Db new_rw{machine, config};
-        EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
-        EXPECT_EQ(new_rw.get_latest_block_id(), max_block_id);
+        db.~Db();
+        new (&db) Db(machine, config);
+        EXPECT_EQ(db.get_history_length(), config.fixed_history_length);
+        EXPECT_EQ(db.get_latest_block_id(), max_block_id);
     }
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
@@ -2143,9 +2149,10 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     // Reopen rwdb with a longer history length
     config.fixed_history_length = DBTEST_HISTORY_LENGTH;
-    Db new_rw{machine, config};
-    EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
-    EXPECT_EQ(new_rw.get_earliest_block_id(), min_block_num_after);
+    db.~Db();
+    new (&db) Db(machine, config);
+    EXPECT_EQ(db.get_history_length(), config.fixed_history_length);
+    EXPECT_EQ(db.get_earliest_block_id(), min_block_num_after);
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
     EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);

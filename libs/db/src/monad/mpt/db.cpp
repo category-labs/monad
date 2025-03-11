@@ -41,6 +41,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -49,6 +50,10 @@
 
 #include <fcntl.h>
 #include <linux/fs.h>
+#include <string.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
@@ -644,6 +649,7 @@ struct Db::RWOnDisk final : public Db::Impl
     };
 
     UpdateAux<> aux_;
+    int flock_fd_;
     std::unique_ptr<TrieDbWorker> worker_;
     std::thread worker_thread_;
     StateMachine &machine_;
@@ -652,10 +658,13 @@ struct Db::RWOnDisk final : public Db::Impl
     uint64_t unflushed_version_{INVALID_BLOCK_ID};
 
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
-        : worker_thread_([&] {
+        : flock_fd_(-1)
+        , worker_thread_([&] {
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<TrieDbWorker>(this, aux_, options);
+                flock_fd_ = open_and_flock_file(options.dbname_paths);
+
                 // This bit is unfortunately nasty, but we have to initialise
                 // aux_ from this thread
                 aux_.~UpdateAux<>();
@@ -696,6 +705,63 @@ struct Db::RWOnDisk final : public Db::Impl
     {
     }
 
+    int
+    open_and_flock_file(std::vector<std::filesystem::path> const &dbname_paths)
+    {
+        if (dbname_paths.empty()) {
+            // no need to flock anonymous file
+            return -1;
+        }
+        std::string const first_filename = dbname_paths.front().string();
+        int const db_fd = ::open(first_filename.c_str(), O_PATH | O_CLOEXEC);
+        struct stat stat;
+        memset(&stat, 0, sizeof(stat));
+        MONAD_ASSERT_PRINTF(
+            ::fstat(db_fd, &stat) != -1,
+            "failed to fstat on file \"%s\", errno: %d, %s",
+            first_filename.c_str(),
+            errno,
+            strerror(errno));
+        ::close(db_fd);
+        std::string id_name;
+        if ((stat.st_mode & S_IFMT) == S_IFBLK) {
+            id_name = "dev_" + std::to_string(::major(stat.st_dev)) + "_" +
+                      std::to_string(::minor(stat.st_dev));
+        }
+        else if ((stat.st_mode & S_IFMT) == S_IFREG) {
+            id_name = std::to_string(stat.st_ino);
+        }
+        else {
+            MONAD_ASSERT(false);
+        }
+        std::filesystem::path const flock_filename =
+            "/tmp/" + id_name + ".lock";
+        int const fd = ::open(
+            flock_filename.c_str(),
+            std::filesystem::exists(flock_filename)
+                ? (O_RDWR | O_CLOEXEC)
+                : (O_RDWR | O_CLOEXEC | O_CREAT),
+            0600);
+        MONAD_ASSERT_PRINTF(
+            fd != -1,
+            "failed to open file \"%s\", errno: %d, %s",
+            flock_filename.c_str(),
+            errno,
+            strerror(errno));
+        LOG_INFO_CFORMAT(
+            "flock try locking file \"%s\" exclusive before "
+            "opening RWDb",
+            flock_filename.c_str());
+        MONAD_ASSERT_PRINTF(
+            ::flock(fd, LOCK_EX | LOCK_NB) != -1,
+            "flock exclusive failed with error message errno: %d, "
+            "%s",
+            errno,
+            strerror(errno));
+        LOG_INFO_CFORMAT("flock file success. RWDb is open now.");
+        return fd;
+    }
+
     ~RWOnDisk()
     {
         aux_.unique_lock();
@@ -707,6 +773,16 @@ struct Db::RWOnDisk final : public Db::Impl
             cond_.notify_one();
         }
         worker_thread_.join();
+
+        if (flock_fd_ != -1) {
+            MONAD_ASSERT_PRINTF(
+                flock(flock_fd_, LOCK_UN) != -1,
+                "flock unlock failed with error message errno: %d, %s",
+                errno,
+                strerror(errno));
+            ::close(flock_fd_);
+            LOG_INFO_CFORMAT("flock unlocked file. RWDb is closed.");
+        }
     }
 
     virtual Node::UniquePtr &root() override

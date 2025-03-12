@@ -171,6 +171,8 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             # mem
             "mem/huge_mem.hpp"
             "mem/huge_mem.cpp"
+            "mem/hugetlb_path.c"
+            "mem/hugetlb_path.h"
             # procfs
             "procfs/statm.c"
             "procfs/statm.h")
@@ -209,7 +211,7 @@ target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  target_link_libraries(monad_core PUBLIC uring)
+  target_link_libraries(monad_core PUBLIC hugetlbfs uring)
 endif()
 
 add_library(

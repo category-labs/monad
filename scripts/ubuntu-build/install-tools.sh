@@ -6,6 +6,7 @@ packages=(
   cmake
   gdb
   git
+  libhugetlbfs-bin
   ninja-build
   pkg-config
   python-is-python3

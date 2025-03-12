@@ -33,6 +33,7 @@ RUN apt update && apt install -y \
   libgmock-dev \
   libgmp-dev \
   libgtest-dev \
+  libhugetlbfs-dev \
   libtbb-dev \
   liburing-dev \
   libzstd-dev
@@ -40,6 +41,7 @@ RUN apt update && apt install -y \
 RUN apt update && apt install -y \
   gdb \
   git \
+  libhugetlbfs-bin \
   python-is-python3 \
   valgrind
 

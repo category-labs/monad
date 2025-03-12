@@ -5,6 +5,7 @@ packages=(
   libcgroup-dev
   libgmock-dev
   libgtest-dev
+  libhugetlbfs-dev
   libtbb-dev
   liburing-dev
 )

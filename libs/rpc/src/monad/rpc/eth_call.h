@@ -52,6 +52,10 @@ typedef struct monad_eth_call_result
     size_t output_data_len;
 
     char *message;
+
+    // for trace
+    uint8_t *rlp_call_frames;
+    size_t rlp_call_frames_len;
 } monad_eth_call_result;
 
 void monad_eth_call_result_release(monad_eth_call_result *);
@@ -68,7 +72,8 @@ void monad_eth_call_executor_submit(
     size_t rlp_header_len, uint8_t const *rlp_sender, size_t rlp_sender_len,
     uint64_t block_number, uint64_t block_round,
     struct monad_state_override const *,
-    void (*complete)(monad_eth_call_result *, void *user), void *user);
+    void (*complete)(monad_eth_call_result *, void *user), void *user,
+    bool const trace);
 
 #ifdef __cplusplus
 }

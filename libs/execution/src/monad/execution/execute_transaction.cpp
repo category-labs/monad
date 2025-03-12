@@ -249,14 +249,13 @@ Result<ExecutionResult> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 result.value(),
                 hdr.beneficiary);
-            call_tracer.on_receipt(receipt);
+            call_tracer.on_finish(receipt.gas_used);
             block_state.merge(state);
 
-            auto const frames = call_tracer.get_frames();
             return ExecutionResult{
                 .receipt = receipt,
                 .sender = sender,
-                .call_frames = {frames.begin(), frames.end()}};
+                .call_frames = std::move(call_tracer).get_frames()};
         }
     }
     {
@@ -286,14 +285,13 @@ Result<ExecutionResult> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             result.value(),
             hdr.beneficiary);
-        call_tracer.on_receipt(receipt);
+        call_tracer.on_finish(receipt.gas_used);
         block_state.merge(state);
 
-        auto const frames = call_tracer.get_frames();
         return ExecutionResult{
             .receipt = receipt,
             .sender = sender,
-            .call_frames = {frames.begin(), frames.end()}};
+            .call_frames = std::move(call_tracer).get_frames()};
     }
 }
 

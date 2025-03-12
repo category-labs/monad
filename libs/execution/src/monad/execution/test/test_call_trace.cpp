@@ -84,7 +84,7 @@ TEST(CallTrace, enter_and_exit)
         call_tracer.on_exit(res);
     }
 
-    auto const call_frames = call_tracer.get_frames();
+    auto const call_frames = std::move(call_tracer).get_frames();
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
@@ -139,7 +139,7 @@ TEST(CallTrace, execute_success)
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
-    auto const &call_frames = call_tracer.get_frames();
+    auto const call_frames = std::move(call_tracer).get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -207,7 +207,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
 
-    auto const &call_frames = call_tracer.get_frames();
+    auto const call_frames = std::move(call_tracer).get_frames();
 
     ASSERT_TRUE(call_frames.size() == 1);
 

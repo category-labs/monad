@@ -14,6 +14,7 @@
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
+#include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -53,6 +54,12 @@ struct monad_state_override
     std::map<byte_string, monad_state_override_object> override_sets;
 };
 
+struct EthCallResult
+{
+    evmc::Result evmc_result;
+    std::vector<CallFrame> call_frames;
+};
+
 namespace
 {
     char const *const BLOCKHASH_ERR_MSG =
@@ -61,12 +68,12 @@ namespace
     using StateOverrideObj = monad_state_override::monad_state_override_object;
 
     template <evmc_revision rev>
-    Result<evmc::Result> eth_call_impl(
+    Result<EthCallResult> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
         Address const &sender, TrieRODb &tdb,
-        BlockHashBufferFinalized const &buffer,
-        monad_state_override const &state_overrides)
+        BlockHashBufferFinalized const buffer,
+        monad_state_override const &state_overrides, bool const trace)
     {
         Transaction enriched_txn{txn};
 
@@ -188,10 +195,18 @@ namespace
 
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());
-        NoopCallTracer call_tracer;
+        auto const call_tracer = [&]() -> std::unique_ptr<CallTracerBase> {
+            if (trace) {
+                return std::make_unique<CallTracer>(enriched_txn);
+            }
+            else {
+                return std::make_unique<NoopCallTracer>();
+            }
+        }();
+
         EvmcHost<rev> host{
-            call_tracer, tx_context, buffer, state, max_code_size};
-        return execute_impl_no_validation<rev>(
+            *call_tracer, tx_context, buffer, state, max_code_size};
+        auto execution_result = execute_impl_no_validation<rev>(
             state,
             host,
             enriched_txn,
@@ -199,14 +214,30 @@ namespace
             header.base_fee_per_gas.value_or(0),
             header.beneficiary,
             max_code_size);
+
+        // compute gas_refund and gas_used
+        auto const gas_refund = chain.compute_gas_refund(
+            header.number,
+            header.timestamp,
+            enriched_txn,
+            static_cast<uint64_t>(execution_result.gas_left),
+            static_cast<uint64_t>(execution_result.gas_refund));
+        auto const gas_used = enriched_txn.gas_limit - gas_refund;
+        call_tracer->on_finish(gas_used);
+
+        execution_result.gas_refund = static_cast<int64_t>(gas_refund);
+
+        return EthCallResult{
+            .evmc_result = std::move(execution_result),
+            .call_frames = std::move(*call_tracer).get_frames()};
     }
 
-    Result<evmc::Result> eth_call_impl(
+    Result<EthCallResult> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const round, Address const &sender, TrieRODb &tdb,
         BlockHashBufferFinalized const &buffer,
-        monad_state_override const &state_overrides)
+        monad_state_override const &state_overrides, bool const trace)
     {
         SWITCH_EVMC_REVISION(
             eth_call_impl,
@@ -218,7 +249,8 @@ namespace
             sender,
             tdb,
             buffer,
-            state_overrides);
+            state_overrides,
+            trace);
         MONAD_ASSERT(false);
     }
 
@@ -362,6 +394,10 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
         free(result->message);
     }
 
+    if (result->rlp_call_frames) {
+        delete[] result->rlp_call_frames;
+    }
+
     delete result;
 }
 
@@ -454,7 +490,8 @@ struct monad_eth_call_executor
         BlockHeader const &block_header, Address const &sender,
         uint64_t const block_number, uint64_t const block_round,
         monad_state_override const *const overrides,
-        void (*complete)(monad_eth_call_result *, void *user), void *const user)
+        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        bool const trace)
     {
         monad_eth_call_result *const result = new monad_eth_call_result();
 
@@ -471,7 +508,8 @@ struct monad_eth_call_executor
              result = result,
              complete = complete,
              user = user,
-             state_overrides = overrides] {
+             state_overrides = overrides,
+             trace = trace] {
                 auto const chain = [chain_config] -> std::unique_ptr<Chain> {
                     switch (chain_config) {
                     case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -508,7 +546,8 @@ struct monad_eth_call_executor
                     sender,
                     tdb,
                     *block_hash_buffer,
-                    *state_overrides);
+                    *state_overrides,
+                    trace);
 
                 if (MONAD_UNLIKELY(res.has_error())) {
                     result->status_code = EVMC_REJECTED;
@@ -518,23 +557,40 @@ struct monad_eth_call_executor
                     return;
                 }
 
-                auto const &res_value = res.assume_value();
-
-                result->status_code = res_value.status_code;
+                auto const &[evmc_result, call_frames_result] =
+                    res.assume_value();
+                result->status_code = evmc_result.status_code;
                 result->gas_used = static_cast<int64_t>(transaction.gas_limit) -
-                                   res_value.gas_left;
-                result->gas_refund = res_value.gas_refund;
-                if (res_value.output_size > 0) {
-                    result->output_data = new uint8_t[res_value.output_size];
-                    result->output_data_len = res_value.output_size;
+                                   evmc_result.gas_left;
+                result->gas_refund = evmc_result.gas_refund;
+                if (evmc_result.output_size > 0) {
+                    result->output_data = new uint8_t[evmc_result.output_size];
+                    result->output_data_len = evmc_result.output_size;
                     memcpy(
                         (uint8_t *)result->output_data,
-                        res_value.output_data,
-                        res_value.output_size);
+                        evmc_result.output_data,
+                        evmc_result.output_size);
                 }
                 else {
                     result->output_data = nullptr;
                     result->output_data_len = 0;
+                }
+
+                if (trace) {
+                    MONAD_ASSERT(call_frames_result.size());
+                    auto const rlp_call_frames =
+                        rlp::encode_call_frames(call_frames_result);
+                    result->rlp_call_frames =
+                        new uint8_t[rlp_call_frames.length()];
+                    result->rlp_call_frames_len = rlp_call_frames.length();
+                    memcpy(
+                        (uint8_t *)result->rlp_call_frames,
+                        rlp_call_frames.data(),
+                        result->rlp_call_frames_len);
+                }
+                else {
+                    result->rlp_call_frames = nullptr;
+                    result->rlp_call_frames_len = 0;
                 }
 
                 complete(result, user);
@@ -570,7 +626,7 @@ void monad_eth_call_executor_submit(
     size_t const rlp_sender_len, uint64_t const block_number,
     uint64_t const block_round, monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
-    void *const user)
+    void *const user, bool const trace)
 {
     MONAD_ASSERT(executor);
 
@@ -604,5 +660,6 @@ void monad_eth_call_executor_submit(
         block_round,
         overrides,
         complete,
-        user);
+        user,
+        trace);
 }

@@ -56,11 +56,11 @@ void NoopCallTracer::on_exit(evmc::Result const &) {}
 
 void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
-void NoopCallTracer::on_receipt(Receipt const &) {}
+void NoopCallTracer::on_finish(uint64_t const) {}
 
-std::span<CallFrame const> NoopCallTracer::get_frames() const
+std::vector<CallFrame> &&NoopCallTracer::get_frames() &&
 {
-    return {};
+    return std::move(frames_);
 }
 
 CallTracer::CallTracer(Transaction const &tx)
@@ -167,16 +167,16 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
     });
 }
 
-void CallTracer::on_receipt(Receipt const &receipt)
+void CallTracer::on_finish(uint64_t const gas_used)
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(last_.empty());
-    frames_.front().gas_used = receipt.gas_used;
+    frames_.front().gas_used = gas_used;
 }
 
-std::span<CallFrame const> CallTracer::get_frames() const
+std::vector<CallFrame> &&CallTracer::get_frames() &&
 {
-    return frames_;
+    return std::move(frames_);
 }
 
 nlohmann::json CallTracer::to_json() const

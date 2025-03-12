@@ -6,6 +6,7 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/rpc/eth_call.h>
@@ -127,10 +128,13 @@ TEST_F(EthCallFixture, simple_success_call)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -179,11 +183,13 @@ TEST_F(EthCallFixture, insufficient_balance)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
+    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -233,10 +239,12 @@ TEST_F(EthCallFixture, on_proposed_block)
         consensus_header.round,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -285,7 +293,8 @@ TEST_F(EthCallFixture, failed_to_read)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
@@ -293,6 +302,7 @@ TEST_F(EthCallFixture, failed_to_read)
         std::strcmp(
             ctx.result->message, "failure to initialize block hash buffer") ==
         0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -339,7 +349,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
     std::string deployed_code =
@@ -358,6 +369,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         ctx.result->output_data,
         ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -414,11 +426,13 @@ TEST_F(EthCallFixture, from_contract_account)
         mpt::INVALID_ROUND_NUM,
         state_override,
         complete_callback,
-        (void *)&ctx);
+        (void *)&ctx,
+        false);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -494,7 +508,8 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             mpt::INVALID_ROUND_NUM,
             state_override,
             complete_callback,
-            (void *)ctx.get());
+            (void *)ctx.get(),
+            false);
     }
 
     for (auto [ctx, f, state_override] :
@@ -506,5 +521,193 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         monad_state_override_destroy(state_override);
     }
 
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, transfer_success_with_trace)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    BlockHeader header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x200000,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {ADDR_B,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+        Code{},
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = 0x10000,
+        .to = ADDR_B,
+    };
+    auto const &from = ADDR_A;
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        mpt::INVALID_ROUND_NUM,
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+
+    byte_string const rlp_call_frames(
+        ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+    CallFrame expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = from,
+        .to = ADDR_B,
+        .value = 0x10000,
+        .gas = 0x100000,
+        .gas_used = 0x100000,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+    };
+
+    byte_string_view view(rlp_call_frames);
+    auto const call_frames = rlp::decode_call_frames(view);
+
+    ASSERT_TRUE(call_frames.has_value());
+    ASSERT_TRUE(call_frames.value().size() == 1);
+    EXPECT_EQ(call_frames.value()[0], expected);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
+{
+    static constexpr auto precompile_address{
+        0x0000000000000000000000000000000000000001_address};
+    static constexpr std::string s = "hello world";
+    byte_string_view const data = to_byte_string_view(s);
+
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    BlockHeader header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 22000,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {precompile_address,
+             StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}}},
+        Code{},
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 22000, // bigger than intrinsic_gas, but smaller than
+                            // intrinsic_gas + 3000 (precompile gas)
+        .value = 0,
+        .to = precompile_address,
+        .data = byte_string(data),
+    };
+    auto const &from = ADDR_A;
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        mpt::INVALID_ROUND_NUM,
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+
+    byte_string const rlp_call_frames(
+        ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+
+    CallFrame expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = from,
+        .to = precompile_address,
+        .value = 0,
+        .gas = 22000,
+        .gas_used = 22000,
+        .input = byte_string(data),
+        .status = EVMC_OUT_OF_GAS,
+        .depth = 0,
+    };
+
+    byte_string_view view(rlp_call_frames);
+    auto const call_frames = rlp::decode_call_frames(view);
+
+    ASSERT_TRUE(call_frames.has_value());
+    ASSERT_TRUE(call_frames.value().size() == 1);
+    EXPECT_EQ(call_frames.value()[0], expected);
+
+    monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }

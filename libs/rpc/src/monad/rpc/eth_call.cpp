@@ -63,7 +63,7 @@ namespace
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
         Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> buffer,
+        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
         monad_state_override const &state_overrides)
     {
         Transaction enriched_txn{txn};
@@ -91,7 +91,7 @@ namespace
                                             : std::make_optional(round));
         BlockState block_state{tdb};
         // avoid conflict with block reward txn
-        Incarnation incarnation{block_number, Incarnation::LAST_TX - 1u};
+        Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
 
         for (auto const &[addr, state_delta] : state_overrides.override_sets) {
@@ -135,7 +135,7 @@ namespace
                 state.set_code(address, code);
             }
 
-            auto update_state =
+            auto const update_state =
                 [&](std::map<byte_string, byte_string> const &diff) {
                     for (auto const &[key, value] : diff) {
                         bytes32_t storage_key;
@@ -203,7 +203,7 @@ namespace
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const round, Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> buffer,
+        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
         monad_state_override const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -234,7 +234,7 @@ monad_state_override *monad_state_override_create()
     return m;
 }
 
-void monad_state_override_destroy(monad_state_override *m)
+void monad_state_override_destroy(monad_state_override *const m)
 {
     MONAD_ASSERT(m);
     delete m;
@@ -251,12 +251,13 @@ void add_override_address(
     byte_string const address{addr, addr + addr_len};
 
     MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
-    m->override_sets.emplace(address, StateOverrideObj());
+    m->override_sets.emplace(address, StateOverrideObj{});
 }
 
 void set_override_balance(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
-    uint8_t const *balance, size_t balance_len)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len, uint8_t const *const balance,
+    size_t const balance_len)
 {
     MONAD_ASSERT(m);
 
@@ -271,8 +272,8 @@ void set_override_balance(
 }
 
 void set_override_nonce(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
-    uint64_t nonce)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len, uint64_t const nonce)
 {
     MONAD_ASSERT(m);
 
@@ -285,8 +286,8 @@ void set_override_nonce(
 }
 
 void set_override_code(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
-    uint8_t const *code, size_t code_len)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len, uint8_t const *const code, size_t const code_len)
 {
     MONAD_ASSERT(m);
 
@@ -301,8 +302,9 @@ void set_override_code(
 }
 
 void set_override_state_diff(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
-    uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len, uint8_t const *const key, size_t const key_len,
+    uint8_t const *const value, size_t const value_len)
 {
     MONAD_ASSERT(m);
 
@@ -324,8 +326,9 @@ void set_override_state_diff(
 }
 
 void set_override_state(
-    monad_state_override *const m, uint8_t const *addr, size_t addr_len,
-    uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len)
+    monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len, uint8_t const *const key, size_t const key_len,
+    uint8_t const *const value, size_t const value_len)
 {
     MONAD_ASSERT(m);
 
@@ -346,7 +349,7 @@ void set_override_state(
     state_object.emplace(k, std::move(v));
 }
 
-void monad_eth_call_result_release(monad_eth_call_result *result)
+void monad_eth_call_result_release(monad_eth_call_result *const result)
 {
     MONAD_ASSERT(result);
     if (result->output_data) {
@@ -450,7 +453,7 @@ struct monad_eth_call_executor
     std::shared_ptr<BlockHashBufferFinalized const>
     create_blockhash_buffer(uint64_t const block_number)
     {
-        if (!last_block_number_ || *(last_block_number_) != block_number) {
+        if (!last_block_number_ || *last_block_number_ != block_number) {
             last_buffer_.reset(new BlockHashBufferFinalized{});
             BlockHashCache::ConstAccessor acc;
             for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
@@ -461,7 +464,7 @@ struct monad_eth_call_executor
                     continue;
                 }
 
-                auto promise = std::make_shared<DbGetPromise>();
+                auto const promise = std::make_shared<DbGetPromise>();
                 pool_.submit(0, [db = db_, b = b, promise = promise] {
                     auto const h = db->get(
                         mpt::concat(
@@ -478,13 +481,13 @@ struct monad_eth_call_executor
                 });
                 auto const header_result = promise->get_future().get();
 
-                if (auto header = std::get_if<0>(&header_result)) {
+                if (auto const header = std::get_if<0>(&header_result)) {
                     auto const h = to_bytes(keccak256(*header));
                     last_buffer_->set(b, h);
                     blockhash_cache_.insert(b, h);
                 }
                 else {
-                    auto err = std::get<1>(header_result);
+                    auto const err = std::get<1>(header_result);
                     LOG_WARNING(
                         "Could not query block header {} from TrieDb -- {}",
                         b,
@@ -498,11 +501,11 @@ struct monad_eth_call_executor
     }
 
     void execute_eth_call(
-        monad_chain_config chain_config, Transaction const &txn,
+        monad_chain_config const chain_config, Transaction const &txn,
         BlockHeader const &block_header, Address const &sender,
         uint64_t const block_number, uint64_t const block_round,
-        monad_state_override const *overrides,
-        void (*complete)(monad_eth_call_result *, void *user), void *user)
+        monad_state_override const *const overrides,
+        void (*complete)(monad_eth_call_result *, void *user), void *const user)
     {
         if (block_number > last_latest_version_) {
             last_latest_version_ = block_number;
@@ -510,7 +513,7 @@ struct monad_eth_call_executor
 
         monad_eth_call_result *const result = new monad_eth_call_result();
 
-        auto blk_hash_buffer = create_blockhash_buffer(block_number);
+        auto const blk_hash_buffer = create_blockhash_buffer(block_number);
         if (blk_hash_buffer == nullptr) {
             result->status_code = EVMC_REJECTED;
             constexpr auto len = BLOCKHASH_ERR_MSG.size();
@@ -535,7 +538,7 @@ struct monad_eth_call_executor
              complete = complete,
              user = user,
              state_overrides = overrides] {
-                auto chain = [chain_config] -> std::unique_ptr<Chain> {
+                auto const chain = [chain_config] -> std::unique_ptr<Chain> {
                     switch (chain_config) {
                     case CHAIN_CONFIG_ETHEREUM_MAINNET:
                         return std::make_unique<EthereumMainnet>();
@@ -595,11 +598,11 @@ struct monad_eth_call_executor
     }
 };
 
-monad_eth_call_executor *
-monad_eth_call_executor_create(unsigned num_fibers, char const *dbpath)
+monad_eth_call_executor *monad_eth_call_executor_create(
+    unsigned const num_fibers, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
-    std::string triedb_path(dbpath);
+    std::string const triedb_path{dbpath};
 
     monad_eth_call_executor *const e =
         new monad_eth_call_executor(num_fibers, triedb_path);
@@ -607,7 +610,7 @@ monad_eth_call_executor_create(unsigned num_fibers, char const *dbpath)
     return e;
 }
 
-void monad_eth_call_executor_destroy(monad_eth_call_executor *e)
+void monad_eth_call_executor_destroy(monad_eth_call_executor *const e)
 {
     MONAD_ASSERT(e);
 
@@ -615,12 +618,14 @@ void monad_eth_call_executor_destroy(monad_eth_call_executor *e)
 }
 
 void monad_eth_call_executor_submit(
-    monad_eth_call_executor *const executor, monad_chain_config chain_config,
-    uint8_t const *rlp_txn, size_t rlp_txn_len, uint8_t const *rlp_header,
-    size_t rlp_header_len, uint8_t const *rlp_sender, size_t rlp_sender_len,
-    uint64_t block_number, uint64_t block_round,
-    monad_state_override const *overrides,
-    void (*complete)(monad_eth_call_result *result, void *user), void *user)
+    monad_eth_call_executor *const executor,
+    monad_chain_config const chain_config, uint8_t const *const rlp_txn,
+    size_t const rlp_txn_len, uint8_t const *const rlp_header,
+    size_t const rlp_header_len, uint8_t const *const rlp_sender,
+    size_t const rlp_sender_len, uint64_t const block_number,
+    uint64_t const block_round, monad_state_override const *const overrides,
+    void (*complete)(monad_eth_call_result *result, void *user),
+    void *const user)
 {
     MONAD_ASSERT(executor);
 

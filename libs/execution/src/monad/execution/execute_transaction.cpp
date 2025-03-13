@@ -216,54 +216,68 @@ Result<ExecutionResult> execute_impl(
         chain.get_chain_id(),
         chain.get_max_code_size(hdr.number, hdr.timestamp)));
 
+    uint32_t const max_restarts = 10;
+    uint32_t restarts = 0;
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state, Incarnation{hdr.number, i + 1}};
-        state.set_relaxed_validation();
-        uint512_t const max_debit =
-            tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
-        uint256_t const min_balance =
-            (max_debit > std::numeric_limits<intx::uint<256>>::max())
-                ? std::numeric_limits<intx::uint<256>>::max()
-                : uint256_t(max_debit);
-        state.set_original_nonce_and_balance(sender, tx.nonce, min_balance);
+        while (true) {
+            State state{block_state, Incarnation{hdr.number, i + 1}};
+            state.set_relaxed_validation();
+            uint512_t const max_debit =
+                tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+            uint256_t const min_balance =
+                (max_debit > std::numeric_limits<intx::uint<256>>::max())
+                    ? std::numeric_limits<intx::uint<256>>::max()
+                    : uint256_t(max_debit);
+            state.set_original_nonce_and_balance(sender, tx.nonce, min_balance);
+            if (restarts < max_restarts) {
+                state.set_read_speculation(true);
+            }
 
 #ifdef ENABLE_CALL_TRACING
-        CallTracer call_tracer{tx};
+            CallTracer call_tracer{tx};
 #else
-        NoopCallTracer call_tracer{};
+            NoopCallTracer call_tracer{};
 #endif
 
-        auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
-
-        {
-            TRACE_TXN_EVENT(StartStall);
-            prev.get_future().wait();
-        }
-
-        if (block_state.can_merge(state)) {
-            if (result.has_error()) {
-                return std::move(result.error());
+            auto result = execute_impl2<rev>(
+                call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            if (!state.validate_reads()) {
+                ++restarts;
+                continue;
             }
-            auto const receipt = execute_final<rev>(
-                chain,
-                state,
-                hdr,
-                tx,
-                sender,
-                hdr.base_fee_per_gas.value_or(0),
-                result.value(),
-                hdr.beneficiary);
-            call_tracer.on_receipt(receipt);
-            block_state.merge(state);
+            state.set_read_speculation(false);
 
-            auto const frames = call_tracer.get_frames();
-            return ExecutionResult{
-                .receipt = receipt,
-                .sender = sender,
-                .call_frames = {frames.begin(), frames.end()}};
+            {
+                TRACE_TXN_EVENT(StartStall);
+                prev.get_future().wait();
+            }
+
+            if (block_state.can_merge(state)) {
+                block_state.add_restarts(restarts);
+                if (result.has_error()) {
+                    return std::move(result.error());
+                }
+                auto const receipt = execute_final<rev>(
+                    chain,
+                    state,
+                    hdr,
+                    tx,
+                    sender,
+                    hdr.base_fee_per_gas.value_or(0),
+                    result.value(),
+                    hdr.beneficiary);
+                call_tracer.on_receipt(receipt);
+                block_state.merge(state);
+
+                auto const frames = call_tracer.get_frames();
+                return ExecutionResult{
+                    .receipt = receipt,
+                    .sender = sender,
+                    .call_frames = {frames.begin(), frames.end()}};
+            }
+            break;
         }
     }
     {

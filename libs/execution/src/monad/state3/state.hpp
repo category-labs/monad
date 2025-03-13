@@ -14,12 +14,15 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
 #include <monad/state3/version_stack.hpp>
+#include <monad/synchronization/spin_lock.hpp>
 #include <monad/types/incarnation.hpp>
 #include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.h>
 
 #include <ankerl/unordered_dense.h>
+
+#include <boost/fiber/future/promise.hpp>
 
 #include <quill/detail/LogMacros.h>
 
@@ -32,6 +35,65 @@
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
+
+class ReadSpeculation
+{
+    std::atomic<bool> found_value_{false};
+    bool waiting_{false};
+    uint32_t n_pending_{0};
+    boost::fibers::promise<void> promise_;
+    SpinLock lock_;
+
+public:
+    // Executed by tx fiber
+    void pre_read()
+    {
+        MONAD_ASSERT(!waiting_);
+        std::unique_lock l(lock_);
+        ++n_pending_;
+    }
+
+    void await_reads()
+    {
+        bool wait = false;
+        MONAD_ASSERT(!waiting_);
+        {
+            std::unique_lock l(lock_);
+            if (n_pending_) {
+                waiting_ = true;
+                wait = true;
+            }
+        }
+        if (wait) {
+            promise_.get_future().get();
+            std::unique_lock l(lock_);
+        }
+    }
+
+    bool validate_reads()
+    {
+        await_reads();
+        return !found_value_.load(std::memory_order_acquire);
+    }
+
+    // Executed by db thread
+    void post_read(bool found_value)
+    {
+        if (found_value) {
+            set_found_value();
+        }
+        std::unique_lock l(lock_);
+        MONAD_ASSERT(n_pending_ > 0);
+        if ((--n_pending_ == 0) && waiting_) {
+            promise_.set_value();
+        }
+    }
+
+    void set_found_value()
+    {
+        found_value_.store(true, std::memory_order_release);
+    }
+};
 
 class State
 {
@@ -54,13 +116,38 @@ class State
 
     bool relaxed_validation_{false};
 
+    bool first_account_read_{true};
+    bool use_read_speculation_{false};
+    ReadSpeculation read_speculation_;
+
+    bool use_read_speculation()
+    {
+        return use_read_speculation_;
+    }
+
 public:
     AccountState &original_account_state(Address const &address)
     {
         auto it = original_.find(address);
         if (it == original_.end()) {
             // block state
+#if 1
+            auto fn1 = [this] { read_speculation_.pre_read(); };
+            auto fn2 = [this](bool hasval) {
+                read_speculation_.post_read(hasval);
+            };
+            auto const account = [&] {
+                if (use_read_speculation() && !first_account_read_) {
+                    return block_state_.read_account(address, fn1, fn2);
+                }
+                else {
+                    first_account_read_ = false;
+                    return block_state_.read_account(address);
+                }
+            }();
+#else
             auto const account = block_state_.read_account(address);
+#endif
             it = original_.try_emplace(address, account).first;
         }
         return it->second;
@@ -159,6 +246,17 @@ public:
         relaxed_validation_ = true;
     }
 
+    void set_read_speculation(bool value)
+    {
+        use_read_speculation_ = value;
+    }
+
+    bool validate_reads()
+    {
+        bool ret = read_speculation_.validate_reads();
+        return ret;
+    }
+
     ////////////////////////////////////////
 
     std::optional<Account> const &recent_account(Address const &address)
@@ -226,18 +324,46 @@ public:
 
     bytes32_t get_storage(Address const &address, bytes32_t const &key)
     {
+        auto fn1 = [this] { read_speculation_.pre_read(); };
+        auto fn2 = [this](bool hasval) { read_speculation_.post_read(hasval); };
         auto const it = current_.find(address);
         if (it == current_.end()) {
             auto const it2 = original_.find(address);
+#if 1
+            if (it2 == original_.end()) {
+                // We must have guessed incorrectly that the account
+                // has no value.
+                read_speculation_.set_found_value();
+                return bytes32_t{};
+            }
+#else
             MONAD_ASSERT(it2 != original_.end());
+#endif
             auto &account_state = it2->second;
             auto const &account = account_state.account_;
             MONAD_ASSERT(account.has_value());
             auto &storage = account_state.storage_;
             auto it3 = storage.find(key);
             if (it3 == storage.end()) {
+#if 1
+                bytes32_t const value = [&] {
+                    if (use_read_speculation()) {
+                        return block_state_.read_storage(
+                            address,
+                            account.value().incarnation,
+                            key,
+                            fn1,
+                            fn2);
+                    }
+                    else {
+                        return block_state_.read_storage(
+                            address, account.value().incarnation, key);
+                    }
+                }();
+#else
                 bytes32_t const value = block_state_.read_storage(
                     address, account.value().incarnation, key);
+#endif
                 it3 = storage.try_emplace(key, value).first;
             }
             return it3->second;
@@ -262,8 +388,25 @@ public:
             auto &original_storage = original_account_state.storage_;
             auto it3 = original_storage.find(key);
             if (it3 == original_storage.end()) {
+#if 1
+                bytes32_t const value = [&] {
+                    if (use_read_speculation()) {
+                        return block_state_.read_storage(
+                            address,
+                            account.value().incarnation,
+                            key,
+                            fn1,
+                            fn2);
+                    }
+                    else {
+                        return block_state_.read_storage(
+                            address, account.value().incarnation, key);
+                    }
+                }();
+#else
                 bytes32_t const value = block_state_.read_storage(
                     address, account.value().incarnation, key);
+#endif
                 it3 = original_storage.try_emplace(key, value).first;
             }
             return it3->second;
@@ -359,8 +502,25 @@ public:
             if (it == storage.end()) {
                 Incarnation const incarnation =
                     account_state.account_->incarnation;
+#if 1
+                auto fn1 = [this] { read_speculation_.pre_read(); };
+                auto fn2 = [this](bool hasval) {
+                    read_speculation_.post_read(hasval);
+                };
+                bytes32_t const value = [&] {
+                    if (use_read_speculation()) {
+                        return block_state_.read_storage(
+                            address, incarnation, key, fn1, fn2);
+                    }
+                    else {
+                        return block_state_.read_storage(
+                            address, incarnation, key);
+                    }
+                }();
+#else
                 bytes32_t const value =
                     block_state_.read_storage(address, incarnation, key);
+#endif
                 it = storage.try_emplace(key, value).first;
             }
             original_value = it->second;

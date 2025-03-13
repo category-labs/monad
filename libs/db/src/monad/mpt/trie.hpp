@@ -1060,6 +1060,14 @@ static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 void find_notify_fiber_future(
     UpdateAuxImpl &, inflight_map_t &inflights, fiber_find_request_t);
 
+struct AsyncFindRequest
+{
+    NodeCursor root_;
+    Nibbles *key_;
+    std::function<void(find_cursor_result_type const &)> fn_;
+};
+void find_with_continuation(UpdateAuxImpl &aux, inflight_map_t &inflights, AsyncFindRequest req);
+
 /*! \brief blocking find node indexed by key from root, It works for both
 on-disk and in-memory trie. When node along key is not yet in memory, it loads
 the node through blocking read.

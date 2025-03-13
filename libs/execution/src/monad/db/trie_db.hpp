@@ -44,6 +44,12 @@ public:
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    void read_account(
+        Address const &address,
+        std::function<void(std::optional<Account> const &)> fn) override;
+    void read_storage(
+        Address const &address, bytes32_t const &key,
+        std::function<void(bytes32_t const &)> fn) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
     virtual void set_block_and_round(
         uint64_t block_number,

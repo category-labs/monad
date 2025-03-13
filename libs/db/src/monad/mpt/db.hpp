@@ -72,6 +72,9 @@ public:
     Result<NodeCursor> find(NodeCursor, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
     Result<byte_string_view> get(NibblesView, uint64_t block_id) const;
+    void get(Nibbles *, uint64_t block_id,
+        std::function<void(Result<byte_string_view>)>) const;
+    void get(NodeCursor, Nibbles *, std::function<void(Result<NodeCursor>)>) const;
     Result<byte_string_view> get_data(NibblesView, uint64_t block_id) const;
     Result<byte_string_view>
     get_data(NodeCursor, NibblesView, uint64_t block_id) const;

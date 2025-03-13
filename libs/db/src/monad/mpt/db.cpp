@@ -82,7 +82,13 @@ struct Db::Impl
 
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+    virtual void find_async(
+        NodeCursor, Nibbles *, std::function<void(find_cursor_result_type const &)>) { MONAD_ASSERT(false); }
+#if 1
+    virtual size_t prefetch_fiber_blocking() { MONAD_ASSERT(false); return 0; }
+#else
     virtual size_t prefetch_fiber_blocking() = 0;
+#endif
     virtual NodeCursor load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
     virtual bool traverse_fiber_blocking(
@@ -437,7 +443,7 @@ struct Db::RWOnDisk final : public Db::Impl
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
-        FiberLoadRootVersionRequest, FiberCopyTrieRequest>;
+        FiberLoadRootVersionRequest, FiberCopyTrieRequest, AsyncFindRequest>;
 
     ::moodycamel::ConcurrentQueue<Comms> comms_;
 
@@ -579,6 +585,10 @@ struct Db::RWOnDisk final : public Db::Impl
                             req->blocked_by_write);
                         req->promise->set_value(std::move(root));
                     }
+                    else if (auto *req = std::get_if<8>(&request.front());
+                             req != nullptr) {
+                        find_with_continuation(aux, inflights, *req);
+                    }
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
@@ -714,6 +724,14 @@ struct Db::RWOnDisk final : public Db::Impl
     virtual UpdateAux<> &aux() override
     {
         return aux_;
+    }
+
+    virtual void find_async(
+        NodeCursor root, Nibbles *key,
+        std::function<void(find_cursor_result_type const &)> fn) override
+    {
+        AsyncFindRequest req{.root_ = root, .key_ = key, .fn_ = fn};
+        comms_.enqueue(req);
     }
 
     // threadsafe
@@ -946,6 +964,27 @@ Db::Db(AsyncIOContext &io_ctx)
 }
 
 Db::~Db() = default;
+
+void Db::get(
+    Nibbles *key, uint64_t const block_id,
+    std::function<void(Result<byte_string_view>)> fn1) const
+{
+    MONAD_ASSERT(impl_);
+    auto cursor = impl_->load_root_for_version(block_id);
+    auto fn2 = [fn1](find_cursor_result_type const res) {
+        auto const [it, result] = res;
+        if (result != find_result::success) {
+            auto result = Result<byte_string_view>(DbError::key_not_found);
+            fn1(std::move(result));
+            return;
+        }
+        MONAD_DEBUG_ASSERT(it.node != nullptr);
+        MONAD_DEBUG_ASSERT(it.node->has_value());
+        fn1(it.node->value());
+    };
+    MONAD_ASSERT(impl_);
+    impl_->find_async(cursor, key, fn2);
+}
 
 Result<NodeCursor>
 Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const

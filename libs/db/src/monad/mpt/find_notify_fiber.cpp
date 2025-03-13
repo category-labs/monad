@@ -32,6 +32,10 @@ void find_recursive(
     UpdateAuxImpl &, inflight_map_t &,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &, NodeCursor root,
     NibblesView key);
+void find_recursive(
+    UpdateAuxImpl &, inflight_map_t &,
+    std::function<void(find_cursor_result_type const &)>, NodeCursor root,
+    NibblesView key);
 
 namespace
 {
@@ -175,6 +179,94 @@ void find_recursive(
             {NodeCursor{*node, node_prefix_index},
              find_result::branch_not_exist_failure});
     }
+}
+
+void find_recursive(
+    UpdateAuxImpl &aux, inflight_map_t &inflights,
+    std::function<void(find_cursor_result_type const &)> cont1,
+    NodeCursor root, NibblesView const key)
+{
+    if (!root.is_valid()) {
+        auto result = find_cursor_result_type{
+            NodeCursor{}, find_result::root_node_is_null_failure};
+        cont1(result);
+        return;
+    }
+    unsigned prefix_index = 0;
+    unsigned node_prefix_index = root.prefix_index;
+    Node *node = root.node;
+    for (; node_prefix_index < node->path_nibble_index_end;
+         ++node_prefix_index, ++prefix_index) {
+        if (prefix_index >= key.nibble_size()) {
+            auto result = find_cursor_result_type{
+                NodeCursor{*node, node_prefix_index},
+                find_result::key_ends_earlier_than_node_failure};
+            cont1(result);
+            return;
+        }
+        if (key.get(prefix_index) !=
+            get_nibble(node->path_data(), node_prefix_index)) {
+            auto result = find_cursor_result_type{
+                NodeCursor{*node, node_prefix_index},
+                find_result::key_mismatch_failure};
+            cont1(result);
+            return;
+        }
+    }
+    if (prefix_index == key.nibble_size()) {
+        auto result = find_cursor_result_type{
+            NodeCursor{*node, node_prefix_index}, find_result::success};
+        cont1(result);
+        return;
+    }
+    MONAD_ASSERT(prefix_index < key.nibble_size());
+    if (unsigned char const branch = key.get(prefix_index);
+        node->mask & (1u << branch)) {
+        MONAD_DEBUG_ASSERT(
+            prefix_index < std::numeric_limits<unsigned char>::max());
+        auto const next_key =
+            key.substr(static_cast<unsigned char>(prefix_index) + 1u);
+        auto const child_index = node->to_child_index(branch);
+        if (node->next(child_index) != nullptr) {
+            find_recursive(
+                aux, inflights, cont1, *node->next(child_index), next_key);
+            return;
+        }
+        if (aux.io->owning_thread_id() != get_tl_tid()) {
+            auto result = find_cursor_result_type{
+                NodeCursor{*node, node_prefix_index},
+                find_result::need_to_continue_in_io_thread};
+            cont1(result);
+            return;
+        }
+        chunk_offset_t const offset = node->fnext(child_index);
+        auto cont2 = [&aux, &inflights, cont1, next_key](
+                        NodeCursor node_cursor) -> result<void> {
+            find_recursive(aux, inflights, cont1, node_cursor, next_key);
+            return success();
+        };
+        if (auto lt = inflights.find(offset); lt != inflights.end()) {
+            lt->second.emplace_back(cont2);
+            return;
+        }
+        inflights[offset].emplace_back(cont2);
+        find_receiver receiver(aux, inflights, node, branch);
+        detail::initiate_async_read_update(
+            *aux.io, std::move(receiver), receiver.bytes_to_read);
+    }
+    else {
+        auto result = find_cursor_result_type{
+            NodeCursor{*node, node_prefix_index},
+            find_result::branch_not_exist_failure};
+        cont1(result);
+    }
+}
+
+void find_with_continuation(
+    UpdateAuxImpl &aux, inflight_map_t &inflights, AsyncFindRequest req)
+{
+    auto g(aux.shared_lock());
+    find_recursive(aux, inflights, req.fn_, req.root_, *req.key_);
 }
 
 void find_notify_fiber_future(

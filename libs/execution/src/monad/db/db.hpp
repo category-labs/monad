@@ -27,6 +27,35 @@ struct Db
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
+    virtual bool read_account(
+        Address const &, std::optional<Account> &, std::function<void()>,
+        std::function<void(std::optional<Account> const &)>)
+    {
+        MONAD_ASSERT(false);
+        return false;
+    }
+
+    virtual void read_account(
+        Address const &, std::function<void(std::optional<Account> const &)>)
+    {
+        MONAD_ASSERT(false);
+    }
+
+    virtual bool read_storage(
+        Address const &, Incarnation, bytes32_t const &, bytes32_t &,
+        std::function<void()>, std::function<void(bytes32_t const &)>)
+    {
+        MONAD_ASSERT(false);
+        return false;
+    }
+
+    virtual void read_storage(
+        Address const &, bytes32_t const &,
+        std::function<void(bytes32_t const &)>)
+    {
+        MONAD_ASSERT(false);
+    }
+
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
 
     virtual BlockHeader read_eth_header() = 0;

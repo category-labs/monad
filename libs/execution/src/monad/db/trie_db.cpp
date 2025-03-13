@@ -113,6 +113,33 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
+void TrieDb::read_account(
+    Address const &address,
+    std::function<void(std::optional<Account> const &)> fn1)
+{
+    Nibbles *dbkey = new Nibbles(concat(
+        prefix_,
+        STATE_NIBBLE,
+        NibblesView{keccak256({address.bytes, sizeof(address.bytes)})}));
+    auto fn2 = [this, dbkey, fn1](Result<byte_string_view> const &value) {
+        delete dbkey;
+        auto result = [this, &value] -> std::optional<Account> {
+            if (!value.has_value()) {
+                STATS_ACCOUNT_NO_VALUE();
+                return std::nullopt;
+            }
+
+            auto encoded_account = value.value();
+            auto const acct = decode_account_db_ignore_address(encoded_account);
+            MONAD_DEBUG_ASSERT(!acct.has_error());
+            STATS_ACCOUNT_VALUE();
+            return acct.value();
+        }();
+        fn1(result);
+    };
+    db_.get(dbkey, block_number_, fn2);
+}
+
 #define MONAD_TRIEDB_STATS
 #ifdef MONAD_TRIEDB_STATS
     #define STATS_STORAGE_NO_VALUE() stats_storage_no_value()
@@ -142,6 +169,33 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     MONAD_ASSERT(!storage.has_error());
     return to_bytes(storage.value());
 };
+
+void TrieDb::read_storage(
+    Address const &address, bytes32_t const &key,
+    std::function<void(bytes32_t const &)> fn1)
+{
+    Nibbles *dbkey = new Nibbles(concat(
+        prefix_,
+        STATE_NIBBLE,
+        NibblesView{keccak256({address.bytes, sizeof(address.bytes)})},
+        NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}));
+    auto fn2 = [this, dbkey, fn1](Result<byte_string_view> const &value) {
+        delete dbkey;
+        auto result = [this, &value]() -> bytes32_t {
+            if (!value.has_value()) {
+                STATS_STORAGE_NO_VALUE();
+                return {};
+            }
+            STATS_STORAGE_VALUE();
+            auto encoded_storage = value.value();
+            auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            return to_bytes(storage.value());
+        }();
+        fn1(result);
+    };
+    db_.get(dbkey, block_number_, fn2);
+}
 
 #ifdef MONAD_TRIEDB_STATS
     #undef STATS_STORAGE_NO_VALUE

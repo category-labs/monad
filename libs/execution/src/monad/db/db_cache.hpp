@@ -98,6 +98,56 @@ public:
         return db_.read_storage(address, incarnation, key);
     }
 
+    virtual bool read_account(
+        Address const &address, std::optional<Account> &result,
+        std::function<void()> fn1,
+        std::function<void(std::optional<Account> const &)> fn2) override
+    {
+        bool truncated = false; // ancestors truncated
+        if (proposals_.try_read_account(address, result, truncated)) {
+            return true;
+        }
+        if (!truncated) {
+            AccountsCache::ConstAccessor acc{};
+            if (accounts_.find(acc, address)) {
+                result = acc->second.value_;
+                return true;
+            }
+        }
+        auto fn = [fn2](std::optional<Account> const &account) {
+            fn2(account);
+        };
+        fn1();
+        db_.read_account(address, fn);
+        return false;
+    }
+
+    virtual bool read_storage(
+        Address const &address, Incarnation incarnation, bytes32_t const &key,
+        bytes32_t &result, std::function<void()> fn1,
+        std::function<void(bytes32_t const &)> fn2) override
+    {
+        bool truncated = false;
+        if (proposals_.try_read_storage(
+                address, incarnation, key, result, truncated)) {
+            return true;
+        }
+        if (!truncated) {
+            StorageKey const skey{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, skey)) {
+                result = acc->second.value_;
+                return true;
+            }
+        }
+        auto fn = [fn2](bytes32_t const &value) {
+            fn2(value);
+        };
+        fn1();
+        db_.read_storage(address, key, fn);
+        return false;
+    }
+
     virtual std::shared_ptr<CodeAnalysis>
     read_code(bytes32_t const &code_hash) override
     {

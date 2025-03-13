@@ -26,6 +26,7 @@ class BlockState final
     std::unique_ptr<Code> code_;
 
 public:
+uint64_t n_retries_{0}, precalc_time_{0}, exec_time_{0};
     BlockState(Db &);
 
     std::optional<Account> read_account(Address const &);

@@ -76,6 +76,8 @@ public:
 
 private:
     /// STATS
+    std::atomic<uint64_t> n_account_no_value_{0};
+    std::atomic<uint64_t> n_account_value_{0};
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
 
@@ -87,6 +89,16 @@ private:
     void stats_storage_value()
     {
         n_storage_value_.fetch_add(1, std::memory_order_release);
+    }
+
+    void stats_account_no_value()
+    {
+        n_account_no_value_.fetch_add(1, std::memory_order_release);
+    }
+
+    void stats_account_value()
+    {
+        n_account_value_.fetch_add(1, std::memory_order_release);
     }
 
     bytes32_t merkle_root(mpt::Nibbles const &);

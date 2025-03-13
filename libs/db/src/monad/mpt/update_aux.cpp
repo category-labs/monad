@@ -1121,6 +1121,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         // log stats
         print_update_stats(version);
     }
+#if 0
     [[maybe_unused]] auto const curr_fast_writer_offset =
         physical_to_virtual(node_writer_fast->sender().offset());
     [[maybe_unused]] auto const curr_slow_writer_offset =
@@ -1139,6 +1140,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
         curr_slow_writer_offset.offset);
+#endif
     if (duration > std::chrono::microseconds(500'000)) {
         LOG_WARNING_CFORMAT(
             "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",

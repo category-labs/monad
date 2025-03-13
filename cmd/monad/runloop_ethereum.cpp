@@ -34,6 +34,7 @@ namespace
 
     void log_tps(
         uint64_t const block_num, uint64_t const nblocks, uint64_t const ntxs,
+uint64_t retries, uint64_t precalc, uint64_t exec_time, Db &db,
         uint64_t const gas, std::chrono::steady_clock::time_point const begin)
     {
         auto const now = std::chrono::steady_clock::now();
@@ -46,6 +47,14 @@ namespace
         uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
         uint64_t const gps = gas / elapsed;
 
+#if 1
+(void)nblocks;
+uint64_t const exec_tps = ntxs * 1'000'000 / exec_time;
+uint64_t const exec_gps = gas / exec_time;
+LOG_INFO("=== {:8} {:6} tx  {:6} {:5.2f}% retries  {:4} {:5} {:5} ms  {:5} {:5} tps {:9} gas {:4} {:4} gps {:6d} mb | {}",
+block_num, ntxs, retries, (float)100*(float)retries/(float)ntxs, precalc/1000, exec_time/1000, elapsed/1000,
+exec_tps, tps, gas, exec_gps, gps, monad_procfs_self_resident() / (1L << 20), db.print_stats());
+#else
         LOG_INFO(
             "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
             "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
@@ -55,6 +64,7 @@ namespace
             tps,
             gps,
             monad_procfs_self_resident() / (1L << 20));
+#endif
     };
 
 #pragma GCC diagnostic pop
@@ -75,6 +85,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
+uint64_t batch_retries = 0, batch_precalc = 0, batch_exec = 0;
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
@@ -121,6 +132,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         }
 
         block_state.log_debug();
+batch_retries += block_state.n_retries_;
+batch_precalc += block_state.precalc_time_;
+batch_exec    += block_state.exec_time_;
         block_state.commit(
             MonadConsensusBlockHeader::from_eth_header(block.header),
             receipts,
@@ -151,18 +165,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block_num,
                 batch_num_blocks,
                 batch_num_txs,
+batch_retries, batch_precalc, batch_exec, db,
                 batch_gas,
                 batch_begin);
             batch_num_blocks = 0;
             batch_num_txs = 0;
             batch_gas = 0;
+batch_retries = 0; batch_precalc = 0; batch_exec = 0;
             batch_begin = std::chrono::steady_clock::now();
         }
         ++block_num;
     }
     if (batch_num_blocks > 0) {
+#if 0
         log_tps(
             block_num, batch_num_blocks, batch_num_txs, batch_gas, batch_begin);
+#endif
     }
     return {ntxs, total_gas};
 }

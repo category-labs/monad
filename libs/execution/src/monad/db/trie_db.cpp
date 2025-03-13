@@ -90,6 +90,9 @@ TrieDb::TrieDb(mpt::Db &db)
 
 TrieDb::~TrieDb() = default;
 
+#define STATS_ACCOUNT_NO_VALUE() stats_account_no_value()
+#define STATS_ACCOUNT_VALUE() stats_account_value()
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     auto const value = db_.get(
@@ -99,8 +102,10 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
     if (!value.has_value()) {
+        STATS_ACCOUNT_NO_VALUE();
         return std::nullopt;
     }
+    STATS_ACCOUNT_VALUE();
 
     auto encoded_account = value.value();
     auto const acct = decode_account_db_ignore_address(encoded_account);
@@ -589,9 +594,13 @@ std::string TrieDb::print_stats()
 {
     std::string ret;
     ret += std::format(
-        "{:6} {:6}",
+        "{:6} {:6} {:6} {:6}",
+        n_account_no_value_.load(std::memory_order_acquire),
+        n_account_value_.load(std::memory_order_acquire),
         n_storage_no_value_.load(std::memory_order_acquire),
         n_storage_value_.load(std::memory_order_acquire));
+    n_account_no_value_.store(0, std::memory_order_release);
+    n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
     return ret;

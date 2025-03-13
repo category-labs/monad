@@ -277,6 +277,7 @@ Result<ExecutionResult> execute_impl(
         NoopCallTracer call_tracer{};
 #endif
 
+++block_state.n_retries_;
         auto result = execute_impl2<rev>(
             call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 

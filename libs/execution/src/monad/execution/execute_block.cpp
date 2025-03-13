@@ -109,6 +109,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         }
     }
 
+auto tbegin = std::chrono::steady_clock::now();
     std::shared_ptr<std::optional<Address>[]> const senders{
         new std::optional<Address>[block.transactions.size()]};
 
@@ -130,6 +131,8 @@ Result<std::vector<ExecutionResult>> execute_block(
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         promises[i].get_future().wait();
     }
+auto tnow = std::chrono::steady_clock::now();
+block_state.precalc_time_ = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(tnow - tbegin).count()); tbegin = tnow;
 
     std::shared_ptr<std::optional<Result<ExecutionResult>>[]> const results{
         new std::optional<Result<ExecutionResult>>[block.transactions.size()]};
@@ -165,6 +168,8 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
     promises[last].get_future().wait();
+tnow = std::chrono::steady_clock::now();
+block_state.exec_time_ = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(tnow - tbegin).count());
 
     std::vector<ExecutionResult> retvals;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {

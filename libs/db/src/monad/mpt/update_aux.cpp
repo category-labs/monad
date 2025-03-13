@@ -536,21 +536,15 @@ void UpdateAuxImpl::set_io(
             "This storage has %u granularity.",
             logical_block_size);
         if (physical_block_size != 0 && physical_block_size != 512) {
-            std::cerr << "WARNING: MPT storage has physical block size "
-                      << physical_block_size
-                      << " which is not 512 bytes. This will cause performance "
-                         "issues due to wasting "
-                      << ((100 * (physical_block_size - 512)) /
-                          physical_block_size)
-                      << "% of i/o capacity!" << std::endl;
+            LOG_INFO_CFORMAT(
+                "MPT storage has physical block size %u which is not 512 "
+                "bytes.",
+                physical_block_size);
         }
         if (minimum_io_size != 0 && minimum_io_size != 512) {
-            std::cerr << "WARNING: MPT storage has minimum i/o size "
-                      << minimum_io_size
-                      << " which is not 512 bytes. This will cause performance "
-                         "issues due to wasting "
-                      << ((100 * (minimum_io_size - 512)) / minimum_io_size)
-                      << "% of i/o capacity!" << std::endl;
+            LOG_INFO_CFORMAT(
+                "MPT storage has minimum i/o size %u which is not 512 bytes.",
+                minimum_io_size);
         }
     }
     /* If writable, can map maps writable. If read only but allowing

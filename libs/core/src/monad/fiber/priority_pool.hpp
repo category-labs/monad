@@ -32,7 +32,8 @@ class PriorityPool final
     std::promise<void> start_{};
 
 public:
-    PriorityPool(unsigned n_threads, unsigned n_fibers);
+    PriorityPool(
+        unsigned n_threads, unsigned n_fibers, bool prevent_spin = false);
 
     PriorityPool(PriorityPool const &) = delete;
     PriorityPool &operator=(PriorityPool const &) = delete;

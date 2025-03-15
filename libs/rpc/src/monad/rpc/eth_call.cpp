@@ -378,7 +378,7 @@ struct monad_eth_call_executor
     monad_eth_call_executor(
         unsigned const num_threads, unsigned const num_fibers,
         unsigned const node_lru_size, std::string const &triedb_path)
-        : pool_{num_threads, num_fibers}
+        : pool_{num_threads, num_fibers, true}
         , db_{[&] {
             std::vector<std::filesystem::path> paths;
             if (std::filesystem::is_directory(triedb_path)) {

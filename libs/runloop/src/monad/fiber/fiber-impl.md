@@ -2,7 +2,7 @@
 
 ## Basic design
 
-The fiber implementation has two essential objects:
+The fiber implementation has three essential objects:
 
 1. `monad_thread_executor_t` - much the same way as a single CPU core
    is an execution resource to run threads, a single thread is an
@@ -11,10 +11,18 @@ The fiber implementation has two essential objects:
    object; the first time a thread calls `monad_fiber_run`, one of these
    objects is created to represent it
 
-2. `monad_fiber_t` - this object represents a fiber, which is an execution
+2. `monad_context` - this object represents an execution context (i.e.,
+   what is actually running on a thread) which can be suspended before
+   context switching into something else, on that same thread. This
+   type comes from the `monad_context_c` library, and is shared with the
+   I/O framework
+
+3. `monad_fiber_t` - this object represents a fiber, which is an execution
    resource for a user defined function that can be voluntarily suspended
-   and resumed. It owns an execution stack, and some machinery for scheduling
-   and synchronization with other fibers
+   and resumed; from an implementation perspective, this is a `monad_context`
+   augmented with the additional fields needed to be a proper user fiber,
+   e.g., a scheduling priority, the fiber function that the user wishes to
+   run, etc.
 
 ## Context switching
 
@@ -29,96 +37,110 @@ The original implementation was symmetric: it was legal to call
 fiber. This doubled the size of the implementation and the runtime cost of a
 context switch, but was never used. For now, this capability has been removed.
 
-The context switching operation is divided into two layers:
+A single context switch is divided across three layers:
 
-1. **Machine-independent layer** - this is shared by
-   all architectures and addresses how the execution transfers from an
-   ordinary thread context to a fiber conext, and back; this code is mostly
-   in `fiber_inline.h`, and is inherently asymmetric (the switch is always
-   between one fiber context and one ordinary thread context)
+1. **Fiber layer** - this defines the interface for how execution transfers
+   from an ordinary thread context to a fiber context, and back; this code is
+   mostly in `fiber_inline.h`, and is inherently asymmetric (the switch is
+   always between one fiber context and one ordinary thread context)
 
-2. **Machine-dependent layer** - this consists of only two functions,
-   `monad_make_fcontext` and `monad_jump_fcontext` which were imported
-   from the Boost.Context third-party library. These are the original
-   names of the functions, but with the `monad_` prefix added. They are
-   the low-level context switch functions implemented in assembly
-   language for a particular CPU architecture, calling convention, and ABI.
+2. **Context layer** - the actual switch operation is delegated to the
+   `monad_context_c` library. This library is able to perform a context
+   switch using various context-switching implementations, e.g.,
+   `setjmp(3)/longjmp(3)`-based, `Boost.Context`-based, or C++
+   coroutines. Each context switching backend has different advantages
+   and drawbacks: some integrate better with debuggers, others are faster,
+   etc. This layer presents a low-level generic interface that works
+   with all of them, but does not itself perform the switch at the hardware
+   level
 
-In the machine-independent layer, the execution context of the thread
-that calls `monad_fiber_run` is modeled by `monad_thread_executor_t` and
-the execution context of a fiber is modeled by `monad_fiber_t`.
+3. **Machine-dependent layer** - these are lowest-level functions called
+   by a specific context switching backend in `monad_context_c`; they
+   actually cause the  stack switch to happen at the CPU level. These
+   functions directly manipulate stack frames, and are implemented in
+   assembly language for a particular CPU architecture, calling convention,
+   and ABI. For example, the `setjmp(3)` and `longjmp(3)` routines that
+   are part of libc
 
-The only piece of data needed by the machine-dependent layer is a single
-pointer that represents the value of the stack pointer where execution was
-suspended, upon its last context switch. In both structures, this field is
-called `md_suspended_ctx` (where `md` is "machine-dependent"). The
-machine-dependent context switching *is* inherently symmetric: the code
-from Boost is mostly unchanged, and does not know any details about
-`struct monad_fiber` or `struct monad_thread_executor`.
-
-### Machine-independent switching
+### Running a fiber
 
 #### Context switching into a fiber
 
-The machine-independent part of a context switch into a fiber is
-handled in two phases:
+At the fiber layer, a context switch _into_ a fiber is handled in three
+phases:
 
-1. The switch starts inside of `monad_fiber_run`
-2. The switch finishes by calling `_monad_finish_switch_to_fiber`
+1. The context switch starts inside of `monad_fiber_run`
+2. `monad_context_c` requires the context switch to trampoline through a
+   helper function, called `_monad_start_switch_to_fiber`
+3. The context switch finishes by calling `_monad_finish_switch_to_fiber`
 
-What distinguishes these two phases is which stack we are running on.
-Although both phases take place on the same thread, the `monad_fiber_run`
-function executes on the thread's ordinary execution stack, and the
-`_monad_finish_switch_to_fiber` function is called once control has
-transferred to the fiber, and is running on the fiber's stack.
+What distinguishes phases 1 & 2 from phase 3 is which stack we are running
+on. Although all phases take place on the same thread, both `monad_fiber_run`
+and `_monad_start_switch_to_fiber` execute on the thread's ordinary execution
+stack. By contrast, the `_monad_finish_switch_to_fiber` function is called
+once CPU control has transferred to the fiber: it is running on the fiber's
+stack.
 
-It is `monad_fiber_run` that calls the machine-dependent context switch
-function, which causes the stack switch to happen at the CPU level.
+It is `_monad_start_switch_to_fiber` that (indirectly) invokes the
+machine-dependent context switch function, which causes the stack switch to
+happen at the CPU level. This happens by calling the
+`suspend_and_call_resume` function in `monad_context_c` library, which
+will call the machine-dependent switch function for the current switching
+backend implementation. The concrete switching implementation is stored
+in an object called a "switcher", which is unique to each particular thread
+and is owned by the `monad_thread_executor_t` object.
+
 Immediately after the CPU-level switch occurs, we are running on the
 stack of the resumed (or newly-started) fiber, and the previously running
 thread context is now suspended; this resumption site must immediately call
-`_monad_finish_switch_to_fiber` to complete the switch. This performs
-critical book-keeping tasks, such as saving the `md_suspended_ctx` of the
-calling thread in its `monad_thread_executor_t` structure.
+`_monad_finish_switch_to_fiber` to complete the switch.
 
 `_monad_finish_switch_to_fiber` is called in two places: at the start of
 the fiber (see `fiber_entrypoint`), or immediately after a fiber resumes
-after being suspended. It takes a single `struct monad_transfer_t` parameter,
-a small structure that passes information between the "switched from" and
-"switched to" stacks by the machine-dependent layer. It contains the
-`monad_thread_executor_t` of the thread that started the context switch,
-and the `md_suspended_ctx` of the suspension point inside `monad_fiber_run`
-when the switch occurred.
+after being suspended.
 
 Typically a fiber will *migrate* between threads, as each worker thread
-selects the highest priority fiber that is ready to run; this is why the
-`monad_thread_executor_t` is passed between the low-level jump routines:
-a fiber can be resumed on a different thread than it was originally
-suspended on.
+selects the highest priority fiber that is ready to run; for a given
+fiber, two successive calls to `_monad_finish_switch_to_fiber` might occur
+on two different threads.
 
 #### Context switching out of a fiber
 
-Fibers run until they voluntarily suspend themselves. This happens via an
-explicit call to `monad_fiber_yield`, going to sleep on a synchronization
-primitive (which calls `_monad_fiber_sleep`), or when the fiber function
-returns (which returns control back to `fiber_entrypoint`). These all call
-the same low-level suspension function, `_monad_suspend_fiber`, which
+Fibers run until they voluntarily suspend themselves or return. Suspension
+happens via an explicit call to `monad_fiber_yield`, or going to sleep on a
+synchronization primitive (which calls `_monad_fiber_sleep`). Both operations
+call the same internal suspension function, `_monad_suspend_fiber`, which
 performs a context switch back to the thread that originally called
-`monad_fiber_run`.
+`monad_fiber_run`. The switch itself is again performed using the switcher's
+`suspend_and_call_resume` function.
 
 Because fibers are always suspended inside of `_monad_suspend_fiber`, this
-function is also the point where fibers are resumed.
+function is also the point where fibers are resumed, which appears as the
+`suspend_and_call_resume` call returning.
 
-### Machine-dependent context switching
+Returning from the fiber function is handled differently: in that case,
+control returns back to the `monad_context_c` library, which in turn
+calls `fiber_detach` to perform the return book-keeping at the fiber layer.
+`monad_context_c` will switch back to the `monad_fiber_run` function: there
+is no `suspend_and_call_resume` call visible in the `monad_fiber` code.
+
+### Context switching
 
 The tricky part of understanding how this works is becoming familiar with
-the following interesting pattern: when we perform a `monad_jump_fcontext`,
-we are suspended and control is transferred away from us. When control
-transfers back to us, it has the appearance of *returning* from the original
-jump function, which had jumped away. To understand this code at a deep
-level, I suggest working through how the lowest-level machine-dependent
-assembly jump functions work between two execution contexts. It may take
-a few hours to understand all the details and internalize them, but this
-will demystify the essential pattern: when we *return* from a jump, we've
-been resumed and are on the original stack, but are potentially on a
-different host thread than when we were suspended on.
+the following interesting pattern: when we perform a
+`suspend_and_call_resume`, we are suspended and control is transferred away
+from us. When control transfers back to us, it has the appearance of
+*returning* from the `suspend_and_call_resume` function call, which had
+jumped away. Notably, we might be on a different host thread when resumed.
+
+To understand this code at a deep level, I suggest working through how the
+lowest-level machine-dependent assembly jump functions work between two
+execution contexts, e.g., the `monad_make_fcontext` and
+`monad_jump_fcontext` functions. It may take a few hours to understand all
+the details and internalize them, but this will demystify the essential
+pattern: when we *return* from a jump, we've been resumed and are on the
+original stack, but are potentially on a different host thread than when
+we were suspended.
+
+The higher-level interface we directly use (`monad_context_c`) retains
+this property.

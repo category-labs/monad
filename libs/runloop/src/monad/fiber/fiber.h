@@ -10,17 +10,10 @@
 #include <stdint.h>
 #include <sys/queue.h>
 
+#include <monad/context/context_switcher.h>
 #include <monad/core/c_result.h>
 #include <monad/core/spinlock.h>
 #include <monad/mem/cma/cma_alloc.h>
-
-#if !defined(__clang__) && !defined(__has_feature)
-    #define __has_feature(X) 0
-#endif
-
-#if __has_feature(address_sanitizer) || __SANITIZE_ADDRESS__
-    #define MONAD_HAS_ASAN 1
-#endif
 
 #ifdef __cplusplus
 extern "C"
@@ -135,14 +128,19 @@ int monad_fiber_set_name(monad_fiber_t *fiber, char const *name);
 /// e.g., this could change asynchronously because of another thread
 static bool monad_fiber_is_runnable(monad_fiber_t const *fiber);
 
-// clang-format off
+/// Set the context switcher implementation used by the calling thread; returns
+/// the previously active switcher implementation for this thread; this must be
+/// called prior to the first call to monad_fiber_run or
+/// monad_fiber_set_function by this thread, otherwise it will have no effect
+monad_context_switcher_impl const *
+monad_fiber_set_context_switcher_impl(monad_context_switcher_impl const *);
 
-struct monad_fiber_stack
-{
-    void *stack_base;   ///< Lowest addr, incl. unusable memory (guard pages)
-    void *stack_bottom; ///< Bottom of usable stack
-    void *stack_top;    ///< Top of usable stack
-};
+/// The global default context switcher implementation to use, if no
+/// implementation is set via a call to monad_fiber_set_context_switcher_impl
+extern monad_context_switcher_impl const
+    *g_monad_fiber_default_context_switcher_impl;
+
+// clang-format off
 
 struct monad_fiber_stats
 {
@@ -166,8 +164,10 @@ enum monad_fiber_state : unsigned;
 /// but should not directly write to other fields
 struct monad_fiber
 {
-    alignas(64) monad_spinlock_t lock;   ///< Protects most fields
-    enum monad_fiber_state state;        ///< Run state the fiber is in
+    struct monad_context_task_head task; ///< monad_context runnable object
+    monad_context switch_ctx;            ///< monad_context state object
+    alignas(64) monad_spinlock_t lock;   ///< Protects most fiber fields
+    enum monad_fiber_state state;        ///< Run state fiber is in
     unsigned fiber_id;                   ///< Unique ID of fiber
     monad_fiber_prio_t priority;         ///< Scheduling priority
     TAILQ_ENTRY(monad_fiber) wait_link;  ///< Linkage for wait_queue
@@ -175,20 +175,14 @@ struct monad_fiber
     __int128_t rq_priority;              ///< Adjusted priority, see run_queue.h
 #endif
     monad_run_queue_t *run_queue;        ///< Most recent run queue
-    monad_fcontext_t md_suspended_ctx;   ///< Suspended context pointer
-    monad_thread_executor_t *thr_exec;   ///< Current thread we're running on
     void *wait_object;                   ///< Synch. primitive we're sleeping on
     void *user_data;                     ///< Opaque user data
-    struct monad_fiber_stack stack;      ///< Stack descriptor
     struct monad_fiber_stats stats;      ///< Statistics about this context
     monad_fiber_ffunc_t *ffunc;          ///< Fiber function to run
     monad_fiber_args_t fargs;            ///< Opaque arguments passed to ffunc
     monad_fiber_attr_t create_attr;      ///< Attributes we were created with
     monad_memblk_t self_memblk;          ///< Dynamic memory block we live in
     char name[MONAD_FIBER_NAME_LEN + 1]; ///< Context name, for debugging
-#if MONAD_HAS_ASAN
-    void *fake_stack_save;               ///< For ASAN stack support
-#endif
 };
 
 enum monad_fiber_state : unsigned

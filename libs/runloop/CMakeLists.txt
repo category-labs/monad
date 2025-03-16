@@ -103,7 +103,7 @@ if (MONAD_FIBER_RUN_QUEUE_SUPPORT_EQUAL_PRIO)
 endif()
 monad_compile_options(monad_fiber_c)
 target_include_directories(monad_fiber_c PUBLIC "src")
-target_link_libraries(monad_fiber_c PUBLIC monad_core monad_boost_context)
+target_link_libraries(monad_fiber_c PUBLIC monad_core monad_context_c)
 
 set(monad_fiber_INCLUDES
   "src/monad/fiber/config.hpp"

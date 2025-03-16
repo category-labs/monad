@@ -112,7 +112,11 @@ inline void
 monad_fiber_semaphore_thread_acquire_one(monad_fiber_semaphore_t *sem)
 {
     unsigned expected;
+    monad_thread_executor_t *thr_exec;
+    uint64_t tries = 0;
+
     MONAD_DEBUG_ASSERT(monad_fiber_self() == nullptr);
+    thr_exec = _monad_current_thread_executor();
 TryAgain:
     expected = 1;
     if (MONAD_UNLIKELY(!__atomic_compare_exchange_n(
@@ -123,7 +127,14 @@ TryAgain:
             __ATOMIC_ACQ_REL,
             __ATOMIC_RELAXED))) {
         monad_spinloop_hint();
+        ++tries;
         goto TryAgain;
+    }
+    if (tries == 0) {
+        ++thr_exec->stats.total_immediate_wakeup;
+    }
+    else {
+        ++thr_exec->stats.total_sleep;
     }
 }
 

@@ -11,18 +11,13 @@
 #endif
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <threads.h>
 
+#include <monad/context/context_switcher.h>
 #include <monad/core/assert.h>
 #include <monad/core/likely.h>
-#include <monad/core/spinlock.h>
-
-#include <monad-boost/context/fcontext.h>
-
-#if MONAD_HAS_ASAN
-    #include <sanitizer/asan_interface.h>
-#endif
 
 #ifdef __cplusplus
 extern "C"
@@ -32,36 +27,25 @@ extern "C"
 extern int
 _monad_run_queue_try_push_global(monad_run_queue_t *rq, monad_fiber_t *fiber);
 
+struct monad_thread_executor_stats
+{
+    size_t total_run;
+    size_t total_sleep;
+    size_t total_immediate_wakeup;
+};
+
 /// Represents a thread (specifically the information about it needed to
 /// execute a fiber)
 struct monad_thread_executor
 {
-    monad_fcontext_t md_suspended_ctx; ///< Saved thread's ctx when suspended
-    monad_fiber_t *cur_fiber; ///< Fiber this thread is running (or nullptr)
+    monad_fiber_t *cur_fiber; ///< Fiber our thread is running (or null)
+    monad_context_switcher switcher; ///< Thread's context switching machinery
     thrd_t thread; ///< Opaque system handle for the thread
-    uint64_t thread_id; ///< Public ID for the thread, for debugging
-    struct monad_fiber_stack stack; ///< Descriptor for thread stack
+    uint64_t thread_id; ///< System ID for thread, for debugging
     monad_fiber_suspend_info_t suspend_info; ///< To copy out suspension info
+    struct monad_thread_executor_stats stats; ///< Stats for thread's executor
     SLIST_ENTRY(monad_thread_executor) next; ///< Linkage for all thread_locals
-#if MONAD_HAS_ASAN
-    void *fake_stack_save; ///< For ASAN stack support
-#endif
 };
-
-#if MONAD_HAS_ASAN
-    #define MONAD_FIBER_ASAN_START_SWITCH(FAKE_STACK_SAVE, STACK_DESC)         \
-        __sanitizer_start_switch_fiber(                                        \
-            (FAKE_STACK_SAVE),                                                 \
-            (STACK_DESC).stack_bottom,                                         \
-            (size_t)((uint8_t *)((STACK_DESC).stack_top) -                     \
-                     (uint8_t *)((STACK_DESC).stack_bottom)))
-
-    #define MONAD_FIBER_ASAN_FINISH_SWITCH(FAKE_STACK_SAVE)                    \
-        __sanitizer_finish_switch_fiber((FAKE_STACK_SAVE), nullptr, nullptr);
-#else
-    #define MONAD_FIBER_ASAN_START_SWITCH(...)
-    #define MONAD_FIBER_ASAN_FINISH_SWITCH(...)
-#endif
 
 // This constinit is needed on macOS, where the TLS codegen strategy differs
 // between C and C++. The thread executor TLS object lives in `fiber_thr.c`, so
@@ -84,49 +68,22 @@ static inline monad_thread_executor_t *_monad_current_thread_executor()
     return &_monad_tl_thr_exec;
 }
 
-// When a fiber stack is first used or is resumed after having been suspended,
-// this function must be called to finish the context switch.
-//
-// There are two places in the code where this can occur:
-//
-//   1. When a fiber initially begins running. This means at the beginning of
-//      the fiber's entrypoint function (the function specified in the
-//      monad_make_fcontext call)
-//
-//   2. Immediately after a call to monad_jump_fcontext returns, in the
-//      `_monad_suspend_fiber` function. Note that a return from
-//      monad_jump_fcontext implies we have been resumed from the suspension
-//      implied by the jump, thus the switch we are finishing is not the same
-//      one that was started by the start switch call
-//
-// We are given a `struct monad_transfer_t`, with two members:
-//
-//   data - the `struct monad_thread_executor_t *` for the thread that
-//          invoked the `monad_fiber_run` call that returned control back to us
-//   fctx - the context pointer (effectively the suspension point) within
-//          the thread where it was suspended upon the switch back to us
-//          (i.e., pointing inside the stack frame of monad_fiber_run)
-static inline void
-_monad_finish_switch_to_fiber(struct monad_transfer_t xfer_from)
+static inline monad_c_result
+_monad_start_switch_to_fiber(void *arg0, monad_context thread_ctx)
 {
-    monad_thread_executor_t *const thr_exec =
-        (monad_thread_executor_t *)xfer_from.data;
-    monad_fiber_t *const fiber = thr_exec->cur_fiber;
+    // Trampoline function needed by monad_context when we jump from a non-fiber
+    // execution context (i.e., an ordinary thread) into a fiber context.
+    monad_thread_executor_t *const thr_exec = (monad_thread_executor_t *)arg0;
+    thr_exec->switcher->suspend_and_call_resume(
+        thread_ctx, thr_exec->cur_fiber->switch_ctx);
+    return monad_c_make_success(0);
+}
 
-    MONAD_FIBER_ASAN_FINISH_SWITCH(fiber->fake_stack_save);
+static inline void _monad_finish_switch_to_fiber(monad_fiber_t *fiber)
+{
     MONAD_DEBUG_ASSERT(monad_spinlock_is_self_owned(&fiber->lock));
-
-    // Remember where the thread context suspended
-    thr_exec->md_suspended_ctx = xfer_from.fctx;
-
-    // Finish book-keeping to become the new running fiber
     fiber->state = MF_STATE_RUNNING;
-    if (MONAD_UNLIKELY(fiber->thr_exec != thr_exec)) {
-        fiber->thr_exec = thr_exec;
-        ++fiber->stats.total_migrate;
-    }
     ++fiber->stats.total_run;
-
     MONAD_SPINLOCK_UNLOCK(&fiber->lock);
 }
 
@@ -142,18 +99,25 @@ static inline void _monad_suspend_fiber(
     // suspension. `monad_fiber_run` disallows nested fiber execution, so we
     // know the previously executing context is the current thread's original
     // execution context
-    monad_thread_executor_t *const thr_exec = self->thr_exec;
+    monad_context_switcher switcher;
+    monad_thread_executor_t *thr_exec;
+
+    MONAD_DEBUG_ASSERT(monad_spinlock_is_self_owned(&self->lock));
+    switcher =
+        atomic_load_explicit(&self->switch_ctx->switcher, memory_order_relaxed);
+    thr_exec = (monad_thread_executor_t *)switcher->user_ptr;
+    self->state = suspend_state;
     thr_exec->suspend_info.suspend_type = suspend_type;
     thr_exec->suspend_info.eval = eval;
-    self->state = suspend_state;
-    // TODO(ken): we never pass nullptr here to cleanup the fake stack save,
-    //   because the stack can be reused even if the function is done; likely
-    //   we'll never fix this because it will be replaced with Niall's stuff
-    //   anyway.
-    MONAD_FIBER_ASAN_START_SWITCH(&self->fake_stack_save, thr_exec->stack);
-    struct monad_transfer_t const resume_xfer =
-        monad_jump_fcontext(thr_exec->md_suspended_ctx, thr_exec);
-    _monad_finish_switch_to_fiber(resume_xfer);
+    switcher->suspend_and_call_resume(self->switch_ctx, nullptr);
+
+    // When suspend_and_call_resume returns, we have been resumed from the
+    // suspension and are the current fiber again. Note that it is not safe to
+    // touch the `thr_exec` variable anymore, as we are potentially resumed by
+    // a different thread than we were suspended on, so it would now point at
+    // the wrong thread object. If you need to access `thr_exec` here, it must
+    // first be reseated by reading `self->switch_ctx->switcher->user_ptr`
+    _monad_finish_switch_to_fiber(self);
 }
 
 /*
@@ -170,11 +134,8 @@ inline int monad_fiber_run(
     monad_fiber_t *next_fiber, monad_fiber_suspend_info_t *suspend_info)
 {
     int err;
-    struct monad_transfer_t resume_xfer;
+    monad_c_result mcr;
     monad_thread_executor_t *thr_exec;
-    // For ASAN:
-    [[maybe_unused]] size_t next_stack_size;
-    [[maybe_unused]] void **fake_stack;
 
     MONAD_DEBUG_ASSERT(next_fiber != nullptr);
     thr_exec = _monad_current_thread_executor();
@@ -208,31 +169,30 @@ inline int monad_fiber_run(
         return err;
     }
 
-    thr_exec->cur_fiber = next_fiber;
-    MONAD_FIBER_ASAN_START_SWITCH(
-        &thr_exec->fake_stack_save, next_fiber->stack);
-    // Call the machine-dependent context switch function, monad_jump_fcontext.
-    // This atomically suspends the thread's execution context and begins
-    // executing the fiber's context at its last suspension point. When we are
-    // resumed at some later time, it will appear as through we've returned
-    // from this function call to `monad_jump_fcontext`, and we will again be
-    // the currently running context.
-    resume_xfer = monad_jump_fcontext(next_fiber->md_suspended_ctx, thr_exec);
-    MONAD_FIBER_ASAN_FINISH_SWITCH(thr_exec->fake_stack_save);
-    next_fiber->md_suspended_ctx = resume_xfer.fctx;
-    if (suspend_info != nullptr) {
-        memcpy(suspend_info, &thr_exec->suspend_info, sizeof *suspend_info);
+    if (atomic_load_explicit(
+            &next_fiber->switch_ctx->switcher, memory_order_relaxed) !=
+        thr_exec->switcher) {
+        monad_context_reparent_switcher(
+            next_fiber->switch_ctx, thr_exec->switcher);
+        ++next_fiber->stats.total_migrate;
     }
-
+    ++thr_exec->stats.total_run;
+    thr_exec->cur_fiber = next_fiber;
+    mcr = thr_exec->switcher->resume_many(
+        thr_exec->switcher, _monad_start_switch_to_fiber, thr_exec);
+    thr_exec->cur_fiber = nullptr;
+    if (MONAD_FAILED(mcr)) {
+        MONAD_SPINLOCK_UNLOCK(&next_fiber->lock);
+        return (int)mcr.error.value; // XXX: just assuming this is errno domain?
+    }
     if (MONAD_UNLIKELY(next_fiber->state == MF_STATE_CAN_RUN)) {
-        // The fiber is ready to run again immediately despite the fact that we
-        // just voluntarily switched away from it. This should happen if it is
-        // a fiber that has just yielded. If the yielding fiber also has a run
-        // queue, we can just reschedule it immediately. We don't need (or
-        // want) to unlock the fiber in that case, because the run queue
-        // expects it to be locked
+        // This fiber is ready to run again immediately despite the fact that
+        // we just voluntarily switched away from it. This happens when it is a
+        // fiber that has just yielded. If the yielding fiber also has a run
+        // queue, we can just reschedule it immediately. We don't need (or want)
+        // to unlock the fiber in that case, because the run queue expects it
+        // to be locked
         MONAD_DEBUG_ASSERT(
-            next_fiber != nullptr &&
             thr_exec->suspend_info.suspend_type == MF_SUSPEND_YIELD);
         if (MONAD_LIKELY(next_fiber->run_queue != nullptr)) {
             (void)_monad_run_queue_try_push_global(
@@ -245,7 +205,9 @@ inline int monad_fiber_run(
     else {
         MONAD_SPINLOCK_UNLOCK(&next_fiber->lock);
     }
-    thr_exec->cur_fiber = nullptr;
+    if (suspend_info != nullptr) {
+        memcpy(suspend_info, &thr_exec->suspend_info, sizeof *suspend_info);
+    }
     return 0;
 }
 

@@ -70,7 +70,7 @@ TEST(run_queue, basic_test)
     }
 }
 
-#if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
+#if MONAD_FIBER_RUN_QUEUE_SUPPORT_EQUAL_PRIO
 
 TEST(run_queue, equal_round_robin)
 {

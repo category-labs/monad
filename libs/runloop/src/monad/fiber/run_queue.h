@@ -80,7 +80,7 @@ struct monad_run_queue
 #define PQ_LEFT_CHILD_IDX(i) (2 * i + 1)
 #define PQ_RIGHT_CHILD_IDX(i) (2 * i + 2)
 
-#if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
+#if MONAD_FIBER_RUN_QUEUE_SUPPORT_EQUAL_PRIO
     #define PQ_IS_HIGHER_PRIO(L, R) ((L)->rq_priority < (R)->rq_priority)
 #else
     #define PQ_IS_HIGHER_PRIO(L, R) ((L)->priority < (R)->priority)
@@ -172,7 +172,7 @@ inline int monad_run_queue_try_push(monad_run_queue_t *rq, monad_fiber_t *fiber)
     }
 
     idx = size++;
-#if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
+#if MONAD_FIBER_RUN_QUEUE_SUPPORT_EQUAL_PRIO
     // To robustly support fibers with equal priority, we need to adjust the
     // scheduling priority so that reinsertion effectively lowers the priority,
     // see the comment in the run_queue.equal_round_robin unit test

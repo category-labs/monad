@@ -171,7 +171,7 @@ struct monad_fiber
     unsigned fiber_id;                   ///< Unique ID of fiber
     monad_fiber_prio_t priority;         ///< Scheduling priority
     TAILQ_ENTRY(monad_fiber) wait_link;  ///< Linkage for wait_queue
-#if MONAD_CORE_RUN_QUEUE_SUPPORT_EQUAL_PRIO
+#if MONAD_FIBER_RUN_QUEUE_SUPPORT_EQUAL_PRIO
     __int128_t rq_priority;              ///< Adjusted priority, see run_queue.h
 #endif
     monad_run_queue_t *run_queue;        ///< Most recent run queue

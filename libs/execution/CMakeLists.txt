@@ -156,6 +156,8 @@ target_link_libraries(
   monad_execution
   PUBLIC monad-compiler-vm
   PUBLIC monad_core
+  PUBLIC monad_fiber
+  PUBLIC monad_fiber_c
   PUBLIC monad_trie
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli

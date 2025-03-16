@@ -2,12 +2,15 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/queue.h>
 #include <threads.h>
 
 #include <pthread.h>
+#include <sysexits.h>
+
+#include <monad/context/context_switcher.h>
+#include <monad/core/c_result.h>
 
 #include <monad/core/assert.h>
 #include <monad/core/spinlock.h>
@@ -25,7 +28,20 @@ static struct thr_exec_global_state
     size_t count;
 } g_thr_execs;
 
+monad_context_switcher_impl const *g_monad_fiber_default_context_switcher_impl;
 thread_local struct monad_thread_executor _monad_tl_thr_exec;
+static thread_local monad_context_switcher_impl const
+    *_monad_tl_context_switcher_impl;
+
+static monad_context_switcher_impl const *get_thread_context_switcher_impl()
+{
+    monad_context_switcher_impl const *const impl =
+        _monad_tl_context_switcher_impl;
+    return impl != nullptr ? impl
+                           : __atomic_load_n(
+                                 &g_monad_fiber_default_context_switcher_impl,
+                                 __ATOMIC_ACQUIRE);
+}
 
 static void monad_thread_executor_dtor(void *arg)
 {
@@ -35,35 +51,30 @@ static void monad_thread_executor_dtor(void *arg)
     --g_thr_execs.count;
     MONAD_SPINLOCK_UNLOCK(&g_thr_execs.lock);
 
-    // XXX: add any final cleanup here
-    (void)thr_exec;
+    // XXX: destroy all linked contexts first? Can potentially only do this
+    // if MONAD_CONTEXT_TRACK_OWNERSHIP is defined...
+    if (atomic_load_explicit(
+            &thr_exec->switcher->contexts, memory_order_acquire) == 0) {
+        thr_exec->switcher->self_destroy(thr_exec->switcher);
+    }
 }
 
 void _monad_init_thread_executor(monad_thread_executor_t *thr_exec)
 {
     int rc;
-    pthread_attr_t thread_attrs;
-    struct monad_fiber_stack *thread_stack;
-    size_t thread_stack_size;
+    monad_c_result mcr;
+    monad_context_switcher_impl const *const switcher_impl =
+        get_thread_context_switcher_impl();
 
     memset(thr_exec, 0, sizeof *thr_exec);
+    mcr = switcher_impl->create(&thr_exec->switcher);
+    if (MONAD_FAILED(mcr)) {
+        monad_errc(
+            EX_SOFTWARE, mcr.error, "monad_switcher_impl->create() failed");
+    }
+    thr_exec->switcher->user_ptr = thr_exec;
     thr_exec->thread = thrd_current();
     thr_exec->thread_id = (uint64_t)get_tl_tid();
-
-    // Get the thread's stack area
-    // TODO(ken): is this potentially wrong if mapped with MAP_GROWSDOWN on
-    //  Linux (its size could increase, and we won't know?)
-    thread_stack = &thr_exec->stack;
-    rc = pthread_getattr_np(pthread_self(), &thread_attrs);
-    MONAD_ASSERT_PRINTF(rc == 0, "pthread_getattr_np(3) failed: %d", rc);
-    rc = pthread_attr_getstack(
-        &thread_attrs, &thread_stack->stack_bottom, &thread_stack_size);
-    MONAD_ASSERT_PRINTF(rc == 0, "pthread_attr_getstack(3) failed: %d", rc);
-    (void)pthread_attr_destroy(&thread_attrs);
-
-    thread_stack->stack_base = thread_stack->stack_bottom;
-    thread_stack->stack_top =
-        (uint8_t *)thread_stack->stack_bottom + thread_stack_size;
 
     MONAD_SPINLOCK_LOCK(&g_thr_execs.lock);
     SLIST_INSERT_HEAD(&g_thr_execs.head, thr_exec, next);
@@ -76,7 +87,7 @@ void _monad_init_thread_executor(monad_thread_executor_t *thr_exec)
     MONAD_SPINLOCK_UNLOCK(&g_thr_execs.lock);
 }
 
-static void __attribute((constructor)) init_thread_executor_list()
+static void __attribute((constructor)) init_fiber_global_state()
 {
     int rc;
 
@@ -87,9 +98,11 @@ static void __attribute((constructor)) init_thread_executor_list()
         err(1, "pthread_key_create(3) failed");
     }
     SLIST_INIT(&g_thr_execs.head);
+    g_monad_fiber_default_context_switcher_impl =
+        &monad_context_switcher_fcontext;
 }
 
-static void __attribute__((destructor)) cleanup_thread_executor_list()
+static void __attribute__((destructor)) cleanup_fiber_global_state()
 {
     while (!SLIST_EMPTY(&g_thr_execs.head)) {
         monad_thread_executor_dtor(SLIST_FIRST(&g_thr_execs.head));

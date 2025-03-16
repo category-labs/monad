@@ -21,6 +21,7 @@
 #include <getopt.h>
 #include <sysexits.h>
 
+#include <monad/context/context_switcher.h>
 #include <monad/core/c_result.h>
 #include <monad/core/likely.h>
 #include <monad/fiber/fiber.h>
@@ -46,6 +47,8 @@ enum long_only_option
 // clang-format off
 static option longopts[] = {
     {.name = "list", .has_arg = 0, .flag = nullptr, .val = 'L'},
+    {.name = "list-switchers", .has_arg = 0, .flag = nullptr, .val = 'W'},
+    {.name = "switcher", .has_arg = 1, .flag = nullptr, .val = 'w'},
     {.name = "stack_shift", .has_arg = 1, .flag = nullptr, .val = 's'},
     {.name = "time", .has_arg = 1, .flag = nullptr, .val = 't'},
     {.name = "rq-fibers", .has_arg = 1, .flag = nullptr,
@@ -60,7 +63,8 @@ static void usage(std::FILE *out)
 {
     std::fprintf(
         out,
-        "%s: [-Lh] [-t <sec>] [-s <shift>] [--rq-fibers <#>] [benchmark...]\n",
+        "%s: [-LWh] [-w <switcher>] [-t <sec>] [-s <shift>] [--rq-fibers <#>] "
+        "[benchmark...]\n",
         __progname);
 }
 
@@ -136,13 +140,24 @@ static struct benchmark
      .description = "performance of fiber semaphores",
      .func = semaphore_benchmark}};
 
+static struct context_switcher_meta
+{
+    std::string_view name;
+    monad_context_switcher_impl const *impl;
+} g_context_switcher_table[] = {
+    {.name = "none", .impl = &monad_context_switcher_none},
+    {.name = "sjlj", .impl = &monad_context_switcher_sjlj},
+    {.name = "fcontext", .impl = &monad_context_switcher_fcontext}};
+
 static int parse_options(int argc, char **argv)
 {
     int ch;
     std::from_chars_result fcr;
     unsigned opt_uint;
+    context_switcher_meta const *i_cs_meta;
 
-    while ((ch = getopt_long(argc, argv, "s:t:Lh", longopts, nullptr)) != -1) {
+    while ((ch = getopt_long(argc, argv, "w:s:t:LWh", longopts, nullptr)) !=
+           -1) {
         char const *const end_optarg =
             optarg ? optarg + std::strlen(optarg) : nullptr;
 
@@ -153,6 +168,32 @@ static int parse_options(int argc, char **argv)
                     stdout, "%s:\t%s\n", data(b.name), data(b.description));
             }
             std::exit(0);
+
+        case 'W':
+            i_cs_meta = g_context_switcher_table;
+            std::fprintf(stdout, "%s", data(i_cs_meta++->name));
+            while (i_cs_meta != std::end(g_context_switcher_table)) {
+                std::fprintf(stdout, " %s", data(i_cs_meta++->name));
+            }
+            fprintf(stdout, "\n");
+            std::exit(0);
+
+        case 'w':
+            i_cs_meta = std::ranges::find(
+                g_context_switcher_table, optarg, &context_switcher_meta::name);
+            if (i_cs_meta != std::end(g_context_switcher_table)) {
+                __atomic_store_n(
+                    &g_monad_fiber_default_context_switcher_impl,
+                    i_cs_meta->impl,
+                    __ATOMIC_RELEASE);
+            }
+            else {
+                errx(
+                    EX_USAGE,
+                    "%s is not a valid type of context switcher",
+                    optarg);
+            }
+            break;
 
         case 's':
             fcr = std::from_chars(optarg, end_optarg, g_fiber_stack_size);
@@ -439,7 +480,8 @@ static void channel_benchmark(benchmark const &self)
     monad_run_queue_destroy(rq);
 
     double const nanos_per_wakeup =
-        ((double)g_benchmark_seconds.count() * 1'000'000'000.0) / (double)wakeup_count;
+        ((double)g_benchmark_seconds.count() * 1'000'000'000.0) /
+        (double)wakeup_count;
     std::fprintf(
         stdout,
         "%s:\tsingle core channel wakeup rate: %lu w/s, %.1f ns/w\n",
@@ -501,7 +543,8 @@ static void semaphore_benchmark(benchmark const &self)
     monad_run_queue_destroy(rq);
 
     double const nanos_per_wakeup =
-        ((double)g_benchmark_seconds.count() * 1'000'000'000.0) / (double)wakeup_count;
+        ((double)g_benchmark_seconds.count() * 1'000'000'000.0) /
+        (double)wakeup_count;
     std::fprintf(
         stdout,
         "%s:\tsingle core semaphore wakeup rate: %lu w/s, %.1f ns/w\n",

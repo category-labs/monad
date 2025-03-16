@@ -12,98 +12,51 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sys/mman.h>
-#include <unistd.h>
-
 #include <monad/core/assert.h>
 #include <monad/core/c_result.h>
 #include <monad/core/likely.h>
 #include <monad/core/spinlock.h>
 #include <monad/fiber/fiber.h>
 
-static monad_fiber_attr_t g_default_fiber_attr = {
-    .stack_size = 1 << 17, // 128 KiB
-    .alloc = nullptr // Default allocator
-};
+#include <monad/context/context_switcher.h>
 
 static atomic_uint g_last_fiber_id = 0;
 
-static int
-alloc_fiber_stack(struct monad_fiber_stack *stack, size_t *stack_size)
-{
-    int const stack_protection = PROT_READ | PROT_WRITE;
-    int const stack_flags = MAP_ANONYMOUS | MAP_PRIVATE
-#if defined(MAP_STACK)
-                            | MAP_STACK
-#endif
-        ;
+static monad_fiber_attr_t g_default_fiber_attr = {
+    .stack_size = 0, // Zero uses default size from monad_context_c
+    .alloc = nullptr // Default allocator
+};
 
-    size_t const page_size = (size_t)getpagesize();
-    if (stack_size == nullptr || stack == nullptr) {
-        return EFAULT;
-    }
-    if (*stack_size - page_size < page_size) {
-        return EINVAL;
-    }
-    stack->stack_base =
-        mmap(nullptr, *stack_size, stack_protection, stack_flags, -1, 0);
-    if (stack->stack_base == MAP_FAILED) {
-        return errno;
-    }
-    if (mprotect(stack->stack_base, page_size, PROT_NONE) == -1) {
-        return errno;
-    }
-    *stack_size -= page_size;
-    stack->stack_bottom = (uint8_t *)stack->stack_base + page_size;
-    stack->stack_top = (uint8_t *)stack->stack_bottom + *stack_size;
-    return 0;
+static monad_c_result fiber_entrypoint(monad_context_task task)
+{
+    monad_fiber_t *self = (monad_fiber_t *)task;
+    _monad_finish_switch_to_fiber(self);
+    return self->ffunc(self->fargs);
 }
 
-static void dealloc_fiber_stack(struct monad_fiber_stack stack)
+static void fiber_detach(monad_context_task task)
 {
-    size_t const mapped_size = (size_t)((uint8_t const *)stack.stack_top -
-                                        (uint8_t const *)stack.stack_base);
-    munmap(stack.stack_base, mapped_size);
-}
-
-[[noreturn]] static void fiber_entrypoint(struct monad_transfer_t xfer_from)
-{
-    // Entry point of a "user" fiber. When this function is called, we're
-    // running on the fiber's stack for the first time (after the most recent
-    // call to monad_fiber_set_function). We cannot directly return from this
-    // function, but we can transfer control back to the execution context that
-    // jumped here. In our model, that is the context that called the
-    // `monad_fiber_run` function, which is typically a regular thread running
-    // a lightweight scheduler. The info needed to transfer control back to the
-    // suspension point in `monad_fiber_run` is contained within the `xfer_from`
-    // argument
-    monad_c_result mcr;
+    // This function by the `monad_context_c` library is called after
+    // `fiber_entrypoint` returns
+    monad_context_switcher switcher;
     monad_thread_executor_t *thr_exec;
-    monad_fiber_t *self;
+    monad_fiber_t *const self = (monad_fiber_t *)task;
 
-    _monad_finish_switch_to_fiber(xfer_from);
-    thr_exec = xfer_from.data;
-    self = thr_exec->cur_fiber;
-
-    // Call the user fiber function
-    mcr = self->ffunc(self->fargs);
-
-    // The fiber function returned, which appears as a kind of suspension to
-    // the caller
     MONAD_SPINLOCK_LOCK(&self->lock);
-    _monad_suspend_fiber(self, MF_STATE_FINISHED, MF_SUSPEND_RETURN, mcr);
-
-    // This should be unreachable (monad_fiber_run should never resume us after
-    // a "return" suspension)
-    abort();
+    self->state = MF_STATE_FINISHED;
+    switcher =
+        atomic_load_explicit(&self->switch_ctx->switcher, memory_order_relaxed);
+    thr_exec = switcher->user_ptr;
+    thr_exec->suspend_info.suspend_type = MF_SUSPEND_RETURN;
+    thr_exec->suspend_info.eval = task->result;
 }
+
+static void (*const FIBER_DETACH_ADDR)(monad_context_task) = fiber_detach;
 
 int monad_fiber_create(monad_fiber_attr_t const *attr, monad_fiber_t **fiber)
 {
     monad_memblk_t memblk;
-    struct monad_fiber_stack fiber_stack;
     monad_fiber_t *f;
-    size_t stack_size;
     int rc;
 
     if (fiber == nullptr) {
@@ -113,15 +66,9 @@ int monad_fiber_create(monad_fiber_attr_t const *attr, monad_fiber_t **fiber)
     if (attr == nullptr) {
         attr = &g_default_fiber_attr;
     }
-    stack_size = attr->stack_size;
-    rc = alloc_fiber_stack(&fiber_stack, &stack_size);
-    if (rc != 0) {
-        return rc;
-    }
     rc = monad_cma_alloc(
         attr->alloc, sizeof **fiber, alignof(monad_fiber_t), &memblk);
     if (rc != 0) {
-        dealloc_fiber_stack(fiber_stack);
         return rc;
     }
     *fiber = f = memblk.ptr;
@@ -129,7 +76,6 @@ int monad_fiber_create(monad_fiber_attr_t const *attr, monad_fiber_t **fiber)
     monad_spinlock_init(&f->lock);
     f->fiber_id = ++g_last_fiber_id;
     f->state = MF_STATE_INIT;
-    f->stack = fiber_stack;
     f->create_attr = *attr;
     f->self_memblk = memblk;
 
@@ -138,8 +84,13 @@ int monad_fiber_create(monad_fiber_attr_t const *attr, monad_fiber_t **fiber)
 
 void monad_fiber_destroy(monad_fiber_t *fiber)
 {
+    monad_context_switcher switcher = nullptr;
     MONAD_ASSERT(fiber != nullptr);
-    dealloc_fiber_stack(fiber->stack);
+    if (fiber->switch_ctx != nullptr) {
+        switcher = atomic_load_explicit(
+            &fiber->switch_ctx->switcher, memory_order_acquire);
+        switcher->destroy(fiber->switch_ctx);
+    }
     monad_cma_dealloc(fiber->create_attr.alloc, fiber->self_memblk);
 }
 
@@ -147,7 +98,10 @@ int monad_fiber_set_function(
     monad_fiber_t *fiber, monad_fiber_prio_t priority,
     monad_fiber_ffunc_t *ffunc, monad_fiber_args_t fargs)
 {
-    size_t stack_size;
+    monad_c_result mcr;
+    struct monad_context_task_attr const task_attr = {
+        .stack_size = fiber->create_attr.stack_size};
+    monad_thread_executor_t *const thr_exec = _monad_current_thread_executor();
 
     MONAD_SPINLOCK_LOCK(&fiber->lock);
     switch (fiber->state) {
@@ -162,10 +116,25 @@ int monad_fiber_set_function(
         MONAD_SPINLOCK_UNLOCK(&fiber->lock);
         return EBUSY;
     }
-    stack_size = (size_t)(fiber->stack.stack_top - fiber->stack.stack_bottom);
+
+    if (fiber->switch_ctx == nullptr) {
+        // The fiber has no associated switchable state (i.e., it has no stack).
+        // Tell the switcher to create one.
+        mcr = thr_exec->switcher->create(
+            &fiber->switch_ctx, thr_exec->switcher, &fiber->task, &task_attr);
+        if (MONAD_FAILED(mcr)) {
+            MONAD_SPINLOCK_UNLOCK(&fiber->lock);
+            return (int)mcr.error.value;
+        }
+        fiber->task.user_code = fiber_entrypoint;
+        fiber->task.user_ptr = nullptr; // XXX: useful somehow?
+        memcpy(
+            (void *)&fiber->task.detach,
+            &FIBER_DETACH_ADDR,
+            sizeof fiber->task.detach);
+    }
+
     fiber->state = MF_STATE_CAN_RUN;
-    fiber->md_suspended_ctx = monad_make_fcontext(
-        fiber->stack.stack_top, stack_size, fiber_entrypoint);
     fiber->priority = priority;
     fiber->ffunc = ffunc;
     fiber->fargs = fargs;

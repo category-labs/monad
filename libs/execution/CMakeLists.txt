@@ -102,6 +102,7 @@ add_library(
   "src/monad/execution/genesis.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
+  "src/monad/execution/staking/storage.hpp"
   "src/monad/execution/switch_evmc_revision.hpp"
   "src/monad/execution/trace/call_frame.cpp"
   "src/monad/execution/trace/call_frame.hpp"
@@ -182,3 +183,4 @@ monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")
+monad_add_test_folder("src/monad/staking")

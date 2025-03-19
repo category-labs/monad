@@ -38,15 +38,16 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <signal.h>
 #include <stdexcept>
 #include <string>
-#include <vector>
-
-#include <signal.h>
 #include <sys/sysinfo.h>
+#include <unistd.h>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -56,16 +57,43 @@ MONAD_NAMESPACE_END
 
 sig_atomic_t volatile stop;
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
 void signal_handler(int)
 {
     stop = 1;
 }
+
+std::terminate_handler cxx_runtime_terminate_handler;
+
+extern "C" void monad_stack_backtrace_capture_and_print(
+    char *buffer, size_t size, int fd, unsigned indent,
+    bool print_async_unsafe_info);
+
+void backtrace_terminate_handler()
+{
+    char buffer[16384];
+    monad_stack_backtrace_capture_and_print(
+        buffer,
+        sizeof(buffer),
+        STDERR_FILENO,
+        /*indent*/ 3,
+        /*print_async_unsafe_info*/ true);
+
+    // Now that we've printed the trace, delegate the actual termination to the
+    // handler originally installed by the C++ runtime support library
+    cxx_runtime_terminate_handler();
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 using namespace monad;
 namespace fs = std::filesystem;
 
 int main(int const argc, char const *argv[])
 {
+    cxx_runtime_terminate_handler = std::get_terminate();
+    std::set_terminate(backtrace_terminate_handler);
 
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();

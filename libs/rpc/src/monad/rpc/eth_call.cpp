@@ -53,7 +53,7 @@ struct monad_state_override
 
 namespace
 {
-    static constexpr std::string_view BLOCKHASH_ERR_MSG =
+    char const *const BLOCKHASH_ERR_MSG =
         "failure to initialize block hash buffer";
 
     using StateOverrideObj = monad_state_override::monad_state_override_object;
@@ -357,7 +357,7 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
     }
 
     if (result->message) {
-        delete[] result->message;
+        free(result->message);
     }
 
     delete result;
@@ -516,10 +516,8 @@ struct monad_eth_call_executor
         auto const blk_hash_buffer = create_blockhash_buffer(block_number);
         if (blk_hash_buffer == nullptr) {
             result->status_code = EVMC_REJECTED;
-            constexpr auto len = BLOCKHASH_ERR_MSG.size();
-            result->message = new char[len + 1];
-            std::strncpy(result->message, BLOCKHASH_ERR_MSG.data(), len);
-            result->message[len] = 0;
+            result->message = strdup(BLOCKHASH_ERR_MSG);
+            MONAD_ASSERT(result->message);
             complete(result, user);
             return;
         }
@@ -567,9 +565,8 @@ struct monad_eth_call_executor
 
                 if (MONAD_UNLIKELY(res.has_error())) {
                     result->status_code = EVMC_REJECTED;
-                    result->message =
-                        new char[res.error().message().size() + 1];
-                    std::strcpy(result->message, res.error().message().c_str());
+                    result->message = strdup(res.error().message().c_str());
+                    MONAD_ASSERT(result->message);
                     complete(result, user);
                     return;
                 }

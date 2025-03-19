@@ -281,6 +281,10 @@ TEST_F(EthCallFixture, failed_to_read)
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
+    EXPECT_TRUE(
+        std::strcmp(
+            ctx.result->message, "failure to initialize block hash buffer") ==
+        0);
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }

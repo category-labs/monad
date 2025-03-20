@@ -38,6 +38,29 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
+class RODb
+{
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+
+public:
+    RODb(ReadOnlyOnDiskDbConfig const &);
+    ~RODb();
+
+    RODb(RODb const &) = delete;
+    RODb(RODb &&) = delete;
+    RODb &operator=(RODb const &) = delete;
+    RODb &operator=(RODb &&) = delete;
+
+    // get() and get_data() APIs are intentionally disabled to prevent
+    // heap-use-after-free memory bug. However, users can still access node data
+    // or value through OwningNodeCursor.
+    Result<OwningNodeCursor>
+    find(OwningNodeCursor &, NibblesView, uint64_t block_id) const;
+    Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+};
+
+// RW, ROBlocking, InMemory
 class Db
 {
 private:
@@ -45,7 +68,7 @@ private:
 
     struct Impl;
     struct RWOnDisk;
-    struct ROOnDisk;
+    struct ROOnDiskBlocking;
     struct InMemory;
 
     std::unique_ptr<Impl> impl_;

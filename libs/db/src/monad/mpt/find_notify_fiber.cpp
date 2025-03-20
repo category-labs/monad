@@ -10,14 +10,17 @@
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
+#include <monad/mpt/node_cursor.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>
 
 #include <boost/fiber/future.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <utility>
 
 #include <unistd.h>
@@ -27,11 +30,6 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 using namespace MONAD_ASYNC_NAMESPACE;
-
-void find_recursive(
-    UpdateAuxImpl &, inflight_map_t &,
-    threadsafe_boost_fibers_promise<find_cursor_result_type> &, NodeCursor root,
-    NibblesView key);
 
 namespace
 {
@@ -95,17 +93,105 @@ namespace
             }
         }
     };
+
+    struct find_owning_receiver
+    {
+        static constexpr bool lifetime_managed_internally = true;
+
+        UpdateAuxImpl *aux;
+        NodeCache &node_cache;
+        inflight_map_owning_t &inflights;
+        chunk_offset_t offset;
+        chunk_offset_t rd_offset; // required for sender
+        unsigned bytes_to_read; // required for sender too
+        uint16_t buffer_off;
+
+        find_owning_receiver(
+            UpdateAuxImpl &aux, NodeCache &node_cache,
+            inflight_map_owning_t &inflights, chunk_offset_t const offset)
+            : aux(&aux)
+            , node_cache(node_cache)
+            , inflights(inflights)
+            , offset(offset)
+            , rd_offset(0, 0)
+        {
+            auto const num_pages_to_load_node =
+                node_disk_pages_spare_15{offset}.to_pages();
+            bytes_to_read =
+                static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+            rd_offset = offset;
+            auto const new_offset =
+                round_down_align<DISK_PAGE_BITS>(offset.offset);
+            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
+            rd_offset.offset = new_offset & chunk_offset_t::max_offset;
+            buffer_off = uint16_t(offset.offset - rd_offset.offset);
+        }
+
+        //! notify a list of requests pending on this node
+        template <class ResultType>
+        void set_value(
+            MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
+            ResultType buffer_)
+        {
+            MONAD_ASSERT(buffer_);
+            OwningNodeCursor start_cursor{};
+
+            auto it = inflights.find(offset);
+            MONAD_ASSERT(it != inflights.end());
+            uint64_t const pending_req_max_version = it->second.first;
+            if (aux->version_is_valid_ondisk(pending_req_max_version)) {
+                {
+                    NodeCache::ConstAccessor acc;
+                    MONAD_ASSERT(node_cache.find(acc, offset) == false);
+                }
+                std::shared_ptr<Node> node =
+                    detail::deserialize_node_from_receiver_result(
+                        std::move(buffer_), buffer_off, io_state);
+                node_cache.insert(offset, node);
+                start_cursor = OwningNodeCursor{node};
+            }
+            auto pendings = std::move(it->second.second);
+            inflights.erase(it);
+            for (auto &cont : pendings) {
+                MONAD_ASSERT(cont(start_cursor));
+            }
+        }
+    };
+
+    void async_read_with_continuation(
+        UpdateAuxImpl &aux, NodeCache &node_cache,
+        inflight_map_owning_t &inflights,
+        threadsafe_boost_fibers_promise<find_owning_cursor_result_type>
+            &promise,
+        auto &&cont, chunk_offset_t const read_offset,
+        uint64_t const request_version)
+    {
+        if (aux.io->owning_thread_id() != get_tl_tid()) {
+            promise.set_value(
+                {OwningNodeCursor{},
+                 find_result::need_to_continue_in_io_thread});
+            return;
+        }
+        if (auto lt = inflights.find(read_offset); lt != inflights.end()) {
+            lt->second.first = std::max(request_version, lt->second.first);
+            lt->second.second.emplace_back(std::move(cont));
+            return;
+        }
+        inflights[read_offset] = {request_version, {cont}};
+        find_owning_receiver receiver(aux, node_cache, inflights, read_offset);
+        detail::initiate_async_read_update(
+            *aux.io, std::move(receiver), receiver.bytes_to_read);
+    }
 }
 
 // Use a hashtable for inflight requests, it maps a file offset to a list of
 // requests. If a read request exists in the hash table, simply append to an
 // existing inflight read, Otherwise, send a read request and put itself on the
 // map
-void find_recursive(
+void find_notify_fiber_future(
     UpdateAuxImpl &aux, inflight_map_t &inflights,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
-    NodeCursor root, NibblesView const key)
-
+    NodeCursor const root, NibblesView const key)
 {
     if (!root.is_valid()) {
         promise.set_value(
@@ -145,7 +231,7 @@ void find_recursive(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (node->next(child_index) != nullptr) {
-            find_recursive(
+            find_notify_fiber_future(
                 aux, inflights, promise, *node->next(child_index), next_key);
             return;
         }
@@ -158,7 +244,8 @@ void find_recursive(
         chunk_offset_t const offset = node->fnext(child_index);
         auto cont = [&aux, &inflights, &promise, next_key](
                         NodeCursor node_cursor) -> result<void> {
-            find_recursive(aux, inflights, promise, node_cursor, next_key);
+            find_notify_fiber_future(
+                aux, inflights, promise, node_cursor, next_key);
             return success();
         };
         if (auto lt = inflights.find(offset); lt != inflights.end()) {
@@ -177,12 +264,133 @@ void find_recursive(
     }
 }
 
-void find_notify_fiber_future(
-    UpdateAuxImpl &aux, inflight_map_t &inflights,
-    fiber_find_request_t const req)
+// Look up from node_cache first, issue read if miss and not in inflight
+// Upon read completion, deserialize node and add to node_cache
+void find_owning_notify_fiber_future(
+    UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
+    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    OwningNodeCursor &start, NibblesView const key, uint64_t const version)
 {
-    auto g(aux.shared_lock());
-    find_recursive(aux, inflights, *req.promise, req.start, req.key);
+    if (!aux.version_is_valid_ondisk(version)) {
+        promise.set_value({start, find_result::version_no_longer_exist});
+        return;
+    }
+    if (!start.is_valid()) {
+        promise.set_value(
+            {OwningNodeCursor{}, find_result::root_node_is_null_failure});
+        return;
+    }
+    unsigned prefix_index = 0;
+    unsigned node_prefix_index = start.prefix_index;
+    auto node = start.node;
+    for (; node_prefix_index < node->path_nibble_index_end;
+         ++node_prefix_index, ++prefix_index) {
+        if (prefix_index >= key.nibble_size()) {
+            promise.set_value(
+                {OwningNodeCursor{node, node_prefix_index},
+                 find_result::key_ends_earlier_than_node_failure});
+            return;
+        }
+        if (key.get(prefix_index) !=
+            get_nibble(node->path_data(), node_prefix_index)) {
+            promise.set_value(
+                {OwningNodeCursor{node, node_prefix_index},
+                 find_result::key_mismatch_failure});
+            return;
+        }
+    }
+    if (prefix_index == key.nibble_size()) {
+        promise.set_value(
+            {OwningNodeCursor{node, node_prefix_index}, find_result::success});
+        return;
+    }
+    MONAD_ASSERT(prefix_index < key.nibble_size());
+    if (unsigned char const branch = key.get(prefix_index);
+        node->mask & (1u << branch)) {
+        MONAD_DEBUG_ASSERT(
+            prefix_index < std::numeric_limits<unsigned char>::max());
+        auto const next_key =
+            key.substr(static_cast<unsigned char>(prefix_index) + 1u);
+        auto const child_index = node->to_child_index(branch);
+        auto const next_node_offset = node->fnext(child_index);
+        // find in cache
+        NodeCache::ConstAccessor acc;
+        if (node_cache.find(acc, next_node_offset)) {
+            OwningNodeCursor next_cursor{acc->second->val};
+            find_owning_notify_fiber_future(
+                aux,
+                node_cache,
+                inflights,
+                promise,
+                next_cursor,
+                next_key,
+                version);
+            return;
+        }
+        auto cont =
+            [&aux, &node_cache, &inflights, &promise, next_key, version](
+                OwningNodeCursor &node_cursor) -> result<void> {
+            if (!node_cursor.is_valid()) {
+                promise.set_value(
+                    {OwningNodeCursor{}, find_result::version_no_longer_exist});
+                return success();
+            }
+            find_owning_notify_fiber_future(
+                aux,
+                node_cache,
+                inflights,
+                promise,
+                node_cursor,
+                next_key,
+                version);
+            return success();
+        };
+        async_read_with_continuation(
+            aux,
+            node_cache,
+            inflights,
+            promise,
+            cont,
+            node->fnext(child_index),
+            version);
+    }
+    else {
+        promise.set_value(
+            {OwningNodeCursor{node, node_prefix_index},
+             find_result::branch_not_exist_failure});
+    }
+}
+
+void load_root_notify_fiber_future(
+    UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
+    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    uint64_t const version)
+{
+    auto const root_offset = aux.get_root_offset_at_version(version);
+    if (root_offset == INVALID_OFFSET) { // version has expired
+        promise.set_value(
+            {OwningNodeCursor{}, find_result::version_no_longer_exist});
+        return;
+    }
+    NodeCache::ConstAccessor acc;
+    if (node_cache.find(acc, root_offset)) {
+        auto &root = acc->second->val;
+        MONAD_ASSERT(root != nullptr);
+        promise.set_value({OwningNodeCursor{root}, find_result::success});
+        return;
+    }
+    auto cont = [&promise](OwningNodeCursor &node_cursor) -> result<void> {
+        if (!node_cursor.is_valid()) {
+            promise.set_value(
+                {node_cursor, find_result::version_no_longer_exist});
+        }
+        else {
+            promise.set_value({node_cursor, find_result::success});
+        }
+        return success();
+    };
+    async_read_with_continuation(
+        aux, node_cache, inflights, promise, cont, root_offset, version);
 }
 
 MONAD_MPT_NAMESPACE_END

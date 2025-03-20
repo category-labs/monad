@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/async/config.hpp>
+#include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
@@ -1035,10 +1036,18 @@ template <class T>
 using find_result_type = std::pair<T, find_result>;
 
 using find_cursor_result_type = find_result_type<NodeCursor>;
+using find_owning_cursor_result_type = find_result_type<OwningNodeCursor>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
+    chunk_offset_t_hasher>;
+
+using inflight_map_owning_t = unordered_dense_map<
+    chunk_offset_t,
+    std::pair< // pair: (max version of all requests, vector of continuations)
+        uint64_t, std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+                      OwningNodeCursor &)>>>,
     chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread
@@ -1054,11 +1063,28 @@ static_assert(sizeof(fiber_find_request_t) == 40);
 static_assert(alignof(fiber_find_request_t) == 8);
 static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 
+using NodeCache = static_lru_cache<
+    chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
+
 //! \warning this is not threadsafe, should only be called from triedb thread
 // during execution, DO NOT invoke it directly from a transaction fiber, as is
 // not race free.
 void find_notify_fiber_future(
-    UpdateAuxImpl &, inflight_map_t &inflights, fiber_find_request_t);
+    UpdateAuxImpl &, inflight_map_t &,
+    threadsafe_boost_fibers_promise<find_cursor_result_type> &,
+    NodeCursor start, NibblesView key);
+
+// rodb
+void find_owning_notify_fiber_future(
+    UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
+    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    OwningNodeCursor &start, NibblesView, uint64_t version);
+
+// rodb load root
+void load_root_notify_fiber_future(
+    UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
+    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    uint64_t version);
 
 /*! \brief blocking find node indexed by key from root, It works for both
 on-disk and in-memory trie. When node along key is not yet in memory, it loads

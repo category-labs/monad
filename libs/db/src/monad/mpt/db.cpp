@@ -79,7 +79,6 @@ struct Db::Impl
     virtual void copy_trie_fiber_blocking(
         uint64_t src_version, NibblesView src, uint64_t dest_version,
         NibblesView dest, bool blocked_by_write = true) = 0;
-
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
     virtual size_t prefetch_fiber_blocking() = 0;
@@ -161,16 +160,14 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     io.set_eager_completions(options.eager_completions);
 }
 
-struct Db::ROOnDisk final : public Db::Impl
+struct Db::ROOnDiskBlocking final : public Db::Impl
 {
-    AsyncIOContext &io_ctx_;
     UpdateAux<> aux_;
     chunk_offset_t last_loaded_root_offset_;
     Node::UniquePtr root_;
 
-    explicit ROOnDisk(AsyncIOContext &io_ctx)
-        : io_ctx_(io_ctx)
-        , aux_(&io_ctx.io)
+    explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
+        : aux_(&io_ctx.io)
         , last_loaded_root_offset_{aux_.get_root_offset_at_version(
               aux_.db_history_max_version())}
         , root_{
@@ -182,7 +179,7 @@ struct Db::ROOnDisk final : public Db::Impl
     {
     }
 
-    ~ROOnDisk()
+    virtual ~ROOnDiskBlocking()
     {
         aux_.unique_lock();
         // must be destroyed before aux is destroyed
@@ -202,7 +199,7 @@ struct Db::ROOnDisk final : public Db::Impl
     virtual void
     upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool, bool) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
@@ -226,18 +223,18 @@ struct Db::ROOnDisk final : public Db::Impl
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual size_t prefetch_fiber_blocking() override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual void copy_trie_fiber_blocking(
         uint64_t, NibblesView, uint64_t, NibblesView, bool) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual size_t poll(bool const blocking, size_t const count) override
@@ -264,19 +261,19 @@ struct Db::ROOnDisk final : public Db::Impl
         }
         if (last_loaded_root_offset_ != root_offset) {
             last_loaded_root_offset_ = root_offset;
-            root_ = read_node_blocking(aux_, root_offset, version);
+            root_ = read_node_blocking(aux(), root_offset, version);
         }
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
 
     virtual void update_finalized_block(uint64_t) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual void update_verified_block(uint64_t) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual uint64_t get_latest_finalized_block_id() const override
@@ -379,7 +376,7 @@ struct Db::InMemory final : public Db::Impl
     }
 };
 
-struct Db::RWOnDisk final : public Db::Impl
+struct OnDiskWithWorkerThreadImpl
 {
     struct FiberUpsertRequest
     {
@@ -434,29 +431,47 @@ struct Db::RWOnDisk final : public Db::Impl
         uint64_t const version;
     };
 
+    struct RODbFiberFindOwningNodeRequest
+    {
+        threadsafe_boost_fibers_promise<find_result_type<OwningNodeCursor>>
+            *promise;
+        OwningNodeCursor start;
+        NibblesView key;
+        uint64_t version;
+    };
+
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
-        FiberLoadRootVersionRequest, FiberCopyTrieRequest>;
+        FiberLoadRootVersionRequest, FiberCopyTrieRequest,
+        RODbFiberFindOwningNodeRequest>;
 
     ::moodycamel::ConcurrentQueue<Comms> comms_;
-
     std::mutex lock_;
     std::condition_variable cond_;
 
     struct DbAsyncWorker
     {
-        RWOnDisk *parent;
+        OnDiskWithWorkerThreadImpl *parent;
         AsyncIOContext async_io;
         UpdateAux<> aux;
-        bool const compaction;
         std::atomic<bool> sleeping{false}, done{false};
 
-        DbAsyncWorker(RWOnDisk *parent, OnDiskDbConfig const &options)
+        DbAsyncWorker(
+            OnDiskWithWorkerThreadImpl *const parent,
+            ReadOnlyOnDiskDbConfig const &options)
+            : parent(parent)
+            , async_io(options)
+            , aux(&async_io.io)
+        {
+        }
+
+        DbAsyncWorker(
+            OnDiskWithWorkerThreadImpl *const parent,
+            OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
             , aux{&async_io.io, options.fixed_history_length}
-            , compaction{options.compaction}
         {
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();
@@ -469,8 +484,93 @@ struct Db::RWOnDisk final : public Db::Impl
             }
         }
 
+        void rodb_run(size_t const node_lru_size)
+        {
+            inflight_map_owning_t inflight;
+            NodeCache node_cache{
+                node_lru_size, chunk_offset_t::invalid_value(), nullptr};
+
+            ::boost::container::deque<
+                threadsafe_boost_fibers_promise<find_owning_cursor_result_type>>
+                find_owning_cursor_promises;
+
+            std::vector<Comms> request;
+            request.reserve(1);
+            unsigned did_nothing_count = 0;
+            while (!done.load(std::memory_order_acquire)) {
+                bool did_nothing = true;
+                request.clear();
+                if (parent->comms_.try_dequeue_bulk(
+                        std::back_inserter(request), 1) > 0) {
+                    if (auto *req = std::get_if<8>(&request.front());
+                        req != nullptr) {
+                        find_owning_cursor_promises.emplace_back(
+                            std::move(*req->promise));
+                        req->promise = &find_owning_cursor_promises.back();
+                        if (req->start.is_valid()) {
+                            find_owning_notify_fiber_future(
+                                aux,
+                                node_cache,
+                                inflight,
+                                *req->promise,
+                                req->start,
+                                req->key,
+                                req->version);
+                        }
+                        else {
+                            MONAD_ASSERT(req->key.empty());
+                            load_root_notify_fiber_future(
+                                aux,
+                                node_cache,
+                                inflight,
+                                *req->promise,
+                                req->version);
+                        }
+                    }
+                    did_nothing = false;
+                }
+                async_io.io.poll_nonblocking(1);
+                boost::this_fiber::yield();
+                if (boost::fibers::has_ready_fibers()) {
+                    did_nothing = false;
+                }
+                if (did_nothing && async_io.io.io_in_flight() > 0) {
+                    did_nothing = false;
+                }
+                while (!find_owning_cursor_promises.empty() &&
+                       find_owning_cursor_promises.front()
+                           .future_has_been_destroyed()) {
+                    find_owning_cursor_promises.pop_front();
+                }
+                if (!find_owning_cursor_promises.empty()) {
+                    did_nothing = false;
+                }
+                if (did_nothing) {
+                    did_nothing_count++;
+                }
+                else {
+                    did_nothing_count = 0;
+                }
+                if (did_nothing_count > 1000000) {
+                    std::unique_lock g(parent->lock_);
+                    sleeping.store(true, std::memory_order_release);
+                    /* Very irritatingly, Boost.Fiber may have fibers scheduled
+                     which weren't ready before, and if we sleep forever here
+                     then they never run and cause anything waiting on them to
+                     hang. So pulse Boost.Fiber every second at most for those
+                     extremely rare occasions.
+                     */
+                    parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
+                        return done.load(std::memory_order_acquire) ||
+                               parent->comms_.size_approx() > 0;
+                    });
+                    sleeping.store(false, std::memory_order_release);
+                }
+            }
+        }
+
         // Runs in the triedb worker thread
-        void run()
+        void rwdb_run()
         {
             inflight_map_t inflights;
             ::boost::container::deque<
@@ -485,6 +585,7 @@ struct Db::RWOnDisk final : public Db::Impl
                 traverse_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<void>>
                 move_trie_version_promises;
+
             /* In case you're wondering why we use a vector for a single
             element, it's because for some odd reason the MoodyCamel concurrent
             queue only supports move only types via its iterator interface. No
@@ -507,7 +608,12 @@ struct Db::RWOnDisk final : public Db::Impl
                         // emptied when its future gets destroyed.
                         find_promises.emplace_back(std::move(*req->promise));
                         req->promise = &find_promises.back();
-                        find_notify_fiber_future(aux, inflights, *req);
+                        find_notify_fiber_future(
+                            aux,
+                            inflights,
+                            *req->promise,
+                            req->start,
+                            req->key);
                     }
                     else if (auto *req = std::get_if<2>(&request.front());
                              req != nullptr) {
@@ -519,7 +625,7 @@ struct Db::RWOnDisk final : public Db::Impl
                             req->sm,
                             std::move(req->updates),
                             req->version,
-                            compaction && req->enable_compaction,
+                            req->enable_compaction,
                             req->can_write_to_fast,
                             req->write_root));
                     }
@@ -651,19 +757,15 @@ struct Db::RWOnDisk final : public Db::Impl
     std::unique_ptr<DbAsyncWorker> worker_;
     std::thread worker_thread_;
     UpdateAux<> *aux_;
-    StateMachine &machine_;
-    Node::UniquePtr root_; // subtrie is owned by worker thread
-    uint64_t root_version_{INVALID_BLOCK_ID};
-    uint64_t unflushed_version_{INVALID_BLOCK_ID};
 
-    RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
+    explicit OnDiskWithWorkerThreadImpl(OnDiskDbConfig const &options)
         : worker_thread_([&, options = options] {
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);
                 cond_.notify_one();
             }
-            worker_->run();
+            worker_->rwdb_run();
             std::unique_lock const g(lock_);
             worker_.reset();
         })
@@ -672,7 +774,55 @@ struct Db::RWOnDisk final : public Db::Impl
             cond_.wait(g, [this] { return worker_ != nullptr; });
             return &(worker_->aux);
         }())
+    {
+    }
+
+    explicit OnDiskWithWorkerThreadImpl(ReadOnlyOnDiskDbConfig const &options)
+        : worker_thread_([&, options = options] {
+            {
+                std::unique_lock const g(lock_);
+                worker_ = std::make_unique<DbAsyncWorker>(this, options);
+                cond_.notify_one();
+            }
+            worker_->rodb_run(options.node_lru_size);
+            std::unique_lock const g(lock_);
+            worker_.reset();
+        })
+        , aux_([&] {
+            std::unique_lock g(lock_);
+            cond_.wait(g, [this] { return worker_ != nullptr; });
+            return &(worker_->aux);
+        }())
+    {
+    }
+
+    ~OnDiskWithWorkerThreadImpl()
+    {
+        {
+            std::unique_lock const g(lock_);
+            worker_->done.store(true, std::memory_order_release);
+            cond_.notify_one();
+        }
+        worker_thread_.join();
+        aux_ = nullptr;
+    }
+}; // end OnDiskWorkerThreadImpl
+
+struct Db::RWOnDisk final
+    : public OnDiskWithWorkerThreadImpl
+    , public Impl
+{
+    StateMachine &machine_;
+    bool const compaction_;
+
+    Node::UniquePtr root_; // subtrie is owned by worker thread
+    uint64_t root_version_{INVALID_BLOCK_ID};
+    uint64_t unflushed_version_{INVALID_BLOCK_ID};
+
+    RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
+        : OnDiskWithWorkerThreadImpl(options)
         , machine_{machine}
+        , compaction_(options.compaction)
         , root_{[&] {
             MONAD_ASSERT(aux_);
             return aux_->get_latest_root_offset() != INVALID_OFFSET
@@ -687,17 +837,6 @@ struct Db::RWOnDisk final : public Db::Impl
     {
     }
 
-    ~RWOnDisk()
-    {
-        {
-            std::unique_lock const g(lock_);
-            worker_->done.store(true, std::memory_order_release);
-            cond_.notify_one();
-        }
-        worker_thread_.join();
-        aux_ = nullptr;
-    }
-
     virtual Node::UniquePtr &root() override
     {
         return root_;
@@ -705,7 +844,13 @@ struct Db::RWOnDisk final : public Db::Impl
 
     virtual UpdateAux<> &aux() override
     {
-        MONAD_ASSERT(aux_ != nullptr);
+        MONAD_ASSERT(aux_)
+        return *aux_;
+    }
+
+    UpdateAux<> const &aux() const
+    {
+        MONAD_ASSERT(aux_)
         return *aux_;
     }
 
@@ -760,7 +905,7 @@ struct Db::RWOnDisk final : public Db::Impl
             .sm = machine_,
             .updates = std::move(updates),
             .version = version,
-            .enable_compaction = enable_compaction,
+            .enable_compaction = enable_compaction && compaction_,
             .can_write_to_fast = can_write_to_fast,
             .write_root = write_root});
         // promise is racily emptied after this point
@@ -864,8 +1009,8 @@ struct Db::RWOnDisk final : public Db::Impl
     {
         if (src_version != root_version_) {
             root_ = read_node_blocking(
-                *aux_,
-                aux_->get_root_offset_at_version(src_version),
+                aux(),
+                aux().get_root_offset_at_version(src_version),
                 src_version);
             root_version_ = src_version;
         }
@@ -875,9 +1020,9 @@ struct Db::RWOnDisk final : public Db::Impl
             dest_root = std::move(root_);
         }
         else if (auto const root_offset =
-                     aux_->get_root_offset_at_version(dest_version);
+                     aux().get_root_offset_at_version(dest_version);
                  root_offset != INVALID_OFFSET) {
-            dest_root = read_node_blocking(*aux_, root_offset, dest_version);
+            dest_root = read_node_blocking(aux(), root_offset, dest_version);
         }
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
@@ -902,29 +1047,108 @@ struct Db::RWOnDisk final : public Db::Impl
 
     virtual void update_finalized_block(uint64_t const block_id) override
     {
-        MONAD_ASSERT(aux_);
-        aux_->set_latest_finalized_version(block_id);
+        aux().set_latest_finalized_version(block_id);
     }
 
     virtual void update_verified_block(uint64_t const block_id) override
     {
-        MONAD_ASSERT(aux_);
-        MONAD_ASSERT(block_id <= aux_->db_history_max_version());
-        aux_->set_latest_verified_version(block_id);
+        MONAD_ASSERT(block_id <= aux().db_history_max_version());
+        aux().set_latest_verified_version(block_id);
     }
 
     virtual uint64_t get_latest_finalized_block_id() const override
     {
-        MONAD_ASSERT(aux_);
-        return aux_->get_latest_finalized_version();
+        return aux().get_latest_finalized_version();
     }
 
     virtual uint64_t get_latest_verified_block_id() const override
     {
-        MONAD_ASSERT(aux_);
-        return aux_->get_latest_verified_version();
+        return aux().get_latest_verified_version();
     }
 };
+
+struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
+{
+    Impl(ReadOnlyOnDiskDbConfig const &options)
+        : OnDiskWithWorkerThreadImpl{options}
+    {
+    }
+
+    UpdateAux<> &aux()
+    {
+        MONAD_ASSERT(aux_);
+        return *aux_;
+    }
+
+    find_owning_cursor_result_type find_fiber_blocking(
+        OwningNodeCursor start, NibblesView const &key, uint64_t const version)
+    {
+        threadsafe_boost_fibers_promise<find_owning_cursor_result_type> promise;
+        RODbFiberFindOwningNodeRequest req{
+            .promise = &promise,
+            .start = start,
+            .key = key,
+            .version = version};
+        auto fut = promise.get_future();
+        comms_.enqueue(req);
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        return fut.get();
+    }
+
+    OwningNodeCursor load_root_fiber_blocking(uint64_t version)
+    {
+        auto const root_offset = aux().get_root_offset_at_version(version);
+        if (root_offset == INVALID_OFFSET) {
+            return {};
+        }
+        auto [cursor, result] = find_fiber_blocking({}, {}, version);
+        if (result == find_result::success) {
+            MONAD_ASSERT(cursor.is_valid());
+            return cursor;
+        }
+        return {};
+    }
+};
+
+RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
+    : impl_(std::make_unique<Impl>(options))
+{
+}
+
+RODb::~RODb() = default;
+
+Result<OwningNodeCursor> RODb::find(
+    OwningNodeCursor &node_cursor, NibblesView const key,
+    uint64_t const block_id) const
+{
+    MONAD_ASSERT(impl_);
+    if (!node_cursor.is_valid()) {
+        return DbError::key_not_found;
+    }
+    if (key.empty()) {
+        return node_cursor;
+    }
+    auto [cursor, result] =
+        impl_->find_fiber_blocking(node_cursor, key, block_id);
+    if (result != find_result::success) {
+        return DbError::key_not_found;
+    }
+    MONAD_DEBUG_ASSERT(cursor.is_valid());
+    MONAD_DEBUG_ASSERT(cursor.node->has_value());
+    return cursor;
+}
+
+Result<OwningNodeCursor>
+RODb::find(NibblesView const key, uint64_t const block_id) const
+{
+    MONAD_ASSERT(impl_);
+    OwningNodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
+    return find(cursor, key, block_id);
+}
 
 Db::Db(StateMachine &machine)
     : impl_{std::make_unique<InMemory>(machine)}
@@ -938,7 +1162,7 @@ Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
 }
 
 Db::Db(AsyncIOContext &io_ctx)
-    : impl_{std::make_unique<ROOnDisk>(io_ctx)}
+    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx)}
 {
 }
 

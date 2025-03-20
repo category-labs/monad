@@ -810,13 +810,10 @@ int main(int argc, char *argv[])
                         monad::threadsafe_boost_fibers_promise<
                             monad::mpt::find_cursor_result_type>
                             promise;
-                        fiber_find_request_t const request{
-                            .promise = &promise,
-                            .start = state_start,
-                            .key = key};
-                        find_notify_fiber_future(*aux, inflights, request);
+                        find_notify_fiber_future(
+                            *aux, inflights, promise, state_start, key);
                         auto const [node_cursor, errc] =
-                            request.promise->get_future().get();
+                            promise.get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
                         MONAD_ASSERT(errc == monad::mpt::find_result::success);
                         MONAD_ASSERT(node_cursor.node->has_value());
@@ -915,6 +912,7 @@ int main(int argc, char *argv[])
                         std::this_thread::yield();
                     }
                 };
+
                 auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
                     inflight_map_t inflights;
                     fiber_find_request_t request;
@@ -928,7 +926,12 @@ int main(int argc, char *argv[])
                             return;
                         }
                         if (req.try_dequeue(request)) {
-                            find_notify_fiber_future(*aux, inflights, request);
+                            find_notify_fiber_future(
+                                *aux,
+                                inflights,
+                                *request.promise,
+                                request.start,
+                                request.key);
                         }
                     }
                 };
@@ -959,7 +962,12 @@ int main(int argc, char *argv[])
                     inflight_map_t inflights;
                     fiber_find_request_t request;
                     if (req.try_dequeue(request)) {
-                        find_notify_fiber_future(aux, inflights, request);
+                        find_notify_fiber_future(
+                            aux,
+                            inflights,
+                            *request.promise,
+                            request.start,
+                            request.key);
                     }
                 }
                 std::cout << "   Joining threads 2 ..." << std::endl;
@@ -1022,7 +1030,12 @@ int main(int argc, char *argv[])
                         {
                             MONAD_ASSERT(res);
                             // We are now on the triedb thread
-                            find_notify_fiber_future(aux, inflights, request);
+                            find_notify_fiber_future(
+                                aux,
+                                inflights,
+                                *request.promise,
+                                request.start,
+                                request.key);
                         }
                     };
                     inflight_map_t inflights;

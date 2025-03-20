@@ -11,6 +11,7 @@
 #include <monad/core/result.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/core/unaligned.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/db.hpp>
@@ -27,6 +28,7 @@
 #include <gtest/gtest.h>
 
 #include <boost/fiber/fiber.hpp>
+#include <boost/fiber/future/promise.hpp>
 #include <boost/fiber/operations.hpp>
 
 #include <atomic>
@@ -40,6 +42,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -295,11 +298,11 @@ namespace
     }
 
     std::pair<std::deque<monad::byte_string>, std::deque<Update>>
-    prepare_random_updates(unsigned size)
+    prepare_random_updates(unsigned nkeys, unsigned const offset = 0)
     {
         std::deque<monad::byte_string> bytes_alloc;
         std::deque<Update> updates_alloc;
-        for (size_t i = 0; i < size; ++i) {
+        for (size_t i = offset; i < nkeys + offset; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
             updates_alloc.push_back(Update{
                 .key = kv,
@@ -309,6 +312,37 @@ namespace
         }
         return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
     }
+
+    struct ROOnDiskWithFileFixture : public OnDiskDbWithFileFixture
+    {
+        RODb ro_db;
+        monad::fiber::PriorityPool pool;
+
+        static constexpr unsigned keys_per_block = 10;
+        static constexpr uint64_t num_blocks = 1000;
+
+        ROOnDiskWithFileFixture()
+            : ro_db(ReadOnlyOnDiskDbConfig{
+                  .dbname_paths = this->config.dbname_paths,
+                  .node_lru_size = 100})
+            , pool(2, 16)
+        {
+            init_db_with_data();
+        }
+
+        void init_db_with_data()
+        {
+            for (unsigned b = 0; b < num_blocks; ++b) {
+                auto [kv_alloc, updates_alloc] =
+                    prepare_random_updates(keys_per_block, b * keys_per_block);
+                UpdateList ls;
+                for (auto &u : updates_alloc) {
+                    ls.push_front(u);
+                }
+                db.upsert(std::move(ls), b);
+            }
+        }
+    };
 }
 
 template <typename TFixture>
@@ -426,6 +460,54 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
     EXPECT_EQ(
         ro_db.get_data(prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+}
+
+TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
+{
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[num_blocks]};
+
+    // read all keys
+    for (unsigned b = 0; b < num_blocks; ++b) {
+        pool.submit(0, [b = b, &db = ro_db, promises = promises] {
+            unsigned const start_index = b * keys_per_block;
+            for (unsigned i = start_index; i < start_index + keys_per_block;
+                 ++i) {
+                auto const kv_bytes = keccak_int_to_string(i);
+                auto const res = db.find(kv_bytes, b);
+                ASSERT_TRUE(res.has_value());
+                EXPECT_EQ(res.value().node->value(), kv_bytes);
+            }
+            promises[b].set_value();
+        });
+    }
+
+    for (unsigned i = 0; i < num_blocks; ++i) {
+        promises[i].get_future().get();
+    }
+
+    // read the same set of keys from all blocks, and invalid blocks and keys
+    promises.reset(new boost::fibers::promise<void>[num_blocks]);
+    for (unsigned b = 0; b < num_blocks; ++b) {
+        pool.submit(0, [b = b, &db = ro_db, promises = promises] {
+            for (unsigned i = 0; i < keys_per_block; ++i) {
+                auto kv_bytes = keccak_int_to_string(i);
+                auto const res = db.find(kv_bytes, b);
+                ASSERT_TRUE(res.has_value());
+                EXPECT_EQ(res.value().node->value(), kv_bytes);
+            }
+            ASSERT_TRUE(
+                db.find(NibblesView{serialize_as_big_endian<sizeof(b)>(b)}, b)
+                    .has_error());
+            // non exist block
+            ASSERT_TRUE(db.find({}, 5000).has_error());
+            promises[b].set_value();
+        });
+    }
+
+    for (unsigned i = 0; i < num_blocks; ++i) {
+        promises[i].get_future().get();
+    }
 }
 
 TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)

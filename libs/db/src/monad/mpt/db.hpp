@@ -67,9 +67,9 @@ private:
     friend struct AsyncContext;
 
     struct Impl;
-    struct RWOnDisk;
-    struct ROOnDiskBlocking;
-    struct InMemory;
+    class RWOnDisk;
+    class ROOnDiskBlocking;
+    class InMemory;
 
     std::unique_ptr<Impl> impl_;
 

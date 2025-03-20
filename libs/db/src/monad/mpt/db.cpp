@@ -160,12 +160,13 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     io.set_eager_completions(options.eager_completions);
 }
 
-struct Db::ROOnDiskBlocking final : public Db::Impl
+class Db::ROOnDiskBlocking final : public Db::Impl
 {
     UpdateAux<> aux_;
     chunk_offset_t last_loaded_root_offset_;
     Node::UniquePtr root_;
 
+public:
     explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
         : aux_(&io_ctx.io)
         , last_loaded_root_offset_{aux_.get_root_offset_at_version(
@@ -287,12 +288,13 @@ struct Db::ROOnDiskBlocking final : public Db::Impl
     }
 };
 
-struct Db::InMemory final : public Db::Impl
+class Db::InMemory final : public Db::Impl
 {
     UpdateAux<> aux_;
     StateMachine &machine_;
     Node::UniquePtr root_;
 
+public:
     explicit InMemory(StateMachine &machine)
         : aux_{nullptr}
         , machine_{machine}
@@ -353,7 +355,7 @@ struct Db::InMemory final : public Db::Impl
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ASSERT(false);
+        MONAD_ABORT()
     }
 
     virtual NodeCursor load_root_for_version(uint64_t) override
@@ -808,7 +810,7 @@ struct OnDiskWithWorkerThreadImpl
     }
 }; // end OnDiskWorkerThreadImpl
 
-struct Db::RWOnDisk final
+class Db::RWOnDisk final
     : public OnDiskWithWorkerThreadImpl
     , public Impl
 {
@@ -819,6 +821,7 @@ struct Db::RWOnDisk final
     uint64_t root_version_{INVALID_BLOCK_ID};
     uint64_t unflushed_version_{INVALID_BLOCK_ID};
 
+public:
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
         : OnDiskWithWorkerThreadImpl(options)
         , machine_{machine}
@@ -1570,7 +1573,7 @@ namespace detail
             return async::success();
         }
         }
-        abort();
+        MONAD_ABORT();
     }
 
     template <return_type T>
@@ -1603,7 +1606,7 @@ namespace detail
                 op_type = op_get_node2;
                 break;
             default:
-                MONAD_ASSERT(false);
+                MONAD_ABORT()
             }
             return async::sender_errc::operation_must_be_reinitiated;
         }

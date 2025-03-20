@@ -15,6 +15,9 @@
 
 #include <gtest/gtest.h>
 
+#include <deque>
+#include <memory>
+#include <ranges>
 #include <vector>
 
 using namespace monad;
@@ -22,13 +25,14 @@ using namespace monad::test;
 
 namespace
 {
+    constexpr unsigned node_lru_size = 10240;
+
     std::vector<uint8_t> to_vec(byte_string const &bs)
     {
         std::vector<uint8_t> v{bs.begin(), bs.end()};
         return v;
     }
 
-    // TODO: consolidate fixtures
     struct EthCallFixture : public ::testing::Test
     {
         std::filesystem::path dbname;
@@ -104,7 +108,8 @@ TEST_F(EthCallFixture, simple_success_call)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -155,7 +160,8 @@ TEST_F(EthCallFixture, insufficient_balance)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -208,7 +214,8 @@ TEST_F(EthCallFixture, on_proposed_block)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -259,7 +266,8 @@ TEST_F(EthCallFixture, failed_to_read)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -312,7 +320,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -386,7 +395,8 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
 
-    auto executor = monad_eth_call_executor_create(1, dbname.string().c_str());
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -410,5 +420,91 @@ TEST_F(EthCallFixture, from_contract_account)
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, concurrent_eth_calls)
+{
+    using namespace intx;
+
+    auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    for (uint64_t i = 0; i < 300; ++i) {
+        if (i == 200) {
+            auto const code =
+                evmc::from_hex(
+                    "0x6000600155600060025560006003556000600455600060055500")
+                    .value();
+            auto const code_hash = to_bytes(keccak256(code));
+            auto const code_analysis =
+                std::make_shared<CodeAnalysis>(analyze(code));
+
+            commit_sequential(
+                tdb,
+                StateDeltas{
+                    {ca,
+                     StateDelta{
+                         .account =
+                             {std::nullopt,
+                              Account{
+                                  .balance = 0x1b58,
+                                  .code_hash = code_hash}}}}},
+                Code{{code_hash, code_analysis}},
+                BlockHeader{.number = i});
+        }
+        else {
+            commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+        }
+    }
+
+    std::string tx_data = "0x60025560";
+
+    Transaction tx{.gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
+
+    auto executor = monad_eth_call_executor_create(
+        2, 10, node_lru_size, dbname.string().c_str());
+
+    std::deque<std::unique_ptr<callback_context>> ctxs;
+    std::deque<boost::fibers::future<void>> futures;
+    std::deque<monad_state_override *> state_overrides;
+
+    for (uint64_t b = 200; b < 300; ++b) {
+        auto &ctx = ctxs.emplace_back(std::make_unique<callback_context>());
+        futures.emplace_back(ctx->promise.get_future());
+        auto *const state_override =
+            state_overrides.emplace_back(monad_state_override_create());
+
+        BlockHeader header{.number = b};
+
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(ca)));
+
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)ctx.get());
+    }
+
+    for (auto [ctx, f, state_override] :
+         std::views::zip(ctxs, futures, state_overrides)) {
+        f.get();
+
+        EXPECT_TRUE(ctx->result->status_code == EVMC_SUCCESS);
+        EXPECT_EQ(ctx->result->output_data_len, 0);
+        monad_state_override_destroy(state_override);
+    }
+
     monad_eth_call_executor_destroy(executor);
 }

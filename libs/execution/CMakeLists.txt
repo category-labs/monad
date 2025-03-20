@@ -79,6 +79,7 @@ add_library(
   "src/monad/db/file_db.hpp"
   "src/monad/db/trie_db.cpp"
   "src/monad/db/trie_db.hpp"
+  "src/monad/db/trie_rodb.hpp"
   "src/monad/db/util.cpp"
   "src/monad/db/util.hpp"
   # execution

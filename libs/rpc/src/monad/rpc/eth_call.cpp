@@ -9,7 +9,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
-#include <monad/db/trie_db.hpp>
+#include <monad/db/trie_rodb.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -17,7 +17,9 @@
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
-#include <monad/lru/static_lru_cache.hpp>
+#include <monad/lru/lru_cache.hpp>
+#include <monad/mpt/db_error.hpp>
+#include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/util.hpp>
 #include <monad/rpc/eth_call.h>
 #include <monad/state2/block_state.hpp>
@@ -62,8 +64,8 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
-        Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
+        Address const &sender, TrieRODb &tdb,
+        BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides)
     {
         Transaction enriched_txn{txn};
@@ -188,7 +190,7 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;
         EvmcHost<rev> host{
-            call_tracer, tx_context, *buffer, state, max_code_size};
+            call_tracer, tx_context, buffer, state, max_code_size};
         return execute_impl_no_validation<rev>(
             state,
             host,
@@ -202,8 +204,8 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        uint64_t const round, Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
+        uint64_t const round, Address const &sender, TrieRODb &tdb,
+        BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -365,139 +367,86 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
 
 struct monad_eth_call_executor
 {
-    using BlockHashCache = static_lru_cache<uint64_t, bytes32_t>;
-
-    using DbGetPromise =
-        boost::fibers::promise<std::variant<byte_string, std::string>>;
+    using BlockHashCache = LruCache<uint64_t, bytes32_t>;
 
     fiber::PriorityPool pool_;
 
-    std::shared_ptr<mpt::AsyncIOContext> async_io_{};
-    std::shared_ptr<mpt::Db> latest_db_{};
-    std::shared_ptr<mpt::Db> db_{};
-    std::shared_ptr<TrieDb> latest_tdb_{};
-    std::shared_ptr<TrieDb> tdb_{};
-
-    uint64_t last_latest_version_{0};
+    mpt::RODb db_;
 
     BlockHashCache blockhash_cache_{7200};
-    std::shared_ptr<BlockHashBufferFinalized> last_buffer_{};
-    std::optional<uint64_t> last_block_number_{};
 
     monad_eth_call_executor(
-        unsigned const num_fibers, std::string const &triedb_path)
-        : pool_{1, num_fibers}
-    {
-        std::vector<std::filesystem::path> paths;
-        if (std::filesystem::is_directory(triedb_path)) {
-            for (auto const &file :
-                 std::filesystem::directory_iterator(triedb_path)) {
-                paths.emplace_back(file.path());
+        unsigned const num_threads, unsigned const num_fibers,
+        unsigned const node_lru_size, std::string const &triedb_path)
+        : pool_{num_threads, num_fibers}
+        , db_{[&] {
+            std::vector<std::filesystem::path> paths;
+            if (std::filesystem::is_directory(triedb_path)) {
+                for (auto const &file :
+                     std::filesystem::directory_iterator(triedb_path)) {
+                    paths.emplace_back(file.path());
+                }
             }
-        }
-        else {
-            paths.emplace_back(triedb_path);
-        }
+            else {
+                paths.emplace_back(triedb_path);
+            }
 
-        // create the db instances on the PriorityPool thread so all the thread
-        // local storage gets instantiated on the one thread its used
-        auto promise = std::make_shared<boost::fibers::promise<void>>();
-        pool_.submit(
-            0,
-            [&paths = paths,
-             &async_io = async_io_,
-             &db = db_,
-             &latest_db = latest_db_,
-             &tdb = tdb_,
-             &latest_tdb = latest_tdb_,
-             promise = promise] {
-                async_io.reset(new mpt::AsyncIOContext{
-                    mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = paths}});
-                db.reset(new mpt::Db{*async_io});
-                latest_db.reset(new mpt::Db{*async_io});
-                tdb.reset(new TrieDb{*db});
-                latest_tdb.reset(new TrieDb{*latest_db});
-                promise->set_value();
-            });
-        promise->get_future().get();
-        return;
+            // create the db instances on the PriorityPool thread so all the
+            // thread local storage gets instantiated on the one thread its
+            // used
+            auto const config = mpt::ReadOnlyOnDiskDbConfig{
+                .dbname_paths = paths, .node_lru_size = node_lru_size};
+            return mpt::RODb{config};
+        }()}
+    {
     }
 
     monad_eth_call_executor(monad_eth_call_executor const &) = delete;
     monad_eth_call_executor &
     operator=(monad_eth_call_executor const &) = delete;
 
-    // destroy the db instances on the same thread they were created,
-    // the PriorityPool thread
-    ~monad_eth_call_executor()
-    {
-        auto promise = std::make_shared<boost::fibers::promise<void>>();
-        pool_.submit(
-            0,
-            [&async_io = async_io_,
-             &db = db_,
-             &latest_db = latest_db_,
-             &tdb = tdb_,
-             &latest_tdb = latest_tdb_,
-             promise = promise] {
-                latest_tdb.reset();
-                latest_db.reset();
-                tdb.reset();
-                db.reset();
-                async_io.reset();
-                promise->set_value();
-            });
-        promise->get_future().get();
-    }
-
-    std::shared_ptr<BlockHashBufferFinalized const>
+    std::unique_ptr<BlockHashBufferFinalized>
     create_blockhash_buffer(uint64_t const block_number)
     {
-        if (!last_block_number_ || *last_block_number_ != block_number) {
-            last_buffer_.reset(new BlockHashBufferFinalized{});
-            BlockHashCache::ConstAccessor acc;
-            for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
-                 b < block_number;
-                 ++b) {
+        std::unique_ptr<BlockHashBufferFinalized> buffer{
+            new BlockHashBufferFinalized{}};
+
+        auto const get_block_hash_from_db =
+            [&db = db_](uint64_t const b) -> Result<bytes32_t> {
+            BOOST_OUTCOME_TRY(
+                auto header_cursor,
+                db.find(
+                    mpt::concat(
+                        FINALIZED_NIBBLE,
+                        mpt::NibblesView{block_header_nibbles}),
+                    b));
+            return to_bytes(keccak256(header_cursor.node->value()));
+        };
+        for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
+             b < block_number;
+             ++b) {
+            {
+                BlockHashCache::ConstAccessor acc;
                 if (blockhash_cache_.find(acc, b)) {
-                    last_buffer_->set(b, acc->second->val);
+                    buffer->set(b, acc->second.value_);
                     continue;
                 }
-
-                auto const promise = std::make_shared<DbGetPromise>();
-                pool_.submit(0, [db = db_, b = b, promise = promise] {
-                    auto const h = db->get(
-                        mpt::concat(
-                            FINALIZED_NIBBLE,
-                            mpt::NibblesView{block_header_nibbles}),
-                        b);
-                    if (h.has_value()) {
-                        promise->set_value(byte_string{h.value()});
-                    }
-                    else {
-                        promise->set_value(
-                            std::string{h.error().message().c_str()});
-                    }
-                });
-                auto const header_result = promise->get_future().get();
-
-                if (auto const header = std::get_if<0>(&header_result)) {
-                    auto const h = to_bytes(keccak256(*header));
-                    last_buffer_->set(b, h);
-                    blockhash_cache_.insert(b, h);
-                }
-                else {
-                    auto const err = std::get<1>(header_result);
-                    LOG_WARNING(
-                        "Could not query block header {} from TrieDb -- {}",
-                        b,
-                        err.c_str());
-                    return nullptr;
-                }
             }
-            last_block_number_ = block_number;
+            auto const h = get_block_hash_from_db(b);
+            if (h.has_value()) {
+                buffer->set(b, h.value());
+                blockhash_cache_.insert(b, h.value());
+            }
+            else {
+                LOG_WARNING(
+                    "Could not query block header {} from TrieRODb -- "
+                    "{}",
+                    b,
+                    h.assume_error().message().c_str());
+                return nullptr;
+            }
         }
-        return last_buffer_;
+        return buffer;
     }
 
     void execute_eth_call(
@@ -507,31 +456,18 @@ struct monad_eth_call_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user)
     {
-        if (block_number > last_latest_version_) {
-            last_latest_version_ = block_number;
-        }
-
         monad_eth_call_result *const result = new monad_eth_call_result();
-
-        auto const blk_hash_buffer = create_blockhash_buffer(block_number);
-        if (blk_hash_buffer == nullptr) {
-            result->status_code = EVMC_REJECTED;
-            result->message = strdup(BLOCKHASH_ERR_MSG);
-            MONAD_ASSERT(result->message);
-            complete(result, user);
-            return;
-        }
 
         pool_.submit(
             0,
-            [chain_config = chain_config,
+            [this,
+             chain_config = chain_config,
              transaction = txn,
              block_header = block_header,
              block_number = block_number,
              block_round = block_round,
+             &db = db_,
              sender = sender,
-             tdb = block_number == last_latest_version_ ? latest_tdb_ : tdb_,
-             block_hash_buffer = blk_hash_buffer,
              result = result,
              complete = complete,
              user = user,
@@ -551,6 +487,17 @@ struct monad_eth_call_executor
                 evmc_revision const rev = chain->get_revision(
                     block_header.number, block_header.timestamp);
 
+                auto const block_hash_buffer =
+                    create_blockhash_buffer(block_number);
+                if (block_hash_buffer == nullptr) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(BLOCKHASH_ERR_MSG);
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+
+                TrieRODb tdb{db};
                 auto const res = eth_call_impl(
                     *chain,
                     rev,
@@ -559,8 +506,8 @@ struct monad_eth_call_executor
                     block_number,
                     block_round,
                     sender,
-                    *tdb,
-                    block_hash_buffer,
+                    tdb,
+                    *block_hash_buffer,
                     *state_overrides);
 
                 if (MONAD_UNLIKELY(res.has_error())) {
@@ -596,13 +543,14 @@ struct monad_eth_call_executor
 };
 
 monad_eth_call_executor *monad_eth_call_executor_create(
-    unsigned const num_fibers, char const *const dbpath)
+    unsigned const num_threads, unsigned const num_fibers,
+    unsigned const node_lru_size, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 
-    monad_eth_call_executor *const e =
-        new monad_eth_call_executor(num_fibers, triedb_path);
+    monad_eth_call_executor *const e = new monad_eth_call_executor(
+        num_threads, num_fibers, node_lru_size, triedb_path);
 
     return e;
 }

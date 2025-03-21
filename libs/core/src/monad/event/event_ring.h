@@ -42,16 +42,11 @@ struct monad_event_descriptor
 {
     alignas(64) uint64_t seqno;  ///< Sequence number, for gap/liveness check
     uint16_t event_type;         ///< What kind of event this is
-    bool inline_payload;         ///< True -> payload stored inside descriptor
-    uint8_t : 8;                 ///< Unused tail padding
+    uint16_t : 16;               ///< Unused tail padding
     uint32_t payload_size;       ///< Size of event payload
-    uint64_t epoch_nanos;        ///< Time event was recorded
-    uint64_t : 64 ;              ///< Reserved (will be used in PR2)
-    union
-    {
-        uint64_t payload_buf_offset; ///< Unwrapped offset of payload in p. buf
-        uint8_t payload[32];         ///< Payload contents if inline_payload
-    };
+    uint64_t record_epoch_nanos; ///< Time event was recorded
+    uint64_t payload_buf_offset; ///< Unwrapped offset of payload in p. buf
+    uint64_t user[4];            ///< Meaning defined by the writer
 };
 
 static_assert(sizeof(struct monad_event_descriptor) == 64);

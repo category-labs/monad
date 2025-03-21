@@ -65,18 +65,26 @@ static void writer_main(
     uint8_t writer_thread_count, uint32_t payload_size)
 {
     using std::chrono::duration_cast, std::chrono::nanoseconds;
-    std::byte payload_buf[1 << 14]{};
+    std::byte local_payload_buf[1 << 14]{};
 
     uint64_t const writer_iterations = MaxPerfIterations / writer_thread_count;
     auto *const test_counter =
-        std::bit_cast<test_counter_payload *>(&payload_buf[0]);
+        std::bit_cast<test_counter_payload *>(&local_payload_buf[0]);
     test_counter->writer_id = writer_id;
     latch->arrive_and_wait();
     sleep(1);
     auto const start_time = std::chrono::system_clock::now();
     for (uint64_t counter = 0; counter < writer_iterations; ++counter) {
         test_counter->counter = counter;
-        monad_event_record(recorder, TEST_COUNTER, payload_buf, payload_size);
+
+        uint64_t seqno;
+        uint8_t *ring_payload_buf;
+
+        monad_event_descriptor *const event = monad_event_recorder_reserve(
+            recorder, payload_size, &seqno, &ring_payload_buf);
+        event->event_type = TEST_COUNTER;
+        memcpy(ring_payload_buf, local_payload_buf, payload_size);
+        __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
     }
     auto const end_time = std::chrono::system_clock::now();
     auto const elapsed_nanos = static_cast<uint64_t>(

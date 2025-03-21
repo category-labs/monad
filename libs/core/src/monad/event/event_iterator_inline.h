@@ -76,20 +76,17 @@ inline void const *monad_event_payload_peek(
     struct monad_event_iterator const *iter,
     struct monad_event_descriptor const *event)
 {
-    return event->inline_payload
-               ? event->payload
-               : iter->payload_buf +
-                     (event->payload_buf_offset & iter->payload_buf_mask);
+    return iter->payload_buf +
+           (event->payload_buf_offset & iter->payload_buf_mask);
 }
 
 inline bool monad_event_payload_check(
     struct monad_event_iterator const *iter,
     struct monad_event_descriptor const *event)
 {
-    return event->inline_payload ||
-           event->payload_buf_offset >=
-               __atomic_load_n(
-                   &iter->control->buffer_window_start, __ATOMIC_ACQUIRE);
+    return event->payload_buf_offset >=
+           __atomic_load_n(
+               &iter->control->buffer_window_start, __ATOMIC_ACQUIRE);
 }
 
 inline void *monad_event_payload_memcpy(

@@ -16,7 +16,6 @@
 #include <time.h>
 
 #include <sys/types.h>
-#include <sys/uio.h>
 
 #include <monad/core/bit_util.h>
 #include <monad/core/likely.h>
@@ -50,12 +49,16 @@ inline uint64_t monad_event_get_epoch_nanos()
 //
 //   - allocates space in the payload buffer for the event payload
 //
-//   - fills in the event descriptor fields that relate to the payload
+//   - fills in the event descriptor fields that relate to the payload and
+//     timestamp
 //
-// This returns a pointer to the allocated slot in the event ring
-static inline struct monad_event_descriptor *_monad_event_ring_reserve(
+// This returns a pointer to the allocated slot in the event ring, the
+// allocated sequence number, and the space to copy the event payload. When
+// the user is finished copying the payload, at atomic store of `seqno` into
+// the descriptor will finish the recording process.
+static inline struct monad_event_descriptor *monad_event_recorder_reserve(
     struct monad_event_recorder *recorder, size_t payload_size, uint64_t *seqno,
-    void **dst)
+    uint8_t **payload)
 {
     struct monad_event_descriptor *event;
     uint64_t buffer_window_start;
@@ -63,20 +66,24 @@ static inline struct monad_event_descriptor *_monad_event_ring_reserve(
     uint64_t payload_end;
     uint64_t const WINDOW_INCR = 1UL << 24;
 
+    uint64_t const start_record_timestamp = monad_event_get_epoch_nanos();
     struct monad_event_ring_control *const rctl = recorder->control;
-    bool const store_payload_inline = payload_size <= sizeof event->payload;
-    size_t const alloc_size =
-        store_payload_inline ? 0 : monad_round_size_to_align(payload_size, 8);
+    size_t const alloc_size = monad_round_size_to_align(payload_size, 8);
+
+    // Allocate the sequence number and payload buffer bytes
     uint64_t const last_seqno =
         __atomic_fetch_add(&rctl->last_seqno, 1, __ATOMIC_RELAXED);
     payload_begin = __atomic_fetch_add(
         &rctl->next_payload_byte, alloc_size, __ATOMIC_RELAXED);
+
     // We're going to start filling in the fields of `event`. Overwrite its
     // sequence number to zero, in case this slot is occupied by an older event
     // and that older event is currently being examined by a reading thread.
     // This ensures the reader can always detect that fields are invalidated.
     event = &recorder->descriptors[last_seqno & recorder->desc_capacity_mask];
     __atomic_store_n(&event->seqno, 0, __ATOMIC_RELEASE);
+
+    // Check if we need to move the sliding buffer window
     payload_end = payload_begin + alloc_size;
     buffer_window_start =
         __atomic_load_n(&rctl->buffer_window_start, __ATOMIC_RELAXED);
@@ -95,61 +102,13 @@ static inline struct monad_event_descriptor *_monad_event_ring_reserve(
             __ATOMIC_RELAXED,
             __ATOMIC_RELAXED);
     }
-    *seqno = last_seqno + 1;
+
     event->payload_size = (uint32_t)payload_size;
-    event->inline_payload = store_payload_inline;
-    if (event->inline_payload) {
-        *dst = event->payload;
-    }
-    else {
-        *dst =
-            &recorder->payload_buf[payload_begin & recorder->payload_buf_mask];
-        event->payload_buf_offset = payload_begin;
-    }
+    event->payload_buf_offset = payload_begin;
+    event->record_epoch_nanos = start_record_timestamp;
+    *seqno = last_seqno + 1;
+    *payload =
+        &recorder->payload_buf[payload_begin & recorder->payload_buf_mask];
+
     return event;
-}
-
-inline void monad_event_record(
-    struct monad_event_recorder *recorder, uint16_t event_type,
-    void const *payload, size_t payload_size)
-{
-    struct monad_event_descriptor *event;
-    uint64_t seqno;
-    uint64_t event_epoch_nanos;
-    void *dst;
-
-    event_epoch_nanos = monad_event_get_epoch_nanos();
-    // Reserve the resources to record the event, copy the event payload,
-    // populate all event fields, and signal that we're done by the atomic
-    // store of the sequence number
-    event = _monad_event_ring_reserve(recorder, payload_size, &seqno, &dst);
-    memcpy(dst, payload, payload_size);
-    event->event_type = event_type;
-    event->epoch_nanos = event_epoch_nanos;
-    __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
-}
-
-inline void monad_event_recordv(
-    struct monad_event_recorder *recorder, uint16_t event_type,
-    struct iovec const *iov, size_t iovlen)
-{
-    struct monad_event_descriptor *event;
-    uint64_t seqno;
-    uint64_t event_epoch_nanos;
-    void *dst;
-    size_t payload_size = 0;
-
-    // Vectored "gather I/O" version of monad_event_record; the comments in
-    // that function apply here also
-    event_epoch_nanos = monad_event_get_epoch_nanos();
-    for (size_t i = 0; i < iovlen; ++i) {
-        payload_size += iov[i].iov_len;
-    }
-    event = _monad_event_ring_reserve(recorder, payload_size, &seqno, &dst);
-    for (size_t i = 0; i < iovlen; ++i) {
-        dst = mempcpy(dst, iov[i].iov_base, iov[i].iov_len);
-    }
-    event->event_type = event_type;
-    event->epoch_nanos = event_epoch_nanos;
-    __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }

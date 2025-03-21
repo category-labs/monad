@@ -20,15 +20,14 @@ extern "C"
 {
 #endif
 
-/// Record an event whose payload is in a single contiguous buffer
-static void monad_event_record(
-    struct monad_event_recorder *, uint16_t event_type, void const *payload,
-    size_t payload_size);
-
-/// Record an event with "gather I/O", similar to writev(2)
-static void monad_event_recordv(
-    struct monad_event_recorder *, uint16_t event_type, struct iovec const *iov,
-    size_t iovlen);
+/// Reserve resources to record an event; this returns an allocated event
+/// descriptor with all fields populated except `seqno` and `event_type`. It
+/// sets `ptr` to the start of a payload buffer large enough to hold the
+/// `payload_size`. To finish recording, perform an atomic store of the
+/// returned `seqno` into the descriptor, with release memory ordering
+static struct monad_event_descriptor *monad_event_recorder_reserve(
+    struct monad_event_recorder *, size_t payload_size, uint64_t *seqno,
+    uint8_t **payload);
 
 /// Take a timestamp, in nanoseconds since the UNIX epoch
 static uint64_t monad_event_get_epoch_nanos();

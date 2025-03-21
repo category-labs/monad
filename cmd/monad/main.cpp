@@ -49,6 +49,11 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef MONAD_EVM_TIMING
+#include <monad/util/timers.hpp>
+extern monad::Timers timers;
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 quill::Logger *event_tracer = nullptr;
@@ -376,6 +381,20 @@ int main(int const argc, char const *argv[])
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();
+
+#ifdef MONAD_EVM_TIMING
+    for (auto it = timers.timers.begin(); it != timers.timers.end(); it++)
+    {
+        LOG_INFO("thread id {}: total evmone execution time = {}",
+                it->first, it->second.evmone_total_time);
+        LOG_INFO("thread id {}: total evmone RE-execution time = {}",
+            it->first, it->second.evmone_reexec_total_time);
+        LOG_INFO("thread id {}: keccak evmone execution time = {}",
+            it->first, it->second.evmone_keccak_time);
+        LOG_INFO("thread id {}: keccak evmone RE-execution time = {}",
+            it->first, it->second.evmone_reexec_keccak_time);
+    }
+#endif
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(

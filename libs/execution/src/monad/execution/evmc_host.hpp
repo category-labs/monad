@@ -31,9 +31,11 @@ protected:
     size_t const max_code_size_;
 
 public:
+    bool is_reexec_;
+
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, size_t max_code_size) noexcept;
+        State &, size_t max_code_size, bool is_reexec = false) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 

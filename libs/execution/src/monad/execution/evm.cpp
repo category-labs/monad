@@ -27,6 +27,11 @@
 #include <optional>
 #include <utility>
 
+#ifdef MONAD_EVM_TIMING
+#include <monad/util/timers.hpp>
+monad::Timers timers;
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
@@ -212,8 +217,16 @@ evmc::Result create(
     };
 
     auto const input_code_analysis = analyze({msg.input_data, msg.input_size});
-    auto result = baseline_execute(m_call, rev, host, input_code_analysis);
-
+#ifdef MONAD_EVM_TIMING
+    const auto &[exec_time, keccak_time] = [&] { 
+        auto &timer = timers.get_timer();
+        if (host->is_reexec_) return std::pair<std::atomic<uint64_t>&, std::atomic<uint64_t>&>(timer.evmone_reexec_total_time, timer.evmone_reexec_keccak_time);
+        else return std::pair<std::atomic<uint64_t>&, std::atomic<uint64_t>&>(timer.evmone_total_time, timer.evmone_keccak_time);
+    }();
+    auto result = baseline_execute(m_call, rev, host, input_code_analysis, &exec_time, &keccak_time);    
+#else
+    auto result = baseline_execute(m_call, rev, host, input_code_analysis, nullptr, nullptr);
+#endif
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
             state, contract_address, std::move(result), max_code_size);
@@ -265,7 +278,16 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
     else {
         auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, host, *code);
+#ifdef MONAD_EVM_TIMING
+        const auto &[exec_time, keccak_time] = [&] { 
+            auto &timer = timers.get_timer();
+            if (host->is_reexec_) return std::pair<std::atomic<uint64_t>&, std::atomic<uint64_t>&>(timer.evmone_reexec_total_time, timer.evmone_reexec_keccak_time);
+            else return std::pair<std::atomic<uint64_t>&, std::atomic<uint64_t>&>(timer.evmone_total_time, timer.evmone_keccak_time);
+        }();
+        result = baseline_execute(msg, rev, host, *code, &exec_time, &keccak_time);    
+#else
+        result = baseline_execute(msg, rev, host, *code, nullptr, nullptr);
+#endif
     }
 
     post_call(state, result);

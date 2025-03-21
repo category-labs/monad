@@ -180,7 +180,7 @@ template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
     CallTracerBase &call_tracer, Chain const &chain, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
+    BlockHashBuffer const &block_hash_buffer, State &state, bool is_reexec)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
@@ -191,7 +191,7 @@ Result<evmc::Result> execute_impl2(
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
     EvmcHost<rev> host{
-        call_tracer, tx_context, block_hash_buffer, state, max_code_size};
+        call_tracer, tx_context, block_hash_buffer, state, max_code_size, is_reexec};
 
     return execute_impl_no_validation<rev>(
         state,
@@ -229,7 +229,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state, false);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -271,7 +271,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state, true);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {

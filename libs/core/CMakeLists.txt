@@ -130,7 +130,9 @@ add_library(
   # test
   "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
-  "src/monad/util/stopwatch.hpp")
+  "src/monad/util/stopwatch.hpp"
+  "src/monad/util/timers.hpp"
+  "src/monad/util/timers.cpp")
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files

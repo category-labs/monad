@@ -20,12 +20,13 @@ MONAD_NAMESPACE_BEGIN
 EvmcHostBase::EvmcHostBase(
     CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
     BlockHashBuffer const &block_hash_buffer, State &state,
-    size_t const max_code_size) noexcept
+    size_t const max_code_size, bool is_reexec) noexcept
     : tx_context_{tx_context}
     , block_hash_buffer_{block_hash_buffer}
     , state_{state}
     , call_tracer_{call_tracer}
     , max_code_size_{max_code_size}
+    , is_reexec_{is_reexec}
 {
 }
 

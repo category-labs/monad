@@ -64,6 +64,31 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
+void init_block_hash_chain_proposals(
+    mpt::Db &db, BlockHashChain &block_hash_chain,
+    uint64_t const start_block_num)
+{
+    uint64_t const end_block_num = db.get_latest_block_id();
+    for (uint64_t b = start_block_num; b <= end_block_num; ++b) {
+        for (uint64_t const r : get_proposal_rounds(db, b)) {
+            auto const consensus_header =
+                read_consensus_header(db, b, proposal_prefix(r));
+            MONAD_ASSERT_PRINTF(
+                consensus_header.has_value(),
+                "Could not decode consensus block at (%lu, %lu)",
+                b,
+                r);
+            auto const encoded_eth_header =
+                db.get(mpt::concat(proposal_prefix(r), BLOCKHEADER_NIBBLE), b);
+            MONAD_ASSERT(encoded_eth_header.has_value());
+            block_hash_chain.propose(
+                to_bytes(keccak256(encoded_eth_header.value())),
+                consensus_header.value().round,
+                consensus_header.value().parent_round());
+        }
+    }
+}
+
 bool has_executed(mpt::Db const &db, MonadConsensusBlockHeader const &header)
 {
     auto const prefix = proposal_prefix(header.round);
@@ -171,6 +196,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = finalized_block_num;
     BlockHashChain block_hash_chain(block_hash_buffer);
+    init_block_hash_chain_proposals(raw_db, block_hash_chain, start_block_num);
 
     auto const body_dir = ledger_dir / "bodies";
     auto const header_dir = ledger_dir / "headers";

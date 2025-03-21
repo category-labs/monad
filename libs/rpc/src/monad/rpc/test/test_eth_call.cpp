@@ -65,6 +65,8 @@ namespace
         {
             std::filesystem::remove(dbname);
         }
+
+        void test_transfer_call_with_trace(bool gas_specified);
     };
 
     struct callback_context
@@ -84,6 +86,107 @@ namespace
 
         c->result = result;
         c->promise.set_value();
+    }
+
+    void EthCallFixture::test_transfer_call_with_trace(bool const gas_specified)
+    {
+        for (uint64_t i = 0; i < 256; ++i) {
+            commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+        }
+
+        BlockHeader header{.number = 256};
+
+        commit_sequential(
+            tdb,
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{
+                              .balance = 0x200000,
+                              .code_hash = NULL_HASH,
+                              .nonce = 0x0}}}},
+                {ADDR_B,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+            Code{},
+            header);
+
+        Transaction const tx{
+            .max_fee_per_gas = 1,
+            .gas_limit = 500'000u,
+            .value = 0x10000,
+            .to = ADDR_B,
+        };
+        auto const &from = ADDR_A;
+
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(from)));
+
+        auto executor = monad_eth_call_executor_create(
+            1, 1, node_lru_size, 30, dbname.string().c_str());
+        auto state_override = monad_state_override_create();
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            true,
+            gas_specified);
+        f.get();
+
+        EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+
+        byte_string const rlp_call_frames(
+            ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+        CallFrame expected{
+            .type = CallType::CALL,
+            .flags = 0,
+            .from = from,
+            .to = ADDR_B,
+            .value = 0x10000,
+            .gas = gas_specified ? 500'000u : MONAD_ETH_CALL_LOW_GAS_LIMIT,
+            .gas_used = gas_specified ? 500'000u : MONAD_ETH_CALL_LOW_GAS_LIMIT,
+            .status = EVMC_SUCCESS,
+            .depth = 0,
+        };
+
+        byte_string_view view(rlp_call_frames);
+        auto const call_frames = rlp::decode_call_frames(view);
+
+        ASSERT_TRUE(call_frames.has_value());
+        ASSERT_TRUE(call_frames.value().size() == 1);
+        EXPECT_EQ(call_frames.value()[0], expected);
+
+        // The discrepancy between `evmc_result.gas_used` and the `gas_used` in
+        // the final CallFrame is expected. This is because Monad currently does
+        // not support gas refund — refunds are always zero. As a result, the
+        // `gas_used` in the final CallFrame always equals the gas limit.
+        // However, `eth_call` returns the actual gas used (not the full gas
+        // limit) to ensure `eth_estimateGas` remains usable.
+        EXPECT_EQ(ctx.result->gas_refund, 0);
+        EXPECT_EQ(ctx.result->gas_used, 21000);
+
+        monad_state_override_destroy(state_override);
+        monad_eth_call_executor_destroy(executor);
     }
 }
 
@@ -110,7 +213,7 @@ TEST_F(EthCallFixture, simple_success_call)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -129,7 +232,8 @@ TEST_F(EthCallFixture, simple_success_call)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -167,7 +271,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -186,7 +290,8 @@ TEST_F(EthCallFixture, insufficient_balance)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
@@ -225,7 +330,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -244,7 +349,8 @@ TEST_F(EthCallFixture, on_proposed_block)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -282,7 +388,7 @@ TEST_F(EthCallFixture, failed_to_read)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -301,7 +407,8 @@ TEST_F(EthCallFixture, failed_to_read)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
@@ -341,7 +448,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -360,7 +467,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     std::string deployed_code =
@@ -421,7 +529,7 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -440,7 +548,8 @@ TEST_F(EthCallFixture, from_contract_account)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false);
+        false,
+        true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -492,7 +601,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
     Transaction tx{.gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
 
     auto executor = monad_eth_call_executor_create(
-        2, 10, node_lru_size, dbname.string().c_str());
+        2, 10, node_lru_size, 30, dbname.string().c_str());
 
     std::deque<std::unique_ptr<callback_context>> ctxs;
     std::deque<boost::fibers::future<void>> futures;
@@ -525,7 +634,8 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             state_override,
             complete_callback,
             (void *)ctx.get(),
-            false);
+            false,
+            true);
     }
 
     for (auto [ctx, f, state_override] :
@@ -546,102 +656,12 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
 
 TEST_F(EthCallFixture, transfer_success_with_trace)
 {
-    for (uint64_t i = 0; i < 256; ++i) {
-        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
-    }
+    test_transfer_call_with_trace(true);
+}
 
-    BlockHeader header{.number = 256};
-
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x200000,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {ADDR_B,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
-        Code{},
-        header);
-
-    Transaction const tx{
-        .max_fee_per_gas = 1,
-        .gas_limit = 500'000u,
-        .value = 0x10000,
-        .to = ADDR_B,
-    };
-    auto const &from = ADDR_A;
-
-    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
-    auto const rlp_header = to_vec(rlp::encode_block_header(header));
-    auto const rlp_sender =
-        to_vec(rlp::encode_address(std::make_optional(from)));
-
-    auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
-    auto state_override = monad_state_override_create();
-
-    struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
-
-    monad_eth_call_executor_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        mpt::INVALID_ROUND_NUM,
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        true);
-    f.get();
-
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
-
-    byte_string const rlp_call_frames(
-        ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
-    CallFrame expected{
-        .type = CallType::CALL,
-        .flags = 0,
-        .from = from,
-        .to = ADDR_B,
-        .value = 0x10000,
-        .gas = 500'000,
-        .gas_used = 500'000,
-        .status = EVMC_SUCCESS,
-        .depth = 0,
-    };
-
-    byte_string_view view(rlp_call_frames);
-    auto const call_frames = rlp::decode_call_frames(view);
-
-    ASSERT_TRUE(call_frames.has_value());
-    ASSERT_TRUE(call_frames.value().size() == 1);
-    EXPECT_EQ(call_frames.value()[0], expected);
-
-    // The discrepancy between `evmc_result.gas_used` and the `gas_used` in the
-    // final CallFrame is expected. This is because Monad currently does not
-    // support gas refund — refunds are always zero. As a result,
-    // the `gas_used` in the final CallFrame always equals the gas limit.
-    // However, `eth_call` returns the actual gas used (not the full gas limit)
-    // to ensure `eth_estimateGas` remains usable.
-    EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 21000);
-
-    monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+TEST_F(EthCallFixture, transfer_success_with_trace_unspecified_gas)
+{
+    test_transfer_call_with_trace(false);
 }
 
 TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
@@ -689,7 +709,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, dbname.string().c_str());
+        1, 1, node_lru_size, 30, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -709,6 +729,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         state_override,
         complete_callback,
         (void *)&ctx,
+        true,
         true);
     f.get();
 

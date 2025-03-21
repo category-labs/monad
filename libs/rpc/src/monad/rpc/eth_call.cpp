@@ -65,7 +65,10 @@ namespace
 {
     char const *const BLOCKHASH_ERR_MSG =
         "failure to initialize block hash buffer";
-
+    char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
+        "failure to submit eth_call to thread pool: queue size exceeded";
+    char const *const TIMEOUT_ERR_MSG =
+        "failure to execute eth_call: queuing time exceeded timeout threshold";
     using StateOverrideObj = monad_state_override::monad_state_override_object;
 
     template <evmc_revision rev>
@@ -406,7 +409,17 @@ struct monad_eth_call_executor
 {
     using BlockHashCache = LruCache<uint64_t, bytes32_t>;
 
-    fiber::PriorityPool pool_;
+    static constexpr auto low_pool_timeout_ = std::chrono::seconds{2};
+
+    fiber::PriorityPool low_gas_pool_;
+    fiber::PriorityPool high_gas_pool_;
+
+    unsigned high_pool_queue_limit_{20};
+    std::chrono::seconds high_pool_timeout_{30};
+
+    // counters
+    uint64_t call_count_{0};
+    std::atomic<unsigned> high_pool_queued_count_{0};
 
     mpt::RODb db_;
 
@@ -414,8 +427,11 @@ struct monad_eth_call_executor
 
     monad_eth_call_executor(
         unsigned const num_threads, unsigned const num_fibers,
-        unsigned const node_lru_size, std::string const &triedb_path)
-        : pool_{num_threads, num_fibers, true}
+        unsigned const node_lru_size, unsigned const high_pool_timeout_sec,
+        std::string const &triedb_path)
+        : low_gas_pool_{num_threads, num_fibers, true}
+        , high_gas_pool_{1, 2, true}
+        , high_pool_timeout_{high_pool_timeout_sec}
         , db_{[&] {
             std::vector<std::filesystem::path> paths;
             if (std::filesystem::is_directory(triedb_path)) {
@@ -492,124 +508,281 @@ struct monad_eth_call_executor
         uint64_t const block_number, uint64_t const block_round,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
-        bool const trace)
+        bool const trace, bool const gas_specified)
     {
         monad_eth_call_result *const result = new monad_eth_call_result();
 
-        pool_.submit(
-            0,
-            [this,
-             chain_config = chain_config,
-             transaction = txn,
-             block_header = block_header,
-             block_number = block_number,
-             block_round = block_round,
-             &db = db_,
-             sender = sender,
-             result = result,
-             complete = complete,
-             user = user,
-             state_overrides = overrides,
-             trace = trace] {
-                auto const chain = [chain_config] -> std::unique_ptr<Chain> {
-                    switch (chain_config) {
-                    case CHAIN_CONFIG_ETHEREUM_MAINNET:
-                        return std::make_unique<EthereumMainnet>();
-                    case CHAIN_CONFIG_MONAD_DEVNET:
-                        return std::make_unique<MonadDevnet>();
-                    case CHAIN_CONFIG_MONAD_TESTNET:
-                        return std::make_unique<MonadTestnet>();
-                    case CHAIN_CONFIG_MONAD_MAINNET:
-                        return std::make_unique<MonadMainnet>();
-                    }
-                    MONAD_ASSERT(false);
-                }();
+        bool const use_high_gas_pool =
+            (gas_specified && txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT);
 
-                evmc_revision const rev = chain->get_revision(
-                    block_header.number, block_header.timestamp);
-
-                auto const block_hash_buffer =
-                    create_blockhash_buffer(block_number);
-                if (block_hash_buffer == nullptr) {
-                    result->status_code = EVMC_REJECTED;
-                    result->message = strdup(BLOCKHASH_ERR_MSG);
-                    MONAD_ASSERT(result->message);
-                    complete(result, user);
-                    return;
-                }
-
-                TrieRODb tdb{db};
-                auto const res = eth_call_impl(
-                    *chain,
-                    rev,
-                    transaction,
-                    block_header,
-                    block_number,
-                    block_round,
-                    sender,
-                    tdb,
-                    *block_hash_buffer,
-                    *state_overrides,
-                    trace);
-
-                if (MONAD_UNLIKELY(res.has_error())) {
-                    result->status_code = EVMC_REJECTED;
-                    result->message = strdup(res.error().message().c_str());
-                    MONAD_ASSERT(result->message);
-                    complete(result, user);
-                    return;
-                }
-
-                auto const &[evmc_result, call_frames_result] =
-                    res.assume_value();
-                result->status_code = evmc_result.status_code;
-                result->gas_used = static_cast<int64_t>(transaction.gas_limit) -
-                                   evmc_result.gas_left;
-                result->gas_refund = evmc_result.gas_refund;
-                if (evmc_result.output_size > 0) {
-                    result->output_data = new uint8_t[evmc_result.output_size];
-                    result->output_data_len = evmc_result.output_size;
-                    memcpy(
-                        (uint8_t *)result->output_data,
-                        evmc_result.output_data,
-                        evmc_result.output_size);
-                }
-                else {
-                    result->output_data = nullptr;
-                    result->output_data_len = 0;
-                }
-
-                if (trace) {
-                    MONAD_ASSERT(call_frames_result.size());
-                    auto const rlp_call_frames =
-                        rlp::encode_call_frames(call_frames_result);
-                    result->rlp_call_frames =
-                        new uint8_t[rlp_call_frames.length()];
-                    result->rlp_call_frames_len = rlp_call_frames.length();
-                    memcpy(
-                        (uint8_t *)result->rlp_call_frames,
-                        rlp_call_frames.data(),
-                        result->rlp_call_frames_len);
-                }
-                else {
-                    result->rlp_call_frames = nullptr;
-                    result->rlp_call_frames_len = 0;
-                }
-
+        if (use_high_gas_pool) {
+            if (high_pool_queued_count_.load(std::memory_order_acquire) >=
+                high_pool_queue_limit_) {
+                result->status_code = EVMC_REJECTED;
+                result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
+                MONAD_ASSERT(result->message);
                 complete(result, user);
-            });
+                return;
+            }
+            ++high_pool_queued_count_;
+        }
+        submit_eth_call_to_pool(
+            chain_config,
+            txn,
+            block_header,
+            sender,
+            block_number,
+            block_round,
+            overrides,
+            complete,
+            user,
+            trace,
+            gas_specified,
+            std::chrono::steady_clock::now(),
+            call_count_++,
+            result,
+            use_high_gas_pool);
+    }
+
+    void submit_eth_call_to_pool(
+        monad_chain_config const chain_config, Transaction const &txn,
+        BlockHeader const &block_header, Address const &sender,
+        uint64_t const block_number, uint64_t const block_round,
+        monad_state_override const *const overrides,
+        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        bool const trace, bool const gas_specified,
+        std::chrono::steady_clock::time_point const call_begin,
+        uint64_t const eth_call_seq_no, monad_eth_call_result *const result,
+        bool const use_high_gas_pool)
+    {
+        (use_high_gas_pool ? high_gas_pool_ : low_gas_pool_)
+            .submit(
+                eth_call_seq_no,
+                [this,
+                 call_begin = call_begin,
+                 eth_call_seq_no = eth_call_seq_no,
+                 chain_config = chain_config,
+                 orig_txn = txn,
+                 block_header = block_header,
+                 block_number = block_number,
+                 block_round = block_round,
+                 &db = db_,
+                 sender = sender,
+                 result = result,
+                 complete = complete,
+                 user = user,
+                 state_overrides = overrides,
+                 trace = trace,
+                 gas_specified = gas_specified,
+                 use_high_gas_pool = use_high_gas_pool,
+                 timeout = use_high_gas_pool ? high_pool_timeout_
+                                             : low_pool_timeout_] {
+                    if (use_high_gas_pool) {
+                        --high_pool_queued_count_;
+                    }
+                    // check for timeout
+                    if (std::chrono::steady_clock::now() - call_begin >
+                        timeout) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(TIMEOUT_ERR_MSG);
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    auto transaction = orig_txn;
+
+                    bool const override_with_low_gas_retry_if_oog =
+                        !use_high_gas_pool && !gas_specified &&
+                        orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT;
+
+                    if (override_with_low_gas_retry_if_oog) {
+                        // override with low gas limit
+                        transaction.gas_limit = MONAD_ETH_CALL_LOW_GAS_LIMIT;
+                    }
+
+                    auto const chain =
+                        [chain_config] -> std::unique_ptr<Chain> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return std::make_unique<EthereumMainnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                            return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                            return std::make_unique<MonadTestnet>();
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                            return std::make_unique<MonadMainnet>();
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
+                    evmc_revision const rev = chain->get_revision(
+                        block_header.number, block_header.timestamp);
+
+                    auto const block_hash_buffer =
+                        create_blockhash_buffer(block_number);
+                    if (block_hash_buffer == nullptr) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(BLOCKHASH_ERR_MSG);
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    TrieRODb tdb{db};
+                    auto const res = eth_call_impl(
+                        *chain,
+                        rev,
+                        transaction,
+                        block_header,
+                        block_number,
+                        block_round,
+                        sender,
+                        tdb,
+                        *block_hash_buffer,
+                        *state_overrides,
+                        trace);
+
+                    if (override_with_low_gas_retry_if_oog &&
+                        ((res.has_value() &&
+                          (res.value().evmc_result.status_code ==
+                               EVMC_OUT_OF_GAS ||
+                           res.value().evmc_result.status_code ==
+                               EVMC_REVERT)) ||
+                         (res.has_error() &&
+                          res.error() == TransactionError::
+                                             IntrinsicGasGreaterThanLimit))) {
+                        retry_in_high_pool(
+                            chain_config,
+                            orig_txn,
+                            block_header,
+                            sender,
+                            block_number,
+                            block_round,
+                            state_overrides,
+                            complete,
+                            user,
+                            trace,
+                            call_begin,
+                            eth_call_seq_no,
+                            result);
+                        return;
+                    }
+                    if (MONAD_UNLIKELY(res.has_error())) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(res.error().message().c_str());
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+                    call_complete(
+                        transaction,
+                        res.assume_value(),
+                        result,
+                        complete,
+                        user,
+                        trace);
+                });
+    }
+
+    void call_complete(
+        Transaction const &transaction, EthCallResult const &res_value,
+        monad_eth_call_result *const result,
+        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        bool const trace)
+    {
+        auto const &[evmc_result, call_frames_result] = res_value;
+        result->status_code = evmc_result.status_code;
+        result->gas_used =
+            static_cast<int64_t>(transaction.gas_limit) - evmc_result.gas_left;
+        result->gas_refund = evmc_result.gas_refund;
+        if (evmc_result.output_size > 0) {
+            result->output_data = new uint8_t[evmc_result.output_size];
+            result->output_data_len = evmc_result.output_size;
+            memcpy(
+                (uint8_t *)result->output_data,
+                evmc_result.output_data,
+                evmc_result.output_size);
+        }
+        else {
+            result->output_data = nullptr;
+            result->output_data_len = 0;
+        }
+
+        if (trace) {
+            MONAD_ASSERT(call_frames_result.size());
+            auto const rlp_call_frames =
+                rlp::encode_call_frames(call_frames_result);
+            result->rlp_call_frames = new uint8_t[rlp_call_frames.length()];
+            result->rlp_call_frames_len = rlp_call_frames.length();
+            memcpy(
+                (uint8_t *)result->rlp_call_frames,
+                rlp_call_frames.data(),
+                result->rlp_call_frames_len);
+        }
+        else {
+            result->rlp_call_frames = nullptr;
+            result->rlp_call_frames_len = 0;
+        }
+        complete(result, user);
+    }
+
+    void retry_in_high_pool(
+        monad_chain_config const chain_config, Transaction const &orig_txn,
+        BlockHeader const &block_header, Address const &sender,
+        uint64_t const block_number, uint64_t const block_round,
+        monad_state_override const *const overrides,
+        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        bool const trace,
+        std::chrono::steady_clock::time_point const call_begin,
+        auto const eth_call_seq_no, monad_eth_call_result *const result)
+    {
+        // retry in high gas limit pool
+        MONAD_ASSERT(orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT);
+
+        if (high_pool_queued_count_.load(std::memory_order_acquire) >=
+            high_pool_queue_limit_) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        ++high_pool_queued_count_;
+        submit_eth_call_to_pool(
+            chain_config,
+            orig_txn,
+            block_header,
+            sender,
+            block_number,
+            block_round,
+            overrides,
+            complete,
+            user,
+            trace,
+            false /* gas_specified */,
+            call_begin,
+            eth_call_seq_no,
+            result,
+            true /* use_high_gas_pool */);
     }
 };
 
 monad_eth_call_executor *monad_eth_call_executor_create(
     unsigned const num_threads, unsigned const num_fibers,
-    unsigned const node_lru_size, char const *const dbpath)
+    unsigned const node_lru_size, unsigned const high_pool_timeout_sec,
+    char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 
     monad_eth_call_executor *const e = new monad_eth_call_executor(
-        num_threads, num_fibers, node_lru_size, triedb_path);
+        num_threads,
+        num_fibers,
+        node_lru_size,
+        high_pool_timeout_sec,
+        triedb_path);
 
     return e;
 }
@@ -629,7 +802,7 @@ void monad_eth_call_executor_submit(
     size_t const rlp_sender_len, uint64_t const block_number,
     uint64_t const block_round, monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
-    void *const user, bool const trace)
+    void *const user, bool const trace, bool const gas_specified)
 {
     MONAD_ASSERT(executor);
 
@@ -664,5 +837,6 @@ void monad_eth_call_executor_submit(
         overrides,
         complete,
         user,
-        trace);
+        trace,
+        gas_specified);
 }

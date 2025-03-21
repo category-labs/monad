@@ -10,6 +10,8 @@ extern "C"
 {
 #endif
 
+static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 400'000;
+
 struct monad_state_override;
 struct monad_eth_call_executor;
 
@@ -62,7 +64,7 @@ void monad_eth_call_result_release(monad_eth_call_result *);
 
 struct monad_eth_call_executor *monad_eth_call_executor_create(
     unsigned num_threads, unsigned num_fibers, unsigned node_lru_size,
-    char const *dbpath);
+    unsigned high_pool_timeout_sec, char const *dbpath);
 
 void monad_eth_call_executor_destroy(struct monad_eth_call_executor *);
 
@@ -73,7 +75,7 @@ void monad_eth_call_executor_submit(
     uint64_t block_number, uint64_t block_round,
     struct monad_state_override const *,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
-    bool const trace);
+    bool trace, bool gas_specified);
 
 #ifdef __cplusplus
 }

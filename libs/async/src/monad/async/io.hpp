@@ -38,7 +38,8 @@ struct IORecord
     unsigned max_inflight_wr{0};
 
     unsigned nreads{0};
-    unsigned reads_retried{0}; // Reads which got a EAGAIN and were retried
+    // Reads and scatter reads which got a EAGAIN and were retried
+    unsigned reads_retried{0};
 };
 
 class AsyncIO final

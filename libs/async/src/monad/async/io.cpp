@@ -651,11 +651,8 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     };
 
     auto process_cqe = [&] {
-        bool is_read_or_write = false;
-        if (state->is_read()) {
-            --records_.inflight_rd;
-            is_read_or_write = true;
-            // For now, only silently retry reads
+        // For now, only silently retry reads and scatter reads
+        auto retry_operation_if_temporary_failure = [&] {
             [[unlikely]] if (
                 res.has_error() &&
                 res.assume_error() == errc::resource_unavailable_try_again) {
@@ -673,6 +670,15 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 state->reinitiate();
                 return true;
             }
+            return false;
+        };
+        bool is_read_or_write = false;
+        if (state->is_read()) {
+            --records_.inflight_rd;
+            is_read_or_write = true;
+            if (retry_operation_if_temporary_failure()) {
+                return true;
+            }
             // Speculative read i/o deque
             dequeue_concurrent_read_ios_pending();
         }
@@ -688,6 +694,9 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         }
         else if (state->is_read_scatter()) {
             --records_.inflight_rd_scatter;
+            if (retry_operation_if_temporary_failure()) {
+                return true;
+            }
         }
 #ifndef NDEBUG
         else {

@@ -52,11 +52,18 @@ struct node_disk_pages_spare_15
         : value{0}
     {
         unsigned const exp = pages >> count_bits;
-        auto const shift = static_cast<uint16_t>(
+        auto shift = static_cast<uint16_t>(
             std::numeric_limits<decltype(exp)>::digits - std::countl_zero(exp));
-        value.spare.count =
-            ((pages >> shift) + bool(pages & ((1u << shift) - 1))) & max_count;
+        auto count = (pages >> shift) + (0 != (pages & ((1u << shift) - 1)));
+        if (count > max_count) {
+            count >>= 1;
+            shift += 1;
+        }
+        MONAD_ASSERT(count <= max_count);
+        MONAD_ASSERT(shift <= max_shift);
+        value.spare.count = count & max_count;
         value.spare.shift = shift & max_shift;
+        MONAD_ASSERT(to_pages() >= pages);
     }
 
     constexpr unsigned to_pages() const noexcept

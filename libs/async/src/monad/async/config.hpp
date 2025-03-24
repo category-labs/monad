@@ -54,6 +54,14 @@ struct chunk_offset_t
     file_offset_t offset : 28; //!< Offset into the chunk, max is 256Mb
     file_offset_t id : 20; //!< Id of the chunk, max is 1 million, therefore
                            //!< maximum addressable storage is 256Tb
+
+    /*! Next fifteen bits are unused by the async library and can be used by
+    client code for anything they wish. Triedb places a
+    `node_disk_pages_spare_15` into these bits which it uses to store how
+    many 512 byte sectors to read to completely load a node's value, thus both
+    a node's location within storage and how many bytes are needed to read it
+    are encapsulated within a single dense 64 bit identifier for Triedb.
+    */
     file_offset_t spare : 15;
     file_offset_t bits_format : 1; //! Reserve top bit to switch between
                                    //! different bits formatting

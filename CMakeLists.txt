@@ -100,7 +100,10 @@ function(monad_compile_options target)
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 endfunction()
 
+# boost
 find_package(Boost REQUIRED COMPONENTS fiber json CONFIG)
+include_directories("third_party/boost/include")
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)

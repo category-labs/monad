@@ -57,7 +57,10 @@ function(monad_compile_options target)
   endif()
 endfunction()
 
+# boost
 find_package(Boost REQUIRED COMPONENTS fiber json)
+include_directories("third_party/boost/include")
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 

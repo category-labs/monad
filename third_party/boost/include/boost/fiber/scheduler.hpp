@@ -51,7 +51,7 @@ public:
                     context, detail::ready_hook, & context::ready_hook_ >,
                 intrusive::constant_time_size< false >
             >                                               ready_queue_type;
-private:
+public:
     typedef intrusive::multiset<
                 context,
                 intrusive::member_hook<

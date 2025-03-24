@@ -8,6 +8,7 @@
 #include <monad/core/fmt/receipt_fmt.hpp> // NOLINT
 #include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
+#include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
@@ -23,6 +24,7 @@
 
 #include <CLI/CLI.hpp>
 #include <evmc/hex.hpp>
+#include <quill/Quill.h>
 #include <quill/bundled/fmt/core.h>
 #include <quill/bundled/fmt/format.h>
 
@@ -787,6 +789,7 @@ int main(int argc, char *argv[])
 {
     std::vector<std::filesystem::path> dbname_paths;
     std::optional<unsigned> sq_thread_cpu = std::nullopt;
+    auto log_level = quill::LogLevel::Info;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -800,6 +803,8 @@ int main(int argc, char *argv[])
         "CPU core binding for the io_uring SQPOLL thread. Specifies the CPU "
         "set for the kernel polling thread in SQPOLL mode. Defaults to "
         "disabled SQPOLL mode.");
+    cli.add_option("--log_level", log_level, "level of logging")
+        ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     try {
         cli.parse(argc, argv);
     }
@@ -809,6 +814,20 @@ int main(int argc, char *argv[])
     catch (CLI::RequiredError const &e) {
         return cli.exit(e);
     }
+
+    auto stdout_handler = quill::stdout_handler();
+    stdout_handler->set_pattern(
+        "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
+        "%(message)",
+        "%Y-%m-%d %H:%M:%S.%Qns",
+        quill::Timezone::GmtTime);
+    quill::Config cfg;
+    cfg.default_handlers.emplace_back(stdout_handler);
+    quill::configure(cfg);
+    quill::start(true);
+    quill::get_root_logger()->set_log_level(log_level);
+    LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+    quill::flush();
 
     if (!isatty(STDIN_FILENO)) {
         fmt::println("Not running interactively! Pass -it to run inside a "

@@ -16,15 +16,12 @@ struct ValidatorInfo
     Address withdrawal_address;
     byte_string_fixed<48> bls_pubkey;
     uint256_t stake;
+    uint256_t active_stake;
     uint64_t join_epoch;
-    uint256_t rewards[3];
-    uint256_t withdrawals[3];
-    uint256_t deposits[3];
-    bool stake_is_compounding;
 
     bool in_valset(uint64_t const epoch) const noexcept
     {
-        return epoch - join_epoch >= 3;
+        return epoch - join_epoch >= 2;
     }
 
     bool is_leaving_valset() const noexcept

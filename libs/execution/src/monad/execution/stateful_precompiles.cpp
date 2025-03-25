@@ -36,7 +36,7 @@ namespace
     constexpr auto METADATA_STORAGE_SLOT = bytes32_t{};
     constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // 1 MON
 
-    uint64_t const MAX_DEPOSIT_REQUESTS_PER_EPOCH = 100;
+    // uint64_t const MAX_DEPOSIT_REQUESTS_PER_EPOCH = 100;
     uint64_t const MAX_WITHDRAWAL_REQUESTS_PER_EPOCH = 100;
 
     //////////////////////

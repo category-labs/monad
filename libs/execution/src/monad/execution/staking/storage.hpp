@@ -3,6 +3,7 @@
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/state3/state.hpp>
 
 #include <type_traits>
 
@@ -52,6 +53,80 @@ struct StorageAdapter
     StorageAdapter()
         : typed{}
     {
+    }
+};
+
+// An array in the State trie. First index is the size.
+template <typename T>
+class StorageArray
+{
+    State &state_;
+    Address const &address_;
+    uint256_t const slot_;
+
+    static constexpr size_t NUM_SLOTS = num_storage_slots<T>();
+
+public:
+    StorageArray(State &state, Address const &address, bytes32_t const &slot)
+        : state_{state}
+        , address_{address}
+        , slot_{intx::be::load<uint256_t>(slot)}
+    {
+    }
+
+    uint64_t size() const noexcept
+    {
+        bytes32_t const size_padded =
+            state_.get_storage(address_, to_bytes(slot_));
+        return ::evmc::load64be(
+            size_padded.bytes + sizeof(size_padded.bytes) - sizeof(uint64_t));
+    }
+
+    T operator[](uint64_t const index) const noexcept
+    {
+        StorageAdapter<T> adapter;
+        size_t offset = 1 /* length */ + index * NUM_SLOTS;
+        for (size_t i = 0; i < NUM_SLOTS; ++i) {
+            adapter.slots[i] =
+                state_.get_storage(address_, to_bytes(slot_ + offset + i));
+        }
+        return adapter.typed;
+    }
+
+    void push(T const &elem) noexcept
+    {
+        StorageAdapter<T> adapter;
+        adapter.typed = elem;
+        size_t num_elements = size();
+        size_t offset = 1 /* length */ + num_elements * NUM_SLOTS;
+
+        // set slots
+        for (size_t i = 0; i < NUM_SLOTS; ++i) {
+            state_.set_storage(
+                address_, to_bytes(slot_ + offset + i), adapter.slots[i]);
+        }
+
+        // increment count
+        state_.set_storage(
+            address_, to_bytes(slot_), bytes32_t{num_elements + 1});
+    }
+
+    void pop() noexcept
+    {
+        size_t num_elements = size();
+        if (num_elements > 0) {
+            size_t offset = 1 /* length */ + (num_elements - 1) * NUM_SLOTS;
+
+            // clear slots
+            for (size_t i = 0; i < NUM_SLOTS; ++i) {
+                state_.set_storage(
+                    address_, to_bytes(slot_ + offset + i), bytes32_t{});
+            }
+
+            // decrement count
+            state_.set_storage(
+                address_, to_bytes(slot_), bytes32_t{num_elements - 1});
+        }
     }
 };
 

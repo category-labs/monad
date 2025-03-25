@@ -32,6 +32,11 @@
 #include <cstdint>
 #include <utility>
 
+#ifdef ENABLE_EVM_TIMING
+#include <monad/util/timers.hpp>
+monad::Timers timers;
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 // YP Sec 6.2 "irrevocable_change"
@@ -180,7 +185,7 @@ template <evmc_revision rev>
 Result<evmc::Result> execute_impl2(
     CallTracerBase &call_tracer, Chain const &chain, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, State &state)
+    BlockHashBuffer const &block_hash_buffer, State &state, bool is_reexec)
 {
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
@@ -193,7 +198,7 @@ Result<evmc::Result> execute_impl2(
     EvmcHost<rev> host{
         call_tracer, tx_context, block_hash_buffer, state, max_code_size};
 
-    return execute_impl_no_validation<rev>(
+    auto result = execute_impl_no_validation<rev>(
         state,
         host,
         tx,
@@ -201,6 +206,13 @@ Result<evmc::Result> execute_impl2(
         hdr.base_fee_per_gas.value_or(0),
         hdr.beneficiary,
         max_code_size);
+
+#ifdef ENABLE_EVM_TIMING
+    auto &timer = timers.get_timer();
+    if(is_reexec) timer.evmone_reexec_total_time.fetch_add(host.get_exec_time());
+    else timer.evmone_total_time.fetch_add(host.get_exec_time());
+#endif
+    return std::move(result);
 }
 
 template <evmc_revision rev>
@@ -229,7 +241,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state, false);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -271,7 +283,7 @@ Result<ExecutionResult> execute_impl(
 #endif
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state, true);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {

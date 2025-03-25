@@ -24,11 +24,14 @@ class EvmcHostBase : public evmc::Host
 {
     evmc_tx_context const &tx_context_;
     BlockHashBuffer const &block_hash_buffer_;
+    friend class TimeReset;
 
 protected:
     State &state_;
     CallTracerBase &call_tracer_;
     size_t const max_code_size_;
+    std::chrono::time_point<std::chrono::system_clock> start_time_;
+    std::atomic<uint64_t> exec_time_{};
 
 public:
     EvmcHostBase(
@@ -74,6 +77,30 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
+
+class TimeReset
+    {
+    public:
+        TimeReset(EvmcHostBase *ctx)
+            : ctx_{*ctx}
+        {
+#ifdef ENABLE_EVM_TIMING
+            auto t = std::chrono::system_clock::now();
+            auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                t - ctx->start_time_);
+
+            ctx_.exec_time_.fetch_add(d.count());
+        }
+
+        ~TimeReset()
+        {
+            ctx_.start_time_ = std::chrono::system_clock::now();
+#endif
+        }
+    private:
+    EvmcHostBase &ctx_;
+    };
+
 template <evmc_revision rev>
 struct EvmcHost final : public EvmcHostBase
 {
@@ -81,6 +108,7 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual bool account_exists(Address const &address) const noexcept override
     {
+        TimeReset _{const_cast<EvmcHost<rev>*>(this)};
         if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
             return state_.account_exists(address);
         }
@@ -90,12 +118,23 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool selfdestruct(
         Address const &address, Address const &beneficiary) noexcept override
     {
+        TimeReset _{this};
         call_tracer_.on_self_destruct(address, beneficiary);
         return state_.selfdestruct<rev>(address, beneficiary);
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
+#ifdef ENABLE_EVM_TIMING
+
+        if(msg.depth > 0)
+        {
+            auto time = std::chrono::system_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time - start_time_);
+            exec_time_.fetch_add(duration.count());
+        }
+        start_time_ = std::chrono::system_clock::now();
+#endif
         if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
             auto result =
                 ::monad::create<rev>(this, state_, msg, max_code_size_);
@@ -108,16 +147,28 @@ struct EvmcHost final : public EvmcHostBase
                     result.gas_refund,
                     result.create_address};
             }
+#ifdef ENABLE_EVM_TIMING
+            auto time = std::chrono::system_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time - start_time_);
+            exec_time_.fetch_add(duration.count());
+#endif
             return result;
         }
         else {
-            return ::monad::call(this, state_, msg);
+            auto result = ::monad::call(this, state_, msg);
+#ifdef ENABLE_EVM_TIMING
+            auto time = std::chrono::system_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time - start_time_);
+            exec_time_.fetch_add(duration.count());
+#endif
+            return result;
         }
     }
 
     virtual evmc_access_status
     access_account(Address const &address) noexcept override
     {
+        TimeReset _{this};
         if (is_precompile<rev>(address)) {
             return EVMC_ACCESS_WARM;
         }
@@ -127,6 +178,11 @@ struct EvmcHost final : public EvmcHostBase
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
+    }
+
+    std::atomic<uint64_t> &get_exec_time() noexcept
+    {
+        return exec_time_;
     }
 };
 

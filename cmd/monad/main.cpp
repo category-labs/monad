@@ -48,6 +48,10 @@
 #include <sys/sysinfo.h>
 #include <unistd.h>
 #include <vector>
+#ifdef ENABLE_EVM_TIMING
+#include <monad/util/timers.hpp>
+extern monad::Timers timers;
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -376,6 +380,16 @@ int main(int const argc, char const *argv[])
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();
+
+#ifdef ENABLE_EVM_TIMING
+    for (auto it = timers.timers.begin(); it != timers.timers.end(); it++)
+    {
+        LOG_INFO("thread id {}: total evmone execution time = {}",
+                it->first, it->second.evmone_total_time);
+        LOG_INFO("thread id {}: total evmone RE-execution time = {}",
+            it->first, it->second.evmone_reexec_total_time);
+    }
+#endif
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(

@@ -1,6 +1,7 @@
 #include "runloop_monad.hpp"
 
 #include <monad/chain/chain.hpp>
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
@@ -34,54 +35,48 @@
 
 namespace fs = std::filesystem;
 
-MONAD_NAMESPACE_BEGIN
-
-namespace
-{
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-    void log_tps(
-        uint64_t const block_num, uint64_t const round_num, uint64_t const ntxs,
-        uint64_t const gas, std::chrono::steady_clock::time_point const begin)
-    {
-        auto const now = std::chrono::steady_clock::now();
-        auto const elapsed = std::max(
-            static_cast<uint64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    now - begin)
-                    .count()),
-            1UL); // for the unlikely case that elapsed < 1 mic
-        uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
-        uint64_t const gps = gas / elapsed;
+void log_tps(
+    uint64_t const block_num, uint64_t const round_num, uint64_t const ntxs,
+    uint64_t const gas, std::chrono::steady_clock::time_point const begin)
+{
+    auto const now = std::chrono::steady_clock::now();
+    auto const elapsed = std::max(
+        static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
+                .count()),
+        1UL); // for the unlikely case that elapsed < 1 mic
+    uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
+    uint64_t const gps = gas / elapsed;
 
-        LOG_INFO(
-            "Run to block= {:4d}, round= {:4d}, number of transactions {:6d}, "
-            "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
-            block_num,
-            round_num,
-            ntxs,
-            tps,
-            gps,
-            monad_procfs_self_resident() / (1L << 20));
-    };
+    LOG_INFO(
+        "Run to block= {:4d}, round= {:4d}, number of transactions {:6d}, "
+        "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
+        block_num,
+        round_num,
+        ntxs,
+        tps,
+        gps,
+        monad_procfs_self_resident() / (1L << 20));
+};
 
 #pragma GCC diagnostic pop
 
-    std::optional<bytes32_t>
-    bft_id_for_finalized_block(mpt::Db const &db, uint64_t const block_id)
-    {
+std::optional<bytes32_t>
+bft_id_for_finalized_block(mpt::Db const &db, uint64_t const block_id)
+{
 
-        auto encoded_bft_header =
-            db.get(mpt::concat(FINALIZED_NIBBLE, BFT_BLOCK_NIBBLE), block_id);
-        if (!encoded_bft_header.has_value()) {
-            return std::nullopt;
-        }
-        return to_bytes(blake3(encoded_bft_header.value()));
+    auto encoded_bft_header =
+        db.get(mpt::concat(FINALIZED_NIBBLE, BFT_BLOCK_NIBBLE), block_id);
+    if (!encoded_bft_header.has_value()) {
+        return std::nullopt;
     }
-
+    return to_bytes(blake3(encoded_bft_header.value()));
 }
 
 Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
@@ -165,6 +160,10 @@ bool validate_delayed_execution_results(
     }
     return true;
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,

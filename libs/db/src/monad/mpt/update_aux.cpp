@@ -1142,10 +1142,16 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     return root;
 }
 
-void UpdateAuxImpl::erase_version(uint64_t const version)
+void UpdateAuxImpl::erase_version(uint64_t const version_to_delete)
 {
-    Node::UniquePtr root_to_erase =
-        read_node_blocking(*this, get_root_offset_at_version(version), version);
+    uint64_t version = db_metadata()->root_offsets.version_lower_bound_;
+    for (; version < version_to_delete; ++version) {
+        update_root_offset(version, INVALID_OFFSET);
+    }
+    Node::UniquePtr root_to_erase = read_node_blocking(
+        *this,
+        get_root_offset_at_version(version_to_delete),
+        version_to_delete);
     auto const [min_offset_fast, min_offset_slow] =
         deserialize_compaction_offsets(root_to_erase->value());
     MONAD_ASSERT(
@@ -1156,7 +1162,7 @@ void UpdateAuxImpl::erase_version(uint64_t const version)
     // MUST NOT CHANGE ORDER
     // Remove the root from the ring buffer before recycling disk chunks
     // ensures crash recovery integrity
-    update_root_offset(version, INVALID_OFFSET);
+    update_root_offset(version_to_delete, INVALID_OFFSET);
     free_compacted_chunks();
 }
 

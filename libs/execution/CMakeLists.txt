@@ -88,6 +88,11 @@ add_library(
   "src/monad/db/trie_rodb.hpp"
   "src/monad/db/util.cpp"
   "src/monad/db/util.hpp"
+  # contract
+  "src/monad/contract/mapping.hpp"
+  "src/monad/contract/storage_adapter.hpp"
+  "src/monad/contract/storage_array.hpp"
+  "src/monad/contract/storage_variable.hpp"
   # execution
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_hash_buffer.hpp"
@@ -111,7 +116,6 @@ add_library(
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/staking/bls.hpp"
   "src/monad/execution/staking/secp256k1.hpp"
-  "src/monad/execution/staking/storage.hpp"
   "src/monad/execution/staking/validator.hpp"
   "src/monad/execution/stateful_precompiles.cpp"
   "src/monad/execution/stateful_precompiles.hpp"
@@ -190,10 +194,10 @@ target_link_options(monad_execution PRIVATE LINKER:-z,defs)
 # unit tests
 # ##############################################################################
 
+monad_add_test_folder("src/monad/contract")
 monad_add_test_folder("src/monad/core")
 monad_add_test_folder("src/monad/db")
 monad_add_test_folder("src/monad/execution")
 monad_add_test_folder("src/monad/rlp")
 monad_add_test_folder("src/monad/state2")
 monad_add_test_folder("src/monad/trie")
-monad_add_test_folder("src/monad/staking")

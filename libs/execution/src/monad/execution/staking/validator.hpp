@@ -13,21 +13,11 @@ MONAD_NAMESPACE_BEGIN
 
 struct ValidatorInfo
 {
-    Address withdrawal_address;
+    Address auth_address;
     byte_string_fixed<48> bls_pubkey;
     uint256_t stake;
     uint256_t active_stake;
     uint64_t join_epoch;
-
-    bool in_valset(uint64_t const epoch) const noexcept
-    {
-        return epoch - join_epoch >= 2;
-    }
-
-    bool is_leaving_valset() const noexcept
-    {
-        return stake == 0;
-    }
 };
 
 struct StakeMetadata

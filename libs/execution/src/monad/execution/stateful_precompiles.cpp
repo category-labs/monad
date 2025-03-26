@@ -1,11 +1,12 @@
+#include <monad/contract/mapping.hpp>
+#include <monad/contract/storage_variable.hpp>
+#include <monad/core/blake3.hpp>
 #include <monad/core/int.hpp>
-#include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/unaligned.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/staking/bls.hpp>
 #include <monad/execution/staking/secp256k1.hpp>
-#include <monad/execution/staking/storage.hpp>
 #include <monad/execution/staking/validator.hpp>
 #include <monad/execution/stateful_precompiles.hpp>
 #include <monad/state3/state.hpp>
@@ -33,11 +34,7 @@ namespace
     //////////////////////
     constexpr auto CONTRACT_ADDRESS =
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_address; // fixme
-    constexpr auto METADATA_STORAGE_SLOT = bytes32_t{};
-    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // 1 MON
-
-    // uint64_t const MAX_DEPOSIT_REQUESTS_PER_EPOCH = 100;
-    uint64_t const MAX_WITHDRAWAL_REQUESTS_PER_EPOCH = 100;
+    // constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // 1 MON
 
     //////////////////////
     //      Crypto      //
@@ -47,6 +44,15 @@ namespace
 
     constexpr size_t BLS_COMPRESSED_PUBKEY_SIZE{48};
     constexpr size_t BLS_COMPRESSED_SIGNATURE_SIZE{96};
+
+    //////////////////////
+    // Domain separator //
+    //////////////////////
+    constexpr auto LAST_VALIDATOR_ID_DS{
+        0x41220a16053449faaa3a6d09af41bd3e_bytes32};
+    constexpr auto VALIDATOR_ID_DS{0x92286cbe19ff43cfb4b0996357fd198b_bytes32};
+    constexpr auto VALIDATOR_INFO_DS{
+        0xc4e9c9649cd24dbe8802efbb68ff43eb_bytes32};
 }
 
 StatefulPrecompile::StatefulPrecompile(State &state, uint64_t const epoch)
@@ -56,34 +62,31 @@ StatefulPrecompile::StatefulPrecompile(State &state, uint64_t const epoch)
 {
 }
 
-evmc_status_code StatefulPrecompile::stake_deposit(
-    byte_string_view const input, evmc_message const &msg)
+evmc_status_code StatefulPrecompile::create_validator(
+    byte_string_view const input, evmc_message const &)
 {
-    constexpr size_t DEPOSIT_MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
-                                            BLS_COMPRESSED_PUBKEY_SIZE +
-                                            sizeof(Address);
+    constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
+                                    BLS_COMPRESSED_PUBKEY_SIZE +
+                                    sizeof(Address);
     constexpr size_t SIGNATURES_SIZE =
         SECP_SIGNATURE_SIZE + BLS_COMPRESSED_SIGNATURE_SIZE;
 
-    constexpr size_t EXPECTED_INPUT_SIZE =
-        DEPOSIT_MESSAGE_SIZE + SIGNATURES_SIZE;
+    constexpr size_t EXPECTED_INPUT_SIZE = MESSAGE_SIZE + SIGNATURES_SIZE;
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != EXPECTED_INPUT_SIZE)) {
         return EVMC_REVERT;
     }
 
-    uint256_t const amount_to_stake = intx::be::load<uint256_t>(msg.value);
-
     // extract individual inputs
-    byte_string_view message = input.substr(0, DEPOSIT_MESSAGE_SIZE);
+    byte_string_view message = input.substr(0, MESSAGE_SIZE);
 
     byte_string_view reader = input;
     byte_string_view secp_pubkey_serialized =
         read_bytes(reader, SECP_COMPRESSED_PUBKEY_SIZE);
     byte_string_view bls_pubkey_serialized =
         read_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE);
-    byte_string_view withdrawal_address = read_bytes(reader, sizeof(Address));
+    byte_string_view auth_address = read_bytes(reader, sizeof(Address));
     byte_string_view secp_signature_serialized =
         read_bytes(reader, SECP_SIGNATURE_SIZE);
     byte_string_view bls_signature_serialized =
@@ -122,47 +125,34 @@ evmc_status_code StatefulPrecompile::stake_deposit(
         return EVMC_REVERT;
     }
 
-    // Check if stake amount meets minimum requirement
-    if (MONAD_UNLIKELY(amount_to_stake < MIN_STAKE_AMOUNT)) {
-        return EVMC_REVERT;
-    }
+    StorageVariable<uint256_t> last_validator_id_storage(
+        state_, CONTRACT_ADDRESS, LAST_VALIDATOR_ID_DS);
+    auto validator_id = last_validator_id_storage.load();
+    validator_id += 1;
+    last_validator_id_storage.store(validator_id);
 
-    bytes32_t raw_metadata =
-        state_.get_storage(CONTRACT_ADDRESS, METADATA_STORAGE_SLOT);
-    auto *metadata = reinterpret_cast<StakeMetadata *>(raw_metadata.bytes + 12);
-    if (metadata->deposit_queue_size == MAX_WITHDRAWAL_REQUESTS_PER_EPOCH) {
-        return EVMC_REVERT;
-    }
-    metadata->deposit_queue_size += 1;
-    state_.set_storage(CONTRACT_ADDRESS, METADATA_STORAGE_SLOT, raw_metadata);
-
+    // create mapping(address => uint256) validator_id
     Address address = address_from_secpkey(secp_pubkey.serialize());
-    ValidatorStorageKeyGenerator gen(address);
-    StorageAdapter<ValidatorInfo> storage;
-    for (uint8_t i = 0; i < static_cast<uint8_t>(storage.slots.size()); ++i) {
-        storage.slots[i] = state_.get_storage(CONTRACT_ADDRESS, gen.key(i));
-    }
+    auto const validator_id_key = mapping(VALIDATOR_ID_DS, address);
 
-    ValidatorInfo &info = storage.typed;
-    bool const is_new_validator = std::all_of(
-        info.bls_pubkey.data(),
-        info.bls_pubkey.data() + info.bls_pubkey.size(),
-        [](uint8_t const byte) { return byte == 0x00; });
-    if (!is_new_validator) {
-        // validator exists in set
-        return EVMC_REVERT;
-    }
+    // auto const validator_id_key =
+    //     to_bytes(blake3(to_byte_string_view(VALIDATOR_ID_MAPPING.bytes)));
+    // StorageAdapter<Address> mapping(address);
+    StorageVariable<uint256_t> validator_id_storage(
+        state_, CONTRACT_ADDRESS, validator_id_key);
+    validator_id_storage.store(validator_id);
 
-    info.stake = amount_to_stake;
-    info.join_epoch = epoch_;
-    info.bls_pubkey =
-        unaligned_load<byte_string_fixed<48>>(bls_pubkey_serialized.data());
-    info.withdrawal_address =
-        unaligned_load<Address>(withdrawal_address.data());
+    ValidatorInfo validator_info;
+    StorageVariable<ValidatorInfo> validator_info_storage(
+        state_, CONTRACT_ADDRESS, mapping(VALIDATOR_INFO_DS, validator_id));
+    validator_info_storage.store(ValidatorInfo{
+        .auth_address = unaligned_load<Address>(auth_address.data()),
+        .bls_pubkey =
+            unaligned_load<byte_string_fixed<48>>(bls_pubkey_serialized.data()),
+        .stake = 0,
+        .active_stake = 0,
+        .join_epoch = epoch_});
 
-    for (uint8_t i = 0; i < static_cast<uint8_t>(storage.slots.size()); ++i) {
-        state_.set_storage(CONTRACT_ADDRESS, gen.key(i), storage.slots[i]);
-    }
     return EVMC_SUCCESS;
 }
 

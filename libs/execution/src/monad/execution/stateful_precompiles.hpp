@@ -20,7 +20,7 @@ public:
     StatefulPrecompile(State &, uint64_t epoch);
 
     evmc_status_code
-    stake_deposit(byte_string_view input, evmc_message const &);
+    create_validator(byte_string_view input, evmc_message const &);
     evmc_status_code
     stake_withdraw(byte_string_view input, evmc_message const &);
 };

@@ -1086,6 +1086,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         // offset slot in ring buffer may be overwritten thus invalidated in
         // `upsert()`.
         erase_version(min_valid_version);
+        MONAD_ASSERT(
+            db_metadata()->root_offsets.version_lower_bound_ >=
+            min_valid_version);
     }
     curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
@@ -1182,6 +1185,9 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
                 version_to_erase != INVALID_BLOCK_ID &&
                 version_to_erase < max_version);
             erase_version(version_to_erase);
+            MONAD_ASSERT(
+                db_metadata()->root_offsets.version_lower_bound_ >=
+                version_to_erase);
             update_history_length_metadata(
                 std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
         }
@@ -1205,6 +1211,15 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     }
 }
 
+void UpdateAuxImpl::clear_root_offsets_before(uint64_t const version)
+{
+    uint64_t v = db_metadata()->root_offsets.version_lower_bound_;
+    for (; v < version; ++v) {
+        update_root_offset(v, INVALID_OFFSET);
+    }
+    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ >= version);
+}
+
 void UpdateAuxImpl::move_trie_version_forward(
     uint64_t const src, uint64_t const dest)
 {
@@ -1215,10 +1230,15 @@ void UpdateAuxImpl::move_trie_version_forward(
         dest >= db_history_max_version());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
-    auto const offset = get_latest_root_offset();
+    auto const offset = get_root_offset_at_version(src);
     update_root_offset(src, INVALID_OFFSET);
     fast_forward_next_version(dest);
     append_root_offset(offset);
+    // erase versions that fall out of history range
+    MONAD_ASSERT(dest == db_history_max_version());
+    if (dest >= version_history_length()) {
+        clear_root_offsets_before(dest - version_history_length() + 1);
+    }
 }
 
 void UpdateAuxImpl::update_disk_growth_data()
@@ -1345,12 +1365,14 @@ uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
         return INVALID_BLOCK_ID;
     }
     else {
-        auto version_lower_bound =
+        auto const history_range_min =
+            max_version >= version_history_length()
+                ? (max_version - version_history_length() + 1)
+                : 0;
+        auto const ro_version_lower_bound =
             db_metadata()->root_offsets.version_lower_bound_;
-        if (max_version - version_lower_bound > version_history_length() + 1) {
-            version_lower_bound = max_version - version_history_length() + 1;
-        }
-        return version_lower_bound;
+        MONAD_ASSERT(ro_version_lower_bound >= history_range_min);
+        return ro_version_lower_bound;
     }
 }
 

@@ -2129,6 +2129,93 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     EXPECT_EQ(ro_db.get_earliest_block_id(), far_dest_block_id);
 }
 
+TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
+{
+    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+
+    auto const &kv = fixed_updates::kv;
+    auto const prefix = 0x00_hex;
+    uint64_t block_id = 0;
+    uint64_t const max_block_id = 10;
+
+    // Upsert the same data in block 0 - 10
+    for (; block_id <= max_block_id; ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(kv[0].first, kv[0].second),
+            make_update(kv[1].first, kv[1].second));
+        EXPECT_TRUE(db.get(prefix + kv[0].first, block_id).has_value());
+        EXPECT_TRUE(db.get(prefix + kv[1].first, block_id).has_value());
+    }
+    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
+
+    // Move trie version within history length, which will not invalidate any
+    // versions
+    uint64_t const dest_block_id = max_block_id + 5;
+    db.move_trie_version_forward(max_block_id, dest_block_id);
+
+    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
+    EXPECT_TRUE(ro_db.find({}, max_block_id).has_error());
+    EXPECT_TRUE(ro_db.find({}, dest_block_id).has_value());
+}
+
+TEST_F(
+    OnDiskDbWithFileFixture,
+    move_trie_version_forward_clear_history_versions_out_of_range)
+{
+    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    Db ro_db{io_ctx};
+    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+
+    auto const &kv = fixed_updates::kv;
+    auto const prefix = 0x00_hex;
+    uint64_t block_id = 0;
+
+    // Upsert the same data in block 0 - 10
+    for (; block_id <= 10; ++block_id) {
+        upsert_updates_flat_list(
+            db,
+            prefix,
+            block_id,
+            make_update(kv[0].first, kv[0].second),
+            make_update(kv[1].first, kv[1].second));
+        EXPECT_TRUE(db.get(prefix + kv[0].first, block_id).has_value());
+        EXPECT_TRUE(db.get(prefix + kv[1].first, block_id).has_value());
+    }
+
+    // Move trie version to a later dest_block_id, which invalidates some
+    // but not all history versions
+    uint64_t const dest_block_id = ro_db.get_history_length() + 5;
+    db.move_trie_version_forward(block_id, dest_block_id);
+
+    // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
+    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
+    auto const earliest_block_id = ro_db.get_earliest_block_id();
+    EXPECT_EQ(
+        earliest_block_id, dest_block_id - ro_db.get_history_length() + 1);
+
+    // src block 10 should be invalid
+    EXPECT_TRUE(ro_db.find(prefix, block_id).has_error());
+
+    // recreate db with longer history length to simulate dynamic history length
+    // adjustment, verify earliest db version remains unchanged
+    db.~Db();
+    auto new_config = this->config;
+    new_config.fixed_history_length = 65536;
+    new_config.append = true;
+    new (&db) Db(machine, new_config);
+    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
+    EXPECT_EQ(ro_db.get_earliest_block_id(), earliest_block_id);
+}
+
 TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 {
     std::atomic<bool> done{false};

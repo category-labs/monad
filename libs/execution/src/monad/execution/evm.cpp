@@ -12,7 +12,6 @@
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/state3/state.hpp>
-#include <monad/vm/evmone/baseline_execute.hpp>
 #include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.h>
@@ -141,7 +140,7 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <evmc_revision rev>
-evmc::Result create(
+monad::ExecuteResult create(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg,
     size_t const max_code_size) noexcept
 {
@@ -151,16 +150,16 @@ evmc::Result create(
     call_tracer.on_enter(msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-        evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-        call_tracer.on_exit(result);
+        monad::ExecuteResult result{evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas}};
+        call_tracer.on_exit(result.evmc_result);
         return result;
     }
 
     auto const nonce = state.get_nonce(msg.sender);
     if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
         // overflow
-        evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
-        call_tracer.on_exit(result);
+        monad::ExecuteResult result{evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas}};
+        call_tracer.on_exit(result.evmc_result);
         return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
@@ -181,8 +180,8 @@ evmc::Result create(
     // Prevent overwriting contracts - EIP-684
     if (state.get_nonce(contract_address) != 0 ||
         state.get_code_hash(contract_address) != NULL_HASH) {
-        evmc::Result result{EVMC_INVALID_INSTRUCTION};
-        call_tracer.on_exit(result);
+            monad::ExecuteResult result{evmc::Result{EVMC_INVALID_INSTRUCTION}};
+        call_tracer.on_exit(result.evmc_result);
         return result;
     }
 
@@ -214,18 +213,18 @@ evmc::Result create(
     auto const input_code_analysis = analyze({msg.input_data, msg.input_size});
     auto result = baseline_execute(m_call, rev, host, input_code_analysis);
 
-    if (result.status_code == EVMC_SUCCESS) {
-        result = deploy_contract_code<rev>(
-            state, contract_address, std::move(result), max_code_size);
+    if (result.evmc_result.status_code == EVMC_SUCCESS) {
+        result = monad::ExecuteResult{deploy_contract_code<rev>(
+            state, contract_address, std::move(result.evmc_result), max_code_size)};
     }
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.evmc_result.status_code == EVMC_SUCCESS) {
         state.pop_accept();
     }
     else {
-        result.gas_refund = 0;
-        if (result.status_code != EVMC_REVERT) {
-            result.gas_left = 0;
+        result.evmc_result.gas_refund = 0;
+        if (result.evmc_result.status_code != EVMC_REVERT) {
+            result.evmc_result.gas_left = 0;
         }
         bool const ripemd_touched = state.is_touched(ripemd_address);
         state.pop_reject();
@@ -235,7 +234,7 @@ evmc::Result create(
         }
     }
 
-    call_tracer.on_exit(result);
+    call_tracer.on_exit(result.evmc_result);
 
     return result;
 }
@@ -243,7 +242,7 @@ evmc::Result create(
 EXPLICIT_EVMC_REVISION(create);
 
 template <evmc_revision rev>
-evmc::Result
+monad::ExecuteResult
 call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 {
     MONAD_ASSERT(
@@ -255,21 +254,21 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
 
     if (auto result = pre_call<rev>(msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());
-        return std::move(result.value());
+        return monad::ExecuteResult{std::move(result.value())};
     }
 
-    evmc::Result result;
+    monad::ExecuteResult result;
     if (auto maybe_result = check_call_precompile<rev>(msg);
         maybe_result.has_value()) {
-        result = std::move(maybe_result.value());
+        result = monad::ExecuteResult{std::move(maybe_result.value())};
     }
     else {
         auto const code = state.get_code(msg.code_address);
         result = baseline_execute(msg, rev, host, *code);
     }
 
-    post_call(state, result);
-    call_tracer.on_exit(result);
+    post_call(state, result.evmc_result);
+    call_tracer.on_exit(result.evmc_result);
     return result;
 }
 

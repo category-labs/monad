@@ -32,7 +32,6 @@ EvmcHostBase::EvmcHostBase(
 bytes32_t EvmcHostBase::get_storage(
     Address const &address, bytes32_t const &key) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.get_storage(address, key);
 }
 
@@ -40,25 +39,21 @@ evmc_storage_status EvmcHostBase::set_storage(
     Address const &address, bytes32_t const &key,
     bytes32_t const &value) noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.set_storage(address, key, value);
 }
 
 evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.get_balance(address);
 }
 
 size_t EvmcHostBase::get_code_size(Address const &address) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.get_code_size(address);
 }
 
 bytes32_t EvmcHostBase::get_code_hash(Address const &address) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     if (state_.account_is_dead(address)) {
         return bytes32_t{};
     }
@@ -69,20 +64,17 @@ size_t EvmcHostBase::copy_code(
     Address const &address, size_t offset, uint8_t *data,
     size_t size) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.copy_code(address, offset, data, size);
 }
 
 evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return tx_context_;
 }
 
 bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     MONAD_ASSERT(block_number >= 0);
     return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
 };
@@ -91,7 +83,6 @@ void EvmcHostBase::emit_log(
     Address const &address, uint8_t const *data, size_t data_size,
     bytes32_t const topics[], size_t num_topics) noexcept
 {
-    TimeReset _{this};
     Receipt::Log log{.data = {data, data_size}, .address = address};
     for (auto i = 0u; i < num_topics; ++i) {
         log.topics.push_back({topics[i]});
@@ -102,14 +93,12 @@ void EvmcHostBase::emit_log(
 evmc_access_status EvmcHostBase::access_storage(
     Address const &address, bytes32_t const &key) noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.access_storage(address, key);
 }
 
 bytes32_t EvmcHostBase::get_transient_storage(
     Address const &address, bytes32_t const &key) const noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.get_transient_storage(address, key);
 }
 
@@ -117,7 +106,6 @@ void EvmcHostBase::set_transient_storage(
     Address const &address, bytes32_t const &key,
     bytes32_t const &value) noexcept
 {
-    TimeReset _{const_cast<EvmcHostBase*>(this)};
     return state_.set_transient_storage(address, key, value);
 }
 

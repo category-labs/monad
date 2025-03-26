@@ -189,7 +189,7 @@ namespace
         NoopCallTracer call_tracer;
         EvmcHost<rev> host{
             call_tracer, tx_context, *buffer, state, max_code_size};
-        return execute_impl_no_validation<rev>(
+        auto result = execute_impl_no_validation<rev>(
             state,
             host,
             enriched_txn,
@@ -197,6 +197,7 @@ namespace
             header.base_fee_per_gas.value_or(0),
             header.beneficiary,
             max_code_size);
+        return std::move(result.evmc_result);
     }
 
     Result<evmc::Result> eth_call_impl(

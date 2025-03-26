@@ -72,7 +72,7 @@ TEST(Evm, create_with_insufficient)
         MAX_CODE_SIZE_EIP170};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
-    EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
 TEST(Evm, eip684_existing_code)
@@ -121,7 +121,7 @@ TEST(Evm, eip684_existing_code)
         s,
         MAX_CODE_SIZE_EIP170};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
-    EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
 TEST(Evm, create_nonce_out_of_range)
@@ -170,7 +170,7 @@ TEST(Evm, create_nonce_out_of_range)
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_FALSE(s.account_exists(new_addr));
-    EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
 }
 
 TEST(Evm, static_precompile_execution)
@@ -221,11 +221,11 @@ TEST(Evm, static_precompile_execution)
 
     auto const result = call<EVMC_SHANGHAI>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 382);
-    ASSERT_EQ(result.output_size, data_size);
-    EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
-    EXPECT_NE(result.output_data, m.input_data);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.evmc_result.gas_left, 382);
+    ASSERT_EQ(result.evmc_result.output_size, data_size);
+    EXPECT_EQ(std::memcmp(result.evmc_result.output_data, m.input_data, data_size), 0);
+    EXPECT_NE(result.evmc_result.output_data, m.input_data);
 }
 
 TEST(Evm, out_of_gas_static_precompile_execution)
@@ -274,9 +274,9 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = call<EVMC_SHANGHAI>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_OUT_OF_GAS);
 }
 
 TEST(Evm, deploy_contract_code)
@@ -415,9 +415,9 @@ TEST(Evm, DISABLED_revert_call)
 
     auto const result = evm_t::call(&h, s, m);
 
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_REVERT);
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
-    EXPECT_EQ(result.gas_left, 6'000);
+    EXPECT_EQ(result.evmc_result.gas_left, 6'000);
 }
 
 // TODO
@@ -443,8 +443,8 @@ TEST(Evm, DISABLED_unsuccessful_call)
 
     auto const result = evm_t::call(&h, s, m);
 
-    EXPECT_EQ(result.status_code, EVMC_BAD_JUMP_DESTINATION);
+    EXPECT_EQ(result.evmc_result.status_code, EVMC_BAD_JUMP_DESTINATION);
     EXPECT_TRUE(s._accounts.empty()); // revert was called on the fake
-    EXPECT_EQ(result.gas_left, 6'000);
+    EXPECT_EQ(result.evmc_result.gas_left, 6'000);
 }
 */

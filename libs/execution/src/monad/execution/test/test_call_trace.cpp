@@ -137,7 +137,7 @@ TEST(CallTrace, execute_success)
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.evmc_result.status_code == EVMC_SUCCESS);
 
     auto const &call_frames = call_tracer.get_frames();
 
@@ -205,7 +205,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
-    EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
+    EXPECT_TRUE(result.evmc_result.status_code == EVMC_INSUFFICIENT_BALANCE);
 
     auto const &call_frames = call_tracer.get_frames();
 

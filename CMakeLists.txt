@@ -7,7 +7,7 @@ project(monad)
 option(HUNTER_ENABLED OFF)
 
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)
-option(ENABLE_EVM_TIMING "Enable evmone call timing" ON)
+option(MONAD_EVM_TIMING "Enable evmone call timing" ON)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_SHARED_LIBS OFF)
 
@@ -45,8 +45,8 @@ function(monad_compile_options target)
     target_compile_definitions(${target} PUBLIC "ENABLE_CALL_TRACING=1")
   endif()
 
-  if(ENABLE_EVM_TIMING)
-    target_compile_definitions(${target} PUBLIC "ENABLE_EVM_TIMING=1")
+  if(MONAD_EVM_TIMING)
+    target_compile_definitions(${target} PUBLIC "MONAD_EVM_TIMING=1")
   endif()
 endfunction()
 

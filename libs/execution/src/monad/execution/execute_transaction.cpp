@@ -32,7 +32,7 @@
 #include <cstdint>
 #include <utility>
 
-#ifdef ENABLE_EVM_TIMING
+#ifdef MONAD_EVM_TIMING
 #include <monad/util/timers.hpp>
 monad::Timers timers;
 #endif
@@ -106,7 +106,7 @@ constexpr evmc_message to_message(Transaction const &tx, Address const &sender)
 }
 
 template <evmc_revision rev>
-evmc::Result execute_impl_no_validation(
+monad::ExecuteResult execute_impl_no_validation(
     State &state, EvmcHost<rev> &host, Transaction const &tx,
     Address const &sender, uint256_t const &base_fee_per_gas,
     Address const &beneficiary, size_t const max_code_size)
@@ -207,12 +207,12 @@ Result<evmc::Result> execute_impl2(
         hdr.beneficiary,
         max_code_size);
 
-#ifdef ENABLE_EVM_TIMING
+#ifdef MONAD_EVM_TIMING
     auto &timer = timers.get_timer();
-    if(is_reexec) timer.evmone_reexec_total_time.fetch_add(host.get_exec_time());
-    else timer.evmone_total_time.fetch_add(host.get_exec_time());
+    if(is_reexec) timer.evmone_reexec_total_time.fetch_add(result.exec_time);
+    else timer.evmone_total_time.fetch_add(result.exec_time);
 #endif
-    return std::move(result);
+    return std::move(result.evmc_result);
 }
 
 template <evmc_revision rev>

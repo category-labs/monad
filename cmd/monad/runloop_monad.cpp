@@ -25,15 +25,11 @@
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
 
-#include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <thread>
 #include <vector>
-
-namespace fs = std::filesystem;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 

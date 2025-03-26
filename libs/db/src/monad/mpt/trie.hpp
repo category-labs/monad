@@ -179,7 +179,8 @@ class UpdateAuxImpl
 
     void free_compacted_chunks();
 
-    void erase_version(uint64_t const version);
+    // clear all versions <= version
+    void erase_version(uint64_t version);
 
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).

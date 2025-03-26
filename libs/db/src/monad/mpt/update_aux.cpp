@@ -1086,9 +1086,6 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         // offset slot in ring buffer may be overwritten thus invalidated in
         // `upsert()`.
         erase_version(min_valid_version);
-        MONAD_ASSERT(
-            db_metadata()->root_offsets.version_lower_bound_ >=
-            min_valid_version);
     }
     curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
@@ -1147,6 +1144,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 
 void UpdateAuxImpl::erase_version(uint64_t const version)
 {
+    clear_root_offsets_before(version);
     Node::UniquePtr root_to_erase =
         read_node_blocking(*this, get_root_offset_at_version(version), version);
     auto const [min_offset_fast, min_offset_slow] =
@@ -1160,6 +1158,7 @@ void UpdateAuxImpl::erase_version(uint64_t const version)
     // Remove the root from the ring buffer before recycling disk chunks
     // ensures crash recovery integrity
     update_root_offset(version, INVALID_OFFSET);
+    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ >= version);
     free_compacted_chunks();
 }
 
@@ -1185,9 +1184,6 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
                 version_to_erase != INVALID_BLOCK_ID &&
                 version_to_erase < max_version);
             erase_version(version_to_erase);
-            MONAD_ASSERT(
-                db_metadata()->root_offsets.version_lower_bound_ >=
-                version_to_erase);
             update_history_length_metadata(
                 std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
         }

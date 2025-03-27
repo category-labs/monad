@@ -1142,11 +1142,13 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     return root;
 }
 
-void UpdateAuxImpl::erase_version(uint64_t const version)
+void UpdateAuxImpl::release_unreferenced_chunks()
 {
-    clear_root_offsets_before(version);
-    Node::UniquePtr root_to_erase =
-        read_node_blocking(*this, get_root_offset_at_version(version), version);
+    auto const min_valid_version = db_history_min_valid_version();
+    Node::UniquePtr root_to_erase = read_node_blocking(
+        *this,
+        get_root_offset_at_version(min_valid_version),
+        min_valid_version);
     auto const [min_offset_fast, min_offset_slow] =
         deserialize_compaction_offsets(root_to_erase->value());
     MONAD_ASSERT(
@@ -1154,12 +1156,15 @@ void UpdateAuxImpl::erase_version(uint64_t const version)
         min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     chunks_to_remove_before_count_fast_ = min_offset_fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offset_slow.get_count();
-    // MUST NOT CHANGE ORDER
-    // Remove the root from the ring buffer before recycling disk chunks
-    // ensures crash recovery integrity
-    update_root_offset(version, INVALID_OFFSET);
-    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ >= version);
+    MONAD_ASSERT(
+        db_metadata()->root_offsets.version_lower_bound_ >= min_valid_version);
     free_compacted_chunks();
+}
+
+void UpdateAuxImpl::erase_version(uint64_t const version)
+{
+    clear_root_offsets_up_to_and_including(version);
+    release_unreferenced_chunks();
 }
 
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
@@ -1207,13 +1212,14 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     }
 }
 
-void UpdateAuxImpl::clear_root_offsets_before(uint64_t const version)
+void UpdateAuxImpl::clear_root_offsets_up_to_and_including(
+    uint64_t const version)
 {
     uint64_t v = db_metadata()->root_offsets.version_lower_bound_;
-    for (; v < version; ++v) {
+    for (; v <= version; ++v) {
         update_root_offset(v, INVALID_OFFSET);
     }
-    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ >= version);
+    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ > version);
 }
 
 void UpdateAuxImpl::move_trie_version_forward(
@@ -1233,7 +1239,8 @@ void UpdateAuxImpl::move_trie_version_forward(
     // erase versions that fall out of history range
     MONAD_ASSERT(dest == db_history_max_version());
     if (dest >= version_history_length()) {
-        clear_root_offsets_before(dest - version_history_length() + 1);
+        clear_root_offsets_up_to_and_including(dest - version_history_length());
+        release_unreferenced_chunks();
     }
 }
 

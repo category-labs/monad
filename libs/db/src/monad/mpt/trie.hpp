@@ -179,6 +179,9 @@ class UpdateAuxImpl
 
     void free_compacted_chunks();
 
+    // clear root offsets of versions <= version
+    void clear_root_offsets_up_to_and_including(uint64_t version);
+    void release_unreferenced_chunks();
     // clear all versions <= version
     void erase_version(uint64_t version);
 
@@ -539,7 +542,6 @@ public:
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
-    void clear_root_offsets_before(uint64_t version);
 
     // collect and print trie update stats
     void reset_stats();

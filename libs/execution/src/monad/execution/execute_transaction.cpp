@@ -14,7 +14,9 @@
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/trace/compression/call_frame_compression.hpp>
 #include <monad/execution/trace/event_trace.hpp>
+#include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
@@ -252,11 +254,13 @@ Result<ExecutionResult> execute_impl(
             call_tracer.on_receipt(receipt);
             block_state.merge(state);
 
-            auto const frames = call_tracer.get_frames();
+            auto const &frames = call_tracer.get_frames();
+            auto const rlp_frames = rlp::encode_call_frames(frames);
+            byte_string_view const rlp_frames_view{rlp_frames};
             return ExecutionResult{
                 .receipt = receipt,
                 .sender = sender,
-                .call_frames = {frames.begin(), frames.end()}};
+                .call_frames = compress_call_frames(rlp_frames_view)};
         }
     }
     {
@@ -289,11 +293,13 @@ Result<ExecutionResult> execute_impl(
         call_tracer.on_receipt(receipt);
         block_state.merge(state);
 
-        auto const frames = call_tracer.get_frames();
+        auto const &frames = call_tracer.get_frames();
+        auto const rlp_frames = rlp::encode_call_frames(frames);
+        byte_string_view const rlp_frames_view{rlp_frames};
         return ExecutionResult{
             .receipt = receipt,
             .sender = sender,
-            .call_frames = {frames.begin(), frames.end()}};
+            .call_frames = compress_call_frames(rlp_frames_view)};
     }
 }
 

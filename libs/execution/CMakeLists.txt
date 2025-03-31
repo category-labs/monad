@@ -104,6 +104,8 @@ add_library(
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/switch_evmc_revision.hpp"
+  "src/monad/execution/trace/compression/call_frame_compression.cpp"
+  "src/monad/execution/trace/compression/call_frame_compression.hpp"
   "src/monad/execution/trace/call_frame.cpp"
   "src/monad/execution/trace/call_frame.hpp"
   "src/monad/execution/trace/call_tracer.cpp"

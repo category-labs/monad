@@ -99,7 +99,7 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
             chain, rev, block, block_state, block_hash_buffer, priority_pool));
 
     std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
+    std::vector<byte_string> call_frames(results.size());
     std::vector<Address> senders(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         auto &result = results[i];

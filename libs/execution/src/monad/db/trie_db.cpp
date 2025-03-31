@@ -21,7 +21,6 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
-#include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -162,7 +161,7 @@ void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
-    std::vector<std::vector<CallFrame>> const &call_frames,
+    std::vector<byte_string> const &call_frames,
     std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
@@ -294,10 +293,8 @@ void TrieDb::commit(
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
-        // Call frames
-        std::span<CallFrame const> frames{call_frames[i]};
         byte_string_view frame_view =
-            bytes_alloc_.emplace_back(rlp::encode_call_frames(frames));
+            bytes_alloc_.emplace_back(std::move(call_frames[i]));
         uint8_t chunk_index = 0;
         auto const call_frame_prefix =
             serialize_as_big_endian<sizeof(uint32_t)>(i);

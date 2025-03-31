@@ -46,7 +46,7 @@ struct Db
     virtual void commit(
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
         std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<byte_string> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
@@ -56,7 +56,7 @@ struct Db
         std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
         MonadConsensusBlockHeader const &consensus_header,
         std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<byte_string> const &call_frames = {},
         std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
         std::vector<BlockHeader> const &ommers = {},

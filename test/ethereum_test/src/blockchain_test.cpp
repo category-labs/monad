@@ -92,7 +92,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         execute_block<rev>(
             chain, block, block_state, block_hash_buffer, *pool_));
     std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
+    std::vector<byte_string> call_frames(results.size());
     std::vector<Address> senders(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         receipts[i] = std::move(results[i].receipt);

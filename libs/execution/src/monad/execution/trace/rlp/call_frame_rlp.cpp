@@ -32,7 +32,7 @@ byte_string encode_call_frame(CallFrame const &call_frame)
         encode_unsigned(call_frame.depth));
 }
 
-byte_string encode_call_frames(std::span<CallFrame const> const call_frames)
+byte_string encode_call_frames(std::vector<CallFrame> const &call_frames)
 {
     byte_string res{};
     for (auto const &call_frame : call_frames) {

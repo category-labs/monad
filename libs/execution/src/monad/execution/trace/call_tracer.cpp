@@ -58,9 +58,9 @@ void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
 void NoopCallTracer::on_receipt(Receipt const &) {}
 
-std::span<CallFrame const> NoopCallTracer::get_frames() const
+std::vector<CallFrame> const &NoopCallTracer::get_frames() const
 {
-    return {};
+    return frames_;
 }
 
 CallTracer::CallTracer(Transaction const &tx)
@@ -174,7 +174,7 @@ void CallTracer::on_receipt(Receipt const &receipt)
     frames_.front().gas_used = receipt.gas_used;
 }
 
-std::span<CallFrame const> CallTracer::get_frames() const
+std::vector<CallFrame> const &CallTracer::get_frames() const
 {
     return frames_;
 }

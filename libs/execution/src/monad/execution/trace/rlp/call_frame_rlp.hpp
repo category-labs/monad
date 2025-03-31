@@ -12,7 +12,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_call_frame(CallFrame const &);
 
-byte_string encode_call_frames(std::span<CallFrame const>);
+byte_string encode_call_frames(std::vector<CallFrame> const &);
 
 Result<CallFrame> decode_call_frame(byte_string_view &);
 

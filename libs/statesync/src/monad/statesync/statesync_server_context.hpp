@@ -116,7 +116,7 @@ struct monad_statesync_server_context final : public monad::Db
         monad::StateDeltas const &state_deltas, monad::Code const &code,
         monad::MonadConsensusBlockHeader const &,
         std::vector<monad::Receipt> const &receipts = {},
-        std::vector<std::vector<monad::CallFrame>> const & = {},
+        std::vector<monad::byte_string> const & = {},
         std::vector<monad::Address> const & = {},
         std::vector<monad::Transaction> const &transactions = {},
         std::vector<monad::BlockHeader> const &ommers = {},

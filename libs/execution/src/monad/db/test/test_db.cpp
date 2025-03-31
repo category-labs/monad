@@ -16,6 +16,9 @@
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
+
+#include <monad/execution/trace/compression/call_frame_compression.hpp>
+
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
@@ -48,6 +51,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <iomanip>
+#include <iostream>
 
 using namespace monad;
 using namespace monad::test;
@@ -108,7 +114,7 @@ namespace
     ///////////////////////////////////////////
     // DB Getters
     ///////////////////////////////////////////
-    std::vector<CallFrame> read_call_frame(
+    byte_string read_call_frame(
         mpt::Db &db, uint64_t const block_number, uint64_t const txn_idx)
     {
         using namespace mpt;
@@ -142,19 +148,13 @@ namespace
                 return c.first < NibblesView{c2.first};
             });
 
-        byte_string const call_frames_encoded = std::accumulate(
+        return std::accumulate(
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
             [](byte_string const acc, KeyedChunk const chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
-
-        byte_string_view view{call_frames_encoded};
-        auto const call_frame = rlp::decode_call_frames(view);
-        MONAD_ASSERT(!call_frame.has_error());
-        MONAD_ASSERT(view.empty());
-        return call_frame.value();
     }
 
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
@@ -546,7 +546,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t3))));
     ASSERT_EQ(receipts.size(), transactions.size());
 
-    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<byte_string> call_frames;
     call_frames.resize(receipts.size());
     constexpr uint64_t first_block = 0;
     std::vector<Address> senders = recover_senders(transactions);
@@ -829,9 +829,11 @@ TYPED_TEST(DBTest, commit_call_frames)
 
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
-    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<byte_string> call_frames(NUM_TXNS);
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
-        call_frames.emplace_back(call_frame);
+        auto const rlp_call_frame = rlp::encode_call_frames(call_frame);
+        byte_string_view const rlp_call_frame_view{rlp_call_frame};
+        call_frames[txn] = compress_call_frames(rlp_call_frame_view);
     }
     std::vector<Receipt> const receipts(call_frames.size());
     // need to increment the nonce of transactions
@@ -850,13 +852,16 @@ TYPED_TEST(DBTest, commit_call_frames)
         senders,
         transactions);
 
+    auto const rlp_call_frame = rlp::encode_call_frames(call_frame);
+    byte_string_view const rlp_call_frame_view{rlp_call_frame};
+    auto const expected = compress_call_frames(rlp_call_frame_view);
+
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
         auto const &res =
             read_call_frame(this->db, tdb.get_block_number(), txn);
         ASSERT_TRUE(!res.empty());
-        ASSERT_TRUE(res.size() == 2);
-        EXPECT_EQ(res[0], call_frame1);
-        EXPECT_EQ(res[1], call_frame2);
+        EXPECT_EQ(res.size(), 97u);
+        EXPECT_EQ(res, expected);
     }
 }
 
@@ -922,7 +927,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     bs.log_debug();
 
     std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<byte_string> call_frames;
     for (auto &result : results.value()) {
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
@@ -939,11 +944,19 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     tdb.finalize(1, 1);
     tdb.set_block_and_round(1);
 
-    auto const actual_call_frames =
+    auto const actual_call_frames_compressed =
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
 #ifdef ENABLE_CALL_TRACING
-    EXPECT_EQ(actual_call_frames.size(), 35799);
+    EXPECT_EQ(actual_call_frames_compressed.size(), 615549);
+
+    auto decompressed_call_frames =
+        decompress_call_frames(actual_call_frames_compressed);
+    byte_string_view view{decompressed_call_frames};
+
+    auto const res = rlp::decode_call_frames(view);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.value().size(), 35799);
 #else
     EXPECT_EQ(actual_call_frames.size(), 0);
 #endif
@@ -1019,7 +1032,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     bs.log_debug();
 
     std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<byte_string> call_frames;
     for (auto &result : results.value()) {
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
@@ -1041,8 +1054,9 @@ TYPED_TEST(DBTest, call_frames_refund)
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
 #ifdef ENABLE_CALL_TRACING
-    ASSERT_EQ(actual_call_frames.size(), 1);
-    CallFrame expected{
+
+    ASSERT_EQ(actual_call_frames.length(), 64);
+    CallFrame frame{
         .type = CallType::CALL,
         .flags = 0,
         .from = from,
@@ -1053,8 +1067,20 @@ TYPED_TEST(DBTest, call_frames_refund)
         .status = EVMC_SUCCESS,
         .depth = 0};
 
-    EXPECT_EQ(actual_call_frames[0], expected);
+    std::vector<CallFrame> expected{frame};
+
+    auto const rlp_call_frame = rlp::encode_call_frames(expected);
+    byte_string_view const rlp_call_frame_view{rlp_call_frame};
+    byte_string const compressed = compress_call_frames(rlp_call_frame_view);
+
+    EXPECT_EQ(actual_call_frames, compressed);
+    auto const decompressed_call_frames =
+        decompress_call_frames(actual_call_frames);
+    byte_string_view view{decompressed_call_frames};
+    auto const decoded_call_frame = rlp::decode_call_frames(view).value();
+    EXPECT_EQ(decoded_call_frame, expected);
+
 #else
-    EXPECT_EQ(actual_call_frames.size(), 0);
+    EXPECT_EQ(actual_call_frames.length(), 0);
 #endif
 }

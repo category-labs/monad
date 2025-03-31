@@ -351,7 +351,7 @@ TEST_F(cli_tool_archives_restores, archives_restores)
  identically sized DBs, this test ensures that this will remain so.
  */
 struct cli_tool_one_chunk_too_many
-    : public cli_tool_fixture<config{.chunks_to_fill = 4, .chunks_max = 5}>
+    : public cli_tool_fixture<config{.chunks_to_fill = 4, .chunks_max = 6}>
 {
 };
 
@@ -363,7 +363,7 @@ TEST_F(cli_tool_one_chunk_too_many, one_chunk_too_many)
 struct cli_tool_non_one_one_chunk_ids
     : public cli_tool_fixture<config{
           .chunks_to_fill = 4,
-          .chunks_max = 5,
+          .chunks_max = 6,
           .interleave_multiple_sources = true}>
 {
 };

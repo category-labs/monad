@@ -955,11 +955,8 @@ void UpdateAuxImpl::set_io(
                     history_len <= db_history_max_version()) {
                     // we invalidate earlier blocks that fall outside of the
                     // history window when shortening history length
-                    for (auto version = db_history_min_valid_version();
-                         version <= db_history_max_version() - *history_len;
-                         ++version) {
-                        update_root_offset(version, INVALID_OFFSET);
-                    }
+                    erase_versions_up_to_and_including(
+                        db_history_max_version() - *history_len);
                 }
                 update_history_length_metadata(*history_len);
                 enable_dynamic_history_length_ = false;
@@ -1244,8 +1241,7 @@ void UpdateAuxImpl::move_trie_version_forward(
     // erase versions that fall out of history range
     MONAD_ASSERT(dest == db_history_max_version());
     if (dest >= version_history_length()) {
-        clear_root_offsets_up_to_and_including(dest - version_history_length());
-        release_unreferenced_chunks();
+        erase_versions_up_to_and_including(dest - version_history_length());
     }
 }
 

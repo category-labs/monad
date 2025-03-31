@@ -576,12 +576,12 @@ namespace monad::test
                             keys.back().first, keys.back().first, 0));
                         update_ls.push_front(updates.back());
                     }
-                    root = upsert(
-                        aux,
-                        version++,
-                        sm,
+                    root = aux.do_update(
                         std::move(root),
-                        std::move(update_ls));
+                        sm,
+                        std::move(update_ls),
+                        version++,
+                        true);
                     size_t count = 0;
                     for (auto const *ci = aux.db_metadata()->fast_list_begin();
                          ci != nullptr;

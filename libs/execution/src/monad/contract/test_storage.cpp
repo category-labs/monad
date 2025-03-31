@@ -44,13 +44,14 @@ struct Storage : public ::testing::Test
 TEST_F(Storage, variable)
 {
     StorageVariable<uint256_t> var(state, ADDRESS, bytes32_t{6000});
-    EXPECT_EQ(var.load(), 0);
+    ASSERT_FALSE(var.load().has_value());
     var.store(5);
-    EXPECT_EQ(var.load(), 5);
+    ASSERT_TRUE(var.load().has_value());
+    EXPECT_EQ(var.load().value(), 5);
     var.store(2000);
-    EXPECT_EQ(var.load(), 2000);
+    EXPECT_EQ(var.load().value(), 2000);
     var.clear();
-    EXPECT_EQ(var.load(), 0);
+    EXPECT_FALSE(var.load().has_value());
 }
 
 TEST_F(Storage, array)
@@ -71,7 +72,8 @@ TEST_F(Storage, array)
 
     for (uint32_t i = 0; i < 100; ++i) {
         auto const res = arr.get(i);
-        EXPECT_EQ(res.load().counter, i);
+        ASSERT_TRUE(res.load().has_value());
+        EXPECT_EQ(res.load().value().counter, i);
     }
 
     for (uint32_t i = 100; i > 0; --i) {

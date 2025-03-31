@@ -30,11 +30,6 @@ struct StorageAdapter
         {
             uint256_t raw[N];
 
-            constexpr size_t size() const noexcept
-            {
-                return N;
-            }
-
             constexpr uint256_t &operator[](size_t const i) noexcept
             {
                 return raw[i];

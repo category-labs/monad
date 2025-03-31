@@ -32,13 +32,12 @@ public:
 
     uint256_t length() const noexcept
     {
-        return length_.load();
+        return length_.load().value_or(0);
     }
 
     StorageVariable<T> get(uint256_t const index) const noexcept
     {
-        auto const length = length_.load();
-        MONAD_ASSERT(index < length);
+        MONAD_ASSERT(index < length());
 
         auto const offset = start_index_ + index * NUM_SLOTS;
         return StorageVariable<T>{
@@ -47,22 +46,22 @@ public:
 
     void push(T const &value) noexcept
     {
-        auto const length = length_.load();
-        auto const offset = start_index_ + length * NUM_SLOTS;
+        auto const len = length();
+        auto const offset = start_index_ + len * NUM_SLOTS;
         StorageVariable<T> var{
             state_, address_, intx::be::store<bytes32_t>(offset)};
         var.store(value);
-        length_.store(length + 1);
+        length_.store(len + 1);
     }
 
     T pop() noexcept
     {
-        auto const length = length_.load();
-        MONAD_ASSERT(length > 0);
-        auto var = get(length - 1);
-        auto value = var.load();
+        auto const len = length();
+        MONAD_ASSERT(len > 0);
+        auto var = get(len - 1);
+        auto value = var.load().value();
         var.clear();
-        length_.store(length - 1);
+        length_.store(len - 1);
         return value;
     }
 };

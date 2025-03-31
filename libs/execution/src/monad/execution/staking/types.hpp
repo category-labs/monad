@@ -15,19 +15,25 @@ struct ValidatorInfo
 {
     Address auth_address;
     byte_string_fixed<48> bls_pubkey;
-    uint256_t stake;
+    uint256_t total_stake;
     uint256_t active_stake;
-    uint64_t join_epoch;
+    uint256_t activating_stake;
+    uint256_t deactivating_stake;
+    uint256_t epoch_rewards;
 };
 
-struct StakeMetadata
+struct DelegatorInfo
 {
-    uint64_t withdrawal_queue_size;
-    uint64_t deposit_queue_size;
-    uint64_t validator_set_size;
+    uint256_t shares;
+    uint256_t balance;
 };
 
-static_assert(sizeof(StakeMetadata) == 24);
-static_assert(alignof(StakeMetadata) == 8);
+struct StakeDelta
+{
+    uint256_t validator_id;
+    uint256_t amount;
+    Address delegator;
+    bool is_deposit;
+};
 
 MONAD_NAMESPACE_END

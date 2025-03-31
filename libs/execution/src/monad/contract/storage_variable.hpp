@@ -8,6 +8,9 @@
 
 #include <intx/intx.hpp>
 
+#include <algorithm>
+#include <optional>
+
 MONAD_NAMESPACE_BEGIN
 
 template <typename T>
@@ -35,14 +38,19 @@ public:
     {
     }
 
-    T load() const noexcept
+    std::optional<T> load() const noexcept
     {
         StorageAdapter<T> value;
         for (size_t i = 0; i < N; ++i) {
             value.slots[i] =
                 intx::be::load<uint256_t>(state_.get_storage(address_, key_));
         }
-        return value.typed;
+        return std::all_of(
+                   value.slots.raw,
+                   value.slots.raw + N,
+                   [](uint256_t const &slot) { return slot == 0; })
+                   ? std::optional<T>{}
+                   : value.typed;
     }
 
     void store(T const &value)

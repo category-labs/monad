@@ -1,4 +1,5 @@
 #include <monad/contract/mapping.hpp>
+#include <monad/contract/storage_array.hpp>
 #include <monad/contract/storage_variable.hpp>
 #include <monad/core/blake3.hpp>
 #include <monad/core/int.hpp>
@@ -8,7 +9,7 @@
 #include <monad/execution/staking/bls.hpp>
 #include <monad/execution/staking/secp256k1.hpp>
 #include <monad/execution/staking/validator.hpp>
-#include <monad/execution/stateful_precompiles.hpp>
+#include <monad/execution/staking_contract.hpp>
 #include <monad/state3/state.hpp>
 
 #include <cstring>
@@ -45,24 +46,52 @@ namespace
     constexpr size_t BLS_COMPRESSED_PUBKEY_SIZE{48};
     constexpr size_t BLS_COMPRESSED_SIGNATURE_SIZE{96};
 
-    //////////////////////
-    // Domain separator //
-    //////////////////////
+    //////////////////////////
+    //   Domain separators  //
+    //////////////////////////
     constexpr auto LAST_VALIDATOR_ID_DS{
         0x41220a16053449faaa3a6d09af41bd3e_bytes32};
     constexpr auto VALIDATOR_ID_DS{0x92286cbe19ff43cfb4b0996357fd198b_bytes32};
     constexpr auto VALIDATOR_INFO_DS{
         0xc4e9c9649cd24dbe8802efbb68ff43eb_bytes32};
+    constexpr auto VALIDATOR_SET_DS{0x5da123f52fc44a169234a9b18ac05821_bytes32};
 }
 
-StatefulPrecompile::StatefulPrecompile(State &state, uint64_t const epoch)
+StakingContract::StakingContract(State &state, uint64_t const epoch)
     : state_{state}
     , epoch_{epoch}
+    , last_validator_id_storage_{state, CONTRACT_ADDRESS, LAST_VALIDATOR_ID_DS}
+    , validator_set_storage_{state, CONTRACT_ADDRESS, VALIDATOR_SET_DS}
 
 {
 }
 
-evmc_status_code StatefulPrecompile::create_validator(
+uint256_t StakingContract::next_validator_id() noexcept
+{
+    auto const id = last_validator_id_storage_.load();
+    last_validator_id_storage_.store(id + 1);
+    return id + 1;
+}
+
+void StakingContract::create_validator_id_mapping(
+    Secp256k1_Pubkey const &secp_pubkey, uint256_t const &id) noexcept
+{
+    Address const address = address_from_secpkey(secp_pubkey.serialize());
+    StorageVariable<uint256_t> validator_id_storage{
+        state_, address, mapping(VALIDATOR_ID_DS, address)};
+    validator_id_storage.store(id);
+}
+
+void StakingContract::add_validator_to_set(
+    uint256_t const &id, ValidatorInfo const &valinfo) noexcept
+{
+    StorageVariable<ValidatorInfo> valinfo_storage(
+        state_, CONTRACT_ADDRESS, mapping(VALIDATOR_INFO_DS, id));
+    valinfo_storage.store(valinfo);
+    validator_set_storage_.push(id);
+}
+
+evmc_status_code StakingContract::precompile_add_validator(
     byte_string_view const input, evmc_message const &)
 {
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
@@ -125,42 +154,17 @@ evmc_status_code StatefulPrecompile::create_validator(
         return EVMC_REVERT;
     }
 
-    StorageVariable<uint256_t> last_validator_id_storage(
-        state_, CONTRACT_ADDRESS, LAST_VALIDATOR_ID_DS);
-    auto validator_id = last_validator_id_storage.load();
-    validator_id += 1;
-    last_validator_id_storage.store(validator_id);
-
-    // create mapping(address => uint256) validator_id
-    Address address = address_from_secpkey(secp_pubkey.serialize());
-    auto const validator_id_key = mapping(VALIDATOR_ID_DS, address);
-
-    // auto const validator_id_key =
-    //     to_bytes(blake3(to_byte_string_view(VALIDATOR_ID_MAPPING.bytes)));
-    // StorageAdapter<Address> mapping(address);
-    StorageVariable<uint256_t> validator_id_storage(
-        state_, CONTRACT_ADDRESS, validator_id_key);
-    validator_id_storage.store(validator_id);
-
-    ValidatorInfo validator_info;
-    StorageVariable<ValidatorInfo> validator_info_storage(
-        state_, CONTRACT_ADDRESS, mapping(VALIDATOR_INFO_DS, validator_id));
-    validator_info_storage.store(ValidatorInfo{
+    auto const id = next_validator_id();
+    create_validator_id_mapping(secp_pubkey, id);
+    ValidatorInfo valinfo{
         .auth_address = unaligned_load<Address>(auth_address.data()),
         .bls_pubkey =
             unaligned_load<byte_string_fixed<48>>(bls_pubkey_serialized.data()),
         .stake = 0,
         .active_stake = 0,
-        .join_epoch = epoch_});
-
+        .join_epoch = epoch_};
+    add_validator_to_set(id, valinfo);
     return EVMC_SUCCESS;
-}
-
-evmc_status_code
-StatefulPrecompile::stake_withdraw(byte_string_view const, evmc_message const &)
-{
-    // TODO
-    return EVMC_REVERT;
 }
 
 MONAD_NAMESPACE_END

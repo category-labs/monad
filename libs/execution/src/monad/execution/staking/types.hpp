@@ -17,8 +17,9 @@ struct ValidatorInfo
     byte_string_fixed<48> bls_pubkey;
     uint256_t total_stake;
     uint256_t active_stake;
+    uint256_t active_shares;
     uint256_t activating_stake;
-    uint256_t deactivating_stake;
+    uint256_t deactivating_shares;
     uint256_t epoch_rewards;
 };
 
@@ -30,12 +31,18 @@ struct DelegatorInfo
     uint256_t balance;
 };
 
-struct StakeDelta
+struct WithdrawalRequest
+{
+    uint256_t validator_id;
+    uint256_t shares;
+    Address delegator;
+};
+
+struct DepositRequest
 {
     uint256_t validator_id;
     uint256_t amount;
     Address delegator;
-    bool is_deposit;
 };
 
 MONAD_NAMESPACE_END

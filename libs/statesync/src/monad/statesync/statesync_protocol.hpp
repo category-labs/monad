@@ -29,4 +29,13 @@ struct StatesyncProtocolV1 : StatesyncProtocol
         unsigned char const *, uint64_t) const override;
 };
 
+// TODO: remove V1 support once all nodes are upgraded since V1 is only
+// backwards compatible with V2 if both can support the same prefix size
+// (whether represented in nibbles or bytes)
+struct StatesyncProtocolV2 : StatesyncProtocolV1
+{
+    virtual void send_request(
+        monad_statesync_client_context *, uint64_t prefix) const override;
+};
+
 MONAD_NAMESPACE_END

@@ -42,14 +42,14 @@ monad_statesync_client_context *monad_statesync_client_context_create(
         statesync_send_request};
 }
 
-uint8_t monad_statesync_client_prefix_bytes()
+uint8_t monad_statesync_client_prefix_len()
 {
-    return 1;
+    return 2;
 }
 
 size_t monad_statesync_client_prefixes()
 {
-    return 1 << (8 * monad_statesync_client_prefix_bytes());
+    return 1 << (4 * monad_statesync_client_prefix_len());
 }
 
 bool monad_statesync_client_has_reached_target(
@@ -79,6 +79,9 @@ void monad_statesync_client_handle_new_peer(
     switch (version) {
     case 1:
         ptr = std::make_unique<StatesyncProtocolV1>();
+        break;
+    case 2:
+        ptr = std::make_unique<StatesyncProtocolV2>();
         break;
     default:
         MONAD_ASSERT(false);

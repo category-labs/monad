@@ -159,7 +159,7 @@ void StatesyncProtocolV1::send_request(
         ctx->sync,
         monad_sync_request{
             .prefix = prefix,
-            .prefix_bytes = monad_statesync_client_prefix_bytes(),
+            .prefix_len = 1,
             .target = tgrt,
             .from = from,
             .until = from >= (tgrt * 99 / 100) ? tgrt : tgrt * 99 / 100,
@@ -227,6 +227,25 @@ bool StatesyncProtocolV1::handle_upsert(
     }
 
     return true;
+}
+
+void StatesyncProtocolV2::send_request(
+    monad_statesync_client_context *const ctx, uint64_t const prefix) const
+{
+    auto const tgrt = ctx->tgrt.number;
+    auto const &[progress, old_target] = ctx->progress[prefix];
+    MONAD_ASSERT(progress == INVALID_BLOCK_ID || progress < tgrt);
+    MONAD_ASSERT(old_target == INVALID_BLOCK_ID || old_target <= tgrt);
+    auto const from = progress == INVALID_BLOCK_ID ? 0 : progress + 1;
+    ctx->statesync_send_request(
+        ctx->sync,
+        monad_sync_request{
+            .prefix = prefix,
+            .prefix_len = monad_statesync_client_prefix_len(),
+            .target = tgrt,
+            .from = from,
+            .until = from >= (tgrt * 99 / 100) ? tgrt : tgrt * 99 / 100,
+            .old_target = old_target});
 }
 
 MONAD_NAMESPACE_END

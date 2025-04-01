@@ -29,7 +29,7 @@ static_assert(alignof(enum monad_sync_type) == 1);
 struct monad_sync_request
 {
     uint64_t prefix;
-    uint8_t prefix_bytes;
+    uint8_t prefix_len;
     uint64_t target;
     uint64_t from;
     uint64_t until;

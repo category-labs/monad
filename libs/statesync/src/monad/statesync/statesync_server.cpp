@@ -43,18 +43,19 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
+Nibbles to_nibbles(uint64_t prefix, unsigned const nibbles)
 {
-    byte_string bytes;
-    for (size_t i = 0; i < n_bytes; ++i) {
-        bytes.push_back((prefix >> ((n_bytes - i - 1) * 8)) & 0xff);
+    Nibbles ret{nibbles};
+    for (unsigned i = 1; i <= nibbles; ++i) {
+        ret.set(nibbles - i, prefix & 0xf);
+        prefix >>= 4;
     }
-    return bytes;
+    return ret;
 }
 
 bool send_deletion(
-    monad_statesync_server *const sync, monad_sync_request const &rq,
-    monad_statesync_server_context &ctx)
+    monad_statesync_server *const sync, NibblesView const prefix,
+    monad_sync_request const &rq, monad_statesync_server_context &ctx)
 {
     MONAD_ASSERT(
         rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_ID);
@@ -63,11 +64,10 @@ bool send_deletion(
         return true;
     }
 
-    auto const fn = [sync, prefix = from_prefix(rq.prefix, rq.prefix_bytes)](
-                        Deletion const &deletion) {
+    auto const fn = [sync, prefix](Deletion const &deletion) {
         auto const &[addr, key] = deletion;
         auto const hash = keccak256(addr.bytes);
-        byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
+        NibblesView const view{hash};
         if (!view.starts_with(prefix)) {
             return;
         }
@@ -262,11 +262,11 @@ bool statesync_server_handle_request(
             0);
     }
 
-    if (!send_deletion(sync, rq, *ctx)) {
+    Nibbles const prefix = to_nibbles(rq.prefix, rq.prefix_len);
+    if (!send_deletion(sync, prefix, rq, *ctx)) {
         return false;
     }
 
-    auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
     auto const root = db.load_root_for_version(rq.target);
     if (!root.is_valid()) {
         return false;
@@ -282,18 +282,18 @@ bool statesync_server_handle_request(
     }
 
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Traverse traverse(sync, prefix, rq.from, rq.until);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         return false;
     }
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
 
     LOG_INFO(
-        "processed request prefix={} prefix_bytes={} target={} from={} "
+        "processed request prefix={} prefix_len={} target={} from={} "
         "until={} "
         "old_target={} overall={} traverse={}",
         rq.prefix,
-        rq.prefix_bytes,
+        rq.prefix_len,
         rq.target,
         rq.from,
         rq.until,

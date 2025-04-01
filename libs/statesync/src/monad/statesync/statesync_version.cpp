@@ -2,7 +2,7 @@
 
 // Modify when there are changes to the protocol
 
-constexpr uint32_t MONAD_STATESYNC_VERSION = 1;
+constexpr uint32_t MONAD_STATESYNC_VERSION = 2;
 
 uint32_t monad_statesync_version()
 {

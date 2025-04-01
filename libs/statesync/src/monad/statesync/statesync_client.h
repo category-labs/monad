@@ -7,7 +7,7 @@ extern "C"
 {
 #endif
 
-extern const unsigned MONAD_SQPOLL_DISABLED;
+extern unsigned const MONAD_SQPOLL_DISABLED;
 
 struct monad_statesync_client;
 struct monad_statesync_client_context;
@@ -18,7 +18,7 @@ struct monad_statesync_client_context *monad_statesync_client_context_create(
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 
-uint8_t monad_statesync_client_prefix_bytes();
+uint8_t monad_statesync_client_prefix_len();
 
 size_t monad_statesync_client_prefixes();
 

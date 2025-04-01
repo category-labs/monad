@@ -23,7 +23,8 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
 
-    byte_string_view read_bytes(byte_string_view &data, size_t const num_bytes)
+    byte_string_view
+    consume_bytes(byte_string_view &data, size_t const num_bytes)
     {
         byte_string_view ret = data.substr(0, num_bytes);
         data.remove_prefix(num_bytes);
@@ -105,14 +106,14 @@ evmc_status_code StakingContract::add_validator(
 
     byte_string_view reader = input;
     byte_string_view secp_pubkey_serialized =
-        read_bytes(reader, SECP_COMPRESSED_PUBKEY_SIZE);
+        consume_bytes(reader, SECP_COMPRESSED_PUBKEY_SIZE);
     byte_string_view bls_pubkey_serialized =
-        read_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE);
-    byte_string_view auth_address = read_bytes(reader, sizeof(Address));
+        consume_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE);
+    byte_string_view auth_address = consume_bytes(reader, sizeof(Address));
     byte_string_view secp_signature_serialized =
-        read_bytes(reader, SECP_SIGNATURE_SIZE);
+        consume_bytes(reader, SECP_SIGNATURE_SIZE);
     byte_string_view bls_signature_serialized =
-        read_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE);
+        consume_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE);
 
     thread_local std::unique_ptr<
         secp256k1_context,
@@ -235,6 +236,11 @@ evmc_status_code StakingContract::remove_stake(
         return EVMC_REVERT;
     }
 
+    // enough shares?
+    if (MONAD_UNLIKELY(delinfo->active_shares < shares)) {
+        return EVMC_REVERT;
+    }
+
     uint256_t const withdrawal_id =
         increment_id(vars.last_withdrawal_request_id);
 
@@ -336,8 +342,9 @@ void StakingContract::on_epoch_change()
             withdrawal_request->shares);
 
         valinfo->active_stake -= tokens_to_burn;
-        valinfo->active_shares += withdrawal_request->shares;
+        valinfo->active_shares -= withdrawal_request->shares;
 
+        delinfo->balance += tokens_to_burn;
         delinfo->active_shares -= withdrawal_request->shares;
 
         valinfo_storage.store(valinfo.value());

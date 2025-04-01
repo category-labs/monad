@@ -42,7 +42,9 @@ public:
     StakingContract(State &, uint64_t epoch);
 
     // public getters
-    std::optional<uint256_t> get_validator_id(Address const &) const noexcept;
+    StorageVariable<uint256_t> get_validator_id(Address const &) const noexcept;
+    StorageVariable<ValidatorInfo>
+    get_validator_info(uint256_t const &) const noexcept;
 
     // modify validator set
     evmc_status_code

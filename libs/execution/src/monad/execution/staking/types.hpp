@@ -24,7 +24,9 @@ struct ValidatorInfo
 
 struct DelegatorInfo
 {
-    uint256_t shares;
+    uint256_t active_shares; // shares
+    uint256_t deactivating_shares; // shares
+    uint256_t activating_stake; // MON
     uint256_t balance;
 };
 

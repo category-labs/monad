@@ -37,6 +37,20 @@ namespace
         0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_address; // fixme
     constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // 1 MON
 
+    uint256_t tokens_to_shares(
+        uint256_t const &original_tokens, uint256_t const &new_tokens,
+        uint256_t const &shares)
+    {
+        return (new_tokens * shares) / original_tokens;
+    }
+
+    // uint256_t shares_to_tokens(
+    //     uint256_t const &original_shares, uint256_t const &new_shares,
+    //     uint256_t const &tokens)
+    //{
+    //     return (new_shares * tokens) / original_shares;
+    // }
+
     //////////////////////
     //      Crypto      //
     //////////////////////
@@ -61,8 +75,7 @@ namespace ds
     constexpr auto VALIDATOR_SET{0x5da123f52fc44a169234a9b18ac05821_bytes32};
     constexpr auto STAKE_DELTA{0x604c50570c7645f2a0663fe4c7a43133_bytes32};
     constexpr auto STAKE_DELTA_IDS{0x604c50570c7645f2a0663fe4c7a43133_bytes32};
-    // constexpr auto
-    // DELEGATOR_INFO{0xdce745101caa44dd9e41d4bc53a0300c_bytes32};
+    constexpr auto DELEGATOR_INFO{0xdce745101caa44dd9e41d4bc53a0300c_bytes32};
 }
 
 StakingContract::StakingContract(State &state, uint64_t const epoch)
@@ -89,12 +102,18 @@ uint256_t StakingContract::next_stake_delta_id() noexcept
     return id + 1;
 }
 
-std::optional<uint256_t>
+StorageVariable<uint256_t>
 StakingContract::get_validator_id(Address const &address) const noexcept
 {
-    StorageVariable<uint256_t> validator_id_storage{
+    return StorageVariable<uint256_t>{
         state_, CONTRACT_ADDRESS, mapping(ds::VALIDATOR_ID, address)};
-    return validator_id_storage.load();
+}
+
+StorageVariable<ValidatorInfo>
+StakingContract::get_validator_info(uint256_t const &id) const noexcept
+{
+    return StorageVariable<ValidatorInfo>{
+        state_, CONTRACT_ADDRESS, mapping(ds::VALIDATOR_INFO, id)};
 }
 
 evmc_status_code StakingContract::add_validator(
@@ -189,18 +208,7 @@ evmc_status_code StakingContract::add_stake(
     byte_string_view const input, evmc_message const &msg)
 {
     // Validate input size
-    if (MONAD_UNLIKELY(input.size() != SECP_COMPRESSED_PUBKEY_SIZE)) {
-        return EVMC_REVERT;
-    }
-    thread_local std::unique_ptr<
-        secp256k1_context,
-        decltype(&secp256k1_context_destroy)> const
-        context(
-            secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),
-            &secp256k1_context_destroy);
-
-    Secp256k1_Pubkey const secp_pubkey(*context.get(), input);
-    if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
+    if (MONAD_UNLIKELY(input.size() != sizeof(uint256_t))) {
         return EVMC_REVERT;
     }
 
@@ -209,11 +217,17 @@ evmc_status_code StakingContract::add_stake(
         return EVMC_REVERT;
     }
 
-    Address const address = address_from_secpkey(secp_pubkey.serialize());
-    auto const validator_id = get_validator_id(address);
-    if (MONAD_UNLIKELY(!validator_id.has_value())) {
+    uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
+        input.substr(0, sizeof(uint256_t)).data());
+
+    auto valinfo_slot = get_validator_info(validator_id);
+    auto valinfo = valinfo_slot.load();
+    if (MONAD_UNLIKELY(!valinfo.has_value())) {
         return EVMC_REVERT;
     }
+
+    valinfo->activating_stake += amount;
+    valinfo_slot.store(valinfo.value());
 
     auto const stake_delta_id = next_stake_delta_id();
 
@@ -223,7 +237,7 @@ evmc_status_code StakingContract::add_stake(
     StorageVariable<StakeDelta> stake_delta{
         state_, CONTRACT_ADDRESS, mapping(ds::STAKE_DELTA, stake_delta_id)};
     stake_delta.store(StakeDelta{
-        .validator_id = validator_id.value(),
+        .validator_id = validator_id,
         .amount = amount,
         .delegator = msg.sender,
         .is_deposit = true});
@@ -231,16 +245,58 @@ evmc_status_code StakingContract::add_stake(
     return EVMC_SUCCESS;
 }
 
-#if 0
 evmc_status_code StakingContract::remove_stake(
     byte_string_view const input, evmc_message const &msg)
 {
-    uint256_t const validator_id = ;
-    StorageVariable<DelegatorInfo> delegator(
-        state_,
-        CONTRACT_ADDRESS,
-        mapping(ds::DELEGATOR_INFO, validator_id, msg.sender));
+    constexpr size_t MESSAGE_SIZE =
+        sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
+    if (MONAD_UNLIKELY(input.size()) != MESSAGE_SIZE) {
+        return EVMC_REVERT;
+    }
+    uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
+        input.substr(0, sizeof(uint256_t)).data());
+    uint256_t const amount = intx::be::unsafe::load<uint256_t>(
+        input.substr(sizeof(uint256_t), sizeof(uint256_t)).data());
+
+    auto valinfo_slot = get_validator_info(validator_id);
+    auto valinfo = valinfo_slot.load();
+    if (MONAD_UNLIKELY(!valinfo.has_value())) {
+        return EVMC_REVERT;
+    }
+    StorageVariable<DelegatorInfo> delinfo_slot{
+        state_, CONTRACT_ADDRESS, mapping(ds::DELEGATOR_INFO, msg.sender)};
+    auto delinfo = delinfo_slot.load();
+    if (MONAD_UNLIKELY(delinfo.has_value())) {
+        return EVMC_REVERT;
+    }
+
+    uint256_t const shares_avail =
+        delinfo->active_shares - delinfo->deactivating_shares;
+    uint256_t const tokens = valinfo->active_stake;
+    uint256_t const new_tokens =
+        valinfo->active_stake - (amount - delinfo->activating_stake);
+    uint256_t const amount_in_shares =
+        tokens_to_shares(tokens, new_tokens, shares_avail);
+    if (MONAD_UNLIKELY(amount_in_shares < shares_avail)) {
+        return EVMC_REVERT;
+    }
+
+    delinfo->deactivating_shares += amount_in_shares;
+    valinfo_slot.store(valinfo.value());
+
+    auto const stake_delta_id = next_stake_delta_id();
+    StorageArray<uint256_t> stake_delta_ids{
+        state_, CONTRACT_ADDRESS, mapping(ds::STAKE_DELTA_IDS, epoch_)};
+    stake_delta_ids.push(stake_delta_id);
+    StorageVariable<StakeDelta> stake_delta{
+        state_, CONTRACT_ADDRESS, mapping(ds::STAKE_DELTA, stake_delta_id)};
+    stake_delta.store(StakeDelta{
+        .validator_id = validator_id,
+        .amount = amount,
+        .delegator = msg.sender,
+        .is_deposit = false});
+
+    return EVMC_SUCCESS;
 }
-#endif
 
 MONAD_NAMESPACE_END

@@ -46,7 +46,7 @@ namespace
         uint256_t const &existing_tokens, uint256_t const &existing_shares,
         uint256_t const &new_tokens)
     {
-        if (existing_shares == 0) {
+        if (MONAD_UNLIKELY(existing_shares == 0)) {
             return new_tokens;
         }
         else {
@@ -54,12 +54,17 @@ namespace
         }
     }
 
-    // uint256_t shares_to_tokens(
-    //     uint256_t const &original_shares, uint256_t const &new_shares,
-    //     uint256_t const &tokens)
-    //{
-    //     return (new_shares * tokens) / original_shares;
-    // }
+    uint256_t shares_to_tokens(
+        uint256_t const &existing_tokens, uint256_t const &existing_shares,
+        uint256_t const &shares_amount)
+    {
+        if (MONAD_UNLIKELY(existing_shares == 0)) {
+            return 0;
+        }
+        else {
+            return (shares_amount * existing_tokens) / existing_shares;
+        }
+    }
 
     //////////////////////
     //      Crypto      //
@@ -287,7 +292,7 @@ void StakingContract::on_epoch_change()
         auto delinfo = delinfo_storage.load();
         MONAD_ASSERT(delinfo.has_value());
 
-        uint256_t shares_to_mint = tokens_to_shares(
+        uint256_t const shares_to_mint = tokens_to_shares(
             valinfo->active_stake,
             valinfo->active_shares,
             deposit_request->amount);
@@ -302,9 +307,45 @@ void StakingContract::on_epoch_change()
 
         deposit_request_storage.clear();
     }
+    MONAD_ASSERT(deposit_queue_storage.length() == 0);
 
     // 3. Apply withdrawal requests
-    // TODO
+    StorageArray<uint256_t> withdrawal_queue_storage =
+        vars.withdrawal_queue(epoch_);
+    uint256_t const num_withdrawals = withdrawal_queue_storage.length();
+    for (uint256_t i = 0; i < num_withdrawals; i += 1) {
+        auto withdrawal_id = withdrawal_queue_storage.pop();
+        auto withdrawal_request_storage =
+            vars.withdrawal_request(withdrawal_id);
+        auto withdrawal_request = withdrawal_request_storage.load();
+        MONAD_ASSERT(withdrawal_request.has_value());
+
+        auto valinfo_storage =
+            vars.validator_info(withdrawal_request->validator_id);
+        auto valinfo = valinfo_storage.load();
+        MONAD_ASSERT(valinfo.has_value());
+
+        auto delinfo_storage = vars.delegator_info(
+            withdrawal_request->validator_id, withdrawal_request->delegator);
+        auto delinfo = delinfo_storage.load();
+        MONAD_ASSERT(delinfo.has_value());
+
+        uint256_t const tokens_to_burn = shares_to_tokens(
+            valinfo->active_stake,
+            valinfo->active_shares,
+            withdrawal_request->shares);
+
+        valinfo->active_stake -= tokens_to_burn;
+        valinfo->active_shares += withdrawal_request->shares;
+
+        delinfo->active_shares -= withdrawal_request->shares;
+
+        valinfo_storage.store(valinfo.value());
+        delinfo_storage.store(delinfo.value());
+
+        withdrawal_request_storage.clear();
+    }
+    MONAD_ASSERT(withdrawal_queue_storage.length() == 0);
 }
 
 MONAD_NAMESPACE_END

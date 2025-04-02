@@ -112,6 +112,8 @@ add_library(
   "src/monad/execution/explicit_evmc_revision.hpp"
   "src/monad/execution/fmt/event_trace_fmt.hpp"
   "src/monad/execution/genesis.hpp"
+  "src/monad/execution/monad_precompiles.cpp"
+  "src/monad/execution/monad_precompiles.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/staking/bls.hpp"

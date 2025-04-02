@@ -36,6 +36,7 @@ using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
 TEST(Evm, create_with_insufficient)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -69,6 +70,7 @@ TEST(Evm, create_with_insufficient)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
+        chain,
         MAX_CODE_SIZE_EIP170};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
@@ -78,6 +80,7 @@ TEST(Evm, create_with_insufficient)
 TEST(Evm, eip684_existing_code)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -119,6 +122,7 @@ TEST(Evm, eip684_existing_code)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
+        chain,
         MAX_CODE_SIZE_EIP170};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -127,6 +131,7 @@ TEST(Evm, eip684_existing_code)
 TEST(Evm, create_nonce_out_of_range)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain;
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -144,6 +149,7 @@ TEST(Evm, create_nonce_out_of_range)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
+        chain,
         MAX_CODE_SIZE_EIP170};
 
     commit_sequential(
@@ -176,6 +182,7 @@ TEST(Evm, create_nonce_out_of_range)
 TEST(Evm, static_precompile_execution)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -193,6 +200,7 @@ TEST(Evm, static_precompile_execution)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
+        chain,
         MAX_CODE_SIZE_EIP170};
 
     commit_sequential(
@@ -219,7 +227,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = call<EVMC_SHANGHAI>(&h, s, chain, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -231,6 +239,7 @@ TEST(Evm, static_precompile_execution)
 TEST(Evm, out_of_gas_static_precompile_execution)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -248,6 +257,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
+        chain,
         MAX_CODE_SIZE_EIP170};
 
     commit_sequential(
@@ -274,7 +284,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, m);
+    evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, chain, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }

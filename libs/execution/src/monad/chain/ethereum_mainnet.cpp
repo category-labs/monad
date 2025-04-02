@@ -8,6 +8,8 @@
 #include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/precompiles.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
@@ -139,6 +141,13 @@ size_t EthereumMainnet::get_max_code_size(
     return get_revision(block_number, timestamp) >= EVMC_SPURIOUS_DRAGON
                ? MAX_CODE_SIZE_EIP170
                : std::numeric_limits<size_t>::max();
+}
+
+std::optional<evmc::Result> EthereumMainnet::try_execute_precompile(
+    State &, evmc_message const &msg, evmc_revision const rev) const
+{
+    SWITCH_EVMC_REVISION(check_call_precompile, msg);
+    MONAD_ABORT("unreachable");
 }
 
 MONAD_NAMESPACE_END

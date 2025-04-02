@@ -1,3 +1,4 @@
+#include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
@@ -243,8 +244,9 @@ evmc::Result create(
 EXPLICIT_EVMC_REVISION(create);
 
 template <evmc_revision rev>
-evmc::Result
-call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+evmc::Result call(
+    EvmcHost<rev> *const host, State &state, Chain const &chain,
+    evmc_message const &msg) noexcept
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -259,7 +261,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     evmc::Result result;
-    if (auto maybe_result = check_call_precompile<rev>(msg);
+    if (auto maybe_result = chain.try_execute_precompile(state, msg, rev);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

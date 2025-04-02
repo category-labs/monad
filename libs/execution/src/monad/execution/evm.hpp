@@ -12,6 +12,7 @@ template <evmc_revision rev>
 struct EvmcHost;
 
 class State;
+struct Chain;
 
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(
@@ -23,6 +24,7 @@ evmc::Result create(
     size_t max_code_size) noexcept;
 
 template <evmc_revision rev>
-evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
+evmc::Result
+call(EvmcHost<rev> *, State &, Chain const &, evmc_message const &) noexcept;
 
 MONAD_NAMESPACE_END

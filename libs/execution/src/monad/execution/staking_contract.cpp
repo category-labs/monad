@@ -77,17 +77,16 @@ namespace
     constexpr size_t BLS_COMPRESSED_SIGNATURE_SIZE{96};
 }
 
-StakingContract::StakingContract(
-    State &state, Address const &ca, uint64_t const epoch)
+StakingContract::StakingContract(State &state, Address const &ca)
     : state_{state}
-    , epoch_{epoch}
     , vars{state, ca}
 {
 }
 
-evmc_status_code StakingContract::add_validator(
-    byte_string_view const input, evmc_message const &)
+evmc_status_code StakingContract::add_validator(evmc_message const &msg)
 {
+    byte_string_view const input{msg.input_data, msg.input_size};
+
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
                                     BLS_COMPRESSED_PUBKEY_SIZE +
                                     sizeof(Address);
@@ -170,9 +169,10 @@ evmc_status_code StakingContract::add_validator(
     return EVMC_SUCCESS;
 }
 
-evmc_status_code StakingContract::add_stake(
-    byte_string_view const input, evmc_message const &msg)
+evmc_status_code StakingContract::add_stake(evmc_message const &msg)
 {
+    byte_string_view const input{msg.input_data, msg.input_size};
+
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != sizeof(uint256_t))) {
         return EVMC_REVERT;
@@ -195,8 +195,10 @@ evmc_status_code StakingContract::add_stake(
     auto delinfo_slot = vars.delegator_info(validator_id, msg.sender);
     auto delinfo = delinfo_slot.load();
 
+    uint256_t const epoch = vars.epoch.load().value_or(0);
+
     uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
-    vars.deposit_queue(epoch_ + 2).push(deposit_id);
+    vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
         .store(DepositRequest{
             .validator_id = validator_id,
@@ -211,9 +213,10 @@ evmc_status_code StakingContract::add_stake(
     return EVMC_SUCCESS;
 }
 
-evmc_status_code StakingContract::remove_stake(
-    byte_string_view const input, evmc_message const &msg)
+evmc_status_code StakingContract::remove_stake(evmc_message const &msg)
 {
+    byte_string_view const input{msg.input_data, msg.input_size};
+
     constexpr size_t MESSAGE_SIZE =
         sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
     if (MONAD_UNLIKELY(input.size()) != MESSAGE_SIZE) {
@@ -244,7 +247,9 @@ evmc_status_code StakingContract::remove_stake(
     uint256_t const withdrawal_id =
         increment_id(vars.last_withdrawal_request_id);
 
-    vars.withdrawal_queue(epoch_ + 2).push(withdrawal_id);
+    uint256_t const epoch = vars.epoch.load().value_or(0);
+
+    vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
         .store(WithdrawalRequest{
             .validator_id = validator_id,
@@ -261,6 +266,12 @@ evmc_status_code StakingContract::remove_stake(
 
 void StakingContract::on_epoch_change()
 {
+    uint256_t const epoch = [this] {
+        auto epoch_storage = vars.epoch.load();
+        MONAD_ASSERT(epoch_storage.has_value());
+        return std::move(epoch_storage.value());
+    }();
+
     // 1. Apply staking rewards
     uint256_t const num_validators = vars.validator_set.length();
     for (uint256_t i = 0; i < num_validators; i += 1) {
@@ -280,7 +291,7 @@ void StakingContract::on_epoch_change()
     }
 
     // 2. Apply deposits
-    StorageArray<uint256_t> deposit_queue_storage = vars.deposit_queue(epoch_);
+    StorageArray<uint256_t> deposit_queue_storage = vars.deposit_queue(epoch);
     uint256_t const num_deposits = deposit_queue_storage.length();
     for (uint256_t i = 0; i < num_deposits; i += 1) {
         auto deposit_id = deposit_queue_storage.pop();
@@ -317,7 +328,7 @@ void StakingContract::on_epoch_change()
 
     // 3. Apply withdrawal requests
     StorageArray<uint256_t> withdrawal_queue_storage =
-        vars.withdrawal_queue(epoch_);
+        vars.withdrawal_queue(epoch);
     uint256_t const num_withdrawals = withdrawal_queue_storage.length();
     for (uint256_t i = 0; i < num_withdrawals; i += 1) {
         auto withdrawal_id = withdrawal_queue_storage.pop();

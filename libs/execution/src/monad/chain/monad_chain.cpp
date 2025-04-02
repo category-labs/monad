@@ -5,6 +5,9 @@
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/monad_precompiles.hpp>
+#include <monad/execution/precompiles.hpp>
+#include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -68,6 +71,19 @@ size_t MonadChain::get_max_code_size(
     else {
         MONAD_ABORT("invalid revision");
     }
+}
+
+std::optional<evmc::Result> MonadChain::try_execute_precompile(
+    State &state, evmc_message const &msg, evmc_revision const rev) const
+{
+    auto eth_precompile_result = [&]() {
+        SWITCH_EVMC_REVISION(check_call_precompile, msg);
+        MONAD_ABORT("unreachable");
+    }();
+    if (eth_precompile_result.has_value()) {
+        return std::move(eth_precompile_result.value());
+    }
+    return monad_check_call_precompile(state, msg);
 }
 
 MONAD_NAMESPACE_END

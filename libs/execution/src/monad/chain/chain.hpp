@@ -7,8 +7,11 @@
 
 #include <evmc/evmc.h>
 
+#include <optional>
+
 MONAD_NAMESPACE_BEGIN
 
+class State;
 struct BlockHeader;
 struct Receipt;
 struct Transaction;
@@ -33,6 +36,9 @@ struct Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual std::optional<evmc::Result> try_execute_precompile(
+        State &, evmc_message const &, evmc_revision) const = 0;
 };
 
 MONAD_NAMESPACE_END

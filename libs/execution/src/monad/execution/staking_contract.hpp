@@ -1,10 +1,12 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/contract/mapping.hpp>
 #include <monad/contract/storage_array.hpp>
 #include <monad/contract/storage_variable.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/execution/staking/types.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -19,10 +21,9 @@ struct ValidatorInfo;
 class StakingContract
 {
     State &state_;
-    uint64_t const epoch_;
 
 public:
-    StakingContract(State &, Address const &, uint64_t epoch);
+    StakingContract(State &, Address const &);
 
     class Variables
     {
@@ -39,6 +40,8 @@ public:
         /////////////////////////
         //  Constant Addresses //
         /////////////////////////
+        StorageVariable<uint256_t> epoch{
+            state_, ca_, 0x900cb4cb1c1d43e391b32859defe395e_bytes32};
 
         StorageVariable<uint256_t> last_validator_id{
             state_, ca_, 0x41220a16053449faaa3a6d09af41bd3e_bytes32};
@@ -133,12 +136,11 @@ public:
     } vars;
 
     // modify validator set
-    evmc_status_code
-    add_validator(byte_string_view input, evmc_message const &);
+    evmc_status_code add_validator(evmc_message const &);
 
     // modify delegator set
-    evmc_status_code add_stake(byte_string_view input, evmc_message const &);
-    evmc_status_code remove_stake(byte_string_view input, evmc_message const &);
+    evmc_status_code add_stake(evmc_message const &);
+    evmc_status_code remove_stake(evmc_message const &);
 
     // system calls
     void on_epoch_change();

@@ -115,6 +115,7 @@ TEST(EvmcHost, emit_log)
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -126,6 +127,7 @@ TEST(EvmcHost, emit_log)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
+        chain,
         MAX_CODE_SIZE_EIP170};
 
     host.emit_log(
@@ -147,6 +149,7 @@ TEST(EvmcHost, emit_log)
 TEST(EvmcHost, access_precompile)
 {
     InMemoryMachine machine;
+    EthereumMainnet chain{};
     mpt::Db db{machine};
     db_t tdb{db};
     BlockState bs{tdb};
@@ -158,6 +161,7 @@ TEST(EvmcHost, access_precompile)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
+        chain,
         MAX_CODE_SIZE_EIP170};
 
     EXPECT_EQ(

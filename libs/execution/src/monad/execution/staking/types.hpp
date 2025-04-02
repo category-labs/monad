@@ -11,6 +11,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+inline constexpr Address STAKING_CONTRACT_ADDRESS{0x1000};
+
 struct ValidatorInfo
 {
     Address auth_address;

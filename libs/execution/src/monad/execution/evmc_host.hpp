@@ -19,6 +19,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
+struct Chain;
 
 class EvmcHostBase : public evmc::Host
 {
@@ -27,13 +28,14 @@ class EvmcHostBase : public evmc::Host
 
 protected:
     State &state_;
+    Chain const &chain_;
     CallTracerBase &call_tracer_;
     size_t const max_code_size_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, size_t max_code_size) noexcept;
+        State &, Chain const &, size_t max_code_size) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -111,7 +113,7 @@ struct EvmcHost final : public EvmcHostBase
             return result;
         }
         else {
-            return ::monad::call(this, state_, msg);
+            return ::monad::call(this, state_, chain_, msg);
         }
     }
 

@@ -5,6 +5,7 @@
 #include <monad/core/int.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/execution/staking/types.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>

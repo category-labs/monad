@@ -89,11 +89,12 @@ namespace
         size_t const max_code_size =
             chain.get_max_code_size(header.number, header.timestamp);
 
-        BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
-            enriched_txn,
-            header.base_fee_per_gas,
-            chain.get_chain_id(),
-            max_code_size));
+        BOOST_OUTCOME_TRY(
+            static_validate_transaction<rev>(
+                enriched_txn,
+                header.base_fee_per_gas,
+                chain.get_chain_id(),
+                max_code_size));
 
         tdb.set_block_and_round(
             block_number,
@@ -206,10 +207,11 @@ namespace
         }();
 
         EvmcHost<rev> host{
-            *call_tracer, tx_context, buffer, state, max_code_size};
+            *call_tracer, tx_context, buffer, state, chain, max_code_size};
         auto execution_result = execute_impl_no_validation<rev>(
             state,
             host,
+            chain,
             enriched_txn,
             sender,
             header.base_fee_per_gas.value_or(0),

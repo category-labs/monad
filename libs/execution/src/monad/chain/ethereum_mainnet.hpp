@@ -35,6 +35,9 @@ struct EthereumMainnet : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual std::optional<evmc::Result> try_execute_precompile(
+        State &, evmc_message const &, evmc_revision) const override;
 };
 
 MONAD_NAMESPACE_END

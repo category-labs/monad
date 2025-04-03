@@ -382,6 +382,7 @@ struct impl_t
     bool truncate_database = false;
     bool create_empty_database = false;
     std::optional<uint64_t> rewind_database_to;
+    std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
     bool debug_printing = false;
     std::filesystem::path archive_database;
@@ -460,6 +461,22 @@ public:
             std::cerr << std::endl;
         }
         return total_used;
+    }
+
+    void print_db_history_summary(MONAD_MPT_NAMESPACE::UpdateAuxImpl &aux)
+    {
+        cout << "MPT database has "
+             << (1 + aux.db_history_max_version() -
+                 aux.db_history_min_valid_version())
+             << " history, earliest is " << aux.db_history_min_valid_version()
+             << " latest is " << aux.db_history_max_version()
+             << ".\n     It has been configured to retain no more than "
+             << aux.version_history_length() << ".\n     Latest voted is ("
+             << aux.get_latest_voted_version() << ", "
+             << aux.get_latest_voted_round() << ").\n     Latest finalized is "
+             << aux.get_latest_finalized_version() << ", latest verified is "
+             << aux.get_latest_verified_version() << ", auto expire version is "
+             << aux.get_auto_expire_version_metadata() << "\n";
     }
 
     void do_restore_database()
@@ -1378,6 +1395,10 @@ opened.
                 "create a new database if needed, otherwise truncate "
                 "existing.");
             cli_ops_group->add_option(
+                "--reset-history-length",
+                impl.reset_history_length,
+                "reset database history length to fixed length");
+            cli_ops_group->add_option(
                 "--rewind-to",
                 impl.rewind_database_to,
                 "rewind database to an earlier point in its history.");
@@ -1472,7 +1493,7 @@ opened.
                 ss << ". Are you sure?\n";
                 impl.cli_ask_question(ss.str().c_str());
             }
-            else if (impl.rewind_database_to) {
+            else if (impl.rewind_database_to || impl.reset_history_length) {
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
@@ -1490,11 +1511,13 @@ opened.
         }
 
         monad::io::Ring ring(1);
+
         auto wr_ring(
-            (impl.rewind_database_to) ? std::optional<monad::io::Ring>(4)
-                                      : std::nullopt);
+            (impl.rewind_database_to || impl.reset_history_length)
+                ? std::optional<monad::io::Ring>(4)
+                : std::nullopt);
         monad::io::Buffers rwbuf =
-            (impl.rewind_database_to)
+            (impl.rewind_database_to || impl.reset_history_length)
                 ? monad::io::make_buffers_for_segregated_read_write(
                       ring,
                       *wr_ring,
@@ -1537,23 +1560,31 @@ opened.
                 aux, aux.db_metadata()->slow_list_begin(), "Slow", &impl.slow);
             impl.print_list_info(
                 aux, aux.db_metadata()->free_list_begin(), "Free");
+            impl.print_db_history_summary(aux);
 
-            cout << "MPT database has "
-                 << (1 + aux.db_history_max_version() -
-                     aux.db_history_min_valid_version())
-                 << " history, earliest is "
-                 << aux.db_history_min_valid_version() << " latest is "
-                 << aux.db_history_max_version()
-                 << ".\n     It has been configured to retain no more than "
-                 << aux.version_history_length() << ".\n     Latest voted is ("
-                 << aux.get_latest_voted_version() << ", "
-                 << aux.get_latest_voted_round()
-                 << ").\n     Latest finalized is "
-                 << aux.get_latest_finalized_version()
-                 << ", latest verified is " << aux.get_latest_verified_version()
-                 << ", auto expire version is "
-                 << aux.get_auto_expire_version_metadata() << "\n";
-
+            if (impl.reset_history_length) {
+                // set to fixed history length, database will prune any outdated
+                // versions outside of new history length window
+                cout << "\nResetting history length from "
+                     << aux.version_history_length() << " to "
+                     << impl.reset_history_length.value() << "... \n";
+                if (impl.reset_history_length.value() <
+                    aux.version_history_length()) {
+                    std::stringstream ss;
+                    ss << "WARNING: --reset-history-length can potentially "
+                          "prune "
+                          "historical versions and only keep the recent "
+                       << impl.reset_history_length.value()
+                       << " versions. Are you sure?\n";
+                    impl.cli_ask_question(ss.str().c_str());
+                }
+                aux.unset_io();
+                aux.set_io(&io, impl.reset_history_length);
+                cout << "Success! Done resetting history to "
+                     << impl.reset_history_length.value() << ".\n";
+                impl.print_db_history_summary(aux);
+                return 0;
+            }
             if (impl.rewind_database_to) {
                 if (*impl.rewind_database_to <
                     aux.db_history_min_valid_version()) {

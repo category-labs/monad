@@ -1,3 +1,4 @@
+#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp> // NOLINT
@@ -60,84 +61,81 @@
 using namespace monad;
 using namespace monad::mpt;
 
-namespace
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+////////////////////////////////////////
+// CLI input parsing helpers
+////////////////////////////////////////
+
+bool is_numeric(std::string_view str)
 {
-    ////////////////////////////////////////
-    // CLI input parsing helpers
-    ////////////////////////////////////////
+    return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
+}
 
-    bool is_numeric(std::string_view str)
-    {
-        return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
-    }
-
-    std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
-    {
-        std::ispanstream iss(input);
-        std::vector<std::string> tokens;
-        std::string token;
-        while (std::getline(iss, token, delim)) {
-            if (!token.empty()) {
-                tokens.emplace_back(std::move(token));
-            }
-        }
-        return tokens;
-    }
-
-    ////////////////////////////////////////
-    // TrieDb Helpers
-    ////////////////////////////////////////
-
-    std::string_view table_as_string(unsigned char table_id)
-    {
-        switch (table_id) {
-        case STATE_NIBBLE:
-            return "state";
-        case CODE_NIBBLE:
-            return "code";
-        case RECEIPT_NIBBLE:
-            return "receipt";
-        default:
-            return "invalid";
+std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
+{
+    std::ispanstream iss(input);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (std::getline(iss, token, delim)) {
+        if (!token.empty()) {
+            tokens.emplace_back(std::move(token));
         }
     }
+    return tokens;
+}
 
-    template <class T>
-        requires std::same_as<T, byte_string_view> ||
-                 std::same_as<T, std::string_view>
-    auto to_triedb_key(T input, bool already_hashed = false)
-    {
-        using res = std::invoke_result_t<hash256 (*)(T), T>;
-        return already_hashed
-                   ? byte_string{input.data(), input.size()}
-                   : byte_string{keccak256(input).bytes, sizeof(res)};
-    }
+////////////////////////////////////////
+// TrieDb Helpers
+////////////////////////////////////////
 
-    void print_account(Account const &acct)
-    {
-        fmt::print("{}\n\n", acct);
+std::string_view table_as_string(unsigned char table_id)
+{
+    switch (table_id) {
+    case STATE_NIBBLE:
+        return "state";
+    case CODE_NIBBLE:
+        return "code";
+    case RECEIPT_NIBBLE:
+        return "receipt";
+    default:
+        return "invalid";
     }
+}
 
-    void print_receipt(Receipt const &receipt)
-    {
-        fmt::print("{}\n\n", receipt);
-    }
+template <class T>
+    requires std::same_as<T, byte_string_view> ||
+             std::same_as<T, std::string_view>
+auto to_triedb_key(T input, bool already_hashed = false)
+{
+    using res = std::invoke_result_t<hash256 (*)(T), T>;
+    return already_hashed ? byte_string{input.data(), input.size()}
+                          : byte_string{keccak256(input).bytes, sizeof(res)};
+}
 
-    void print_storage(bytes32_t key, bytes32_t val)
-    {
-        fmt::print("Storage{{key={},value={}}}\n\n", key, val);
-    }
+void print_account(Account const &acct)
+{
+    fmt::print("{}\n\n", acct);
+}
 
-    void print_code(byte_string_view const code)
-    {
-        fmt::print(
-            "{}\n\n",
-            (code.empty()
-                 ? "EMPTY"
-                 : fmt::format(
-                       "0x{:02x}",
-                       fmt::join(std::as_bytes(std::span(code)), ""))));
-    }
+void print_receipt(Receipt const &receipt)
+{
+    fmt::print("{}\n\n", receipt);
+}
+
+void print_storage(bytes32_t key, bytes32_t val)
+{
+    fmt::print("Storage{{key={},value={}}}\n\n", key, val);
+}
+
+void print_code(byte_string_view const code)
+{
+    fmt::print(
+        "{}\n\n",
+        (code.empty()
+             ? "EMPTY"
+             : fmt::format(
+                   "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""))));
 }
 
 struct DbStateMachine
@@ -784,6 +782,8 @@ int interactive_impl(Db &db)
     }
     return 0;
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 int main(int argc, char *argv[])
 {

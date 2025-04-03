@@ -12,7 +12,7 @@
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/execute_block.hpp>
+#include <monad/execution/execute_monad_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/wal_reader.hpp>
@@ -95,8 +95,14 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     BlockState block_state(db);
     BOOST_OUTCOME_TRY(
         auto results,
-        execute_block(
-            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+        execute_monad_block(
+            chain,
+            rev,
+            consensus_header,
+            block,
+            block_state,
+            block_hash_buffer,
+            priority_pool));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());

@@ -107,6 +107,8 @@ add_library(
   "src/monad/execution/evmc_host.hpp"
   "src/monad/execution/execute_block.cpp"
   "src/monad/execution/execute_block.hpp"
+  "src/monad/execution/execute_monad_block.cpp"
+  "src/monad/execution/execute_monad_block.hpp"
   "src/monad/execution/execute_transaction.cpp"
   "src/monad/execution/execute_transaction.hpp"
   "src/monad/execution/explicit_evmc_revision.hpp"

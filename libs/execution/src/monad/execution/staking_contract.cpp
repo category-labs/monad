@@ -12,13 +12,26 @@
 #include <monad/execution/staking_contract.hpp>
 #include <monad/state3/state.hpp>
 
-#include <cstring>
-#include <memory>
-
 #include <blst.h>
 #include <secp256k1.h>
 
+#include <boost/outcome/config.hpp>
+// TODO unstable paths between versions
+#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
+    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
+    #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
+#else
+    #include <boost/outcome/experimental/status-code/config.hpp>
+    #include <boost/outcome/experimental/status-code/generic_code.hpp>
+#endif
+#include <boost/outcome/success_failure.hpp>
+
+#include <cstring>
+#include <memory>
+
 MONAD_NAMESPACE_BEGIN
+
+using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 namespace
 {
@@ -34,7 +47,8 @@ namespace
     //////////////////////
     //     Staking     //
     //////////////////////
-    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // 1 MON
+    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
+    constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
 
     uint256_t increment_id(StorageVariable<uint256_t> &storage)
     {
@@ -70,6 +84,11 @@ namespace
     //////////////////////
     //      Crypto      //
     //////////////////////
+    thread_local std::unique_ptr<
+        secp256k1_context, decltype(&secp256k1_context_destroy)> const
+        secp_context(
+            secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),
+            &secp256k1_context_destroy);
     constexpr size_t SECP_COMPRESSED_PUBKEY_SIZE{33};
     constexpr size_t SECP_SIGNATURE_SIZE{64};
 
@@ -114,19 +133,13 @@ evmc_status_code StakingContract::add_validator(evmc_message const &msg)
     byte_string_view bls_signature_serialized =
         consume_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE);
 
-    thread_local std::unique_ptr<
-        secp256k1_context,
-        decltype(&secp256k1_context_destroy)> const
-        context(
-            secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),
-            &secp256k1_context_destroy);
-
     // Verify SECP signature
-    Secp256k1_Pubkey secp_pubkey(*context.get(), secp_pubkey_serialized);
+    Secp256k1_Pubkey secp_pubkey(*secp_context.get(), secp_pubkey_serialized);
     if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
         return EVMC_REVERT;
     }
-    Secp256k1_Signature secp_sig(*context.get(), secp_signature_serialized);
+    Secp256k1_Signature secp_sig(
+        *secp_context.get(), secp_signature_serialized);
     if (MONAD_UNLIKELY(!secp_sig.is_valid())) {
         return EVMC_REVERT;
     }
@@ -264,24 +277,55 @@ evmc_status_code StakingContract::remove_stake(evmc_message const &msg)
     return EVMC_SUCCESS;
 }
 
-void StakingContract::on_epoch_change()
+Result<void>
+StakingContract::reward_validator(byte_string_fixed<33> const &beneficiary)
 {
-    uint256_t const epoch = [this] {
-        auto epoch_storage = vars.epoch.load();
-        MONAD_ASSERT(epoch_storage.has_value());
-        return std::move(epoch_storage.value());
-    }();
+    Secp256k1_Pubkey pubkey(
+        *secp_context.get(), to_byte_string_view(beneficiary));
+    if (MONAD_UNLIKELY(!pubkey.is_valid())) {
+        return StakingSyscallError::InvalidValidatorSecpKey;
+    }
+
+    Address const address = address_from_secpkey(pubkey.serialize());
+    auto const validator_id = vars.validator_id(address).load();
+    if (MONAD_UNLIKELY(validator_id.has_value())) {
+        return StakingSyscallError::RewardValidatorNotInSet;
+    }
+
+    auto validator_info_storage = vars.validator_info(validator_id.value());
+    auto validator_info = validator_info_storage.load();
+    if (MONAD_UNLIKELY(!validator_info.has_value())) {
+        return StakingSyscallError::InvalidState;
+    }
+
+    validator_info->epoch_rewards += BASE_STAKING_REWARD;
+    validator_info_storage.store(validator_info.value());
+
+    return success();
+}
+
+Result<void> StakingContract::on_epoch_change()
+{
+    auto const maybe_epoch = vars.epoch.load();
+    if (MONAD_UNLIKELY(!maybe_epoch.has_value())) {
+        return success();
+    }
+    uint256_t const epoch = maybe_epoch.value();
 
     // 1. Apply staking rewards
     uint256_t const num_validators = vars.validator_set.length();
     for (uint256_t i = 0; i < num_validators; i += 1) {
         auto const validator_id_storage = vars.validator_set.get(i);
         auto const validator_id = validator_id_storage.load();
-        MONAD_ASSERT(validator_id.has_value());
+        if (MONAD_UNLIKELY(!validator_id.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         auto valinfo_storage = vars.validator_info(validator_id.value());
         auto valinfo = valinfo_storage.load();
-        MONAD_ASSERT(valinfo.has_value());
+        if (MONAD_UNLIKELY(!valinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         // TODO: apply commission rate
         valinfo->total_stake += valinfo->epoch_rewards;
@@ -297,17 +341,23 @@ void StakingContract::on_epoch_change()
         auto deposit_id = deposit_queue_storage.pop();
         auto deposit_request_storage = vars.deposit_request(deposit_id);
         auto deposit_request = deposit_request_storage.load();
-        MONAD_ASSERT(deposit_request.has_value());
+        if (MONAD_UNLIKELY(!deposit_request.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         auto valinfo_storage =
             vars.validator_info(deposit_request->validator_id);
         auto valinfo = valinfo_storage.load();
-        MONAD_ASSERT(valinfo.has_value());
+        if (MONAD_UNLIKELY(!valinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         auto delinfo_storage = vars.delegator_info(
             deposit_request->validator_id, deposit_request->delegator);
         auto delinfo = delinfo_storage.load();
-        MONAD_ASSERT(delinfo.has_value());
+        if (MONAD_UNLIKELY(!delinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         uint256_t const shares_to_mint = tokens_to_shares(
             valinfo->active_stake,
@@ -324,7 +374,9 @@ void StakingContract::on_epoch_change()
 
         deposit_request_storage.clear();
     }
-    MONAD_ASSERT(deposit_queue_storage.length() == 0);
+    if (MONAD_UNLIKELY(deposit_queue_storage.length() != 0)) {
+        return StakingSyscallError::CouldNotClearStorage;
+    }
 
     // 3. Apply withdrawal requests
     StorageArray<uint256_t> withdrawal_queue_storage =
@@ -335,17 +387,23 @@ void StakingContract::on_epoch_change()
         auto withdrawal_request_storage =
             vars.withdrawal_request(withdrawal_id);
         auto withdrawal_request = withdrawal_request_storage.load();
-        MONAD_ASSERT(withdrawal_request.has_value());
+        if (MONAD_UNLIKELY(!withdrawal_request.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         auto valinfo_storage =
             vars.validator_info(withdrawal_request->validator_id);
         auto valinfo = valinfo_storage.load();
-        MONAD_ASSERT(valinfo.has_value());
+        if (MONAD_UNLIKELY(!valinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         auto delinfo_storage = vars.delegator_info(
             withdrawal_request->validator_id, withdrawal_request->delegator);
         auto delinfo = delinfo_storage.load();
-        MONAD_ASSERT(delinfo.has_value());
+        if (MONAD_UNLIKELY(!delinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
 
         uint256_t const tokens_to_burn = shares_to_tokens(
             valinfo->active_stake,
@@ -363,7 +421,36 @@ void StakingContract::on_epoch_change()
 
         withdrawal_request_storage.clear();
     }
-    MONAD_ASSERT(withdrawal_queue_storage.length() == 0);
+    if (MONAD_UNLIKELY(withdrawal_queue_storage.length() != 0)) {
+        return StakingSyscallError::CouldNotClearStorage;
+    }
+
+    return success();
 }
 
 MONAD_NAMESPACE_END
+
+BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
+
+std::initializer_list<
+    quick_status_code_from_enum<monad::StakingSyscallError>::mapping> const &
+quick_status_code_from_enum<monad::StakingSyscallError>::value_mappings()
+{
+    using monad::StakingSyscallError;
+
+    static std::initializer_list<mapping> const v = {
+        {StakingSyscallError::Success, "success", {errc::success}},
+        {StakingSyscallError::InvalidValidatorSecpKey,
+         "invalid secp pubkey",
+         {}},
+        {StakingSyscallError::InvalidState, "invalid state", {}},
+        {StakingSyscallError::RewardValidatorNotInSet,
+         "rewarding validator not in set",
+         {}},
+        {StakingSyscallError::CouldNotClearStorage,
+         "Could not clear storage",
+         {}}};
+    return v;
+}
+
+BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_END

@@ -1,5 +1,6 @@
 #include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
+#include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/monad_block.hpp>
@@ -34,8 +35,12 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+
+    BOOST_OUTCOME_TRY(contract.reward_validator(consensus_header.author));
+
     if (consensus_header.epoch != contract.vars.epoch.load()) {
-        contract.on_epoch_change();
+        BOOST_OUTCOME_TRY(
+            contract.on_epoch_change()); // TODO: run this on a fiber?
         contract.vars.epoch.store(consensus_header.epoch);
     }
     return execute_block<rev>(

@@ -6,17 +6,36 @@
 #include <monad/contract/storage_variable.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/int.hpp>
+#include <monad/core/result.hpp>
 #include <monad/execution/staking/types.hpp>
+
+#include <evmc/evmc.h>
+
+// TODO unstable paths between versions
+#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
+    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
+    #include <boost/outcome/experimental/status-code/status-code/quick_status_code_from_enum.hpp>
+#else
+    #include <boost/outcome/experimental/status-code/config.hpp>
+    #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
+#endif
 
 #include <cstdint>
 #include <optional>
-
-#include <evmc/evmc.h>
 
 MONAD_NAMESPACE_BEGIN
 
 class State;
 struct ValidatorInfo;
+
+enum class StakingSyscallError
+{
+    Success = 0,
+    InvalidValidatorSecpKey,
+    InvalidState,
+    RewardValidatorNotInSet,
+    CouldNotClearStorage,
+};
 
 class StakingContract
 {
@@ -143,7 +162,23 @@ public:
     evmc_status_code remove_stake(evmc_message const &);
 
     // system calls
-    void on_epoch_change();
+    Result<void> reward_validator(byte_string_fixed<33> const &);
+    Result<void> on_epoch_change();
 };
 
 MONAD_NAMESPACE_END
+
+BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
+
+template <>
+struct quick_status_code_from_enum<monad::StakingSyscallError>
+    : quick_status_code_from_enum_defaults<monad::StakingSyscallError>
+{
+    static constexpr auto const domain_name = "Staking System Call Error";
+    static constexpr auto const domain_uuid =
+        "e8858564-6ac9-4f02-899d-bb872d5227f2";
+
+    static std::initializer_list<mapping> const &value_mappings();
+};
+
+BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_END

@@ -144,4 +144,10 @@ mpt::Nibbles proposal_prefix(uint64_t);
 
 std::vector<uint64_t> get_proposal_rounds(mpt::Db &, uint64_t block_number);
 
+bool for_each_state(
+    mpt::Db &, mpt::NibblesView prefix, uint64_t block_number, uint64_t from,
+    uint64_t until, std::function<void(byte_string_view)> handle_account,
+    std::function<void(Address const &, byte_string_view)> handle_storage,
+    std::function<void(byte_string_view)> handle_code);
+
 MONAD_NAMESPACE_END

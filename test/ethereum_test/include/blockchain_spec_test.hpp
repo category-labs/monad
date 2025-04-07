@@ -1,16 +1,14 @@
 #pragma once
 
-#include <ethereum_test.hpp>
-
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
-
 #include <nlohmann/json_fwd.hpp>
 
 #include <filesystem>
@@ -19,36 +17,52 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Block;
 class BlockHashBuffer;
+class TrieDb;
+struct Block;
 struct Receipt;
 
 MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-class BlockchainTest : public testing::Test
+struct EthereumMainnetRev : EthereumMainnet
 {
+    evmc_revision const rev;
+
+    EthereumMainnetRev(evmc_revision const rev)
+        : rev{rev}
+    {
+    }
+
+    virtual evmc_revision get_revision(
+        uint64_t /* block_number */, uint64_t /* timestamp */) const override
+    {
+        return rev;
+    }
+};
+
+using db_t = monad::TrieDb;
+
+class BlockchainSpecTest : public testing::Test
+{
+protected:
     static fiber::PriorityPool *pool_;
 
     std::filesystem::path const file_;
     std::optional<evmc_revision> const revision_;
 
-    template <evmc_revision rev>
-    static Result<std::vector<Receipt>>
-    execute(Block &, test::db_t &, BlockHashBuffer const &);
+    virtual Result<std::vector<Receipt>> execute_dispatch(
+        evmc_revision, Block &, db_t &, BlockHashBuffer const &) = 0;
 
-    static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &);
-
-    static void
+    void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
 
 public:
     static void SetUpTestSuite();
     static void TearDownTestSuite();
 
-    BlockchainTest(
+    BlockchainSpecTest(
         std::filesystem::path const &file,
         std::optional<evmc_revision> const &revision) noexcept
         : file_{file}
@@ -58,7 +72,5 @@ public:
 
     void TestBody() override;
 };
-
-void register_blockchain_tests(std::optional<evmc_revision> const &);
 
 MONAD_TEST_NAMESPACE_END

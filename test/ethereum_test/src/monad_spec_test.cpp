@@ -1,5 +1,5 @@
-#include <ethereum_test.hpp>
 #include <from_json.hpp>
+#include <monad_spec_test.hpp>
 #include <test_resource_data.h>
 
 #include <monad/chain/ethereum_mainnet.hpp>
@@ -7,7 +7,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/execute_block.hpp>
+#include <monad/execution/execute_monad_block.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/state3/state.hpp>
@@ -24,19 +24,27 @@
 MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>> EthereumSpecTest::execute(
+Result<std::vector<Receipt>> MonadSpecTest::execute(
     Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
 {
     using namespace monad::test;
 
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
+    auto const consensus_header =
+        MonadConsensusBlockHeader::from_eth_header(block.header);
+
     BlockState block_state(db);
     EthereumMainnetRev const chain{rev};
     BOOST_OUTCOME_TRY(
         auto const results,
-        execute_block<rev>(
-            chain, block, block_state, block_hash_buffer, *pool_));
+        execute_monad_block<rev>(
+            chain,
+            consensus_header,
+            block,
+            block_state,
+            block_hash_buffer,
+            *pool_));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
     std::vector<Address> senders(results.size());
@@ -48,7 +56,7 @@ Result<std::vector<Receipt>> EthereumSpecTest::execute(
 
     block_state.log_debug();
     block_state.commit(
-        MonadConsensusBlockHeader::from_eth_header(block.header),
+        consensus_header,
         receipts,
         call_frames,
         senders,
@@ -64,7 +72,7 @@ Result<std::vector<Receipt>> EthereumSpecTest::execute(
     return receipts;
 }
 
-Result<std::vector<Receipt>> EthereumSpecTest::execute_dispatch(
+Result<std::vector<Receipt>> MonadSpecTest::execute_dispatch(
     evmc_revision const rev, Block &block, test::db_t &db,
     BlockHashBuffer const &block_hash_buffer)
 {
@@ -73,18 +81,10 @@ Result<std::vector<Receipt>> EthereumSpecTest::execute_dispatch(
     MONAD_ASSERT(false);
 }
 
-void register_ethereum_blockchain_tests(
+void register_monad_blockchain_tests(
     std::optional<evmc_revision> const &revision)
 {
     namespace fs = std::filesystem;
-
-    // skip slow tests
-    testing::FLAGS_gtest_filter +=
-        ":-:BlockchainTests.GeneralStateTests/stTimeConsuming/*:"
-        "BlockchainTests.GeneralStateTests/VMTests/vmPerformance/*:"
-        "BlockchainTests.GeneralStateTests/stQuadraticComplexityTest/"
-        "Call50000_sha256.json:"
-        "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
     constexpr auto suite = "BlockchainTests";
     auto const root = test_resource::ethereum_tests_dir / suite;
@@ -105,7 +105,7 @@ void register_ethereum_blockchain_tests(
                 nullptr,
                 path.string().c_str(),
                 0,
-                [=] { return new EthereumSpecTest(path, revision); });
+                [=] { return new MonadSpecTest(path, revision); });
         }
     }
 }

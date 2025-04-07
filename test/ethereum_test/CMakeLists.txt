@@ -3,13 +3,15 @@ target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
                                                   monad_execution GTest::gtest)
 target_sources(
   monad-ethereum-test
-  PRIVATE include/blockchain_test.hpp
+  PRIVATE include/blockchain_spec_test.hpp
           include/ethereum_test.hpp
           include/from_json.hpp
+          include/monad_spec_test.hpp
           include/transaction_test.hpp
-          src/blockchain_test.cpp
+          src/blockchain_spec_test.cpp
           src/ethereum_test.cpp
           src/main.cpp
+          src/monad_spec_test.cpp
           src/transaction_test.cpp)
 
 target_include_directories(

@@ -1,8 +1,7 @@
-#include <blockchain_test.hpp>
+#include <blockchain_spec_test.hpp>
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 
-#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -15,13 +14,10 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
+#include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/execute_block.hpp>
-#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/genesis.hpp>
-#include <monad/execution/switch_evmc_revision.hpp>
-#include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -43,8 +39,6 @@
 
 #include <gtest/gtest.h>
 
-#include <test_resource_data.h>
-
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -59,75 +53,56 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 namespace
 {
-    struct EthereumMainnetRev : EthereumMainnet
+    void load_state_from_json(nlohmann::json const &j, State &state)
     {
-        evmc_revision const rev;
+        for (auto const &[j_addr, j_acc] : j.items()) {
+            auto const account_address =
+                evmc::from_hex<monad::Address>(j_addr).value();
 
-        EthereumMainnetRev(evmc_revision const rev)
-            : rev{rev}
-        {
+            if (j_acc.contains("code") || j_acc.contains("storage")) {
+                ASSERT_TRUE(
+                    j_acc.contains("code") && j_acc.contains("storage"));
+                state.create_contract(account_address);
+            }
+
+            if (j_acc.contains("code")) {
+                state.set_code(
+                    account_address,
+                    j_acc.at("code").get<monad::byte_string>());
+            }
+
+            state.add_to_balance(
+                account_address, j_acc.at("balance").get<intx::uint256>());
+            // we cannot use the nlohmann::json from_json<uint64_t> because
+            // it does not use the strtoull implementation, whereas we need
+            // it so we can turn a hex string into a uint64_t
+            state.set_nonce(
+                account_address,
+                integer_from_json<uint64_t>(j_acc.at("nonce")));
+
+            if (j_acc.contains("storage")) {
+                ASSERT_TRUE(j_acc["storage"].is_object());
+                for (auto const &[key, value] : j_acc["storage"].items()) {
+                    nlohmann::json const key_json = key;
+                    monad::bytes32_t const key_bytes32 =
+                        key_json.get<monad::bytes32_t>();
+                    monad::bytes32_t const value_bytes32 = value;
+                    if (value_bytes32 == monad::bytes32_t{}) {
+                        // skip setting starting storage to zero to avoid
+                        // pointless deletion
+                        continue;
+                    }
+                    EXPECT_EQ(
+                        state.set_storage(
+                            account_address, key_bytes32, value_bytes32),
+                        EVMC_STORAGE_ADDED);
+                }
+            }
         }
-
-        virtual evmc_revision get_revision(
-            uint64_t /* block_number */,
-            uint64_t /* timestamp */) const override
-        {
-            return rev;
-        }
-    };
-}
-
-template <evmc_revision rev>
-Result<std::vector<Receipt>> BlockchainTest::execute(
-    Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
-{
-    using namespace monad::test;
-
-    BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
-
-    BlockState block_state(db);
-    EthereumMainnetRev const chain{rev};
-    BOOST_OUTCOME_TRY(
-        auto const results,
-        execute_block<rev>(
-            chain, block, block_state, block_hash_buffer, *pool_));
-    std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
-    std::vector<Address> senders(results.size());
-    for (unsigned i = 0; i < results.size(); ++i) {
-        receipts[i] = std::move(results[i].receipt);
-        call_frames[i] = std::move(results[i].call_frames);
-        senders[i] = results[i].sender;
     }
-
-    block_state.log_debug();
-    block_state.commit(
-        MonadConsensusBlockHeader::from_eth_header(block.header),
-        receipts,
-        call_frames,
-        senders,
-        block.transactions,
-        block.ommers,
-        block.withdrawals);
-    db.finalize(block.header.number, block.header.number);
-
-    auto output_header = db.read_eth_header();
-    BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
-
-    return receipts;
 }
 
-Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
-    evmc_revision const rev, Block &block, test::db_t &db,
-    BlockHashBuffer const &block_hash_buffer)
-{
-    MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(execute, block, db, block_hash_buffer);
-    MONAD_ASSERT(false);
-}
-
-void BlockchainTest::validate_post_state(
+void BlockchainSpecTest::validate_post_state(
     nlohmann::json const &json, nlohmann::json const &db)
 {
     EXPECT_EQ(db.size(), json.size());
@@ -175,20 +150,20 @@ void BlockchainTest::validate_post_state(
     }
 }
 
-fiber::PriorityPool *BlockchainTest::pool_ = nullptr;
+fiber::PriorityPool *BlockchainSpecTest::pool_ = nullptr;
 
-void BlockchainTest::SetUpTestSuite()
+void BlockchainSpecTest::SetUpTestSuite()
 {
     pool_ = new fiber::PriorityPool{1, 1};
 }
 
-void BlockchainTest::TearDownTestSuite()
+void BlockchainSpecTest::TearDownTestSuite()
 {
     delete pool_;
     pool_ = nullptr;
 }
 
-void BlockchainTest::TestBody()
+void BlockchainSpecTest::TestBody()
 {
     std::ifstream f{file_};
 
@@ -397,42 +372,6 @@ void BlockchainTest::TestBody()
     if (!executed) {
         MONAD_ASSERT(revision_.has_value());
         GTEST_SKIP() << "no test cases found revision=" << revision_.value();
-    }
-}
-
-void register_blockchain_tests(std::optional<evmc_revision> const &revision)
-{
-    namespace fs = std::filesystem;
-
-    // skip slow tests
-    testing::FLAGS_gtest_filter +=
-        ":-:BlockchainTests.GeneralStateTests/stTimeConsuming/*:"
-        "BlockchainTests.GeneralStateTests/VMTests/vmPerformance/*:"
-        "BlockchainTests.GeneralStateTests/stQuadraticComplexityTest/"
-        "Call50000_sha256.json:"
-        "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
-
-    constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
-
-            // get rid of minus signs, which is a special symbol when used in //
-            // filtering
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
-
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] { return new BlockchainTest(path, revision); });
-        }
     }
 }
 

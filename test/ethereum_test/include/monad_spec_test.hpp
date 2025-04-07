@@ -19,9 +19,8 @@ MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-class EthereumSpecTest : public BlockchainSpecTest
+class MonadSpecTest : public BlockchainSpecTest
 {
-    EthereumSpecTest();
     template <evmc_revision rev>
     Result<std::vector<Receipt>>
     execute(Block &, db_t &, BlockHashBuffer const &);
@@ -30,7 +29,7 @@ class EthereumSpecTest : public BlockchainSpecTest
         evmc_revision, Block &, db_t &, BlockHashBuffer const &) override;
 
 public:
-    EthereumSpecTest(
+    MonadSpecTest(
         std::filesystem::path const &file,
         std::optional<evmc_revision> const &revision) noexcept
         : BlockchainSpecTest(file, revision)
@@ -38,20 +37,6 @@ public:
     }
 };
 
-void register_ethereum_blockchain_tests(std::optional<evmc_revision> const &);
-
-inline std::unordered_map<std::string, evmc_revision> const revision_map = {
-    {"Frontier", EVMC_FRONTIER},
-    {"Homestead", EVMC_HOMESTEAD},
-    {"EIP150", EVMC_TANGERINE_WHISTLE},
-    {"EIP158", EVMC_SPURIOUS_DRAGON},
-    {"Byzantium", EVMC_BYZANTIUM},
-    {"ConstantinopleFix", EVMC_PETERSBURG},
-    {"Istanbul", EVMC_ISTANBUL},
-    {"Berlin", EVMC_BERLIN},
-    {"London", EVMC_LONDON},
-    {"Merge", EVMC_PARIS},
-    {"Shanghai", EVMC_SHANGHAI},
-    {"Cancun", EVMC_CANCUN}};
+void register_monad_blockchain_tests(std::optional<evmc_revision> const &);
 
 MONAD_TEST_NAMESPACE_END

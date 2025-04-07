@@ -40,6 +40,7 @@ enum class StakingSyscallError
 class StakingContract
 {
     State &state_;
+    Address const &ca_;
 
 public:
     StakingContract(State &, Address const &);

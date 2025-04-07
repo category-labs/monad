@@ -2,7 +2,6 @@
 #include <monad/core/log_level_map.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 
-#include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
 #include <transaction_test.hpp>
 
@@ -51,7 +50,7 @@ int main(int argc, char *argv[])
     event_tracer = quill::create_logger("event_trace", quill::null_handler());
 #endif
 
-    test::register_blockchain_tests(revision);
+    test::register_ethereum_blockchain_tests(revision);
     test::register_transaction_tests(revision);
 
     int return_code = RUN_ALL_TESTS();

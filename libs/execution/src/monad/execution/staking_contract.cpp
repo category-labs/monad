@@ -98,6 +98,7 @@ namespace
 
 StakingContract::StakingContract(State &state, Address const &ca)
     : state_{state}
+    , ca_{ca}
     , vars{state, ca}
 {
 }
@@ -298,6 +299,7 @@ StakingContract::reward_validator(byte_string_fixed<33> const &beneficiary)
         return StakingSyscallError::InvalidState;
     }
 
+    state_.add_to_balance(ca_, BASE_STAKING_REWARD);
     validator_info->epoch_rewards += BASE_STAKING_REWARD;
     validator_info_storage.store(validator_info.value());
 

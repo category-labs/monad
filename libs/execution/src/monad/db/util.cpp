@@ -643,23 +643,29 @@ byte_string encode_account_db(Address const &address, Account const &account)
     return rlp::encode_list2(encoded_account);
 }
 
-Result<std::pair<Address, Account>> decode_account_db(byte_string_view &enc)
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_account_db_raw(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(auto const address, rlp::decode_address(payload));
-    BOOST_OUTCOME_TRY(auto const acct, decode_account_db_helper(payload));
+    BOOST_OUTCOME_TRY(auto const address, rlp::parse_string_metadata(payload));
+    if (MONAD_UNLIKELY(address.size() != sizeof(Address))) {
+        return rlp::DecodeError::ArrayLengthUnexpected;
+    }
+    return {address, payload};
+}
+
+Result<std::pair<Address, Account>> decode_account_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto res, decode_account_db_raw(enc));
+    Address const address = unaligned_load<Address>(res.first.data());
+    BOOST_OUTCOME_TRY(auto const acct, decode_account_db_helper(res.second));
     return {address, acct};
 }
 
 Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(
-        auto const address_byte_view, rlp::parse_string_metadata(payload));
-    if (MONAD_UNLIKELY(address_byte_view.size() != sizeof(Address))) {
-        return rlp::DecodeError::ArrayLengthUnexpected;
-    }
-    return decode_account_db_helper(payload);
+    BOOST_OUTCOME_TRY(auto res, decode_account_db_raw(enc));
+    return decode_account_db_helper(res.second);
 }
 
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)

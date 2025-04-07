@@ -34,8 +34,11 @@ namespace test_resource
     inline auto const ethereum_genesis_dir =
         test_data_dir / "common" / "genesis" / "ethereum";
 
-    // ethereum tests
+    // ethereum spec tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
+
+    // monad spec tests
+    inline auto const monad_tests_dir = test_data_dir / "monad-specs";
 
     inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 }

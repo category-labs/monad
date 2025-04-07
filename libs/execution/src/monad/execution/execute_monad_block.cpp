@@ -36,7 +36,7 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
 
-    BOOST_OUTCOME_TRY(contract.reward_validator(consensus_header.author));
+    // BOOST_OUTCOME_TRY(contract.reward_validator(consensus_header.author));
 
     if (consensus_header.epoch != contract.vars.epoch.load()) {
         BOOST_OUTCOME_TRY(

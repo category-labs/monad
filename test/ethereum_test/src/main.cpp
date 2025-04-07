@@ -3,6 +3,7 @@
 #include <monad/execution/trace/event_trace.hpp>
 
 #include <ethereum_test.hpp>
+#include <monad_spec_test.hpp>
 #include <transaction_test.hpp>
 
 #include <evmc/evmc.h>
@@ -52,6 +53,8 @@ int main(int argc, char *argv[])
 
     test::register_ethereum_blockchain_tests(revision);
     test::register_transaction_tests(revision);
+
+    test::register_monad_blockchain_tests(revision);
 
     int return_code = RUN_ALL_TESTS();
 

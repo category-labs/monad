@@ -23,6 +23,26 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+namespace
+{
+    struct EthereumMainnetRev : EthereumMainnet
+    {
+        evmc_revision const rev;
+
+        EthereumMainnetRev(evmc_revision const rev)
+            : rev{rev}
+        {
+        }
+
+        virtual evmc_revision get_revision(
+            uint64_t /* block_number */,
+            uint64_t /* timestamp */) const override
+        {
+            return rev;
+        }
+    };
+}
+
 template <evmc_revision rev>
 Result<std::vector<Receipt>> EthereumSpecTest::execute(
     Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)

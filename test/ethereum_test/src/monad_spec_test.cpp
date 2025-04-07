@@ -2,7 +2,7 @@
 #include <monad_spec_test.hpp>
 #include <test_resource_data.h>
 
-#include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -23,6 +23,19 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+namespace
+{
+    struct MonadChainRev : public MonadTestnet
+    {
+        virtual monad_revision get_monad_revision(
+            uint64_t /* block_number */,
+            uint64_t /* timestamp */) const override
+        {
+            return MONAD_TWO;
+        }
+    };
+}
+
 template <evmc_revision rev>
 Result<std::vector<Receipt>> MonadSpecTest::execute(
     Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
@@ -35,7 +48,7 @@ Result<std::vector<Receipt>> MonadSpecTest::execute(
         MonadConsensusBlockHeader::from_eth_header(block.header);
 
     BlockState block_state(db);
-    EthereumMainnetRev const chain{rev};
+    MonadChainRev const chain;
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_monad_block<rev>(
@@ -86,8 +99,9 @@ void register_monad_blockchain_tests(
 {
     namespace fs = std::filesystem;
 
-    constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
+    constexpr auto suite = "MonadBlockchainTests";
+    auto const root = test_resource::monad_tests_dir / suite;
+    std::cout << "root:" << root << std::endl;
     for (auto const &entry : fs::recursive_directory_iterator{root}) {
         auto const path = entry.path();
         if (path.extension() == ".json") {

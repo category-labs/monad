@@ -2,6 +2,7 @@
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>

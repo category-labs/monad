@@ -1,6 +1,5 @@
 #pragma once
 
-#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
 #include <monad/execution/execute_transaction.hpp>
@@ -25,22 +24,6 @@ struct Receipt;
 MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
-
-struct EthereumMainnetRev : EthereumMainnet
-{
-    evmc_revision const rev;
-
-    EthereumMainnetRev(evmc_revision const rev)
-        : rev{rev}
-    {
-    }
-
-    virtual evmc_revision get_revision(
-        uint64_t /* block_number */, uint64_t /* timestamp */) const override
-    {
-        return rev;
-    }
-};
 
 using db_t = monad::TrieDb;
 

@@ -124,6 +124,8 @@ decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
 
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 

@@ -676,33 +676,31 @@ byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
     return rlp::encode_list2(encoded_storage);
 }
 
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_storage_db_raw(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(byte_string_view const slot, rlp::decode_string(payload));
+    BOOST_OUTCOME_TRY(byte_string_view const val, rlp::decode_string(payload));
+    return {slot, val};
+}
 
-    std::pair<bytes32_t, bytes32_t> storage;
-    BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(payload));
-    BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(payload));
-
-    if (MONAD_UNLIKELY(!payload.empty())) {
+Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
+    if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }
-
-    return storage;
+    return {to_bytes(res.first), to_bytes(res.second)};
 }
 
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-
-    BOOST_OUTCOME_TRY(rlp::decode_bytes32_compact(payload));
-    BOOST_OUTCOME_TRY(auto const output, rlp::decode_string(payload));
-
-    if (MONAD_UNLIKELY(!payload.empty())) {
+    BOOST_OUTCOME_TRY(auto const res, decode_storage_db_raw(enc));
+    if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }
-
-    return output;
+    return res.second;
 };
 
 void write_to_file(

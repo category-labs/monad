@@ -34,6 +34,7 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
 {
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+    state.touch(STAKING_CONTRACT_ADDRESS);
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
 
     // BOOST_OUTCOME_TRY(contract.reward_validator(consensus_header.author));

@@ -103,7 +103,7 @@ StakingContract::StakingContract(State &state, Address const &ca)
 {
 }
 
-evmc_status_code StakingContract::add_validator(evmc_message const &msg)
+StakingContract::Status StakingContract::add_validator(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
@@ -117,7 +117,7 @@ evmc_status_code StakingContract::add_validator(evmc_message const &msg)
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != EXPECTED_INPUT_SIZE)) {
-        return EVMC_REVERT;
+        return INPUT_SIZE_INVALID;
     }
 
     // extract individual inputs
@@ -137,28 +137,28 @@ evmc_status_code StakingContract::add_validator(evmc_message const &msg)
     // Verify SECP signature
     Secp256k1_Pubkey secp_pubkey(*secp_context.get(), secp_pubkey_serialized);
     if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
-        return EVMC_REVERT;
+        return INVALID_SECP_PUBKEY;
     }
     Secp256k1_Signature secp_sig(
         *secp_context.get(), secp_signature_serialized);
     if (MONAD_UNLIKELY(!secp_sig.is_valid())) {
-        return EVMC_REVERT;
+        return INVALID_SECP_SIGNATURE;
     }
     if (MONAD_UNLIKELY(!secp_sig.verify(secp_pubkey, message))) {
-        return EVMC_REVERT;
+        return SECP_SIGNATURE_VERIFICATION_FAILED;
     }
 
     // Verify BLS signature
     Bls_Pubkey bls_pubkey(bls_pubkey_serialized);
     if (MONAD_UNLIKELY(!bls_pubkey.is_valid())) {
-        return EVMC_REVERT;
+        return INVALID_BLS_PUBKEY;
     }
     Bls_Signature bls_sig(bls_signature_serialized);
     if (MONAD_UNLIKELY(!bls_sig.is_valid())) {
-        return EVMC_REVERT;
+        return INVALID_BLS_SIGNATURE;
     }
     if (MONAD_UNLIKELY(!bls_sig.verify(bls_pubkey, message))) {
-        return EVMC_REVERT;
+        return BLS_SIGNATURE_VERIFICATION_FAILED;
     }
 
     uint256_t const validator_id = increment_id(vars.last_validator_id);
@@ -180,21 +180,21 @@ evmc_status_code StakingContract::add_validator(evmc_message const &msg)
 
     vars.validator_set.push(validator_id);
 
-    return EVMC_SUCCESS;
+    return SUCCESS;
 }
 
-evmc_status_code StakingContract::add_stake(evmc_message const &msg)
+StakingContract::Status StakingContract::add_stake(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != sizeof(uint256_t))) {
-        return EVMC_REVERT;
+        return INPUT_SIZE_INVALID;
     }
 
     auto const stake = intx::be::load<uint256_t>(msg.value);
     if (MONAD_UNLIKELY(stake < MIN_STAKE_AMOUNT)) {
-        return EVMC_REVERT;
+        return MINIMUM_STAKE_NOT_MET;
     }
 
     uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
@@ -203,7 +203,7 @@ evmc_status_code StakingContract::add_stake(evmc_message const &msg)
     auto valinfo_slot = vars.validator_info(validator_id);
     auto valinfo = valinfo_slot.load();
     if (MONAD_UNLIKELY(!valinfo.has_value())) {
-        return EVMC_REVERT;
+        return UNKNOWN_VALIDATOR;
     }
 
     auto delinfo_slot = vars.delegator_info(validator_id, msg.sender);
@@ -224,17 +224,17 @@ evmc_status_code StakingContract::add_stake(evmc_message const &msg)
     delinfo_slot.store(delinfo.value());
     valinfo_slot.store(valinfo.value());
 
-    return EVMC_SUCCESS;
+    return SUCCESS;
 }
 
-evmc_status_code StakingContract::remove_stake(evmc_message const &msg)
+StakingContract::Status StakingContract::remove_stake(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
     constexpr size_t MESSAGE_SIZE =
         sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
-    if (MONAD_UNLIKELY(input.size()) != MESSAGE_SIZE) {
-        return EVMC_REVERT;
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+        return INPUT_SIZE_INVALID;
     }
     uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
         input.substr(0, sizeof(uint256_t)).data());
@@ -244,18 +244,18 @@ evmc_status_code StakingContract::remove_stake(evmc_message const &msg)
     auto valinfo_slot = vars.validator_info(validator_id);
     auto valinfo = valinfo_slot.load();
     if (MONAD_UNLIKELY(!valinfo.has_value())) {
-        return EVMC_REVERT;
+        return UNKNOWN_VALIDATOR;
     }
 
     auto delinfo_slot = vars.delegator_info(validator_id, msg.sender);
     auto delinfo = delinfo_slot.load();
     if (MONAD_UNLIKELY(delinfo.has_value())) {
-        return EVMC_REVERT;
+        return UNKNOWN_DELEGATOR;
     }
 
     // enough shares?
     if (MONAD_UNLIKELY(delinfo->active_shares < shares)) {
-        return EVMC_REVERT;
+        return NOT_ENOUGH_SHARES_TO_WITHDRAW;
     }
 
     uint256_t const withdrawal_id =
@@ -275,7 +275,7 @@ evmc_status_code StakingContract::remove_stake(evmc_message const &msg)
     delinfo_slot.store(delinfo.value());
     valinfo_slot.store(valinfo.value());
 
-    return EVMC_SUCCESS;
+    return SUCCESS;
 }
 
 Result<void>

@@ -2,7 +2,7 @@
 #include <monad_spec_test.hpp>
 #include <test_resource_data.h>
 
-#include <monad/chain/monad_testnet.hpp>
+#include <monad/chain/monad_chain.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -25,8 +25,13 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 namespace
 {
-    struct MonadChainRev : public MonadTestnet
+    struct MonadChainRev : public MonadChain
     {
+        virtual uint256_t get_chain_id() const override
+        {
+            return 1;
+        }
+
         virtual monad_revision get_monad_revision(
             uint64_t /* block_number */,
             uint64_t /* timestamp */) const override

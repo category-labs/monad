@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -43,6 +44,45 @@ class StakingContract
     Address const &ca_;
 
 public:
+    //////////////////////
+    //  Revert Codes   //
+    //////////////////////
+    enum Status
+    {
+        SUCCESS = 0,
+        INPUT_SIZE_INVALID,
+        UNKNOWN_VALIDATOR,
+        UNKNOWN_DELEGATOR,
+        MINIMUM_STAKE_NOT_MET,
+        NOT_ENOUGH_SHARES_TO_WITHDRAW,
+        INVALID_SECP_PUBKEY,
+        INVALID_BLS_PUBKEY,
+        INVALID_SECP_SIGNATURE,
+        INVALID_BLS_SIGNATURE,
+        SECP_SIGNATURE_VERIFICATION_FAILED,
+        BLS_SIGNATURE_VERIFICATION_FAILED,
+        STATUS_CODES_LENGTH,
+    };
+
+    static std::string_view error_message(Status const res)
+    {
+        static constexpr std::string_view REVERT_MSG[] = {
+            "Success",
+            "Input invalid",
+            "Unknown validator",
+            "Unknown delegator",
+            "Minimum stake not met",
+            "Not enough shares to withdraw",
+            "Invalid secp256k1 pubkey",
+            "Invalid bls pubkey",
+            "Invalid secp256k1 signature",
+            "Secp256k1 signature verification failed",
+            "Bls signature verification failed",
+            "Invalid bls signature",
+        };
+        return REVERT_MSG[res];
+    }
+
     StakingContract(State &, Address const &);
 
     class Variables
@@ -51,6 +91,8 @@ public:
         Address const &ca_;
 
     public:
+        static std::string_view revert_message(Status);
+
         explicit Variables(State &state, Address const &ca)
             : state_{state}
             , ca_{ca}
@@ -155,14 +197,16 @@ public:
         }
     } vars;
 
-    // modify validator set
-    evmc_status_code add_validator(evmc_message const &);
+    ////////////////////
+    //  Precompiles  //
+    ///////////////////
+    Status add_validator(evmc_message const &);
+    Status add_stake(evmc_message const &);
+    Status remove_stake(evmc_message const &);
 
-    // modify delegator set
-    evmc_status_code add_stake(evmc_message const &);
-    evmc_status_code remove_stake(evmc_message const &);
-
-    // system calls
+    ////////////////////
+    //  System Calls  //
+    ////////////////////
     Result<void> reward_validator(byte_string_fixed<33> const &);
     Result<void> on_epoch_change();
 };

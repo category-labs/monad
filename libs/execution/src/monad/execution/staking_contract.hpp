@@ -200,6 +200,13 @@ public:
     ////////////////////
     //  Precompiles  //
     ///////////////////
+private:
+    // helper used by add_stake() and add_validator()
+    Status add_stake(
+        uint256_t const &validator_id, uint256_t const &amount,
+        Address const &);
+
+public:
     Status add_validator(evmc_message const &);
     Status add_stake(evmc_message const &);
     Status remove_stake(evmc_message const &);

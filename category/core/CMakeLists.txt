@@ -135,6 +135,11 @@ add_library(
   "fiber/priority_queue.cpp"
   "fiber/priority_queue.hpp"
   "fiber/priority_task.hpp"
+  # fiber2
+  "src/monad/fiber2/config.hpp"
+  "src/monad/fiber2/dispatcher.hpp"
+  "src/monad/fiber2/future.hpp"
+  "src/monad/fiber2/scheduler.hpp"
   # io
   "io/buffer_pool.cpp"
   "io/buffer_pool.hpp"

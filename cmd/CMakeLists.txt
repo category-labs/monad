@@ -40,3 +40,10 @@ monad_compile_options(eventcap)
 target_compile_options(eventcap PRIVATE -Wno-c99-designator)
 target_link_libraries(eventcap PRIVATE monad_core CLI11::CLI11)
 target_compile_options(eventcap PRIVATE -Wno-missing-field-initializers)
+
+add_executable(
+  fiber_test
+  fiber_test.cpp
+)
+monad_compile_options(fiber_test)
+target_link_libraries(fiber_test PRIVATE monad_core PUBLIC quill::quill)

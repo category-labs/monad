@@ -50,6 +50,7 @@ public:
     enum Status
     {
         SUCCESS = 0,
+        METHOD_NOT_SUPPORTED,
         INPUT_SIZE_INVALID,
         UNKNOWN_VALIDATOR,
         UNKNOWN_DELEGATOR,
@@ -68,6 +69,7 @@ public:
     {
         static constexpr std::string_view REVERT_MSG[] = {
             "Success",
+            "Method not supported",
             "Input invalid",
             "Unknown validator",
             "Unknown delegator",
@@ -207,6 +209,7 @@ private:
         Address const &);
 
 public:
+    Status fallback(evmc_message const &);
     Status add_validator(evmc_message const &);
     Status add_stake(evmc_message const &);
     Status remove_stake(evmc_message const &);

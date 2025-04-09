@@ -104,6 +104,13 @@ StakingContract::StakingContract(State &state, Address const &ca)
 {
 }
 
+StakingContract::Status StakingContract::fallback(evmc_message const &)
+{
+    // Invoked if someone sends money to the contract account. Do nothing and
+    // revert.
+    return METHOD_NOT_SUPPORTED;
+}
+
 StakingContract::Status StakingContract::add_validator(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
@@ -184,9 +191,12 @@ StakingContract::Status StakingContract::add_validator(evmc_message const &msg)
 
     state_.store_log(
         Receipt::Log{
-            .data = {},
+            .data = byte_string{secp_pubkey_serialized} +
+                    byte_string{bls_pubkey_serialized},
             .topics = create_topics(
-                "AddValidator{bytes32,address}", validator_id, address),
+                "AddValidator(bytes32,address,bytes,bytes)",
+                validator_id,
+                address),
             .address = ca_});
 
     auto const stake = intx::be::load<uint256_t>(msg.value);

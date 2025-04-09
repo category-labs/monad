@@ -38,7 +38,8 @@ namespace test_resource
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
 
     // monad spec tests
-    inline auto const monad_tests_dir = test_data_dir / "monad-specs";
+    inline auto const monad_tests_dir =
+        third_party_dir / "execution-spec-tests";
 
     inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 }
@@ -52,23 +53,26 @@ inline constexpr auto ADDR_A =
 inline constexpr auto ADDR_B =
     0x0000000000000000000000000000000000000101_address;
 inline auto const A_CODE =
-    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                   "ffffffffffffffffffffff0160005500")
+    evmc::from_hex(
+        "7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+        "ffffffffffffffffffffff0160005500")
         .value();
 inline auto const A_CODE_HASH = to_bytes(keccak256(A_CODE));
 inline auto const A_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(A_CODE));
 inline auto const B_CODE =
-    evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffffffff0160005500")
+    evmc::from_hex(
+        "60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
+        "fffffffffffffff0160005500")
         .value();
 inline auto const B_CODE_HASH = to_bytes(keccak256(B_CODE));
 inline auto const B_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(B_CODE));
 inline auto const C_CODE =
-    evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffffffff0160005500")
+    evmc::from_hex(
+        "60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
+        "fffffffffffffff0160005500")
         .value();
 inline auto const C_CODE_HASH = to_bytes(keccak256(C_CODE));
 inline auto const C_CODE_ANALYSIS =
@@ -78,8 +82,9 @@ inline auto const D_CODE_HASH = to_bytes(keccak256(D_CODE));
 inline auto const D_CODE_ANALYSIS =
     std::make_shared<CodeAnalysis>(analyze(D_CODE));
 inline auto const E_CODE =
-    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffff60010160005500")
+    evmc::from_hex(
+        "7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        "fffffffffff60010160005500")
         .value();
 inline auto const E_CODE_HASH = to_bytes(keccak256(E_CODE));
 inline auto const E_CODE_ANALYSIS =

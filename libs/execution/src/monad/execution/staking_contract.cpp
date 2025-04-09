@@ -1,6 +1,7 @@
 #include <monad/contract/mapping.hpp>
 #include <monad/contract/storage_array.hpp>
 #include <monad/contract/storage_variable.hpp>
+#include <monad/contract/topics.hpp>
 #include <monad/core/blake3.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
@@ -44,9 +45,9 @@ namespace
         return ret;
     }
 
-    //////////////////////
-    //     Staking     //
-    //////////////////////
+    ///////////////
+    //  Staking  //
+    ///////////////
     constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
     constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
 
@@ -81,9 +82,9 @@ namespace
         }
     }
 
-    //////////////////////
-    //      Crypto      //
-    //////////////////////
+    //////////////
+    //  Crypto  //
+    //////////////
     thread_local std::unique_ptr<
         secp256k1_context, decltype(&secp256k1_context_destroy)> const
         secp_context(
@@ -167,18 +168,26 @@ StakingContract::Status StakingContract::add_validator(evmc_message const &msg)
     vars.validator_id(address).store(validator_id);
 
     vars.validator_info(validator_id)
-        .store(ValidatorInfo{
-            .auth_address = unaligned_load<Address>(auth_address.data()),
-            .bls_pubkey = unaligned_load<byte_string_fixed<48>>(
-                bls_pubkey_serialized.data()),
-            .total_stake = 0,
-            .active_stake = 0,
-            .active_shares = 0,
-            .activating_stake = 0,
-            .deactivating_shares = 0,
-            .epoch_rewards = 0});
+        .store(
+            ValidatorInfo{
+                .auth_address = unaligned_load<Address>(auth_address.data()),
+                .bls_pubkey = unaligned_load<byte_string_fixed<48>>(
+                    bls_pubkey_serialized.data()),
+                .total_stake = 0,
+                .active_stake = 0,
+                .active_shares = 0,
+                .activating_stake = 0,
+                .deactivating_shares = 0,
+                .epoch_rewards = 0});
 
     vars.validator_set.push(validator_id);
+
+    state_.store_log(
+        Receipt::Log{
+            .data = {},
+            .topics = create_topics(
+                "AddValidator{bytes32,address}", validator_id, address),
+            .address = ca_});
 
     auto const stake = intx::be::load<uint256_t>(msg.value);
     return add_stake(validator_id, stake, msg.sender);
@@ -206,10 +215,11 @@ StakingContract::Status StakingContract::add_stake(
     uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
     vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
-        .store(DepositRequest{
-            .validator_id = validator_id,
-            .amount = amount,
-            .delegator = delegator});
+        .store(
+            DepositRequest{
+                .validator_id = validator_id,
+                .amount = amount,
+                .delegator = delegator});
 
     delinfo->activating_stake += amount;
     valinfo->activating_stake += amount;
@@ -272,10 +282,11 @@ StakingContract::Status StakingContract::remove_stake(evmc_message const &msg)
 
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
-        .store(WithdrawalRequest{
-            .validator_id = validator_id,
-            .shares = shares,
-            .delegator = msg.sender});
+        .store(
+            WithdrawalRequest{
+                .validator_id = validator_id,
+                .shares = shares,
+                .delegator = msg.sender});
 
     delinfo->deactivating_shares += shares;
     valinfo->deactivating_shares += shares;

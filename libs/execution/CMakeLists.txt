@@ -93,6 +93,7 @@ add_library(
   "src/monad/contract/storage_adapter.hpp"
   "src/monad/contract/storage_array.hpp"
   "src/monad/contract/storage_variable.hpp"
+  "src/monad/contract/topics.hpp"
   # execution
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_hash_buffer.hpp"

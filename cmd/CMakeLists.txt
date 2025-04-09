@@ -31,3 +31,10 @@ endif()
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad_cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+
+add_executable(
+  fiber_test
+  fiber_test.cpp
+)
+monad_compile_options(fiber_test)
+target_link_libraries(fiber_test PRIVATE monad_core PUBLIC quill::quill)

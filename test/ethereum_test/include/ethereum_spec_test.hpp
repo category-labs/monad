@@ -1,13 +1,15 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <spec_test_utils.hpp>
+
 #include <monad/core/result.hpp>
-#include <monad/execution/execute_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.hpp>
+
 #include <gtest/gtest.h>
+
 #include <nlohmann/json_fwd.hpp>
 
 #include <filesystem>
@@ -16,36 +18,33 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class BlockHashBuffer;
-class TrieDb;
 struct Block;
+class BlockHashBuffer;
 struct Receipt;
 
 MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-using db_t = monad::TrieDb;
-
-class BlockchainSpecTest : public testing::Test
+class EthereumSpecTest : public testing::Test
 {
-protected:
     static fiber::PriorityPool *pool_;
 
     std::filesystem::path const file_;
     std::optional<evmc_revision> const revision_;
 
-    virtual Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, db_t &, BlockHashBuffer const &) = 0;
+    template <evmc_revision rev>
+    static Result<std::vector<Receipt>>
+    execute(Block &, test::db_t &, BlockHashBuffer const &);
 
-    void
-    validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
+    static Result<std::vector<Receipt>> execute_dispatch(
+        evmc_revision, Block &, test::db_t &, BlockHashBuffer const &);
 
 public:
     static void SetUpTestSuite();
     static void TearDownTestSuite();
 
-    BlockchainSpecTest(
+    EthereumSpecTest(
         std::filesystem::path const &file,
         std::optional<evmc_revision> const &revision) noexcept
         : file_{file}
@@ -55,5 +54,7 @@ public:
 
     void TestBody() override;
 };
+
+void register_ethereum_blockchain_tests(std::optional<evmc_revision> const &);
 
 MONAD_TEST_NAMESPACE_END

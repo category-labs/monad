@@ -1,11 +1,10 @@
 #pragma once
 
-#include <blockchain_spec_test.hpp>
-
+#include <monad/db/trie_db.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
-#include <gtest/gtest.h>
+
 #include <nlohmann/json.hpp>
 
 #include <string>
@@ -19,26 +18,7 @@ MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-class EthereumSpecTest : public BlockchainSpecTest
-{
-    EthereumSpecTest();
-    template <evmc_revision rev>
-    Result<std::vector<Receipt>>
-    execute(Block &, db_t &, BlockHashBuffer const &);
-
-    Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, db_t &, BlockHashBuffer const &) override;
-
-public:
-    EthereumSpecTest(
-        std::filesystem::path const &file,
-        std::optional<evmc_revision> const &revision) noexcept
-        : BlockchainSpecTest(file, revision)
-    {
-    }
-};
-
-void register_ethereum_blockchain_tests(std::optional<evmc_revision> const &);
+using db_t = monad::TrieDb;
 
 inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Frontier", EVMC_FRONTIER},
@@ -53,5 +33,10 @@ inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Merge", EVMC_PARIS},
     {"Shanghai", EVMC_SHANGHAI},
     {"Cancun", EVMC_CANCUN}};
+
+void load_genesis_json_into_db(
+    evmc_revision, nlohmann::json const &j_contents, db_t &tdb);
+void load_state_from_json(nlohmann::json const &, State &);
+void validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
 
 MONAD_TEST_NAMESPACE_END

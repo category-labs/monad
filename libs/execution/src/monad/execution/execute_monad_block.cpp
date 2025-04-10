@@ -37,11 +37,11 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
     state.touch(STAKING_CONTRACT_ADDRESS);
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
 
-    // BOOST_OUTCOME_TRY(contract.reward_validator(consensus_header.author));
+    // BOOST_OUTCOME_TRY(contract.syscall_reward_validator(consensus_header.author));
 
     if (consensus_header.epoch != contract.vars.epoch.load()) {
         BOOST_OUTCOME_TRY(
-            contract.on_epoch_change()); // TODO: run this on a fiber?
+            contract.syscall_on_epoch_change()); // TODO: run this on a fiber?
         contract.vars.epoch.store(consensus_header.epoch);
     }
     return execute_block<rev>(

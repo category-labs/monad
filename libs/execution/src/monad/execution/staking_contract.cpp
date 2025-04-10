@@ -104,14 +104,16 @@ StakingContract::StakingContract(State &state, Address const &ca)
 {
 }
 
-StakingContract::Status StakingContract::fallback(evmc_message const &)
+StakingContract::Status
+StakingContract::precompile_fallback(evmc_message const &)
 {
     // Invoked if someone sends money to the contract account. Do nothing and
     // revert.
     return METHOD_NOT_SUPPORTED;
 }
 
-StakingContract::Status StakingContract::add_validator(evmc_message const &msg)
+StakingContract::Status
+StakingContract::precompile_add_validator(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
@@ -239,7 +241,8 @@ StakingContract::Status StakingContract::add_stake(
     return SUCCESS;
 }
 
-StakingContract::Status StakingContract::add_stake(evmc_message const &msg)
+StakingContract::Status
+StakingContract::precompile_add_stake(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
@@ -254,7 +257,8 @@ StakingContract::Status StakingContract::add_stake(evmc_message const &msg)
     return add_stake(validator_id, stake, msg.sender);
 }
 
-StakingContract::Status StakingContract::remove_stake(evmc_message const &msg)
+StakingContract::Status
+StakingContract::precompile_remove_stake(evmc_message const &msg)
 {
     byte_string_view const input{msg.input_data, msg.input_size};
 
@@ -306,8 +310,8 @@ StakingContract::Status StakingContract::remove_stake(evmc_message const &msg)
     return SUCCESS;
 }
 
-Result<void>
-StakingContract::reward_validator(byte_string_fixed<33> const &beneficiary)
+Result<void> StakingContract::syscall_reward_validator(
+    byte_string_fixed<33> const &beneficiary)
 {
     Secp256k1_Pubkey pubkey(
         *secp_context.get(), to_byte_string_view(beneficiary));
@@ -334,7 +338,7 @@ StakingContract::reward_validator(byte_string_fixed<33> const &beneficiary)
     return success();
 }
 
-Result<void> StakingContract::on_epoch_change()
+Result<void> StakingContract::syscall_on_epoch_change()
 {
     auto const maybe_epoch = vars.epoch.load();
     if (MONAD_UNLIKELY(!maybe_epoch.has_value())) {

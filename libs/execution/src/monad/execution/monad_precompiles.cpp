@@ -11,10 +11,11 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 using StakingPrecompilePtr =
     StakingContract::Status (StakingContract::*)(evmc_message const &);
-constexpr std::array<StakingPrecompilePtr, 3> STAKING_DISPATCH{
-    &StakingContract::add_validator,
-    &StakingContract::add_stake,
-    &StakingContract::remove_stake};
+constexpr std::array<StakingPrecompilePtr, 4> STAKING_DISPATCH{
+    &StakingContract::precompile_fallback,
+    &StakingContract::precompile_add_validator,
+    &StakingContract::precompile_add_stake,
+    &StakingContract::precompile_remove_stake};
 
 constexpr uint32_t MONAD_STAKING_PRECOMPILES_BEGIN{0x1000};
 constexpr uint32_t MONAD_STAKING_PRECOMPILES_END{

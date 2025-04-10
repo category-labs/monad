@@ -209,16 +209,16 @@ private:
         Address const &);
 
 public:
-    Status fallback(evmc_message const &);
-    Status add_validator(evmc_message const &);
-    Status add_stake(evmc_message const &);
-    Status remove_stake(evmc_message const &);
+    Status precompile_fallback(evmc_message const &);
+    Status precompile_add_validator(evmc_message const &);
+    Status precompile_add_stake(evmc_message const &);
+    Status precompile_remove_stake(evmc_message const &);
 
     ////////////////////
     //  System Calls  //
     ////////////////////
-    Result<void> reward_validator(byte_string_fixed<33> const &);
-    Result<void> on_epoch_change();
+    Result<void> syscall_reward_validator(byte_string_fixed<33> const &);
+    Result<void> syscall_on_epoch_change();
 };
 
 MONAD_NAMESPACE_END

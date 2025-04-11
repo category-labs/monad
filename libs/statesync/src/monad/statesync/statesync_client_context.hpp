@@ -1,15 +1,20 @@
 #pragma once
 
 #include <monad/core/address.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/statesync/statesync_protocol.hpp>
 
 #include <ankerl/unordered_dense.h>
 
+#include <array>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -23,24 +28,21 @@ struct monad_statesync_client_context
 
     using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
 
-    struct StateDelta
-    {
-        std::optional<monad::Account> account;
-        StorageDeltas storage;
-    };
+    using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
     std::vector<std::pair<uint64_t, uint64_t>> progress;
-    uint8_t prefix_bytes;
-    uint64_t target;
+    std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
+    std::array<monad::BlockHeader, 256> hdrs;
+    monad::BlockHeader tgrt;
     uint64_t current;
-    monad::bytes32_t expected_root;
     Map<monad::Address, StorageDeltas> buffered;
+    ankerl::unordered_dense::segmented_set<monad::bytes32_t> upserted;
+    ankerl::unordered_dense::segmented_set<monad::bytes32_t> pending;
     Map<monad::bytes32_t, monad::byte_string> code;
-    Map<monad::Address, StateDelta> deltas;
-    ankerl::unordered_dense::segmented_set<monad::bytes32_t> hash;
+    Map<monad::Address, std::optional<StateDelta>> deltas;
     uint64_t n_upserts;
     std::filesystem::path genesis;
     monad_statesync_client *sync;
@@ -49,8 +51,10 @@ struct monad_statesync_client_context
 
     monad_statesync_client_context(
         std::vector<std::filesystem::path> dbname_paths,
-        std::filesystem::path genesis, uint8_t prefix_bytes,
+        std::filesystem::path genesis, std::optional<unsigned> sq_thread_cpu,
         monad_statesync_client *,
         void (*statesync_send_request)(
             struct monad_statesync_client *, struct monad_sync_request));
+
+    void commit();
 };

@@ -28,6 +28,8 @@ struct Receipt
     std::vector<Log> logs{}; // R_l
 
     void add_log(Receipt::Log const &);
+
+    friend bool operator==(Receipt const &, Receipt const &) = default;
 };
 
 void populate_bloom(Receipt::Bloom &, Receipt::Log const &);

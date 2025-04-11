@@ -74,6 +74,7 @@ struct Requests
         unsigned n = 0;
         while (!updates.empty()) {
             Update &req = updates.front();
+            MONAD_ASSERT(req.key.nibble_size() != 0);
             updates.pop_front();
             if (prefix_index == req.key.nibble_size()) {
                 opt_leaf = std::move(req);

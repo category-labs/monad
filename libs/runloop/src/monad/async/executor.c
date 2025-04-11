@@ -408,6 +408,13 @@ static inline monad_c_result monad_async_executor_run_impl(
                 }
 #endif
                 ring = &ex->wr_ring;
+                /* This will use syscall enter if either the submission or
+                completion queues have flagged that they need it e.g. the SQPOLL
+                thread has gone to sleep and needs reawakening, or the CQE queue
+                has entered overflow. This means it can take some time,
+                occasionally, but it's better than an explicit call to
+                io_uring_wait_cqes().
+                */
                 r = io_uring_submit(ring);
                 if (r < 0 && r != -EINTR) {
                     return monad_c_make_failure(-r);
@@ -491,18 +498,14 @@ static inline monad_c_result monad_async_executor_run_impl(
                     // extant write ops
                     timeout = &single_millisecond_waiting;
                 }
-                if (0 == r) {
-                    ex->wr_ring_ops_outstanding--;
-                }
             }
             // If write ring did not have a CQE for us, examine the non-write
             // ring
-            if (0 != r) {
-                assert(cqe == nullptr);
+            if (cqe == nullptr) {
                 ring = &ex->ring;
                 // Speculatively peek to avoid syscalls
                 r = io_uring_peek_cqe(ring, &cqe);
-                if (0 != r) {
+                if (cqe == nullptr) {
                     if (atomic_load_explicit(
                             &ex->head.tasks_suspended_sqe_exhaustion,
                             memory_order_acquire) > 0) {
@@ -533,25 +536,37 @@ static inline monad_c_result monad_async_executor_run_impl(
                     }
                     fflush(stdout);
 #endif
-                    monad_context_cpu_ticks_count_t const sleep_begin =
-                        get_ticks_count(memory_order_relaxed);
-                    // This is the new faster io_uring wait syscall
-                    r = io_uring_wait_cqes(
-                        ring,
-                        &cqe,
-                        1,
-                        (struct __kernel_timespec *)timeout,
-                        nullptr);
-                    if (r == 0 && cqe != nullptr) {
-                        r = 1;
+                    if (timeout != nullptr && timeout->tv_sec == 0 &&
+                        timeout->tv_nsec == 0 &&
+                        (ring->flags & IORING_SETUP_SQPOLL) != 0 &&
+                        (*ring->sq.kflags & IORING_SQ_NEED_WAKEUP) == 0) {
+                        // If SQPOLL and zero timeout and no reason to call
+                        // syscall io_uring_enter, skip that.
                     }
-                    // Ignore temporary failure
-                    if (r == -EINTR) {
-                        r = 0;
+                    else {
+                        monad_context_cpu_ticks_count_t const sleep_begin =
+                            get_ticks_count(memory_order_relaxed);
+                        // This is the new faster io_uring wait syscall
+                        // It calls syscall io_uring_enter2. It does not have an
+                        // optimisation for zero timeout.
+                        r = io_uring_wait_cqes(
+                            ring,
+                            &cqe,
+                            1,
+                            (struct __kernel_timespec *)timeout,
+                            nullptr);
+                        if (r == 0 && cqe != nullptr) {
+                            r = 1;
+                        }
+                        // Ignore temporary failure
+                        if (r == -EINTR) {
+                            r = 0;
+                        }
+                        monad_context_cpu_ticks_count_t const sleep_end =
+                            get_ticks_count(memory_order_relaxed);
+                        ex->head.total_ticks_sleeping +=
+                            sleep_end - sleep_begin;
                     }
-                    monad_context_cpu_ticks_count_t const sleep_end =
-                        get_ticks_count(memory_order_relaxed);
-                    ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
                 }
             }
             if (r < 0) {
@@ -599,10 +614,14 @@ static inline monad_c_result monad_async_executor_run_impl(
                     cqe->flags);
                 fflush(stdout);
 #endif
-                if (cqe->user_data == 0 && cqe->res == 0 && cqe->flags == 0) {
-                    // Spurious empty CQE. Appears to be generated when you
-                    // cancel an op which would have produced a CQE.
-                    continue;
+                if (cqe->user_data == 0 && cqe->res <= 0 && cqe->flags == 0) {
+                    // Empty CQE. Theroretically no longer possible since recent
+                    // other changes.
+                    fprintf(
+                        stderr,
+                        "FATAL: Empty CQE received. This should supposedly "
+                        "never happen.\n");
+                    abort();
                 }
                 struct monad_async_task_impl *task;
                 monad_async_io_status *iostatus;
@@ -623,9 +642,71 @@ static inline monad_c_result monad_async_executor_run_impl(
                 if (task != nullptr) {
                 resume_task:
                     assert(0 == memcmp(task->magic, "MNASTASK", 8));
+                    if (task->please_cancel_status !=
+                        please_cancel_not_invoked) {
+                        /* It would seem from testing that there is always a
+                        one-one relationship between SQE and CQE, so we always
+                        get one CQE for every SQE submitted.
+
+                        If we cancel an io_uring operation already submitted,
+                        the following can occur:
+
+                        1. We get back a CQE saying -EALREADY which means
+                        io_uring refuses to cancel that operation.
+
+                        2. -ENOENT which means io_uring has decided it has
+                        already completed that operation.
+
+                        3. The original operation may return -ECANCELED, but it
+                        may also sometimes not do so.
+
+                        4. The CQE for the original operation and the
+                        cancellation of that operation can appear in any order,
+                        and may have other CQEs in between them.
+
+                        To this end, we have a small state machine here which
+                        doesn't differentiate between CQE types, but rather
+                        counts their receipt. We don't resume the task until the
+                        SECOND CQE arrives. This avoids issues with say i/o
+                        buffers getting written into after the task has been
+                        unwound.
+
+                        We also zap any success or error values from io_uring
+                        into a single ECANCELED for the resumed task to trigger
+                        cancellation.
+                        */
+                        switch (task->please_cancel_status) {
+                        case please_cancel_invoked_not_seen_yet:
+                            task->please_cancel_status =
+                                please_cancel_invoked_seen_awaiting_uring;
+                            task->please_cancel_invoked_suspending_ops_remaining =
+                                1;
+                            break;
+                        case please_cancel_invoked_seen_awaiting_uring:
+                            task->please_cancel_invoked_suspending_ops_remaining--;
+                            break;
+                        default:
+                            abort();
+                        }
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+                        printf(
+                            "*** %u. Executor %p cancelling task %p "
+                            "please_cancel_status = %d "
+                            "please_cancel_invoked_suspending_ops_"
+                            "remaining = %d\n",
+                            i,
+                            (void *)ex,
+                            (void *)task,
+                            task->please_cancel_status,
+                            task->please_cancel_invoked_suspending_ops_remaining);
+                        fflush(stdout);
+#endif
+                    }
                     if (atomic_load_explicit(
                             &task->head.is_suspended_awaiting,
-                            memory_order_acquire)) {
+                            memory_order_acquire) &&
+                        task->please_cancel_invoked_suspending_ops_remaining ==
+                            0) {
 #if MONAD_ASYNC_EXECUTOR_PRINTING
                         printf(
                             "*** %u. Executor %p resumes suspended task "
@@ -639,32 +720,21 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
                         task->head.ticks_when_suspended_completed =
                             get_ticks_count(memory_order_relaxed);
-                        if (task->please_cancel_invoked) {
+                        if (task->please_cancel_status !=
+                            please_cancel_not_invoked) {
                             if (cqe->res < 0) {
                                 switch (cqe->res) {
                                 case -ECANCELED:
-                                    // This is what we'd like to see
-                                    break;
+                                case -ETIME:
+                                case -EALREADY:
                                 case -ENOENT:
-                                    fprintf(
-                                        stderr,
-                                        "FATAL: Executor told cancellation "
-                                        "request could not be found, this will "
-                                        "be a logic error.\n");
-                                    abort();
+                                    break;
                                 case -EINVAL:
                                     fprintf(
                                         stderr,
                                         "FATAL: Executor told cancellation "
                                         "request had invalid arguments, this "
                                         "will be a logic error.\n");
-                                    abort();
-                                case -EALREADY:
-                                    fprintf(
-                                        stderr,
-                                        "FATAL: FIXME we have not implemented "
-                                        "restarting waits if cancellation "
-                                        "fails.\n");
                                     abort();
                                 default:
                                     fprintf(
@@ -678,9 +748,6 @@ static inline monad_c_result monad_async_executor_run_impl(
                             }
                             task->head.derived.result =
                                 monad_c_make_failure(ECANCELED);
-                            // It would seem from testing that a cancelled op
-                            // generates an empty CQE, so total_io_completed
-                            // should be correctly incremented.
                         }
                         else if (cqe->res < 0) {
                             task->head.derived.result =
@@ -810,6 +877,10 @@ static inline monad_c_result monad_async_executor_run_impl(
             printf("*** Executor %p ends processing io_uring\n", (void *)ex);
             fflush(stdout);
 #endif
+            if (ring == &ex->wr_ring) {
+                assert(ex->wr_ring_ops_outstanding >= i);
+                ex->wr_ring_ops_outstanding -= i;
+            }
             monad_context_cpu_ticks_count_t const io_uring_end =
                 get_ticks_count(memory_order_relaxed);
             ex->head.total_ticks_in_io_uring += io_uring_end - io_uring_begin;
@@ -833,7 +904,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 int r = ppoll(fds, 1, nullptr, nullptr);
                 monad_context_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
-                ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
+                ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
                     timed_out = true;
                 }
@@ -871,7 +942,7 @@ static inline monad_c_result monad_async_executor_run_impl(
                 int r = ppoll(fds, 1, timeout, nullptr);
                 monad_context_cpu_ticks_count_t const sleep_end =
                     get_ticks_count(memory_order_relaxed);
-                ex->head.total_ticks_sleeping = sleep_end - sleep_begin;
+                ex->head.total_ticks_sleeping += sleep_end - sleep_begin;
                 if (r == 0) {
                     timed_out = true;
                 }
@@ -987,7 +1058,7 @@ static inline monad_c_result monad_async_executor_run_impl(
 #endif
             monad_context_cpu_ticks_count_t const completions_end =
                 get_ticks_count(memory_order_relaxed);
-            ex->head.total_ticks_in_task_completion =
+            ex->head.total_ticks_in_task_completion +=
                 completions_end - completions_begin;
             if (ex->tasks_exited.count > 0) {
 #if MONAD_ASYNC_EXECUTOR_PRINTING >= 3
@@ -1154,8 +1225,11 @@ monad_c_result monad_async_executor_suspend_impl(
         nullptr);
     atomic_store_explicit(
         &ex->head.current_task, &task->head, memory_order_release);
-    task->please_cancel_invoked =
-        false; // result of task resumption already is set
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
+    }
     task->please_cancel = nullptr;
     task->completed = nullptr;
     return task->head.derived.result;
@@ -1358,11 +1432,22 @@ monad_async_task_cancel(monad_async_executor ex_, monad_async_task task_)
     if (atomic_load_explicit(
             &task->head.is_pending_launch, memory_order_acquire)) {
         atomic_lock(&ex->lock);
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+        printf(
+            "*** Task %p running on executor %p is cancelled immediately as it "
+            "was pending launch.\n",
+            (void *)task,
+            (void *)ex);
+        fflush(stdout);
+#endif
         LIST_REMOVE_ATOMIC_COUNTER(
             ex->tasks_pending_launch, task, &ex->head.tasks_pending_launch);
         atomic_store_explicit(
             &task->head.is_pending_launch, false, memory_order_release);
+        task->please_cancel_status = please_cancel_cancelled;
         atomic_unlock(&ex->lock);
+        atomic_store_explicit(
+            &task->head.current_executor, nullptr, memory_order_release);
         return monad_c_make_success(0);
     }
     if (atomic_load_explicit(&task->head.is_running, memory_order_acquire)) {
@@ -1370,33 +1455,121 @@ monad_async_task_cancel(monad_async_executor ex_, monad_async_task task_)
             stderr, "TODO: Switch context back to root, and end the task\n");
         abort();
     }
+    atomic_lock(&ex->lock);
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+        char const *awaiting_msg = "i/o";
+        if (atomic_load_explicit(
+                &task->head.is_suspended_sqe_exhaustion,
+                memory_order_acquire)) {
+            awaiting_msg = "a non-write io_uring SQE";
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_sqe_exhaustion_wr,
+                     memory_order_acquire)) {
+            awaiting_msg = "a write io_uring SQE";
+        }
+        printf(
+            "*** Task %p running on executor %p currently suspended "
+            "awaiting %s has already been requested to cancel. "
+            "please_cancel_status = %d\n",
+            (void *)task,
+            (void *)ex,
+            awaiting_msg,
+            task->please_cancel_status);
+        fflush(stdout);
+#endif
+        atomic_unlock(&ex->lock);
+        return monad_c_make_failure(EAGAIN);
+    }
     if (atomic_load_explicit(
             &task->head.is_suspended_awaiting, memory_order_acquire) ||
         atomic_load_explicit(
             &task->head.is_suspended_sqe_exhaustion, memory_order_acquire) ||
         atomic_load_explicit(
             &task->head.is_suspended_sqe_exhaustion_wr, memory_order_acquire)) {
-        atomic_lock(&ex->lock);
-        task->please_cancel_invoked = true;
+        task->please_cancel_status = please_cancel_invoked_not_seen_yet;
         // Invoke the cancellation routine
         if (task->please_cancel == nullptr) {
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+            char const *awaiting_msg = "i/o";
+            if (atomic_load_explicit(
+                    &task->head.is_suspended_sqe_exhaustion,
+                    memory_order_acquire)) {
+                awaiting_msg = "a non-write io_uring SQE";
+            }
+            else if (atomic_load_explicit(
+                         &task->head.is_suspended_sqe_exhaustion_wr,
+                         memory_order_acquire)) {
+                awaiting_msg = "a write io_uring SQE";
+            }
+            printf(
+                "*** Task %p running on executor %p currently suspended "
+                "awaiting %s did not set a cancellation initiation routine and "
+                "so will be asked to cancel the next time it resumes.\n",
+                (void *)task,
+                (void *)ex,
+                awaiting_msg);
+            fflush(stdout);
+#endif
             atomic_unlock(&ex->lock);
             return monad_c_make_failure(EAGAIN);
         }
         monad_c_result r = task->please_cancel(ex, task);
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+        char const *awaiting_msg = "i/o";
+        char const *result_msg = "success";
+        if (atomic_load_explicit(
+                &task->head.is_suspended_sqe_exhaustion,
+                memory_order_acquire)) {
+            awaiting_msg = "a non-write io_uring SQE";
+        }
+        else if (atomic_load_explicit(
+                     &task->head.is_suspended_sqe_exhaustion_wr,
+                     memory_order_acquire)) {
+            awaiting_msg = "a write io_uring SQE";
+        }
+        if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
+            result_msg = outcome_status_code_message(&r.error);
+        }
+        printf(
+            "*** Task %p running on executor %p currently suspended "
+            "awaiting %s initiated its cancellation which returned status "
+            "'%s'. It has also been asked to cancel the next time it "
+            "resumes.\n",
+            (void *)task,
+            (void *)ex,
+            awaiting_msg,
+            result_msg);
+        fflush(stdout);
+#endif
+        if (BOOST_OUTCOME_C_RESULT_HAS_VALUE(r)) {
+            task->please_cancel_status = please_cancel_cancelled;
+        }
         atomic_unlock(&ex->lock);
         return r;
     }
     else if (atomic_load_explicit(
                  &task->head.is_suspended_completed, memory_order_acquire)) {
-        atomic_lock(&ex->lock);
         // Have this return ECANCELED when it resumes
         task->head.derived.result = monad_c_make_failure(ECANCELED);
+        task->please_cancel_status = please_cancel_invoked_not_seen_yet;
+#if MONAD_ASYNC_EXECUTOR_PRINTING
+        printf(
+            "*** Task %p running on executor %p currently pending resumption "
+            "due to i/o completion will be told the i/o failed with "
+            "ECANCELED.\n",
+            (void *)task,
+            (void *)ex);
+        fflush(stdout);
+#endif
         atomic_unlock(&ex->lock);
     }
     else {
+        atomic_unlock(&ex->lock);
         return monad_c_make_failure(ENOENT);
     }
+    atomic_unlock(&ex->lock);
     return monad_c_make_success(0);
 }
 
@@ -1516,13 +1689,10 @@ monad_async_io_status *monad_async_task_completed_io(monad_async_task task_)
 static inline monad_c_result monad_async_task_suspend_for_duration_cancel(
     struct monad_async_executor_impl *ex, struct monad_async_task_impl *task)
 {
-    struct io_uring_sqe *sqe = get_sqe_suspending_if_necessary(
-        ex,
-        (struct monad_async_task_impl *)atomic_load_explicit(
-            &ex->head.current_task, memory_order_acquire),
-        false);
+    struct io_uring_sqe *sqe = get_sqe_for_cancellation(ex);
     io_uring_prep_timeout_remove(
         sqe, (__u64)io_uring_mangle_into_data(task), 0);
+    sqe->user_data = (__u64)io_uring_mangle_into_data(task);
     return monad_c_make_failure(EAGAIN); // Canceller needs to wait
 }
 
@@ -1530,7 +1700,10 @@ monad_c_result monad_async_task_suspend_for_duration(
     monad_async_io_status **completed, monad_async_task task_, uint64_t ns)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
-    if (task->please_cancel_invoked) {
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
         return monad_c_make_failure(ECANCELED);
     }
     struct monad_async_executor_impl *ex =
@@ -1545,7 +1718,7 @@ monad_c_result monad_async_task_suspend_for_duration(
         struct io_uring_sqe *sqe =
             get_sqe_suspending_if_necessary(ex, task, true);
         if (sqe == nullptr) {
-            assert(task->please_cancel_invoked);
+            assert(task->please_cancel_status != please_cancel_not_invoked);
             return monad_c_make_failure(ECANCELED);
         }
         if (ns == 0) {
@@ -1645,7 +1818,10 @@ monad_async_task_claim_registered_io_write_buffer_resume(
     // through. To prevent i/o buffer starvation of higher priority work, we
     // also need to temporarily boost tasks given an i/o buffer so they execute
     // ASAP.
-    if (task->please_cancel_invoked) {
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
         task->head.derived.result = monad_c_make_failure(ECANCELED);
     }
     else {
@@ -1747,7 +1923,7 @@ monad_async_task_claim_registered_io_write_buffer_cancel(
             .tasks_awaiting,
         &task->io_buffer_awaiting,
         (size_t *)nullptr);
-    assert(task->please_cancel_invoked == true);
+    assert(task->please_cancel_status != please_cancel_not_invoked);
     task->head.derived.result = monad_c_make_failure(ECANCELED);
     assert(
         atomic_load_explicit(
@@ -1777,7 +1953,10 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
     struct monad_async_task_claim_registered_io_buffer_flags flags)
 {
     struct monad_async_task_impl *task = (struct monad_async_task_impl *)task_;
-    if (task->please_cancel_invoked) {
+    if (task->please_cancel_status != please_cancel_not_invoked) {
+        if (task->please_cancel_status < please_cancel_invoked_seen) {
+            task->please_cancel_status = please_cancel_invoked_seen;
+        }
         return monad_c_make_failure(ECANCELED);
     }
     struct monad_async_executor_impl *ex =
@@ -1853,7 +2032,7 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             "is_large_page=%d io_buffer_awaiting_was_inserted_at_front=%d "
             "io_buffer_awaiting_is_for_write=%d "
             "io_buffer_awaiting_is_for_large_page=%d "
-            "please_cancel_invoked=%d\n",
+            "please_cancel_status=%d\n",
             (void *)ex,
             (void *)task,
             !flags._for_read_ring,
@@ -1861,7 +2040,7 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             task->io_buffer_awaiting_was_inserted_at_front,
             task->io_buffer_awaiting_is_for_write,
             task->io_buffer_awaiting_is_for_large_page,
-            task->please_cancel_invoked);
+            task->please_cancel_status);
         fflush(stdout);
 #endif
         // This task no longer is resumed due to i/o buffer wait
@@ -1872,7 +2051,10 @@ monad_c_result monad_async_task_claim_registered_file_io_write_buffer(
             -1));
         task->io_buffer_awaiting_is_for_write = false;
         task->io_buffer_awaiting_is_for_large_page = false;
-        if (task->please_cancel_invoked) {
+        if (task->please_cancel_status != please_cancel_not_invoked) {
+            if (task->please_cancel_status < please_cancel_invoked_seen) {
+                task->please_cancel_status = please_cancel_invoked_seen;
+            }
             return monad_c_make_failure(ECANCELED);
         }
         p = (struct monad_async_executor_free_registered_buffer *)

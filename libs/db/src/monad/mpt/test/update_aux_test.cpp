@@ -124,6 +124,8 @@ TEST(update_aux_test, set_io_reader_dirty)
 
 TEST(update_aux_test, root_offsets_fast_slow)
 {
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
     monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
     monad::io::Ring ring1;
     monad::io::Ring ring2;
@@ -156,7 +158,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
         // verify set_io() succeeds
         monad::mpt::UpdateAux aux_writer{};
         aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
-        EXPECT_EQ(aux_writer.db_metadata()->get_max_version_in_history(), 0);
+        EXPECT_EQ(aux_writer.root_offsets().max_version(), 0);
 
         // Write version 1. However, append the new root offset without
         // advancing fast list
@@ -169,10 +171,12 @@ TEST(update_aux_test, root_offsets_fast_slow)
             aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
         aux_writer.append_root_offset(end_offset);
     }
-    {
+
+    { // Fail to reopen upon calling rewind_to_match_offsets()
         monad::mpt::UpdateAux aux_writer{};
-        EXPECT_THROW(
+        EXPECT_EXIT(
             aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH),
-            std::runtime_error);
+            ::testing::KilledBySignal(SIGABRT),
+            "Detected corruption");
     }
 }

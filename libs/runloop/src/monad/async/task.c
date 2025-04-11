@@ -2,6 +2,7 @@
 
 #include <monad/context/boost_result.h>
 
+#include "executor.h"
 #include "task_impl.h"
 
 // #define MONAD_ASYNC_FIBER_PRINTING 1
@@ -114,14 +115,18 @@ monad_c_result monad_async_task_destroy(monad_async_task task)
             "exit it first.\n");
         abort();
     }
-    monad_async_executor ex =
-        atomic_load_explicit(&task->current_executor, memory_order_acquire);
-    if (ex != nullptr) {
+    if (!monad_async_task_has_exited(task)) {
+        monad_async_executor ex =
+            atomic_load_explicit(&task->current_executor, memory_order_acquire);
         monad_c_result r = monad_async_task_cancel(ex, task);
         if (BOOST_OUTCOME_C_RESULT_HAS_ERROR(r)) {
-            if (!outcome_status_code_equal_generic(&r.error, ENOENT)) {
+            if (!outcome_status_code_equal_generic(&r.error, ENOENT) &&
+                !outcome_status_code_equal_generic(&r.error, EAGAIN)) {
                 return r;
             }
+        }
+        while (!monad_async_task_has_exited(task)) {
+            r = monad_async_executor_run(ex, 1, nullptr);
         }
     }
     memset(p->magic, 0, 8);

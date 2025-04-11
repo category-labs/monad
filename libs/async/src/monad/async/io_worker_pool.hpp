@@ -13,6 +13,8 @@
 
 #include <boost/lockfree/queue.hpp>
 
+#include <monad/core/tl_tid.h>
+
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 template <sender Sender>
@@ -511,7 +513,7 @@ public:
         detail::AsyncReadIoWorkerPoolBase &pool, Args &&...args)
         : Sender(std::forward<Args>(args)...)
         , pool_(&pool)
-        , initiating_tid_(gettid())
+        , initiating_tid_(get_tl_tid())
     {
     }
 

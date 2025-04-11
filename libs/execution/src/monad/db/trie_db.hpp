@@ -1,16 +1,19 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_frame.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/state_machine.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -19,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -29,6 +33,9 @@ class TrieDb final : public ::monad::Db
     std::deque<byte_string> bytes_alloc_;
     std::deque<hash256> hash_alloc_;
     uint64_t block_number_;
+    // read from finalized if it is nullopt
+    std::optional<uint64_t> round_number_;
+    ::monad::mpt::Nibbles prefix_;
 
 public:
     TrieDb(mpt::Db &);
@@ -38,24 +45,34 @@ public:
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
-    virtual void increment_block_number() override;
+    virtual void set_block_and_round(
+        uint64_t block_number,
+        std::optional<uint64_t> round_number = std::nullopt) override;
     virtual void commit(
-        StateDeltas const &, Code const &,
-        std::vector<Receipt> const & = {}) override;
+        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
+        std::vector<Receipt> const & = {},
+        std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<Address> const & = {},
+        std::vector<Transaction> const & = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
+    virtual void
+    finalize(uint64_t block_number, uint64_t round_number) override;
+    virtual void update_verified_block(uint64_t block_number) override;
+    virtual void
+    update_voted_metadata(uint64_t block_number, uint64_t round) override;
+
+    virtual BlockHeader read_eth_header() override;
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
+    virtual bytes32_t transactions_root() override;
+    virtual std::optional<bytes32_t> withdrawals_root() override;
     virtual std::string print_stats() override;
 
-    nlohmann::json to_json();
+    nlohmann::json to_json(size_t concurrency_limit = 4096);
     size_t prefetch_current_root();
     uint64_t get_block_number() const;
     uint64_t get_history_length() const;
-
-    // for testing only
-    std::pair<bytes32_t, bytes32_t>
-    read_storage_and_slot(Address const &, bytes32_t const &key);
-
-    void set_block_number(uint64_t);
 
 private:
     /// STATS

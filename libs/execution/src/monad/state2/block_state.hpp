@@ -1,13 +1,18 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
-#include <monad/execution/code_analysis.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/types/incarnation.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <memory>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -16,8 +21,8 @@ class State;
 class BlockState final
 {
     Db &db_;
-    StateDeltas state_{};
-    Code code_{};
+    std::unique_ptr<StateDeltas> state_;
+    std::unique_ptr<Code> code_;
 
 public:
     BlockState(Db &);
@@ -32,7 +37,15 @@ public:
 
     void merge(State const &);
 
-    void commit(std::vector<Receipt> const &);
+    // TODO: remove round_number parameter, retrieve it from header instead once
+    // we add the monad fields in BlockHeader
+    void commit(
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
+        std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<Address> const & = {},
+        std::vector<Transaction> const & = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const & = {});
 
     void log_debug();
 };

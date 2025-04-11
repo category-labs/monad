@@ -5,6 +5,7 @@
 #include <monad/core/bytes.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/state3/state.hpp>
 
@@ -26,10 +27,13 @@ class EvmcHostBase : public evmc::Host
 
 protected:
     State &state_;
+    CallTracerBase &call_tracer_;
+    size_t const max_code_size_;
 
 public:
     EvmcHostBase(
-        evmc_tx_context const &, BlockHashBuffer const &, State &) noexcept;
+        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
+        State &, size_t max_code_size) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -86,14 +90,29 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool selfdestruct(
         Address const &address, Address const &beneficiary) noexcept override
     {
+        call_tracer_.on_self_destruct(address, beneficiary);
         return state_.selfdestruct<rev>(address, beneficiary);
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-                   ? ::monad::create_contract_account<rev>(this, state_, msg)
-                   : ::monad::call<rev>(this, state_, msg);
+        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+            auto result =
+                ::monad::create<rev>(this, state_, msg, max_code_size_);
+
+            // EIP-211
+            if (result.status_code != EVMC_REVERT) {
+                result = evmc::Result{
+                    result.status_code,
+                    result.gas_left,
+                    result.gas_refund,
+                    result.create_address};
+            }
+            return result;
+        }
+        else {
+            return ::monad::call(this, state_, msg);
+        }
     }
 
     virtual evmc_access_status
@@ -103,6 +122,11 @@ struct EvmcHost final : public EvmcHostBase
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
+    }
+
+    CallTracerBase &get_call_tracer() noexcept
+    {
+        return call_tracer_;
     }
 };
 

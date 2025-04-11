@@ -2,27 +2,34 @@
 
 FROM ubuntu:24.04 as base
 
-RUN apt update
-RUN apt upgrade -y
-RUN apt install -y ca-certificates curl gnupg software-properties-common wget
+RUN apt update && apt upgrade -y
+
+RUN apt update && apt install -y apt-utils
+
+RUN apt update && apt install -y dialog
+
+RUN apt update && apt install -y \
+  ca-certificates \
+  curl \
+  gnupg \
+  software-properties-common \
+  wget
 
 RUN add-apt-repository -y ppa:ubuntu-toolchain-r/test
 RUN add-apt-repository -y ppa:mhier/libboost-latest
-RUN apt update
 
-RUN apt install -y libstdc++-13-dev
+RUN apt update && apt install -y libstdc++-13-dev
 
-RUN apt-get install -y \
+RUN apt update && apt install -y \
   libboost-atomic1.83.0 \
   libboost-container1.83.0 \
   libboost-fiber1.83.0 \
   libboost-filesystem1.83.0 \
-  libboost-graph1.83.0 \
   libboost-json1.83.0 \
   libboost-regex1.83.0 \
   libboost-stacktrace1.83.0
 
-RUN apt install -y \
+RUN apt update && apt install -y \
   libarchive-dev \
   libbenchmark-dev \
   libbrotli-dev \
@@ -35,16 +42,19 @@ RUN apt install -y \
   liburing-dev \
   libzstd-dev
 
+RUN apt update && apt install -y \
+  gdb \
+  valgrind
+
 FROM base as build
 
-RUN apt install -y gcc-13 g++-13
+RUN apt update && apt install -y gcc-13 g++-13
 
-RUN apt install -y cmake ninja-build pkg-config
-RUN apt install -y python3-pytest
+RUN apt update && apt install -y cmake ninja-build pkg-config
+RUN apt update && apt install -y python3-pytest
 
-RUN apt-get install -y \
+RUN apt update && apt-get install -y \
   libboost-fiber1.83-dev \
-  libboost-graph1.83-dev \
   libboost-json1.83-dev \
   libboost-stacktrace1.83-dev \
   libboost1.83-dev \

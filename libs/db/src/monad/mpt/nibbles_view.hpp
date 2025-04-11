@@ -94,6 +94,7 @@ public:
     substr(unsigned const pos, unsigned const count = npos) const;
 
     inline constexpr bool operator==(NibblesView const &other) const;
+    inline constexpr auto operator<=>(NibblesView const &other) const;
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
@@ -234,6 +235,17 @@ public:
         return true;
     }
 
+    constexpr auto operator<=>(NibblesView const &other) const
+    {
+        unsigned const min_size = std::min(nibble_size(), other.nibble_size());
+        for (unsigned i = 0; i < min_size; ++i) {
+            if (get(i) != other.get(i)) {
+                return get(i) <=> other.get(i);
+            }
+        }
+        return nibble_size() <=> other.nibble_size();
+    }
+
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
         MONAD_ASSERT(i < nibble_size());
@@ -264,6 +276,11 @@ Nibbles::substr(unsigned const pos, unsigned const count) const
 inline constexpr bool Nibbles::operator==(NibblesView const &other) const
 {
     return NibblesView(*this) == other;
+}
+
+inline constexpr auto Nibbles::operator<=>(NibblesView const &other) const
+{
+    return NibblesView(*this) <=> other;
 }
 
 template <class... Args>
@@ -311,13 +328,8 @@ inline std::ostream &operator<<(std::ostream &s, NibblesView const &v)
     auto const oldwidth = int(s.width());
     s.width(2);
     s << "0x" << std::hex;
-    for (NibblesView::size_type n = 0; n < v.end_nibble_ / 2; n++) {
-        if (n == 0 && v.begin_nibble_) {
-            s << uint32_t(v.data_[n] & 0xf);
-        }
-        else {
-            s << uint32_t(v.data_[n]);
-        }
+    for (NibblesView::size_type n = 0; n < v.nibble_size(); n++) {
+        s << static_cast<uint32_t>(v.get(n));
     }
     s.width(oldwidth);
     return s << std::dec;

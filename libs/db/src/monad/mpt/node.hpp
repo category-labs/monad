@@ -52,11 +52,18 @@ struct node_disk_pages_spare_15
         : value{0}
     {
         unsigned const exp = pages >> count_bits;
-        auto const shift = static_cast<uint16_t>(
+        auto shift = static_cast<uint16_t>(
             std::numeric_limits<decltype(exp)>::digits - std::countl_zero(exp));
-        value.spare.count =
-            ((pages >> shift) + bool(pages & ((1u << shift) - 1))) & max_count;
+        auto count = (pages >> shift) + (0 != (pages & ((1u << shift) - 1)));
+        if (count > max_count) {
+            count >>= 1;
+            shift += 1;
+        }
+        MONAD_ASSERT(count <= max_count);
+        MONAD_ASSERT(shift <= max_shift);
+        value.spare.count = count & max_count;
         value.spare.shift = shift & max_shift;
+        MONAD_ASSERT(to_pages() >= pages);
     }
 
     constexpr unsigned to_pages() const noexcept
@@ -275,8 +282,8 @@ public:
     unsigned char const *next_data() const noexcept;
     Node *next(size_t index) noexcept;
     Node const *next(size_t index) const noexcept;
-    void set_next(unsigned index, Node *) noexcept;
-    UniquePtr next_ptr(unsigned index) noexcept;
+    void set_next(unsigned index, Node::UniquePtr) noexcept;
+    UniquePtr move_next(unsigned index) noexcept;
 
     //! node size in memory
     unsigned get_mem_size() const noexcept;
@@ -291,7 +298,7 @@ static_assert(alignof(Node) == 8);
 // file offset and hash data, in the update recursion.
 struct ChildData
 {
-    Node *ptr{nullptr};
+    Node::UniquePtr ptr{nullptr};
     chunk_offset_t offset{INVALID_OFFSET}; // physical offsets
     unsigned char data[32] = {0};
     int64_t subtrie_min_version{std::numeric_limits<int64_t>::max()};
@@ -302,11 +309,11 @@ struct ChildData
 
     uint8_t branch{INVALID_BRANCH};
     uint8_t len{0};
-    bool cache_node{true};
+    bool cache_node{true}; // attach ptr to parent if cache, free otherwise
 
     bool is_valid() const;
     void erase();
-    void finalize(Node &, Compute &, bool cache);
+    void finalize(Node::UniquePtr, Compute &, bool cache);
     void copy_old_child(Node *old, unsigned i);
 };
 
@@ -318,7 +325,6 @@ constexpr size_t calculate_node_size(
     size_t const value_size, size_t const path_size,
     size_t const data_size) noexcept
 {
-    MONAD_DEBUG_ASSERT(number_of_children || total_child_data_size == 0);
     return sizeof(Node) +
            (sizeof(uint16_t) // child data offset
             + sizeof(compact_virtual_chunk_offset_t) * 2 // min truncated offset
@@ -327,6 +333,16 @@ constexpr size_t calculate_node_size(
                number_of_children +
            total_child_data_size + value_size + path_size + data_size;
 }
+
+// Maximum value size that can be stored in a leaf node.  This is calculated by
+// taking the maximum possible node size and subtracting the overhead of the
+// Node metadata. We use KECCAK256_SIZE for the path length since the state trie
+// is our deepest trie in practice.
+constexpr size_t MAX_VALUE_LEN_OF_LEAF =
+    Node::max_disk_size -
+    calculate_node_size(
+        0 /* number_of_children */, 0 /* child_data_size */, 0 /* value_size */,
+        KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
 
 Node::UniquePtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
@@ -342,7 +358,7 @@ Node::UniquePtr make_node(
     int64_t version);
 
 // create node: either branch/extension, with or without leaf
-Node *create_node_with_children(
+Node::UniquePtr create_node_with_children(
     Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
     std::optional<byte_string_view> value, int64_t version);
 
@@ -353,10 +369,7 @@ void serialize_node_to_buffer(
 Node::UniquePtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
 
-//! input argument is node's physical offset
-//! chunk_offset_t spare bits store the num page to read
-Node *read_node_blocking(
-    MONAD_ASYNC_NAMESPACE::storage_pool &, chunk_offset_t node_offset);
+Node::UniquePtr copy_node(Node const *);
 
 int64_t calc_min_version(Node const &);
 

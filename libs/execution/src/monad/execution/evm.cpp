@@ -6,15 +6,14 @@
 #include <monad/core/int.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
-#include <monad/execution/baseline_execute.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/state3/state.hpp>
-
-#include <evmone/baseline.hpp>
+#include <monad/vm/evmone/baseline_execute.hpp>
+#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -30,16 +29,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<evmc::Result>
-check_sender_balance(State &state, evmc_message const &msg) noexcept
+bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     auto const balance =
         intx::be::load<uint256_t>(state.get_balance(msg.sender));
-    if (balance < value) {
-        return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-    }
-    return std::nullopt;
+    return balance >= value;
 }
 
 void transfer_balances(
@@ -50,23 +45,10 @@ void transfer_balances(
     state.add_to_balance(to, value);
 }
 
-evmc::Result transfer_call_balances(State &state, evmc_message const &msg)
-{
-    if (msg.kind != EVMC_DELEGATECALL) {
-        if (auto result = check_sender_balance(state, msg);
-            result.has_value()) {
-            return std::move(result.value());
-        }
-        else if (msg.flags != EVMC_STATIC) {
-            transfer_balances(state, msg, msg.recipient);
-        }
-    }
-    return evmc::Result{EVMC_SUCCESS};
-}
-
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(
-    State &state, Address const &address, evmc::Result result) noexcept
+    State &state, Address const &address, evmc::Result result,
+    size_t const max_code_size) noexcept
 {
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
@@ -78,7 +60,7 @@ evmc::Result deploy_contract_code(
     }
     // EIP-170
     if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
-        if (result.output_size > 0x6000) {
+        if (result.output_size > max_code_size) {
             return evmc::Result{EVMC_OUT_OF_GAS};
         }
     }
@@ -113,112 +95,18 @@ evmc::Result deploy_contract_code(
 EXPLICIT_EVMC_REVISION(deploy_contract_code);
 
 template <evmc_revision rev>
-std::optional<evmc::Result> pre_create_contract_account(
-    State &state, evmc_message const &msg, evmc_message &call_msg) noexcept
-{
-    if (auto result = check_sender_balance(state, msg); result.has_value()) {
-        return std::move(result.value());
-    }
-
-    auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
-        // Match geth behavior - don't overflow nonce
-        return evmc::Result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
-    }
-    state.set_nonce(msg.sender, nonce + 1);
-
-    auto const contract_address = [&] {
-        if (msg.kind == EVMC_CREATE) {
-            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
-        }
-        else if (msg.kind == EVMC_CREATE2) {
-            auto const code_hash = keccak256({msg.input_data, msg.input_size});
-            return create2_contract_address(
-                msg.sender, msg.create2_salt, code_hash);
-        }
-        MONAD_ASSERT(false);
-    }();
-
-    state.access_account(contract_address);
-
-    // Prevent overwriting contracts - EIP-684
-    if (state.get_nonce(contract_address) != 0 ||
-        state.get_code_hash(contract_address) != NULL_HASH) {
-        return evmc::Result{EVMC_INVALID_INSTRUCTION};
-    }
-
-    state.push();
-
-    state.create_contract(contract_address);
-
-    // EIP-161
-    constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
-    state.set_nonce(contract_address, starting_nonce);
-    transfer_balances(state, msg, contract_address);
-
-    call_msg = evmc_message{
-        .kind = EVMC_CALL,
-        .flags = 0,
-        .depth = msg.depth,
-        .gas = msg.gas,
-        .recipient = contract_address,
-        .sender = msg.sender,
-        .input_data = nullptr,
-        .input_size = 0,
-        .value = msg.value,
-        .create2_salt = {},
-        .code_address = contract_address,
-        .code = nullptr, // TODO
-        .code_size = 0, // TODO
-    };
-    return std::nullopt;
-}
-
-template <evmc_revision rev>
-void post_create_contract_account(
-    State &state, Address const &contract_address,
-    evmc::Result &result) noexcept
-{
-    if (result.status_code == EVMC_SUCCESS) {
-        result = deploy_contract_code<rev>(
-            state, contract_address, std::move(result));
-    }
-
-    if (result.status_code == EVMC_SUCCESS) {
-        state.pop_accept();
-    }
-    else {
-        result.gas_refund = 0;
-        if (result.status_code != EVMC_REVERT) {
-            result.gas_left = 0;
-        }
-        bool const ripemd_touched = state.is_touched(ripemd_address);
-        state.pop_reject();
-        if (MONAD_UNLIKELY(ripemd_touched)) {
-            // YP K.1. Deletion of an Account Despite Out-of-gas.
-            state.touch(ripemd_address);
-        }
-    }
-
-    // eip-211, eip-140
-    if (result.status_code != EVMC_REVERT) {
-        result = evmc::Result{
-            result.status_code,
-            result.gas_left,
-            result.gas_refund,
-            result.create_address};
-    }
-}
-
-template <evmc_revision rev>
 std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
 
-    if (auto result = transfer_call_balances(state, msg);
-        result.status_code != EVMC_SUCCESS) {
-        state.pop_reject();
-        return result;
+    if (msg.kind != EVMC_DELEGATECALL) {
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+            state.pop_reject();
+            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        }
+        else if (msg.flags != EVMC_STATIC) {
+            transfer_balances(state, msg, msg.recipient);
+        }
     }
 
     MONAD_ASSERT(
@@ -253,26 +141,106 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <evmc_revision rev>
-evmc::Result create_contract_account(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+evmc::Result create(
+    EvmcHost<rev> *const host, State &state, evmc_message const &msg,
+    size_t const max_code_size) noexcept
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
-    evmc_message m_call;
-    if (auto result = pre_create_contract_account<rev>(state, msg, m_call);
-        result.has_value()) {
-        return std::move(result.value());
+    auto &call_tracer = host->get_call_tracer();
+    call_tracer.on_enter(msg);
+
+    if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        call_tracer.on_exit(result);
+        return result;
     }
 
-    auto const input_code_analysis =
-        evmone::baseline::analyze(rev, {msg.input_data, msg.input_size});
+    auto const nonce = state.get_nonce(msg.sender);
+    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
+        // overflow
+        evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
+        call_tracer.on_exit(result);
+        return result;
+    }
+    state.set_nonce(msg.sender, nonce + 1);
+
+    Address const contract_address = [&] {
+        if (msg.kind == EVMC_CREATE) {
+            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
+        }
+        else { // msg.kind == EVMC_CREATE2
+            auto const code_hash = keccak256({msg.input_data, msg.input_size});
+            return create2_contract_address(
+                msg.sender, msg.create2_salt, code_hash);
+        }
+    }();
+
+    state.access_account(contract_address);
+
+    // Prevent overwriting contracts - EIP-684
+    if (state.get_nonce(contract_address) != 0 ||
+        state.get_code_hash(contract_address) != NULL_HASH) {
+        evmc::Result result{EVMC_INVALID_INSTRUCTION};
+        call_tracer.on_exit(result);
+        return result;
+    }
+
+    state.push();
+
+    state.create_contract(contract_address);
+
+    // EIP-161
+    constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
+    state.set_nonce(contract_address, starting_nonce);
+    transfer_balances(state, msg, contract_address);
+
+    evmc_message const m_call{
+        .kind = EVMC_CALL,
+        .flags = 0,
+        .depth = msg.depth,
+        .gas = msg.gas,
+        .recipient = contract_address,
+        .sender = msg.sender,
+        .input_data = nullptr,
+        .input_size = 0,
+        .value = msg.value,
+        .create2_salt = {},
+        .code_address = contract_address,
+        .code = nullptr,
+        .code_size = 0,
+    };
+
+    auto const input_code_analysis = analyze({msg.input_data, msg.input_size});
     auto result = baseline_execute(m_call, rev, host, input_code_analysis);
 
-    post_create_contract_account<rev>(state, m_call.recipient, result);
-    return std::move(result);
+    if (result.status_code == EVMC_SUCCESS) {
+        result = deploy_contract_code<rev>(
+            state, contract_address, std::move(result), max_code_size);
+    }
+
+    if (result.status_code == EVMC_SUCCESS) {
+        state.pop_accept();
+    }
+    else {
+        result.gas_refund = 0;
+        if (result.status_code != EVMC_REVERT) {
+            result.gas_left = 0;
+        }
+        bool const ripemd_touched = state.is_touched(ripemd_address);
+        state.pop_reject();
+        if (MONAD_UNLIKELY(ripemd_touched)) {
+            // YP K.1. Deletion of an Account Despite Out-of-gas.
+            state.touch(ripemd_address);
+        }
+    }
+
+    call_tracer.on_exit(result);
+
+    return result;
 }
 
-EXPLICIT_EVMC_REVISION(create_contract_account);
+EXPLICIT_EVMC_REVISION(create);
 
 template <evmc_revision rev>
 evmc::Result
@@ -282,7 +250,11 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
         msg.kind == EVMC_CALL);
 
+    auto &call_tracer = host->get_call_tracer();
+    call_tracer.on_enter(msg);
+
     if (auto result = pre_call<rev>(msg, state); result.has_value()) {
+        call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
 
@@ -297,6 +269,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     post_call(state, result);
+    call_tracer.on_exit(result);
     return result;
 }
 

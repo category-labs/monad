@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.27)
+
+cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 project(monad-runloop LANGUAGES C CXX ASM)
 
@@ -23,7 +25,7 @@ monad_compile_options(monad_context_c)
 target_compile_options(monad_context_c PRIVATE -Wpedantic)
 target_compile_definitions(monad_context_c PRIVATE MONAD_CONTEXT_SOURCE=1)
 target_include_directories(monad_context_c PUBLIC "src")
-target_link_libraries(monad_context_c PRIVATE monad_boost_context monad_context_c-custom-binutils-gdb)
+target_link_libraries(monad_context_c PRIVATE monad_boost_context monad_core monad_context_c-custom-binutils-gdb)
 
 # This MUST be a shared library called libthread_db.so for GDB to load it
 # We do NOT use monad_compile_options() here because this custom libthread_db.so.1
@@ -39,6 +41,11 @@ target_compile_options(monad_context_c_libthread_db PRIVATE -Wall -Wextra -Wconv
 # Hide all symbols in this except those explicitly made visibile to prevent
 # unhelpful collision with the GDB process symbols
 target_compile_options(monad_context_c_libthread_db PRIVATE -fvisibility=hidden)
+# Because GDB loads libthread_db.so, if we compile it with a sanitiser, the
+# sanitiser will blow up as it needs GDB to have sanitiser enabled too. So
+# prevent our toolchain having effects here.
+target_compile_options(monad_context_c_libthread_db PRIVATE -fno-sanitize=all)
+target_link_options(monad_context_c_libthread_db PRIVATE -fno-sanitize=all)
 set_target_properties(monad_context_c_libthread_db PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   OUTPUT_NAME "thread_db"
@@ -50,7 +57,6 @@ target_link_libraries(monad_context_c_libthread_db PRIVATE monad_context_c-custo
 # problems with GDB, diagnosing and fixing this should be revisited.
 #target_link_options(monad_context_c_libthread_db PRIVATE -static)
 target_compile_definitions(monad_context_c PUBLIC MONAD_CONTEXT_CUSTOM_GDB_THREAD_DB_PATH=$<TARGET_FILE_DIR:monad_context_c_libthread_db>)
-
 
 
 set(monad_async_INCLUDES

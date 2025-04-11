@@ -71,6 +71,15 @@ byte_string encode_block_header(BlockHeader const &block_header)
     return encode_list2(encoded_block_header);
 }
 
+byte_string encode_ommers(std::vector<BlockHeader> const &ommers)
+{
+    byte_string encoded;
+    for (auto const &ommer : ommers) {
+        encoded += rlp::encode_block_header(ommer);
+    }
+    return rlp::encode_list2(encoded);
+}
+
 byte_string encode_block(Block const &block)
 {
     byte_string const encoded_block_header = encode_block_header(block.header);
@@ -88,15 +97,10 @@ byte_string encode_block(Block const &block)
     }
     encoded_block_transactions = encode_list2(encoded_block_transactions);
 
-    for (auto const &ommer : block.ommers) {
-        encoded_block_ommers += encode_block_header(ommer);
-    }
-    encoded_block_ommers = encode_list2(encoded_block_ommers);
-
     byte_string encoded_block;
     encoded_block += encoded_block_header;
     encoded_block += encoded_block_transactions;
-    encoded_block += encoded_block_ommers;
+    encoded_block += encode_ommers(block.ommers);
 
     if (block.withdrawals.has_value()) {
         byte_string encoded_block_withdrawals;
@@ -159,31 +163,6 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
     }
 
     return block_header;
-}
-
-Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
-{
-    std::vector<Transaction> transactions;
-    BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
-
-    // TODO: Reserve txn vector size for better perf
-    while (ls.size() > 0) {
-        if (ls[0] >= 0xc0) {
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
-            transactions.emplace_back(std::move(tx));
-        }
-        else {
-            BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
-            transactions.emplace_back(std::move(tx));
-        }
-    }
-
-    if (MONAD_UNLIKELY(!ls.empty())) {
-        return DecodeError::InputTooLong;
-    }
-
-    return transactions;
 }
 
 Result<std::vector<BlockHeader>>

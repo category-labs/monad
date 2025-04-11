@@ -108,7 +108,7 @@ namespace
         memset(buffer.data(), 0x77, buffer.size());
         std::cout << "\n\nWriting to first sequential chunk ..." << std::endl;
         fd = chunk2->write_fd(buffer.size());
-        EXPECT_EQ(fd.second, chunk1->capacity());
+        EXPECT_EQ(fd.second, chunk1->capacity() * 3);
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
@@ -120,7 +120,7 @@ namespace
 
         memset(buffer.data(), 0x55, buffer.size());
         fd = chunk2->write_fd(buffer.size());
-        EXPECT_EQ(fd.second, chunk1->capacity() + buffer.size());
+        EXPECT_EQ(fd.second, chunk1->capacity() * 3 + buffer.size());
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
@@ -135,8 +135,9 @@ namespace
         fd = chunk3->write_fd(buffer.size());
         EXPECT_EQ(
             fd.second,
-            chunk1->capacity() * pool.chunks(storage_pool::seq) /
-                pool.devices().size());
+            chunk1->capacity() * 2 + chunk1->capacity() *
+                                         pool.chunks(storage_pool::seq) /
+                                         pool.devices().size());
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
@@ -150,7 +151,8 @@ namespace
         fd = chunk3->write_fd(buffer.size());
         EXPECT_EQ(
             fd.second,
-            chunk1->capacity() * pool.chunks(storage_pool::seq) /
+            chunk1->capacity() * 2 +
+                chunk1->capacity() * pool.chunks(storage_pool::seq) /
                     pool.devices().size() +
                 buffer.size());
         MONAD_ASSERT(
@@ -276,9 +278,9 @@ namespace
             };
             static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
             std::filesystem::path devs[] = {
-                create_temp_file(20 * BLKSIZE),
-                create_temp_file(10 * BLKSIZE),
-                create_temp_file(5 * BLKSIZE)};
+                create_temp_file(22 * BLKSIZE),
+                create_temp_file(12 * BLKSIZE),
+                create_temp_file(7 * BLKSIZE)};
             auto undevs = monad::make_scope_exit([&]() noexcept {
                 for (auto &p : devs) {
                     std::filesystem::remove(p);
@@ -329,12 +331,12 @@ namespace
         };
         auto print_stddev = [](size_t devid, std::vector<size_t> const &vals) {
             double mean = 0;
-            for (const auto &i : vals) {
+            for (auto const &i : vals) {
                 mean += static_cast<double>(i);
             }
             mean /= static_cast<double>(vals.size());
             double variance = 0;
-            for (const auto &i : vals) {
+            for (auto const &i : vals) {
                 variance += pow(static_cast<double>(i) - mean, 2);
             }
             variance /= static_cast<double>(vals.size());

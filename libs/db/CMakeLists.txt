@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.27)
 
 cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
@@ -31,12 +31,12 @@ add_library(
   "src/monad/mpt/compute.cpp"
   "src/monad/mpt/compute.hpp"
   "src/monad/mpt/config.hpp"
+  "src/monad/mpt/copy_trie.cpp"
   "src/monad/mpt/db.cpp"
   "src/monad/mpt/db.hpp"
   "src/monad/mpt/db_error.hpp"
   "src/monad/mpt/find.cpp"
   "src/monad/mpt/find_notify_fiber.cpp"
-  "src/monad/mpt/find_request_sender.cpp"
   "src/monad/mpt/find_request_sender.hpp"
   "src/monad/mpt/nibbles_view.hpp"
   "src/monad/mpt/nibbles_view_fmt.hpp"
@@ -45,8 +45,10 @@ add_library(
   "src/monad/mpt/node_cursor.hpp"
   "src/monad/mpt/ondisk_db_config.hpp"
   "src/monad/mpt/request.hpp"
+  "src/monad/mpt/read_node_blocking.cpp"
   "src/monad/mpt/state_machine.hpp"
   "src/monad/mpt/traverse.hpp"
+  "src/monad/mpt/traverse_util.hpp"
   "src/monad/mpt/trie.cpp"
   "src/monad/mpt/trie.hpp"
   "src/monad/mpt/update.hpp"
@@ -57,6 +59,7 @@ target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC monad_async)
+target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
 add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
                          "src/monad/mpt/cli_tool_impl.cpp")
 monad_compile_options(monad_mpt)
@@ -69,11 +72,15 @@ function(add_trie_test)
   cmake_parse_arguments(ADD_TRIE_TEST "" "${ONE_VALUE_ARGS}"
                         "${MULTI_VALUE_ARGS}" ${ARGN})
 
-  add_executable(${ADD_TRIE_TEST_TARGET} ${ADD_TRIE_TEST_SOURCES})
+  add_executable(
+    ${ADD_TRIE_TEST_TARGET}
+    "${PROJECT_SOURCE_DIR}/../../test/unit/common/src/test/main.cpp"
+    ${ADD_TRIE_TEST_SOURCES})
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
-    ${ADD_TRIE_TEST_TARGET} PUBLIC monad_trie GTest::gtest_main
-                                   ${ADD_TRIE_TEST_LINK_LIBRARIES})
+    ${ADD_TRIE_TEST_TARGET}
+    PUBLIC monad_trie GTest::GTest monad_unit_test_common
+           ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}
     TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER ${ADD_TRIE_TEST_TEST_FILTER}

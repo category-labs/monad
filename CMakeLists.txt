@@ -1,11 +1,12 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.27)
+
+cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 project(monad)
 
 option(HUNTER_ENABLED OFF)
 
-option(EVMONE_TRACING
-       "Enable instruction-level tracing for the evmone interpreter" OFF)
+option(ENABLE_CALL_TRACING "Enable call tracer" ON)
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
     set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
@@ -36,48 +37,38 @@ function(monad_compile_options target)
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
 
-  # needed to resolve some potential false positives when compiling with
-  # Boost.Graph
-  target_compile_options(
-    ${target} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
-
   # this is needed to turn off ranges support in nlohmann_json, because the
   # ranges standard header triggers a clang bug which is fixed in trunk but not
   # currently available to us
   # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 
-  if(EVMONE_TRACING)
-    target_compile_definitions(${target} PUBLIC EVMONE_TRACING=1)
+  if(ENABLE_CALL_TRACING)
+    target_compile_definitions(${target} PUBLIC "ENABLE_CALL_TRACING=1")
   endif()
 endfunction()
 
-find_package(Boost REQUIRED COMPONENTS fiber graph json)
+find_package(Boost REQUIRED COMPONENTS fiber json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
+# BLAKE3
+add_subdirectory(third_party/BLAKE3/c)
+
 # cli11
 find_package(CLI11 REQUIRED)
-
-# intx
-add_subdirectory(third_party/intx)
 
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
-# evmone
-set(ethash_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
-set(intx_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake/dummy")
-add_subdirectory(third_party/evmone)
-unset(ethash_DIR)
-unset(intx_DIR)
-target_link_libraries(evmone_precompiles PUBLIC ethash::keccak)
-target_include_directories(evmone PUBLIC "third_party/evmone/lib")
-# always compile baseline with optimization due to stack size of dispatch_cgoto
-set_source_files_properties(
-  third_party/evmone/lib/evmone/baseline.cpp TARGET_DIRECTORY evmone
-  PROPERTIES COMPILE_OPTIONS -O2)
+# intx
+add_subdirectory(third_party/intx)
+
+# compiler
+set(MONAD_COMPILER_STANDALONE OFF)
+set(MONAD_COMPILER_TESTING OFF)
+add_subdirectory("third_party/compiler")
 
 # komihash
 add_library(komihash INTERFACE)
@@ -119,13 +110,26 @@ function(monad_add_test2 target)
     ${target}
     PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution monad_statesync GTest::GTest
-                        GTest::Main)
-  gtest_discover_tests(
-    ${target} DISCOVERY_MODE PRE_TEST
-    PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
-               UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
-               TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
+  target_link_libraries(${target} monad_execution monad_statesync monad_rpc
+                        GTest::GTest GTest::Main)
+  if("${target}" MATCHES "test_statesync")
+    gtest_discover_tests(
+      ${target} DISCOVERY_MODE PRE_TEST
+      PROPERTIES RUN_SERIAL
+                 TRUE
+                 ENVIRONMENT
+                 ASAN_OPTIONS=abort_on_error=1
+                 ENVIRONMENT
+                 UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1
+                 ENVIRONMENT
+                 TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
+  else()
+    gtest_discover_tests(
+      ${target} DISCOVERY_MODE PRE_TEST
+      PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
+                 UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
+                 TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
+  endif()
 endfunction()
 
 function(monad_add_test_folder target)
@@ -136,29 +140,41 @@ function(monad_add_test_folder target)
   endforeach()
 endfunction()
 
-function(monad_target_gdb_pretty_printer dest target printer)
-  file(REAL_PATH "${printer}" printer)
-  file(RELATIVE_PATH leaf "${CMAKE_SOURCE_DIR}" "${printer}")
-  set(asmfile "${CMAKE_BINARY_DIR}/${leaf}.S")
-  set(GDB_PRETTY_PRINTER_PATH "${printer}")
-  configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/debug_gdb_scripts.in"
-                 "${asmfile}" @ONLY)
-  add_library(${target} OBJECT "${asmfile}")
-  # The use of TARGET_OBJECTS here turns out to be critical. This was very
-  # non-obvious.
-  target_link_libraries(${dest} PUBLIC "$<TARGET_OBJECTS:${target}>")
+function(monad_add_test_death target)
+  cmake_parse_arguments(ADD_DEATH_TEST "" "FAIL_REGEX"
+                        "SOURCES;LINK_LIBRARIES;TEST_PROPERTIES" ${ARGN})
+  if(NOT ADD_DEATH_TEST_FAIL_REGEX)
+    message(FATAL_ERROR "FATAL: FAIL_REGEX is mandatory")
+  endif()
+  add_executable(${target} ${ADD_DEATH_TEST_SOURCES})
+  monad_compile_options(${target})
+  target_link_libraries(${target} PUBLIC GTest::gtest_main
+                                         ${ADD_DEATH_TEST_LINK_LIBRARIES})
+  add_test(NAME "${PROJECT_NAME}/${target}" COMMAND ${CMAKE_COMMAND} -E env
+                                                    $<TARGET_FILE:${target}>)
+  set_tests_properties(
+    "${PROJECT_NAME}/${target}"
+    PROPERTIES PASS_REGULAR_EXPRESSION
+               "${ADD_DEATH_TEST_FAIL_REGEX}"
+               ${ADD_DEATH_TEST_TEST_PROPERTIES}
+               ENVIRONMENT
+               ASAN_OPTIONS=abort_on_error=1
+               ENVIRONMENT
+               UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1
+               ENVIRONMENT
+               TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
 # ##############################################################################
 # libs
 # ##############################################################################
 
-add_subdirectory("libs/core")
-add_subdirectory("libs/runloop")
 add_subdirectory("libs/async")
+add_subdirectory("libs/core")
 add_subdirectory("libs/db")
 add_subdirectory("libs/execution")
 add_subdirectory("libs/rpc")
+add_subdirectory("libs/runloop")
 add_subdirectory("libs/statesync")
 
 # ##############################################################################

@@ -231,6 +231,14 @@ DEALINGS IN THE SOFTWARE.
     #endif
 #endif
 
+#ifndef BOOST_OUTCOME_C_INLINE
+    #if __STDC_VERSION__ >= 199900L || __cplusplus > 0
+        #define BOOST_OUTCOME_C_INLINE inline
+    #elif defined(__GNUC__) || defined(__clang__)
+        #define BOOST_OUTCOME_C_INLINE __inline
+    #endif
+#endif
+
 /* Inline GDB pretty printer for result
 (C) 2024 Niall Douglas <http://www.nedproductions.biz/> (6 commits)
 File Created: Jun 2024
@@ -543,24 +551,15 @@ extern char const *outcome_status_code_message(void const *a);
         unsigned flags;                                                        \
         S error;                                                               \
     };                                                                         \
-    BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                         \
-    BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_##ident                 \
-        outcome_make_result_##ident##_success(R value)                         \
-    {                                                                          \
+    BOOST_OUTCOME_C_NODISCARD static BOOST_OUTCOME_C_INLINE struct             \
+        cxx_result_status_code_##ident outcome_make_result_##ident##_success(  \
+            R value)                                                           \
+    { /* We special case this so it inlines efficiently */                     \
         struct cxx_result_status_code_##ident ret;                             \
-        assert(outcome_make_result_status_code_success); /* If this fails, you \
-                                                            need to compile    \
-                                                            this file at least \
-                                                            once in C++. */    \
-        outcome_make_result_status_code_success(                               \
-            (void *)&ret,                                                      \
-            sizeof(ret),                                                       \
-            offsetof(struct cxx_result_status_code_##ident, flags),            \
-            (const void *)&value,                                              \
-            sizeof(value));                                                    \
+        ret.value = value;                                                     \
+        ret.flags = 1 /* have_value */;                                        \
         return ret;                                                            \
     }                                                                          \
-    BOOST_OUTCOME_C_MSVC_FORCE_EMIT(outcome_make_result_##ident##_success)     \
     BOOST_OUTCOME_C_NODISCARD_EXTERN_C                                         \
     BOOST_OUTCOME_C_WEAK struct cxx_result_status_code_##ident                 \
         outcome_make_result_##ident##_failure_posix(int errcode)               \
@@ -752,43 +751,6 @@ struct cxx_status_code_system
 
 // You need to include this C header in at least one C++ source file to have
 // these C helper functions be implemented
-extern "C" BOOST_OUTCOME_C_WEAK void outcome_make_result_status_code_success(
-    void *out, size_t bytes, size_t offset, void const *toset,
-    size_t tosetbytes)
-{
-    union type_punner_t
-    {
-        BOOST_OUTCOME_V2_NAMESPACE::experimental::status_result<intptr_t> cpp;
-
-        struct cxx_status_code
-        {
-            intptr_t value;
-            unsigned flags;
-            cxx_status_code_system error;
-        } c;
-
-        type_punner_t()
-            : cpp(0)
-        {
-        }
-
-        ~type_punner_t() {}
-    } pun;
-
-    static_assert(sizeof(pun.cpp) == sizeof(pun.c), "");
-    static constexpr size_t punoffset =
-        offsetof(type_punner_t::cxx_status_code, flags);
-    assert(bytes - tosetbytes >= sizeof(pun.cpp) - punoffset);
-    size_t const tocopy =
-        std::min(bytes - tosetbytes, sizeof(pun.c) - punoffset);
-    memcpy(out, toset, tosetbytes);
-    memcpy(
-        (void *)((char *)out + offset),
-        (void const *)((char const *)&pun.c + punoffset),
-        tocopy);
-}
-BOOST_OUTCOME_C_MSVC_FORCE_EMIT(outcome_make_result_status_code_success)
-
 extern "C" BOOST_OUTCOME_C_WEAK void
 outcome_make_result_status_code_failure_posix(
     void *out, size_t bytes, size_t offset, int errcode)

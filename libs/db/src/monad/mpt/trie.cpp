@@ -17,6 +17,8 @@
 #include <monad/mpt/upward_tnode.hpp>
 #include <monad/mpt/util.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -41,16 +43,16 @@ using namespace MONAD_ASYNC_NAMESPACE;
  `*_prefix_index_start` is the starting nibble index in current function frame
 */
 void dispatch_updates_flat_list_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, NibblesView path, unsigned prefix_index);
 
 void dispatch_updates_impl_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, unsigned prefix_index, NibblesView path,
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void mismatch_handler_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, NibblesView path,
     unsigned old_prefix_index, unsigned prefix_index);
 
@@ -64,21 +66,27 @@ void create_new_trie_from_requests_(
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void upsert_(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, chunk_offset_t offset, UpdateList &&,
     unsigned prefix_index = 0, unsigned old_prefix_index = 0);
 
 void create_node_compute_data_possibly_async(
-    UpdateAuxImpl &, StateMachine &, UpwardTreeNode &parent, ChildData &,
+    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     tnode_unique_ptr, bool might_on_disk = true);
 
 void compact_(
-    UpdateAuxImpl &, StateMachine &, CompactTNode *parent, unsigned index,
-    Node *, bool cached, chunk_offset_t node_offset,
-    bool copy_node_for_fast_or_slow);
+    UpdateAuxImpl &, StateMachine &, CompactTNode::unique_ptr_type,
+    chunk_offset_t node_offset, bool copy_node_for_fast_or_slow);
+
+void expire_(
+    UpdateAuxImpl &, StateMachine &, ExpireTNode::unique_ptr_type,
+    chunk_offset_t node_offset);
 
 void try_fillin_parent_with_rewritten_node(
     UpdateAuxImpl &, CompactTNode::unique_ptr_type);
+
+void try_fillin_parent_after_expiration(
+    UpdateAuxImpl &, StateMachine &, ExpireTNode::unique_ptr_type);
 
 struct async_write_node_result
 {
@@ -88,15 +96,16 @@ struct async_write_node_result
 };
 
 // invoke at the end of each block upsert
+void flush_buffered_writes(UpdateAuxImpl &);
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &, uint64_t);
 
 Node::UniquePtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
-    Node::UniquePtr old, UpdateList &&updates)
+    Node::UniquePtr old, UpdateList &&updates, bool const write_root)
 {
     auto impl = [&] {
         aux.reset_stats();
-        auto sentinel = make_tnode(1 /*mask*/, 0 /*prefix_index*/);
+        auto sentinel = make_tnode(1 /*mask*/);
         ChildData &entry = sentinel->children[0];
         sentinel->children[0] = ChildData{.branch = 0};
         if (old) {
@@ -117,14 +126,16 @@ Node::UniquePtr upsert(
             create_new_trie_(
                 aux, sm, sentinel->version, entry, std::move(updates));
         }
-        auto *const root = entry.ptr;
-        if (aux.is_on_disk()) {
-            if (root) {
+        auto root = std::move(entry.ptr);
+        if (aux.is_on_disk() && root) {
+            if (write_root) {
                 write_new_root_node(aux, *root, version);
             }
-            aux.print_update_stats();
+            else {
+                flush_buffered_writes(aux);
+            }
         }
-        return Node::UniquePtr{root};
+        return root;
     };
     if (aux.is_current_thread_upserting()) {
         return impl();
@@ -181,17 +192,16 @@ struct load_all_impl_
         {
             MONAD_ASSERT(buffer_);
             // load node from read buffer
-            Node *node;
             {
                 auto g(impl->aux.unique_lock());
                 MONAD_ASSERT(root.node->next(branch_index) == nullptr);
-                node = detail::deserialize_node_from_receiver_result(
-                           std::move(buffer_), buffer_off, io_state)
-                           .release();
-                root.node->set_next(branch_index, node);
+                root.node->set_next(
+                    branch_index,
+                    detail::deserialize_node_from_receiver_result(
+                        std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
-            impl->process(NodeCursor{*node}, *sm);
+            impl->process(NodeCursor{*root.node->next(branch_index)}, *sm);
         }
     };
 
@@ -246,7 +256,7 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const root)
 
 // Upward update until a unfinished parent node. For each tnode, create the
 // trie Node when all its children are created
-void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode *tnode)
+void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
 {
     while (!tnode->npending && tnode->parent) {
         MONAD_DEBUG_ASSERT(tnode->children.size()); // not a leaf
@@ -269,7 +279,7 @@ struct update_receiver
     UpdateAuxImpl *aux;
     std::unique_ptr<StateMachine> sm;
     UpdateList updates;
-    UpwardTreeNode *parent;
+    UpdateTNode *parent;
     ChildData &entry;
     chunk_offset_t rd_offset;
     unsigned bytes_to_read;
@@ -278,7 +288,7 @@ struct update_receiver
 
     update_receiver(
         UpdateAuxImpl *aux, std::unique_ptr<StateMachine> sm, ChildData &entry,
-        chunk_offset_t offset, UpdateList &&updates, UpwardTreeNode *parent,
+        chunk_offset_t offset, UpdateList &&updates, UpdateTNode *parent,
         unsigned const prefix_index)
         : aux(aux)
         , sm(std::move(sm))
@@ -327,13 +337,88 @@ struct update_receiver
 static_assert(sizeof(update_receiver) == 64);
 static_assert(alignof(update_receiver) == 8);
 
+struct read_single_child_expire_receiver
+{
+    static constexpr bool lifetime_managed_internally = true;
+
+    UpdateAuxImpl *aux;
+    std::unique_ptr<StateMachine> sm;
+    chunk_offset_t rd_offset;
+    ExpireTNode::unique_ptr_type tnode;
+    unsigned bytes_to_read;
+    uint16_t buffer_off;
+    uint8_t child_branch;
+
+    read_single_child_expire_receiver(
+        UpdateAuxImpl *const aux_, std::unique_ptr<StateMachine> sm_,
+        ExpireTNode::unique_ptr_type tnode_, chunk_offset_t const offset,
+        uint8_t const child_branch)
+        : aux(aux_)
+        , sm(std::move(sm_))
+        , rd_offset(0, 0)
+        , tnode(std::move(tnode_))
+        , child_branch(child_branch)
+    {
+        MONAD_ASSERT(tnode && tnode->node);
+        aux->collect_expire_stats(true);
+        // TODO: put in a helper to dedup logic
+        rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
+        auto const num_pages_to_load_node =
+            node_disk_pages_spare_15{rd_offset}.to_pages();
+        buffer_off = uint16_t(offset.offset - rd_offset.offset);
+        MONAD_DEBUG_ASSERT(
+            num_pages_to_load_node <=
+            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
+        bytes_to_read =
+            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        rd_offset.set_spare(0);
+    }
+
+    template <class ResultType>
+    void set_value(erased_connected_operation *io_state, ResultType buffer_)
+    {
+        MONAD_ASSERT(buffer_);
+        auto single_child = detail::deserialize_node_from_receiver_result(
+            std::move(buffer_), buffer_off, io_state);
+        auto new_node = make_node(
+            *single_child,
+            concat(
+                tnode->node->path_nibble_view(),
+                child_branch,
+                single_child->path_nibble_view()),
+            single_child->opt_value(),
+            single_child->version);
+        fillin_parent_after_expiration(
+            *aux,
+            std::move(new_node),
+            tnode->parent,
+            tnode->index,
+            tnode->branch,
+            tnode->cache_node);
+        // upward update
+        auto *parent = tnode->parent;
+        while (!parent->npending) {
+            if (parent->type == tnode_type::update) {
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
+                return;
+            }
+            auto *next_parent = parent->parent;
+            MONAD_ASSERT(next_parent);
+            try_fillin_parent_after_expiration(
+                *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+            // go one level up
+            parent = next_parent;
+        }
+    }
+};
+
 struct read_single_child_receiver
 {
     static constexpr bool lifetime_managed_internally = true;
 
     UpdateAuxImpl *aux;
     chunk_offset_t rd_offset;
-    UpwardTreeNode *tnode; // single child tnode
+    UpdateTNode *tnode; // single child tnode
     ChildData &child;
     unsigned bytes_to_read;
     uint16_t buffer_off;
@@ -341,23 +426,16 @@ struct read_single_child_receiver
 
     read_single_child_receiver(
         UpdateAuxImpl *const aux, std::unique_ptr<StateMachine> sm,
-        UpwardTreeNode *const tnode, ChildData &child)
+        UpdateTNode *const tnode, ChildData &child)
         : aux(aux)
         , rd_offset(0, 0)
         , tnode(tnode)
         , child(child)
         , sm(std::move(sm))
     {
-        // prep uring data
-        if (auto const virtual_child_offset =
+        { // some sanity checks
+            auto const virtual_child_offset =
                 aux->physical_to_virtual(child.offset);
-            !virtual_child_offset.in_fast_list()) { // some sanity checks
-            MONAD_DEBUG_ASSERT(
-                virtual_child_offset.count <=
-                aux->num_chunks(
-                    virtual_child_offset.in_fast_list()
-                        ? UpdateAuxImpl::chunk_list::fast
-                        : UpdateAuxImpl::chunk_list::slow));
             // child offset is older than current node writer's start offset
             MONAD_DEBUG_ASSERT(
                 virtual_child_offset <
@@ -393,8 +471,7 @@ struct read_single_child_receiver
             tnode->orig_mask,
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
         child.ptr = detail::deserialize_node_from_receiver_result(
-                        std::move(buffer_), buffer_off, io_state)
-                        .release();
+            std::move(buffer_), buffer_off, io_state);
         auto const path_size = tnode->path.nibble_size();
         create_node_compute_data_possibly_async(
             *aux, *sm, *parent, entry, tnode_unique_ptr{tnode}, false);
@@ -413,8 +490,7 @@ struct compaction_receiver
     UpdateAuxImpl *aux;
     chunk_offset_t rd_offset;
     chunk_offset_t orig_offset;
-    CompactTNode *tnode;
-    uint8_t index;
+    CompactTNode::unique_ptr_type tnode;
     unsigned bytes_to_read;
     uint16_t buffer_off;
     std::unique_ptr<StateMachine> sm;
@@ -422,17 +498,17 @@ struct compaction_receiver
 
     compaction_receiver(
         UpdateAuxImpl *aux_, std::unique_ptr<StateMachine> sm_,
-        CompactTNode *tnode_, unsigned const index_,
-        chunk_offset_t const offset, bool const copy_node_for_fast_or_slow_)
+        CompactTNode::unique_ptr_type tnode_, chunk_offset_t const offset,
+        bool const copy_node_for_fast_or_slow_)
         : aux(aux_)
         , rd_offset({0, 0})
         , orig_offset(offset)
-        , tnode(tnode_)
-        , index(static_cast<uint8_t>(index_))
+        , tnode(std::move(tnode_))
         , sm(std::move(sm_))
         , copy_node_for_fast_or_slow(copy_node_for_fast_or_slow_)
     {
-        MONAD_ASSERT(tnode);
+        MONAD_ASSERT(offset != INVALID_OFFSET);
+        MONAD_ASSERT(tnode && tnode->type == tnode_type::compact);
         rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
         auto const num_pages_to_load_node =
             node_disk_pages_spare_15{rd_offset}.to_pages();
@@ -451,31 +527,94 @@ struct compaction_receiver
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
         MONAD_ASSERT(buffer_);
-        Node *node = detail::deserialize_node_from_receiver_result(
-                         std::move(buffer_), buffer_off, io_state)
-                         .release();
+        tnode->update_after_async_read(
+            detail::deserialize_node_from_receiver_result(
+                std::move(buffer_), buffer_off, io_state));
+        auto *parent = tnode->parent;
         compact_(
             *aux,
             *sm,
-            tnode,
-            index,
-            node,
-            false,
+            std::move(tnode),
             orig_offset,
             copy_node_for_fast_or_slow);
-        // now if tnode has everything it needs
-        while (!tnode->npending) {
-            if (tnode->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpwardTreeNode *)tnode);
+        while (!parent->npending) {
+            if (parent->type == tnode_type::update) {
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
                 return;
             }
-            auto *parent = tnode->parent;
-            MONAD_ASSERT(parent);
-            // tnode is freed after this call
-            try_fillin_parent_with_rewritten_node(
-                *aux, CompactTNode::unique_ptr_type{tnode});
-            // upward by one level
-            tnode = parent;
+            auto *next_parent = parent->parent;
+            MONAD_ASSERT(next_parent);
+            if (parent->type == tnode_type::compact) {
+                try_fillin_parent_with_rewritten_node(
+                    *aux, CompactTNode::unique_ptr_type{parent});
+            }
+            else {
+                try_fillin_parent_after_expiration(
+                    *aux,
+                    *sm,
+                    ExpireTNode::unique_ptr_type{(ExpireTNode *)parent});
+            }
+            // go one level up
+            parent = next_parent;
+        }
+    }
+};
+
+struct expire_receiver
+{
+    static constexpr bool lifetime_managed_internally = true;
+
+    UpdateAuxImpl *aux;
+    chunk_offset_t rd_offset;
+    ExpireTNode::unique_ptr_type tnode;
+    unsigned bytes_to_read;
+    uint16_t buffer_off;
+    std::unique_ptr<StateMachine> sm;
+
+    expire_receiver(
+        UpdateAuxImpl *aux_, std::unique_ptr<StateMachine> sm_,
+        ExpireTNode::unique_ptr_type tnode_, chunk_offset_t const offset)
+        : aux(aux_)
+        , rd_offset({0, 0})
+        , tnode(std::move(tnode_))
+        , sm(std::move(sm_))
+    {
+        MONAD_ASSERT(tnode && tnode->type == tnode_type::expire);
+        aux->collect_expire_stats(true);
+        rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
+        auto const num_pages_to_load_node =
+            node_disk_pages_spare_15{rd_offset}.to_pages();
+        buffer_off = uint16_t(offset.offset - rd_offset.offset);
+        MONAD_DEBUG_ASSERT(
+            num_pages_to_load_node <=
+            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
+        bytes_to_read =
+            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        rd_offset.set_spare(0);
+    }
+
+    template <class ResultType>
+    void set_value(erased_connected_operation *io_state, ResultType buffer_)
+    {
+        MONAD_ASSERT(buffer_);
+        tnode->update_after_async_read(
+            detail::deserialize_node_from_receiver_result(
+                std::move(buffer_), buffer_off, io_state));
+        auto *parent = tnode->parent;
+        MONAD_ASSERT(parent);
+        expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
+        while (!parent->npending) {
+            if (parent->type == tnode_type::update) {
+                upward_update(*aux, *sm, (UpdateTNode *)parent);
+                return;
+            }
+            MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
+            auto *next_parent = parent->parent;
+            MONAD_ASSERT(next_parent);
+            try_fillin_parent_after_expiration(
+                *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+            // go one level up
+            parent = next_parent;
         }
     }
 };
@@ -483,7 +622,100 @@ struct compaction_receiver
 /////////////////////////////////////////////////////
 // Create Node
 /////////////////////////////////////////////////////
-Node *create_node_from_children_if_any(
+
+std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
+    UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode)
+{
+    MONAD_ASSERT(tnode->node);
+    // no recomputation of data
+    // all children should still be in memory, this function is responsible for
+    // deallocating them per state machine cache() output.
+    // if single child, coelease branch nibble with single child's path
+    if (tnode->mask == 0) {
+        return {true, nullptr};
+    }
+    auto const mask = tnode->mask;
+    auto &orig = tnode->node;
+    auto const number_of_children = static_cast<size_t>(std::popcount(mask));
+    if (number_of_children == 1 && !orig->has_value()) {
+        auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
+        auto const child_index = orig->to_child_index(child_branch);
+        auto single_child = orig->move_next(child_index);
+        if (!single_child) {
+            read_single_child_expire_receiver receiver(
+                &aux,
+                sm.clone(),
+                std::move(tnode),
+                orig->fnext(child_index),
+                child_branch);
+            async_read(aux, std::move(receiver));
+            return {false, nullptr};
+        }
+        return {
+            true,
+            make_node(
+                *single_child,
+                concat(
+                    orig->path_nibble_view(),
+                    child_branch,
+                    single_child->path_nibble_view()),
+                single_child->opt_value(),
+                single_child->version)};
+    }
+    uint16_t total_child_data_size = 0;
+    // no need to update version (max of children or itself)
+    std::vector<unsigned> orig_indexes;
+    std::vector<uint16_t> child_data_offsets;
+    orig_indexes.reserve(number_of_children);
+    child_data_offsets.reserve(number_of_children);
+    auto const orig_n = static_cast<unsigned>(std::popcount(orig->mask));
+    for (unsigned orig_j = 0, bit = 1; orig_j < orig_n; bit <<= 1) {
+        if (bit & orig->mask) {
+            if (bit & mask) {
+                orig_indexes.push_back(orig_j);
+                total_child_data_size += (uint16_t)orig->child_data_len(orig_j);
+                child_data_offsets.push_back(total_child_data_size);
+            }
+            ++orig_j;
+        }
+    }
+    auto node = Node::make(
+        calculate_node_size(
+            number_of_children,
+            total_child_data_size,
+            orig->value_len,
+            orig->path_bytes(),
+            orig->bitpacked.data_len),
+        mask,
+        orig->opt_value(),
+        (size_t)orig->bitpacked.data_len,
+        orig->path_nibble_view(),
+        orig->version);
+
+    std::copy_n(
+        (byte_string_view::pointer)child_data_offsets.data(),
+        child_data_offsets.size() * sizeof(uint16_t),
+        node->child_off_data());
+    // clear next pointers
+    std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
+    for (unsigned j = 0; j < number_of_children; ++j) {
+        auto const &orig_j = orig_indexes[j];
+        node->set_fnext(j, orig->fnext(orig_j));
+        node->set_min_offset_fast(j, orig->min_offset_fast(orig_j));
+        node->set_min_offset_slow(j, orig->min_offset_slow(orig_j));
+        MONAD_ASSERT(
+            orig->subtrie_min_version(orig_j) >=
+            aux.curr_upsert_auto_expire_version);
+        node->set_subtrie_min_version(j, orig->subtrie_min_version(orig_j));
+        if (tnode->cache_mask & (1u << orig_j)) {
+            node->set_next(j, orig->move_next(orig_j));
+        }
+        node->set_child_data(j, orig->child_data_view(orig_j));
+    }
+    return {true, std::move(node)};
+}
+
+Node::UniquePtr create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
     uint16_t const mask, std::span<ChildData> children, NibblesView const path,
     std::optional<byte_string_view> const leaf_data, int64_t const version)
@@ -494,26 +726,24 @@ Node *create_node_from_children_if_any(
     if (number_of_children == 0) {
         return leaf_data.has_value()
                    ? make_node(0, {}, path, leaf_data.value(), {}, version)
-                         .release()
-                   : nullptr;
+                   : Node::UniquePtr{};
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
         MONAD_DEBUG_ASSERT(children[j].ptr);
-        auto const node = Node::UniquePtr{children[j].ptr};
+        auto node = std::move(children[j].ptr);
         /* Note: there's a potential superfluous extension hash recomputation
         when node coaleases upon erases, because we compute node hash when path
         is not yet the final form. There's not yet a good way to avoid this
         unless we delay all the compute() after all child branches finish
         creating nodes and return in the recursion */
         return make_node(
-                   *node,
-                   concat(path, children[j].branch, node->path_nibble_view()),
-                   node->has_value() ? std::make_optional(node->value())
-                                     : std::nullopt,
-                   version)
-            .release();
+            *node,
+            concat(path, children[j].branch, node->path_nibble_view()),
+            node->has_value() ? std::make_optional(node->value())
+                              : std::nullopt,
+            version); // node is deallocated
     }
     MONAD_DEBUG_ASSERT(
         number_of_children > 1 ||
@@ -541,10 +771,7 @@ Node *create_node_from_children_if_any(
             // apply cache based on state machine state, always cache node that
             // is a single child
             if (child.ptr && number_of_children > 1 && !child.cache_node) {
-                {
-                    Node::UniquePtr const _{child.ptr};
-                }
-                child.ptr = nullptr;
+                child.ptr.reset();
             }
         }
     }
@@ -553,8 +780,8 @@ Node *create_node_from_children_if_any(
 }
 
 void create_node_compute_data_possibly_async(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, tnode_unique_ptr tnode, bool const might_on_disk)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    tnode_unique_ptr tnode, bool const might_on_disk)
 {
     if (might_on_disk && tnode->number_of_children() == 1) {
         auto &child = tnode->children[bitmask_index(
@@ -570,7 +797,7 @@ void create_node_compute_data_possibly_async(
             return;
         }
     }
-    Node *node = create_node_from_children_if_any(
+    auto node = create_node_from_children_if_any(
         aux,
         sm,
         tnode->orig_mask,
@@ -581,26 +808,28 @@ void create_node_compute_data_possibly_async(
         tnode->version);
     MONAD_DEBUG_ASSERT(entry.branch < 16);
     if (node) {
-        entry.finalize(*node, sm.get_compute(), sm.cache());
         parent.version = std::max(parent.version, node->version);
+        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+        if (sm.auto_expire()) {
+            MONAD_ASSERT(
+                entry.subtrie_min_version >=
+                aux.curr_upsert_auto_expire_version);
+        }
     }
     else {
-        parent.mask &=
-            static_cast<uint16_t>(~(static_cast<uint16_t>(1u << entry.branch)));
+        parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
         entry.erase();
     }
     --parent.npending;
 }
 
 void update_value_and_subtrie_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, NibblesView const path,
-    Update &update)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, NibblesView const path, Update &update)
 {
     if (update.is_deletion()) {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
         entry.erase();
-        MONAD_DEBUG_ASSERT(entry.ptr == nullptr);
         --parent.npending;
         return;
     }
@@ -662,6 +891,7 @@ void create_new_trie_(
             MONAD_DEBUG_ASSERT(update.value.has_value());
             Requests requests;
             requests.split_into_sublists(std::move(update.next), 0);
+            MONAD_ASSERT(requests.opt_leaf == std::nullopt);
             create_new_trie_from_requests_(
                 aux,
                 sm,
@@ -676,11 +906,15 @@ void create_new_trie_(
         else {
             aux.collect_number_nodes_created_stats();
             entry.finalize(
-                *make_node(
-                     0, {}, path, update.value.value(), {}, update.version)
-                     .release(),
+                make_node(
+                    0, {}, path, update.value.value(), {}, update.version),
                 sm.get_compute(),
                 sm.cache());
+            if (sm.auto_expire()) {
+                MONAD_ASSERT(
+                    entry.subtrie_min_version >=
+                    aux.curr_upsert_auto_expire_version);
+            }
             parent_version = std::max(parent_version, entry.ptr->version);
         }
 
@@ -743,11 +977,15 @@ void create_new_trie_from_requests_(
         }
     }
     // can have empty children
-    auto *node = create_node_from_children_if_any(
+    auto node = create_node_from_children_if_any(
         aux, sm, mask, mask, children, path, opt_leaf_data, version);
     MONAD_ASSERT(node);
     parent_version = std::max(parent_version, node->version);
-    entry.finalize(*node, sm.get_compute(), sm.cache());
+    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+    if (sm.auto_expire()) {
+        MONAD_ASSERT(
+            entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
+    }
 }
 
 /////////////////////////////////////////////////////
@@ -755,9 +993,9 @@ void create_new_trie_from_requests_(
 /////////////////////////////////////////////////////
 
 void upsert_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, chunk_offset_t const old_offset,
-    UpdateList &&updates, unsigned prefix_index, unsigned old_prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, chunk_offset_t const old_offset, UpdateList &&updates,
+    unsigned prefix_index, unsigned old_prefix_index)
 {
     if (!old) {
         update_receiver receiver(
@@ -849,7 +1087,7 @@ void upsert_(
 
 void fillin_entry(
     UpdateAuxImpl &aux, StateMachine &sm, tnode_unique_ptr tnode,
-    UpwardTreeNode &parent, ChildData &entry)
+    UpdateTNode &parent, ChildData &entry)
 {
     if (tnode->npending) {
         tnode.release();
@@ -863,10 +1101,10 @@ void fillin_entry(
 /* dispatch updates at the end of old node's path. old node may have leaf data,
  * and there might be update to the leaf value. */
 void dispatch_updates_impl_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old_ptr, Requests &requests,
-    unsigned const prefix_index, NibblesView const path,
-    std::optional<byte_string_view> const opt_leaf_data, int64_t const version)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old_ptr, Requests &requests, unsigned const prefix_index,
+    NibblesView const path, std::optional<byte_string_view> const opt_leaf_data,
+    int64_t const version)
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
@@ -875,7 +1113,6 @@ void dispatch_updates_impl_(
     // tnode->version will be updated bottom up
     auto tnode = make_tnode(
         orig_mask,
-        prefix_index,
         &parent,
         entry.branch,
         path,
@@ -897,7 +1134,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[j],
-                    old->next_ptr(old->to_child_index(i)),
+                    old->move_next(old->to_child_index(i)),
                     old->fnext(old->to_child_index(i)),
                     std::move(requests)[i],
                     prefix_index + 1,
@@ -920,23 +1157,34 @@ void dispatch_updates_impl_(
         else if (bit & old->mask) {
             auto &child = children[j];
             child.copy_old_child(old, i);
-            auto const old_index = old->to_child_index(i);
-            auto const orig_child_offset = old->fnext(old_index);
-            if (aux.is_on_disk() && sm.compact() &&
-                (old->min_offset_fast(old_index) < aux.compact_offset_fast ||
-                 old->min_offset_slow(old_index) < aux.compact_offset_slow)) {
-                child.offset = INVALID_OFFSET; // to be rewritten
-                bool const copy_node_for_fast =
-                    old->min_offset_fast(old_index) < aux.compact_offset_fast;
-                compact_(
-                    aux,
-                    sm,
-                    reinterpret_cast<CompactTNode *>(tnode.get()),
-                    j,
-                    child.ptr,
-                    true,
-                    orig_child_offset,
-                    copy_node_for_fast);
+            if (aux.is_on_disk()) {
+                if (sm.auto_expire() &&
+                    child.subtrie_min_version <
+                        aux.curr_upsert_auto_expire_version) {
+                    // expire_() is similar to dispatch_updates() except that it
+                    // can cut off some branches for data expiration
+                    auto expire_tnode = ExpireTNode::make(
+                        tnode.get(), i, j, std::move(child.ptr));
+                    expire_(aux, sm, std::move(expire_tnode), child.offset);
+                }
+                else if (
+                    sm.compact() &&
+                    (child.min_offset_fast < aux.compact_offset_fast ||
+                     child.min_offset_slow < aux.compact_offset_slow)) {
+                    bool const copy_node_for_fast =
+                        child.min_offset_fast < aux.compact_offset_fast;
+                    auto compact_tnode = CompactTNode::make(
+                        tnode.get(), j, std::move(child.ptr));
+                    compact_(
+                        aux,
+                        sm,
+                        std::move(compact_tnode),
+                        child.offset,
+                        copy_node_for_fast);
+                }
+                else {
+                    --tnode->npending;
+                }
             }
             else {
                 --tnode->npending;
@@ -948,9 +1196,9 @@ void dispatch_updates_impl_(
 }
 
 void dispatch_updates_flat_list_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old, Requests &requests,
-    NibblesView const path, unsigned prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old, Requests &requests, NibblesView const path,
+    unsigned prefix_index)
 {
     auto &opt_leaf = requests.opt_leaf;
     auto opt_leaf_data = old->opt_value();
@@ -1001,10 +1249,9 @@ void dispatch_updates_flat_list_(
 // Split `old` at old_prefix_index, `updates` are already splitted at
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpwardTreeNode &parent,
-    ChildData &entry, Node::UniquePtr old_ptr, Requests &requests,
-    NibblesView const path, unsigned const old_prefix_index,
-    unsigned const prefix_index)
+    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
+    Node::UniquePtr old_ptr, Requests &requests, NibblesView const path,
+    unsigned const old_prefix_index, unsigned const prefix_index)
 {
     Node &old = *old_ptr;
     MONAD_DEBUG_ASSERT(old.has_path());
@@ -1014,8 +1261,7 @@ void mismatch_handler_(
         get_nibble(old.path_data(), old_prefix_index);
     uint16_t const orig_mask =
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
-    auto tnode =
-        make_tnode(orig_mask, prefix_index, &parent, entry.branch, path);
+    auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
     MONAD_DEBUG_ASSERT(
@@ -1066,27 +1312,42 @@ void mismatch_handler_(
             child = ChildData{.branch = static_cast<uint8_t>(i)};
             // Updated node inherits the version number directly from old node
             child.finalize(
-                *make_node(old, path_suffix, old.opt_value(), old.version)
-                     .release(),
+                make_node(old, path_suffix, old.opt_value(), old.version),
                 sm.get_compute(),
                 sm.cache());
+            MONAD_DEBUG_ASSERT(child.offset == INVALID_OFFSET);
+            // Note that it is possible that we recreate this node later after
+            // done expiring all subtries under it
             sm.up(path_suffix.nibble_size() + 1);
-            if (auto const [min_offset_fast, min_offset_slow] =
-                    calc_min_offsets(*child.ptr);
-                aux.is_on_disk() && sm.compact() &&
-                (min_offset_fast < aux.compact_offset_fast ||
-                 min_offset_slow < aux.compact_offset_slow)) {
-                bool const copy_node_for_fast =
-                    min_offset_fast < aux.compact_offset_fast;
-                compact_(
-                    aux,
-                    sm,
-                    (CompactTNode *)tnode.get(),
-                    j,
-                    child.ptr,
-                    true,
-                    INVALID_OFFSET,
-                    copy_node_for_fast);
+            if (aux.is_on_disk()) {
+                if (sm.auto_expire() &&
+                    child.subtrie_min_version <
+                        aux.curr_upsert_auto_expire_version) {
+                    auto expire_tnode = ExpireTNode::make(
+                        tnode.get(), i, j, std::move(child.ptr));
+                    expire_(aux, sm, std::move(expire_tnode), INVALID_OFFSET);
+                }
+                else if (auto const [min_offset_fast, min_offset_slow] =
+                             calc_min_offsets(*child.ptr);
+                         // same as old, TODO: can optimize by passing in the
+                         // min offsets stored in old's parent
+                         sm.compact() &&
+                         (min_offset_fast < aux.compact_offset_fast ||
+                          min_offset_slow < aux.compact_offset_slow)) {
+                    bool const copy_node_for_fast =
+                        min_offset_fast < aux.compact_offset_fast;
+                    auto compact_tnode = CompactTNode::make(
+                        tnode.get(), j, std::move(child.ptr));
+                    compact_(
+                        aux,
+                        sm,
+                        std::move(compact_tnode),
+                        INVALID_OFFSET,
+                        copy_node_for_fast);
+                }
+                else {
+                    --tnode->npending;
+                }
             }
             else {
                 --tnode->npending;
@@ -1097,17 +1358,147 @@ void mismatch_handler_(
     fillin_entry(aux, sm, std::move(tnode), parent, entry);
 }
 
+void expire_(
+    UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode,
+    chunk_offset_t const node_offset)
+{
+    // might recreate node to store in child.ptr
+    if (!tnode->node) {
+        // expire receiver should be similar to update_receiver, only difference
+        // is needs to call expire_() over the read node rather than upsert_(),
+        // can pass in a flag to differentiate, or maybe a different receiver?
+        MONAD_ASSERT(node_offset != INVALID_OFFSET);
+        expire_receiver receiver(
+            &aux, sm.clone(), std::move(tnode), node_offset);
+        async_read(aux, std::move(receiver));
+        return;
+    }
+    auto *const parent = tnode->parent;
+    // expire subtries whose subtrie_min_version(branch) <
+    // curr_upsert_auto_expire_version, check for compaction on the rest of the
+    // subtries
+    MONAD_ASSERT(sm.auto_expire() == true && sm.compact() == true);
+    auto &node = *tnode->node;
+    if (node.version < aux.curr_upsert_auto_expire_version) { // early stop
+        // this branch is expired, erase it from parent
+        parent->mask &= static_cast<uint16_t>(~(1u << tnode->branch));
+        if (parent->type == tnode_type::update) {
+            ((UpdateTNode *)parent)->children[tnode->index].erase();
+        }
+        --parent->npending;
+        return;
+    }
+    MONAD_ASSERT(node.mask);
+    // this loop might remove or update some branches
+    // any fnext updates can be directly to node->fnext(), and we keep a
+    // npending + current mask
+    for (unsigned i = 0, j = 0, bit = 1; j < node.number_of_children();
+         ++i, bit <<= 1) {
+        if (bit & node.mask) {
+            if (node.subtrie_min_version(j) <
+                aux.curr_upsert_auto_expire_version) {
+                auto child_tnode =
+                    ExpireTNode::make(tnode.get(), i, j, node.move_next(j));
+                expire_(aux, sm, std::move(child_tnode), node.fnext(j));
+            }
+            else if (
+                node.min_offset_fast(j) < aux.compact_offset_fast ||
+                node.min_offset_slow(j) < aux.compact_offset_slow) {
+                auto child_tnode =
+                    CompactTNode::make(tnode.get(), j, node.move_next(j));
+                compact_(
+                    aux,
+                    sm,
+                    std::move(child_tnode),
+                    node.fnext(j),
+                    node.min_offset_fast(j) < aux.compact_offset_fast);
+            }
+            else {
+                --tnode->npending;
+            }
+            ++j;
+        }
+    }
+    try_fillin_parent_after_expiration(aux, sm, std::move(tnode));
+}
+
+void fillin_parent_after_expiration(
+    UpdateAuxImpl &aux, Node::UniquePtr new_node, ExpireTNode *const parent,
+    uint8_t const index, uint8_t const branch, bool const cache_node)
+{
+    if (new_node == nullptr) {
+        // expire this branch from parent
+        parent->mask &= static_cast<uint16_t>(~(1u << branch));
+        if (parent->type == tnode_type::update) {
+            ((UpdateTNode *)parent)->children[index].erase();
+        }
+    }
+    else {
+        auto const new_offset =
+            async_write_node_set_spare(aux, *new_node, true);
+        auto const &[min_offset_fast, min_offset_slow] =
+            calc_min_offsets(*new_node, aux.physical_to_virtual(new_offset));
+        MONAD_DEBUG_ASSERT(
+            min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
+            min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
+        auto const min_version = calc_min_version(*new_node);
+        MONAD_ASSERT(min_version >= aux.curr_upsert_auto_expire_version);
+        if (parent->type == tnode_type::update) {
+            auto &child = ((UpdateTNode *)parent)->children[index];
+            MONAD_ASSERT(!child.ptr); // been transferred to tnode
+            child.offset = new_offset;
+            MONAD_DEBUG_ASSERT(cache_node);
+            child.ptr = std::move(new_node);
+            child.min_offset_fast = min_offset_fast;
+            child.min_offset_slow = min_offset_slow;
+            child.subtrie_min_version = min_version;
+        }
+        else {
+            MONAD_ASSERT(parent->type == tnode_type::expire);
+            if (cache_node) {
+                parent->cache_mask |= static_cast<uint16_t>(1u << index);
+            }
+            parent->node->set_next(index, std::move(new_node));
+            parent->node->set_subtrie_min_version(index, min_version);
+            parent->node->set_min_offset_fast(index, min_offset_fast);
+            parent->node->set_min_offset_slow(index, min_offset_slow);
+            parent->node->set_fnext(index, new_offset);
+        }
+    }
+    --parent->npending;
+}
+
+void try_fillin_parent_after_expiration(
+    UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode)
+{
+    if (tnode->npending) {
+        tnode.release();
+        return;
+    }
+    auto const index = tnode->index;
+    auto const branch = tnode->branch;
+    auto *const parent = tnode->parent;
+    auto const cache_node = tnode->cache_node;
+    aux.collect_expire_stats(false);
+    auto [done, new_node] =
+        create_node_with_expired_branches(aux, sm, std::move(tnode));
+    if (!done) {
+        return;
+    }
+    fillin_parent_after_expiration(
+        aux, std::move(new_node), parent, index, branch, cache_node);
+}
+
 void compact_(
-    UpdateAuxImpl &aux, StateMachine &sm, CompactTNode *const parent,
-    unsigned const index, Node *const node, bool const cached,
+    UpdateAuxImpl &aux, StateMachine &sm, CompactTNode::unique_ptr_type tnode,
     chunk_offset_t const node_offset, bool const copy_node_for_fast_or_slow)
 {
-    if (!node) {
+    MONAD_ASSERT(tnode->type == tnode_type::compact);
+    if (!tnode->node) {
         compaction_receiver receiver(
             &aux,
             sm.clone(),
-            parent,
-            index,
+            std::move(tnode),
             node_offset,
             copy_node_for_fast_or_slow);
         async_read(aux, std::move(receiver));
@@ -1131,27 +1522,26 @@ void compact_(
                (!virtual_node_offset.in_fast_list() &&
                 compacted_virtual_offset >= aux.compact_offset_slow);
     }();
-    auto tnode =
-        CompactTNode::make(parent, index, node, rewrite_to_fast, cached);
 
+    Node &node = *tnode->node;
+    tnode->rewrite_to_fast = rewrite_to_fast;
     aux.collect_compacted_nodes_stats(
         copy_node_for_fast_or_slow,
         rewrite_to_fast,
         virtual_node_offset,
-        node->get_disk_size());
+        node.get_disk_size());
 
-    for (unsigned j = 0; j < node->number_of_children(); ++j) {
-        if (node->min_offset_fast(j) < aux.compact_offset_fast ||
-            node->min_offset_slow(j) < aux.compact_offset_slow) {
+    for (unsigned j = 0; j < node.number_of_children(); ++j) {
+        if (node.min_offset_fast(j) < aux.compact_offset_fast ||
+            node.min_offset_slow(j) < aux.compact_offset_slow) {
+            auto child_tnode =
+                CompactTNode::make(tnode.get(), j, node.move_next(j));
             compact_(
                 aux,
                 sm,
-                tnode.get(),
-                j,
-                node->next(j),
-                true,
-                node->fnext(j),
-                node->min_offset_fast(j) < aux.compact_offset_fast);
+                std::move(child_tnode),
+                node.fnext(j),
+                node.min_offset_fast(j) < aux.compact_offset_fast);
         }
         else {
             --tnode->npending;
@@ -1192,24 +1582,34 @@ void try_fillin_parent_with_rewritten_node(
     MONAD_DEBUG_ASSERT(min_offset_slow >= aux.compact_offset_slow);
     auto *parent = tnode->parent;
     auto const index = tnode->index;
-    if (parent->type == tnode_type::copy) {
-        parent->node->set_fnext(index, new_offset);
-        parent->node->set_min_offset_fast(index, min_offset_fast);
-        parent->node->set_min_offset_slow(index, min_offset_slow);
-        if (tnode->cached) { // debug
-            MONAD_DEBUG_ASSERT(parent->node->next(index) == tnode->node);
-        }
-    }
-    else { // parent tnode is an update tnode
-        auto *const p = reinterpret_cast<UpwardTreeNode *>(parent);
-        MONAD_DEBUG_ASSERT(tnode->cached);
-        MONAD_DEBUG_ASSERT(p->children[index].offset == INVALID_OFFSET);
+    if (parent->type == tnode_type::update) {
+        auto *const p = reinterpret_cast<UpdateTNode *>(parent);
+        MONAD_DEBUG_ASSERT(tnode->cache_node);
         auto &child = p->children[index];
-        child.ptr =
-            tnode->node; // let parent tnode manage tnode->node's lifetime
+        child.ptr = std::move(tnode->node);
         child.offset = new_offset;
         child.min_offset_fast = min_offset_fast;
         child.min_offset_slow = min_offset_slow;
+    }
+    else {
+        MONAD_DEBUG_ASSERT(
+            parent->type == tnode_type::compact ||
+            parent->type == tnode_type::expire);
+        auto &node = (parent->type == tnode_type::compact)
+                         ? parent->node
+                         : ((ExpireTNode *)parent)->node;
+        MONAD_ASSERT(node);
+        node->set_fnext(index, new_offset);
+        node->set_min_offset_fast(index, min_offset_fast);
+        node->set_min_offset_slow(index, min_offset_slow);
+        if (tnode->cache_node || parent->type == tnode_type::expire) {
+            // Delay tnode->node deallocation to parent ExpireTNode
+            node->set_next(index, std::move(tnode->node));
+            if (tnode->cache_node && parent->type == tnode_type::expire) {
+                ((ExpireTNode *)parent)->cache_mask |=
+                    static_cast<uint16_t>(1u << tnode->index);
+            }
+        }
     }
     --parent->npending;
 }
@@ -1234,24 +1634,56 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto *tozero = sender->advance_buffer_append(remaining_buffer_bytes);
     MONAD_DEBUG_ASSERT(tozero != nullptr);
     memset(tozero, 0, remaining_buffer_bytes);
+
     /* If there aren't enough write buffers, this may poll uring until a free
     write buffer appears. However, that polling may write a node, causing
     this function to be reentered, and another free chunk allocated and now
     writes are being directed there instead. Obviously then replacing that new
     partially filled chunk with this new chunk is something which trips the
-    assets.
+    asserts.
 
     Replacing the runloop exposed this bug much more clearly than before, but we
     had been seeing occasional issues somewhere around here for some time now,
     it just wasn't obvious the cause. Anyway detect when reentrancy occurs, and
     if so undo this operation and tell the caller to retry.
     */
+    static thread_local struct reentrancy_detection_t
+    {
+        int count{0}, max_count{0};
+    } reentrancy_detection;
+
+    int const my_reentrancy_count = reentrancy_detection.count++;
+    MONAD_ASSERT(my_reentrancy_count >= 0);
+    if (my_reentrancy_count == 0) {
+        // We are at the base
+        reentrancy_detection.max_count = 0;
+    }
+    else if (my_reentrancy_count > reentrancy_detection.max_count) {
+        // We are reentering
+        LOG_INFO_CFORMAT(
+            "replace_node_writer_to_start_at_new_chunk reenter "
+            "my_reentrancy_count = "
+            "%d max_count = %d",
+            my_reentrancy_count,
+            reentrancy_detection.max_count);
+        reentrancy_detection.max_count = my_reentrancy_count;
+    }
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{
             offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
-        write_operation_io_receiver{});
-    if (ci_ != aux.db_metadata()->free_list_end()) {
+        write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
+    reentrancy_detection.count--;
+    MONAD_ASSERT(reentrancy_detection.count >= 0);
+    // The deepest-most reentrancy must succeed, and all less deep reentrancies
+    // must retry
+    if (my_reentrancy_count != reentrancy_detection.max_count) {
         // We reentered, please retry
+        LOG_INFO_CFORMAT(
+            "replace_node_writer_to_start_at_new_chunk retry "
+            "my_reentrancy_count = "
+            "%d max_count = %d",
+            my_reentrancy_count,
+            reentrancy_detection.max_count);
         return {};
     }
     aux.remove(idx);
@@ -1289,13 +1721,12 @@ node_writer_unique_ptr_type replace_node_writer(
     }
     // See above about handling potential reentrancy correctly
     auto *const node_writer_ptr = node_writer.get();
+    size_t const bytes_to_write = std::min(
+        AsyncIO::WRITE_BUFFER_SIZE,
+        (size_t)(chunk_capacity - offset_of_next_writer.offset));
     auto ret = aux.io->make_connected(
-        write_single_buffer_sender{
-            offset_of_next_writer,
-            std::min(
-                AsyncIO::WRITE_BUFFER_SIZE,
-                (size_t)(chunk_capacity - offset_of_next_writer.offset))},
-        write_operation_io_receiver{});
+        write_single_buffer_sender{offset_of_next_writer, bytes_to_write},
+        write_operation_io_receiver{bytes_to_write});
     if (node_writer.get() != node_writer_ptr) {
         // We reentered, please retry
         return {};
@@ -1378,10 +1809,10 @@ retry:
         // initiate current node writer
         if (node_writer->sender().written_buffer_bytes() !=
             node_writer->sender().buffer().size()) {
-            std::cout << "async_write_node "
-                      << node_writer->sender().written_buffer_bytes()
-                      << " != " << node_writer->sender().buffer().size()
-                      << std::endl;
+            LOG_INFO_CFORMAT(
+                "async_write_node %zu != %zu",
+                node_writer->sender().written_buffer_bytes(),
+                node_writer->sender().buffer().size());
         }
         MONAD_ASSERT(
             node_writer->sender().written_buffer_bytes() ==
@@ -1452,11 +1883,8 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
     return off;
 }
 
-// return root physical offset
-chunk_offset_t
-write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+void flush_buffered_writes(UpdateAuxImpl &aux)
 {
-    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
     // Round up with all bits zero
     auto replace = [&](node_writer_unique_ptr_type &node_writer) {
         auto *sender = &node_writer->sender();
@@ -1473,6 +1901,8 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         }
         auto to_initiate = std::move(node_writer);
         node_writer = std::move(new_node_writer);
+        to_initiate->receiver().reset(
+            to_initiate->sender().written_buffer_bytes());
         to_initiate->initiate();
         // shall be recycled by the i/o receiver
         to_initiate.release();
@@ -1482,25 +1912,40 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         // replace slow node writer
         replace(aux.node_writer_slow);
     }
-    // flush async write root and slow writer
     aux.io->flush();
-    // update root offset
-    auto const last_version_in_db = aux.db_history_max_version();
-    MONAD_ASSERT(
-        last_version_in_db == INVALID_BLOCK_ID ||
-        version == last_version_in_db || version == last_version_in_db + 1);
+}
+
+// return root physical offset
+chunk_offset_t
+write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+{
+    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
+    flush_buffered_writes(aux);
     // advance fast and slow ring's latest offset in db metadata
     aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
         aux.node_writer_slow->sender().offset());
-    if (last_version_in_db == version) {
+    // update root offset
+    auto const max_version_in_db = aux.db_history_max_version();
+    if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_ID)) {
+        aux.fast_forward_next_version(version);
+        aux.append_root_offset(offset_written_to);
+        MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
+    }
+    else if (version <= max_version_in_db) {
+        MONAD_ASSERT(
+            version >=
+            ((max_version_in_db >= aux.version_history_length())
+                 ? max_version_in_db - aux.version_history_length() + 1
+                 : 0));
+        auto const prev_lower_bound = aux.db_history_range_lower_bound();
         aux.update_root_offset(version, offset_written_to);
+        MONAD_ASSERT(
+            aux.db_history_range_lower_bound() ==
+            std::min(version, prev_lower_bound));
     }
     else {
-        if (MONAD_UNLIKELY(version != last_version_in_db + 1)) {
-            MONAD_ASSERT(last_version_in_db == INVALID_BLOCK_ID);
-            aux.fast_forward_next_version(version);
-        }
+        MONAD_ASSERT(version == max_version_in_db + 1);
         aux.append_root_offset(offset_written_to);
     }
     return offset_written_to;

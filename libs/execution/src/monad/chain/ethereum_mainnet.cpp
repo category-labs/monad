@@ -7,14 +7,15 @@
 #include <monad/core/likely.h>
 #include <monad/core/result.hpp>
 #include <monad/execution/ethereum/dao.hpp>
+#include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
 
 #include <evmc/evmc.h>
 
-#include <quill/Quill.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+
+#include <limits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -25,39 +26,40 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-evmc_revision EthereumMainnet::get_revision(BlockHeader const &header) const
+evmc_revision EthereumMainnet::get_revision(
+    uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (header.number >= 19426587) {
+    if (MONAD_LIKELY(timestamp >= 1710338135)) {
         return EVMC_CANCUN;
     }
-    else if (header.number >= 17034870) {
+    else if (timestamp >= 1681338455) {
         return EVMC_SHANGHAI;
     }
-    else if (header.number >= 15537394) {
+    else if (block_number >= 15537394) {
         return EVMC_PARIS;
     }
-    else if (header.number >= 12965000) {
+    else if (block_number >= 12965000) {
         return EVMC_LONDON;
     }
-    else if (header.number >= 12244000) {
+    else if (block_number >= 12244000) {
         return EVMC_BERLIN;
     }
-    else if (header.number >= 9069000) {
+    else if (block_number >= 9069000) {
         return EVMC_ISTANBUL;
     }
-    else if (header.number >= 7280000) {
+    else if (block_number >= 7280000) {
         return EVMC_PETERSBURG;
     }
-    else if (header.number >= 4370000) {
+    else if (block_number >= 4370000) {
         return EVMC_BYZANTIUM;
     }
-    else if (header.number >= 2675000) {
+    else if (block_number >= 2675000) {
         return EVMC_SPURIOUS_DRAGON;
     }
-    else if (header.number >= 2463000) {
+    else if (block_number >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (header.number >= 1150000) {
+    else if (block_number >= 1150000) {
         return EVMC_HOMESTEAD;
     }
     return EVMC_FRONTIER;
@@ -76,46 +78,67 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
     return success();
 }
 
-Result<void> EthereumMainnet::validate_header(
-    std::vector<Receipt> const &receipts, BlockHeader const &hdr) const
+Result<void> EthereumMainnet::validate_output_header(
+    BlockHeader const &input, BlockHeader const &output) const
 {
+    // First, validate execution inputs.
+    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
+        return BlockError::WrongOmmersHash;
+    }
+    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+
+    // Second, validate execution outputs known before commit.
+
+    // YP eq. 170
+    if (MONAD_UNLIKELY(input.gas_used != output.gas_used)) {
+        return BlockError::InvalidGasUsed;
+    }
+
+    // YP eq. 56
+    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
+        return BlockError::GasAboveLimit;
+    }
+
     // YP eq. 33
-    if (compute_bloom(receipts) != hdr.logs_bloom) {
+    if (MONAD_UNLIKELY(input.logs_bloom != output.logs_bloom)) {
         return BlockError::WrongLogsBloom;
     }
 
-    // YP eq. 170
-    if (!receipts.empty() && receipts.back().gas_used != hdr.gas_used) {
-        return BlockError::InvalidGasUsed;
+    if (MONAD_UNLIKELY(input.parent_hash != output.parent_hash)) {
+        return BlockError::WrongParentHash;
+    }
+
+    // Lastly, validate execution outputs only known after commit.
+    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+    if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
+        return BlockError::WrongMerkleRoot;
     }
 
     return success();
 }
 
-bool EthereumMainnet::validate_root(
-    evmc_revision const rev, BlockHeader const &hdr,
-    bytes32_t const &state_root, bytes32_t const &receipts_root) const
+uint64_t EthereumMainnet::compute_gas_refund(
+    uint64_t const block_number, uint64_t const timestamp,
+    Transaction const &tx, uint64_t const gas_remaining,
+    uint64_t const refund) const
 {
-    if (state_root != hdr.state_root) {
-        LOG_ERROR(
-            "Block: {}, Computed State Root: {}, Expected State Root: {}",
-            hdr.number,
-            state_root,
-            hdr.state_root);
-        return false;
-    }
-    if (MONAD_LIKELY(rev >= EVMC_BYZANTIUM)) {
-        if (receipts_root != hdr.receipts_root) {
-            LOG_ERROR(
-                "Block: {}, Computed Receipts Root: {}, Expected Receipts "
-                "Root: {}",
-                hdr.number,
-                receipts_root,
-                hdr.receipts_root);
-            return false;
-        }
-    }
-    return true;
+    auto const rev = get_revision(block_number, timestamp);
+    return g_star(rev, tx, gas_remaining, refund);
+}
+
+size_t EthereumMainnet::get_max_code_size(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    return get_revision(block_number, timestamp) >= EVMC_SPURIOUS_DRAGON
+               ? MAX_CODE_SIZE_EIP170
+               : std::numeric_limits<size_t>::max();
 }
 
 MONAD_NAMESPACE_END

@@ -264,9 +264,8 @@ set it to the desired size beforehand).
         cli.add_option(
             "--really-fill",
             destroy_and_really_fill_count,
-            "destroy all existing contents, actually fill chunks specified "
-            "before "
-            "doing test.");
+            "destroy all existing contents, actually fill percentage of total "
+            "chunks specified before doing test.");
         cli.add_option(
             "--concurrent-io",
             concurrent_io,
@@ -344,6 +343,9 @@ set it to the desired size beforehand).
 #endif
         if (destroy_and_really_fill_count > 0) {
             destroy_and_fill = true;
+            if (destroy_and_really_fill_count > 100) {
+                destroy_and_really_fill_count = 100;
+            }
         }
 
         auto const mode =
@@ -361,9 +363,11 @@ set it to the desired size beforehand).
             MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};
         if (destroy_and_really_fill_count > 0) {
-            uint32_t const tofill = std::min(
-                uint32_t(destroy_and_really_fill_count),
-                uint32_t(io.chunk_count()));
+            uint32_t const tofill =
+                (uint32_t)(100.0 * double(io.chunk_count()) /
+                           double(destroy_and_really_fill_count));
+            std::cout << "Destroying storage and filling " << tofill
+                      << " chunks with random bytes ..." << std::endl;
             monad::small_prng rand;
             std::span<uint32_t> buffer;
             monad::HugeMem storage;
@@ -415,6 +419,11 @@ set it to the desired size beforehand).
                          "available for the random read test."
                       << std::endl;
         }
+        else {
+            std::cout << "NOTE: Test surface will be "
+                      << (double(bytes) / 1024.0 / 1024.0 / 1024.0) << " Gb"
+                      << std::endl;
+        }
 
         struct statistics_t
         {
@@ -424,6 +433,9 @@ set it to the desired size beforehand).
             float max_latency{0};
         } statistics;
 
+        std::cout << "\nBeginning random read test, printing performance every "
+                     "second from now ..."
+                  << std::endl;
         auto begin = std::chrono::steady_clock::now();
         auto print_statistics = [&] {
             auto const now = std::chrono::steady_clock::now();

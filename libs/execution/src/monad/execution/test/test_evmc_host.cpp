@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -118,8 +119,14 @@ TEST(EvmcHost, emit_log)
     db_t tdb{db};
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
-    BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evmc_host_t host{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        MAX_CODE_SIZE_EIP170};
 
     host.emit_log(
         from,
@@ -144,8 +151,14 @@ TEST(EvmcHost, access_precompile)
     db_t tdb{db};
     BlockState bs{tdb};
     State state{bs, Incarnation{0, 0}};
-    BlockHashBuffer const block_hash_buffer;
-    evmc_host_t host{EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evmc_host_t host{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        MAX_CODE_SIZE_EIP170};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

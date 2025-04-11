@@ -164,8 +164,13 @@ namespace monad::test
     static_assert(sizeof(StateMachineVarLenTrieWithPrefix<>) == 16);
     static_assert(alignof(StateMachineVarLenTrieWithPrefix<>) == 8);
 
-    template <
-        class Compute, bool enable_compaction = false, size_t cache_depth = 6>
+    struct StateMachineConfig
+    {
+        bool expire{false};
+        size_t cache_depth{6};
+    };
+
+    template <class Compute, StateMachineConfig config = StateMachineConfig{}>
     class StateMachineAlways final : public StateMachine
     {
     private:
@@ -176,9 +181,7 @@ namespace monad::test
 
         virtual std::unique_ptr<StateMachine> clone() const override
         {
-            return std::make_unique<
-                StateMachineAlways<Compute, enable_compaction, cache_depth>>(
-                *this);
+            return std::make_unique<StateMachineAlways<Compute, config>>(*this);
         }
 
         virtual void down(unsigned char) override
@@ -200,18 +203,23 @@ namespace monad::test
 
         virtual constexpr bool cache() const override
         {
-            return depth < cache_depth;
+            return depth < config.cache_depth;
         }
 
         virtual constexpr bool compact() const override
         {
-            return enable_compaction;
+            return true;
+        }
+
+        virtual constexpr bool auto_expire() const override
+        {
+            return config.expire;
         }
     };
 
     using StateMachineAlwaysEmpty = StateMachineAlways<EmptyCompute>;
     using StateMachineAlwaysMerkle = StateMachineAlways<MerkleCompute>;
-    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute>;
+    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute<>>;
 
     Node::UniquePtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
@@ -415,6 +423,8 @@ namespace monad::test
     {
         size_t chunks_to_fill;
         size_t chunks_max{64};
+        size_t history_len{MPT_TEST_HISTORY_LENGTH};
+        size_t updates_per_block{1000};
         bool alternate_slow_fast_writer{false};
         bool use_anonymous_inode{true};
     };
@@ -442,12 +452,12 @@ namespace monad::test
                 if (-1 == fd) {
                     abort();
                 }
-                if (-1 ==
-                    ftruncate(
-                        fd,
-                        Config.chunks_max * MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                                MONAD_IO_BUFFERS_WRITE_SIZE +
-                            24576)) {
+                if (-1 == ftruncate(
+                              fd,
+                              (3 + Config.chunks_max) *
+                                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                          MONAD_IO_BUFFERS_WRITE_SIZE +
+                                  24576)) {
                     abort();
                 }
                 ::close(fd);
@@ -470,8 +480,7 @@ namespace monad::test
             Node::UniquePtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux<LockType> aux{
-                &io,
-                MPT_TEST_HISTORY_LENGTH}; // trie section starts from account
+                &io, Config.history_len}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};
@@ -533,6 +542,14 @@ namespace monad::test
                 std::cout << "\n\n   Free list: "
                           << aux.db_metadata()->capacity_in_free_list
                           << " bytes.";
+                auto const ro = aux.root_offsets();
+                auto const most_recent_offset = ro[ro.max_version()];
+                std::cout << "\n\n   DB version history is "
+                          << aux.db_history_min_valid_version() << " - "
+                          << aux.db_history_max_version()
+                          << ". Most recent DB history is id "
+                          << most_recent_offset.id << " offset "
+                          << most_recent_offset.offset;
                 std::cout << std::endl;
                 return s;
             }
@@ -540,11 +557,11 @@ namespace monad::test
             void ensure_total_chunks(size_t chunks)
             {
                 std::vector<Update> updates;
-                updates.reserve(1000);
+                updates.reserve(Config.updates_per_block);
                 for (;;) {
                     UpdateList update_ls;
                     updates.clear();
-                    for (size_t n = 0; n < 1000; n++) {
+                    for (size_t n = 0; n < Config.updates_per_block; n++) {
                         {
                             monad::byte_string key(
                                 0x1234567812345678123456781234567812345678123456781234567812345678_hex);
@@ -555,16 +572,16 @@ namespace monad::test
                                 std::move(key),
                                 aux.get_latest_root_offset().id);
                         }
-                        updates.push_back(
-                            make_update(keys.back().first, keys.back().first));
+                        updates.push_back(make_update(
+                            keys.back().first, keys.back().first, 0));
                         update_ls.push_front(updates.back());
                     }
-                    root = upsert(
-                        aux,
-                        version++,
-                        sm,
+                    root = aux.do_update(
                         std::move(root),
-                        std::move(update_ls));
+                        sm,
+                        std::move(update_ls),
+                        version++,
+                        true);
                     size_t count = 0;
                     for (auto const *ci = aux.db_metadata()->fast_list_begin();
                          ci != nullptr;

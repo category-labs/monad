@@ -7,6 +7,7 @@
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/db/block_db.hpp>
 #include <monad/db/db.hpp>
 #include <monad/state2/state_deltas.hpp>
@@ -64,12 +65,49 @@ inline BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     block_header.timestamp =
         std::stoull(genesis_json["timestamp"].get<std::string>(), nullptr, 0);
 
+    if (genesis_json.contains("coinbase")) {
+        auto const coinbase =
+            evmc::from_hex(genesis_json["coinbase"].get<std::string>());
+        MONAD_ASSERT(coinbase.has_value());
+        std::copy_n(
+            coinbase.value().begin(),
+            coinbase.value().length(),
+            block_header.beneficiary.bytes);
+    }
+
+    // London fork
+    if (genesis_json.contains("baseFeePerGas")) {
+        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
+            genesis_json["baseFeePerGas"].get<std::string>());
+    }
+
+    // Shanghai fork
+    if (genesis_json.contains("blobGasUsed")) {
+        block_header.blob_gas_used = std::stoull(
+            genesis_json["blobGasUsed"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("excessBlobGas")) {
+        block_header.excess_blob_gas = std::stoull(
+            genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("parentBeaconBlockRoot")) {
+        auto const parent_beacon_block_root = evmc::from_hex(
+            genesis_json["parentBeaconBlockRoot"].get<std::string>());
+        MONAD_ASSERT(parent_beacon_block_root.has_value());
+        auto &write_to =
+            block_header.parent_beacon_block_root.emplace(bytes32_t{});
+        std::copy_n(
+            parent_beacon_block_root.value().begin(),
+            parent_beacon_block_root.value().length(),
+            write_to.bytes);
+    }
+
     return block_header;
 }
 
-inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
+inline void read_genesis_state(
+    nlohmann::json const &genesis_json, StateDeltas &state_deltas)
 {
-    StateDeltas state_deltas;
     for (auto const &account_info : genesis_json["alloc"].items()) {
         Address address{};
         auto const address_byte_string =
@@ -89,7 +127,6 @@ inline void read_genesis_state(nlohmann::json const &genesis_json, Db &db)
         state_deltas.emplace(
             address, StateDelta{.account = {std::nullopt, account}});
     }
-    db.commit(state_deltas, Code{});
 }
 
 inline BlockHeader
@@ -97,17 +134,15 @@ read_genesis(std::filesystem::path const &genesis_file, Db &db)
 {
     std::ifstream ifile(genesis_file.c_str());
     auto const genesis_json = nlohmann::json::parse(ifile);
-    auto block_header = read_genesis_blockheader(genesis_json);
 
-    block_header.ommers_hash = NULL_LIST_HASH;
-    block_header.transactions_root = NULL_ROOT;
-    block_header.receipts_root = NULL_ROOT;
+    StateDeltas state_deltas;
+    read_genesis_state(genesis_json, state_deltas);
 
-    read_genesis_state(genesis_json, db);
-
-    block_header.state_root = db.state_root();
-
-    return block_header;
+    MonadConsensusBlockHeader consensus_header{};
+    consensus_header.execution_inputs = read_genesis_blockheader(genesis_json);
+    db.commit(state_deltas, Code{}, consensus_header);
+    db.finalize(0, 0);
+    return db.read_eth_header();
 }
 
 inline void verify_genesis(BlockDb &block_db, BlockHeader const &block_header)

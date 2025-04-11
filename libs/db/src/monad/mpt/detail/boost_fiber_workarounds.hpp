@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 
+#include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
 
 #include <boost/fiber/algo/round_robin.hpp>
@@ -219,7 +220,7 @@ class debugging_fiber_scheduler_algorithm_wrapper : public BaseFiberScheduler
     virtual void awakened(boost::fibers::context *ctx) noexcept override
     {
         {
-            auto const mytid = gettid();
+            auto const mytid = get_tl_tid();
             auto &state = detail::
                 debugging_fiber_scheduler_algorithm_wrapper_shared_state();
             std::lock_guard g(state.lock);
@@ -258,7 +259,7 @@ class debugging_fiber_scheduler_algorithm_wrapper : public BaseFiberScheduler
     {
         auto *ctx = BaseFiberScheduler::pick_next();
 #if MONAD_BOOST_FIBER_WORKAROUNDS_DEBUG_PRINTING
-        auto const mytid = gettid();
+        auto const mytid = get_tl_tid();
         auto &state =
             detail::debugging_fiber_scheduler_algorithm_wrapper_shared_state();
         std::lock_guard g(state.lock);
@@ -277,7 +278,7 @@ class debugging_fiber_scheduler_algorithm_wrapper : public BaseFiberScheduler
         std::chrono::steady_clock::time_point const &tm) noexcept override
     {
 #if MONAD_BOOST_FIBER_WORKAROUNDS_DEBUG_PRINTING
-        auto const mytid = gettid();
+        auto const mytid = get_tl_tid();
         auto &state =
             detail::debugging_fiber_scheduler_algorithm_wrapper_shared_state();
         std::lock_guard g(state.lock);
@@ -289,7 +290,7 @@ class debugging_fiber_scheduler_algorithm_wrapper : public BaseFiberScheduler
     virtual void notify() noexcept override
     {
 #if MONAD_BOOST_FIBER_WORKAROUNDS_DEBUG_PRINTING
-        auto const mytid = gettid();
+        auto const mytid = get_tl_tid();
         auto &state =
             detail::debugging_fiber_scheduler_algorithm_wrapper_shared_state();
         std::lock_guard g(state.lock);
@@ -302,7 +303,7 @@ public:
     debugging_fiber_scheduler_algorithm_wrapper()
     {
 #if MONAD_BOOST_FIBER_WORKAROUNDS_DEBUG_PRINTING
-        auto const mytid = gettid();
+        auto const mytid = get_tl_tid();
         auto &state =
             detail::debugging_fiber_scheduler_algorithm_wrapper_shared_state();
         std::lock_guard g(state.lock);
@@ -313,7 +314,7 @@ public:
 
     ~debugging_fiber_scheduler_algorithm_wrapper()
     {
-        auto const mytid = gettid();
+        auto const mytid = get_tl_tid();
         auto &state =
             detail::debugging_fiber_scheduler_algorithm_wrapper_shared_state();
         std::lock_guard g(state.lock);

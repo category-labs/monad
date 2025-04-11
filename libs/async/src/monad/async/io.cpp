@@ -7,6 +7,7 @@
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/tl_tid.h>
 #include <monad/core/unordered_map.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
@@ -107,22 +108,13 @@ namespace detail
 
     static struct AsyncIO_rlimit_raiser_impl
     {
-#ifndef NDEBUG
-        std::set<int> fd_reservation;
-#endif
         AsyncIO_rlimit_raiser_impl()
         {
-            size_t n = 4096;
-            for (; n >= 1024; n >>= 1) {
-                struct rlimit const r{n, n};
-                int const ret = setrlimit(RLIMIT_NOFILE, &r);
-                if (ret >= 0) {
-                    break;
-                }
-            }
-            if (n < 4096) {
-                std::cerr << "WARNING: maximum hard file descriptor kimit is "
-                          << n
+            struct rlimit r = {0, 0};
+            getrlimit(RLIMIT_NOFILE, &r);
+            if (r.rlim_cur < 4096) {
+                std::cerr << "WARNING: maximum file descriptor limit is "
+                          << r.rlim_cur
                           << " which is less than 4096. 'Too many open files' "
                              "errors may result. You can increase the hard "
                              "file descriptor limit for a given user by adding "
@@ -130,33 +122,13 @@ namespace detail
                              "nofile 16384'."
                           << std::endl;
             }
-#ifndef NDEBUG
-            /* If in debug, reserve the first 1024 file descriptor numbers
-            in order to better reveal software which is not >= 1024 fd number
-            safe, which is still some third party dependencies on Linux. */
-            else {
-                for (int fd = ::dup(0); fd > 0 && fd < 1024; fd = ::dup(0)) {
-                    fd_reservation.insert(fd);
-                }
-            }
-#endif
-        }
-
-        ~AsyncIO_rlimit_raiser_impl()
-        {
-#ifndef NDEBUG
-            while (!fd_reservation.empty()) {
-                (void)::close(*fd_reservation.begin());
-                fd_reservation.erase(fd_reservation.begin());
-            }
-#endif
         }
     } AsyncIO_rlimit_raiser;
 
 }
 
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
-    : owning_tid_(gettid())
+    : owning_tid_(get_tl_tid())
     , fds_{-1, -1}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
@@ -169,22 +141,31 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         // The write ring must have at least as many submission entries as there
         // are write i/o buffers
         auto const [sqes, cqes] = io_uring_ring_entries_left(true);
-        MONAD_ASSERT(rwbuf.get_write_count() <= sqes);
+        MONAD_ASSERT_PRINTF(
+            rwbuf.get_write_count() <= sqes,
+            "rwbuf write count %zu sqes %u",
+            rwbuf.get_write_count(),
+            sqes);
     }
 
     auto &ts = detail::AsyncIO_per_thread_state();
-    MONAD_ASSERT(ts.instance == nullptr); // currently cannot create more than
-                                          // one AsyncIO per thread at a time
+    MONAD_ASSERT_PRINTF(
+        ts.instance == nullptr,
+        "currently cannot create more than one AsyncIO per thread at a time");
     ts.instance = this;
 
     // create and register the message type pipe for threadsafe communications
     // read side is nonblocking, write side is blocking
     auto *ring = const_cast<io_uring *>(&uring_.get_ring());
     if (!(ring->flags & IORING_SETUP_IOPOLL)) {
-        MONAD_ASSERT(
-            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1);
-        MONAD_ASSERT(
-            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1);
+        MONAD_ASSERT_PRINTF(
+            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
+            "failed due to %s",
+            strerror(errno));
+        MONAD_ASSERT_PRINTF(
+            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1,
+            "failed due to %s",
+            strerror(errno));
         struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
         MONAD_ASSERT(sqe);
         io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
@@ -213,8 +194,12 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
             std::static_pointer_cast<storage_pool::seq_chunk>(
                 pool.activate_chunk(
                     storage_pool::seq, static_cast<uint32_t>(n))));
-        MONAD_ASSERT(
-            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE);
+        MONAD_ASSERT_PRINTF(
+            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
+            "sequential chunk capacity %llu must equal or exceed i/o buffer "
+            "size %zu",
+            seq_chunks_.back().ptr->capacity(),
+            MONAD_IO_BUFFERS_WRITE_SIZE);
         MONAD_ASSERT(
             (seq_chunks_.back().ptr->capacity() %
              MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
@@ -285,9 +270,9 @@ AsyncIO::~AsyncIO()
     wait_until_done();
 
     auto &ts = detail::AsyncIO_per_thread_state();
-    MONAD_ASSERT(
-        ts.instance ==
-        this); // this is being destructed not from its thread, bad idea
+    MONAD_ASSERT_PRINTF(
+        ts.instance == this,
+        "this is being destructed not from its thread, bad idea");
     ts.instance = nullptr;
 
     if (wr_uring_ != nullptr) {
@@ -410,7 +395,13 @@ void AsyncIO::submit_request_(
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
-    MONAD_ASSERT((chunk_and_offset.offset & 0xffff) == (offset & 0xffff));
+    MONAD_ASSERT_PRINTF(
+        (chunk_and_offset.offset & 0xffff) == (offset & 0xffff),
+        "where we are appending %u is not where we are supposed to be "
+        "appending %llu. Chunk id is %u",
+        (chunk_and_offset.offset & 0xffff),
+        (offset & 0xffff),
+        chunk_and_offset.id);
 
     auto *const wr_ring = (wr_uring_ != nullptr)
                               ? const_cast<io_uring *>(&wr_uring_->get_ring())
@@ -511,7 +502,7 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     // completions
     MONAD_DEBUG_ASSERT((poll_rings_mask & 3) != 3);
     auto h = detail::AsyncIO_per_thread_state().enter_completions();
-    MONAD_DEBUG_ASSERT(owning_tid_ == gettid());
+    MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
     auto *const other_ring = const_cast<io_uring *>(&uring_.get_ring());
@@ -660,11 +651,8 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     };
 
     auto process_cqe = [&] {
-        bool is_read_or_write = false;
-        if (state->is_read()) {
-            --records_.inflight_rd;
-            is_read_or_write = true;
-            // For now, only silently retry reads
+        // For now, only silently retry reads and scatter reads
+        auto retry_operation_if_temporary_failure = [&] {
             [[unlikely]] if (
                 res.has_error() &&
                 res.assume_error() == errc::resource_unavailable_try_again) {
@@ -682,6 +670,15 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 state->reinitiate();
                 return true;
             }
+            return false;
+        };
+        bool is_read_or_write = false;
+        if (state->is_read()) {
+            --records_.inflight_rd;
+            is_read_or_write = true;
+            if (retry_operation_if_temporary_failure()) {
+                return true;
+            }
             // Speculative read i/o deque
             dequeue_concurrent_read_ios_pending();
         }
@@ -697,6 +694,9 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         }
         else if (state->is_read_scatter()) {
             --records_.inflight_rd_scatter;
+            if (retry_operation_if_temporary_failure()) {
+                return true;
+            }
         }
 #ifndef NDEBUG
         else {
@@ -838,7 +838,7 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
                 << " within_completions_count = "
                 << detail::AsyncIO_per_thread_state().within_completions_count
                 << std::endl;
-            MONAD_ASSERT("no i/o buffers remaining" == nullptr);
+            MONAD_ABORT("no i/o buffers remaining");
         }
         // Reap completions until a buffer frees up, only reaping completions
         // for the write or other ring exclusively.

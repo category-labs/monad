@@ -1,3 +1,6 @@
+[submodule "third_party/compiler"]
+	path = third_party/compiler
+	url = git@github.com:category-labs/monad-compiler.git
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests
@@ -13,19 +16,13 @@
 	url = https://github.com/avaneev/komihash.git
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
-	url = https://github.com/monad-crypto/silkpre.git
-[submodule "third_party/thread-safe-lru"]
-	path = third_party/thread-safe-lru
-	url = git@github.com:monad-crypto/thread-safe-lru.git
+	url = https://github.com/category-labs/silkpre.git
 [submodule "third_party/yellowpaper"]
 	path = third_party/yellowpaper
 	url = https://github.com/ethereum/yellowpaper.git
 [submodule "ethash"]
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
-[submodule "evmone"]
-	path = third_party/evmone
-	url = https://github.com/ethereum/evmone.git
 [submodule "core/third_party/nanobench"]
 	path = libs/core/third_party/nanobench
 	url = https://github.com/martinus/nanobench.git
@@ -40,4 +37,7 @@
 	url = https://github.com/martinus/unordered_dense.git
 [submodule "libs/runloop/third_party/binutils-gdb"]
 	path = libs/runloop/third_party/binutils-gdb
-	url = git@github.com:monad-crypto/binutils-gdb.git
+	url = git@github.com:category-labs/binutils-gdb.git
+[submodule "third_party/BLAKE3"]
+	path = third_party/BLAKE3
+	url = https://github.com/BLAKE3-team/BLAKE3.git

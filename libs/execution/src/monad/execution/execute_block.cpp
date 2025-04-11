@@ -95,22 +95,10 @@ void fork_task(fiber::PriorityPool &priority_pool, uint64_t priority, const Task
     priority_pool.submit(priority, [task_function]() { task_function(); });
 }
 
-// not useful until we do template-generic proofs, not just template-generic specs
-template <typename TaskFunction, typename PriorityFunction>
-void fork_tasks(
-    fiber::PriorityPool &priority_pool, uint64_t numTasks,
-    const TaskFunction & task,
-    const PriorityFunction & priority_of_task)
-{
-    for (uint64_t i = 0; i < numTasks; ++i) {
-        fork_task(priority_pool, priority_of_task(i), [task, i]() { task(i); });
-    }
-}
-
 #define MAX_TRANSACTIONS 800
 boost::fibers::promise<void> promises[MAX_TRANSACTIONS];
 std::optional<Address> senders[MAX_TRANSACTIONS];
-std::optional<Result<Receipt>> results[MAX_TRANSACTIONS];
+std::optional<Result<ExecutionResult>> results[MAX_TRANSACTIONS];
 
 void reset_promises(uint64_t num_transactions){
     for (uint64_t i = 0; i < num_transactions; ++i) {
@@ -165,9 +153,10 @@ void execute_transactions(Block const &block, fiber::PriorityPool &priority_pool
     wait_for_promise(promises[block.transactions.size()]);
 
 }
+
 template <evmc_revision rev>
-Result<std::vector<Receipt>> finalize_block(Block const &block, BlockState &block_state) {
-    std::vector<Receipt> receipts;
+Result<std::vector<ExecutionResult>> finalize_block(Block const &block, BlockState &block_state) {
+    std::vector<ExecutionResult> retvals;
 
     for (uint64_t i = 0; i < block.transactions.size(); ++i) {
         MONAD_ASSERT(results[i].has_value());
@@ -178,12 +167,12 @@ Result<std::vector<Receipt>> finalize_block(Block const &block, BlockState &bloc
                 block.transactions[i],
                 results[i].value().assume_error().message().c_str());
         }
-        BOOST_OUTCOME_TRY(Receipt receipt, std::move(results[i].value()));
-        receipts.push_back(std::move(receipt));
+        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
+        retvals.push_back(std::move(retval));
     }
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &receipt : receipts) {
+    for (auto &[receipt, _, call_frame] : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }
@@ -203,11 +192,12 @@ Result<std::vector<Receipt>> finalize_block(Block const &block, BlockState &bloc
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-    return receipts;
+
+    return retvals;
 }
 
 template <evmc_revision rev>
-Result<std::vector<Receipt>> execute_block(
+Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, Block &block, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
@@ -235,7 +225,7 @@ Result<std::vector<Receipt>> execute_block(
 
 EXPLICIT_EVMC_REVISION(execute_block);
 
-Result<std::vector<Receipt>> execute_block(
+Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)

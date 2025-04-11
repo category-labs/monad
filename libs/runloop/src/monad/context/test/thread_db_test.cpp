@@ -154,7 +154,7 @@ namespace
         }
 #define LIBTHREAD_DB_FUNCTION(symbol)                                          \
     symbol##_p = (symbol##_ftype *)dlsym(so_ref, #symbol);                     \
-    if (symbol == nullptr)                                                     \
+    if (symbol##_p == nullptr)                                                 \
         throw std::runtime_error(dlerror());
         LIBTHREAD_DB_FUNCTION(td_init)
         LIBTHREAD_DB_FUNCTION(td_ta_map_lwp2thr)

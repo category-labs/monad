@@ -17,6 +17,10 @@ using boost::fibers::context;
 class PriorityAlgorithm final
     : public boost::fibers::algo::algorithm_with_properties<PriorityProperties>
 {
+    bool recent_{true};
+    // if set true, threads do not spin when no fiber available
+    bool prevent_spin_{false};
+
     PriorityQueue &rqueue_;
 
     using lqueue_type = boost::fibers::scheduler::ready_queue_type;
@@ -24,7 +28,7 @@ class PriorityAlgorithm final
     lqueue_type lqueue_{};
 
 public:
-    explicit PriorityAlgorithm(PriorityQueue &);
+    explicit PriorityAlgorithm(PriorityQueue &, bool prevent_spin = false);
 
     PriorityAlgorithm(PriorityAlgorithm const &) = delete;
     PriorityAlgorithm(PriorityAlgorithm &&) = delete;

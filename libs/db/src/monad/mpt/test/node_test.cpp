@@ -64,13 +64,12 @@ TEST(NodeTest, leaf_single_branch)
 {
     DummyCompute comp{};
     NibblesView const path1{12, 16, path.data()};
-    Node *child = make_node(0, {}, path1, value, {}, 0).release();
 
     ChildData children[1];
     children[0].len = 1;
     children[0].data[0] = 0xa;
     children[0].branch = 0xc;
-    children[0].ptr = child;
+    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = 1u << 0xc;
     Node::UniquePtr node{
@@ -87,17 +86,15 @@ TEST(NodeTest, leaf_multiple_branches)
 {
     DummyCompute comp{};
     NibblesView const path1{12, 16, path.data()};
-    Node *child1 = make_node(0, {}, path1, value, {}, 0).release();
-    Node *child2 = make_node(0, {}, path1, value, {}, 0).release();
 
-    ChildData child;
-    child.len = 1;
-    child.data[0] = 0xa;
-    ChildData children[2] = {child, child};
+    ChildData children[2] = {ChildData{.len = 1}, ChildData{.len = 1}};
+    children[0].data[0] = 0xa;
+    children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = child1;
-    children[1].ptr = child2;
+    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::UniquePtr node{
@@ -114,17 +111,15 @@ TEST(NodeTest, branch_node)
 {
     DummyCompute comp{};
     NibblesView const path1{12, 16, path.data()};
-    Node *child1 = make_node(0, {}, path1, value, {}, 0).release();
-    Node *child2 = make_node(0, {}, path1, value, {}, 0).release();
 
-    ChildData child;
-    child.len = 1;
-    child.data[0] = 0xa;
-    ChildData children[2] = {child, child};
+    ChildData children[2] = {ChildData{.len = 1}, ChildData{.len = 1}};
+    children[0].data[0] = 0xa;
+    children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = child1;
-    children[1].ptr = child2;
+    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+
     NibblesView const path2{1, 1, path.data()}; // path2 is empty
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::UniquePtr node{create_node_with_children(
@@ -141,17 +136,15 @@ TEST(NodeTest, extension_node)
 {
     DummyCompute comp{};
     NibblesView const path1{12, 16, path.data()};
-    Node *child1 = make_node(0, {}, path1, value, {}, 0).release();
-    Node *child2 = make_node(0, {}, path1, value, {}, 0).release();
 
-    ChildData child;
-    child.len = 1;
-    child.data[0] = 0xa;
-    ChildData children[2] = {child, child};
+    ChildData children[2] = {ChildData{.len = 1}, ChildData{.len = 1}};
+    children[0].data[0] = 0xa;
+    children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = child1;
-    children[1].ptr = child2;
+    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::UniquePtr node{create_node_with_children(

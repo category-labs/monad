@@ -1,7 +1,6 @@
 #include <monad/mpt/node.hpp>
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
@@ -81,11 +80,7 @@ Node::Node(
 Node::~Node()
 {
     for (uint8_t index = 0; index < number_of_children(); ++index) {
-        {
-            UniquePtr const _{next(index)};
-            (void)_;
-        }
-        set_next(index, nullptr);
+        move_next(index).reset();
     }
 }
 
@@ -364,16 +359,17 @@ Node const *Node::next(size_t const index) const noexcept
     return unaligned_load<Node *>(next_data() + index * sizeof(Node *));
 }
 
-void Node::set_next(unsigned const index, Node *const node) noexcept
+void Node::set_next(unsigned const index, Node::UniquePtr node_ptr) noexcept
 {
+    Node *node = node_ptr.release();
     node ? memcpy(next_data() + index * sizeof(Node *), &node, sizeof(Node *))
          : memset(next_data() + index * sizeof(Node *), 0, sizeof(Node *));
 }
 
-Node::UniquePtr Node::next_ptr(unsigned const index) noexcept
+Node::UniquePtr Node::move_next(unsigned const index) noexcept
 {
     Node *p = next(index);
-    set_next(index, nullptr);
+    set_next(index, {nullptr});
     return UniquePtr{p};
 }
 
@@ -403,25 +399,27 @@ bool ChildData::is_valid() const
 
 void ChildData::erase()
 {
+    MONAD_ASSERT(!ptr);
     branch = INVALID_BRANCH;
 }
 
-void ChildData::finalize(Node &node, Compute &compute, bool const cache)
+void ChildData::finalize(
+    Node::UniquePtr node, Compute &compute, bool const cache)
 {
     MONAD_DEBUG_ASSERT(is_valid());
-    ptr = &node;
-    auto const length = compute.compute(data, ptr);
+    ptr = std::move(node);
+    auto const length = compute.compute(data, ptr.get());
     MONAD_DEBUG_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;
-    subtrie_min_version = calc_min_version(node);
+    subtrie_min_version = calc_min_version(*ptr);
 }
 
 void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
     if (old->next(index)) { // in memory, infers cached
-        ptr = old->next_ptr(index).release();
+        ptr = old->move_next(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -433,7 +431,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     min_offset_fast = old->min_offset_fast(index);
     min_offset_slow = old->min_offset_slow(index);
     subtrie_min_version = old->subtrie_min_version(index);
-    cache_node = true;
+    cache_node = ptr != nullptr;
 
     MONAD_DEBUG_ASSERT(is_valid());
 }
@@ -525,13 +523,13 @@ Node::UniquePtr make_node(
         child_data_offsets.size() * sizeof(uint16_t),
         node->child_off_data());
 
-    for (unsigned index = 0; auto const &child : children) {
+    for (unsigned index = 0; auto &child : children) {
         if (child.is_valid()) {
             node->set_fnext(index, child.offset);
             node->set_min_offset_fast(index, child.min_offset_fast);
             node->set_min_offset_slow(index, child.min_offset_slow);
             node->set_subtrie_min_version(index, child.subtrie_min_version);
-            node->set_next(index, child.ptr);
+            node->set_next(index, std::move(child.ptr));
             node->set_child_data(index, {child.data, child.len});
             ++index;
         }
@@ -552,7 +550,7 @@ Node::UniquePtr make_node(
 
 // all children's offset are set before creating parent
 // create node with at least one child
-Node *create_node_with_children(
+Node::UniquePtr create_node_with_children(
     Compute &comp, uint16_t const mask, std::span<ChildData> children,
     NibblesView const path, std::optional<byte_string_view> const value,
     int64_t const version)
@@ -564,16 +562,15 @@ Node *create_node_with_children(
     if (data_size) {
         comp.compute_branch(node->data_data(), node.get());
     }
-    return node.release();
+    return node;
 }
 
 void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_append, Node const &node,
     uint32_t const disk_size, unsigned const offset)
 {
-
+    MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     if (offset < Node::disk_size_bytes) { // serialize node disk size
-        MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
         MONAD_ASSERT(bytes_to_append <= disk_size - offset);
         unsigned const written =
             std::min(bytes_to_append, Node::disk_size_bytes - offset);
@@ -601,7 +598,8 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     }
     // Load 32-bit node on-disk size
     auto const disk_size = unaligned_load<uint32_t>(read_pos);
-    MONAD_ASSERT(disk_size <= max_bytes);
+    MONAD_ASSERT_PRINTF(
+        disk_size <= max_bytes, "deserialized node disk size is %u", disk_size);
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     read_pos += Node::disk_size_bytes;
     // Load the on disk node
@@ -620,41 +618,16 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     return node;
 }
 
-Node *read_node_blocking(
-    MONAD_ASYNC_NAMESPACE::storage_pool &pool, chunk_offset_t node_offset)
+Node::UniquePtr copy_node(Node const *const node)
 {
-    MONAD_DEBUG_ASSERT(
-        node_offset.spare <=
-        round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-    // spare bits are number of pages needed to load node
-    unsigned const num_pages_to_load_node =
-        node_disk_pages_spare_15{node_offset}.to_pages();
-    unsigned const bytes_to_read = num_pages_to_load_node << DISK_PAGE_BITS;
-    file_offset_t const rd_offset =
-        round_down_align<DISK_PAGE_BITS>(node_offset.offset);
-    uint16_t const buffer_off = uint16_t(node_offset.offset - rd_offset);
-    auto *buffer =
-        (unsigned char *)aligned_alloc(DISK_PAGE_SIZE, bytes_to_read);
-    auto unbuffer = make_scope_exit([buffer]() noexcept { ::free(buffer); });
-
-    auto chunk = pool.activate_chunk(pool.seq, node_offset.id);
-    auto fd = chunk->read_fd();
-    ssize_t const bytes_read = pread(
-        fd.first,
-        buffer,
-        bytes_to_read,
-        static_cast<off_t>(fd.second + rd_offset));
-    if (bytes_read < 0) {
-        fprintf(
-            stderr,
-            "FATAL: pread(%u, %llu) failed with '%s'\n",
-            bytes_to_read,
-            rd_offset,
-            strerror(errno));
-    }
-    return deserialize_node_from_buffer(
-               buffer + buffer_off, size_t(bytes_read) - buffer_off)
-        .release();
+    auto const alloc_size = node->get_mem_size();
+    auto node_copy = Node::make(alloc_size);
+    std::copy_n(
+        (unsigned char *)node, alloc_size, (unsigned char *)node_copy.get());
+    // reset all in memory children
+    auto const next_size = node->number_of_children() * sizeof(Node *);
+    std::memset(node_copy->next_data(), 0, next_size);
+    return node_copy;
 }
 
 int64_t calc_min_version(Node const &node)

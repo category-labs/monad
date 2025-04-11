@@ -34,6 +34,8 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    constexpr size_t SEND_BATCH_SIZE = 64 * 1024;
+
     void send(int const fd, byte_string_view const buf)
     {
         size_t nsent = 0;
@@ -62,11 +64,13 @@ void statesync_server_send_upsert(
     MONAD_ASSERT(v1 != nullptr || size1 == 0);
     MONAD_ASSERT(v2 != nullptr || size2 == 0);
     MONAD_ASSERT(
-        type == SyncTypeUpsertCode || type == SyncTypeUpsertAccount ||
-        type == SyncTypeUpsertStorage || type == SyncTypeUpsertAccountDelete ||
-        type == SyncTypeUpsertStorageDelete);
+        type == SYNC_TYPE_UPSERT_CODE || type == SYNC_TYPE_UPSERT_ACCOUNT ||
+        type == SYNC_TYPE_UPSERT_STORAGE ||
+        type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE ||
+        type == SYNC_TYPE_UPSERT_STORAGE_DELETE ||
+        type == SYNC_TYPE_UPSERT_HEADER);
 
-    auto const start = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(type);
     uint64_t const size = size1 + size2;
     net->obuf.append(
@@ -78,7 +82,7 @@ void statesync_server_send_upsert(
         net->obuf.append(v2, size2);
     }
 
-    if (net->obuf.size() >= (1 << 30)) {
+    if (net->obuf.size() >= SEND_BATCH_SIZE) {
         send(net->fd, net->obuf);
         net->obuf.clear();
     }
@@ -97,8 +101,8 @@ void statesync_server_send_upsert(
 void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const msg)
 {
-    auto const start = std::chrono::steady_clock::now();
-    net->obuf.push_back(SyncTypeDone);
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
+    net->obuf.push_back(SYNC_TYPE_DONE);
     net->obuf.append(
         reinterpret_cast<unsigned char const *>(&msg), sizeof(msg));
     send(net->fd, net->obuf);

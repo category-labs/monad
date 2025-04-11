@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/chain/chain.hpp>
+#include <monad/chain/monad_revision.h>
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 
@@ -9,15 +10,25 @@
 MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
+struct Transaction;
 
 struct MonadChain : Chain
 {
-    Result<void> validate_header(
-        std::vector<Receipt> const &, BlockHeader const &) const override;
+    virtual evmc_revision
+    get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
-    virtual bool validate_root(
-        evmc_revision, BlockHeader const &, bytes32_t const &state_root,
-        bytes32_t const &receipts_root) const override;
+    virtual Result<void> validate_output_header(
+        BlockHeader const &input, BlockHeader const &output) const override;
+
+    virtual uint64_t compute_gas_refund(
+        uint64_t block_number, uint64_t timestamp, Transaction const &,
+        uint64_t gas_remaining, uint64_t refund) const override;
+
+    virtual monad_revision
+    get_monad_revision(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual size_t
+    get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 };
 
 MONAD_NAMESPACE_END

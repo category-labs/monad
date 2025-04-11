@@ -58,9 +58,7 @@ struct Compute
     //! node's branches, return hash data length
     virtual unsigned compute_branch(unsigned char *buffer, Node *node) = 0;
     //! compute data of a trie rooted at node, put data to first argument and
-    //! return data length. 3rd parameter is the branch nibble of node, it's
-    //! present only when node is the single child of its parent, which is a
-    //! leaf node
+    //! return data length
     virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
 };
 
@@ -188,7 +186,7 @@ protected:
 
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
-        Node *const node = single_child.ptr;
+        Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
         return state.len = encode_two_pieces(
@@ -214,6 +212,23 @@ in the middle of a variable length trie.
 
 TODO for vicky: consolidate VarLenMerkleCompute and MerkleCompute into one.
 */
+
+template <typename T>
+concept leaf_processor = requires {
+    {
+        T::process(std::declval<byte_string_view>())
+    } -> std::same_as<byte_string_view>;
+};
+
+struct NoopProcessor
+{
+    static byte_string_view process(byte_string_view const in)
+    {
+        return in;
+    }
+};
+
+template <leaf_processor LeafDataProcessor = NoopProcessor>
 struct VarLenMerkleCompute : Compute
 {
     static constexpr auto calc_rlp_max_size =
@@ -258,7 +273,8 @@ struct VarLenMerkleCompute : Compute
         auto result = encode_16_children(node, branch_str_rlp);
         // encode vt
         result = (node->has_value() && node->value_len)
-                     ? rlp::encode_string(result, node->value())
+                     ? rlp::encode_string(
+                           result, LeafDataProcessor::process(node->value()))
                      : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
@@ -274,7 +290,10 @@ struct VarLenMerkleCompute : Compute
         if (node->number_of_children() == 0) {
             MONAD_ASSERT(node->has_value());
             return encode_two_pieces(
-                buffer, node->path_nibble_view(), node->value(), true);
+                buffer,
+                node->path_nibble_view(),
+                LeafDataProcessor::process(node->value()),
+                true);
         }
         // Ethereum extension: there is non-empty path
         // rlp(encoded path, inline branch hash)
@@ -305,7 +324,8 @@ protected:
         auto result = encode_16_children(children, branch_str_rlp);
         // encode vt
         result = (value.has_value() && value.value().size())
-                     ? rlp::encode_string(result, value.value())
+                     ? rlp::encode_string(
+                           result, LeafDataProcessor::process(value.value()))
                      : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
@@ -318,9 +338,11 @@ protected:
     }
 };
 
-struct RootVarLenMerkleCompute final : public VarLenMerkleCompute
+template <leaf_processor LeafDataProcessor = NoopProcessor>
+struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
 {
-    using Base = VarLenMerkleCompute;
+    using Base = VarLenMerkleCompute<LeafDataProcessor>;
+    using Base::state;
 
     virtual unsigned compute(unsigned char *const, Node *const) override
     {
@@ -358,7 +380,7 @@ struct RootVarLenMerkleCompute final : public VarLenMerkleCompute
 private:
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
-        Node *const node = single_child.ptr;
+        Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
         return state.len = encode_two_pieces(
@@ -371,7 +393,7 @@ private:
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {branch_hash, compute_branch(branch_hash, node)};
                    }())
-                              : node->value(),
+                              : LeafDataProcessor::process(node->value()),
                    node->has_value());
     }
 };

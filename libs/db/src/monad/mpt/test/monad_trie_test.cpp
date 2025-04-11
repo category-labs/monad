@@ -29,6 +29,8 @@
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -147,7 +149,9 @@ Node::UniquePtr batch_upsert_commit(
         1000000000.0;
 
     fprintf(stdout, "root->data : ");
-    __print_bytes_in_hex(new_root->data());
+    MONAD_ASSERT(new_root->next(0) != nullptr);
+    MONAD_ASSERT(new_root->next(0)->number_of_children() > 1);
+    __print_bytes_in_hex(new_root->next(0)->data());
 
     fprintf(
         stdout,
@@ -370,6 +374,8 @@ int main(int argc, char *argv[])
             csv_writer << "\"Keys written\",\"Per second\"\n";
         }
 
+        quill::start(true);
+
         /* This does a good job of emptying the CPU's data caches and
         data TLB. It does not empty instruction caches nor instruction TLB,
         including the branch prediction history.
@@ -517,8 +523,10 @@ int main(int argc, char *argv[])
 
             Node::UniquePtr root{};
             if (append) {
-                root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_latest_root_offset()));
+                root = read_node_blocking(
+                    aux,
+                    aux.get_latest_root_offset(),
+                    aux.db_history_max_version());
             }
             auto block_id = in_memory ? 0 : (aux.db_history_max_version() + 1);
             printf("starting block id %lu\n", block_id);
@@ -624,6 +632,8 @@ int main(int argc, char *argv[])
         } /* upsert test end */
 
         if (random_read_benchmark_threads > 0) {
+            using find_bytes_request_sender =
+                find_request_sender<monad::byte_string>;
             {
                 auto begin = std::chrono::steady_clock::now();
                 while (std::chrono::steady_clock::now() - begin <
@@ -658,9 +668,12 @@ int main(int argc, char *argv[])
                 if (!in_memory) {
                     aux.set_io(&io, history_len);
                 }
-                root.reset(read_node_blocking(
-                    io.storage_pool(), aux.get_latest_root_offset()));
-                auto [res, errc] = find_blocking(aux, *root, state_nibbles);
+                root = read_node_blocking(
+                    aux,
+                    aux.get_latest_root_offset(),
+                    aux.db_history_max_version());
+                auto [res, errc] = find_blocking(
+                    aux, *root, state_nibbles, aux.db_history_max_version());
                 MONAD_ASSERT(errc == find_result::success);
                 state_start = res;
                 return ret;
@@ -682,7 +695,7 @@ int main(int argc, char *argv[])
                     uint64_t &ops;
                     bool &done;
                     unsigned const n_slices;
-                    find_request_sender *sender{nullptr};
+                    find_bytes_request_sender *sender{nullptr};
                     NodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
@@ -702,7 +715,7 @@ int main(int argc, char *argv[])
                     void set_value(
                         MONAD_ASYNC_NAMESPACE::erased_connected_operation
                             *io_state,
-                        find_request_sender::result_type res)
+                        find_bytes_request_sender::result_type res)
                     {
                         MONAD_ASSERT(res);
                         auto const [data, errc] = res.assume_value();
@@ -722,7 +735,7 @@ int main(int argc, char *argv[])
                 };
 
                 using connected_state_type = MONAD_ASYNC_NAMESPACE::
-                    connected_operation<find_request_sender, receiver_t>;
+                    connected_operation<find_bytes_request_sender, receiver_t>;
 
                 uint64_t ops{0};
                 bool signal_done{false};
@@ -732,7 +745,7 @@ int main(int argc, char *argv[])
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
-                        find_request_sender{
+                        find_bytes_request_sender{
                             aux,
                             inflights,
                             state_start,
@@ -748,7 +761,7 @@ int main(int argc, char *argv[])
                     state->receiver().sender = &state->sender();
                     state->receiver().set_value(
                         state.get(),
-                        monad::mpt::find_bytes_result_type(
+                        monad::mpt::find_result_type<monad::byte_string>(
                             {}, monad::mpt::find_result::success));
                 }
 
@@ -795,15 +808,12 @@ int main(int argc, char *argv[])
                             (unsigned char const *)&key_src, 8, key.data());
 
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::find_cursor_result_type>
                             promise;
-                        fiber_find_request_t const request{
-                            .promise = &promise,
-                            .start = state_start,
-                            .key = key};
-                        find_notify_fiber_future(*aux, inflights, request);
+                        find_notify_fiber_future(
+                            *aux, inflights, promise, state_start, key);
                         auto const [node_cursor, errc] =
-                            request.promise->get_future().get();
+                            promise.get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
                         MONAD_ASSERT(errc == monad::mpt::find_result::success);
                         MONAD_ASSERT(node_cursor.node->has_value());
@@ -872,7 +882,7 @@ int main(int argc, char *argv[])
                     // allowed in Boost.Fiber
                     std::array<
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>,
+                            monad::mpt::find_cursor_result_type>,
                         4>
                         promises;
                     auto *promise_it = promises.begin();
@@ -902,6 +912,7 @@ int main(int argc, char *argv[])
                         std::this_thread::yield();
                     }
                 };
+
                 auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
                     inflight_map_t inflights;
                     fiber_find_request_t request;
@@ -915,7 +926,12 @@ int main(int argc, char *argv[])
                             return;
                         }
                         if (req.try_dequeue(request)) {
-                            find_notify_fiber_future(*aux, inflights, request);
+                            find_notify_fiber_future(
+                                *aux,
+                                inflights,
+                                *request.promise,
+                                request.start,
+                                request.key);
                         }
                     }
                 };
@@ -946,7 +962,12 @@ int main(int argc, char *argv[])
                     inflight_map_t inflights;
                     fiber_find_request_t request;
                     if (req.try_dequeue(request)) {
-                        find_notify_fiber_future(aux, inflights, request);
+                        find_notify_fiber_future(
+                            aux,
+                            inflights,
+                            *request.promise,
+                            request.start,
+                            request.key);
                     }
                 }
                 std::cout << "   Joining threads 2 ..." << std::endl;
@@ -980,7 +1001,7 @@ int main(int argc, char *argv[])
                     {
                         UpdateAuxImpl &aux;
                         monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_result_type>
+                            monad::mpt::find_cursor_result_type>
                             p;
                         monad::byte_string key;
                         fiber_find_request_t request;
@@ -1009,7 +1030,12 @@ int main(int argc, char *argv[])
                         {
                             MONAD_ASSERT(res);
                             // We are now on the triedb thread
-                            find_notify_fiber_future(aux, inflights, request);
+                            find_notify_fiber_future(
+                                aux,
+                                inflights,
+                                *request.promise,
+                                request.start,
+                                request.key);
                         }
                     };
                     inflight_map_t inflights;

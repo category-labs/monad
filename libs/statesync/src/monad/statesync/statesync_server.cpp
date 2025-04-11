@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <fcntl.h>
+#include <mutex>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -53,7 +54,7 @@ byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 
 bool send_deletion(
     monad_statesync_server *const sync, monad_sync_request const &rq,
-    monad_statesync_server_context const &ctx)
+    monad_statesync_server_context &ctx)
 {
     MONAD_ASSERT(
         rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_ID);
@@ -62,41 +63,38 @@ bool send_deletion(
         return true;
     }
 
-    auto const &deleted = ctx.deleted;
-    auto const prefix = from_prefix(rq.prefix, rq.prefix_bytes);
+    auto const fn = [sync, prefix = from_prefix(rq.prefix, rq.prefix_bytes)](
+                        Deletion const &deletion) {
+        auto const &[addr, key] = deletion;
+        auto const hash = keccak256(addr.bytes);
+        byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
+        if (!view.starts_with(prefix)) {
+            return;
+        }
+        if (!key.has_value()) {
+            sync->statesync_server_send_upsert(
+                sync->net,
+                SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
+                reinterpret_cast<unsigned char const *>(&addr),
+                sizeof(addr),
+                nullptr,
+                0);
+        }
+        else {
+            auto const skey = rlp::encode_bytes32_compact(key.value());
+            sync->statesync_server_send_upsert(
+                sync->net,
+                SYNC_TYPE_UPSERT_STORAGE_DELETE,
+                reinterpret_cast<unsigned char const *>(&addr),
+                sizeof(addr),
+                skey.data(),
+                skey.size());
+        }
+    };
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
-        Deleted::const_accessor it;
-        if (!deleted.find(it, i)) {
+        if (!ctx.deletions.for_each(i, fn)) {
             return false;
-        }
-        for (auto const &[addr, storage] : it->second) {
-            auto const hash = keccak256(addr.bytes);
-            byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
-            if (!view.starts_with(prefix)) {
-                continue;
-            }
-            if (storage.empty()) {
-                sync->statesync_server_send_upsert(
-                    sync->net,
-                    SyncTypeUpsertAccountDelete,
-                    reinterpret_cast<unsigned char const *>(&addr),
-                    sizeof(addr),
-                    nullptr,
-                    0);
-            }
-            else {
-                for (auto const &skey : storage) {
-                    auto const key = rlp::encode_bytes32_compact(skey);
-                    sync->statesync_server_send_upsert(
-                        sync->net,
-                        SyncTypeUpsertStorageDelete,
-                        reinterpret_cast<unsigned char const *>(&addr),
-                        sizeof(addr),
-                        key.data(),
-                        key.size());
-                }
-            }
         }
     }
     return true;
@@ -186,17 +184,17 @@ bool statesync_server_handle_request(
 
                 if (nibble == CODE_NIBBLE) {
                     MONAD_ASSERT(depth == HASH_SIZE);
-                    send_upsert(SyncTypeUpsertCode);
+                    send_upsert(SYNC_TYPE_UPSERT_CODE);
                 }
                 else {
                     MONAD_ASSERT(nibble == STATE_NIBBLE);
                     if (depth == HASH_SIZE) {
-                        send_upsert(SyncTypeUpsertAccount);
+                        send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
                         send_upsert(
-                            SyncTypeUpsertStorage,
+                            SYNC_TYPE_UPSERT_STORAGE,
                             reinterpret_cast<unsigned char *>(&addr),
                             sizeof(addr));
                     }
@@ -239,24 +237,56 @@ bool statesync_server_handle_request(
         }
     };
 
-    auto const start = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;
+    auto &db = *ctx->ro;
+    if (rq.prefix < 256 && rq.target > rq.prefix) {
+        auto const version = rq.target - rq.prefix - 1;
+        auto const root = db.load_root_for_version(version);
+        if (!root.is_valid()) {
+            return false;
+        }
+        auto const res = db.find(
+            root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), version);
+        if (res.has_error() || !res.value().is_valid()) {
+            return false;
+        }
+        auto const &val = res.value().node->value();
+        MONAD_ASSERT(!val.empty());
+        sync->statesync_server_send_upsert(
+            sync->net,
+            SYNC_TYPE_UPSERT_HEADER,
+            val.data(),
+            val.size(),
+            nullptr,
+            0);
+    }
+
     if (!send_deletion(sync, rq, *ctx)) {
         return false;
     }
-    auto &db = *ctx->ro;
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
     auto const root = db.load_root_for_version(rq.target);
     if (!root.is_valid()) {
         return false;
     }
-    auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
-    if (!db.traverse(root, traverse, rq.target)) {
+    auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
+    if (!finalized_root_res.has_value()) {
         return false;
     }
-    auto const end = std::chrono::steady_clock::now();
+    auto const &finalized_root = finalized_root_res.value();
+    if (db.find(finalized_root, state_nibbles, rq.target).has_error() ||
+        db.find(finalized_root, code_nibbles, rq.target).has_error()) {
+        return false;
+    }
+
+    [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
+    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    if (!db.traverse(finalized_root, traverse, rq.target)) {
+        return false;
+    }
+    [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
 
     LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "
@@ -281,10 +311,11 @@ void monad_statesync_server_handle_request(
     if (!success) {
         LOG_INFO(
             "could not handle request prefix={} from={} until={} "
-            "target={}",
+            "old_target={} target={}",
             rq.prefix,
             rq.from,
             rq.until,
+            rq.old_target,
             rq.target);
     }
     sync->statesync_server_send_done(
@@ -321,7 +352,7 @@ void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
     if (sync->statesync_server_recv(sync->net, buf, 1) != 1) {
         return;
     }
-    MONAD_ASSERT(buf[0] == SyncTypeRequest);
+    MONAD_ASSERT(buf[0] == SYNC_TYPE_REQUEST);
     unsigned char *ptr = buf;
     uint64_t n = sizeof(monad_sync_request);
     while (n != 0) {

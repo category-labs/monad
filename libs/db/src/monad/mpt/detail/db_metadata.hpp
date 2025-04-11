@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/mpt/util.hpp>
 
+#include <monad/async/config.hpp>
 #include <monad/async/detail/start_lifetime_as_polyfill.hpp>
 
 #include "unsigned_20.hpp"
@@ -25,9 +26,10 @@ namespace detail
          */
         constexpr struct
         {
-            uint32_t chunk_info_count : 20;
-            uint32_t unused0_ : 4;
-            uint32_t reserved0_ : 8;
+            uint64_t chunk_info_count : 20;
+            uint64_t using_chunks_for_root_offsets : 1;
+            uint64_t unused0_ : 35;
+            uint64_t reserved0_ : 8;
         } v{.reserved0_ = 1};
 
         struct type
@@ -36,7 +38,7 @@ namespace detail
         };
 
         constexpr type ret = std::bit_cast<type>(v);
-        return ret.x[3];
+        return ret.x[sizeof(v) - 1]; // last byte
     }
 #endif
     inline void
@@ -45,8 +47,8 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MND6";
-        static constexpr unsigned MAGIC_STRING_LEN = 4;
+        static constexpr char const *MAGIC = "MONAD007";
+        static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
         friend inline void
@@ -56,9 +58,10 @@ namespace detail
         db_metadata &operator=(db_metadata const &) = default;
 
         char magic[MAGIC_STRING_LEN];
-        uint32_t chunk_info_count : 20; // items in chunk_info below
-        uint32_t unused0_ : 4; // next item MUST be on a byte boundary
-        uint32_t reserved_for_is_dirty_ : 8; // for is_dirty below
+        uint64_t chunk_info_count : 20; // items in chunk_info below
+        uint64_t using_chunks_for_root_offsets : 1;
+        uint64_t unused0_ : 35; // next item MUST be on a byte boundary
+        uint64_t reserved_for_is_dirty_ : 8; // for is_dirty below
         // DO NOT INSERT ANYTHING IN HERE
         uint64_t capacity_in_free_list; // used to detect when free space is
                                         // running low
@@ -71,76 +74,34 @@ namespace detail
         // ring buffer is under capacity.
         struct root_offsets_ring_t
         {
-            static constexpr size_t SIZE = 65536;
+            static constexpr size_t SIZE_ = 65536;
             static_assert(
-                (SIZE & (SIZE - 1)) == 0, "root offsets must be a power of 2");
+                (SIZE_ & (SIZE_ - 1)) == 0,
+                "root offsets must be a power of 2");
 
+            uint64_t version_lower_bound_;
             uint64_t next_version_; // all bits zero turns into INVALID_BLOCK_ID
-            chunk_offset_t arr_[SIZE];
 
-            struct as_atomics_
+            union
             {
-                std::atomic<uint64_t> next_version;
-                std::atomic<chunk_offset_t> arr[SIZE];
-            };
+                struct
+                {
+                    uint32_t high_bits_all_set; // All bits one to deliberately
+                                                // break older codebases
+                    uint32_t cnv_chunks_len; // How long the following list is
 
-            as_atomics_ *self()
-            {
-                return start_lifetime_as<as_atomics_>(this);
-            }
+                    struct
+                    {
+                        uint32_t
+                            high_bits_all_set; // All bits one to deliberately
+                                               // break older codebases
+                        uint32_t cnv_chunk_id; // The read-write chunk id
+                    } cnv_chunks[SIZE_ - 1];
+                };
 
-            as_atomics_ const *self() const
-            {
-                return start_lifetime_as<as_atomics_ const>(this);
-            }
-
-            static constexpr size_t capacity() noexcept
-            {
-                return SIZE;
-            }
-
-            void push(chunk_offset_t const o) noexcept
-            {
-                auto *self = this->self();
-                auto const wp =
-                    self->next_version.load(std::memory_order_relaxed);
-                auto const next_wp = wp + 1;
-                MONAD_ASSERT(next_wp != 0);
-                self->arr[wp & (SIZE - 1)].store(o, std::memory_order_release);
-                self->next_version.store(next_wp, std::memory_order_release);
-            }
-
-            void assign(size_t const i, chunk_offset_t const o) noexcept
-            {
-                self()->arr[i & (SIZE - 1)].store(o, std::memory_order_release);
-            }
-
-            chunk_offset_t operator[](size_t const i) const noexcept
-            {
-                return self()->arr[i & (SIZE - 1)].load(
-                    std::memory_order_acquire);
-            }
-
-            uint64_t max_version() const noexcept
-            {
-                auto const wp =
-                    self()->next_version.load(std::memory_order_acquire);
-                return wp - 1;
-            }
-
-            void reset_all(uint64_t const version)
-            {
-                self()->next_version.store(0, std::memory_order_release);
-                for (size_t i = 0; i < capacity(); ++i) {
-                    push(INVALID_OFFSET);
-                }
-                self()->next_version.store(version, std::memory_order_release);
-            }
-
+                chunk_offset_t arr[SIZE_];
+            } storage_;
         } root_offsets;
-
-        static_assert(
-            sizeof(root_offsets_ring_t::as_atomics_) == sizeof(root_offsets));
 
         struct db_offsets_info_t
         {
@@ -149,10 +110,6 @@ namespace detail
             // should be rewound if restart.
             chunk_offset_t start_of_wip_offset_fast;
             chunk_offset_t start_of_wip_offset_slow;
-            compact_virtual_chunk_offset_t last_compact_offset_fast;
-            compact_virtual_chunk_offset_t last_compact_offset_slow;
-            compact_virtual_chunk_offset_t last_compact_offset_range_fast;
-            compact_virtual_chunk_offset_t last_compact_offset_range_slow;
 
             db_offsets_info_t() = delete;
             db_offsets_info_t(db_offsets_info_t const &) = delete;
@@ -164,19 +121,9 @@ namespace detail
 
             constexpr db_offsets_info_t(
                 chunk_offset_t start_of_wip_offset_fast_,
-                chunk_offset_t start_of_wip_offset_slow_,
-                compact_virtual_chunk_offset_t last_compact_offset_fast_,
-                compact_virtual_chunk_offset_t last_compact_offset_slow_,
-                compact_virtual_chunk_offset_t last_compact_offset_range_fast_,
-                compact_virtual_chunk_offset_t last_compact_offset_range_slow_)
+                chunk_offset_t start_of_wip_offset_slow_)
                 : start_of_wip_offset_fast(start_of_wip_offset_fast_)
                 , start_of_wip_offset_slow(start_of_wip_offset_slow_)
-                , last_compact_offset_fast(last_compact_offset_fast_)
-                , last_compact_offset_slow(last_compact_offset_slow_)
-                , last_compact_offset_range_fast(
-                      last_compact_offset_range_fast_)
-                , last_compact_offset_range_slow(
-                      last_compact_offset_range_slow_)
             {
             }
 
@@ -184,28 +131,23 @@ namespace detail
             {
                 start_of_wip_offset_fast = o.start_of_wip_offset_fast;
                 start_of_wip_offset_slow = o.start_of_wip_offset_slow;
-                last_compact_offset_fast = o.last_compact_offset_fast;
-                last_compact_offset_slow = o.last_compact_offset_slow;
-                last_compact_offset_range_fast =
-                    o.last_compact_offset_range_fast;
-                last_compact_offset_range_slow =
-                    o.last_compact_offset_range_slow;
             }
         } db_offsets;
 
         /* NOTE Remember to update the DB restore implementation in the CLI
         tool if you modify anything after this!
         */
-        float slow_fast_ratio;
         // cannot use atomic_uint64_t here because db_metadata has to be
         // trivially copyable for db_copy().
         uint64_t history_length;
+        uint64_t latest_finalized_version;
+        uint64_t latest_verified_version;
+        uint64_t latest_voted_version;
+        uint64_t latest_voted_round;
+        int64_t auto_expire_version;
 
-        // return INVALID_BLOCK_ID indicates that db is empty
-        uint64_t get_max_version_in_history() const noexcept
-        {
-            return root_offsets.max_version();
-        }
+        // padding for adding future atomics without requiring DB reset
+        uint8_t future_variables_unused[4096];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -517,57 +459,12 @@ namespace detail
             auto g = hold_dirty();
             db_offsets.store(offsets_to_apply);
         }
-
-        void
-        append_root_offset_(chunk_offset_t const latest_root_offset) noexcept
-        {
-            auto g = hold_dirty();
-            root_offsets.push(latest_root_offset);
-        }
-
-        void update_root_offset_(
-            size_t const i, chunk_offset_t const latest_root_offset) noexcept
-        {
-            auto g = hold_dirty();
-            root_offsets.assign(i, latest_root_offset);
-        }
-
-        void fast_forward_next_version_(uint64_t const new_version)
-        {
-            auto g = hold_dirty();
-            uint64_t curr_version = root_offsets.max_version();
-
-            if (new_version >= curr_version &&
-                new_version - curr_version >= root_offsets.capacity()) {
-                root_offsets.reset_all(new_version);
-            }
-            else {
-                while (curr_version + 1 < new_version) {
-                    root_offsets.push(INVALID_OFFSET);
-                    curr_version = root_offsets.max_version();
-                }
-            }
-        }
-
-        void set_history_length_(uint64_t history_len) noexcept
-        {
-            auto g = hold_dirty();
-            MONAD_ASSERT(
-                history_len > 0 &&
-                history_len <= root_offsets_ring_t::capacity());
-            reinterpret_cast<std::atomic_uint64_t *>(&history_length)
-                ->store(history_len, std::memory_order_relaxed);
-        }
-
-        void update_slow_fast_ratio_(float const ratio) noexcept
-        {
-            auto g = hold_dirty();
-            slow_fast_ratio = ratio;
-        }
     };
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
+    static_assert(sizeof(db_metadata) == 528512);
+    static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(
         void *__restrict__ dest_, void const *__restrict__ src_, size_t bytes,
@@ -622,8 +519,8 @@ namespace detail
             ((std::byte *)dest) + sizeof(db_metadata),
             ((std::byte const *)src) + sizeof(db_metadata),
             bytes - sizeof(db_metadata));
-        dest->root_offsets.self()->next_version.store(
-            old_next_version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(dest->root_offsets.next_version_)
+            .store(old_next_version, std::memory_order_release);
     };
 }
 

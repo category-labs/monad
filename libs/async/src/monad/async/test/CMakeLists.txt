@@ -12,7 +12,14 @@ add_async_test(TARGET cpp_coroutine_wrappers_test SOURCES
 
 add_async_test(TARGET io_test SOURCES "io.cpp")
 
-add_async_test(TARGET io_death_test SOURCES "io_death.cpp")
+monad_add_test_death(io_death_write_buffer_exhaustion_causes_death_test
+                     SOURCES "io_death_write_buffer_exhaustion_causes_death.cpp"
+                     LINK_LIBRARIES monad_async
+                     FAIL_REGEX ".*Must fail after this:\nFATAL: no i/o buffers remaining.*")
+monad_add_test_death(io_death_read_buffer_exhaustion_causes_death_test
+                     SOURCES "io_death_read_buffer_exhaustion_causes_death.cpp"
+                     LINK_LIBRARIES monad_async
+                     FAIL_REGEX ".*Must fail after this:\nFATAL: no i/o buffers remaining.*")
 
 add_async_test(TARGET io_worker_pool_test SOURCES "io_worker_pool.cpp")
 target_link_options(io_worker_pool_test PUBLIC "-rdynamic")
@@ -36,7 +43,7 @@ else()
 endif()
 
 add_async_test(TARGET sender_receiver_test SOURCES "sender_receiver.cpp"
-              TEST_FILTER "-AsyncIO.timed_delay_sender_receiver")
+              TEST_FILTER "-AsyncIO.timed_delay_sender_receiver:-AsyncIO.external_thread_sender_receiver")
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # explodes build times if optimising
   target_compile_options(sender_receiver_test
@@ -44,21 +51,10 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 target_link_libraries(sender_receiver_test PRIVATE Boost::fiber)
 
-# this test is sensitive to io_uring poll times, so force it to run serially
+# These tests are sensitive to io_uring poll times, so force to run serially
 gtest_discover_tests(
   sender_receiver_test
-  TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER "AsyncIO.timed_delay_sender_receiver"
+  TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER "AsyncIO.external_thread_sender_receiver:AsyncIO.timed_delay_sender_receiver"
   PROPERTIES RUN_SERIAL TRUE)
 
 add_async_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
-
-# monad async perf test
-add_executable(benchmark_io_test "benchmark_io_test.cpp")
-monad_compile_options(benchmark_io_test)
-target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
-                                               monad_async)
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  pkg_check_modules(cap IMPORTED_TARGET libcap)
-  target_compile_definitions(benchmark_io_test PRIVATE MONAD_HAVE_LIBCAP=1)
-  target_link_libraries(benchmark_io_test PRIVATE PkgConfig::cap)
-endif()

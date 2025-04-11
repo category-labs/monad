@@ -10,6 +10,7 @@
 #include <monad/core/likely.h>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/rlp/block_rlp.hpp>
 
 #include <evmc/evmc.h>
 
@@ -44,14 +45,17 @@ Receipt::Bloom compute_bloom(std::vector<Receipt> const &receipts)
     return bloom;
 }
 
+bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
+{
+    if (ommers.empty()) {
+        return NULL_LIST_HASH;
+    }
+    return to_bytes(keccak256(rlp::encode_ommers(ommers)));
+}
+
 template <evmc_revision rev>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    // YP eq. 56
-    if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
-        return BlockError::GasAboveLimit;
-    }
-
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
         return BlockError::InvalidGasLimit;
@@ -129,11 +133,8 @@ EXPLICIT_EVMC_REVISION(static_validate_header);
 template <evmc_revision rev>
 constexpr Result<void> static_validate_ommers(Block const &block)
 {
-    // TODO: What we really need is probably a generic ommer hash computation
-    // function Instead of just checking this special case
-    if (MONAD_UNLIKELY(
-            block.ommers.empty() &&
-            block.header.ommers_hash != NULL_LIST_HASH)) {
+    // YP eq. 33
+    if (compute_ommers_hash(block.ommers) != block.header.ommers_hash) {
         return BlockError::WrongOmmersHash;
     }
 
@@ -168,9 +169,7 @@ constexpr Result<void> static_validate_body(Block const &block)
 {
     // EIP-4895
     if constexpr (rev < EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(
-                block.withdrawals.has_value() &&
-                !block.withdrawals.value().empty())) {
+        if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
@@ -219,6 +218,7 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidGasLimit, "invalid gas limit", {}},
         {BlockError::ExtraDataTooLong, "extra data too long", {}},
         {BlockError::WrongOmmersHash, "wrong ommers hash", {}},
+        {BlockError::WrongParentHash, "wrong parent hash", {}},
         {BlockError::FieldBeforeFork, "field before fork", {}},
         {BlockError::MissingField, "missing field", {}},
         {BlockError::PowBlockAfterMerge, "pow block after merge", {}},
@@ -229,7 +229,7 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
-        {BlockError::WrongStateRoot, "wrong state root", {}}};
+        {BlockError::WrongMerkleRoot, "wrong merkle root", {}}};
 
     return v;
 }

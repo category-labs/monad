@@ -2,19 +2,22 @@
 
 FROM ubuntu:24.04 as base
 
-RUN apt update
+RUN apt update && apt upgrade -y
 
-RUN apt upgrade -y
+RUN apt update && apt install -y apt-utils
 
-RUN apt install -y apt-utils
+RUN apt update && apt install -y dialog
 
-RUN apt install -y dialog
-
-RUN apt install -y ca-certificates curl gnupg software-properties-common wget
+RUN apt update && apt install -y \
+  ca-certificates \
+  curl \
+  gnupg \
+  software-properties-common \
+  wget
 
 COPY scripts/ubuntu-build/ /opt
 
-RUN apt install -y \
+RUN apt update && apt install -y \
   clang-18 \
   gcc-13 \
   g++-13
@@ -23,7 +26,7 @@ RUN /opt/install-boost.sh
 RUN /opt/install-tools.sh
 RUN /opt/install-deps.sh
 
-RUN apt install -y \
+RUN apt update && apt install -y \
   libarchive-dev \
   libbrotli-dev \
   libcap-dev \

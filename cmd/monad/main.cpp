@@ -1,5 +1,10 @@
+#include "runloop_ethereum.hpp"
+#include "runloop_monad.hpp"
+
+#include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
@@ -10,12 +15,9 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/execute_block.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
-#include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/procfs/statm.h>
@@ -28,7 +30,6 @@
 
 #include <quill/LogLevel.h>
 #include <quill/Quill.h>
-#include <quill/detail/LogMacros.h>
 #include <quill/handlers/FileHandler.h>
 
 #include <boost/outcome/try.hpp>
@@ -37,15 +38,16 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
-#include <fstream>
+#include <limits>
 #include <optional>
+#include <signal.h>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <vector>
-
 #include <sys/sysinfo.h>
+#include <unistd.h>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -55,146 +57,48 @@ MONAD_NAMESPACE_END
 
 sig_atomic_t volatile stop;
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
 void signal_handler(int)
 {
     stop = 1;
 }
 
+std::terminate_handler cxx_runtime_terminate_handler;
+
+extern "C" void monad_stack_backtrace_capture_and_print(
+    char *buffer, size_t size, int fd, unsigned indent,
+    bool print_async_unsafe_info);
+
+void backtrace_terminate_handler()
+{
+    char buffer[16384];
+    monad_stack_backtrace_capture_and_print(
+        buffer,
+        sizeof(buffer),
+        STDERR_FILENO,
+        /*indent*/ 3,
+        /*print_async_unsafe_info*/ true);
+
+    // Now that we've printed the trace, delegate the actual termination to the
+    // handler originally installed by the C++ runtime support library
+    cxx_runtime_terminate_handler();
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
 using namespace monad;
 namespace fs = std::filesystem;
 
-using TryGet = std::move_only_function<std::optional<Block>(uint64_t) const>;
-
-void log_tps(
-    uint64_t const block_num, uint64_t const nblocks, uint64_t const ntxs,
-    uint64_t const gas, std::chrono::steady_clock::time_point const begin)
-{
-    auto const now = std::chrono::steady_clock::now();
-    auto const elapsed = std::max(
-        static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
-                .count()),
-        1UL); // for the unlikely case that elapsed < 1 mic
-    uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
-    uint64_t const gps = gas / elapsed;
-
-    LOG_INFO(
-        "Run {:4d} blocks to {:8d}, number of transactions {:6d}, "
-        "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
-        nblocks,
-        block_num,
-        ntxs,
-        tps,
-        gps,
-        monad_procfs_self_resident() / (1L << 20));
-};
-
-Result<std::pair<uint64_t, uint64_t>> run_monad(
-    Chain const &chain, Db &db, TryGet const &try_get,
-    fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const nblocks)
-{
-    constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    signal(SIGINT, signal_handler);
-    stop = 0;
-
-    uint64_t const batch_size =
-        nblocks == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
-    uint64_t batch_num_blocks = 0;
-    uint64_t batch_num_txs = 0;
-    uint64_t total_gas = 0;
-    uint64_t batch_gas = 0;
-    auto batch_begin = std::chrono::steady_clock::now();
-    uint64_t ntxs = 0;
-
-    BlockHashBuffer block_hash_buffer;
-    for (uint64_t i = block_num < 256 ? 1 : block_num - 255;
-         i < block_num && stop == 0;) {
-        auto const block = try_get(i);
-        if (!block.has_value()) {
-            std::this_thread::sleep_for(SLEEP_TIME);
-            continue;
-        }
-        block_hash_buffer.set(i - 1, block.value().header.parent_hash);
-        ++i;
-    }
-
-    uint64_t const end_block_num =
-        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
-            ? std::numeric_limits<uint64_t>::max()
-            : block_num + nblocks - 1;
-    while (block_num <= end_block_num && stop == 0) {
-        auto block = try_get(block_num);
-        if (!block.has_value()) {
-            std::this_thread::sleep_for(SLEEP_TIME);
-            continue;
-        }
-
-        block_hash_buffer.set(block_num - 1, block.value().header.parent_hash);
-
-        BOOST_OUTCOME_TRY(chain.static_validate_header(block.value().header));
-
-        evmc_revision const rev = chain.get_revision(block.value().header);
-
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block.value()));
-
-        BlockState block_state(db);
-        BOOST_OUTCOME_TRY(
-            auto const receipts,
-            execute_block(
-                chain,
-                rev,
-                block.value(),
-                block_state,
-                block_hash_buffer,
-                priority_pool));
-
-        BOOST_OUTCOME_TRY(
-            chain.validate_header(receipts, block.value().header));
-        block_state.log_debug();
-        block_state.commit(receipts);
-
-        if (!chain.validate_root(
-                rev,
-                block.value().header,
-                db.state_root(),
-                db.receipts_root())) {
-            return BlockError::WrongStateRoot;
-        }
-
-        ntxs += block.value().transactions.size();
-        batch_num_txs += block.value().transactions.size();
-        total_gas += block.value().header.gas_used;
-        batch_gas += block.value().header.gas_used;
-        ++batch_num_blocks;
-
-        if (block_num % batch_size == 0) {
-            log_tps(
-                block_num,
-                batch_num_blocks,
-                batch_num_txs,
-                batch_gas,
-                batch_begin);
-            batch_num_blocks = 0;
-            batch_num_txs = 0;
-            batch_gas = 0;
-            batch_begin = std::chrono::steady_clock::now();
-        }
-        ++block_num;
-    }
-    if (batch_num_blocks > 0) {
-        log_tps(
-            block_num, batch_num_blocks, batch_num_txs, batch_gas, batch_begin);
-    }
-    return {ntxs, total_gas};
-}
-
 int main(int const argc, char const *argv[])
 {
+    cxx_runtime_terminate_handler = std::get_terminate();
+    std::set_terminate(backtrace_terminate_handler);
 
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
+    monad_chain_config chain_config;
     fs::path block_db_path;
     uint64_t nblocks = std::numeric_limits<uint64_t>::max();
     unsigned nthreads = 4;
@@ -202,7 +106,6 @@ int main(int const argc, char const *argv[])
     bool no_compaction = false;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
-    uint64_t history_len = 20000;
     std::vector<fs::path> dbname_paths;
     fs::path genesis;
     fs::path snapshot;
@@ -210,15 +113,10 @@ int main(int const argc, char const *argv[])
     std::string statesync;
     auto log_level = quill::LogLevel::Info;
 
-    enum class ChainConfig
-    {
-        EthereumMainnet,
-        MonadDevnet
-    } chain_config;
-
-    std::unordered_map<std::string, ChainConfig> const CHAIN_CONFIG_MAP = {
-        {"ethereum_mainnet", ChainConfig::EthereumMainnet},
-        {"monad_devnet", ChainConfig::MonadDevnet}};
+    std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
+        {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
+         {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
+         {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -250,10 +148,6 @@ int main(int const argc, char const *argv[])
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
-    cli.add_option(
-        "--history_len",
-        history_len,
-        "history length an empty db is initialized to");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group->add_option("--genesis", genesis, "genesis file")
@@ -309,7 +203,9 @@ int main(int const argc, char const *argv[])
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
-    auto const load_start_time = std::chrono::steady_clock::now();
+    auto const db_in_memory = dbname_paths.empty();
+    [[maybe_unused]] auto const load_start_time =
+        std::chrono::steady_clock::now();
 
     std::optional<monad_statesync_server_network> net;
     if (!statesync.empty()) {
@@ -317,7 +213,7 @@ int main(int const argc, char const *argv[])
     }
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
-        if (!dbname_paths.empty()) {
+        if (!db_in_memory) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
                 *machine,
@@ -328,13 +224,13 @@ int main(int const argc, char const *argv[])
                     .wr_buffers = 32,
                     .uring_entries = 128,
                     .sq_thread_cpu = sq_thread_cpu,
-                    .dbname_paths = dbname_paths,
-                    .history_length = history_len}};
+                    .dbname_paths = dbname_paths}};
         }
         machine = std::make_unique<InMemoryMachine>();
         return mpt::Db{*machine};
     }();
 
+    TrieDb triedb{db}; // init block number to latest finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -347,6 +243,13 @@ int main(int const argc, char const *argv[])
             std::ifstream code(snapshot / "code");
             auto const n = std::stoul(snapshot.stem());
             load_from_binary(db, accounts, code, n);
+
+            // load the eth header for snapshot
+            BlockDb block_db{block_db_path};
+            Block block;
+            MONAD_ASSERT_PRINTF(
+                block_db.get(n, block), "FATAL: Could not load block %lu", n);
+            load_header(db, block.header);
             return n;
         }
         else if (!db.root().is_valid()) {
@@ -355,26 +258,26 @@ int main(int const argc, char const *argv[])
             TrieDb tdb{db};
             read_genesis(genesis, tdb);
         }
-        return db.get_latest_block_id();
+        return triedb.get_block_number();
     }();
-    TrieDb triedb{db};
 
-    std::optional<monad_statesync_server_context> ctx;
+    std::unique_ptr<monad_statesync_server_context> ctx;
     std::jthread sync_thread;
     monad_statesync_server *sync = nullptr;
     if (!statesync.empty()) {
-        ctx.emplace(triedb);
+        ctx = std::make_unique<monad_statesync_server_context>(triedb);
         sync = monad_statesync_server_create(
-            &ctx.value(),
+            ctx.get(),
             &net.value(),
             &statesync_server_recv,
             &statesync_server_send_upsert,
             &statesync_server_send_done);
         sync_thread = std::jthread([&](std::stop_token const token) {
             pthread_setname_np(pthread_self(), "statesync thread");
-            mpt::Db ro{mpt::ReadOnlyOnDiskDbConfig{
+            mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
                 .sq_thread_cpu = ro_sq_thread_cpu,
                 .dbname_paths = dbname_paths}};
+            mpt::Db ro{io_ctx};
             ctx->ro = &ro;
             while (!token.stop_requested()) {
                 monad_statesync_server_run_once(sync);
@@ -383,28 +286,16 @@ int main(int const argc, char const *argv[])
         });
     }
 
-    if (snapshot.empty()) {
-        auto const start_time = std::chrono::steady_clock::now();
-        auto const nodes_loaded = triedb.prefetch_current_root();
-        LOG_INFO(
-            "Finish loading current root into memory, time_elapsed = {}, "
-            "nodes_loaded = {}",
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time),
-            nodes_loaded);
-    }
-
     LOG_INFO(
-        "Finished initializing db at block = {}, state root = {}, time elapsed "
+        "Finished initializing db at block = {}, last finalized block = {}, "
+        "last verified block = {}, state root = {}, time elapsed "
         "= {}",
         init_block_num,
+        db.get_latest_finalized_block_id(),
+        db.get_latest_verified_block_id(),
         triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
-
-    if (nblocks == 0) {
-        return EXIT_SUCCESS;
-    }
 
     uint64_t const start_block_num = init_block_num + 1;
 
@@ -419,64 +310,72 @@ int main(int const argc, char const *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    auto db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
-
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
-        case ChainConfig::EthereumMainnet:
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
             return std::make_unique<EthereumMainnet>();
-        case ChainConfig::MonadDevnet:
+        case CHAIN_CONFIG_MONAD_DEVNET:
             return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>();
         }
         MONAD_ASSERT(false);
     }();
 
-    // TODO: consolidate
-    auto const try_get = [&] -> TryGet {
-        switch (chain_config) {
-        case ChainConfig::EthereumMainnet:
-            return [block_db = BlockDb{block_db_path}](
-                       uint64_t const i) -> std::optional<Block> {
-                Block block;
-                if (block_db.get(i, block)) {
-                    return block;
-                }
-                return std::nullopt;
-            };
-        case ChainConfig::MonadDevnet:
-            return [block_db_path](uint64_t const i) -> std::optional<Block> {
-                auto const path = block_db_path / std::to_string(i);
-                if (!fs::exists(path)) {
-                    return std::nullopt;
-                }
-                MONAD_ASSERT(fs::is_regular_file(path));
-                std::ifstream istream(path);
-                if (!istream) {
-                    LOG_ERROR_LIMIT(
-                        std::chrono::seconds(30),
-                        "Opening {} failed with {}",
-                        path,
-                        strerror(errno));
-                    return std::nullopt;
-                }
-                std::ostringstream buf;
-                buf << istream.rdbuf();
-                auto view = byte_string_view{
-                    (unsigned char *)buf.view().data(), buf.view().size()};
-                auto block_result = rlp::decode_block(view);
-                if (block_result.has_error()) {
-                    return std::nullopt;
-                }
-                MONAD_ASSERT(view.empty());
-                return block_result.assume_value();
-            };
-        }
-        MONAD_ASSERT(false);
-    }();
+    BlockHashBufferFinalized block_hash_buffer;
+    bool initialized_headers_from_triedb = false;
+
+    if (!db_in_memory) {
+        mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
+        mpt::Db rodb{io_ctx};
+        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
+            rodb, start_block_num, block_hash_buffer);
+    }
+    if (!initialized_headers_from_triedb) {
+        BlockDb block_db{block_db_path};
+        MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
+        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+            block_db, start_block_num, block_hash_buffer));
+    }
+
+    signal(SIGINT, signal_handler);
+    stop = 0;
 
     uint64_t block_num = start_block_num;
-    auto const result =
-        run_monad(*chain, db_cache, try_get, priority_pool, block_num, nblocks);
+    uint64_t const end_block_num =
+        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
+            ? std::numeric_limits<uint64_t>::max()
+            : block_num + nblocks - 1;
+
+    DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
+    auto const result = [&] {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return runloop_ethereum(
+                *chain,
+                block_db_path,
+                db_cache,
+                block_hash_buffer,
+                priority_pool,
+                block_num,
+                end_block_num,
+                stop);
+        case CHAIN_CONFIG_MONAD_DEVNET:
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return runloop_monad(
+                *chain,
+                block_db_path,
+                db,
+                db_cache,
+                block_hash_buffer,
+                priority_pool,
+                block_num,
+                end_block_num,
+                stop);
+        }
+        MONAD_ABORT_PRINTF("Unsupported chain");
+    }();
 
     if (MONAD_UNLIKELY(result.has_error())) {
         LOG_ERROR(
@@ -485,9 +384,9 @@ int main(int const argc, char const *argv[])
             result.assume_error().message().c_str());
     }
     else {
-        auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start_time);
-        auto const [ntxs, total_gas] = result.assume_value();
+        [[maybe_unused]] auto const elapsed =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time);
         LOG_INFO(
             "Finish running, finish(stopped) block number = {}, "
             "number of blocks run = {}, time_elapsed = {}, num transactions = "
@@ -496,9 +395,10 @@ int main(int const argc, char const *argv[])
             block_num,
             nblocks,
             elapsed,
-            ntxs,
-            ntxs / std::max(1UL, static_cast<uint64_t>(elapsed.count())),
-            total_gas /
+            result.assume_value().first,
+            result.assume_value().first /
+                std::max(1UL, static_cast<uint64_t>(elapsed.count())),
+            result.assume_value().second /
                 (1'000'000 *
                  std::max(1UL, static_cast<uint64_t>(elapsed.count()))));
     }
@@ -511,13 +411,12 @@ int main(int const argc, char const *argv[])
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", block_num);
-        mpt::Db db{mpt::ReadOnlyOnDiskDbConfig{
+        mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu,
             .dbname_paths = dbname_paths,
-            .concurrent_read_io_limit = 128}};
+            .concurrent_read_io_limit = 128});
+        mpt::Db db{io_ctx};
         TrieDb ro_db{db};
-        // WARNING: to_json() does parallel traverse which consumes excessive
-        // memory
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

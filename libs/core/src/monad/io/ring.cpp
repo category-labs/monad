@@ -7,6 +7,7 @@
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
+#include <string.h>
 
 MONAD_IO_NAMESPACE_BEGIN
 
@@ -28,7 +29,11 @@ Ring::Ring(RingConfig const &config)
 {
     int const result = io_uring_queue_init_params(
         config.entries, &ring_, const_cast<io_uring_params *>(&params_));
-    MONAD_ASSERT(!result);
+    MONAD_ASSERT_PRINTF(
+        result == 0,
+        "io_uring_queue_init_params failed: %s (%d)",
+        strerror(-result),
+        -result);
 }
 
 Ring::~Ring()

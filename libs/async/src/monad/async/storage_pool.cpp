@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -151,11 +152,15 @@ storage_pool::chunk::write_fd(size_t bytes_which_shall_be_written) noexcept
                       std::memory_order_acq_rel)
                 : chunk_bytes_used[chunkid_within_device_].load(
                       std::memory_order_acquire);
-        MONAD_ASSERT(
-            size + bytes_which_shall_be_written <= metadata->chunk_capacity);
+        MONAD_ASSERT_PRINTF(
+            size + bytes_which_shall_be_written <= metadata->chunk_capacity,
+            "size %u bytes which shall be written %zu chunk capacity %u",
+            size,
+            bytes_which_shall_be_written,
+            metadata->chunk_capacity);
         return std::pair<int, file_offset_t>{write_fd_, offset_ + size};
     }
-    MONAD_ASSERT("zonefs support isn't implemented yet" == nullptr);
+    MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
 file_offset_t storage_pool::chunk::size() const
@@ -196,17 +201,20 @@ uint32_t storage_pool::chunk::clone_contents_into(chunk &other, uint32_t bytes)
         copy_file_range(rdfd.first, &off_in, wrfd.first, &off_out, bytes, 0);
     if (bytescopied == -1) {
         auto *p = aligned_alloc(DISK_PAGE_SIZE, bytes);
-        MONAD_ASSERT(p != nullptr);
+        MONAD_ASSERT_PRINTF(p != nullptr, "failed due to %s", strerror(errno));
         auto unp = make_scope_exit([&]() noexcept { ::free(p); });
         bytescopied =
             ::pread(rdfd.first, p, bytes, static_cast<off_t>(rdfd.second));
-        MONAD_ASSERT(-1 != bytescopied);
-        MONAD_ASSERT(
+        MONAD_ASSERT_PRINTF(
+            -1 != bytescopied, "failed due to %s", strerror(errno));
+        MONAD_ASSERT_PRINTF(
             -1 != ::pwrite(
                       wrfd.first,
                       p,
                       static_cast<size_t>(bytescopied),
-                      static_cast<off_t>(wrfd.second)));
+                      static_cast<off_t>(wrfd.second)),
+            "failed due to %s",
+            strerror(errno));
     }
     return uint32_t(bytescopied);
 }
@@ -255,7 +263,7 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
         auto const bytesread = (remainder == 0)
                                    ? 0
                                    : ::pread(
-                                         write_fd_,
+                                         read_fd_,
                                          buffer,
                                          DISK_PAGE_SIZE,
                                          static_cast<off_t>(range[0]));
@@ -429,18 +437,22 @@ storage_pool::device storage_pool::make_device_(
                                    chunk_capacity * sizeof(uint32_t))));
                  offset2 < static_cast<off_t>(offset);
                  offset2 += DISK_PAGE_SIZE) {
-                MONAD_ASSERT(
-                    ::pwrite(readwritefd, buffer, DISK_PAGE_SIZE, offset2) > 0);
+                MONAD_ASSERT_PRINTF(
+                    ::pwrite(readwritefd, buffer, DISK_PAGE_SIZE, offset2) > 0,
+                    "failed due to %s",
+                    strerror(errno));
             }
             memcpy(metadata_footer->magic, "MND0", 4);
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
-            MONAD_ASSERT(
+            MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
                     buffer,
                     static_cast<size_t>(bytesread),
-                    static_cast<off_t>(offset)) > 0);
+                    static_cast<off_t>(offset)) > 0,
+                "failed due to %s",
+                strerror(errno));
         }
         total_size =
             metadata_footer->total_size(static_cast<size_t>(stat.st_size));
@@ -491,13 +503,17 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     for (auto const &device : devices_) {
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
-            MONAD_ASSERT(devicechunks > 0);
+            if (devicechunks < 4) {
+                throw std::runtime_error(std::format(
+                    "Device {} has {} chunks the minimum allowed is four.",
+                    device.current_path().c_str(),
+                    devicechunks));
+            }
             MONAD_DEBUG_ASSERT(
                 devicechunks <= std::numeric_limits<uint32_t>::max());
-            if (devicechunks > 1) {
-                chunks.push_back(devicechunks - 1);
-                total += devicechunks - 1;
-            }
+            // Take off three for the cnv chunks
+            chunks.push_back(devicechunks - 3);
+            total += devicechunks - 3;
             fnv1a_hash<uint32_t>::add(
                 hashshouldbe, static_cast<uint32_t>(devicechunks));
             fnv1a_hash<uint32_t>::add(
@@ -537,14 +553,20 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             }
         }
     }
-    // First block of each device goes to conventional, remainder go to
+    // First three blocks of each device goes to conventional, remainder go to
     // sequential
-    chunks_[cnv].reserve(devices_.size());
-    for (auto &device : devices_) {
-        chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
-    }
+    chunks_[cnv].reserve(devices_.size() * 3);
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
+        }
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
+        }
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+        }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
         // would be ABACABA i.e. a ratio of 4:2:1
@@ -553,7 +575,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         for (size_t n = 0; n < chunks.size(); n++) {
             chunkratios[n] = double(total) / static_cast<double>(chunks[n]);
             chunkcounts[n] = chunkratios[n];
-            chunks[n] = 1;
+            chunks[n] = 3;
         }
         while (chunks_[seq].size() < chunks_[seq].capacity()) {
             for (size_t n = 0; n < chunks.size(); n++) {
@@ -576,10 +598,15 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
 #endif
     }
     else {
+        for (auto &device : devices_) {
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
+            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+        }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
-            for (size_t n = 1; n <= chunks[deviceidx]; n++) {
+            for (size_t n = 0; n < chunks[deviceidx]; n++) {
                 chunks_[seq].emplace_back(
-                    std::weak_ptr<class chunk>{}, devices_[deviceidx], n);
+                    std::weak_ptr<class chunk>{}, devices_[deviceidx], 3 + n);
             }
         }
     }
@@ -798,22 +825,23 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
         return ret;
     }
     g.unlock();
+    auto &chunkinfo = chunks_[which][id];
     switch (which) {
     case chunk_type::cnv:
         ret = std::shared_ptr<cnv_chunk>(new cnv_chunk(
-            devices_[id],
-            devices_[id].cached_readwritefd_,
-            devices_[id].cached_readwritefd_,
-            0,
-            devices_[id].metadata_->chunk_capacity,
-            id,
+            chunkinfo.device,
+            chunkinfo.device.cached_readwritefd_,
+            chunkinfo.device.cached_readwritefd_,
+            file_offset_t(chunkinfo.chunk_offset_into_device) *
+                chunkinfo.device.metadata_->chunk_capacity,
+            chunkinfo.device.metadata_->chunk_capacity,
+            chunkinfo.chunk_offset_into_device,
             id,
             false,
             false,
             false));
         break;
     case chunk_type::seq: {
-        auto &chunkinfo = chunks_[chunk_type::seq][id];
         int fds[2] = {
             chunkinfo.device.uncached_readfd_,
             chunkinfo.device.uncached_writefd_};

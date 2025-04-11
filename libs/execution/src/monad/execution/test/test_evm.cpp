@@ -1,3 +1,4 @@
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
@@ -10,6 +11,7 @@
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/state3/state.hpp>
+#include <test_resource_data.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -25,6 +27,7 @@
 #include <utility>
 
 using namespace monad;
+using namespace monad::test;
 
 using db_t = TrieDb;
 
@@ -41,13 +44,15 @@ TEST(Evm, create_with_insufficient)
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
                  .account =
                      {std::nullopt, Account{.balance = 10'000'000'000}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -57,9 +62,15 @@ TEST(Evm, create_with_insufficient)
     uint256_t const v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170};
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -79,7 +90,8 @@ TEST(Evm, eip684_existing_code)
     static constexpr auto code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -89,7 +101,8 @@ TEST(Evm, eip684_existing_code)
             {to,
              StateDelta{
                  .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -99,162 +112,16 @@ TEST(Evm, eip684_existing_code)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170};
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
-}
-
-TEST(Evm, transfer_call_balances)
-{
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    db_t tdb{db};
-    BlockState bs{tdb};
-    State s{bs, Incarnation{0, 0}};
-
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-    tdb.commit(
-        StateDeltas{
-            {to, StateDelta{.account = {std::nullopt, Account{}}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_CALL,
-        .gas = 20'000,
-        .recipient = to,
-        .sender = from,
-    };
-    uint256_t const v{7'000'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = transfer_call_balances(s, m);
-
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{3'000'000'000});
-    EXPECT_EQ(s.get_balance(to), bytes32_t{7'000'000'000});
-}
-
-TEST(Evm, transfer_call_balances_to_self)
-{
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    db_t tdb{db};
-    BlockState bs{tdb};
-    State s{bs, Incarnation{0, 0}};
-
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to = from;
-    tdb.commit(
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 7}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_CALL,
-        .gas = 20'000,
-        .recipient = to,
-        .sender = from,
-    };
-    uint256_t const v{7'000'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = transfer_call_balances(s, m);
-
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
-}
-
-TEST(Evm, dont_transfer_on_delegatecall)
-{
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    db_t tdb{db};
-    BlockState bs{tdb};
-    State s{bs, Incarnation{0, 0}};
-
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-
-    tdb.commit(
-        StateDeltas{
-            {to, StateDelta{.account = {std::nullopt, Account{}}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 6}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_DELEGATECALL,
-        .gas = 20'000,
-        .recipient = to,
-        .sender = from,
-    };
-    uint256_t const v{7'000'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = transfer_call_balances(s, m);
-
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
-    EXPECT_EQ(s.get_balance(to), bytes32_t{});
-}
-
-TEST(Evm, dont_transfer_on_staticcall)
-{
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    db_t tdb{db};
-    BlockState bs{tdb};
-    State s{bs, Incarnation{0, 0}};
-
-    static constexpr auto from{
-        0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    static constexpr auto to{
-        0xdac17f958d2ee523a2206206994597c13d831ec7_address};
-
-    tdb.commit(
-        StateDeltas{
-            {to, StateDelta{.account = {std::nullopt, Account{}}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 6}}}}},
-        Code{});
-
-    evmc_message m{
-        .kind = EVMC_CALL,
-        .flags = EVMC_STATIC,
-        .gas = 20'000,
-        .recipient = to,
-        .sender = from,
-    };
-    uint256_t const v{7'000'000'000};
-    intx::be::store(m.value.bytes, v);
-
-    auto const result = transfer_call_balances(s, m);
-
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(s.get_balance(from), bytes32_t{10'000'000'000});
-    EXPECT_EQ(s.get_balance(to), bytes32_t{});
 }
 
 TEST(Evm, create_nonce_out_of_range)
@@ -270,10 +137,17 @@ TEST(Evm, create_nonce_out_of_range)
     static constexpr auto new_addr{
         0x58f3f9ebd5dbdf751f12d747b02d00324837077d_address};
 
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {from,
              StateDelta{
@@ -282,7 +156,8 @@ TEST(Evm, create_nonce_out_of_range)
                       Account{
                           .balance = 10'000'000'000,
                           .nonce = std::numeric_limits<uint64_t>::max()}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     evmc_message m{
         .kind = EVMC_CREATE,
@@ -292,7 +167,7 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = create_contract_account<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -311,17 +186,25 @@ TEST(Evm, static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000004_address};
 
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
             {from,
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 15'000}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
@@ -358,17 +241,25 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     static constexpr auto code_address{
         0x0000000000000000000000000000000000000001_address};
 
-    BlockHashBuffer const block_hash_buffer;
-    evm_host_t h{EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170};
 
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{
             {code_address,
              StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
             {from,
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 15'000}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
 
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
@@ -395,9 +286,11 @@ TEST(Evm, deploy_contract_code)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    tdb.commit(
+    commit_sequential(
+        tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
-        Code{});
+        Code{},
+        BlockHeader{});
     BlockState bs{tdb};
 
     // Frontier
@@ -408,13 +301,13 @@ TEST(Evm, deploy_contract_code)
             State s{bs, Incarnation{0, 0}};
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 =
-                deploy_contract_code<EVMC_FRONTIER>(s, a, std::move(r));
+            auto const r2 = deploy_contract_code<EVMC_FRONTIER>(
+                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(
-                s.get_code(a)->executable_code,
+                s.get_code(a)->executable_code(),
                 byte_string(code, sizeof(code)));
         }
 
@@ -422,8 +315,8 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, Incarnation{0, 1}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 =
-                deploy_contract_code<EVMC_FRONTIER>(s, a, std::move(r));
+            auto const r2 = deploy_contract_code<EVMC_FRONTIER>(
+                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, a);
@@ -439,14 +332,14 @@ TEST(Evm, deploy_contract_code)
             int64_t const gas = 10'000;
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 =
-                deploy_contract_code<EVMC_HOMESTEAD>(s, a, std::move(r));
+            auto const r2 = deploy_contract_code<EVMC_HOMESTEAD>(
+                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
                       gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(
-                s.get_code(a)->executable_code,
+                s.get_code(a)->executable_code(),
                 byte_string(code, sizeof(code)));
         }
 
@@ -454,8 +347,8 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, Incarnation{0, 3}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 =
-                deploy_contract_code<EVMC_HOMESTEAD>(s, a, std::move(r));
+            auto const r2 = deploy_contract_code<EVMC_HOMESTEAD>(
+                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, 0x00_address);
@@ -475,8 +368,8 @@ TEST(Evm, deploy_contract_code)
             0,
             code.data(),
             code.size()};
-        auto const r2 =
-            deploy_contract_code<EVMC_SPURIOUS_DRAGON>(s, a, std::move(r));
+        auto const r2 = deploy_contract_code<EVMC_SPURIOUS_DRAGON>(
+            s, a, std::move(r), MAX_CODE_SIZE_EIP170);
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
@@ -490,7 +383,8 @@ TEST(Evm, deploy_contract_code)
 
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 = deploy_contract_code<EVMC_LONDON>(s, a, std::move(r));
+        auto const r2 = deploy_contract_code<EVMC_LONDON>(
+            s, a, std::move(r), MAX_CODE_SIZE_EIP170);
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);

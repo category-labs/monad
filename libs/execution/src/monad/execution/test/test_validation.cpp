@@ -29,7 +29,8 @@ TEST(Validation, validate_enough_gas)
         .gas_limit = 27'500, // no .to, under the creation amount
         .value = 1};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0, 1);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+        t, 0, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
 
@@ -113,7 +114,8 @@ TEST(Validation, successful_validation)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 25};
 
-    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(tx, 0, 1);
+    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(
+        tx, 0, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(!result1.has_error());
 
     auto const result2 = validate_transaction(tx, sender_account);
@@ -132,8 +134,8 @@ TEST(Validation, max_fee_less_than_base)
         .to = b,
         .max_priority_fee_per_gas = 100'000'000};
 
-    auto const result =
-        static_validate_transaction<EVMC_SHANGHAI>(t, 37'000'000'000, 1);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+        t, 37'000'000'000, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::MaxFeeLessThanBase);
 }
 
@@ -149,8 +151,8 @@ TEST(Validation, priority_fee_greater_than_max)
         .to = b,
         .max_priority_fee_per_gas = 100'000'000'000};
 
-    auto const result =
-        static_validate_transaction<EVMC_SHANGHAI>(t, 29'000'000'000, 1);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+        t, 29'000'000'000, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
 
@@ -182,7 +184,8 @@ TEST(Validation, init_code_exceed_limit)
     static Transaction const t{
         .max_fee_per_gas = 0, .gas_limit = 1000, .value = 0, .data = long_data};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(t, 0, 1);
+    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+        t, 0, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
 }
 
@@ -208,19 +211,13 @@ TEST(Validation, wrong_dao_extra_data)
 TEST(Validation, base_fee_per_gas_existence)
 {
     static BlockHeader const header1{
-        .ommers_hash = NULL_LIST_HASH,
-        .gas_limit = 10000,
-        .gas_used = 5000,
-        .base_fee_per_gas = 1000};
+        .gas_limit = 10000, .gas_used = 5000, .base_fee_per_gas = 1000};
 
     auto const result1 = static_validate_header<EVMC_FRONTIER>(header1);
     EXPECT_EQ(result1.error(), BlockError::FieldBeforeFork);
 
     static BlockHeader const header2{
-        .ommers_hash = NULL_LIST_HASH,
-        .gas_limit = 10000,
-        .gas_used = 5000,
-        .base_fee_per_gas = std::nullopt};
+        .gas_limit = 10000, .gas_used = 5000, .base_fee_per_gas = std::nullopt};
 
     auto const result2 = static_validate_header<EVMC_LONDON>(header2);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
@@ -228,8 +225,11 @@ TEST(Validation, base_fee_per_gas_existence)
 
 TEST(Validation, withdrawal_root_existence)
 {
+    EthereumMainnet chain;
+
     static BlockHeader const header1{
         .ommers_hash = NULL_LIST_HASH,
+        .number = 0, // FRONTIER
         .gas_limit = 10000,
         .gas_used = 5000,
         .base_fee_per_gas = std::nullopt,
@@ -240,8 +240,10 @@ TEST(Validation, withdrawal_root_existence)
 
     static BlockHeader const header2{
         .ommers_hash = NULL_LIST_HASH,
+        .number = 17034870, // SHANGHAI
         .gas_limit = 10000,
         .gas_used = 5000,
+        .timestamp = 1681338455, // SHANGHAI
         .base_fee_per_gas = 1000,
         .withdrawals_root = std::nullopt};
 
@@ -255,7 +257,6 @@ TEST(Validation, invalid_nonce)
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
     static BlockHeader const header{
-        .ommers_hash = NULL_LIST_HASH,
         .gas_limit = 10000,
         .gas_used = 5000,
         .nonce = nonce,

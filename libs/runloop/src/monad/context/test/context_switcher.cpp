@@ -18,24 +18,59 @@
 #include <stdexcept>
 #include <utility>
 
-/* Runtime pluggable context switchers:
-
+/* Runtime pluggable context switchers with GDB IPC enabled:
 
    Testing none switcher ...
-   Constructed and destroyed none switcher contexts at 4.26533e+07 ops/sec which
-   is 23.4464 ns/op.
+
+   Constructed and destroyed none switcher contexts at 2.21733e+07 ops/sec which
+is 45.1057 ns/op.
 
 
    Testing setjmp/longjmp switcher ...
-   Constructed and destroyed setjmp/longjmp switcher contexts at 249754 ops/sec
-   which is 4004.1 ns/op.
+
+   Constructed and destroyed setjmp/longjmp switcher contexts at 67157 ops/sec
+which is 14892.6 ns/op.
+
+   Switched 1000000 setjmp/longjmp switcher contexts at 1.75439e+07 ops/sec
+which is 57.7857 ns/op.
 
 
-   Testing monad fiber switcher ...
-   Constructed and destroyed monad fiber switcher contexts at 286373 ops/sec
-   which is 3492.37 ns/op.
+   Testing fcontext switcher ...
+
+   Constructed and destroyed fcontext switcher contexts at 69160.6 ops/sec which
+is 14460.1 ns/op.
+
+   Switched 1000000 fcontext switcher contexts at 2e+07 ops/sec which is 50.9227
+ns/op.
+*/
+
+/* Runtime pluggable context switchers with GDB IPC disabled:
+
+   Testing none switcher ...
+
+   Constructed and destroyed none switcher contexts at 2.223e+07 ops/sec which
+   is 44.9921 ns/op.
 
 
+   Testing setjmp/longjmp switcher ...
+
+   Constructed and destroyed setjmp/longjmp switcher contexts at 66371.7 ops/sec
+   which is 15066.8 ns/op.
+
+   Switched 1000000 setjmp/longjmp switcher contexts at 1.5625e+07 ops/sec which
+   is 64.3646 ns/op.
+
+
+   Testing fcontext switcher ...
+
+   Constructed and destroyed fcontext switcher contexts at 69356.9 ops/sec which
+   is 14419.5 ns/op.
+
+   Switched 1000000 fcontext switcher contexts at 2.12766e+07 ops/sec which
+   is 47.0094 ns/op.
+*/
+
+/*
 Max creation limits before we run out of RAM:
 
     - none switcher was stopped after 2 billion instances, likely could go on

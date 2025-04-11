@@ -8,6 +8,7 @@
 #include <monad/core/fmt/receipt_fmt.hpp> // NOLINT
 #include <monad/core/keccak.h>
 #include <monad/core/keccak.hpp>
+#include <monad/core/log_level_map.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
@@ -23,12 +24,14 @@
 
 #include <CLI/CLI.hpp>
 #include <evmc/hex.hpp>
+#include <quill/Quill.h>
 #include <quill/bundled/fmt/core.h>
 #include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -38,6 +41,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <span>
 #include <spanstream>
 #include <stdexcept>
@@ -46,6 +50,7 @@
 #include <system_error>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -130,23 +135,28 @@ namespace
             (code.empty()
                  ? "EMPTY"
                  : fmt::format(
-                       "{}", fmt::join(std::as_bytes(std::span(code)), ""))));
+                       "0x{:02x}",
+                       fmt::join(std::as_bytes(std::span(code)), ""))));
     }
 }
 
 struct DbStateMachine
 {
     Db &db;
+
     uint64_t curr_version{INVALID_BLOCK_ID};
+    std::optional<uint64_t> curr_round{}; // nullopt means finalized
+    Nibbles curr_section_prefix{};
     unsigned char curr_table_id{INVALID_NIBBLE};
+
     enum class DbState
     {
         unset = 0,
         version_number,
+        proposal_or_finalize,
         table,
         invalid
     } state{DbState::unset};
-    NodeCursor cursor;
 
     explicit DbStateMachine(Db &db)
         : db(db)
@@ -155,11 +165,16 @@ struct DbStateMachine
 
     void set_version(uint64_t const version)
     {
+        MONAD_ASSERT(version != INVALID_BLOCK_ID);
         if (state != DbState::unset) {
-            fmt::println("Error setting version use 'back' to move the cursor "
-                         "back up and try again");
+            fmt::println(
+                "Error: already at version {}, use 'back' to move cursor "
+                "up and try again",
+                curr_version);
             return;
         }
+        MONAD_ASSERT(curr_version == INVALID_BLOCK_ID);
+        MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
 
         auto const min_version = db.get_earliest_block_id();
         auto const max_version = db.get_latest_block_id();
@@ -173,18 +188,93 @@ struct DbStateMachine
             return;
         }
 
-        fmt::println("Setting version to {}...", version);
         curr_version = version;
         state = DbState::version_number;
+
+        fmt::println("Success! Set version to {}\n", curr_version);
+        if (list_finalized_and_proposals(version)) {
+            fmt::println("Type \"proposal [round]\" or "
+                         "\"finalized\" to set section");
+        }
+        else {
+            fmt::println(
+                "WARNING: version {} has no proposals or finalized section",
+                curr_version);
+        }
+    }
+
+    // Returns `true` if at least one finalized or proposal section exists,
+    // otherwise `false`.
+    bool list_finalized_and_proposals(uint64_t const version)
+    {
+        if (version == INVALID_BLOCK_ID) {
+            fmt::println("Error: invalid version to list sections, set to a "
+                         "valid version and try again");
+            return false;
+        }
+        auto const finalized_res = db.find(finalized_nibbles, version);
+        auto rounds = get_proposal_rounds(db, version);
+        if (finalized_res.has_error() && rounds.empty()) {
+            return false;
+        }
+        std::sort(rounds.begin(), rounds.end());
+        fmt::println("List sections of version {}: ", version);
+        if (finalized_res.has_value()) {
+            fmt::println("    finalized : yes ", version);
+        }
+        else {
+            fmt::println("    finalized : no ", version);
+        }
+        fmt::println("    proposals : {}\n", rounds);
+        return true;
+    }
+
+    void set_proposal_or_finalized(std::optional<uint64_t> const round)
+    {
+        if (state != DbState::version_number) {
+            fmt::println("Error: at wrong part of trie, only allow set section "
+                         "when cursor is set to a version.");
+            return;
+        }
+        MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
+        if (round.has_value()) { // set proposal
+            auto const prefix = proposal_prefix(round.value());
+            if (db.find(prefix, curr_version).has_value()) {
+                curr_section_prefix = prefix;
+                curr_round = round;
+                state = DbState::proposal_or_finalize;
+                fmt::println(
+                    "Success! Set to proposal {} of version {}",
+                    round.value(),
+                    curr_version);
+            }
+            else {
+                fmt::println("Could not locate round {}", round.value());
+            }
+        }
+        else {
+            if (db.find(finalized_nibbles, curr_version).has_value()) {
+                curr_section_prefix = finalized_nibbles;
+                state = DbState::proposal_or_finalize;
+                fmt::println(
+                    "Success! Set to finalized of version {}", curr_version);
+            }
+            else {
+                fmt::println(
+                    "Version {} does not contain finalized section",
+                    curr_version);
+            }
+        }
     }
 
     void set_table(unsigned char table_id)
     {
-        if (state != DbState::version_number) {
+        if (state != DbState::proposal_or_finalize) {
             fmt::println("Error: at wrong part of trie, only allow set table "
                          "when cursor is set to a specific version number.");
             return;
         }
+        MONAD_ASSERT(curr_section_prefix.nibble_size() > 0);
 
         if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
             table_id == RECEIPT_NIBBLE) {
@@ -192,9 +282,10 @@ struct DbStateMachine
                 "Setting cursor to version {}, table {} ...",
                 curr_version,
                 table_as_string(table_id));
-            auto const res = db.find(concat(table_id), curr_version);
+            auto const res =
+                db.find(concat(curr_section_prefix, table_id), curr_version);
             if (res.has_value()) {
-                cursor = res.assume_value();
+                NodeCursor const cursor = res.assume_value();
                 state = DbState::table;
                 curr_table_id = table_id;
                 if (curr_table_id != CODE_NIBBLE) {
@@ -227,21 +318,41 @@ struct DbStateMachine
             fmt::println("Error: at wrong part of trie, please navigate cursor "
                          "to a table before lookup.");
         }
+        MONAD_ASSERT(!curr_section_prefix.empty());
+        MONAD_ASSERT(curr_table_id != INVALID_NIBBLE);
         fmt::println(
             "Looking up key {} \nat version {} on table {} ... ",
             key,
             curr_version,
             table_as_string(curr_table_id));
-        return db.find(cursor, key, curr_version);
+        return db.find(
+            concat(curr_section_prefix, curr_table_id, key), curr_version);
     }
 
     void back()
     {
         switch (state) {
         case DbState::table:
+            state = DbState::proposal_or_finalize;
+            if (curr_round.has_value()) {
+                fmt::println(
+                    "At proposal round {} of version {}",
+                    curr_round.value(),
+                    curr_version);
+            }
+            else {
+                fmt::println(
+                    "At finalized section of version {}", curr_version);
+            }
+            break;
+        case DbState::proposal_or_finalize:
             state = DbState::version_number;
-            cursor = NodeCursor{};
-            fmt::println("At version {}.", curr_version);
+            curr_section_prefix = {};
+            curr_round = std::nullopt;
+            fmt::println(
+                "At version {}. Type \"proposal [round]\" or "
+                "\"finalized\" to set section",
+                curr_version);
             break;
         case DbState::version_number:
             curr_version = INVALID_BLOCK_ID;
@@ -250,7 +361,6 @@ struct DbStateMachine
             break;
         default:
             curr_version = INVALID_BLOCK_ID;
-            fmt::println("Cursor is unset.");
         }
         curr_table_id = INVALID_NIBBLE;
     }
@@ -262,9 +372,12 @@ void print_db_version_info(Db &db)
     auto const max_version = db.get_latest_block_id();
     if (min_version != INVALID_BLOCK_ID && max_version != INVALID_BLOCK_ID) {
         fmt::println(
-            "Database is open with minimum version {} and maximum version {}",
+            "Database is open with minimum version {} and maximum version {},\n"
+            "latest finalized version {}, latest verified version {}",
             min_version,
-            max_version);
+            max_version,
+            db.get_latest_finalized_block_id(),
+            db.get_latest_verified_block_id());
     }
     else {
         throw std::runtime_error("This is an empty Db that contains no valid "
@@ -281,7 +394,10 @@ void print_help()
     fmt::print(
         "List of commands:\n\n"
         "version [version_number]     -- Set the database version\n"
-        "table [state/receipt/code]   -- Set the trie to query\n"
+        "proposal [round_number] or finalized -- Set the section to query\n"
+        "list sections                -- List any proposal or finalized "
+        "section in current version\n"
+        "table [state/receipt/code]   -- Set the table to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
@@ -303,6 +419,19 @@ void do_version(DbStateMachine &sm, std::string_view const version)
     }
     else {
         sm.set_version(v);
+    }
+}
+
+void do_proposal(DbStateMachine &sm, std::string_view const round)
+{
+    uint64_t r{};
+    auto [_, ec] =
+        std::from_chars(round.data(), round.data() + round.size(), r);
+    if (ec != std::errc()) {
+        fmt::println("Invalid round: please input a number.");
+    }
+    else {
+        sm.set_proposal_or_finalized(r);
     }
 }
 
@@ -446,134 +575,109 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
         return;
     }
     auto receipt_encoded = receipt_query_res.value().node->value();
-    auto const receipt_res = rlp::decode_receipt(receipt_encoded);
+    auto const receipt_res = decode_receipt_db(receipt_encoded);
     if (!receipt_res) {
         fmt::println(
             "Could not decode receipt -- {}",
             receipt_res.error().message().c_str());
     }
-    auto const decoded = receipt_res.value();
+    auto const decoded = receipt_res.value().first;
     print_receipt(decoded);
 }
 
 void do_node_stats(DbStateMachine &sm)
 {
-    struct DepthMetadata
+    std::unordered_map<std::vector<bool>, size_t> metadata;
+
+    class Traverse final : public TraverseMachine
     {
-        uint32_t node_count;
-        uint32_t leaf_count;
-        uint32_t branch_count;
-        std::vector<uint32_t> nibble_depth;
-    };
+        std::unordered_map<std::vector<bool>, size_t> &metadata_;
+        std::vector<bool> had_values_;
 
-    using TrieMetadata = std::vector<DepthMetadata>;
-    TrieMetadata metadata;
-
-    struct Traverse final : public TraverseMachine
-    {
-        TrieMetadata &metadata;
-        unsigned nibble_depth;
-        unsigned depth;
-        monad::mpt::NibblesView const root;
-
-        Traverse(TrieMetadata &metadata_, NibblesView const root_ = {})
-            : metadata{metadata_}
-            , nibble_depth{0}
-            , depth{0}
-            , root{root_}
+    public:
+        explicit Traverse(
+            std::unordered_map<std::vector<bool>, size_t> &metadata)
+            : metadata_{metadata}
         {
         }
 
         Traverse(Traverse const &other) = default;
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool down(unsigned char const, Node const &node) override
         {
-            if (branch == INVALID_BRANCH) {
-                note(node);
-                return true;
-            }
-
-            ++depth;
-            nibble_depth += 1 + node.path_nibble_view().nibble_size();
-            note(node);
+            had_values_.push_back(node.has_value());
+            ++metadata_[had_values_];
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void up(unsigned char const, Node const &) override
         {
-            if (branch == INVALID_BRANCH) {
-                return;
-            }
-            unsigned const subtrahend =
-                1 + node.path_nibble_view().nibble_size();
-            MONAD_ASSERT(nibble_depth >= subtrahend);
-            nibble_depth -= subtrahend;
-            --depth;
+            had_values_.pop_back();
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
         {
             return std::make_unique<Traverse>(*this);
         }
+    } traverse(metadata);
 
-        void note(Node const &node)
-        {
-            metadata.resize(
-                std::max(metadata.size(), static_cast<size_t>(depth) + 1));
-
-            ++metadata[depth].node_count;
-            metadata[depth].leaf_count +=
-                static_cast<uint32_t>(node.value_len > 0);
-            metadata[depth].branch_count +=
-                static_cast<uint32_t>(node.number_of_children() > 0);
-            metadata[depth].nibble_depth.emplace_back(nibble_depth);
+    auto cursor_res = sm.db.find(
+        concat(sm.curr_section_prefix, sm.curr_table_id), sm.curr_version);
+    if (cursor_res.has_value()) {
+        if (sm.db.traverse(cursor_res.value(), traverse, sm.curr_version) ==
+            false) {
+            fmt::println(
+                "WARNING: Traverse finished early because version {} got "
+                "pruned from db history",
+                sm.curr_version);
+            return;
         }
-    } traverse(metadata, concat(sm.curr_table_id));
+    }
+    else {
+        fmt::println(
+            "Error: can't start traverse because current version {} already "
+            "got pruned from db history",
+            sm.curr_version);
+        return;
+    }
 
-    sm.db.traverse(sm.cursor, traverse, sm.curr_version);
-
-    auto agg_stats = [](std::vector<uint32_t> const &data)
-        -> std::tuple<size_t, double, double> {
-        auto const size = static_cast<double>(data.size());
-        if (size == 0) {
-            return std::make_tuple(size, NAN, NAN);
+    std::vector<std::pair<size_t, std::vector<bool>>> sorted_metadata;
+    size_t total{0};
+    size_t leaves{0};
+    size_t branches{0};
+    for (auto const &[had_values, count] : metadata) {
+        sorted_metadata.emplace_back(count, had_values);
+        total += count;
+        if (had_values.back()) {
+            leaves += count;
         }
-        double const mean =
-            std::accumulate(data.begin(), data.end(), 0.0) / size;
-
-        double const pop_var = std::accumulate(
-                                   data.begin(),
-                                   data.end(),
-                                   0.0,
-                                   [mean](double acc, uint32_t const val) {
-                                       double const dev = val - mean;
-                                       return acc + dev * dev;
-                                   }) /
-                               size;
-
-        return std::make_tuple(size, mean, sqrt(pop_var));
-    };
+        else {
+            branches += count;
+        }
+    }
+    std::ranges::sort(sorted_metadata, std::ranges::greater());
 
     fmt::println(
-        "{:>5} {:>15} {:>15} {:>15} {:>20}",
-        "depth",
-        "# nodes",
-        "# leaves",
-        "# branches",
-        "nibble depth");
-    auto format_mean = [](double mean, double stddev) {
-        return std::isnan(mean) ? "N/A"
-                                : fmt::format("{:.2f} (±{:.2f})", mean, stddev);
-    };
-    for (unsigned depth = 0; depth < metadata.size(); ++depth) {
-        auto [_, mean_nd, stddev_nd] = agg_stats(metadata[depth].nibble_depth);
-        fmt::println(
-            "{:>5} {:>15} {:>15} {:>15} {:>20}",
-            depth,
-            metadata[depth].node_count,
-            metadata[depth].leaf_count,
-            metadata[depth].branch_count,
-            format_mean(mean_nd, stddev_nd));
+        "Statistics:\nTotal={}\nLeaves={}\nBranches={}\n",
+        total,
+        leaves,
+        branches);
+    if (total > 0) {
+        std::string out;
+        for (auto const &[count, had_values] : sorted_metadata) {
+            for (bool const has_value : had_values) {
+                out += has_value ? "L" : "B";
+            }
+            fmt::format_to(
+                std::back_inserter(out),
+                ",{},{},{},{:.2f}%\n",
+                had_values.size(),
+                std::ranges::count(had_values, true),
+                count,
+                ((double)count / (double)total) * 100);
+        }
+        fmt::println("path,depth,leaves,count,percentage");
+        fmt::println("{}", out);
     }
 }
 
@@ -597,6 +701,7 @@ int interactive_impl(Db &db)
             continue;
         }
 
+        auto const begin = std::chrono::steady_clock::now();
         if (tokens[0] == "help") {
             print_help();
         }
@@ -605,15 +710,33 @@ int interactive_impl(Db &db)
                 do_version(state_machine, tokens[1]);
             }
             else {
-                fmt::println("No version number provided.");
+                fmt::println(
+                    "Wrong format to set version, type 'version [number]'");
             }
+        }
+        else if (tokens[0] == "list") {
+            state_machine.list_finalized_and_proposals(
+                state_machine.curr_version);
+        }
+        else if (tokens[0] == "proposal") {
+            if (tokens.size() == 2) {
+                do_proposal(state_machine, tokens[1]);
+            }
+            else {
+                fmt::println("Wrong format to set proposal, type 'proposal "
+                             "[round number]'");
+            }
+        }
+        else if (tokens[0] == "finalized") {
+            state_machine.set_proposal_or_finalized(std::nullopt);
         }
         else if (tokens[0] == "table") {
             if (tokens.size() == 2) {
                 do_table(state_machine, tokens[1]);
             }
             else {
-                fmt::println("No table number provided.");
+                fmt::println("Wrong format to set table, type 'table "
+                             "[state/code/receipt]'");
             }
         }
         else if (tokens[0] == "get") {
@@ -657,13 +780,16 @@ int interactive_impl(Db &db)
         else {
             fmt::println("Invalid command: \"{}\". See \"help\"", tokens[0]);
         }
+        fmt::println("Took {}", std::chrono::steady_clock::now() - begin);
     }
     return 0;
 }
 
 int main(int argc, char *argv[])
 {
-    std::vector<std::filesystem::path> dbname_paths{"test.db"};
+    std::vector<std::filesystem::path> dbname_paths;
+    std::optional<unsigned> sq_thread_cpu = std::nullopt;
+    auto log_level = quill::LogLevel::Info;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -671,6 +797,14 @@ int main(int argc, char *argv[])
            dbname_paths,
            "A comma-separated list of previously created database paths")
         ->required();
+    cli.add_option(
+        "--sq_thread_cpu",
+        sq_thread_cpu,
+        "CPU core binding for the io_uring SQPOLL thread. Specifies the CPU "
+        "set for the kernel polling thread in SQPOLL mode. Defaults to "
+        "disabled SQPOLL mode.");
+    cli.add_option("--log_level", log_level, "level of logging")
+        ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     try {
         cli.parse(argc, argv);
     }
@@ -681,15 +815,30 @@ int main(int argc, char *argv[])
         return cli.exit(e);
     }
 
+    auto stdout_handler = quill::stdout_handler();
+    stdout_handler->set_pattern(
+        "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
+        "%(message)",
+        "%Y-%m-%d %H:%M:%S.%Qns",
+        quill::Timezone::GmtTime);
+    quill::Config cfg;
+    cfg.default_handlers.emplace_back(stdout_handler);
+    quill::configure(cfg);
+    quill::start(true);
+    quill::get_root_logger()->set_log_level(log_level);
+    LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+    quill::flush();
+
     if (!isatty(STDIN_FILENO)) {
         fmt::println("Not running interactively! Pass -it to run inside a "
                      "docker container.");
         return 1;
     }
 
-    ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = dbname_paths};
-
-    Db ro_db{ro_config};
+    ReadOnlyOnDiskDbConfig const ro_config{
+        .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
+    AsyncIOContext io_ctx{ro_config};
+    Db ro_db{io_ctx};
 
     fmt::print("Opening read only database ");
     for (auto const &dbname : dbname_paths) {

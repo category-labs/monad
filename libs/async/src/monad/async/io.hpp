@@ -38,7 +38,8 @@ struct IORecord
     unsigned max_inflight_wr{0};
 
     unsigned nreads{0};
-    unsigned reads_retried{0}; // Reads which got a EAGAIN and were retried
+    // Reads and scatter reads which got a EAGAIN and were retried
+    unsigned reads_retried{0};
 };
 
 class AsyncIO final
@@ -143,7 +144,11 @@ public:
 
     file_offset_t chunk_capacity(size_t id) const noexcept
     {
-        MONAD_ASSERT(id < seq_chunks_.size());
+        MONAD_ASSERT_PRINTF(
+            id < seq_chunks_.size(),
+            "id %zu seq chunks size %zu",
+            id,
+            seq_chunks_.size());
         return seq_chunks_[id].ptr->capacity();
     }
 
@@ -517,7 +522,8 @@ private:
             std::allocator_traits<connected_operation_storage_allocator_type_>;
         unsigned char *mem = (unsigned char *)traits::allocate(
             connected_operation_storage_pool_, 1);
-        MONAD_ASSERT(mem != nullptr);
+        MONAD_ASSERT_PRINTF(
+            mem != nullptr, "failed due to %s", strerror(errno));
         MONAD_DEBUG_ASSERT(((void)mem[0], true));
         auto ret = std::unique_ptr<
             connected_type,

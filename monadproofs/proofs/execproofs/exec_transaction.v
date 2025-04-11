@@ -45,13 +45,16 @@ Section with_Sigma.
                          (Tnamed
                             (Ninst (Nscoped (Nglobal (Nid "std")) (Nid "optional"))
                                [Atype (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")]))])));
-                    Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])))]))
+                    Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])));
+                    "unsigned long"%cpp_type
+             ]))
              [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))]) as validate_spec with
       (
         \arg{txp} "tx" (Vref txp)
         \prepost{qtx t} txp |-> TransactionR qtx t
         \arg{basefeep} "base" (Vref basefeep)
-        \arg{chainidp} "base" (Vref chainidp)
+        \arg{chainidp} "chainid" (Vref chainidp)
+        \arg{maxcodesize} "maxcodesize" (Vint maxcodesize)
        \post{retp} [Vptr retp] (reference_to
     (Tnamed
        (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
@@ -193,10 +196,20 @@ Require Import bedrock.prelude.lens.
   end.
 
 
-  Search Bvector.Bvector Z.
-cpp.spec ((Nscoped (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
-       (Nfunction function_qualifiers.N ("set_original_nonce")
-          [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address")))); "unsigned long"%cpp_type])))
+    Fixpoint isFunctionNamed2 (fname: ident) (n:name): bool :=
+    match n with
+    | Nglobal  (Nfunction _ i _) => bool_decide (i=fname)
+    | Ninst nm _ => isFunctionNamed2 fname nm
+    | Nscoped _ (Nfunction _ i _) => bool_decide (i=fname)
+    | _ => false
+    end.
+
+    Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce")).
+    (*
+  cpp.spec ((Nscoped
+               (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
+               (Nfunction function_qualifiers.N ("set_original_nonce")
+                  [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address")))); Tconst ("unsigned long"%cpp_type)])))
   as set_original_nonce_spec with
     (fun this:ptr =>
        \arg{addrp} "a" (Vptr addrp)
@@ -205,13 +218,16 @@ cpp.spec ((Nscoped (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
        \pre{au} this |-> StateR au
        \post Exists auf, this |-> StateR auf **
                 [| set_original_nonce addr (Zdigits.Z_to_binary 256 nonce) au auf |]
-    ).
+    ). *)
 #[global] Instance : LearnEq2 (addressR) := ltac:(solve_learnable).
 #[global] Instance : LearnEq1 (StateR) := ltac:(solve_learnable).
+
 cpp.spec (Ninst
              (Nscoped (Nglobal (Nid "monad"))
                 (Nfunction function_qualifiers.N ("execute_impl2")
-                   [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Chain"))));
+                   [
+                     Tref ((Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "CallTracerBase"))));
+                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Chain"))));
                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))));
                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHeader"))));
@@ -219,6 +235,8 @@ cpp.spec (Ninst
                     Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State")))]))
              [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])
   as execute_impl2 with (execute_impl2_specg).
+
+
   cpp.spec (Nscoped (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
           (Nctor
              [Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState")));
@@ -385,6 +403,15 @@ Definition exec_final :=
   |} execute_final_spec.
 
 (* TODO: generalize *)
+
+Definition result_val_contr_name valty :=
+  ((Ninst
+          (Nscoped resultn
+             (Nctor
+                [Trv_ref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))));
+                 Tnamed (Nscoped resultn (Nid "value_converting_constructor_tag"))]))
+          [Atype valty; Atype "void"])).
+(*
 #[ignore_errors]
 cpp.spec ((Ninst
           (Nscoped resultn
@@ -397,7 +424,8 @@ cpp.spec ((Ninst
                                \prepost{r} recp |-> ReceiptR r
                                \arg{vtag} ("vtag"%pstring) (Vptr vtag)
                                \post this |-> ResultSuccessR ReceiptR r).
-
+ *)
+(*
   cpp.spec (Nscoped (Nscoped resultn (Nid "value_converting_constructor_tag")) (Nctor []))
     as tag_constr with
       (fun (this:ptr) => \post this |-> structR ((Nscoped resultn (Nid "value_converting_constructor_tag"))) (cQp.mut 1)).
@@ -406,6 +434,7 @@ cpp.spec ((Ninst
       (fun (this:ptr) => \pre this |-> structR ((Nscoped resultn (Nid "value_converting_constructor_tag"))) (cQp.mut 1)
                           \post emp
       ).
+*)  
   cpp.spec (Nscoped ("monad::Receipt") (Ndtor))
     as rcpt_dtor with
       (fun (this:ptr) => \pre{r} this |-> ReceiptR r
@@ -514,7 +543,7 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** destr_outcome_overload
               ** incarnation_constr
              ** StateConstr
-             ** set_original_nonce_spec
+(*             ** set_original_nonce_spec *)
              ** execute_impl2
              ** destr_incarnation
              ** can_merge
@@ -523,10 +552,9 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** result_value
              ** exec_final
              ** merge
-             ** result_val_constr
-             ** result_val_constr
-             ** tag_constr
-             ** tag_dtor
+(*             ** result_val_constr *)
+(*             ** tag_constr *)
+(*             ** tag_dtor *)
              ** rcpt_dtor
              ** res_dtor
              ** st_dtor

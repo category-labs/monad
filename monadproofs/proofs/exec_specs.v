@@ -420,6 +420,7 @@ Section with_Sigma.
 
   Definition execute_impl2_specg : WpSpec mpredI val val :=
     \with (speculative: bool) (* making this the first argument helps in proofs *)
+     \arg{ctracerp} "" (Vref ctracerp)
     \arg{chainp :ptr} "chain" (Vref chainp)
     \prepost{(qchain:Qp) (chain: Chain)} chainp |-> ChainR qchain chain
     \arg{txp} "tx" (Vref txp)
@@ -450,7 +451,7 @@ Section with_Sigma.
 
   Definition IncarnationR (q:Qp) (i: Indices): Rep. Proof. Admitted.
 
-  cpp.spec "monad::BlockState::can_merge(const monad::State&)"
+  cpp.spec "monad::BlockState::can_merge(monad::State&) const"
     as can_merge with ( fun (this:ptr) =>
      \arg{statep} "state" (Vptr statep) 
      \prepost{assumptionsAndUpdates} statep |-> StateR assumptionsAndUpdates

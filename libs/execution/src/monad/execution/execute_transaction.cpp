@@ -203,6 +203,24 @@ Result<evmc::Result> execute_impl2(
         max_code_size);
 }
 
+//temporary hack to avoid virtual dispatch reasoning on chain
+// if the return type is not const, a precondition of the wp_const rule in C++ semantics is violated
+const monad::uint256_t get_chain_id(Chain const &chain) {
+    return chain.get_chain_id();
+}
+
+template <typename T>
+bool has_error(const Result<T> & rec)
+{
+    return rec.has_error();
+}
+
+template <typename T>
+const T & value(const Result<T> & rec)
+{
+    return rec.value();
+}
+
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,

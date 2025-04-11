@@ -29,6 +29,9 @@ public: // TODO
     std::optional<Account> account_{};
     Map<bytes32_t, bytes32_t> storage_{};
     Map<bytes32_t, bytes32_t> transient_storage_{};
+    bool validate_exact_nonce_{false};
+    bool validate_exact_balance_{false};
+    uint256_t min_balance_{0};
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -83,6 +86,38 @@ public:
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
         transient_storage_[key] = value;
+    }
+
+    [[nodiscard]] bool validate_exact_nonce() const
+    {
+        return validate_exact_nonce_;
+    }
+
+    [[nodiscard]] bool validate_exact_balance() const
+    {
+        return validate_exact_balance_;
+    }
+
+    [[nodiscard]] uint256_t const &min_balance() const
+    {
+        return min_balance_;
+    }
+
+    void set_validate_exact_nonce()
+    {
+        validate_exact_nonce_ = true;
+    }
+
+    void set_validate_exact_balance()
+    {
+        validate_exact_balance_ = true;
+    }
+
+    void set_min_balance(uint256_t const &value)
+    {
+        if (value > min_balance_) {
+            min_balance_ = value;
+        }
     }
 };
 

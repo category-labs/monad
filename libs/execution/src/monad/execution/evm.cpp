@@ -32,8 +32,22 @@ MONAD_NAMESPACE_BEGIN
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
-    auto const balance =
-        intx::be::load<uint256_t>(state.get_balance(msg.sender));
+    auto const &account = state.recent_account(msg.sender);
+    auto const balance = account.has_value() ? account->balance : 0;
+    auto &original_state = state.original_account_state(msg.sender);
+    if (balance >= value) {
+        auto const diff = balance - value;
+        auto const &original = original_state.account_;
+        auto const original_balance =
+            original.has_value() ? original->balance : 0;
+        if (original_balance > diff) {
+            auto const min_balance = original_balance - diff;
+            original_state.set_min_balance(min_balance);
+        }
+    }
+    else {
+        original_state.set_validate_exact_balance();
+    }
     return balance >= value;
 }
 
@@ -156,18 +170,17 @@ evmc::Result create(
         return result;
     }
 
-    auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
+    if (!state.increment_nonce(msg.sender)) {
         // overflow
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
-    state.set_nonce(msg.sender, nonce + 1);
 
     Address const contract_address = [&] {
         if (msg.kind == EVMC_CREATE) {
-            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
+            return create_contract_address(
+                msg.sender, state.get_nonce(msg.sender) - 1); // YP Eqn. 85
         }
         else { // msg.kind == EVMC_CREATE2
             auto const code_hash = keccak256({msg.input_data, msg.input_size});

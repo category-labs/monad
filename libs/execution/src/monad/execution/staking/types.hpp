@@ -22,7 +22,7 @@ struct ValidatorInfo
     uint256_t active_shares;
     uint256_t activating_stake;
     uint256_t deactivating_shares;
-    uint256_t epoch_rewards;
+    uint256_t rewards[2];
 };
 
 struct DelegatorInfo

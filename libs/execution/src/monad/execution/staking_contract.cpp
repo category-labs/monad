@@ -3,6 +3,7 @@
 #include <monad/contract/storage_variable.hpp>
 #include <monad/contract/topics.hpp>
 #include <monad/core/blake3.hpp>
+#include <monad/core/bytes_hash_compare.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
 #include <monad/core/unaligned.hpp>
@@ -29,6 +30,7 @@
 
 #include <cstring>
 #include <memory>
+#include <set>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -48,7 +50,7 @@ namespace
     ///////////////
     //  Staking  //
     ///////////////
-    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
+    constexpr uint256_t MIN_STAKE_AMOUNT{10e18}; // FIXME
     constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
 
     uint256_t increment_id(StorageVariable<uint256_t> &storage)
@@ -203,7 +205,7 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
             .active_shares = 0,
             .activating_stake = 0,
             .deactivating_shares = 0,
-            .epoch_rewards = 0});
+            .rewards = {}});
 
     vars.validator_set.push(validator_id);
 
@@ -344,7 +346,7 @@ Result<void> StakingContract::syscall_reward_validator(
     }
 
     state_.add_to_balance(ca_, BASE_STAKING_REWARD);
-    validator_info->epoch_rewards += BASE_STAKING_REWARD;
+    validator_info->rewards[1] += BASE_STAKING_REWARD;
     validator_info_storage.store(validator_info.value());
 
     return success();
@@ -359,6 +361,8 @@ Result<void> StakingContract::syscall_on_epoch_change()
     uint256_t const epoch = maybe_epoch.value();
 
     // 1. Apply staking rewards
+    std::unordered_map<uint256_t, uint256_t, BytesHashCompare<uint256_t>>
+        val_id_to_index;
     uint256_t const num_validators = vars.validator_set.length();
     for (uint256_t i = 0; i < num_validators; i += 1) {
         auto const validator_id_storage = vars.validator_set.get(i);
@@ -367,6 +371,8 @@ Result<void> StakingContract::syscall_on_epoch_change()
             return StakingSyscallError::InvalidState;
         }
 
+        val_id_to_index[validator_id.value()] = i;
+
         auto valinfo_storage = vars.validator_info(validator_id.value());
         auto valinfo = valinfo_storage.load();
         if (MONAD_UNLIKELY(!valinfo.has_value())) {
@@ -374,9 +380,10 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         // TODO: apply commission rate
-        valinfo->total_stake += valinfo->epoch_rewards;
-        valinfo->active_stake += valinfo->epoch_rewards;
-        valinfo->epoch_rewards = 0;
+        valinfo->total_stake += valinfo->rewards[0];
+        valinfo->active_stake += valinfo->rewards[0];
+        valinfo->rewards[0] = valinfo->rewards[1];
+        valinfo->rewards[1] = 0;
         valinfo_storage.store(valinfo.value());
     }
 
@@ -428,6 +435,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
     StorageArray<uint256_t> withdrawal_queue_storage =
         vars.withdrawal_queue(epoch);
     uint256_t const num_withdrawals = withdrawal_queue_storage.length();
+    std::set<uint256_t, std::greater<uint256_t>> valset_removals;
     for (uint256_t i = 0; i < num_withdrawals; i += 1) {
         auto withdrawal_id = withdrawal_queue_storage.pop();
         auto withdrawal_request_storage =
@@ -462,6 +470,17 @@ Result<void> StakingContract::syscall_on_epoch_change()
         delinfo->balance += tokens_to_burn;
         delinfo->active_shares -= withdrawal_request->shares;
 
+        if (withdrawal_request->delegator == valinfo->auth_address) {
+            auto const tokens_after_withdrawal = shares_to_tokens(
+                valinfo->active_stake,
+                valinfo->active_shares,
+                delinfo->active_shares);
+            if (MONAD_LIKELY(tokens_after_withdrawal < MIN_STAKE_AMOUNT)) {
+                valset_removals.insert(
+                    val_id_to_index[withdrawal_request->validator_id]);
+            }
+        }
+
         valinfo_storage.store(valinfo.value());
         delinfo_storage.store(delinfo.value());
 
@@ -469,6 +488,12 @@ Result<void> StakingContract::syscall_on_epoch_change()
     }
     if (MONAD_UNLIKELY(withdrawal_queue_storage.length() != 0)) {
         return StakingSyscallError::CouldNotClearStorage;
+    }
+
+    for (auto const &removal : valset_removals) {
+        auto to_remove = vars.validator_set.get(removal);
+        uint256_t const id = vars.validator_set.pop();
+        to_remove.store(id);
     }
 
     return success();

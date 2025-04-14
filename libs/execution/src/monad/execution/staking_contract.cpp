@@ -119,7 +119,7 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
 
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
                                     BLS_COMPRESSED_PUBKEY_SIZE +
-                                    sizeof(Address);
+                                    sizeof(Address) + sizeof(uint256_t);
     constexpr size_t SIGNATURES_SIZE =
         SECP_SIGNATURE_SIZE + BLS_COMPRESSED_SIGNATURE_SIZE;
 
@@ -127,22 +127,30 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != EXPECTED_INPUT_SIZE)) {
-        return INPUT_SIZE_INVALID;
+        return INVALID_INPUT;
     }
 
     // extract individual inputs
     byte_string_view message = input.substr(0, MESSAGE_SIZE);
 
     byte_string_view reader = input;
-    byte_string_view secp_pubkey_serialized =
-        consume_bytes(reader, SECP_COMPRESSED_PUBKEY_SIZE);
-    byte_string_view bls_pubkey_serialized =
-        consume_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE);
-    byte_string_view auth_address = consume_bytes(reader, sizeof(Address));
+    auto const secp_pubkey_serialized = unaligned_load<byte_string_fixed<33>>(
+        consume_bytes(reader, SECP_COMPRESSED_PUBKEY_SIZE).data());
+    auto const bls_pubkey_serialized = unaligned_load<byte_string_fixed<48>>(
+        consume_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE).data());
+    auto const auth_address =
+        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
+    auto const signed_stake = intx::be::unsafe::load<uint256_t>(
+        consume_bytes(reader, sizeof(uint256_t)).data());
     byte_string_view secp_signature_serialized =
         consume_bytes(reader, SECP_SIGNATURE_SIZE);
     byte_string_view bls_signature_serialized =
         consume_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE);
+    auto const stake = intx::be::load<uint256_t>(msg.value);
+
+    if (MONAD_UNLIKELY(signed_stake != stake)) {
+        return INVALID_INPUT;
+    }
 
     // Verify SECP signature
     Secp256k1_Pubkey secp_pubkey(*secp_context.get(), secp_pubkey_serialized);
@@ -171,37 +179,44 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
         return BLS_SIGNATURE_VERIFICATION_FAILED;
     }
 
-    uint256_t const validator_id = increment_id(vars.last_validator_id);
-
+    // Check if validator already exists
     Address const address = address_from_secpkey(secp_pubkey.serialize());
-    vars.validator_id(address).store(validator_id);
+    auto validator_id_storage = vars.validator_id(address);
+    auto validator_id_bls_storage =
+        vars.validator_id_bls(bls_pubkey_serialized);
+    if (MONAD_UNLIKELY(
+            validator_id_storage.load().has_value() ||
+            validator_id_bls_storage.load().has_value())) {
+        return VALIDATOR_EXISTS;
+    }
+
+    uint256_t const validator_id = increment_id(vars.last_validator_id);
+    validator_id_storage.store(validator_id);
+    validator_id_bls_storage.store(validator_id);
 
     vars.validator_info(validator_id)
-        .store(
-            ValidatorInfo{
-                .auth_address = unaligned_load<Address>(auth_address.data()),
-                .bls_pubkey = unaligned_load<byte_string_fixed<48>>(
-                    bls_pubkey_serialized.data()),
-                .total_stake = 0,
-                .active_stake = 0,
-                .active_shares = 0,
-                .activating_stake = 0,
-                .deactivating_shares = 0,
-                .epoch_rewards = 0});
+        .store(ValidatorInfo{
+            .auth_address = auth_address,
+            .bls_pubkey = bls_pubkey_serialized,
+            .total_stake = 0,
+            .active_stake = 0,
+            .active_shares = 0,
+            .activating_stake = 0,
+            .deactivating_shares = 0,
+            .epoch_rewards = 0});
 
     vars.validator_set.push(validator_id);
 
-    state_.store_log(
-        Receipt::Log{
-            .data = byte_string{secp_pubkey_serialized} +
-                    byte_string{bls_pubkey_serialized},
-            .topics = create_topics(
-                "AddValidator(bytes32,address,bytes,bytes)",
-                validator_id,
-                address),
-            .address = ca_});
+    // state_.store_log(
+    //     Receipt::Log{
+    //         .data = byte_string{secp_pubkey_serialized} +
+    //                 byte_string{bls_pubkey_serialized},
+    //         .topics = create_topics(
+    //             "AddValidator(bytes32,address,bytes,bytes)",
+    //             validator_id,
+    //             address),
+    //         .address = ca_});
 
-    auto const stake = intx::be::load<uint256_t>(msg.value);
     return add_stake(validator_id, stake, msg.sender);
 }
 
@@ -227,11 +242,10 @@ StakingContract::Status StakingContract::add_stake(
     uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
     vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
-        .store(
-            DepositRequest{
-                .validator_id = validator_id,
-                .amount = amount,
-                .delegator = delegator});
+        .store(DepositRequest{
+            .validator_id = validator_id,
+            .amount = amount,
+            .delegator = delegator});
 
     delinfo->activating_stake += amount;
     valinfo->activating_stake += amount;
@@ -248,7 +262,7 @@ StakingContract::precompile_add_stake(evmc_message const &msg)
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != sizeof(uint256_t))) {
-        return INPUT_SIZE_INVALID;
+        return INVALID_INPUT;
     }
 
     auto const stake = intx::be::load<uint256_t>(msg.value);
@@ -265,7 +279,7 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
     constexpr size_t MESSAGE_SIZE =
         sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
-        return INPUT_SIZE_INVALID;
+        return INVALID_INPUT;
     }
     uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
         input.substr(0, sizeof(uint256_t)).data());
@@ -296,11 +310,10 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
 
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
-        .store(
-            WithdrawalRequest{
-                .validator_id = validator_id,
-                .shares = shares,
-                .delegator = msg.sender});
+        .store(WithdrawalRequest{
+            .validator_id = validator_id,
+            .shares = shares,
+            .delegator = msg.sender});
 
     delinfo->deactivating_shares += shares;
     valinfo->deactivating_shares += shares;
@@ -313,8 +326,7 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
 Result<void> StakingContract::syscall_reward_validator(
     byte_string_fixed<33> const &beneficiary)
 {
-    Secp256k1_Pubkey pubkey(
-        *secp_context.get(), to_byte_string_view(beneficiary));
+    Secp256k1_Pubkey pubkey(*secp_context.get(), beneficiary);
     if (MONAD_UNLIKELY(!pubkey.is_valid())) {
         return StakingSyscallError::InvalidValidatorSecpKey;
     }

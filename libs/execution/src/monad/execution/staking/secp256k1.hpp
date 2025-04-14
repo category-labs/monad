@@ -15,7 +15,7 @@ class Secp256k1_Pubkey
 
 public:
     Secp256k1_Pubkey(
-        secp256k1_context &context, byte_string_view const serialized)
+        secp256k1_context &context, byte_string_fixed<33> const &serialized)
         : context_{context}
     {
         parse_result_ = secp256k1_ec_pubkey_parse(

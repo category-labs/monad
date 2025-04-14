@@ -51,7 +51,8 @@ public:
     {
         SUCCESS = 0,
         METHOD_NOT_SUPPORTED,
-        INPUT_SIZE_INVALID,
+        INVALID_INPUT,
+        VALIDATOR_EXISTS,
         UNKNOWN_VALIDATOR,
         UNKNOWN_DELEGATOR,
         MINIMUM_STAKE_NOT_MET,
@@ -71,6 +72,7 @@ public:
             "Success",
             "Method not supported",
             "Input invalid",
+            "Validator already exists",
             "Unknown validator",
             "Unknown delegator",
             "Minimum stake not met",
@@ -130,6 +132,19 @@ public:
                 state_,
                 ca_,
                 mapping(0x3a5828ff05e4479fbcdc119cf8328b90_bytes32, address));
+        }
+
+        // mapping (address => uint256_t) validator_id
+        // This mapping only exists to ensure the same bls_key cannot be
+        // assigned to multiple validator ids.
+        StorageVariable<uint256_t>
+        validator_id_bls(byte_string_fixed<48> const &bls_pubkey) noexcept
+        {
+            return StorageVariable<uint256_t>(
+                state_,
+                ca_,
+                mapping(
+                    0x9b5d94806d34471e95f7972d795def46_bytes32, bls_pubkey));
         }
 
         // mapping(uint256 => ValidatorInfo) validator_info

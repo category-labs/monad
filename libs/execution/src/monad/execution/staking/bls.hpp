@@ -13,7 +13,7 @@ class Bls_Pubkey
     BLST_ERROR parse_result_;
 
 public:
-    Bls_Pubkey(byte_string_view const serialized)
+    Bls_Pubkey(byte_string_fixed<48> const &serialized)
     {
         parse_result_ = blst_p1_deserialize(&pubkey_, serialized.data());
     }

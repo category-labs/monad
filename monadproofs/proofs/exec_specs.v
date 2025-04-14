@@ -12,16 +12,17 @@ Require Import bedrock.auto.cpp.tactics4.
 Require Import monad.proofs.libspecs.
 Import cQp_compat.
 
-Notation resultn :=
+(* delete ? *)
+Notation resultn ty :=
                   (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-                   [Atype (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt")));
+                   [Atype ty;
                     Atype
                       (Tnamed
                          (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code")) [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
                     Atype
                       (Tnamed
                          (Ninst (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy")) (Nid "status_code_throw"))
-                            [Atype (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt")));
+                            [Atype ty;
                              Atype
                                (Tnamed
                                   (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
@@ -220,7 +221,8 @@ cpp.spec
             (transactions block)).
 
 
-Definition resultT := (Tnamed resultn).
+Definition resultT := Tnamed (resultn "monad::ExecutionResult").
+Definition ExecutionResultR (tr: TransactionResult): Rep. Proof. Admitted.
 
 Definition oResultT := (Tnamed (Ninst "std::optional" [Atype resultT])).
 
@@ -248,7 +250,7 @@ cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::
         _global "monad::results" |->
           arrayR
             oResultT
-            (fun t=> libspecs.optionR resultT (ResultSuccessR ReceiptR) 1 (garbage t))
+            (fun t=> libspecs.optionR resultT (ResultSuccessR ExecutionResultR) 1 (garbage t))
             (transactions block)
    \prepost{qs} _global "monad::senders" |->
           arrayR
@@ -257,7 +259,7 @@ cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::
             (transactions block)
    \post
       let (actual_final_state, receipts) := stateAfterTransactions (header block) preBlockState (transactions block) in
-      _global "monad::results" |-> arrayR oResultT (fun r => libspecs.optionR resultT (ResultSuccessR ReceiptR) 1 (Some r)) receipts
+      _global "monad::results" |-> arrayR oResultT (fun r => libspecs.optionR resultT (ResultSuccessR ExecutionResultR) 1 (Some r)) receipts
       ** block_statep |-> BlockState.Rauth preBlockState g actual_final_state
 
     ).
@@ -275,6 +277,7 @@ cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::
     (* todo: generalize over the template arg *)
 cpp.spec 
   "std::vector<monad::Transaction, std::allocator<monad::Transaction>>::operator[](unsigned long) const" as vector_op_monad with (vector_opg "monad::Transaction").
+
 
 (*
   erewrite sizeof.size_of_compat;[| eauto; fail| vm_compute; reflexivity].
@@ -299,7 +302,7 @@ cpp.spec
         prevp |-> PromiseConsumerR prg (OtherPromisedResources ** block_statep |-> BlockState.Rauth preBlockState g prevTxGlobalState)
     \post{retp}[Vptr retp] OtherPromisedResources ** prevp |-> PromiseUnusableR **
       let '(finalState, result) := stateAfterTransaction header i prevTxGlobalState t in
-       retp |-> ResultSuccessR ReceiptR result
+       retp |-> ResultSuccessR ExecutionResultR result
          ** block_statep |->  BlockState.Rauth preBlockState g finalState.
 
 cpp.spec ((Ninst
@@ -311,18 +314,18 @@ cpp.spec ((Ninst
                     Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState"))); Tref (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "fibers")) (Nid "promise")) [Atype "void"]))]))
              [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])) as ext1 with (execute_transaction_spec).
 
-Definition destr_res :=
+Definition destr_res {T} ty (tyR: T-> Rep):=
 λ {thread_info : biIndex} {_Σ : gFunctors} {Sigma : cpp_logic thread_info _Σ} {CU : genv},
   specify
     {|
       info_name :=
         Nscoped
-          resultn
+          (resultn ty)
           (Ndtor);
       info_type :=
         tDtor
-          resultn
-    |} (λ this : ptr, \pre{res} this |-> ResultSuccessR ReceiptR res
+          (resultn ty)
+    |} (λ this : ptr, \pre{res} this |-> ResultSuccessR tyR res
                         \post    emp).
 #[global] Instance : LearnEq2 ChainR:= ltac:(solve_learnable).
 #[global] Instance : LearnEq3 BlockState.Rfrag := ltac:(solve_learnable).

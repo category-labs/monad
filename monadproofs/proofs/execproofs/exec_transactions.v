@@ -32,7 +32,7 @@ Lemma prf: denoteModule module
              ** set_value
              ** destrop
              ** ext1
-             ** destr_res
+             ** (destr_res (Tnamed "monad::ExecutionResult") ExecutionResultR)
              |-- exect.
 Proof using MODd.
   verify_spec'.
@@ -51,10 +51,10 @@ Proof using MODd.
   slauto.
   iExists unit.
   go.
-  
+  (* TODO: construct the iExists arg below programmatically, rather than writing by hand *)
   iExists  (fun i _ =>
     let '(actual_final_state, receipts) := stateAfterTransactions (header block) preBlockState (take i (transactions block)) in
-    ((_global "monad::results" |-> arrayR oResultT (fun r => libspecs.optionR resultT (ResultSuccessR ReceiptR) 1 (Some r)) receipts)
+    ((_global "monad::results" |-> arrayR oResultT (fun r => libspecs.optionR resultT (ResultSuccessR ExecutionResultR) 1 (Some r)) receipts)
      ** ([∗ list] _ ∈ (take i (transactions block)),  (block_hash_bufferp |-> BlockHashBufferR (qbuf*/(N_to_Qp (1+ lengthN (transactions block)))) buf))
      ** ([∗ list] _ ∈ (take i (transactions block)),  (chainp |-> ChainR (qchain*/(N_to_Qp (1+ lengthN (transactions block)))) chain))
      ** _global "monad::senders" |->

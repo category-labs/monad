@@ -98,7 +98,7 @@ void fork_task(fiber::PriorityPool &priority_pool, uint64_t priority, const Task
 #define MAX_TRANSACTIONS 800
 boost::fibers::promise<void> promises[MAX_TRANSACTIONS];
 std::optional<Address> senders[MAX_TRANSACTIONS];
-std::optional<Result<ExecutionResult>> results[MAX_TRANSACTIONS];
+std::optional<Result<ExecutionResult>> results[MAX_TRANSACTIONS];// can we drop the optional? it is always a value. however, the default constructor of Result has been deleted. optional works around that.
 
 void reset_promises(uint64_t num_transactions){
     for (uint64_t i = 0; i < num_transactions; ++i) {

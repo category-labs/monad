@@ -131,11 +131,12 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
     for (auto const &[addr, j_account] : json.items()) {
         nlohmann::json const addr_json = addr;
         auto const addr_bytes = addr_json.get<Address>();
-        auto const hashed_account = to_bytes(keccak256(addr_bytes.bytes));
-        auto const db_addr_key = fmt::format("{}", hashed_account);
+        auto const db_addr_key = fmt::format("{}", addr_bytes);
+        auto const db_addr_key_hashed =
+            fmt::format("{}", to_bytes(keccak256(addr_bytes.bytes)));
 
-        ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
-        auto const &db_account = db.at(db_addr_key);
+        ASSERT_TRUE(db.contains(db_addr_key_hashed)) << db_addr_key;
+        auto const &db_account = db.at(db_addr_key_hashed);
 
         auto const expected_balance =
             fmt::format("{}", j_account.at("balance").get<uint256_t>());

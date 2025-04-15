@@ -223,15 +223,21 @@ private:
         uint256_t const &validator_id, uint256_t const &amount,
         Address const &);
 
+public:
+    using PrecompileFunc = Status (StakingContract::*)(
+        byte_string_view, evmc_address const &, evmc_bytes32 const &);
+
+    static std::pair<PrecompileFunc, uint64_t>
+    precompile_dispatch(byte_string_view &);
+
+    Status precompile_fallback(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
     Status precompile_add_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Status precompile_add_stake(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Status precompile_remove_stake(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-
-public:
-    Status precompile_dispatch(evmc_message const &);
 
     ////////////////////
     //  System Calls  //

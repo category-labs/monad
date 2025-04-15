@@ -107,13 +107,11 @@ StakingContract::StakingContract(State &state, Address const &ca)
 {
 }
 
-StakingContract::Status
-StakingContract::precompile_dispatch(evmc_message const &msg)
+std::pair<StakingContract::PrecompileFunc, uint64_t>
+StakingContract::precompile_dispatch(byte_string_view &input)
 {
-    byte_string_view input{msg.input_data, msg.input_size};
-
     if (MONAD_UNLIKELY(input.size() < 4)) {
-        return INVALID_INPUT;
+        return make_pair(&StakingContract::precompile_fallback, 0);
     }
 
     auto const signature =
@@ -122,15 +120,22 @@ StakingContract::precompile_dispatch(evmc_message const &msg)
 
     switch (signature) {
     case 0xc7a52e25:
-        return precompile_add_validator(input, msg.sender, msg.value);
+        return make_pair(
+            &StakingContract::precompile_add_validator, 0 /* fixme */);
     case 0x91b3006c:
-        return precompile_add_stake(input, msg.sender, msg.value);
+        return make_pair(&StakingContract::precompile_add_stake, 0 /* fixme */);
     case 0x1b3a5c4c:
-        return precompile_remove_stake(input, msg.sender, msg.value);
+        return make_pair(
+            &StakingContract::precompile_remove_stake, 0 /* fixme */);
     default:
-        // fallback
-        return METHOD_NOT_SUPPORTED;
+        return make_pair(&StakingContract::precompile_fallback, 0);
     }
+}
+
+StakingContract::Status StakingContract::precompile_fallback(
+    byte_string_view const, evmc_address const &, evmc_uint256be const &)
+{
+    return METHOD_NOT_SUPPORTED;
 }
 
 StakingContract::Status StakingContract::precompile_add_validator(

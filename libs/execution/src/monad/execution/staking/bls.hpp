@@ -34,12 +34,12 @@ public:
 class Bls_Signature
 {
     static constexpr char BLS_SIGNATURE_DST[] =
-        "BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_POP_";
+        "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
     blst_p2_affine sig_;
     BLST_ERROR parse_result_;
 
 public:
-    Bls_Signature(byte_string_view const serialized)
+    Bls_Signature(byte_string_fixed<96> const &serialized)
     {
         parse_result_ = blst_p2_deserialize(&sig_, serialized.data());
     }
@@ -59,7 +59,7 @@ public:
             message.data(),
             message.size(),
             reinterpret_cast<uint8_t const *>(BLS_SIGNATURE_DST), // Default DST
-            sizeof(BLS_SIGNATURE_DST), // DST length
+            sizeof(BLS_SIGNATURE_DST) - 1, // DST length
             nullptr, // No augmentation
             0 // Aug length
         );

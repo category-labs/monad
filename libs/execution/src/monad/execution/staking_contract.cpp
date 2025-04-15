@@ -3,6 +3,7 @@
 #include <monad/contract/storage_variable.hpp>
 #include <monad/contract/topics.hpp>
 #include <monad/core/blake3.hpp>
+#include <monad/core/byte_string.hpp>
 #include <monad/core/bytes_hash_compare.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/likely.h>
@@ -144,10 +145,15 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
         unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
     auto const signed_stake = intx::be::unsafe::load<uint256_t>(
         consume_bytes(reader, sizeof(uint256_t)).data());
-    byte_string_view secp_signature_serialized =
-        consume_bytes(reader, SECP_SIGNATURE_SIZE);
-    byte_string_view bls_signature_serialized =
-        consume_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE);
+    auto const secp_signature_serialized =
+        unaligned_load<byte_string_fixed<64>>(
+            consume_bytes(reader, SECP_SIGNATURE_SIZE).data());
+    auto const bls_signature_serialized = unaligned_load<byte_string_fixed<96>>(
+        consume_bytes(reader, BLS_COMPRESSED_SIGNATURE_SIZE).data());
+    if (!reader.empty()) {
+        return INVALID_INPUT;
+    }
+
     auto const stake = intx::be::load<uint256_t>(msg.value);
 
     if (MONAD_UNLIKELY(signed_stake != stake)) {
@@ -197,15 +203,16 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
     validator_id_bls_storage.store(validator_id);
 
     vars.validator_info(validator_id)
-        .store(ValidatorInfo{
-            .auth_address = auth_address,
-            .bls_pubkey = bls_pubkey_serialized,
-            .total_stake = 0,
-            .active_stake = 0,
-            .active_shares = 0,
-            .activating_stake = 0,
-            .deactivating_shares = 0,
-            .rewards = {}});
+        .store(
+            ValidatorInfo{
+                .auth_address = auth_address,
+                .bls_pubkey = bls_pubkey_serialized,
+                .total_stake = 0,
+                .active_stake = 0,
+                .active_shares = 0,
+                .activating_stake = 0,
+                .deactivating_shares = 0,
+                .rewards = {}});
 
     vars.validator_set.push(validator_id);
 
@@ -244,10 +251,11 @@ StakingContract::Status StakingContract::add_stake(
     uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
     vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
-        .store(DepositRequest{
-            .validator_id = validator_id,
-            .amount = amount,
-            .delegator = delegator});
+        .store(
+            DepositRequest{
+                .validator_id = validator_id,
+                .amount = amount,
+                .delegator = delegator});
 
     delinfo->activating_stake += amount;
     valinfo->activating_stake += amount;
@@ -312,10 +320,11 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
 
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
-        .store(WithdrawalRequest{
-            .validator_id = validator_id,
-            .shares = shares,
-            .delegator = msg.sender});
+        .store(
+            WithdrawalRequest{
+                .validator_id = validator_id,
+                .shares = shares,
+                .delegator = msg.sender});
 
     delinfo->deactivating_shares += shares;
     valinfo->deactivating_shares += shares;
@@ -325,16 +334,10 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
     return SUCCESS;
 }
 
-Result<void> StakingContract::syscall_reward_validator(
-    byte_string_fixed<33> const &beneficiary)
+Result<void>
+StakingContract::syscall_reward_validator(Address const &block_author)
 {
-    Secp256k1_Pubkey pubkey(*secp_context.get(), beneficiary);
-    if (MONAD_UNLIKELY(!pubkey.is_valid())) {
-        return StakingSyscallError::InvalidValidatorSecpKey;
-    }
-
-    Address const address = address_from_secpkey(pubkey.serialize());
-    auto const validator_id = vars.validator_id(address).load();
+    auto const validator_id = vars.validator_id(block_author).load();
     if (MONAD_UNLIKELY(validator_id.has_value())) {
         return StakingSyscallError::RewardValidatorNotInSet;
     }

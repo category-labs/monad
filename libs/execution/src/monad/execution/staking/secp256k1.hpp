@@ -35,7 +35,7 @@ public:
     byte_string_fixed<65> serialize() const noexcept
     {
         byte_string_fixed<65> serialized;
-        size_t uncompressed_pubkey_size = 0;
+        size_t uncompressed_pubkey_size = 65;
         secp256k1_ec_pubkey_serialize(
             &context_,
             serialized.data(),
@@ -55,7 +55,7 @@ class Secp256k1_Signature
 
 public:
     Secp256k1_Signature(
-        secp256k1_context &context, byte_string_view const serialized)
+        secp256k1_context &context, byte_string_fixed<64> const &serialized)
         : context_{context}
     {
         parse_result_ = secp256k1_ecdsa_signature_parse_compact(

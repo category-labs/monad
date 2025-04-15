@@ -60,12 +60,7 @@ Result<std::vector<Receipt>> MonadSpecTest::execute(
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_monad_block<rev>(
-            chain,
-            consensus_header,
-            block,
-            block_state,
-            block_hash_buffer,
-            *pool_));
+            chain, block, block_state, block_hash_buffer, *pool_));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
     std::vector<Address> senders(results.size());

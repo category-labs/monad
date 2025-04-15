@@ -232,7 +232,7 @@ public:
     ////////////////////
     //  System Calls  //
     ////////////////////
-    Result<void> syscall_reward_validator(byte_string_fixed<33> const &);
+    Result<void> syscall_reward_validator(Address const &);
     Result<void> syscall_on_epoch_change();
 };
 

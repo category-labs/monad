@@ -14,6 +14,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_monad_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
+#include <monad/execution/staking/secp256k1.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/wal_reader.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -22,11 +23,14 @@
 #include <monad/state2/block_state.hpp>
 
 #include <boost/outcome/try.hpp>
+#include <intx/intx.hpp>
 #include <quill/Quill.h>
 #include <quill/detail/LogMacros.h>
+#include <secp256k1.h>
 
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -75,6 +79,33 @@ bft_id_for_finalized_block(mpt::Db const &db, uint64_t const block_id)
     return to_bytes(blake3(encoded_bft_header.value()));
 }
 
+BlockHeader to_eth_header(MonadConsensusBlockHeader const &consensus_header)
+{
+    thread_local std::unique_ptr<
+        secp256k1_context,
+        decltype(&secp256k1_context_destroy)> const
+        context(
+            secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),
+            &secp256k1_context_destroy);
+
+    Secp256k1_Pubkey pubkey(*context.get(), consensus_header.author);
+    MONAD_ASSERT(pubkey.is_valid());
+    Address const author_address = address_from_secpkey(pubkey.serialize());
+
+    BlockHeader eth_header = consensus_header.execution_inputs;
+    byte_string extra_data;
+    extra_data.resize(28);
+    intx::be::unsafe::store<uint64_t>(
+        extra_data.data(), consensus_header.epoch);
+    memcpy(
+        extra_data.data() + sizeof(uint64_t),
+        author_address.bytes,
+        sizeof(Address));
+    eth_header.extra_data = std::move(extra_data);
+
+    return eth_header;
+}
+
 Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashBuffer const &block_hash_buffer, Chain const &chain, Db &db,
@@ -96,13 +127,7 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     BOOST_OUTCOME_TRY(
         auto results,
         execute_monad_block(
-            chain,
-            rev,
-            consensus_header,
-            block,
-            block_state,
-            block_hash_buffer,
-            priority_pool));
+            chain, rev, block, block_state, block_hash_buffer, priority_pool));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -214,7 +239,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 on_proposal_event(
                     consensus_header,
                     Block{
-                        .header = consensus_header.execution_inputs,
+                        .header = to_eth_header(consensus_header),
                         .transactions = std::move(consensus_body.transactions),
                         .ommers = std::move(consensus_body.ommers),
                         .withdrawals = std::move(consensus_body.withdrawals)},

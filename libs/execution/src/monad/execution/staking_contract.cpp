@@ -51,7 +51,7 @@ namespace
     ///////////////
     //  Staking  //
     ///////////////
-    constexpr uint256_t MIN_STAKE_AMOUNT{10e18}; // FIXME
+    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
     constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
 
     uint256_t increment_id(StorageVariable<uint256_t> &storage)
@@ -203,16 +203,15 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
     validator_id_bls_storage.store(validator_id);
 
     vars.validator_info(validator_id)
-        .store(
-            ValidatorInfo{
-                .auth_address = auth_address,
-                .bls_pubkey = bls_pubkey_serialized,
-                .total_stake = 0,
-                .active_stake = 0,
-                .active_shares = 0,
-                .activating_stake = 0,
-                .deactivating_shares = 0,
-                .rewards = {}});
+        .store(ValidatorInfo{
+            .auth_address = auth_address,
+            .bls_pubkey = bls_pubkey_serialized,
+            .total_stake = 0,
+            .active_stake = 0,
+            .active_shares = 0,
+            .activating_stake = 0,
+            .deactivating_shares = 0,
+            .rewards = {}});
 
     vars.validator_set.push(validator_id);
 
@@ -244,22 +243,21 @@ StakingContract::Status StakingContract::add_stake(
     }
 
     auto delinfo_slot = vars.delegator_info(validator_id, delegator);
-    auto delinfo = delinfo_slot.load();
+    auto delinfo = delinfo_slot.load().value_or(DelegatorInfo{});
 
     uint256_t const epoch = vars.epoch.load().value_or(0);
 
     uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
     vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
-        .store(
-            DepositRequest{
-                .validator_id = validator_id,
-                .amount = amount,
-                .delegator = delegator});
+        .store(DepositRequest{
+            .validator_id = validator_id,
+            .amount = amount,
+            .delegator = delegator});
 
-    delinfo->activating_stake += amount;
+    delinfo.activating_stake += amount;
     valinfo->activating_stake += amount;
-    delinfo_slot.store(delinfo.value());
+    delinfo_slot.store(delinfo);
     valinfo_slot.store(valinfo.value());
 
     return SUCCESS;
@@ -320,11 +318,10 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
 
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
-        .store(
-            WithdrawalRequest{
-                .validator_id = validator_id,
-                .shares = shares,
-                .delegator = msg.sender});
+        .store(WithdrawalRequest{
+            .validator_id = validator_id,
+            .shares = shares,
+            .delegator = msg.sender});
 
     delinfo->deactivating_shares += shares;
     valinfo->deactivating_shares += shares;

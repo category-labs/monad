@@ -223,11 +223,15 @@ private:
         uint256_t const &validator_id, uint256_t const &amount,
         Address const &);
 
+    Status precompile_add_validator(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Status precompile_add_stake(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Status precompile_remove_stake(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+
 public:
-    Status precompile_fallback(evmc_message const &);
-    Status precompile_add_validator(evmc_message const &);
-    Status precompile_add_stake(evmc_message const &);
-    Status precompile_remove_stake(evmc_message const &);
+    Status precompile_dispatch(evmc_message const &);
 
     ////////////////////
     //  System Calls  //

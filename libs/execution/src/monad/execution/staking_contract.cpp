@@ -108,18 +108,35 @@ StakingContract::StakingContract(State &state, Address const &ca)
 }
 
 StakingContract::Status
-StakingContract::precompile_fallback(evmc_message const &)
+StakingContract::precompile_dispatch(evmc_message const &msg)
 {
-    // Invoked if someone sends money to the contract account. Do nothing and
-    // revert.
-    return METHOD_NOT_SUPPORTED;
+    byte_string_view input{msg.input_data, msg.input_size};
+
+    if (MONAD_UNLIKELY(input.size() < 4)) {
+        return INVALID_INPUT;
+    }
+
+    auto const signature =
+        intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
+    input.remove_prefix(4);
+
+    switch (signature) {
+    case 0xc7a52e25:
+        return precompile_add_validator(input, msg.sender, msg.value);
+    case 0x91b3006c:
+        return precompile_add_stake(input, msg.sender, msg.value);
+    case 0x1b3a5c4c:
+        return precompile_remove_stake(input, msg.sender, msg.value);
+    default:
+        // fallback
+        return METHOD_NOT_SUPPORTED;
+    }
 }
 
-StakingContract::Status
-StakingContract::precompile_add_validator(evmc_message const &msg)
+StakingContract::Status StakingContract::precompile_add_validator(
+    byte_string_view const input, evmc_address const &msg_sender,
+    evmc_uint256be const &msg_value)
 {
-    byte_string_view const input{msg.input_data, msg.input_size};
-
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
                                     BLS_COMPRESSED_PUBKEY_SIZE +
                                     sizeof(Address) + sizeof(uint256_t);
@@ -154,7 +171,7 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
         return INVALID_INPUT;
     }
 
-    auto const stake = intx::be::load<uint256_t>(msg.value);
+    auto const stake = intx::be::load<uint256_t>(msg_value);
 
     if (MONAD_UNLIKELY(signed_stake != stake)) {
         return INVALID_INPUT;
@@ -225,7 +242,7 @@ StakingContract::precompile_add_validator(evmc_message const &msg)
     //             address),
     //         .address = ca_});
 
-    return add_stake(validator_id, stake, msg.sender);
+    return add_stake(validator_id, stake, msg_sender);
 }
 
 StakingContract::Status StakingContract::add_stake(
@@ -263,27 +280,27 @@ StakingContract::Status StakingContract::add_stake(
     return SUCCESS;
 }
 
-StakingContract::Status
-StakingContract::precompile_add_stake(evmc_message const &msg)
+StakingContract::Status StakingContract::precompile_add_stake(
+    byte_string_view const input, evmc_address const &msg_sender,
+    evmc_uint256be const &msg_value)
 {
-    byte_string_view const input{msg.input_data, msg.input_size};
+    constexpr size_t MESSAGE_SIZE = sizeof(uint256_t) /* validatorId */;
 
     // Validate input size
-    if (MONAD_UNLIKELY(input.size() != sizeof(uint256_t))) {
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return INVALID_INPUT;
     }
 
-    auto const stake = intx::be::load<uint256_t>(msg.value);
+    auto const stake = intx::be::load<uint256_t>(msg_value);
     uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
         input.substr(0, sizeof(uint256_t)).data());
-    return add_stake(validator_id, stake, msg.sender);
+    return add_stake(validator_id, stake, msg_sender);
 }
 
-StakingContract::Status
-StakingContract::precompile_remove_stake(evmc_message const &msg)
+StakingContract::Status StakingContract::precompile_remove_stake(
+    byte_string_view const input, evmc_address const &msg_sender,
+    evmc_uint256be const &)
 {
-    byte_string_view const input{msg.input_data, msg.input_size};
-
     constexpr size_t MESSAGE_SIZE =
         sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
@@ -300,7 +317,7 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
         return UNKNOWN_VALIDATOR;
     }
 
-    auto delinfo_slot = vars.delegator_info(validator_id, msg.sender);
+    auto delinfo_slot = vars.delegator_info(validator_id, msg_sender);
     auto delinfo = delinfo_slot.load();
     if (MONAD_UNLIKELY(delinfo.has_value())) {
         return UNKNOWN_DELEGATOR;
@@ -321,7 +338,7 @@ StakingContract::precompile_remove_stake(evmc_message const &msg)
         .store(WithdrawalRequest{
             .validator_id = validator_id,
             .shares = shares,
-            .delegator = msg.sender});
+            .delegator = msg_sender});
 
     delinfo->deactivating_shares += shares;
     valinfo->deactivating_shares += shares;

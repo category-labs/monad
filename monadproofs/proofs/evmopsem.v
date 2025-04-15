@@ -24,8 +24,8 @@ Definition w256 := N.
 Record BlockHeader :={
     base_fee_per_gas: option w256;
     number: N;
-    beneficiary: evm.address
-              
+    beneficiary: evm.address;
+    timestamp: N;
     }.
 Record TransactionResult :=
   {

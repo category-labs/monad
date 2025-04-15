@@ -241,10 +241,10 @@ bool BlockState::fix_account_mismatch(
     if (is_dead(actual)) {
         return false;
     }
-    if (original->code_hash != actual->code_hash) {
+    if (original->code_hash != actual->code_hash) {// the code at an account can change? how?
         return false;
     }
-    if (original->incarnation != actual->incarnation) {
+    if (original->incarnation != actual->incarnation) {// how can this happen?
         return false;
     }
     bool const nonce_mismatch = original->nonce != actual->nonce;

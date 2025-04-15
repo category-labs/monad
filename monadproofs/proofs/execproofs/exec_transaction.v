@@ -204,11 +204,10 @@ Require Import bedrock.prelude.lens.
     | _ => false
     end.
 
-    Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce")).
-    (*
+    Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce_and_balance")).
   cpp.spec ((Nscoped
                (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
-               (Nfunction function_qualifiers.N ("set_original_nonce")
+               (Nfunction function_qualifiers.N ("set_original_nonce_and_balance")
                   [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address")))); Tconst ("unsigned long"%cpp_type)])))
   as set_original_nonce_spec with
     (fun this:ptr =>
@@ -406,10 +405,10 @@ Definition exec_final :=
 
 Definition result_val_contr_name valty :=
   ((Ninst
-          (Nscoped resultn
+          (Nscoped (resultn "monad::Receipt")
              (Nctor
-                [Trv_ref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))));
-                 Tnamed (Nscoped resultn (Nid "value_converting_constructor_tag"))]))
+                [Trv_ref (Tconst "monad::Receipt");
+                 Tnamed (Nscoped (resultn "monad::Receipt" ) (Nid "value_converting_constructor_tag"))]))
           [Atype valty; Atype "void"])).
 (*
 #[ignore_errors]
@@ -516,6 +515,15 @@ cpp.spec ((Ninst
     result_addr) (result_addr |-> ResultSuccessR EvmcResultR t).
   Proof using. Admitted.
 
+  cpp.spec "monad::get_max_code_size(const monad::Chain&, unsigned long, unsigned long)"
+    as max_code_size with (
+        \arg{chainp} "chain" (Vptr chainp)
+        \prepost{q c} chainp |-> ChainR q c
+        \arg{bn} "number" (Vint bn)
+        \arg{ts} "timestamp" (Vint ts)
+        \post{maxcs:N} [Vint maxcs] emp
+      ).
+  
   Lemma stateObserve (state_addr:ptr) t: 
     Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))) state_addr)
             (state_addr |-> StateR t).
@@ -533,7 +541,7 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** (opt_reconstr TransactionResult resultT)
              ** wait_for_promise
              ** destrop
-             ** destr_res
+             ** (destr_res (Tnamed "monad::ExecutionResult") ExecutionResultR) (* is this needed? *)
              ** destr_u256
              ** (has_value "evmc::address" evm.address)
              ** (value "evmc::address" evm.address)
@@ -541,7 +549,8 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** validate_spec
              ** try_op_has_val
              ** destr_outcome_overload
-              ** incarnation_constr
+             ** incarnation_constr
+             ** max_code_size
              ** StateConstr
 (*             ** set_original_nonce_spec *)
              ** execute_impl2

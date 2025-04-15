@@ -104,7 +104,8 @@ Section with_Sigma.
     ** _field "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q) q  (base_fee_per_gas hdr)
     ** _field "monad::BlockHeader::number" |-> ulongR q  (number hdr)
     ** _field "monad::BlockHeader::beneficiary" 
-         |-> addressR 1 (beneficiary hdr).
+         |-> addressR 1 (beneficiary hdr)
+    ** _field "monad::BlockHeader::timestamp" |-> primR "unsigned long" q (timestamp hdr).
          
   Definition BlockR (q: Qp) (c: Block): Rep :=
     _field "::monad::Block::transactions" |-> VectorR (Tnamed "::monad::Transaction") (fun t => TransactionR q t) q (transactions c)
@@ -337,6 +338,7 @@ End with_Sigma.
 
 
 Require Import monad.asts.ext.
+Require Import Lens.Lens.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}.
   Context  {MODd : ext.module ⊧ CU}.
@@ -353,10 +355,17 @@ Section with_Sigma.
       block_index: N;
       tx_index: N;
     }.
+
+  Record AssumptionExactness :=
+    {
+      balance: bool;
+      nonce: bool;
+    }.
+      
       
   Record AssumptionsAndUpdates (* StateM *) :=
     {
-      original: gmap evm.address evm.account_state;
+      original: gmap evm.address (evm.account_state * AssumptionExactness);
       newStates: gmap evm.address (list evm.account_state); (* head is the latest *)
       blockStatePtr: ptr;
       indices: Indices
@@ -366,6 +375,9 @@ Section with_Sigma.
   Definition StateR (s: AssumptionsAndUpdates): Rep :=
     structR "monad::State" 1.
 
+  Definition nullifyBalNonce (e: evm.account_state) : evm.account_state. Proof. Admitted.
+  (*    := {[ e with evm.account_balance := 0, evm.account_nonce:=0 ]}. *)
+  
   (*
   Definition preImpl2 (blockStatePtr: ptr) (senderAddr: evm.address) (sender: account_state): AssumptionsAndUpdates:=
     {|
@@ -376,17 +388,28 @@ Section with_Sigma.
 (*
   Definition EvmcResultR (r: TransactionResult): Rep. Proof. Admitted. *)
 
+  Search Bvector.Bvector Z.
+  Definition balanceZ (s: evm.account_state): Z := (Zdigits.binary_value _ (block.block_account_balance s)).
   Definition satisfiesAssumptions (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr,
-      match original a !! acAddr  with
-      | Some acState => Some acState = preTxState !! acAddr
-      | None => True
+      match original a !! acAddr, preTxState !! acAddr  with
+      | Some assumAcE, Some preTxAc =>
+          let '(assumState, assumEx) := assumAcE in
+          nullifyBalNonce assumState = nullifyBalNonce preTxAc
+          /\ (if (balance assumEx)
+             then balanceZ assumState = balanceZ preTxAc
+             else (balanceZ assumState (* min_Balance *)
+                   <= balanceZ preTxAc))%Z
+          /\ (if (nonce assumEx)
+              then block.block_account_nonce assumState = block.block_account_nonce preTxAc
+              else True)
+      | None, None => True
+      | _, _ => False                        
       end.
 
-    Search (gmap.gmap ?a ?b) (list (?a * ?b)).
 
     
-  Definition applyUpdate (s: StateOfAccounts) (acup: address * list account_state) : StateOfAccounts :=
+  Definition applyUpdate (s: StateOfAccounts) (a: AssumptionsAndUpdates) (acup: address * list account_state) : StateOfAccounts :=
     let '(addr, upd) :=  acup in
     match upd with
     | [] => s (* should not happen *)

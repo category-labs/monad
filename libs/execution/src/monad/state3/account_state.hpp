@@ -31,7 +31,7 @@ public: // TODO
     Map<bytes32_t, bytes32_t> transient_storage_{};
     bool validate_exact_nonce_{false};
     bool validate_exact_balance_{false};
-    uint256_t min_balance_{0};
+    uint256_t min_balance_{0};// can we just use account_.value.balance for this? validate_exact_balance_ will determine whether it is an exact value or a lower bound
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,

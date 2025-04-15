@@ -221,6 +221,10 @@ const T & value(const Result<T> & rec)
     return rec.value();
 }
 
+size_t get_max_code_size(Chain const &chain, uint64_t const number, uint64_t const timestamp) {
+    return chain.get_max_code_size(number, timestamp);
+}
+
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,
@@ -232,7 +236,7 @@ Result<ExecutionResult> execute_impl(
         tx,
         hdr.base_fee_per_gas,
         get_chain_id(chain),
-        chain.get_max_code_size(hdr.number, hdr.timestamp)));
+        get_max_code_size(chain, hdr.number, hdr.timestamp)));
 
     {
         TRACE_TXN_EVENT(StartExecution);

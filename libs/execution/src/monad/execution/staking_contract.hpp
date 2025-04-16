@@ -107,19 +107,29 @@ public:
         //  Constant Addresses //
         /////////////////////////
         StorageVariable<uint256_t> epoch{
-            state_, ca_, 0x900cb4cb1c1d43e391b32859defe395e_bytes32};
+            state_,
+            ca_,
+            0x9e3708c603ac673081e26bb54047f80d5cdafe77528853915ad2a74c55155c0e_bytes32};
 
         StorageVariable<uint256_t> last_validator_id{
-            state_, ca_, 0x41220a16053449faaa3a6d09af41bd3e_bytes32};
+            state_,
+            ca_,
+            0xcb5af3efd03d626a8756769ffe0b848d51f4dd9a8a4ea88b7d83db13535be6bd_bytes32};
 
         StorageVariable<uint256_t> last_deposit_request_id{
-            state_, ca_, 0x9e097777443c4f35945fb3a6db51d76c_bytes32};
+            state_,
+            ca_,
+            0x59725fc1e48c9d8be01f7e99fd22a7aebdb81ead6f187a3aa7f1ed9c2d5786c9_bytes32};
 
         StorageVariable<uint256_t> last_withdrawal_request_id{
-            state_, ca_, 0x744d787f2587405db4c57efe0e41b665_bytes32};
+            state_,
+            ca_,
+            0xfc1f685954d77928bb8b43407904dc3510647b966f75e0efe3575b5ef5056e80_bytes32};
 
         StorageArray<uint256_t> validator_set{
-            state_, ca_, 0x5da123f52fc44a169234a9b18ac05821_bytes32};
+            state_,
+            ca_,
+            0x72ae25330cca2b1fbd02fe7c6d1ab3960b26f14196d8d23d5f70da5a02c0a073_bytes32};
 
         ////////////////
         //  Mappings  //
@@ -131,7 +141,9 @@ public:
             return StorageVariable<uint256_t>(
                 state_,
                 ca_,
-                mapping(0x3a5828ff05e4479fbcdc119cf8328b90_bytes32, address));
+                mapping(
+                    0x1218e92019291fc557f47a4668a1b0e9a8461218bdefa517648e349f42bcb1a3_bytes32,
+                    address));
         }
 
         // mapping (address => uint256_t) validator_id
@@ -144,7 +156,8 @@ public:
                 state_,
                 ca_,
                 mapping(
-                    0x9b5d94806d34471e95f7972d795def46_bytes32, bls_pubkey));
+                    0x158c8819b794f76dcd3f66270b7e24e3e3bcca6f80ff106985d16ea43fafda77_bytes32,
+                    bls_pubkey));
         }
 
         // mapping(uint256 => ValidatorInfo) validator_info
@@ -154,7 +167,9 @@ public:
             return StorageVariable<ValidatorInfo>(
                 state_,
                 ca_,
-                mapping(0xf4e4e229b1c54e1889efc238b4380067_bytes32, id));
+                mapping(
+                    0x815e0d4ab52908ec59c74742a0533220a68f43b791154f0ba3b193f4bd8474fe_bytes32,
+                    id));
         }
 
         // mapping(uint256 => mapping(address => DelegatorInfo)) delegator_info
@@ -166,7 +181,7 @@ public:
                 state_,
                 ca_,
                 mapping(
-                    0x218c054367a74863b4ba62b844e3c2c0_bytes32,
+                    0x4245010c3499211ecff43d70a64a69d43205b85f984fca1439887714e8f0857c_bytes32,
                     validator_id,
                     address)};
         }
@@ -179,7 +194,8 @@ public:
                 state_,
                 ca_,
                 mapping(
-                    0xc33a216d11ae4052ae2ff03f00dbca3a_bytes32, deposit_id)};
+                    0xad6040bcddfdc4135a29f90043f4d16f58b32de144dc68b689436b2f3c83a9f8_bytes32,
+                    deposit_id)};
         }
 
         // mapping(uint256 => WithdrawalRequest) withdrawal_request
@@ -190,7 +206,8 @@ public:
                 state_,
                 ca_,
                 mapping(
-                    0x911c09f7006c4b8b8bb6bed2e426772d_bytes32, withdrawal_id)};
+                    0x310389d7b283e0188edf5a44370f9302f17158d3bee6e3fe8939b11f862f0918_bytes32,
+                    withdrawal_id)};
         }
 
         // mapping(uint256 /* epoch */ => Array[u256]) deposit_queue
@@ -200,7 +217,9 @@ public:
             return StorageArray<uint256_t>{
                 state_,
                 ca_,
-                mapping(0xc33a216d11ae4052ae2ff03f00dbca3a_bytes32, epoch)};
+                mapping(
+                    0xca6c90673d5b5445f10b56983d278ce9580be99dd91290b64d4c4a0cd10512ee_bytes32,
+                    epoch)};
         }
 
         // mapping(uint256 /* epoch */ => Array[u256]) withdrawal_queue
@@ -210,7 +229,9 @@ public:
             return StorageArray<uint256_t>{
                 state_,
                 ca_,
-                mapping(0xbdde0ce231c849f1adbb75bc51dfe172_bytes32, epoch)};
+                mapping(
+                    0x2e9329d8bc51599706422b7b26be828c8aa29f11009e2407b9db7897c8b6a6e7_bytes32,
+                    epoch)};
         }
     } vars;
 

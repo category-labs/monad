@@ -264,7 +264,7 @@ bool BlockState::fix_account_mismatch(
         if (original_state.validate_exact_balance()) {
             return false;
         }
-        if (actual->balance < original_state.min_balance()) {
+        if (actual->balance < original_state.min_balance()) {// this check needs to be done even if there is no balance mismatch? no, the min_balance assumption is only set if the assumption is consistent with the original balance: see sender_has_balance and set_original_nonce_and_balance which are the only 2 places min_balance is set
             return false;
         }
     }

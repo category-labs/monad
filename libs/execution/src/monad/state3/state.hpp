@@ -66,7 +66,6 @@ public:
         return it->second;
     }
 
-private:
     void set_original_nonce_and_balance(
         Address const &address, uint64_t const nonce,
         uint256_t const &min_balance)
@@ -79,12 +78,13 @@ private:
         }
         account->nonce = nonce;
         account_state.set_validate_exact_nonce();
-        if (account->balance < min_balance) {// is this branch dead code?
-            account->balance = min_balance;
+        if (account->balance < min_balance) {
+            account->balance = min_balance;// this is not essential for correctness: the spec only has frag for this so any garbabe is fine. to reduce retries, we should set it to the most likely balance, especially if the contract does BALANCE opcode.
         }
-        account_state.set_min_balance(min_balance);
+        account_state.set_min_balance(min_balance); // what if a transaction has some opcode that requires min_balance and some other that requires exact balance and the requirements are conflicting?
     }
     
+private:
     AccountState const &recent_account_state(Address const &address)
     {
         // current

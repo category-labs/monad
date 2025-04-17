@@ -1839,7 +1839,8 @@ retry:
             MONAD_ASSERT(
                 node_writer->sender().advance_buffer_append(bytes_to_append) !=
                 nullptr);
-            if (node_writer->sender().remaining_buffer_bytes() == 0) {
+            if (offset_in_on_disk_node < size &&
+                node_writer->sender().remaining_buffer_bytes() == 0) {
                 // replace node writer
                 new_node_writer = replace_node_writer(aux, node_writer);
                 if (new_node_writer) {

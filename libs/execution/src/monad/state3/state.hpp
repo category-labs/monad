@@ -67,6 +67,24 @@ public:
     }
 
 private:
+    void set_original_nonce_and_balance(
+        Address const &address, uint64_t const nonce,
+        uint256_t const &min_balance)
+    {
+        set_relaxed_validation();        
+        auto &account_state = original_account_state(address);
+        auto &account = account_state.account_;
+        if (!account.has_value()) {
+            account = Account{};
+        }
+        account->nonce = nonce;
+        account_state.set_validate_exact_nonce();
+        if (account->balance < min_balance) {// is this branch dead code?
+            account->balance = min_balance;
+        }
+        account_state.set_min_balance(min_balance);
+    }
+    
     AccountState const &recent_account_state(Address const &address)
     {
         // current
@@ -102,6 +120,13 @@ public:
         : block_state_{block_state}
         , incarnation_{incarnation}
     {
+    }
+    State(BlockState &block_state, Incarnation const incarnation, Address const &sender_address, uint64_t const nonce,
+        uint256_t const &min_balance)
+        : block_state_{block_state}
+        , incarnation_{incarnation}
+    {
+        set_original_nonce_and_balance(sender_address, nonce, min_balance);
     }
 
     State(State &&) = delete;
@@ -159,28 +184,16 @@ public:
         relaxed_validation_ = true;
     }
 
+    void set_strict_validation()
+    {
+        relaxed_validation_ = false;
+    }
+
     ////////////////////////////////////////
 
     std::optional<Account> const &recent_account(Address const &address)
     {
         return recent_account_state(address).account_;
-    }
-
-    void set_original_nonce_and_balance(
-        Address const &address, uint64_t const nonce,
-        uint256_t const &min_balance)
-    {
-        auto &account_state = original_account_state(address);
-        auto &account = account_state.account_;
-        if (!account.has_value()) {
-            account = Account{};
-        }
-        account->nonce = nonce;
-        account_state.set_validate_exact_nonce();
-        if (account->balance < min_balance) {
-            account->balance = min_balance;
-        }
-        account_state.set_min_balance(min_balance);
     }
 
     ////////////////////////////////////////

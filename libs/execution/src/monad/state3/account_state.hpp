@@ -26,7 +26,7 @@ public: // TODO
     template <class Key, class T>
     using Map = ankerl::unordered_dense::segmented_map<Key, T>;
 
-    std::optional<Account> account_{};
+    std::optional<Account> account_{};// what does None mean here?
     Map<bytes32_t, bytes32_t> storage_{};
     Map<bytes32_t, bytes32_t> transient_storage_{};
     bool validate_exact_nonce_{false};

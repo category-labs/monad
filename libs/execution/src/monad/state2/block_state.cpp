@@ -300,6 +300,7 @@ bool BlockState::fix_account_mismatch(
     if (balance_mismatch) {
         original->balance = actual->balance;
     }
+    //state.set_strict_validation();// not really necessary because the validation is already done.but helps in proof. else the proof will require a ghost location.
     return true;
 }
 

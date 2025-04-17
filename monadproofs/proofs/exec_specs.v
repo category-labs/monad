@@ -11,7 +11,9 @@ Require Import bedrock.auto.cpp.proof.
 Require Import bedrock.auto.cpp.tactics4.
 Require Import monad.proofs.libspecs.
 Import cQp_compat.
+#[local] Open Scope lens_scope.
 
+#[only(lens)] derive block.block_account.
 (* delete ? *)
 Notation resultn ty :=
                   (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
@@ -365,6 +367,7 @@ Section with_Sigma.
       
   Record AssumptionsAndUpdates (* StateM *) :=
     {
+      relaxedValidation: bool;
       original: gmap evm.address (evm.account_state * AssumptionExactness);
       newStates: gmap evm.address (list evm.account_state); (* head is the latest *)
       blockStatePtr: ptr;
@@ -389,35 +392,67 @@ Section with_Sigma.
   Definition EvmcResultR (r: TransactionResult): Rep. Proof. Admitted. *)
 
   Search Bvector.Bvector Z.
-  Definition balanceZ (s: evm.account_state): Z := (Zdigits.binary_value _ (block.block_account_balance s)).
+  Open Scope Z_scope.
+
+  Definition zbvfun (fz: Z -> Z) (w: keccak.w256): keccak.w256:=
+    let wnz := fz (Zdigits.binary_value _ w) in
+    Zdigits.Z_to_binary _ wnz.
+    
+   
+  Definition zbvlens {A:Type} (l: Lens A A keccak.w256 keccak.w256): Lens A A Z Z :=
+    {| view := λ a : A, Zdigits.binary_value 256 (a .^ l);
+      over := λ (fz : Z → Z) (a : A), (l %= zbvfun fz) a |}.
+  Definition _balance : Lens evm.account_state evm.account_state Z Z:=
+    zbvlens (_block_account_balance).
+  Definition _nonce : Lens evm.account_state evm.account_state Z Z:=
+    zbvlens (_block_account_nonce).
+  
   Definition satisfiesAssumptions (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr,
       match original a !! acAddr, preTxState !! acAddr  with
       | Some assumAcE, Some preTxAc =>
           let '(assumState, assumEx) := assumAcE in
           nullifyBalNonce assumState = nullifyBalNonce preTxAc
-          /\ (if (balance assumEx)
-             then balanceZ assumState = balanceZ preTxAc
-             else (balanceZ assumState (* min_Balance *)
-                   <= balanceZ preTxAc))%Z
-          /\ (if (nonce assumEx)
-              then block.block_account_nonce assumState = block.block_account_nonce preTxAc
+          /\ (if (negb (relaxedValidation a) || balance assumEx)
+             then assumState .^ _balance = preTxAc .^ _balance
+             else (assumState .^ _balance (* min_Balance *) <= preTxAc .^ _balance))
+          /\ (if (negb (relaxedValidation a) || nonce assumEx)
+              then assumState .^ _nonce = preTxAc.^ _nonce
               else True)
       | None, None => True
       | _, _ => False                        
       end.
 
+  Definition dummyEx : AssumptionExactness := ltac:(constructor; exact true).
 
-    
-  Definition applyUpdate (s: StateOfAccounts) (a: AssumptionsAndUpdates) (acup: address * list account_state) : StateOfAccounts :=
+  Definition postTxActualBalNonce (a: AssumptionsAndUpdates) addr (speculativePostTxState: account_state)  (actualPreTxState: account_state) : (Z*Z * AssumptionExactness) :=
+    match original a !! addr with
+    | None => (0,0, dummyEx) (* impossible *)
+    | Some (assumedPreTxState, assumEx) =>
+        (actualPreTxState .^ _balance + (speculativePostTxState .^ _balance - assumedPreTxState .^ _balance),
+         actualPreTxState  .^ _nonce + (speculativePostTxState .^ _nonce - assumedPreTxState .^ _nonce), assumEx)
+    end.
+
+  Global Instance: LookupTotal address account_state StateOfAccounts :=
+    fun a s => match s !! a with
+               | Some f => f
+               | None => block.block_account_default
+               end.
+                 
+  Definition applyUpdate (a: AssumptionsAndUpdates) (actualPreTxState: StateOfAccounts) (acup: address * list account_state) :
+    StateOfAccounts :=
     let '(addr, upd) :=  acup in
     match upd with
-    | [] => s (* should not happen *)
-    | h::_ => <[addr := h]>s
+    | [] => actualPreTxState (* should not happen *)
+    | h::_ =>
+        let '(postTxBal, postTxNonce, assumEx) := postTxActualBalNonce a addr h (actualPreTxState !!! addr) in
+        if negb (relaxedValidation a) then <[addr:=h]> actualPreTxState else
+          let postAcState := if (balance assumEx) then h else (h &: _balance .= postTxBal) in
+          <[addr := if (nonce assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)]> actualPreTxState
     end.
 
   Definition applyUpdates (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) :StateOfAccounts :=
-    let ups := map_to_list (newStates a) in fold_left applyUpdate ups preTxState.
+    let ups := map_to_list (newStates a) in fold_left (applyUpdate a) ups preTxState.
   
   Definition execute_impl2_spec : WpSpec mpredI val val :=
     \arg{chainp :ptr} "chain" (Vref chainp)
@@ -530,7 +565,7 @@ Section with_Sigma.
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \pre{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ |}.
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := false|}.
 
 
   

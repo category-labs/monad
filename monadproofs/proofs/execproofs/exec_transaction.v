@@ -188,12 +188,16 @@ Require Import bedrock.prelude.lens.
     Import LensNotations.
     #[local] Open Scope lens_scope.
 
-  Definition set_original_nonce (addr: evm.address) (n: keccak.w256) (s sf : AssumptionsAndUpdates) : Prop :=
-  match original s !! addr with
-  | Some ac => sf = (s &: _original %= <[addr:=ac &: _block_account_nonce .= n]>)
-  | None => exists loadedAc, (block.block_account_nonce loadedAc = n)
-                             /\ sf = (s &: _original %= <[addr:= loadedAc]>)
-  end.
+    Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce sender_balance: N)  (bsp: ptr) (ind: Indices) (sf: AssumptionsAndUpdates) : Prop :=
+      exists senderAc, senderAc .^ _nonce = sender_nonce /\ senderAc .^ _balance = sender_balance /\
+        sf =
+          {|
+            relaxedValidation:= true;
+            newStates:= ∅;
+            original := <[sender_addr := (senderAc, {| balance := true; nonce :=false |}) ]> ∅;
+            blockStatePtr := bsp;
+            indices:= ind;
+          |}.
 
 
     Fixpoint isFunctionNamed2 (fname: ident) (n:name): bool :=
@@ -204,7 +208,43 @@ Require Import bedrock.prelude.lens.
     | _ => false
     end.
 
-    Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce_and_balance")).
+    Definition u256t : type :=
+      Tnamed ((Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])).
+  (*cpp.spec (Nscoped "monad::State"
+          (Nctor
+             [Tref "monad::BlockState";
+              Tconst "monad::Incarnation";
+              Tref (Tconst "evmc::address");
+              Tconst ("unsigned long long"%cpp_type);
+              Tref (Tconst u256t)
+              
+    ]))
+    as StateConstrRelaxed with
+  (    fun (this:ptr) =>
+      \arg{bsp} "" (Vref bsp)
+      \arg{incp} "" (Vptr incp)
+      \arg{sender_addrp} "sender_addr" (Vptr sender_addrp)
+      \arg{sender_nonce:N} "sender_nonce" (Vint sender_nonce)
+      \arg{sender_balp} "sender_balp" (Vptr sender_balp)
+      \prepost{qbal sender_bal} sender_balp |-> u256R qbal sender_bal
+      \prepost{sender_addr q} sender_addrp |-> addressR q sender_addr
+      \prepost{q inc} incp |-> IncarnationR q inc 
+      \post Exists au, this |-> StateR au ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
+  *)  
+  cpp.spec (Nscoped "monad::State"
+          (Nctor
+             [Tref "monad::BlockState";
+              Tnamed "monad::Incarnation"
+    ]))
+    as StateConstrExact with
+  (    fun (this:ptr) =>
+      \arg{bsp} "" (Vref bsp)
+      \arg{incp} "" (Vptr incp)
+      \prepost{q inc} incp |-> IncarnationR q inc 
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}).
+  
+  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce_and_balance")).
+  (*
   cpp.spec ((Nscoped
                (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
                (Nfunction function_qualifiers.N ("set_original_nonce_and_balance")
@@ -235,17 +275,6 @@ cpp.spec (Ninst
              [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])
   as execute_impl2 with (execute_impl2_specg).
 
-
-  cpp.spec (Nscoped (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
-          (Nctor
-             [Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState")));
-              Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Incarnation"))]))
-    as StateConstr with
-  (    fun (this:ptr) =>
-      \arg{bsp} "" (Vref bsp)
-      \arg{incp} "" (Vptr incp)
-      \prepost{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ |}).
   
   #[global] Instance : LearnEq2 IncarnationR := ltac:(solve_learnable).
 Opaque Zdigits.Z_to_binary.
@@ -551,7 +580,7 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** destr_outcome_overload
              ** incarnation_constr
              ** max_code_size
-             ** StateConstr
+             ** StateConstrExact
 (*             ** set_original_nonce_spec *)
              ** execute_impl2
              ** destr_incarnation
@@ -577,6 +606,13 @@ Proof using MODd.
   slauto.
   rewrite <- wp_const_const_delete.
   go.
+  name_locals.
+  go.
+  need to fix these:
+
+    (*             ** result_val_constr *)
+(*             ** tag_constr *)
+
   unshelve rewrite <- wp_init_implicit.
   slauto.
   iExists i. (* TODO: add a REfine 1 hint to avoid needing this *)

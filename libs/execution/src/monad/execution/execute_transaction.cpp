@@ -225,6 +225,16 @@ size_t get_max_code_size(Chain const &chain, uint64_t const number, uint64_t con
     return chain.get_max_code_size(number, timestamp);
 }
 
+inline uint256_t min_balance(Transaction const &tx) {
+    uint512_t const max_debit =
+        tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+    uint256_t min_balance =
+        (max_debit > std::numeric_limits<intx::uint<256>>::max())
+            ? std::numeric_limits<intx::uint<256>>::max()
+            : uint256_t(max_debit);
+    return min_balance;
+}
+
 template <evmc_revision rev>
 Result<ExecutionResult> execute_impl(
     Chain const &chain, uint64_t const i, Transaction const &tx,
@@ -241,13 +251,7 @@ Result<ExecutionResult> execute_impl(
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        uint512_t const max_debit =
-            tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
-        uint256_t const min_balance =
-            (max_debit > std::numeric_limits<intx::uint<256>>::max())
-                ? std::numeric_limits<intx::uint<256>>::max()
-                : uint256_t(max_debit);
-        State state{block_state, Incarnation{hdr.number, i + 1}, sender, tx.nonce, min_balance};
+        State state{block_state, Incarnation{hdr.number, i + 1}, sender, tx.nonce, min_balance(tx)};
 
 #ifdef ENABLE_CALL_TRACING
         CallTracer call_tracer{tx};

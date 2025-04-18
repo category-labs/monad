@@ -434,19 +434,14 @@ Definition exec_final :=
 
 Definition result_val_contr_name valty :=
   ((Ninst
-          (Nscoped (resultn "monad::Receipt")
+          (Nscoped (resultn valty)
              (Nctor
-                [Trv_ref (Tconst "monad::Receipt");
-                 Tnamed (Nscoped (resultn "monad::Receipt" ) (Nid "value_converting_constructor_tag"))]))
+                [Trv_ref (Tconst valty);
+                 Tnamed (Nscoped (resultn valty) (Nid "value_converting_constructor_tag"))]))
           [Atype valty; Atype "void"])).
 (*
 #[ignore_errors]
-cpp.spec ((Ninst
-          (Nscoped resultn
-             (Nctor
-                [Trv_ref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))));
-                 Tnamed (Nscoped resultn (Nid "value_converting_constructor_tag"))]))
-          [Atype (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt")))); Atype "void"]))
+cpp.spec (result_val_contr_name "monad::ExecutionResult")
   as result_val_constr with (fun this:ptr =>
                                \arg{recp} ("recp"%pstring) (Vref recp)
                                \prepost{r} recp |-> ReceiptR r
@@ -565,6 +560,26 @@ Existing Instance UNSAFE_read_prim_cancel.
     Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) state_addr)
             (state_addr |-> ReceiptR t).
   Proof using. Admitted.
+  cpp.spec (Nscoped "monad::State"
+          (Nctor
+             [Tref "monad::BlockState";
+              Tnamed "monad::Incarnation";
+              Tref (Tconst "evmc::address");
+              ("unsigned long"%cpp_type);
+              Tref (Tconst u256t)
+              
+    ]))
+    as StateConstrRelaxed with
+  (    fun (this:ptr) =>
+      \arg{bsp} "" (Vref bsp)
+      \arg{incp} "" (Vptr incp)
+      \arg{sender_addrp} "sender_addr" (Vptr sender_addrp)
+      \arg{sender_nonce:N} "sender_nonce" (Vint sender_nonce)
+      \arg{sender_balp} "sender_balp" (Vptr sender_balp)
+      \prepost{qbal sender_bal} sender_balp |-> u256R qbal sender_bal
+      \prepost{sender_addr q} sender_addrp |-> addressR q sender_addr
+      \prepost{q inc} incp |-> IncarnationR q inc 
+      \post Exists au, this |-> StateR au ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
   
   Lemma prf: denoteModule module
              ** (opt_reconstr TransactionResult resultT)
@@ -581,6 +596,7 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** incarnation_constr
              ** max_code_size
              ** StateConstrExact
+             ** StateConstrRelaxed
 (*             ** set_original_nonce_spec *)
              ** execute_impl2
              ** destr_incarnation
@@ -606,17 +622,11 @@ Proof using MODd.
   slauto.
   rewrite <- wp_const_const_delete.
   go.
-  name_locals.
-  go.
-  need to fix these:
-
-    (*             ** result_val_constr *)
-(*             ** tag_constr *)
-
   unshelve rewrite <- wp_init_implicit.
-  slauto.
+  go.
   iExists i. (* TODO: add a REfine 1 hint to avoid needing this *)
   go.
+  (* need spec for min_balance *)
   wapplyObserve stateObserve.
   eagerUnifyU.
   slauto.

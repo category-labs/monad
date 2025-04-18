@@ -360,8 +360,8 @@ Section with_Sigma.
 
   Record AssumptionExactness :=
     {
-      balance: bool;
-      nonce: bool;
+      min_balance: option N; (* None means exact validation *)
+      nonce_exact: bool;
     }.
       
       
@@ -391,7 +391,6 @@ Section with_Sigma.
 (*
   Definition EvmcResultR (r: TransactionResult): Rep. Proof. Admitted. *)
 
-  Search Bvector.Bvector Z.
   Open Scope Z_scope.
 
   Definition zbvfun (fz: Z -> Z) (w: keccak.w256): keccak.w256:=
@@ -407,23 +406,39 @@ Section with_Sigma.
   Definition _nonce : Lens evm.account_state evm.account_state Z Z:=
     zbvlens (_block_account_nonce).
   
+  Definition isNone {T} (a: option T):= negb (isSome a).
+  Definition min_balanceN (a: AssumptionExactness) : N:=
+    match min_balance a with
+    | Some f => f
+    | None => 0
+    end.
+      
+      
   Definition satisfiesAssumptions (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr,
       match original a !! acAddr, preTxState !! acAddr  with
       | Some assumAcE, Some preTxAc =>
           let '(assumState, assumEx) := assumAcE in
           nullifyBalNonce assumState = nullifyBalNonce preTxAc
-          /\ (if (negb (relaxedValidation a) || balance assumEx)
+          /\ (if (negb (relaxedValidation a) || isNone (min_balance assumEx))
              then assumState .^ _balance = preTxAc .^ _balance
-             else (assumState .^ _balance (* min_Balance *) <= preTxAc .^ _balance))
-          /\ (if (negb (relaxedValidation a) || nonce assumEx)
+             else (min_balanceN assumEx <= preTxAc .^ _balance))
+          /\ (if (negb (relaxedValidation a) || nonce_exact assumEx)
               then assumState .^ _nonce = preTxAc.^ _nonce
               else True)
       | None, None => True
       | _, _ => False                        
       end.
+  Definition validAU (a: AssumptionsAndUpdates) : Prop :=
+    forall acAddr,
+      match original a !! acAddr  with
+      | Some (assumState, assumEx) =>
+          if ((relaxedValidation a) && isSome (min_balance assumEx))
+          then (min_balanceN assumEx <= assumState .^ _balance) else True
+      | None => True
+      end.
 
-  Definition dummyEx : AssumptionExactness := ltac:(constructor; exact true).
+  Definition dummyEx : AssumptionExactness :=  {| min_balance := None; nonce_exact := true |}.
 
   Definition postTxActualBalNonce (a: AssumptionsAndUpdates) addr (speculativePostTxState: account_state)  (actualPreTxState: account_state) : (Z*Z * AssumptionExactness) :=
     match original a !! addr with
@@ -447,8 +462,8 @@ Section with_Sigma.
     | h::_ =>
         let '(postTxBal, postTxNonce, assumEx) := postTxActualBalNonce a addr h (actualPreTxState !!! addr) in
         if negb (relaxedValidation a) then <[addr:=h]> actualPreTxState else
-          let postAcState := if (balance assumEx) then h else (h &: _balance .= postTxBal) in
-          <[addr := if (nonce assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)]> actualPreTxState
+          let postAcState := if (isNone (min_balance assumEx)) then h else (h &: _balance .= postTxBal) in
+          <[addr := if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)]> actualPreTxState
     end.
 
   Definition applyUpdates (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) :StateOfAccounts :=
@@ -500,7 +515,8 @@ Section with_Sigma.
     \post{retp}[Vptr retp] Exists assumptionsAndUpdates result,
       statep |-> StateR assumptionsAndUpdates
       ** retp |-> ResultSuccessR EvmcResultR result 
-       ** [| blockStatePtr assumptionsAndUpdates = blockStatePtr au |]
+      ** [| blockStatePtr assumptionsAndUpdates = blockStatePtr au |]
+      ** [| validAU assumptionsAndUpdates |]
        ** [| indices assumptionsAndUpdates = indices au |]
        ** [| let postCond preTxState :=
                let '(postTxState, actualResult) := stateAfterTransactionAux header preTxState (N.to_nat (tx_index (indices au))) t in

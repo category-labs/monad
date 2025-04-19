@@ -626,6 +626,20 @@ Proof using MODd.
   go.
   iExists i. (* TODO: add a REfine 1 hint to avoid needing this *)
   go.
+  Transparent TransactionR.
+  progress unfold TransactionR.
+  slauto.
+  cpp.spec "monad::min_balance(const monad::Transaction&)" as minb with
+      (
+        \arg{trp} "tx" (Vptr trp)
+        \post{x:ptr} [Vptr x] emp (* TODO: fix *)
+      ).
+  iAssert minb as "#?"%string;[admit|].
+  go.
+  rewrite <- wp_const_const_delete.
+  go.
+      
+       
   (* need spec for min_balance *)
   wapplyObserve stateObserve.
   eagerUnifyU.

@@ -106,27 +106,27 @@ public:
         /////////////////////////
         //  Constant Addresses //
         /////////////////////////
-        StorageVariable<uint256_t> epoch{
+        StorageVariable<Uint256BE> epoch{
             state_,
             ca_,
             0x9e3708c603ac673081e26bb54047f80d5cdafe77528853915ad2a74c55155c0e_bytes32};
 
-        StorageVariable<uint256_t> last_validator_id{
+        StorageVariable<Uint256BE> last_validator_id{
             state_,
             ca_,
             0xcb5af3efd03d626a8756769ffe0b848d51f4dd9a8a4ea88b7d83db13535be6bd_bytes32};
 
-        StorageVariable<uint256_t> last_deposit_request_id{
+        StorageVariable<Uint256BE> last_deposit_request_id{
             state_,
             ca_,
             0x59725fc1e48c9d8be01f7e99fd22a7aebdb81ead6f187a3aa7f1ed9c2d5786c9_bytes32};
 
-        StorageVariable<uint256_t> last_withdrawal_request_id{
+        StorageVariable<Uint256BE> last_withdrawal_request_id{
             state_,
             ca_,
             0xfc1f685954d77928bb8b43407904dc3510647b966f75e0efe3575b5ef5056e80_bytes32};
 
-        StorageArray<uint256_t> validator_set{
+        StorageArray<Uint256BE> validator_set{
             state_,
             ca_,
             0x72ae25330cca2b1fbd02fe7c6d1ab3960b26f14196d8d23d5f70da5a02c0a073_bytes32};
@@ -135,10 +135,10 @@ public:
         //  Mappings  //
         ////////////////
 
-        // mapping (address => uint256_t) validator_id
-        StorageVariable<uint256_t> validator_id(Address const &address) noexcept
+        // mapping (address => uint256) validator_id
+        StorageVariable<Uint256BE> validator_id(Address const &address) noexcept
         {
-            return StorageVariable<uint256_t>(
+            return StorageVariable<Uint256BE>(
                 state_,
                 ca_,
                 mapping(
@@ -146,13 +146,13 @@ public:
                     address));
         }
 
-        // mapping (address => uint256_t) validator_id
+        // mapping (address => uint256) validator_id
         // This mapping only exists to ensure the same bls_key cannot be
         // assigned to multiple validator ids.
-        StorageVariable<uint256_t>
+        StorageVariable<Uint256BE>
         validator_id_bls(byte_string_fixed<48> const &bls_pubkey) noexcept
         {
-            return StorageVariable<uint256_t>(
+            return StorageVariable<Uint256BE>(
                 state_,
                 ca_,
                 mapping(
@@ -162,7 +162,7 @@ public:
 
         // mapping(uint256 => ValidatorInfo) validator_info
         StorageVariable<ValidatorInfo>
-        validator_info(uint256_t const &id) noexcept
+        validator_info(Uint256BE const &id) noexcept
         {
             return StorageVariable<ValidatorInfo>(
                 state_,
@@ -174,7 +174,7 @@ public:
 
         // mapping(uint256 => mapping(address => DelegatorInfo)) delegator_info
         StorageVariable<DelegatorInfo> delegator_info(
-            uint256_t const &validator_id,
+            Uint256BE const &validator_id,
             Address const &address) const noexcept
         {
             return StorageVariable<DelegatorInfo>{
@@ -188,7 +188,7 @@ public:
 
         // mapping(uint256 => DepositRequest) deposit_request
         StorageVariable<DepositRequest>
-        deposit_request(uint256_t const &deposit_id) const noexcept
+        deposit_request(Uint256BE const &deposit_id) const noexcept
         {
             return StorageVariable<DepositRequest>{
                 state_,
@@ -200,7 +200,7 @@ public:
 
         // mapping(uint256 => WithdrawalRequest) withdrawal_request
         StorageVariable<WithdrawalRequest>
-        withdrawal_request(uint256_t const &withdrawal_id) const noexcept
+        withdrawal_request(Uint256BE const &withdrawal_id) const noexcept
         {
             return StorageVariable<WithdrawalRequest>{
                 state_,
@@ -211,10 +211,10 @@ public:
         }
 
         // mapping(uint256 /* epoch */ => Array[u256]) deposit_queue
-        StorageArray<uint256_t>
-        deposit_queue(uint256_t const &epoch) const noexcept
+        StorageArray<Uint256BE>
+        deposit_queue(Uint256BE const &epoch) const noexcept
         {
-            return StorageArray<uint256_t>{
+            return StorageArray<Uint256BE>{
                 state_,
                 ca_,
                 mapping(
@@ -223,10 +223,10 @@ public:
         }
 
         // mapping(uint256 /* epoch */ => Array[u256]) withdrawal_queue
-        StorageArray<uint256_t>
-        withdrawal_queue(uint256_t const &epoch) const noexcept
+        StorageArray<Uint256BE>
+        withdrawal_queue(Uint256BE const &epoch) const noexcept
         {
-            return StorageArray<uint256_t>{
+            return StorageArray<Uint256BE>{
                 state_,
                 ca_,
                 mapping(
@@ -241,7 +241,7 @@ public:
 private:
     // helper used by add_stake() and add_validator()
     Status add_stake(
-        uint256_t const &validator_id, uint256_t const &amount,
+        Uint256BE const &validator_id, Uint256BE const &amount,
         Address const &);
 
 public:

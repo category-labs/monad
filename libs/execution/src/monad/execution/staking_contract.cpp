@@ -54,16 +54,9 @@ namespace
     constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
     constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
 
-    uint256_t increment_id(StorageVariable<uint256_t> &storage)
-    {
-        auto const id = storage.load().value_or(0);
-        storage.store(id + 1);
-        return id + 1;
-    }
-
-    uint256_t tokens_to_shares(
-        uint256_t const &existing_tokens, uint256_t const &existing_shares,
-        uint256_t const &new_tokens)
+    Uint256Native tokens_to_shares(
+        Uint256Native const &existing_tokens,
+        Uint256Native const &existing_shares, Uint256Native const &new_tokens)
     {
         if (MONAD_UNLIKELY(existing_shares == 0)) {
             return new_tokens;
@@ -73,9 +66,10 @@ namespace
         }
     }
 
-    uint256_t shares_to_tokens(
-        uint256_t const &existing_tokens, uint256_t const &existing_shares,
-        uint256_t const &shares_amount)
+    Uint256Native shares_to_tokens(
+        Uint256Native const &existing_tokens,
+        Uint256Native const &existing_shares,
+        Uint256Native const &shares_amount)
     {
         if (MONAD_UNLIKELY(existing_shares == 0)) {
             return 0;
@@ -144,7 +138,7 @@ StakingContract::Status StakingContract::precompile_add_validator(
 {
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
                                     BLS_COMPRESSED_PUBKEY_SIZE +
-                                    sizeof(Address) + sizeof(uint256_t);
+                                    sizeof(Address) + sizeof(Uint256BE);
     constexpr size_t SIGNATURES_SIZE =
         SECP_SIGNATURE_SIZE + BLS_COMPRESSED_SIGNATURE_SIZE;
 
@@ -165,8 +159,8 @@ StakingContract::Status StakingContract::precompile_add_validator(
         consume_bytes(reader, BLS_COMPRESSED_PUBKEY_SIZE).data());
     auto const auth_address =
         unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
-    auto const signed_stake = intx::be::unsafe::load<uint256_t>(
-        consume_bytes(reader, sizeof(uint256_t)).data());
+    auto const signed_stake = unaligned_load<evmc_uint256be>(
+        consume_bytes(reader, sizeof(evmc_uint256be)).data());
     auto const secp_signature_serialized =
         unaligned_load<byte_string_fixed<64>>(
             consume_bytes(reader, SECP_SIGNATURE_SIZE).data());
@@ -176,9 +170,10 @@ StakingContract::Status StakingContract::precompile_add_validator(
         return INVALID_INPUT;
     }
 
-    auto const stake = intx::be::load<uint256_t>(msg_value);
-
-    if (MONAD_UNLIKELY(signed_stake != stake)) {
+    if (MONAD_UNLIKELY(
+            0 !=
+            memcmp(
+                signed_stake.bytes, msg_value.bytes, sizeof(evmc_uint256be)))) {
         return INVALID_INPUT;
     }
 
@@ -210,7 +205,7 @@ StakingContract::Status StakingContract::precompile_add_validator(
     }
 
     // Check if validator already exists
-    Address const address = address_from_secpkey(secp_pubkey.serialize());
+    auto const address = address_from_secpkey(secp_pubkey.serialize());
     auto validator_id_storage = vars.validator_id(address);
     auto validator_id_bls_storage =
         vars.validator_id_bls(bls_pubkey_serialized);
@@ -220,7 +215,11 @@ StakingContract::Status StakingContract::precompile_add_validator(
         return VALIDATOR_EXISTS;
     }
 
-    uint256_t const validator_id = increment_id(vars.last_validator_id);
+    auto const validator_id = vars.last_validator_id.load()
+                                  .value_or(Uint256BE{})
+                                  .native()
+                                  .add(1)
+                                  .to_be();
     validator_id_storage.store(validator_id);
     validator_id_bls_storage.store(validator_id);
 
@@ -228,11 +227,11 @@ StakingContract::Status StakingContract::precompile_add_validator(
         .store(ValidatorInfo{
             .auth_address = auth_address,
             .bls_pubkey = bls_pubkey_serialized,
-            .total_stake = 0,
-            .active_stake = 0,
-            .active_shares = 0,
-            .activating_stake = 0,
-            .deactivating_shares = 0,
+            .total_stake = {},
+            .active_stake = {},
+            .active_shares = {},
+            .activating_stake = {},
+            .deactivating_shares = {},
             .rewards = {}});
 
     vars.validator_set.push(validator_id);
@@ -247,14 +246,14 @@ StakingContract::Status StakingContract::precompile_add_validator(
     //             address),
     //         .address = ca_});
 
-    return add_stake(validator_id, stake, msg_sender);
+    return add_stake(validator_id, msg_value, msg_sender);
 }
 
 StakingContract::Status StakingContract::add_stake(
-    uint256_t const &validator_id, uint256_t const &amount,
+    Uint256BE const &validator_id, Uint256BE const &amount,
     Address const &delegator)
 {
-    if (MONAD_UNLIKELY(amount < MIN_STAKE_AMOUNT)) {
+    if (MONAD_UNLIKELY(amount.native() < MIN_STAKE_AMOUNT)) {
         return MINIMUM_STAKE_NOT_MET;
     }
 
@@ -267,9 +266,13 @@ StakingContract::Status StakingContract::add_stake(
     auto delinfo_slot = vars.delegator_info(validator_id, delegator);
     auto delinfo = delinfo_slot.load().value_or(DelegatorInfo{});
 
-    uint256_t const epoch = vars.epoch.load().value_or(0);
-
-    uint256_t const deposit_id = increment_id(vars.last_deposit_request_id);
+    auto const epoch = vars.epoch.load().value_or(Uint256BE{});
+    auto const deposit_id = vars.last_deposit_request_id.load()
+                                .value_or(Uint256BE{})
+                                .native()
+                                .add(1)
+                                .to_be();
+    vars.last_deposit_request_id.store(deposit_id);
     vars.deposit_queue(epoch).push(deposit_id);
     vars.deposit_request(deposit_id)
         .store(DepositRequest{
@@ -277,8 +280,11 @@ StakingContract::Status StakingContract::add_stake(
             .amount = amount,
             .delegator = delegator});
 
-    delinfo.activating_stake += amount;
-    valinfo->activating_stake += amount;
+    auto const amount_native = amount.native();
+    delinfo.activating_stake =
+        delinfo.activating_stake.native().add(amount_native).to_be();
+    valinfo->activating_stake =
+        valinfo->activating_stake.native().add(amount_native).to_be();
     delinfo_slot.store(delinfo);
     valinfo_slot.store(valinfo.value());
 
@@ -289,17 +295,16 @@ StakingContract::Status StakingContract::precompile_add_stake(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
-    constexpr size_t MESSAGE_SIZE = sizeof(uint256_t) /* validatorId */;
+    constexpr size_t MESSAGE_SIZE = sizeof(Uint256BE) /* validatorId */;
 
     // Validate input size
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return INVALID_INPUT;
     }
 
-    auto const stake = intx::be::load<uint256_t>(msg_value);
-    uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
-        input.substr(0, sizeof(uint256_t)).data());
-    return add_stake(validator_id, stake, msg_sender);
+    auto const validator_id =
+        unaligned_load<Uint256BE>(input.substr(0, sizeof(Uint256BE)).data());
+    return add_stake(validator_id, Uint256BE{msg_value}, msg_sender);
 }
 
 StakingContract::Status StakingContract::precompile_remove_stake(
@@ -307,15 +312,16 @@ StakingContract::Status StakingContract::precompile_remove_stake(
     evmc_uint256be const &)
 {
     constexpr size_t MESSAGE_SIZE =
-        sizeof(uint256_t) /* validatorId */ + sizeof(uint256_t) /* amount */;
+        sizeof(Uint256BE) /* validatorId */ + sizeof(Uint256BE) /* amount */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return INVALID_INPUT;
     }
-    uint256_t const validator_id = intx::be::unsafe::load<uint256_t>(
-        input.substr(0, sizeof(uint256_t)).data());
-    uint256_t const shares = intx::be::unsafe::load<uint256_t>(
-        input.substr(sizeof(uint256_t), sizeof(uint256_t)).data());
+    auto const validator_id =
+        unaligned_load<Uint256BE>(input.substr(0, sizeof(Uint256BE)).data());
+    auto const shares = unaligned_load<Uint256BE>(
+        input.substr(sizeof(Uint256BE), sizeof(Uint256BE)).data());
 
+    auto const shares_native = shares.native();
     auto valinfo_slot = vars.validator_info(validator_id);
     auto valinfo = valinfo_slot.load();
     if (MONAD_UNLIKELY(!valinfo.has_value())) {
@@ -329,14 +335,17 @@ StakingContract::Status StakingContract::precompile_remove_stake(
     }
 
     // enough shares?
-    if (MONAD_UNLIKELY(delinfo->active_shares < shares)) {
+    if (MONAD_UNLIKELY(delinfo->active_shares.native() < shares.native())) {
         return NOT_ENOUGH_SHARES_TO_WITHDRAW;
     }
 
-    uint256_t const withdrawal_id =
-        increment_id(vars.last_withdrawal_request_id);
-
-    uint256_t const epoch = vars.epoch.load().value_or(0);
+    auto const epoch = vars.epoch.load().value_or(Uint256BE{});
+    auto const withdrawal_id = vars.last_withdrawal_request_id.load()
+                                   .value_or(Uint256BE{})
+                                   .native()
+                                   .add(1)
+                                   .to_be();
+    vars.last_withdrawal_request_id.store(withdrawal_id);
 
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
@@ -345,8 +354,8 @@ StakingContract::Status StakingContract::precompile_remove_stake(
             .shares = shares,
             .delegator = msg_sender});
 
-    delinfo->deactivating_shares += shares;
-    valinfo->deactivating_shares += shares;
+    delinfo->deactivating_shares.native().add(shares_native);
+    valinfo->deactivating_shares.native().add(shares_native);
     delinfo_slot.store(delinfo.value());
     valinfo_slot.store(valinfo.value());
 
@@ -368,7 +377,8 @@ StakingContract::syscall_reward_validator(Address const &block_author)
     }
 
     state_.add_to_balance(ca_, BASE_STAKING_REWARD);
-    validator_info->rewards[1] += BASE_STAKING_REWARD;
+    validator_info->rewards[1] =
+        validator_info->rewards[1].native().add(BASE_STAKING_REWARD).to_be();
     validator_info_storage.store(validator_info.value());
 
     return success();
@@ -380,10 +390,10 @@ Result<void> StakingContract::syscall_on_epoch_change()
     if (MONAD_UNLIKELY(!maybe_epoch.has_value())) {
         return success();
     }
-    uint256_t const epoch = maybe_epoch.value();
+    auto const epoch = maybe_epoch.value();
 
     // 1. Apply staking rewards
-    std::unordered_map<uint256_t, uint256_t, BytesHashCompare<uint256_t>>
+    std::unordered_map<Uint256BE, uint256_t, BytesHashCompare<Uint256BE>>
         val_id_to_index;
     uint256_t const num_validators = vars.validator_set.length();
     for (uint256_t i = 0; i < num_validators; i += 1) {
@@ -402,15 +412,16 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         // TODO: apply commission rate
-        valinfo->total_stake += valinfo->rewards[0];
-        valinfo->active_stake += valinfo->rewards[0];
+        valinfo->total_stake = valinfo->total_stake.native()
+                                   .add(valinfo->rewards[0].native())
+                                   .to_be();
         valinfo->rewards[0] = valinfo->rewards[1];
-        valinfo->rewards[1] = 0;
+        valinfo->rewards[1] = Uint256BE{};
         valinfo_storage.store(valinfo.value());
     }
 
     // 2. Apply deposits
-    StorageArray<uint256_t> deposit_queue_storage = vars.deposit_queue(epoch);
+    auto deposit_queue_storage = vars.deposit_queue(epoch);
     uint256_t const num_deposits = deposit_queue_storage.length();
     for (uint256_t i = 0; i < num_deposits; i += 1) {
         auto deposit_id = deposit_queue_storage.pop();
@@ -434,15 +445,17 @@ Result<void> StakingContract::syscall_on_epoch_change()
             return StakingSyscallError::InvalidState;
         }
 
-        uint256_t const shares_to_mint = tokens_to_shares(
-            valinfo->active_stake,
-            valinfo->active_shares,
-            deposit_request->amount);
+        auto val_active_stake = valinfo->active_stake.native();
+        auto val_active_shares = valinfo->active_shares.native();
+        auto const deposit_amount = deposit_request->amount.native();
 
-        valinfo->active_stake += deposit_request->amount;
-        valinfo->active_shares += shares_to_mint;
+        auto const shares_to_mint = tokens_to_shares(
+            val_active_stake, val_active_shares, deposit_amount);
 
-        delinfo->active_shares += shares_to_mint;
+        valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
+        valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
+        delinfo->active_shares =
+            delinfo->active_shares.native().add(shares_to_mint).to_be();
 
         valinfo_storage.store(valinfo.value());
         delinfo_storage.store(delinfo.value());
@@ -454,8 +467,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
     }
 
     // 3. Apply withdrawal requests
-    StorageArray<uint256_t> withdrawal_queue_storage =
-        vars.withdrawal_queue(epoch);
+    auto withdrawal_queue_storage = vars.withdrawal_queue(epoch);
     uint256_t const num_withdrawals = withdrawal_queue_storage.length();
     std::set<uint256_t, std::greater<uint256_t>> valset_removals;
     for (uint256_t i = 0; i < num_withdrawals; i += 1) {
@@ -481,22 +493,26 @@ Result<void> StakingContract::syscall_on_epoch_change()
             return StakingSyscallError::InvalidState;
         }
 
-        uint256_t const tokens_to_burn = shares_to_tokens(
-            valinfo->active_stake,
-            valinfo->active_shares,
-            withdrawal_request->shares);
+        auto val_active_stake = valinfo->active_stake.native();
+        auto val_active_shares = valinfo->active_stake.native();
+        auto const withdrawal_shares = withdrawal_request->shares.native();
 
-        valinfo->active_stake -= tokens_to_burn;
-        valinfo->active_shares -= withdrawal_request->shares;
+        auto const tokens_to_burn = shares_to_tokens(
+            val_active_stake, val_active_shares, withdrawal_shares);
 
-        delinfo->balance += tokens_to_burn;
-        delinfo->active_shares -= withdrawal_request->shares;
+        valinfo->active_stake = val_active_stake.sub(tokens_to_burn).to_be();
+        valinfo->active_shares = val_active_shares.sub(tokens_to_burn).to_be();
+
+        delinfo->balance =
+            delinfo->balance.native().sub(tokens_to_burn).to_be();
+        delinfo->active_shares =
+            delinfo->active_shares.native().sub(withdrawal_shares).to_be();
 
         if (withdrawal_request->delegator == valinfo->auth_address) {
             auto const tokens_after_withdrawal = shares_to_tokens(
-                valinfo->active_stake,
-                valinfo->active_shares,
-                delinfo->active_shares);
+                val_active_stake,
+                val_active_shares,
+                delinfo->active_shares.native());
             if (MONAD_LIKELY(tokens_after_withdrawal < MIN_STAKE_AMOUNT)) {
                 valset_removals.insert(
                     val_id_to_index[withdrawal_request->validator_id]);
@@ -514,7 +530,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
     for (auto const &removal : valset_removals) {
         auto to_remove = vars.validator_set.get(removal);
-        uint256_t const id = vars.validator_set.pop();
+        auto const id = vars.validator_set.pop();
         to_remove.store(id);
     }
 

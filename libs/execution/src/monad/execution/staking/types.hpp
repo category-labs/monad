@@ -1,10 +1,10 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/core/int.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -17,33 +17,33 @@ struct ValidatorInfo
 {
     Address auth_address;
     byte_string_fixed<48> bls_pubkey;
-    uint256_t total_stake;
-    uint256_t active_stake;
-    uint256_t active_shares;
-    uint256_t activating_stake;
-    uint256_t deactivating_shares;
-    uint256_t rewards[2];
+    Uint256BE total_stake;
+    Uint256BE active_stake;
+    Uint256BE active_shares;
+    Uint256BE activating_stake;
+    Uint256BE deactivating_shares;
+    Uint256BE rewards[2];
 };
 
 struct DelegatorInfo
 {
-    uint256_t active_shares; // shares
-    uint256_t deactivating_shares; // shares
-    uint256_t activating_stake; // MON
-    uint256_t balance;
+    Uint256BE active_shares; // shares
+    Uint256BE deactivating_shares; // shares
+    Uint256BE activating_stake; // MON
+    Uint256BE balance;
 };
 
 struct WithdrawalRequest
 {
-    uint256_t validator_id;
-    uint256_t shares;
+    Uint256BE validator_id;
+    Uint256BE shares;
     Address delegator;
 };
 
 struct DepositRequest
 {
-    uint256_t validator_id;
-    uint256_t amount;
+    Uint256BE validator_id;
+    Uint256BE amount;
     Address delegator;
 };
 

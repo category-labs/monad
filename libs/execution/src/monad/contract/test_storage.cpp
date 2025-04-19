@@ -1,5 +1,6 @@
 #include <monad/contract/storage_array.hpp>
 #include <monad/contract/storage_variable.hpp>
+#include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -81,4 +82,12 @@ TEST_F(Storage, array)
         arr.pop();
         EXPECT_EQ(arr.length(), i - 1);
     }
+}
+
+TEST_F(Storage, uint256)
+{
+    bytes32_t y{5};
+    Uint256BE be = std::bit_cast<Uint256BE>(y);
+    auto const res = be.native().add(5).to_be();
+    EXPECT_EQ(std::bit_cast<bytes32_t>(res), bytes32_t{10});
 }

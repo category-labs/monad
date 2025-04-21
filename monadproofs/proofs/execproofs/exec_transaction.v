@@ -579,10 +579,83 @@ Existing Instance UNSAFE_read_prim_cancel.
       \prepost{qbal sender_bal} sender_balp |-> u256R qbal sender_bal
       \prepost{sender_addr q} sender_addrp |-> addressR q sender_addr
       \prepost{q inc} incp |-> IncarnationR q inc 
-      \post Exists au, this |-> StateR au ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
+      \post Exists au, this |-> StateR au ** [| blockStatePtr au = bsp |]
+                         ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
   
+  Instance Learnable q q2 v tx1 (txp:ptr) :
+    Learnable
+      (txp |-> TransactionR q tx1)
+      (txp ,, o_field CU "monad::Transaction::nonce" |-> primR "unsigned long" q2 v)
+      [q2= cQp.mut q; v=(Z.of_N (tx_nonce tx1))] := ltac:(solve_learnable).
+  Lemma borrow_nonce2 q tx (txp:ptr) :
+    (txp |-> TransactionR q tx) |--
+   ((txp ,, o_field CU "monad::Transaction::nonce" |-> ulongR (cQp.mut q) (Z.of_N (tx_nonce tx))) -* txp |-> TransactionR q tx) **                             
+      ((txp ,, o_field CU "monad::Transaction::nonce" |-> ulongR (cQp.mut q) (Z.of_N (tx_nonce tx)))) .
+  Proof using.
+    Transparent TransactionR.
+    unfold TransactionR. go.
+    Opaque TransactionR.
+  Qed.
+  Definition borrow_nonce2_C := [CANCEL] borrow_nonce2.
+  Hint Resolve borrow_nonce2_C: br_opacity.
+  cpp.spec (Nscoped "monad::CallTracer"
+          (Nctor
+             [Tref "const monad::Transaction"]))
+    as callTracerConstr with
+      (    fun (this:ptr) =>
+        \arg{txp} "tx" (Vptr txp)
+        \prepost{qt tx} txp |-> TransactionR qt tx
+        \post this |-> structR "monad::CallTracer" (cQp.mut 1)).
+  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
+  cpp.spec "monad::min_balance(const monad::Transaction&)" as minb with
+      (
+        \arg{txp} "tx" (Vptr txp)
+        \prepost{qt tx} txp |-> TransactionR qt tx
+        \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
+      ).
+  
+  Lemma wAssert (P:mpred): P |-- P. reflexivity. Qed.
+  Import environments.
+  Ltac foldRep Rc R :=
+    (wapply (wAssert (Exists q a1 (p:ptr), p|-> Rc q a1))
+     || wapply (wAssert (Exists q a1 a2 (p:ptr), p|-> Rc q a1 a2)));
+    lazymatch goal with
+    | |- envs_entails _ (_ ** ?r) =>
+        let fn := fresh "CallresumeUseWand" in
+        hideFromWorkAs r fn
+    end;
+    unfold R;
+    work;
+    repeat (iExists _);
+    eagerUnifyU;
+    work;
+    lazymatch goal with
+    | |- envs_entails _ ?r => hsubst r
+    end.
+    
+  Tactic Notation "foldr" constr(Rc) reference(R) := (foldRep Rc R).
+  Instance refineInjVint: RefineInj (=) (=) Vint.
+  Proof using.
+    hnf.
+    intros.
+    congruence.
+  Qed.
+  Instance refineInjSr: RefineInj (=) (=) (fun x:Z=> x+1)%Z.
+  Proof using.
+    hnf.
+    intros.
+    lia.
+  Qed.
+  Instance refineInjSr2: RefineInj (=) (=) (fun x:nat=> Z.of_nat x+1)%Z.
+  Proof using.
+    hnf.
+    intros.
+    lia.
+  Qed.
   Lemma prf: denoteModule module
              ** (opt_reconstr TransactionResult resultT)
+             ** minb
+             ** callTracerConstr
              ** wait_for_promise
              ** destrop
              ** (destr_res (Tnamed "monad::ExecutionResult") ExecutionResultR) (* is this needed? *)
@@ -605,7 +678,7 @@ Existing Instance UNSAFE_read_prim_cancel.
              ** has_error
              ** result_value
              ** exec_final
-             ** merge
+             ** exec_specs.merge
 (*             ** result_val_constr *)
 (*             ** tag_constr *)
 (*             ** tag_dtor *)
@@ -620,64 +693,29 @@ Proof using MODd.
   Transparent BheaderR.
   unfold BheaderR.
   slauto.
+  go.
   rewrite <- wp_const_const_delete.
   go.
   unshelve rewrite <- wp_init_implicit.
   go.
-  iExists i. (* TODO: add a REfine 1 hint to avoid needing this *)
-  go.
-  Transparent TransactionR.
-  progress unfold TransactionR.
-  slauto.
-  go.
-  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
-  cpp.spec "monad::min_balance(const monad::Transaction&)" as minb with
-      (
-        \arg{txp} "tx" (Vptr txp)
-        \prepost{qt tx} txp |-> TransactionR qt tx
-        \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
-      ).
+  work.
+  iExists (_:nat). go.
   iAssert minb as "#?"%string;[admit|].
-  go.
-  unfold TransactionR.
-  go.
-  iExists _, _. eagerUnifyU.
+  foldr BheaderR BheaderR.
   go.
   rewrite <- wp_const_const_delete.
   go.
   Transparent libspecs.optionR.
-  Lemma borrow_nonce q tx (txp:ptr) :
-    (txp |-> TransactionR q tx) |-- borrow_from (txp |-> TransactionR q tx) (txp ,, o_field CU "monad::Transaction::nonce" |-> ulongR (cQp.mut q) (Z.of_N (tx_nonce tx))).
-  Proof using. unfold TransactionR. go. Qed.
-
-  Definition borrow_nonce_C := [CANCEL] borrow_nonce.
-  Hint Resolve borrow_nonce_C: br_opacity.
-  go.
-  
   simpl in *.
   go.
   rewrite <- wp_const_const_delete.
-  go.
+  wapplyObserve stateObserve. progress eagerUnifyU. go.
   (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
-  cpp.spec (Nscoped "monad::CallTracer"
-          (Nctor
-             [Tref "const monad::Transaction"]))
-    as callTracerConstr with
-      (    fun (this:ptr) =>
-        \arg{txp} "tx" (Vptr txp)
-        \prepost{qt tx} txp |-> TransactionR qt tx
-        \post this |-> structR "monad::CallTracer" (cQp.mut 1)).
   iAssert callTracerConstr as "#?"%string;[admit|].
+  Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
   go.
-  wapplyObserve stateObserve.
-  eagerUnifyU. go.
-  unfold TransactionR.
-  go.
-  iExists _, _. eagerUnifyU. go.
-  progress unfold TransactionR.
-  go.
-  iExists _, _. eagerUnifyU. go.
-  unfold BheaderR. go.
+
+  (*
   slauto.
   eagerUnifyU.
   Transparent libspecs.optionR.
@@ -690,10 +728,10 @@ Proof using MODd.
   forward_reason. subst.
   go. subst. go.
   unfold BheaderR. go.
-  unfold TransactionR. go.
+  unfold TransactionR. go. *)
   iExists true.  slauto.
-  do 3 (iExists _). iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
-  eagerUnifyU. slauto.
+  do 4 (iExists _). iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
+  eagerUnifyU. go. slauto.
   slauto.
   wp_if.
   {

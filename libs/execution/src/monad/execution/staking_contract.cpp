@@ -222,6 +222,7 @@ StakingContract::Status StakingContract::precompile_add_validator(
                                   .to_be();
     validator_id_storage.store(validator_id);
     validator_id_bls_storage.store(validator_id);
+    vars.last_validator_id.store(validator_id);
 
     vars.validator_info(validator_id)
         .store(ValidatorInfo{
@@ -346,7 +347,6 @@ StakingContract::Status StakingContract::precompile_remove_stake(
                                    .add(1)
                                    .to_be();
     vars.last_withdrawal_request_id.store(withdrawal_id);
-
     vars.withdrawal_queue(epoch).push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
         .store(WithdrawalRequest{

@@ -23,8 +23,7 @@ class StorageVariable
     void store_(StorageAdapter<T> const &adapter)
     {
         for (size_t i = 0; i < N; ++i) {
-            state_.set_storage(
-                address_, key_, intx::be::store<bytes32_t>(adapter.slots[i]));
+            state_.set_storage(address_, key_, adapter.slots[i]);
         }
     }
 
@@ -41,16 +40,12 @@ public:
     std::optional<T> load() const noexcept
     {
         StorageAdapter<T> value;
+        bool has_data = false;
         for (size_t i = 0; i < N; ++i) {
-            value.slots[i] =
-                intx::be::load<uint256_t>(state_.get_storage(address_, key_));
+            value.slots[i] = state_.get_storage(address_, key_);
+            has_data |= (value.slots[i] != bytes32_t{});
         }
-        return std::all_of(
-                   value.slots.raw,
-                   value.slots.raw + N,
-                   [](uint256_t const &slot) { return slot == 0; })
-                   ? std::optional<T>{}
-                   : value.typed;
+        return has_data ? value.typed : std::optional<T>{};
     }
 
     void store(T const &value)

@@ -12,7 +12,7 @@ MONAD_NAMESPACE_BEGIN
 template <typename T>
 constexpr size_t num_storage_slots()
 {
-    constexpr size_t SLOT_SIZE = sizeof(uint256_t);
+    constexpr size_t SLOT_SIZE = sizeof(bytes32_t);
     return (sizeof(T) + SLOT_SIZE - 1) / SLOT_SIZE;
 }
 
@@ -28,14 +28,14 @@ struct StorageAdapter
     {
         struct
         {
-            uint256_t raw[N];
+            bytes32_t raw[N];
 
-            constexpr uint256_t &operator[](size_t const i) noexcept
+            constexpr bytes32_t &operator[](size_t const i) noexcept
             {
                 return raw[i];
             }
 
-            constexpr uint256_t const &operator[](size_t const i) const noexcept
+            constexpr bytes32_t const &operator[](size_t const i) const noexcept
             {
                 return raw[i];
             }

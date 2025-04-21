@@ -32,6 +32,7 @@ Record TransactionResult :=
     gas_used: N;
     gas_refund: N;
     logs: list evm.log_entry;
+    (* sender : evm.address *)
   }.
 
 Definition stateAfterTransactionAux  (hdr: BlockHeader) (s: StateOfAccounts) (txindex: nat) (t: Transaction): StateOfAccounts * TransactionResult.

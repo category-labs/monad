@@ -280,14 +280,14 @@ Result<ExecutionResult> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 value(result),//TODO uninline
                 hdr.beneficiary);
-            call_tracer.on_receipt(receipt);
+            //call_tracer.on_receipt(receipt);
             block_state.merge(state);
 
-            auto const frames = call_tracer.get_frames();
+            //auto const frames = call_tracer.get_frames();
             return ExecutionResult{
                 .receipt = receipt,
                 .sender = sender,
-                .call_frames = {frames.begin(), frames.end()}};
+                .call_frames = {}}; //{frames.begin(), frames.end()}};
         }
     }
     {
@@ -317,14 +317,14 @@ Result<ExecutionResult> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             value(result),
             hdr.beneficiary);
-        call_tracer.on_receipt(receipt);
+        //call_tracer.on_receipt(receipt);
         block_state.merge(state);
 
-        auto const frames = call_tracer.get_frames();
+        //auto const frames = call_tracer.get_frames();
         return ExecutionResult{
             .receipt = receipt,
             .sender = sender,
-            .call_frames = {frames.begin(), frames.end()}};
+            .call_frames = {}}; //{frames.begin(), frames.end()}};
     }
 }
 

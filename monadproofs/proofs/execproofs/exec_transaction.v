@@ -614,11 +614,12 @@ Existing Instance UNSAFE_read_prim_cancel.
         \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
       ).
   
-  Lemma wAssert (P:mpred): P |-- P. reflexivity. Qed.
+  Lemma wAssert2 {A B:Type}(P: A-> B-> Rep) (p:ptr): forall a b, p|->P a b |-- p|-> P a b. reflexivity. Qed.
+  Lemma wAssert3 {A B C:Type}(P: A-> B-> C-> Rep) (p:ptr): forall a b c, p|->P a b c|-- p|-> P a b c. reflexivity. Qed.
   Import environments.
   Ltac foldRep Rc R :=
-    (wapply (wAssert (Exists q a1 (p:ptr), p|-> Rc q a1))
-     || wapply (wAssert (Exists q a1 a2 (p:ptr), p|-> Rc q a1 a2)));
+    (wapply (wAssert2 Rc)
+     || wapply (wAssert3 Rc));
     lazymatch goal with
     | |- envs_entails _ (_ ** ?r) =>
         let fn := fresh "CallresumeUseWand" in
@@ -652,6 +653,7 @@ Existing Instance UNSAFE_read_prim_cancel.
     intros.
     lia.
   Qed.
+  Remove Hints primR_split_C: br_opacity.
   Lemma prf: denoteModule module
              ** (opt_reconstr TransactionResult resultT)
              ** minb
@@ -702,6 +704,7 @@ Proof using MODd.
   iExists (_:nat). go.
   iAssert minb as "#?"%string;[admit|].
   foldr BheaderR BheaderR.
+  Search primR CancelX.
   go.
   rewrite <- wp_const_const_delete.
   go.
@@ -720,18 +723,15 @@ Proof using MODd.
   eagerUnifyU.
   Transparent libspecs.optionR.
   slauto1.
-  Transparent set_original_nonce.
-  unfold set_original_nonce in *.
-  simpl in *.
-  autorewrite with syntactic.
-  rewrite lookup_empty in H.
-  forward_reason. subst.
-  go. subst. go.
-  unfold BheaderR. go.
-  unfold TransactionR. go. *)
+  Transparent set_original_nonce. *)
+  unfold relaxed_constructor_init_state in H.
+  Opaque _nonce. (* o/w simpl hangs *)
+  Opaque _balance.
+  forward_reason. Set Printing Coercions.
+  rewrite Hrr. simpl.
+  progress autorewrite with syntactic.
   iExists true.  slauto.
-  do 4 (iExists _). iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
-  eagerUnifyU. go. slauto.
+  iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
   slauto.
   wp_if.
   {
@@ -740,9 +740,23 @@ Proof using MODd.
     slauto.
     slauto.
     go.
-    repeat (iExists _).
-    eagerUnifyU.
-    slauto.
+  Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
+    learn_exist_interface.Learnable
+      (hdrp |-> BheaderR q hdr)
+      (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q2) q2 (base_fee_per_gas hdr2))
+      [q2= cQp.mut q; hdr2=hdr] := ltac:(solve_learnable).
+  work.
+  
+  Lemma borrow_basefee q hdr (hdrp:ptr) :
+    let br :=   (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q) q (base_fee_per_gas hdr))
+    in
+    (hdrp |-> BheaderR q hdr) |-- (br -* hdrp |-> BheaderR q hdr) ** br.
+  Proof using.
+    unfold BheaderR. go.
+  Qed.
+  Definition borrow_basefee_C := [CANCEL] borrow_basefee.
+  Hint Resolve borrow_basefee_C: br_opacity.
+  go.
     rewrite <- wp_const_const_delete.
     slauto.
     go.

@@ -30,7 +30,7 @@ struct ExecutionResult
 {
     Receipt receipt;
     Address sender;
-    std::vector<CallFrame> call_frames;
+    std::vector<CallFrame> call_frames;// what are these?
 };
 
 uint64_t g_star(

@@ -646,6 +646,14 @@ Proof using MODd.
   rewrite <- wp_const_const_delete.
   go.
   Transparent libspecs.optionR.
+  Lemma borrow_nonce q tx (txp:ptr) :
+    (txp |-> TransactionR q tx) |-- borrow_from (txp |-> TransactionR q tx) (txp ,, o_field CU "monad::Transaction::nonce" |-> ulongR (cQp.mut q) (Z.of_N (tx_nonce tx))).
+  Proof using. unfold TransactionR. go. Qed.
+
+  Definition borrow_nonce_C := [CANCEL] borrow_nonce.
+  Hint Resolve borrow_nonce_C: br_opacity.
+  go.
+  
   simpl in *.
   go.
   rewrite <- wp_const_const_delete.
@@ -661,28 +669,17 @@ Proof using MODd.
         \post this |-> structR "monad::CallTracer" (cQp.mut 1)).
   iAssert callTracerConstr as "#?"%string;[admit|].
   go.
+  wapplyObserve stateObserve.
+  eagerUnifyU. go.
   unfold TransactionR.
   go.
   iExists _, _. eagerUnifyU. go.
-  Search state_addr.
-
-  (* wierd     reference_to "monad::State" state_addr obligation *)
-
-  name_locals.
-    .
-  
-  Search senderp.
-  libspecs.optionR
-  searchL senderp.
-       
-  (* need spec for min_balance *)
-  wapplyObserve stateObserve.
-  eagerUnifyU.
-  slauto.
-  Transparent TransactionR.
   progress unfold TransactionR.
+  go.
+  iExists _, _. eagerUnifyU. go.
+  unfold BheaderR. go.
   slauto.
-
+  eagerUnifyU.
   Transparent libspecs.optionR.
   slauto1.
   Transparent set_original_nonce.

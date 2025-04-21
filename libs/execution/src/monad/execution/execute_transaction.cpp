@@ -295,11 +295,11 @@ Result<ExecutionResult> execute_impl(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
-#ifdef ENABLE_CALL_TRACING
-        CallTracer call_tracer{tx};
-#else
-        NoopCallTracer call_tracer{};
-#endif
+// #ifdef ENABLE_CALL_TRACING
+//         CallTracer call_tracer{tx};
+// #else
+//         NoopCallTracer call_tracer{};
+// #endif
 
         auto result = execute_impl2<rev>(
             call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);

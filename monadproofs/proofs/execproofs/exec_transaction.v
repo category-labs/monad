@@ -650,6 +650,15 @@ Proof using MODd.
   go.
   rewrite <- wp_const_const_delete.
   go.
+  (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
+  cpp.spec (Nscoped "monad::CallTracer"
+          (Nctor
+             [Tref "const monad::Transaction"]))
+    as callTracerConstr with
+      (    fun (this:ptr) =>
+        \arg{txp} "tx" (Vptr txp)
+        \prepost{qt tx} txp |-> TransactionR qt tx
+        \post emp ).
   name_locals.
     .
   

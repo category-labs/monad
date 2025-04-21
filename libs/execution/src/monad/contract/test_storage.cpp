@@ -56,6 +56,37 @@ TEST_F(Storage, variable)
     EXPECT_FALSE(var.load().has_value());
 }
 
+TEST_F(Storage, struct)
+{
+    struct S
+    {
+        int x;
+        int y;
+        uint256_t z;
+    };
+
+    StorageVariable<S> var(state, ADDRESS, bytes32_t{6000});
+
+    ASSERT_FALSE(var.load().has_value());
+    var.store(S{.x = 4, .y = 5, .z = 6});
+    ASSERT_TRUE(var.load().has_value());
+    S s = var.load().value();
+    EXPECT_EQ(s.x, 4);
+    EXPECT_EQ(s.y, 5);
+    EXPECT_EQ(s.z, uint256_t(6));
+    s.x *= 2;
+    s.y *= 2;
+    s.z *= 2;
+    var.store(s);
+    ASSERT_TRUE(var.load().has_value());
+    S s2 = var.load().value();
+    EXPECT_EQ(s2.x, 8);
+    EXPECT_EQ(s2.y, 10);
+    EXPECT_EQ(s2.z, 12);
+    var.clear();
+    EXPECT_FALSE(var.load().has_value());
+}
+
 TEST_F(Storage, array)
 {
     struct SomeType

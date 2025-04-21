@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/contract/storage_adapter.hpp>
+#include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/state3/state.hpp>
@@ -18,12 +19,15 @@ class StorageVariable
 {
     State &state_;
     Address const &address_;
-    bytes32_t const key_;
+    uint256_t const offset_;
 
     void store_(StorageAdapter<T> const &adapter)
     {
         for (size_t i = 0; i < N; ++i) {
-            state_.set_storage(address_, key_, adapter.slots[i]);
+            state_.set_storage(
+                address_,
+                intx::be::store<bytes32_t>(offset_ + i),
+                adapter.slots[i]);
         }
     }
 
@@ -33,7 +37,7 @@ public:
     StorageVariable(State &state, Address const &address, bytes32_t key)
         : state_{state}
         , address_{address}
-        , key_{std::move(key)}
+        , offset_{intx::be::load<uint256_t>(key)}
     {
     }
 
@@ -42,7 +46,8 @@ public:
         StorageAdapter<T> value;
         bool has_data = false;
         for (size_t i = 0; i < N; ++i) {
-            value.slots[i] = state_.get_storage(address_, key_);
+            value.slots[i] = state_.get_storage(
+                address_, intx::be::store<bytes32_t>(offset_ + i));
             has_data |= (value.slots[i] != bytes32_t{});
         }
         return has_data ? value.typed : std::optional<T>{};

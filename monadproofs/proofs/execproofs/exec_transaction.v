@@ -658,7 +658,16 @@ Proof using MODd.
       (    fun (this:ptr) =>
         \arg{txp} "tx" (Vptr txp)
         \prepost{qt tx} txp |-> TransactionR qt tx
-        \post emp ).
+        \post this |-> structR "monad::CallTracer" (cQp.mut 1)).
+  iAssert callTracerConstr as "#?"%string;[admit|].
+  go.
+  unfold TransactionR.
+  go.
+  iExists _, _. eagerUnifyU. go.
+  Search state_addr.
+
+  (* wierd     reference_to "monad::State" state_addr obligation *)
+
   name_locals.
     .
   

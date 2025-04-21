@@ -629,16 +629,33 @@ Proof using MODd.
   Transparent TransactionR.
   progress unfold TransactionR.
   slauto.
+  go.
+  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
   cpp.spec "monad::min_balance(const monad::Transaction&)" as minb with
       (
-        \arg{trp} "tx" (Vptr trp)
-        \post{x:ptr} [Vptr x] emp (* TODO: fix *)
+        \arg{txp} "tx" (Vptr txp)
+        \prepost{qt tx} txp |-> TransactionR qt tx
+        \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
       ).
   iAssert minb as "#?"%string;[admit|].
   go.
+  unfold TransactionR.
+  go.
+  iExists _, _. eagerUnifyU.
+  go.
   rewrite <- wp_const_const_delete.
   go.
-      
+  Transparent libspecs.optionR.
+  simpl in *.
+  go.
+  rewrite <- wp_const_const_delete.
+  go.
+  name_locals.
+    .
+  
+  Search senderp.
+  libspecs.optionR
+  searchL senderp.
        
   (* need spec for min_balance *)
   wapplyObserve stateObserve.

@@ -21,7 +21,7 @@ bytes32_t mapping(Args const &...args)
     ([&] { blake3_hasher_update(&ctx, &args, sizeof(args)); }(), ...);
 
     blake3_hasher_finalize(&ctx, output.bytes, BLAKE3_OUT_LEN);
-    return intx::be::store<bytes32_t>(std::bit_cast<uint256_t>(output));
+    return std::bit_cast<bytes32_t>(output);
 }
 
 MONAD_NAMESPACE_END

@@ -267,7 +267,8 @@ StakingContract::Status StakingContract::add_stake(
     auto delinfo_slot = vars.delegator_info(validator_id, delegator);
     auto delinfo = delinfo_slot.load().value_or(DelegatorInfo{});
 
-    auto const epoch = vars.epoch.load().value_or(Uint256BE{});
+    auto const epoch =
+        vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be();
     auto const deposit_id = vars.last_deposit_request_id.load()
                                 .value_or(Uint256BE{})
                                 .native()
@@ -340,7 +341,8 @@ StakingContract::Status StakingContract::precompile_remove_stake(
         return NOT_ENOUGH_SHARES_TO_WITHDRAW;
     }
 
-    auto const epoch = vars.epoch.load().value_or(Uint256BE{});
+    auto const epoch =
+        vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be();
     auto const withdrawal_id = vars.last_withdrawal_request_id.load()
                                    .value_or(Uint256BE{})
                                    .native()
@@ -454,6 +456,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
         valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
+
         delinfo->active_shares =
             delinfo->active_shares.native().add(shares_to_mint).to_be();
 
@@ -501,10 +504,11 @@ Result<void> StakingContract::syscall_on_epoch_change()
             val_active_stake, val_active_shares, withdrawal_shares);
 
         valinfo->active_stake = val_active_stake.sub(tokens_to_burn).to_be();
-        valinfo->active_shares = val_active_shares.sub(tokens_to_burn).to_be();
+        valinfo->active_shares =
+            val_active_shares.sub(withdrawal_shares).to_be();
 
         delinfo->balance =
-            delinfo->balance.native().sub(tokens_to_burn).to_be();
+            delinfo->balance.native().add(tokens_to_burn).to_be();
         delinfo->active_shares =
             delinfo->active_shares.native().sub(withdrawal_shares).to_be();
 

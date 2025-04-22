@@ -133,7 +133,7 @@ StakingContract::Status StakingContract::precompile_fallback(
 }
 
 StakingContract::Status StakingContract::precompile_add_validator(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view const input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     constexpr size_t MESSAGE_SIZE = SECP_COMPRESSED_PUBKEY_SIZE +
@@ -247,7 +247,7 @@ StakingContract::Status StakingContract::precompile_add_validator(
     //             address),
     //         .address = ca_});
 
-    return add_stake(validator_id, msg_value, msg_sender);
+    return add_stake(validator_id, msg_value, auth_address);
 }
 
 StakingContract::Status StakingContract::add_stake(
@@ -267,26 +267,28 @@ StakingContract::Status StakingContract::add_stake(
     auto delinfo_slot = vars.delegator_info(validator_id, delegator);
     auto delinfo = delinfo_slot.load().value_or(DelegatorInfo{});
 
-    auto const epoch =
-        vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be();
     auto const deposit_id = vars.last_deposit_request_id.load()
                                 .value_or(Uint256BE{})
                                 .native()
                                 .add(1)
                                 .to_be();
     vars.last_deposit_request_id.store(deposit_id);
-    vars.deposit_queue(epoch).push(deposit_id);
+    vars.deposit_queue(
+            vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be())
+        .push(deposit_id);
     vars.deposit_request(deposit_id)
         .store(DepositRequest{
             .validator_id = validator_id,
-            .amount = amount,
-            .delegator = delegator});
+            .delegator = delegator,
+            .amount = amount});
 
     auto const amount_native = amount.native();
     delinfo.activating_stake =
         delinfo.activating_stake.native().add(amount_native).to_be();
     valinfo->activating_stake =
         valinfo->activating_stake.native().add(amount_native).to_be();
+    valinfo->total_stake =
+        valinfo->total_stake.native().add(amount_native).to_be();
     delinfo_slot.store(delinfo);
     valinfo_slot.store(valinfo.value());
 
@@ -332,7 +334,7 @@ StakingContract::Status StakingContract::precompile_remove_stake(
 
     auto delinfo_slot = vars.delegator_info(validator_id, msg_sender);
     auto delinfo = delinfo_slot.load();
-    if (MONAD_UNLIKELY(delinfo.has_value())) {
+    if (MONAD_UNLIKELY(!delinfo.has_value())) {
         return UNKNOWN_DELEGATOR;
     }
 
@@ -341,23 +343,30 @@ StakingContract::Status StakingContract::precompile_remove_stake(
         return NOT_ENOUGH_SHARES_TO_WITHDRAW;
     }
 
-    auto const epoch =
-        vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be();
     auto const withdrawal_id = vars.last_withdrawal_request_id.load()
                                    .value_or(Uint256BE{})
                                    .native()
                                    .add(1)
                                    .to_be();
     vars.last_withdrawal_request_id.store(withdrawal_id);
-    vars.withdrawal_queue(epoch).push(withdrawal_id);
+    vars.withdrawal_queue(
+            vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be())
+        .push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
         .store(WithdrawalRequest{
             .validator_id = validator_id,
-            .shares = shares,
-            .delegator = msg_sender});
+            .delegator = msg_sender,
+            .shares = shares});
 
     delinfo->deactivating_shares.native().add(shares_native);
     valinfo->deactivating_shares.native().add(shares_native);
+    valinfo->total_stake = valinfo->total_stake.native()
+                               .sub(shares_to_tokens(
+                                   valinfo->total_stake.native(),
+                                   valinfo->active_shares.native() -
+                                       valinfo->deactivating_shares.native(),
+                                   shares.native()))
+                               .to_be();
     delinfo_slot.store(delinfo.value());
     valinfo_slot.store(valinfo.value());
 
@@ -414,9 +423,6 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         // TODO: apply commission rate
-        valinfo->total_stake = valinfo->total_stake.native()
-                                   .add(valinfo->rewards[0].native())
-                                   .to_be();
         valinfo->rewards[0] = valinfo->rewards[1];
         valinfo->rewards[1] = Uint256BE{};
         valinfo_storage.store(valinfo.value());
@@ -456,6 +462,8 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
         valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
+        valinfo->activating_stake =
+            valinfo->activating_stake.native().sub(deposit_amount).to_be();
 
         delinfo->active_shares =
             delinfo->active_shares.native().add(shares_to_mint).to_be();
@@ -506,6 +514,8 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo->active_stake = val_active_stake.sub(tokens_to_burn).to_be();
         valinfo->active_shares =
             val_active_shares.sub(withdrawal_shares).to_be();
+        valinfo->deactivating_shares =
+            valinfo->activating_stake.native().sub(withdrawal_shares).to_be();
 
         delinfo->balance =
             delinfo->balance.native().add(tokens_to_burn).to_be();

@@ -36,15 +36,15 @@ struct DelegatorInfo
 struct WithdrawalRequest
 {
     Uint256BE validator_id;
-    Uint256BE shares;
     Address delegator;
+    Uint256BE shares;
 };
 
 struct DepositRequest
 {
     Uint256BE validator_id;
-    Uint256BE amount;
     Address delegator;
+    Uint256BE amount;
 };
 
 MONAD_NAMESPACE_END

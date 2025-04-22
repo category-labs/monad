@@ -188,13 +188,15 @@ Require Import bedrock.prelude.lens.
     Import LensNotations.
     #[local] Open Scope lens_scope.
 
-    Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce sender_balance: N)  (bsp: ptr) (ind: Indices) (sf: AssumptionsAndUpdates) : Prop :=
-      exists senderAc, senderAc .^ _nonce = sender_nonce /\ senderAc .^ _balance = sender_balance /\
+    Locate balance.
+  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
+    Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce min_sender_balance: N) (bsp: ptr) (ind: Indices) (sf: AssumptionsAndUpdates) : Prop :=
+      exists senderAc, senderAc .^ _nonce = sender_nonce /\ (min_sender_balance <= senderAc .^ _balance)%Z  /\
         sf =
           {|
             relaxedValidation:= true;
             newStates:= ∅;
-            original := <[sender_addr := (senderAc, {| balance := true; nonce :=false |}) ]> ∅;
+            original := <[sender_addr := (senderAc, {| min_balance := Some min_sender_balance  ; nonce_exact :=false |}) ]> ∅;
             blockStatePtr := bsp;
             indices:= ind;
           |}.
@@ -534,8 +536,8 @@ cpp.spec (result_val_contr_name "monad::ExecutionResult")
                     Atype
                       (Tnamed
                          (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                            [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                    Atype "void"]))]))
+                            [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))])); 
+                   Atype "void"]))]))
     result_addr) (result_addr |-> ResultSuccessR EvmcResultR t).
   Proof using. Admitted.
 
@@ -606,7 +608,6 @@ Existing Instance UNSAFE_read_prim_cancel.
         \arg{txp} "tx" (Vptr txp)
         \prepost{qt tx} txp |-> TransactionR qt tx
         \post this |-> structR "monad::CallTracer" (cQp.mut 1)).
-  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
   cpp.spec "monad::min_balance(const monad::Transaction&)" as minb with
       (
         \arg{txp} "tx" (Vptr txp)
@@ -654,6 +655,52 @@ Existing Instance UNSAFE_read_prim_cancel.
     lia.
   Qed.
   Remove Hints primR_split_C: br_opacity.
+  Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
+    learn_exist_interface.Learnable
+      (hdrp |-> BheaderR q hdr)
+      (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q2) q2 (base_fee_per_gas hdr2))
+      [q2= cQp.mut q; hdr2=hdr] := ltac:(solve_learnable).
+  Transparent BheaderR.
+  Lemma borrow_basefee q hdr (hdrp:ptr) :
+    let br :=   (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q) q (base_fee_per_gas hdr))
+    in
+    (hdrp |-> BheaderR q hdr) |-- (br -* hdrp |-> BheaderR q hdr) ** br.
+  Proof using.
+    unfold BheaderR. go.
+  Qed.
+  Definition borrow_basefee_C := [CANCEL] borrow_basefee.
+  Hint Resolve borrow_basefee_C: br_opacity.
+      cpp.spec (Ninst
+             "monad::execute_final(const monad::Chain&, monad::State&, const monad::BlockHeader&, const monad::Transaction&, const evmc::address&, const intx::uint<256u>&, const evmc::Result&, const evmc::address&)"
+             [Avalue (Eint 11 "enum evmc_revision")]) as exec_final_spec with (
+    \arg{chainp} "chain" (Vptr chainp)
+    \prepost{qchain chain} chainp |-> ChainR qchain chain
+    \arg{statep: ptr} "state" (Vref statep)
+    \pre{assumptionsAndUpdates}  statep |-> StateR assumptionsAndUpdates
+    \arg{hdrp: ptr} "hdr" (Vref hdrp)
+    \prepost{qh header} hdrp |-> BheaderR qh header
+    \arg{txp} "tx" (Vref txp)
+    \prepost{qtx t} txp |-> TransactionR qtx t
+    \arg{senderp} "sender" (Vref senderp)
+    \prepost{qs} senderp |-> addressR qs (sender t)
+    \arg{bfeep: ptr} "base_fee_per_gase" (Vref bfeep)
+    \prepost{q basefeepergas} bfeep |-> u256R q basefeepergas
+    \arg{i preTxState resultp hdr} "" (Vptr resultp)
+    \pre{postTxState result} [| (postTxState, result) = stateAfterTransactionAux hdr preTxState i t |]
+    \prepost resultp |-> EvmcResultR result
+    \arg{benp} "beneficiary" (Vref benp)
+    \pre [| benp = (hdrp ,, o_field CU "monad::BlockHeader::beneficiary") |]
+    \pre [| postTxState = applyUpdates assumptionsAndUpdates preTxState |]
+    \prepost{preBlockState g} (blockStatePtr assumptionsAndUpdates) |-> BlockState.Rauth preBlockState g preTxState
+    \pre [| satisfiesAssumptions assumptionsAndUpdates preTxState |]
+    \post{retp}[Vptr retp] Exists assumptionsAndUpdatesFinal,
+       retp |-> ReceiptR result ** statep |-> StateR assumptionsAndUpdatesFinal
+       ** [| satisfiesAssumptions assumptionsAndUpdatesFinal preTxState |]
+       ** [| blockStatePtr assumptionsAndUpdatesFinal = blockStatePtr assumptionsAndUpdates |]
+       ** [| indices assumptionsAndUpdatesFinal = indices assumptionsAndUpdates |]
+       ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |]).
+      Ltac assertp foo :=  iAssert foo as "#?"%string;[admit|].
+  
   Lemma prf: denoteModule module
              ** (opt_reconstr TransactionResult resultT)
              ** minb
@@ -727,7 +774,8 @@ Proof using MODd.
   unfold relaxed_constructor_init_state in H.
   Opaque _nonce. (* o/w simpl hangs *)
   Opaque _balance.
-  forward_reason. Set Printing Coercions.
+  Set Printing Coercions.
+  forward_reason. 
   rewrite Hrr. simpl.
   progress autorewrite with syntactic.
   iExists true.  slauto.
@@ -738,57 +786,9 @@ Proof using MODd.
     intros.
     wapplyObserve @resultObserve. eagerUnifyU.
     slauto.
-    slauto.
-    go.
-  Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
-    learn_exist_interface.Learnable
-      (hdrp |-> BheaderR q hdr)
-      (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q2) q2 (base_fee_per_gas hdr2))
-      [q2= cQp.mut q; hdr2=hdr] := ltac:(solve_learnable).
-  work.
-  
-  Lemma borrow_basefee q hdr (hdrp:ptr) :
-    let br :=   (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q) q (base_fee_per_gas hdr))
-    in
-    (hdrp |-> BheaderR q hdr) |-- (br -* hdrp |-> BheaderR q hdr) ** br.
-  Proof using.
-    unfold BheaderR. go.
-  Qed.
-  Definition borrow_basefee_C := [CANCEL] borrow_basefee.
-  Hint Resolve borrow_basefee_C: br_opacity.
-  go.
     rewrite <- wp_const_const_delete.
     slauto.
 
-      cpp.spec (Ninst
-             "monad::execute_final(const monad::Chain&, monad::State&, const monad::BlockHeader&, const monad::Transaction&, const evmc::address&, const intx::uint<256u>&, const evmc::Result&, const evmc::address&)"
-             [Avalue (Eint 11 "enum evmc_revision")]) as exec_final_spec with (
-    \arg{chainp} "chain" (Vptr chainp)
-    \prepost{qchain chain} chainp |-> ChainR qchain chain
-    \arg{statep: ptr} "state" (Vref statep)
-    \pre{assumptionsAndUpdates}  statep |-> StateR assumptionsAndUpdates
-    \arg{hdrp: ptr} "hdr" (Vref hdrp)
-    \prepost{qh header} hdrp |-> BheaderR qh header
-    \arg{txp} "tx" (Vref txp)
-    \prepost{qtx t} txp |-> TransactionR qtx t
-    \arg{senderp} "sender" (Vref senderp)
-    \prepost{qs} senderp |-> addressR qs (sender t)
-    \arg{bfeep: ptr} "base_fee_per_gase" (Vref bfeep)
-    \prepost{q basefeepergas} bfeep |-> u256R q basefeepergas
-    \arg{i preTxState resultp hdr} "" (Vptr resultp)
-    \pre{postTxState result} [| (postTxState, result) = stateAfterTransactionAux hdr preTxState i t |]
-    \prepost resultp |-> EvmcResultR result
-    \arg{benp} "beneficiary" (Vref benp)
-    \pre [| benp = (hdrp ,, o_field CU "monad::BlockHeader::beneficiary") |]
-    \pre [| postTxState = applyUpdates assumptionsAndUpdates preTxState |]
-    \prepost{preBlockState g} (blockStatePtr assumptionsAndUpdates) |-> BlockState.Rauth preBlockState g preTxState
-    \pre [| satisfiesAssumptions assumptionsAndUpdates preTxState |]
-    \post{retp}[Vptr retp] Exists assumptionsAndUpdatesFinal,
-       retp |-> ReceiptR result ** statep |-> StateR assumptionsAndUpdatesFinal
-       ** [| satisfiesAssumptions assumptionsAndUpdatesFinal preTxState |]
-       ** [| blockStatePtr assumptionsAndUpdatesFinal = blockStatePtr assumptionsAndUpdates |]
-       ** [| indices assumptionsAndUpdatesFinal = indices assumptionsAndUpdates |]
-       ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |]).
 
       iAssert (exec_final_spec) as "?"%string;[admit|].
       use_wand_no_assert.
@@ -824,21 +824,85 @@ Proof using MODd.
     wapplyObserve recObserve. eagerUnifyU.
     (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
     go.
-    unshelve rewrite <- wp_init_implicit.
-    go.
-    setoid_rewrite ResultSucRDef.
-    go.
-    repeat (iExists _). eagerUnifyC. go.
+cpp.spec "boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::basic_result<monad::ExecutionResult, void>(monad::ExecutionResult&&, boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::value_converting_constructor_tag)"
+  as result_val_constr with (fun this:ptr =>
+                               \arg{recp} ("recp"%pstring) (Vref recp)
+                               \prepost{r} recp |-> ExecutionResultR r
+                               \arg{vtag} ("vtag"%pstring) (Vptr vtag)
+                               \post this |-> ResultSuccessR ExecutionResultR r).
+cpp.spec "monad::Receipt::Receipt(const monad::Receipt&)"
+  as result_val_constr2 with (fun this:ptr =>
+                               \arg{recp} ("recp"%pstring) (Vref recp)
+                               \prepost{r} recp |-> ReceiptR r
+                               \post this |-> ReceiptR r).
+cpp.spec "evmc::address::address(const evmc::address&)"
+  as addr_copy_constr with (fun this:ptr =>
+                               \arg{recp} ("recp"%pstring) (Vref recp)
+                               \prepost{q r} recp |-> addressR q r
+                               \post this |-> addressR 1 r).
+cpp.spec "std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>::vector()" as vector_constr_spec with
+    (fun this:ptr =>
+       \pre emp
+       \post this |-> VectorR "monad::CallFrame" (fun _:unit=>emp) 1 []).
+  cpp.spec (Nscoped (Nscoped (resultn "monad::ExecutionResult") (Nid "value_converting_constructor_tag")) (Nctor []))
+    as tag_constr with
+      (fun (this:ptr) => \post this |-> structR ((Nscoped (resultn "monad::ExecutionResult") (Nid "value_converting_constructor_tag"))) (cQp.mut 1)).
+  cpp.spec (Nscoped (Nscoped (resultn "monad::ExecutionResult") (Nid "value_converting_constructor_tag")) (Ndtor))
+    as tag_dtor with
+      (fun (this:ptr) => \pre this |-> structR ((Nscoped (resultn "monad::ExecutionResult") (Nid "value_converting_constructor_tag"))) (cQp.mut 1)
+                          \post emp).
+  cpp.spec (Nscoped "monad::ExecutionResult" (Ndtor))
+    as execres_dtor with
+      (fun (this:ptr) =>
+         \pre{r} this |-> ExecutionResultR r
+         \post emp
+      ).
+  cpp.spec (Nscoped "monad::CallTracer" (Ndtor))
+    as ct_dtor with
+      (fun (this:ptr) =>
+         \pre this |-> structR "monad::CallTracer" (cQp.mut 1)
+         \post emp
+      ).
+  cpp.spec (Nscoped "monad::Receipt" (Ndtor))
+    as rec_dtor with
+      (fun (this:ptr) =>
+         \pre{r} this |-> ReceiptR r
+         \post emp
+      ).
 
-    (* too many temps need to be destructed just before returning *)
+  assertp constr:(rec_dtor).
+    assertp (ct_dtor).
+  assertp constr:(execres_dtor).
+assertp constr:(tag_constr).
+assertp constr:(tag_dtor).
+assertp constr:(vector_constr_spec).
+assertp constr:(result_val_constr).
+assertp constr:(result_val_constr2).
+assertp constr:(addr_copy_constr).
+go.
 
-    go.
-    rewrite <- wp_const_const_delete.
-    go.
-    go.
-    setoid_rewrite ResultSucRDef.
-    go.
-    go.
+unshelve rewrite <- wp_init_implicit.
+go.
+Lemma ExecutionResultRdef t (r: TransactionResult) :
+  ExecutionResultR r -|-
+    structR "monad::ExecutionResult" (cQp.mut 1)
+    ** o_field CU "monad::ExecutionResult::sender" |-> addressR 1 (sender t)
+    **  o_field CU "monad::ExecutionResult::receipt" |-> ReceiptR r
+    ** o_field CU "monad::ExecutionResult::call_frames" |-> VectorR "monad::CallFrame" (λ _ : (), emp) 1 [].
+Proof using. Admitted.
+setoid_rewrite ExecutionResultRdef at 1.
+Opaque VectorR.
+go.
+  go.
+  Instance: LearnEq1 ExecutionResultR := ltac:(solve_learnable).
+  go.
+  rewrite <- wp_const_const_delete.
+  go.
+  setoid_rewrite ResultSucRDef.
+  Remove Hints borrow_basefee_C: br_opacity.
+  go.
+  unfold BheaderR. (* properly hide postcond to avoid needing this *)
+  go.
     autorewrite with syntactic in *.
     iClear "#"%string.
     match goal with
@@ -847,8 +911,9 @@ Proof using MODd.
     unfold stateAfterTransaction.
     rewrite <- Heqsaf.
     go.
-    rewrite ResultSucRDef. go.
-}
+    rewrite ResultSucRDef.
+    work.
+  }
 {
   rename result_addr into result_addr_del.
   rename state_addr into state_addr_del.

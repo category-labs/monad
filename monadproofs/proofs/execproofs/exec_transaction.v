@@ -759,11 +759,42 @@ Proof using MODd.
   go.
     rewrite <- wp_const_const_delete.
     slauto.
-    go.
-    unfold TransactionR.
-    go.
-    progress applyPHyp.
-    repeat (iExists _). eagerUnifyC.
+
+      cpp.spec (Ninst
+             "monad::execute_final(const monad::Chain&, monad::State&, const monad::BlockHeader&, const monad::Transaction&, const evmc::address&, const intx::uint<256u>&, const evmc::Result&, const evmc::address&)"
+             [Avalue (Eint 11 "enum evmc_revision")]) as exec_final_spec with (
+    \arg{chainp} "chain" (Vptr chainp)
+    \prepost{qchain chain} chainp |-> ChainR qchain chain
+    \arg{statep: ptr} "state" (Vref statep)
+    \pre{assumptionsAndUpdates}  statep |-> StateR assumptionsAndUpdates
+    \arg{hdrp: ptr} "hdr" (Vref hdrp)
+    \prepost{qh header} hdrp |-> BheaderR qh header
+    \arg{txp} "tx" (Vref txp)
+    \prepost{qtx t} txp |-> TransactionR qtx t
+    \arg{senderp} "sender" (Vref senderp)
+    \prepost{qs} senderp |-> addressR qs (sender t)
+    \arg{bfeep: ptr} "base_fee_per_gase" (Vref bfeep)
+    \prepost{q basefeepergas} bfeep |-> u256R q basefeepergas
+    \arg{i preTxState resultp hdr} "" (Vptr resultp)
+    \pre{postTxState result} [| (postTxState, result) = stateAfterTransactionAux hdr preTxState i t |]
+    \prepost resultp |-> EvmcResultR result
+    \arg{benp} "beneficiary" (Vref benp)
+    \pre [| benp = (hdrp ,, o_field CU "monad::BlockHeader::beneficiary") |]
+    \pre [| postTxState = applyUpdates assumptionsAndUpdates preTxState |]
+    \prepost{preBlockState g} (blockStatePtr assumptionsAndUpdates) |-> BlockState.Rauth preBlockState g preTxState
+    \pre [| satisfiesAssumptions assumptionsAndUpdates preTxState |]
+    \post{retp}[Vptr retp] Exists assumptionsAndUpdatesFinal,
+       retp |-> ReceiptR result ** statep |-> StateR assumptionsAndUpdatesFinal
+       ** [| satisfiesAssumptions assumptionsAndUpdatesFinal preTxState |]
+       ** [| blockStatePtr assumptionsAndUpdatesFinal = blockStatePtr assumptionsAndUpdates |]
+       ** [| indices assumptionsAndUpdatesFinal = indices assumptionsAndUpdates |]
+       ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |]).
+
+      iAssert (exec_final_spec) as "?"%string;[admit|].
+      use_wand_no_assert.
+      go.
+    progress applyPHyp. go.
+    repeat (iExists _). 
     match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
@@ -782,13 +813,14 @@ Proof using MODd.
     forward_reason.
     ren_hyp au AssumptionsAndUpdates.
     subst.
+    go.
+    Forward.rwHyps.
     eagerUnifyC.
     go.
     rewrite <- wp_const_const_delete.
     go.
     rewrite <- wp_const_const_delete.
     go.
-
     wapplyObserve recObserve. eagerUnifyU.
     (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
     go.

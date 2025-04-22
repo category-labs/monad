@@ -743,54 +743,12 @@ Proof using MODd.
   unfold BheaderR.
   slauto.
   go.
-  
-  CONST1.
-  Search (wp_make_const _).
   rewrite <- wp_const_const_delete.
   go.
   unshelve rewrite <- wp_init_implicit.
   go.
-  Require Import  bedrock.auto.core.internal.lib.refine_lib.
-  unfold Vn.
-  Instance add_r_Refine1 (a b a' b' : Z) : Refine1 true true (a + b = a' + b)%Z [a = a'].
-  Proof using. constructor; auto. Admitted.
-  Instance Zofnat_refine (a a' : nat) : Refine1 true true (Z.of_nat a = Z.of_nat a')%Z [a = a'].
-  Proof using. constructor; auto. Admitted.
-  iAssert (
-  Exists txindex : Z,
-        [| (( i + 1) =  (txindex + 1))%Z |]:mpred) as "_". solve [go].
-  iAssert (
-  Exists t : nat,
-        [| ((Z.of_nat i + 1) =   (Z.of_nat t+ 1))%Z |]:mpred) as "_".
-  Fail (solve [go]).
-  
   work.
-  Set Printing Coercions.
-  iAssert (
-  Exists txindex : Z,
-        [| (( i + 1) =  (txindex + 1))%Z |]:mpred) as "?".
-  progress go.
-  iAssert (
-  Exists txindex : nat,
-        [| (Vint (Z.of_nat i + 1) =  Vint (Z.of_nat txindex + 1))%Z |]:mpred) as "?".
-  go.
-  Locate refine_lib.
-  go.
-  Require Import  bedrock.auto.core.internal.lib.refine_lib.
-  go.
-  unfold Vn.
-  go.
-  unfold Vn.
-  go.
-  iAssert (
-  Exists txindex : nat,
-        [| [Vint (Z.of_N (number header)); Vint (Z.of_nat i + 1)] = [Vint (Z.of_N (number header)); Vint (Z.of_nat txindex + 1)] |]:mpred) as "?".
-  go.
-  Global Instance Refine1
-                  wp_const_const_delete.
-                  
-  iExists (_:nat).
-  go.
+  iExists (_:nat). go.
   iAssert minb as "#?"%string;[admit|].
   foldr BheaderR BheaderR.
   Search primR CancelX.

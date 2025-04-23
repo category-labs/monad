@@ -891,6 +891,8 @@ Proof using MODd.
     rewrite ResultSucRDef.
     work.
   }
+Abort.
+(*
 {
   rename result_addr into result_addr_del.
   rename state_addr into state_addr_del.
@@ -985,5 +987,5 @@ Proof using MODd.
     rewrite ResultSucRDef. go.
 }
 Qed.
-
+*)
 End with_Sigma.

@@ -582,7 +582,8 @@ Existing Instance UNSAFE_read_prim_cancel.
       \prepost{sender_addr q} sender_addrp |-> addressR q sender_addr
       \prepost{q inc} incp |-> IncarnationR q inc 
       \post Exists au, this |-> StateR au ** [| blockStatePtr au = bsp |]
-                         ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
+                   ** (reference_to "monad::State" this) (* convenient but logically redundant *)
+                   ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
   
   Instance Learnable q q2 v tx1 (txp:ptr) :
     Learnable
@@ -701,6 +702,11 @@ Existing Instance UNSAFE_read_prim_cancel.
        ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |]).
       Ltac assertp foo :=  iAssert foo as "#?"%string;[admit|].
   
+  Lemma CR_const : const.CONST1 module "intx::uint<256u>" u256R.
+  Proof. Admitted.
+  Definition CR_const_C := [CANCEL] CR_const.
+  #[local] Hint Resolve CR_const_C : br_opacity.
+  Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
   Lemma prf: denoteModule module
              ** (opt_reconstr TransactionResult resultT)
              ** minb
@@ -743,27 +749,16 @@ Proof using MODd.
   unfold BheaderR.
   slauto.
   go.
-  rewrite <- wp_const_const_delete.
-  go.
   unshelve rewrite <- wp_init_implicit.
   go.
   work.
   iExists (_:nat). go.
-  iAssert minb as "#?"%string;[admit|].
   foldr BheaderR BheaderR.
-  Search primR CancelX.
-  go.
-  rewrite <- wp_const_const_delete.
   go.
   Transparent libspecs.optionR.
   simpl in *.
   go.
-  rewrite <- wp_const_const_delete.
-  wapplyObserve stateObserve. progress eagerUnifyU. go.
   (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
-  iAssert callTracerConstr as "#?"%string;[admit|].
-  Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
-  go.
 
   (*
   slauto.
@@ -772,7 +767,7 @@ Proof using MODd.
   slauto1.
   Transparent set_original_nonce. *)
   unfold relaxed_constructor_init_state in H.
-  Opaque _nonce. (* o/w simpl hangs *)
+  Opaque _nonce. (* o/w simpl hangs. TODO: move up *)
   Opaque _balance.
   Set Printing Coercions.
   forward_reason. 
@@ -785,45 +780,31 @@ Proof using MODd.
   {
     intros.
     wapplyObserve @resultObserve. eagerUnifyU.
+    iAssert (exec_final_spec) as "?"%string;[admit|].
     slauto.
-    rewrite <- wp_const_const_delete.
-    slauto.
-
-
-      iAssert (exec_final_spec) as "?"%string;[admit|].
-      use_wand_no_assert.
-      go.
-    progress applyPHyp. go.
+    progress applyPHyp.
     repeat (iExists _). 
     match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
         remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
     end.
-    
     rename result into resultOld.
     destruct saf as [smid result].
     simpl in *.
-    go.
-    eagerUnifyU.
-    
+    progress go.
     rewrite ResultSucRDef.
-    go.
-    eagerUnifyC.
+    progress go.
     forward_reason.
     ren_hyp au AssumptionsAndUpdates.
     subst.
-    go.
     Forward.rwHyps.
-    eagerUnifyC.
     go.
-    rewrite <- wp_const_const_delete.
-    go.
+Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
     rewrite <- wp_const_const_delete.
     go.
     wapplyObserve recObserve. eagerUnifyU.
     (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
-    go.
 cpp.spec "boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::basic_result<monad::ExecutionResult, void>(monad::ExecutionResult&&, boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::value_converting_constructor_tag)"
   as result_val_constr with (fun this:ptr =>
                                \arg{recp} ("recp"%pstring) (Vref recp)
@@ -892,8 +873,6 @@ Lemma ExecutionResultRdef t (r: TransactionResult) :
 Proof using. Admitted.
 setoid_rewrite ExecutionResultRdef at 1.
 Opaque VectorR.
-go.
-  go.
   Instance: LearnEq1 ExecutionResultR := ltac:(solve_learnable).
   go.
   rewrite <- wp_const_const_delete.
@@ -901,19 +880,19 @@ go.
   setoid_rewrite ResultSucRDef.
   Remove Hints borrow_basefee_C: br_opacity.
   go.
-  unfold BheaderR. (* properly hide postcond to avoid needing this *)
+  unfold BheaderR. (* TODO: properly hide postcond to avoid needing this *)
   go.
-    autorewrite with syntactic in *.
-    iClear "#"%string.
-    match goal with
-    | H: _.1 = applyUpdates _ _ |- _ => revert H
-    end.
-    unfold stateAfterTransaction.
-    rewrite <- Heqsaf.
-    go.
-    rewrite ResultSucRDef.
-    work.
-  }
+  autorewrite with syntactic in *.
+  iClear "#"%string.
+  match goal with
+  | H: _.1 = applyUpdates _ _ |- _ => revert H
+  end.
+  unfold stateAfterTransaction.
+  rewrite <- Heqsaf.
+  go.
+  rewrite ResultSucRDef.
+  work.
+}
 {
   rename result_addr into result_addr_del.
   rename state_addr into state_addr_del.

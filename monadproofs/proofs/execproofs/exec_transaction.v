@@ -707,104 +707,7 @@ Existing Instance UNSAFE_read_prim_cancel.
   Definition CR_const_C := [CANCEL] CR_const.
   #[local] Hint Resolve CR_const_C : br_opacity.
   Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
-  Lemma prf: denoteModule module
-             ** (opt_reconstr TransactionResult resultT)
-             ** minb
-             ** callTracerConstr
-             ** wait_for_promise
-             ** destrop
-             ** (destr_res (Tnamed "monad::ExecutionResult") ExecutionResultR) (* is this needed? *)
-             ** destr_u256
-             ** (has_value "evmc::address" evm.address)
-             ** (value "evmc::address" evm.address)
-             ** get_chain_id
-             ** validate_spec
-             ** try_op_has_val
-             ** destr_outcome_overload
-             ** incarnation_constr
-             ** max_code_size
-             ** StateConstrExact
-             ** StateConstrRelaxed
-(*             ** set_original_nonce_spec *)
-             ** execute_impl2
-             ** destr_incarnation
-             ** can_merge
-             ** opt_value_or
-             ** has_error
-             ** result_value
-             ** exec_final
-             ** exec_specs.merge
-(*             ** result_val_constr *)
-(*             ** tag_constr *)
-(*             ** tag_dtor *)
-             ** rcpt_dtor
-             ** res_dtor
-             ** st_dtor
-             ** br_dtor
-             |-- ext1.
-Proof using MODd.
-  verify_spec'.
-  go; try (ego; fail).
-  Transparent BheaderR.
-  unfold BheaderR.
-  slauto.
-  go.
-  unshelve rewrite <- wp_init_implicit.
-  go.
-  work.
-  iExists (_:nat). go.
-  foldr BheaderR BheaderR.
-  go.
-  Transparent libspecs.optionR.
-  simpl in *.
-  go.
-  (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
 
-  (*
-  slauto.
-  eagerUnifyU.
-  Transparent libspecs.optionR.
-  slauto1.
-  Transparent set_original_nonce. *)
-  unfold relaxed_constructor_init_state in H.
-  Opaque _nonce. (* o/w simpl hangs. TODO: move up *)
-  Opaque _balance.
-  Set Printing Coercions.
-  forward_reason. 
-  rewrite Hrr. simpl.
-  progress autorewrite with syntactic.
-  iExists true.  slauto.
-  iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
-  slauto.
-  wp_if.
-  {
-    intros.
-    wapplyObserve @resultObserve. eagerUnifyU.
-    iAssert (exec_final_spec) as "?"%string;[admit|].
-    slauto.
-    progress applyPHyp.
-    repeat (iExists _). 
-    match goal with
-    | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
-        unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
-        remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
-    end.
-    rename result into resultOld.
-    destruct saf as [smid result].
-    simpl in *.
-    progress go.
-    rewrite ResultSucRDef.
-    progress go.
-    forward_reason.
-    ren_hyp au AssumptionsAndUpdates.
-    subst.
-    Forward.rwHyps.
-    go.
-Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
-    rewrite <- wp_const_const_delete.
-    go.
-    wapplyObserve recObserve. eagerUnifyU.
-    (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
 cpp.spec "boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::basic_result<monad::ExecutionResult, void>(monad::ExecutionResult&&, boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::value_converting_constructor_tag)"
   as result_val_constr with (fun this:ptr =>
                                \arg{recp} ("recp"%pstring) (Vref recp)
@@ -850,20 +753,6 @@ cpp.spec "std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>::vecto
          \pre{r} this |-> ReceiptR r
          \post emp
       ).
-
-  assertp constr:(rec_dtor).
-    assertp (ct_dtor).
-  assertp constr:(execres_dtor).
-assertp constr:(tag_constr).
-assertp constr:(tag_dtor).
-assertp constr:(vector_constr_spec).
-assertp constr:(result_val_constr).
-assertp constr:(result_val_constr2).
-assertp constr:(addr_copy_constr).
-go.
-
-unshelve rewrite <- wp_init_implicit.
-go.
 Lemma ExecutionResultRdef t (r: TransactionResult) :
   ExecutionResultR r -|-
     structR "monad::ExecutionResult" (cQp.mut 1)
@@ -871,28 +760,129 @@ Lemma ExecutionResultRdef t (r: TransactionResult) :
     **  o_field CU "monad::ExecutionResult::receipt" |-> ReceiptR r
     ** o_field CU "monad::ExecutionResult::call_frames" |-> VectorR "monad::CallFrame" (λ _ : (), emp) 1 [].
 Proof using. Admitted.
-setoid_rewrite ExecutionResultRdef at 1.
 Opaque VectorR.
   Instance: LearnEq1 ExecutionResultR := ltac:(solve_learnable).
+  Opaque _nonce. (* o/w simpl hangs. TODO: move up *)
+  Opaque _balance.
+  Set Printing Coercions.
+  
+  Lemma prf: denoteModule module
+             ** rec_dtor
+             ** ct_dtor
+             ** execres_dtor
+             ** tag_constr
+             ** tag_dtor
+             ** vector_constr_spec
+             ** result_val_constr
+             ** result_val_constr2
+             ** addr_copy_constr
+             ** (opt_reconstr TransactionResult resultT)
+             ** minb
+             ** callTracerConstr
+             ** wait_for_promise
+             ** destrop
+             ** (destr_res (Tnamed "monad::ExecutionResult") ExecutionResultR) (* is this needed? *)
+             ** destr_u256
+             ** (has_value "evmc::address" evm.address)
+             ** (value "evmc::address" evm.address)
+             ** get_chain_id
+             ** validate_spec
+             ** try_op_has_val
+             ** destr_outcome_overload
+             ** incarnation_constr
+             ** max_code_size
+             ** StateConstrExact
+             ** StateConstrRelaxed
+(*             ** set_original_nonce_spec *)
+             ** execute_impl2
+             ** destr_incarnation
+             ** can_merge
+             ** opt_value_or
+             ** has_error
+             ** result_value
+             ** exec_final
+             ** exec_specs.merge
+(*             ** result_val_constr *)
+(*             ** tag_constr *)
+(*             ** tag_dtor *)
+             ** rcpt_dtor
+             ** res_dtor
+             ** st_dtor
+             ** br_dtor
+             |-- ext1.
+Proof using MODd.
+  verify_spec'.
+  go; try (ego; fail).
+  Transparent BheaderR.
+  unfold BheaderR.
+  slauto.
+  unshelve rewrite <- wp_init_implicit.
   go.
-  rewrite <- wp_const_const_delete.
+  iExists (_:nat). go.
+  foldr BheaderR BheaderR.
   go.
-  setoid_rewrite ResultSucRDef.
-  Remove Hints borrow_basefee_C: br_opacity.
+  Transparent libspecs.optionR.
+  simpl in *.
   go.
-  unfold BheaderR. (* TODO: properly hide postcond to avoid needing this *)
-  go.
-  autorewrite with syntactic in *.
-  iClear "#"%string.
-  match goal with
-  | H: _.1 = applyUpdates _ _ |- _ => revert H
-  end.
-  unfold stateAfterTransaction.
-  rewrite <- Heqsaf.
-  go.
-  rewrite ResultSucRDef.
-  work.
-}
+  (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
+
+  unfold relaxed_constructor_init_state in H.
+  forward_reason. 
+  rewrite Hrr. simpl.
+  progress autorewrite with syntactic.
+  iExists true.  slauto.
+  iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
+  slauto.
+  wp_if.
+  {
+    intros.
+    wapplyObserve @resultObserve. eagerUnifyU.
+    iAssert (exec_final_spec) as "?"%string;[admit|].
+    slauto.
+    progress applyPHyp.
+    repeat (iExists _). 
+    match goal with
+    | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
+        unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
+        remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
+    end.
+    rename result into resultOld.
+    destruct saf as [smid result].
+    simpl in *.
+    progress go.
+    rewrite ResultSucRDef.
+    progress go.
+    forward_reason.
+    ren_hyp au AssumptionsAndUpdates.
+    subst.
+    Forward.rwHyps.
+    go.
+    rewrite <- wp_const_const_delete.
+    wapplyObserve recObserve. eagerUnifyU.
+    (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
+    go.
+    unshelve rewrite <- wp_init_implicit.
+    go.
+    setoid_rewrite ExecutionResultRdef at 1.
+    go.
+    rewrite <- wp_const_const_delete.
+    go.
+    setoid_rewrite ResultSucRDef.
+    Remove Hints borrow_basefee_C: br_opacity.
+    go.
+    unfold BheaderR. (* TODO: properly hide postcond to avoid needing this *)
+    go.
+    autorewrite with syntactic in *.
+    iClear "#"%string.
+    match goal with
+    | H: _.1 = applyUpdates _ _ |- _ => revert H
+    end.
+    unfold stateAfterTransaction.
+    rewrite <- Heqsaf.
+    go.
+    rewrite ResultSucRDef.
+    work.
+  }
 {
   rename result_addr into result_addr_del.
   rename state_addr into state_addr_del.

@@ -765,7 +765,17 @@ Opaque VectorR.
   Opaque _nonce. (* o/w simpl hangs. TODO: move up *)
   Opaque _balance.
   Set Printing Coercions.
-  
+
+  Ltac hidePost :=
+  IPM.perm_left ltac:(fun L n =>
+                          let f:= fresh "fullyHiddenPostcond" in
+                        match L with
+                        | HiddenPostCondition => hideFromWorkAs L f
+                        end
+                     ).
+
+  Definition wp_init_implicit_B := [BWD] wp_init_implicit.
+  Hint Resolve wp_init_implicit_B: br_opacity. (* TODO: investigagte why it is not already in automation *)
   Lemma prf: denoteModule module
              ** rec_dtor
              ** ct_dtor
@@ -812,13 +822,13 @@ Opaque VectorR.
              |-- ext1.
 Proof using MODd.
   verify_spec'.
+  hidePost.
   go; try (ego; fail).
   Transparent BheaderR.
   unfold BheaderR.
   slauto.
-  unshelve rewrite <- wp_init_implicit.
   go.
-  iExists (_:nat). go.
+  iExists (_:nat). go. (* this manual intervention should not be needed. likely a bug in Refine1, reported to bluerock *)
   foldr BheaderR BheaderR.
   go.
   Transparent libspecs.optionR.
@@ -861,18 +871,16 @@ Proof using MODd.
     wapplyObserve recObserve. eagerUnifyU.
     (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
     go.
-    unshelve rewrite <- wp_init_implicit.
+(*    unshelve rewrite <- wp_init_implicit. *)
     go.
     setoid_rewrite ExecutionResultRdef at 1.
     go.
     rewrite <- wp_const_const_delete.
     go.
+    unhideAllFromWork.
     setoid_rewrite ResultSucRDef.
     Remove Hints borrow_basefee_C: br_opacity.
     go.
-    unfold BheaderR. (* TODO: properly hide postcond to avoid needing this *)
-    go.
-    autorewrite with syntactic in *.
     iClear "#"%string.
     match goal with
     | H: _.1 = applyUpdates _ _ |- _ => revert H
@@ -951,7 +959,7 @@ Proof using MODd.
     wapplyObserve recObserve. eagerUnifyU.
     (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
     go.
-    unshelve rewrite <- wp_init_implicit.
+(*    unshelve rewrite <- wp_init_implicit. *)
     go.
     setoid_rewrite ResultSucRDef.
     go.

@@ -9,9 +9,15 @@
 #include <cstdint>
 #include <optional>
 
+#include <intx/intx.hpp>
+
 MONAD_NAMESPACE_BEGIN
 
+using namespace intx::literals;
+
 inline constexpr Address STAKING_CONTRACT_ADDRESS{0x1000};
+inline constexpr auto MIN_STAKE_AMOUNT = 1000000000000000000_u256;
+inline constexpr auto BASE_STAKING_REWARD = 1000000000000000000_u256;
 
 struct ValidatorInfo
 {

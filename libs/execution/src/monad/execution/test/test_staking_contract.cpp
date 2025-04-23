@@ -5,6 +5,7 @@
 #include <monad/core/keccak.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/execution/staking/secp256k1.hpp>
 #include <monad/execution/staking/types.hpp>
 #include <monad/execution/staking_contract.hpp>
 #include <monad/state2/block_state.hpp>
@@ -232,6 +233,30 @@ TEST_F(Stake, add_validator_bad_signature)
     }
 }
 
+TEST_F(Stake, invalid_state)
+{
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    auto const stake = 50000000000000000000_u256;
+    auto const sender = 0xdeadbeef_address;
+    auto const value = intx::be::store<evmc_uint256be>(stake);
+    auto const input = craft_add_validator_input(0xababab_address, stake);
+    EXPECT_EQ(
+        contract.precompile_add_validator(input, sender, value),
+        StakingContract::SUCCESS);
+    ASSERT_TRUE(contract.vars.last_validator_id.load().has_value());
+    EXPECT_EQ(
+        contract.vars.last_validator_id.load().value(),
+        Uint256Native{1}.to_be());
+
+    // screw up contract internal state
+    contract.vars.validator_info(contract.vars.last_validator_id.load().value())
+        .clear();
+    contract.vars.epoch.store(Uint256Native{1}.to_be());
+    auto const res = contract.syscall_on_epoch_change();
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(res.assume_error(), StakingSyscallError::InvalidState);
+}
+
 TEST_F(Stake, add_validator_msg_value_not_signed)
 {
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
@@ -264,7 +289,6 @@ TEST_F(Stake, add_validator_then_remove)
     EXPECT_EQ(
         contract.precompile_add_validator(input, sender, value),
         StakingContract::SUCCESS);
-
     auto const validator_id = contract.vars.last_validator_id.load();
     ASSERT_TRUE(validator_id.has_value());
     EXPECT_EQ(validator_id.value(), Uint256Native{1}.to_be());
@@ -360,4 +384,80 @@ TEST_F(Stake, add_validator_then_remove)
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
     EXPECT_EQ(deposit_queue.length(), 0);
     EXPECT_EQ(contract.vars.validator_set.length(), 0);
+}
+
+TEST_F(Stake, reward_unknown_validator)
+{
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    auto const val_address = Address{0xabcdef};
+    auto const res = contract.syscall_reward_validator(val_address);
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(res.assume_error(), StakingSyscallError::RewardValidatorNotInSet);
+}
+
+TEST_F(Stake, reward_success)
+{
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    auto const sender = 0xdeadbeef_address;
+    auto const value = intx::be::store<evmc_uint256be>(MIN_STAKE_AMOUNT);
+    auto const input =
+        craft_add_validator_input(0xababab_address, MIN_STAKE_AMOUNT);
+    auto const res = contract.precompile_add_validator(input, sender, value);
+    EXPECT_EQ(res, StakingContract::SUCCESS);
+    EXPECT_TRUE(contract.vars.last_validator_id.load().has_value());
+    EXPECT_EQ(
+        contract.vars.last_validator_id.load().value(),
+        Uint256Native{1}.to_be());
+    auto const valinfo_storage = contract.vars.validator_info(
+        contract.vars.last_validator_id.load().value());
+    EXPECT_TRUE(valinfo_storage.load().has_value());
+
+    EXPECT_FALSE(contract.vars.epoch.load().has_value());
+    contract.vars.epoch.store(Uint256Native(2).to_be());
+    ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_stake,
+        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_shares,
+        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
+
+    auto const secpkeys = gen_secp_keypair();
+    byte_string_fixed<65> serialized;
+    size_t uncompressed_pubkey_size = 65;
+    secp256k1_ec_pubkey_serialize(
+        secp_context.get(),
+        serialized.data(),
+        &uncompressed_pubkey_size,
+        &secpkeys.first,
+        SECP256K1_EC_UNCOMPRESSED);
+    ASSERT_EQ(uncompressed_pubkey_size, 65);
+    auto const val_address = address_from_secpkey(serialized);
+    ASSERT_FALSE(contract.syscall_reward_validator(val_address).has_error());
+    EXPECT_EQ(
+        intx::be::load<uint256_t>(state.get_balance(STAKING_CONTRACT_ADDRESS)),
+        BASE_STAKING_REWARD);
+
+    contract.vars.epoch.store(Uint256Native(3).to_be());
+    ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_stake,
+        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_shares,
+        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
+    EXPECT_EQ(
+        valinfo_storage.load()->rewards[0],
+        Uint256Native{BASE_STAKING_REWARD}.to_be());
+    EXPECT_EQ(valinfo_storage.load()->rewards[1], Uint256BE{});
+
+    contract.vars.epoch.store(Uint256Native(4).to_be());
+    ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_stake,
+        Uint256Native{MIN_STAKE_AMOUNT + BASE_STAKING_REWARD}.to_be());
+    EXPECT_EQ(
+        valinfo_storage.load()->active_shares,
+        Uint256Native{MIN_STAKE_AMOUNT}
+            .to_be()); // active shares shouldn't change
 }

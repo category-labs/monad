@@ -48,12 +48,6 @@ namespace
         return ret;
     }
 
-    ///////////////
-    //  Staking  //
-    ///////////////
-    constexpr uint256_t MIN_STAKE_AMOUNT{1e18}; // FIXME
-    constexpr uint256_t BASE_STAKING_REWARD{1e18}; // FIXME
-
     Uint256Native tokens_to_shares(
         Uint256Native const &existing_tokens,
         Uint256Native const &existing_shares, Uint256Native const &new_tokens)
@@ -377,7 +371,7 @@ Result<void>
 StakingContract::syscall_reward_validator(Address const &block_author)
 {
     auto const validator_id = vars.validator_id(block_author).load();
-    if (MONAD_UNLIKELY(validator_id.has_value())) {
+    if (MONAD_UNLIKELY(!validator_id.has_value())) {
         return StakingSyscallError::RewardValidatorNotInSet;
     }
 
@@ -390,6 +384,8 @@ StakingContract::syscall_reward_validator(Address const &block_author)
     state_.add_to_balance(ca_, BASE_STAKING_REWARD);
     validator_info->rewards[1] =
         validator_info->rewards[1].native().add(BASE_STAKING_REWARD).to_be();
+    validator_info->total_stake =
+        validator_info->total_stake.native().add(BASE_STAKING_REWARD).to_be();
     validator_info_storage.store(validator_info.value());
 
     return success();
@@ -423,6 +419,9 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         // TODO: apply commission rate
+        valinfo->active_stake = valinfo->active_shares.native()
+                                    .add(valinfo->rewards[0].native())
+                                    .to_be();
         valinfo->rewards[0] = valinfo->rewards[1];
         valinfo->rewards[1] = Uint256BE{};
         valinfo_storage.store(valinfo.value());

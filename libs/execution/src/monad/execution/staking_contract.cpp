@@ -209,11 +209,8 @@ StakingContract::Status StakingContract::precompile_add_validator(
         return VALIDATOR_EXISTS;
     }
 
-    auto const validator_id = vars.last_validator_id.load()
-                                  .value_or(Uint256BE{})
-                                  .native()
-                                  .add(1)
-                                  .to_be();
+    auto const validator_id =
+        vars.last_validator_id.load_unchecked().native().add(1).to_be();
     validator_id_storage.store(validator_id);
     validator_id_bls_storage.store(validator_id);
     vars.last_validator_id.store(validator_id);
@@ -259,16 +256,12 @@ StakingContract::Status StakingContract::add_stake(
     }
 
     auto delinfo_slot = vars.delegator_info(validator_id, delegator);
-    auto delinfo = delinfo_slot.load().value_or(DelegatorInfo{});
+    auto delinfo = delinfo_slot.load_unchecked();
 
-    auto const deposit_id = vars.last_deposit_request_id.load()
-                                .value_or(Uint256BE{})
-                                .native()
-                                .add(1)
-                                .to_be();
+    auto const deposit_id =
+        vars.last_deposit_request_id.load_unchecked().native().add(1).to_be();
     vars.last_deposit_request_id.store(deposit_id);
-    vars.deposit_queue(
-            vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be())
+    vars.deposit_queue(vars.epoch.load_unchecked().native().add(2).to_be())
         .push(deposit_id);
     vars.deposit_request(deposit_id)
         .store(DepositRequest{
@@ -337,14 +330,12 @@ StakingContract::Status StakingContract::precompile_remove_stake(
         return NOT_ENOUGH_SHARES_TO_WITHDRAW;
     }
 
-    auto const withdrawal_id = vars.last_withdrawal_request_id.load()
-                                   .value_or(Uint256BE{})
+    auto const withdrawal_id = vars.last_withdrawal_request_id.load_unchecked()
                                    .native()
                                    .add(1)
                                    .to_be();
     vars.last_withdrawal_request_id.store(withdrawal_id);
-    vars.withdrawal_queue(
-            vars.epoch.load().value_or(Uint256BE{}).native().add(2).to_be())
+    vars.withdrawal_queue(vars.epoch.load_unchecked().native().add(2).to_be())
         .push(withdrawal_id);
     vars.withdrawal_request(withdrawal_id)
         .store(WithdrawalRequest{
@@ -372,7 +363,7 @@ StakingContract::syscall_reward_validator(Address const &block_author)
 {
     auto const validator_id = vars.validator_id(block_author).load();
     if (MONAD_UNLIKELY(!validator_id.has_value())) {
-        return StakingSyscallError::RewardValidatorNotInSet;
+        return StakingSyscallError::BlockAuthorNotInSet;
     }
 
     auto validator_info_storage = vars.validator_info(validator_id.value());
@@ -461,11 +452,13 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
         valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
-        valinfo->activating_stake =
-            valinfo->activating_stake.native().sub(deposit_amount).to_be();
-
         delinfo->active_shares =
             delinfo->active_shares.native().add(shares_to_mint).to_be();
+
+        valinfo->activating_stake =
+            valinfo->activating_stake.native().sub(deposit_amount).to_be();
+        delinfo->activating_stake =
+            delinfo->activating_stake.native().sub(deposit_amount).to_be();
 
         valinfo_storage.store(valinfo.value());
         delinfo_storage.store(delinfo.value());
@@ -566,8 +559,8 @@ quick_status_code_from_enum<monad::StakingSyscallError>::value_mappings()
          "invalid secp pubkey",
          {}},
         {StakingSyscallError::InvalidState, "invalid state", {}},
-        {StakingSyscallError::RewardValidatorNotInSet,
-         "rewarding validator not in set",
+        {StakingSyscallError::BlockAuthorNotInSet,
+         "block author not in validator set",
          {}},
         {StakingSyscallError::CouldNotClearStorage,
          "Could not clear storage",

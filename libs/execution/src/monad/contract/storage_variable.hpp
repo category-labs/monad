@@ -41,6 +41,16 @@ public:
     {
     }
 
+    T load_unchecked() const noexcept
+    {
+        StorageAdapter<T> value;
+        for (size_t i = 0; i < N; ++i) {
+            value.slots[i] = state_.get_storage(
+                address_, intx::be::store<bytes32_t>(offset_ + i));
+        }
+        return value.typed;
+    }
+
     std::optional<T> load() const noexcept
     {
         StorageAdapter<T> value;

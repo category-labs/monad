@@ -38,5 +38,6 @@ void load_genesis_json_into_db(
     evmc_revision, nlohmann::json const &j_contents, db_t &tdb);
 void load_state_from_json(nlohmann::json const &, State &);
 void validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
+void validate_staking_post_state(nlohmann::json const &json, State &);
 
 MONAD_TEST_NAMESPACE_END

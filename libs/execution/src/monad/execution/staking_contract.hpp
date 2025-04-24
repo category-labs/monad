@@ -34,7 +34,7 @@ enum class StakingSyscallError
     Success = 0,
     InvalidValidatorSecpKey,
     InvalidState,
-    RewardValidatorNotInSet,
+    BlockAuthorNotInSet,
     CouldNotClearStorage,
 };
 

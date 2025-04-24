@@ -1,5 +1,6 @@
 #include <monad/chain/chain.hpp>
 #include <monad/config.hpp>
+#include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -33,7 +34,6 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
-#if 0
     // TODO: move to validate_monad_block?
     if (MONAD_UNLIKELY(
             block.header.extra_data.size() !=
@@ -47,22 +47,41 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
     auto const block_author = unaligned_load<Address>(
         extra_data.substr(sizeof(uint64_t), sizeof(Address)).data());
 
-    State state{
-        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
-    state.touch(STAKING_CONTRACT_ADDRESS);
-    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    std::vector<ExecutionResult> results;
+    {
+        State state{
+            block_state,
+            Incarnation{block.header.number, Incarnation::LAST_TX}};
+        StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+        state.touch(STAKING_CONTRACT_ADDRESS);
 
-    BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
-
-    if (epoch != contract.vars.epoch.load()) {
+        auto const contract_epoch =
+            contract.vars.epoch.load_unchecked().native();
+        if (MONAD_UNLIKELY(epoch != contract_epoch)) {
+            contract.vars.epoch.store(Uint256Native{epoch}.to_be());
+            BOOST_OUTCOME_TRY(contract.syscall_on_epoch_change());
+            MONAD_ASSERT(block_state.can_merge(state));
+            block_state.merge(state);
+        }
         BOOST_OUTCOME_TRY(
-            contract.syscall_on_epoch_change()); // TODO: run this on a fiber?
-        contract.vars.epoch.store(epoch);
+            results,
+            execute_block<rev>(
+                chain, block, block_state, block_hash_buffer, priority_pool));
     }
-#endif
 
-    return execute_block<rev>(
-        chain, block, block_state, block_hash_buffer, priority_pool);
+    {
+        State state{
+            block_state,
+            Incarnation{block.header.number, Incarnation::LAST_TX}};
+        StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+        state.touch(STAKING_CONTRACT_ADDRESS);
+
+        BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+
+    return results;
 }
 
 EXPLICIT_EVMC_REVISION(execute_monad_block);

@@ -268,6 +268,21 @@ TEST_F(Stake, add_validator_msg_value_not_signed)
     EXPECT_EQ(res, StakingContract::INVALID_INPUT);
 }
 
+TEST_F(Stake, add_validator_already_exists)
+{
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    auto const sender = 0xdeadbeef_address;
+    auto const value = intx::be::store<evmc_uint256be>(MIN_STAKE_AMOUNT);
+    auto const input =
+        craft_add_validator_input(0xababab_address, MIN_STAKE_AMOUNT);
+    EXPECT_EQ(
+        contract.precompile_add_validator(input, sender, value),
+        StakingContract::SUCCESS);
+    EXPECT_EQ(
+        contract.precompile_add_validator(input, sender, value),
+        StakingContract::VALIDATOR_EXISTS);
+}
+
 TEST_F(Stake, add_validator_minimum_stake_not_met)
 {
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
@@ -275,8 +290,9 @@ TEST_F(Stake, add_validator_minimum_stake_not_met)
     auto const value = intx::be::store<evmc_uint256be>(uint256_t{1});
     auto const input =
         craft_add_validator_input(0xababab_address, uint256_t{1});
-    auto const res = contract.precompile_add_validator(input, sender, value);
-    EXPECT_EQ(res, StakingContract::MINIMUM_STAKE_NOT_MET);
+    EXPECT_EQ(
+        contract.precompile_add_validator(input, sender, value),
+        StakingContract::MINIMUM_STAKE_NOT_MET);
 }
 
 TEST_F(Stake, add_validator_then_remove)
@@ -392,7 +408,7 @@ TEST_F(Stake, reward_unknown_validator)
     auto const val_address = Address{0xabcdef};
     auto const res = contract.syscall_reward_validator(val_address);
     ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.assume_error(), StakingSyscallError::RewardValidatorNotInSet);
+    EXPECT_EQ(res.assume_error(), StakingSyscallError::BlockAuthorNotInSet);
 }
 
 TEST_F(Stake, reward_success)

@@ -1,24 +1,26 @@
 #include <from_json.hpp>
 #include <spec_test_utils.hpp>
 
+#include <monad/contract/storage_variable.hpp>
+#include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/execution/genesis.hpp>
+#include <monad/execution/staking/types.hpp>
+#include <monad/execution/staking_contract.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
-
+#include <gtest/gtest.h>
 #include <intx/intx.hpp>
-
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
-
-#include <gtest/gtest.h>
 
 #include <cstdint>
 
@@ -169,6 +171,154 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
             EXPECT_EQ(db_storage.at(db_storage_key).at("value"), expected_value)
                 << db_storage_key;
         }
+    }
+}
+
+void validate_staking_post_state(nlohmann::json const &json, State &state)
+{
+    struct Bytes48
+    {
+        byte_string_fixed<48> bytes;
+    };
+
+    StakingContract contract{state, STAKING_CONTRACT_ADDRESS};
+    auto const expected_balance = intx::from_string<uint256_t>(json["balance"]);
+    auto const actual_balance =
+        intx::be::load<uint256_t>(state.get_balance(STAKING_CONTRACT_ADDRESS));
+    EXPECT_EQ(expected_balance, actual_balance);
+
+    // contract constants
+    EXPECT_EQ(
+        intx::from_string<uint256_t>(json["epoch"]),
+        contract.vars.epoch.load_unchecked().native());
+    EXPECT_EQ(
+        intx::from_string<uint256_t>(json["last_validator_id"]),
+        contract.vars.last_validator_id.load_unchecked().native());
+    EXPECT_EQ(
+        intx::from_string<uint256_t>(json["last_deposit_request_id"]),
+        contract.vars.last_deposit_request_id.load_unchecked().native());
+    EXPECT_EQ(
+        intx::from_string<uint256_t>(json["last_withdrawal_request_id"]),
+        contract.vars.last_withdrawal_request_id.load_unchecked().native());
+
+    auto const &validator_set_json = json["validator_set"];
+    ASSERT_EQ(validator_set_json.size(), contract.vars.validator_set.length());
+    for (size_t i = 0; i < validator_set_json.size(); ++i) {
+        EXPECT_EQ(
+            intx::from_string<uint256_t>(validator_set_json[i]),
+            contract.vars.validator_set.get(i).load().value().native());
+    }
+
+    for (auto const &[epoch_json, deposit_queue_json] :
+         json["deposit_queue"].items()) {
+
+        auto const epoch = intx::from_string<Uint256Native>(epoch_json).to_be();
+        auto const deposit_queue = contract.vars.deposit_queue(epoch);
+        ASSERT_EQ(deposit_queue_json.size(), deposit_queue.length());
+
+        for (size_t i = 0; i < deposit_queue_json.size(); ++i) {
+            auto deposit_id_str = deposit_queue_json[i];
+            auto const expected_deposit_id =
+                intx::from_string<uint256_t>(deposit_id_str);
+            auto const actual_deposit_id = deposit_queue.get(i).load().value();
+            EXPECT_EQ(expected_deposit_id, actual_deposit_id.native());
+        }
+    }
+
+    for (auto const &[deposit_id_str, deposit_request_json] :
+         json["deposit_request"].items()) {
+        auto const deposit_id =
+            intx::from_string<Uint256Native>(deposit_id_str).to_be();
+        auto const deposit_request =
+            contract.vars.deposit_request(deposit_id).load();
+        ASSERT_TRUE(deposit_request.has_value())
+            << "deposit_request: mapping not found: " << deposit_id_str;
+
+        auto const expected_validator_id = intx::from_string<uint256_t>(
+            deposit_request_json["validator_id"].get<std::string>());
+        auto const expected_delegator =
+            evmc::from_hex<Address>(
+                deposit_request_json["delegator"].get<std::string>())
+                .value();
+        auto const expected_amount = intx::from_string<uint256_t>(
+            deposit_request_json["amount"].get<std::string>());
+        EXPECT_EQ(
+            expected_validator_id, deposit_request->validator_id.native());
+        EXPECT_EQ(expected_delegator, deposit_request->delegator);
+        EXPECT_EQ(expected_amount, deposit_request->amount.native());
+    }
+
+    for (auto const &[validator_id_str, validator_info_json] :
+         json["validator_info"].items()) {
+        auto const validator_id =
+            intx::from_string<Uint256Native>(validator_id_str).to_be();
+        auto const validator_info =
+            contract.vars.validator_info(validator_id).load();
+        ASSERT_TRUE(validator_info.has_value())
+            << "validator_info: mapping not found: " << validator_id_str;
+
+        auto const expected_auth_address =
+            evmc::from_hex<Address>(
+                validator_info_json["auth_address"].get<std::string>())
+                .value();
+        auto const expected_bls_pubkey =
+            evmc::from_hex<Bytes48>(
+                validator_info_json["bls_pubkey"].get<std::string>())
+                .value();
+        auto const expected_total_stake =
+            intx::from_string<uint256_t>(validator_info_json["total_stake"]);
+        auto const expected_active_stake =
+            intx::from_string<uint256_t>(validator_info_json["active_stake"]);
+        auto const expected_active_shares =
+            intx::from_string<uint256_t>(validator_info_json["active_shares"]);
+        auto const expected_activating_stake = intx::from_string<uint256_t>(
+            validator_info_json["activating_stake"]);
+        // auto const expected_deactivating_stake =
+        // intx::from_string<uint256_t>(
+        //     validator_info_json["deactivating_shares"]);
+        auto const expected_rewards0 =
+            intx::from_string<uint256_t>(validator_info_json["rewards"][0]);
+        auto const expected_rewards1 =
+            intx::from_string<uint256_t>(validator_info_json["rewards"][1]);
+
+        EXPECT_EQ(expected_auth_address, validator_info->auth_address);
+        EXPECT_EQ(expected_bls_pubkey.bytes, validator_info->bls_pubkey);
+        EXPECT_EQ(expected_total_stake, validator_info->total_stake.native());
+        EXPECT_EQ(expected_active_stake, validator_info->active_stake.native());
+        EXPECT_EQ(
+            expected_active_shares, validator_info->active_shares.native());
+        EXPECT_EQ(
+            expected_activating_stake,
+            validator_info->activating_stake.native());
+        // EXPECT_EQ(
+        //     expected_deactivating_stake validator_info->deactivating_shares);
+        EXPECT_EQ(expected_rewards0, validator_info->rewards[0].native());
+        EXPECT_EQ(expected_rewards1, validator_info->rewards[1].native());
+    }
+
+    for (auto const &[preimage_json, validator_id_str] :
+         json["validator_id"].items()) {
+        auto const preimage = evmc::from_hex<Address>(preimage_json).value();
+        auto const expected =
+            intx::from_string<Uint256Native>(validator_id_str);
+        auto const mapping = contract.vars.validator_id(preimage).load();
+        ASSERT_TRUE(mapping.has_value())
+            << "validator_id: mapping not found: " << preimage_json;
+        auto const actual = mapping.value().native();
+        EXPECT_EQ(expected, actual);
+    }
+
+    for (auto const &[preimage_json, validator_id_str] :
+         json["validator_id_bls"].items()) {
+        auto const preimage = evmc::from_hex<Bytes48>(preimage_json).value();
+        auto const expected =
+            intx::from_string<Uint256Native>(validator_id_str);
+        auto const mapping =
+            contract.vars.validator_id_bls(preimage.bytes).load();
+        ASSERT_TRUE(mapping.has_value())
+            << "validator_id_bls: mapping not found: " << preimage_json;
+        auto const actual = mapping.value().native();
+        EXPECT_EQ(expected, actual);
     }
 }
 

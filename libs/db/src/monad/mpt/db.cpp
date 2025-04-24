@@ -384,18 +384,18 @@ struct OnDiskWithWorkerThreadImpl
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
         Node::UniquePtr prev_root;
-        StateMachine &sm;
-        UpdateList &&updates;
-        uint64_t const version;
-        bool const enable_compaction;
-        bool const can_write_to_fast;
-        bool const write_root;
+        std::reference_wrapper<StateMachine> sm;
+        UpdateList updates;
+        uint64_t version;
+        bool enable_compaction;
+        bool can_write_to_fast;
+        bool write_root;
     };
 
     struct FiberCopyTrieRequest
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
-        Node &src_root;
+        std::reference_wrapper<Node> src_root;
         NibblesView src;
         uint64_t src_version;
         Node::UniquePtr dest_root;
@@ -408,14 +408,14 @@ struct OnDiskWithWorkerThreadImpl
     {
         threadsafe_boost_fibers_promise<size_t> *promise;
         NodeCursor root;
-        StateMachine &sm;
+        std::reference_wrapper<StateMachine> sm;
     };
 
     struct FiberTraverseRequest
     {
         threadsafe_boost_fibers_promise<bool> *promise;
-        Node &root;
-        TraverseMachine &machine;
+        std::reference_wrapper<Node> root;
+        std::reference_wrapper<TraverseMachine> machine;
         uint64_t version;
         size_t concurrency_limit;
     };
@@ -430,7 +430,7 @@ struct OnDiskWithWorkerThreadImpl
     struct FiberLoadRootVersionRequest
     {
         threadsafe_boost_fibers_promise<Node::UniquePtr> *promise;
-        uint64_t const version;
+        uint64_t version;
     };
 
     struct RODbFiberFindOwningNodeRequest
@@ -498,16 +498,12 @@ struct OnDiskWithWorkerThreadImpl
                 threadsafe_boost_fibers_promise<find_owning_cursor_result_type>>
                 find_owning_cursor_promises;
 
-            std::vector<Comms> request;
-            request.reserve(1);
+            Comms request;
             unsigned did_nothing_count = 0;
             while (!done.load(std::memory_order_acquire)) {
                 bool did_nothing = true;
-                request.clear();
-                if (parent->comms_.try_dequeue_bulk(
-                        std::back_inserter(request), 1) > 0) {
-                    if (auto *req = std::get_if<8>(&request.front());
-                        req != nullptr) {
+                if (parent->comms_.try_dequeue(request)) {
+                    if (auto *req = std::get_if<8>(&request); req != nullptr) {
                         find_owning_cursor_promises.emplace_back(
                             std::move(*req->promise));
                         req->promise = &find_owning_cursor_promises.back();
@@ -590,21 +586,12 @@ struct OnDiskWithWorkerThreadImpl
             ::boost::container::deque<threadsafe_boost_fibers_promise<void>>
                 move_trie_version_promises;
 
-            /* In case you're wondering why we use a vector for a single
-            element, it's because for some odd reason the MoodyCamel concurrent
-            queue only supports move only types via its iterator interface. No
-            that makes no sense to me either, but it is what it is.
-            */
-            std::vector<Comms> request;
-            request.reserve(1);
+            Comms request;
             unsigned did_nothing_count = 0;
             while (!done.load(std::memory_order_acquire)) {
                 bool did_nothing = true;
-                request.clear();
-                if (parent->comms_.try_dequeue_bulk(
-                        std::back_inserter(request), 1) > 0) {
-                    if (auto *req = std::get_if<1>(&request.front());
-                        req != nullptr) {
+                if (parent->comms_.try_dequeue(request)) {
+                    if (auto *req = std::get_if<1>(&request); req != nullptr) {
                         // The promise needs to hang around until its future is
                         // destructed, otherwise there is a race within
                         // Boost.Fiber. So we move the promise out of the
@@ -619,7 +606,7 @@ struct OnDiskWithWorkerThreadImpl
                             req->start,
                             req->key);
                     }
-                    else if (auto *req = std::get_if<2>(&request.front());
+                    else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
                         // Ditto to above
                         upsert_promises.emplace_back(std::move(*req->promise));
@@ -633,7 +620,7 @@ struct OnDiskWithWorkerThreadImpl
                             req->can_write_to_fast,
                             req->write_root));
                     }
-                    else if (auto *req = std::get_if<3>(&request.front());
+                    else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {
                         // Ditto to above
                         prefetch_promises.emplace_back(
@@ -642,7 +629,7 @@ struct OnDiskWithWorkerThreadImpl
                         req->promise->set_value(
                             mpt::load_all(aux, req->sm, req->root));
                     }
-                    else if (auto *req = std::get_if<4>(&request.front());
+                    else if (auto *req = std::get_if<4>(&request);
                              req != nullptr) {
                         // Ditto to above
                         traverse_promises.emplace_back(
@@ -661,7 +648,7 @@ struct OnDiskWithWorkerThreadImpl
                             req->promise->set_value(false);
                         }
                     }
-                    else if (auto *req = std::get_if<5>(&request.front());
+                    else if (auto *req = std::get_if<5>(&request);
                              req != nullptr) {
                         // Ditto to above
                         move_trie_version_promises.emplace_back(
@@ -670,7 +657,7 @@ struct OnDiskWithWorkerThreadImpl
                         aux.move_trie_version_forward(req->src, req->dest);
                         req->promise->set_value();
                     }
-                    else if (auto *req = std::get_if<6>(&request.front());
+                    else if (auto *req = std::get_if<6>(&request);
                              req != nullptr) {
                         // share the same promise type as upsert
                         upsert_promises.emplace_back(std::move(*req->promise));
@@ -681,7 +668,7 @@ struct OnDiskWithWorkerThreadImpl
                         req->promise->set_value(
                             read_node_blocking(aux, root_offset, req->version));
                     }
-                    else if (auto *req = std::get_if<7>(&request.front());
+                    else if (auto *req = std::get_if<7>(&request);
                              req != nullptr) {
                         // share the same promise type as upsert
                         upsert_promises.emplace_back(std::move(*req->promise));
@@ -904,15 +891,16 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberUpsertRequest{
-            .promise = &promise,
-            .prev_root = std::move(root_),
-            .sm = machine_,
-            .updates = std::move(updates),
-            .version = version,
-            .enable_compaction = enable_compaction && compaction_,
-            .can_write_to_fast = can_write_to_fast,
-            .write_root = write_root});
+        comms_.enqueue(
+            FiberUpsertRequest{
+                .promise = &promise,
+                .prev_root = std::move(root_),
+                .sm = machine_,
+                .updates = std::move(updates),
+                .version = version,
+                .enable_compaction = enable_compaction && compaction_,
+                .can_write_to_fast = can_write_to_fast,
+                .write_root = write_root});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -947,8 +935,9 @@ public:
         MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberLoadAllFromBlockRequest{
-            .promise = &promise, .root = *root(), .sm = machine_});
+        comms_.enqueue(
+            FiberLoadAllFromBlockRequest{
+                .promise = &promise, .root = *root(), .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -970,12 +959,13 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberTraverseRequest{
-            .promise = &promise,
-            .root = node,
-            .machine = machine,
-            .version = version,
-            .concurrency_limit = concurrency_limit});
+        comms_.enqueue(
+            FiberTraverseRequest{
+                .promise = &promise,
+                .root = node,
+                .machine = machine,
+                .version = version,
+                .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -994,8 +984,9 @@ public:
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
             auto fut = promise.get_future();
-            comms_.enqueue(FiberLoadRootVersionRequest{
-                .promise = &promise, .version = version});
+            comms_.enqueue(
+                FiberLoadRootVersionRequest{
+                    .promise = &promise, .version = version});
             // promise is racily emptied after this point
             if (worker_->sleeping.load(std::memory_order_acquire)) {
                 std::unique_lock const g(lock_);
@@ -1032,15 +1023,16 @@ public:
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberCopyTrieRequest{
-            .promise = &promise,
-            .src_root = src_root,
-            .src = src,
-            .src_version = src_version,
-            .dest_root = std::move(dest_root),
-            .dest = dest,
-            .dest_version = dest_version,
-            .blocked_by_write = blocked_by_write});
+        comms_.enqueue(
+            FiberCopyTrieRequest{
+                .promise = &promise,
+                .src_root = src_root,
+                .src = src,
+                .src_version = src_version,
+                .dest_root = std::move(dest_root),
+                .dest = dest,
+                .dest_version = dest_version,
+                .blocked_by_write = blocked_by_write});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);

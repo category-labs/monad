@@ -37,9 +37,9 @@ Require Import monad.tutorials.demo. (* monad/tutorials/demo.v, the AST of monad
 (https://github.com/bluerock-io/BRiCk/blob/master/rocq-bluerock-cpp2v/README.md) *)
 
 Require Import monad.proofs.misc. (* monad/proofs/misc.v *)
-Require Import bedrock.auto.invariants.
-Require Import bedrock.auto.cpp.proof.
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.invariants.
+Require Import bluerock.auto.cpp.proof.
+Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.tutorials.demomisc.
 From AAC_tactics Require Import AAC.
 From AAC_tactics Require Import Instances.

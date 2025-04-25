@@ -252,6 +252,7 @@ Result<ExecutionResult> execute_impl(
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state, Incarnation{hdr.number, i + 1}, sender, tx.nonce, min_balance(tx)};
+        // setting min_balance as the balance of sender if its balance is lower is not necessary for correctness. it may be an optimization.
 
 #ifdef ENABLE_CALL_TRACING
         CallTracer call_tracer{tx};

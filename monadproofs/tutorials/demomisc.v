@@ -1,5 +1,5 @@
-Require Import bedrock.auto.cpp.proof.
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.cpp.proof.
+Require Import bluerock.auto.cpp.tactics4.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
 

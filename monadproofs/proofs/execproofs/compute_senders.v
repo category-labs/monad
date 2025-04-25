@@ -2,10 +2,10 @@ Require Import monad.proofs.misc.
 Require Import monad.proofs.libspecs.
 Require Import monad.proofs.evmopsem.
 Import linearity.
-Require Import bedrock.auto.invariants.
-Require Import bedrock.auto.cpp.proof.
+Require Import bluerock.auto.invariants.
+Require Import bluerock.auto.cpp.proof.
 
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.exb.
 Require Import monad.proofs.exec_specs.
       Set Printing Coercions.

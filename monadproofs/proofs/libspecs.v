@@ -1,7 +1,7 @@
-Require Import bedrock.auto.cpp.proof.
+Require Import bluerock.auto.cpp.proof.
 
 Require Import monad.asts.exb.
-Require Import bedrock.auto.invariants.
+Require Import bluerock.auto.invariants.
 Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.misc.
 

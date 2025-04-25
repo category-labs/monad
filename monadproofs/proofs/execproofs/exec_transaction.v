@@ -2,10 +2,10 @@ Require Import monad.proofs.misc.
 Require Import monad.proofs.libspecs.
 Require Import monad.proofs.evmopsem.
 Import linearity.
-Require Import bedrock.auto.invariants.
-Require Import bedrock.auto.cpp.proof.
+Require Import bluerock.auto.invariants.
+Require Import bluerock.auto.cpp.proof.
 
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.ext.
 Require Import monad.proofs.exec_specs.
 
@@ -180,7 +180,7 @@ Definition destr_incarnation :=
           (Nscoped (Nglobal (Nid "monad")) (Nid "Incarnation"))
     |} (λ this : ptr, \pre{w} this |-> IncarnationR 1 w
                         \post    emp).
-Require Import bedrock.prelude.lens.
+Require Import bluerock.prelude.lens.
     #[only(lens)] derive AssumptionsAndUpdates.
     #[only(lens)] derive block.block_account.
 

@@ -1,14 +1,14 @@
 Require Import QArith.
 Require Import Lens.Elpi.Elpi.
-Require Import bedrock.lang.cpp.
+Require Import bluerock.lang.cpp.
 Require Import stdpp.gmap.
 Require Import monad.proofs.misc.
 Require Import monad.proofs.evmopsem.
 Import linearity.
 Require Import monad.asts.exb.
-Require Import bedrock.auto.invariants.
-Require Import bedrock.auto.cpp.proof.
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.invariants.
+Require Import bluerock.auto.cpp.proof.
+Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.proofs.libspecs.
 Import cQp_compat.
 #[local] Open Scope lens_scope.
@@ -75,7 +75,7 @@ Module BlockState. Section with_Sigma.
 End with_Sigma. End BlockState.
 
 
-(* Import bedrock.lang.cpp.semantics.values.VALUES_INTF_AXIOM. *)
+(* Import bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM. *)
 
 
 Open Scope cpp_name.
@@ -178,8 +178,8 @@ Import namemap.
 Import translation_unit.
 Require Import List.
 Import bytestring_core.
-Require Import bedrock.auto.cpp.
-Require Import bedrock.auto.cpp.specs.
+Require Import bluerock.auto.cpp.
+Require Import bluerock.auto.cpp.specs.
 
 
 Context  {MODd : exb.module ⊧ CU}.

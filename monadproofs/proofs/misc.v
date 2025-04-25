@@ -1,9 +1,9 @@
 Require Import QArith.
-Require Import bedrock.auto.cpp.proof.
+Require Import bluerock.auto.cpp.proof.
 
 Require Import monad.proofs.stsg.
 Require Import stdpp.gmap.
-Require Import bedrock.auto.cpp.tactics4.
+Require Import bluerock.auto.cpp.tactics4.
 From AAC_tactics Require Import AAC.
 From AAC_tactics Require Import Instances.
 Import Instances.Z.
@@ -1400,7 +1400,7 @@ Hint Resolve primR_split_C : br_opacity.
 
 
 
-Require Import bedrock.prelude.propset.
+Require Import bluerock.prelude.propset.
 
 
 Ltac erefl :=

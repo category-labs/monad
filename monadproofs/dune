@@ -3,7 +3,7 @@
  (name monad) ; logical path of this library
  (theories
   Lens Lens.Elpi Equations Equations.Prop Equations.Type
-  bedrock iris stdpp elpi ExtLib Ltac2 AAC_tactics))
+  bluerock iris stdpp elpi ExtLib Ltac2 AAC_tactics))
 
 (subdir tutorials
 	(include dune.inc))

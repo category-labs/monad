@@ -13,3 +13,4 @@ mkdir -p $DST
 cp build/compile_commands.json ./ # cpp2v extracts the compile flags from here and passes the same to the clang AST visitor library
 $CPP2V  ./libs/execution/src/monad/execution/execute_block.cpp --no-elaborate -o $(pwd)/$DST/exb.v
 $CPP2V  ./libs/execution/src/monad/execution/execute_transaction.cpp --no-elaborate -o $(pwd)/$DST/ext.v
+$CPP2V  ./libs/execution/src/monad/state2/block_state.cpp --no-elaborate -o $(pwd)/$DST/block_state_cpp.v

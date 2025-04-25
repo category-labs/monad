@@ -65,19 +65,19 @@
    breaking up the combined element appropriately.
  *)
 
-Require Import bedrock.auto.miscPure.
+Require Import bluerock.auto.miscPure.
 Require Export stdpp.propset.
 Require Export iris.algebra.cmra.
 Require Import monad.proofs.dra.
-Require Import bedrock.lang.base_logic.iprop_own.
-Require Import bedrock.lang.proofmode.proofmode.
+Require Import bluerock.iris.extra.base_logic.iprop_own.
+Require Import bluerock.iris.extra.proofmode.proofmode.
 Set Default Proof Using "Type".
 Local Arguments valid _ _ !_ /.
 Local Arguments op _ _ !_ !_ /.
 Local Arguments core _ _ !_ /.
 Notation "a |--> r" := (own a r) (at level 80).
 
-(** * Definition of STSs *)
+(** * Definition of STSs  *)
 Module sts.
   Structure stsT := Sts {
     state : Type;

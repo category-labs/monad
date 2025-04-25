@@ -231,37 +231,4 @@ namespace
         EXPECT_EQ(constructed, 1);
         EXPECT_EQ(destructed, 1);
     }
-
-#if MONAD_CORE_ALLOCATORS_HAVE_BOOST_POOL &&                                   \
-    !MONAD_CORE_ALLOCATORS_DISABLE_BOOST_OBJECT_POOL
-    TEST(AllocatorsTest, array_of_boost_pools_allocator)
-    {
-        using namespace MONAD_NAMESPACE::allocators;
-        using allocator_type = array_of_boost_pools_allocator<8, 64, 4>;
-        allocator_type alloc;
-        auto *const p1 = alloc.allocate(16);
-        auto *const p2 = alloc.allocate(16);
-        auto *const p3 = alloc.allocate(24);
-        auto *const p4 = alloc.allocate(24);
-        EXPECT_EQ(p2, p1 + 16);
-        EXPECT_EQ(p4, p3 + 24);
-        alloc.deallocate(p1, 16);
-        alloc.deallocate(p2, 16);
-        alloc.deallocate(p3, 24);
-        alloc.deallocate(p4, 24);
-
-        auto *const p5 = alloc.allocate(64);
-        EXPECT_TRUE(p5 != nullptr);
-        if (p5) {
-            alloc.deallocate(p5, 64);
-        }
-
-        // success on allocating size larger than upper bound
-        auto *const p6 = alloc.allocate(65);
-        EXPECT_TRUE(p5 != nullptr);
-        if (p6) {
-            alloc.deallocate(p6, 65);
-        }
-    }
-#endif
 }

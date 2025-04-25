@@ -14,7 +14,6 @@ project(monad_execution)
 
 add_library(
   monad_execution STATIC
-  "src/monad/config.hpp"
   # chain
   "src/monad/chain/chain_config.h"
   "src/monad/chain/chain.cpp"

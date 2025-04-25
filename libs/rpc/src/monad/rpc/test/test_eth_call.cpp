@@ -134,6 +134,8 @@ TEST_F(EthCallFixture, simple_success_call)
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21000);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -190,6 +192,8 @@ TEST_F(EthCallFixture, insufficient_balance)
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
     EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -245,6 +249,9 @@ TEST_F(EthCallFixture, on_proposed_block)
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21000);
+
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -303,6 +310,9 @@ TEST_F(EthCallFixture, failed_to_read)
             ctx.result->message, "failure to initialize block hash buffer") ==
         0);
     EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 0);
+
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -370,6 +380,9 @@ TEST_F(EthCallFixture, contract_deployment_success)
         ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
     EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 68137);
+
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -433,6 +446,9 @@ TEST_F(EthCallFixture, from_contract_account)
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 32094);
+
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
@@ -518,6 +534,10 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
 
         EXPECT_TRUE(ctx->result->status_code == EVMC_SUCCESS);
         EXPECT_EQ(ctx->result->output_data_len, 0);
+        EXPECT_EQ(ctx->result->rlp_call_frames_len, 0);
+        EXPECT_EQ(ctx->result->gas_refund, 0);
+        EXPECT_EQ(ctx->result->gas_used, 32094);
+
         monad_state_override_destroy(state_override);
     }
 
@@ -553,7 +573,7 @@ TEST_F(EthCallFixture, transfer_success_with_trace)
 
     Transaction const tx{
         .max_fee_per_gas = 1,
-        .gas_limit = 0x100000,
+        .gas_limit = 500'000u,
         .value = 0x10000,
         .to = ADDR_B,
     };
@@ -598,8 +618,8 @@ TEST_F(EthCallFixture, transfer_success_with_trace)
         .from = from,
         .to = ADDR_B,
         .value = 0x10000,
-        .gas = 0x100000,
-        .gas_used = 0x100000,
+        .gas = 500'000,
+        .gas_used = 500'000,
         .status = EVMC_SUCCESS,
         .depth = 0,
     };
@@ -610,6 +630,15 @@ TEST_F(EthCallFixture, transfer_success_with_trace)
     ASSERT_TRUE(call_frames.has_value());
     ASSERT_TRUE(call_frames.value().size() == 1);
     EXPECT_EQ(call_frames.value()[0], expected);
+
+    // The discrepancy between `evmc_result.gas_used` and the `gas_used` in the
+    // final CallFrame is expected. This is because Monad currently does not
+    // support gas refund — refunds are always zero. As a result,
+    // the `gas_used` in the final CallFrame always equals the gas limit.
+    // However, `eth_call` returns the actual gas used (not the full gas limit)
+    // to ensure `eth_estimateGas` remains usable.
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21000);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -707,6 +736,9 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
     ASSERT_TRUE(call_frames.has_value());
     ASSERT_TRUE(call_frames.value().size() == 1);
     EXPECT_EQ(call_frames.value()[0], expected);
+
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 22000);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);

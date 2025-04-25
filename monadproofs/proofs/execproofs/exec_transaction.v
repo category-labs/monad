@@ -243,8 +243,9 @@ Require Import bedrock.prelude.lens.
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \prepost{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}).
-  
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}
+            ** (reference_to "monad::State" this)). (* convenient but logically redundant *)
+
   Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce_and_balance")).
   (*
   cpp.spec ((Nscoped
@@ -776,6 +777,23 @@ Opaque VectorR.
 
   Definition wp_init_implicit_B := [BWD] wp_init_implicit.
   Hint Resolve wp_init_implicit_B: br_opacity. (* TODO: investigagte why it is not already in automation *)
+  Instance lsfjdlksj2 q q2 hdr (hdrp:ptr) v:
+    learn_exist_interface.Learnable
+      (hdrp |-> BheaderR q hdr)
+      (hdrp ,, o_field CU "monad::BlockHeader::number" |-> primR "unsigned long" q2 v)
+      [q2= cQp.mut q; v = number hdr] := ltac:(solve_learnable).
+  Lemma borrow_number (q:Qp) hdr (hdrp:ptr) :
+    let br := hdrp ,, o_field CU "monad::BlockHeader::number" |-> primR "unsigned long" (cQp.mut q) (number hdr)
+    in
+    (hdrp |-> BheaderR q hdr) |-- (br -* hdrp |-> BheaderR q hdr) ** br.
+  Proof using.
+    simpl.
+    unfold BheaderR. go.
+  Qed.
+  Definition borrow_number_C := [CANCEL] borrow_number.
+  Hint Resolve borrow_number_C: br_opacity.
+    Definition observeResult r t := @observe_fwd _ _ _ (resultObserve r t).
+    Hint Resolve observeResult : br_opacity.
   Lemma prf: denoteModule module
              ** rec_dtor
              ** ct_dtor
@@ -810,7 +828,7 @@ Opaque VectorR.
              ** opt_value_or
              ** has_error
              ** result_value
-             ** exec_final
+             ** exec_final_spec
              ** exec_specs.merge
 (*             ** result_val_constr *)
 (*             ** tag_constr *)
@@ -843,11 +861,9 @@ Proof using MODd.
   iExists true.  slauto.
   iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
   slauto.
-  wp_if.
+  wp_if. (* case analysis on the result of can_merge *)
   {
     intros.
-    wapplyObserve @resultObserve. eagerUnifyU.
-    iAssert (exec_final_spec) as "?"%string;[admit|].
     slauto.
     progress applyPHyp.
     repeat (iExists _). 
@@ -879,7 +895,7 @@ Proof using MODd.
     go.
     unhideAllFromWork.
     setoid_rewrite ResultSucRDef.
-    Remove Hints borrow_basefee_C: br_opacity.
+(*    Remove Hints borrow_basefee_C: br_opacity. *)
     go.
     iClear "#"%string.
     match goal with
@@ -891,14 +907,12 @@ Proof using MODd.
     rewrite ResultSucRDef.
     work.
   }
-Abort.
-(*
-{
-  rename result_addr into result_addr_del.
-  rename state_addr into state_addr_del.
-  slauto.
-  iExists i. (* TODO: add a REfine 1 hint to avoid needing this *)
-  run1.
+  {
+    rename result_addr into result_addr_del.
+    rename state_addr into state_addr_del.
+    slauto.
+    iExists (_:nat). rename call_tracer_addr into call_tracer_addr2. slauto. (* this manual intervention should not be needed. likely a bug in Refine1, reported to bluerock *)
+(*  run1.
   wapplyObserve stateObserve.
   progress eagerUnifyU.
   slauto.
@@ -916,9 +930,10 @@ Abort.
   forward_reason. subst.
   go. subst. go.
   unfold BheaderR. go.
-  unfold TransactionR. go.
-  iExists false.  slauto.
-  do 3 (iExists _). 
+  unfold TransactionR. go. *)
+    iExists false.
+    slauto.
+(*  do 3 (iExists _). 
   eagerUnifyU.
   run1.
     wapplyObserve @resultObserve. eagerUnifyU.
@@ -931,61 +946,40 @@ Abort.
     slauto.
     go.
     unfold TransactionR.
+    go. *)
+    use_wand_no_assert.
+ Definition recObserveF s t := @observe_fwd _ _ _ (recObserve s t) .
+Hint Resolve recObserveF: br_opacity.
+    rewrite ResultSucRDef.
     go.
-    repeat (iExists _). eagerUnifyC.
     rename result into resultOld.
+    repeat (iExists _). eagerUnifyC.
     match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
         remember (stateAfterTransactionAux a1 b1 c1 d1) as saf; destruct saf as [smid result]
     end.
 
-    simpl in *.
-    go.
-    eagerUnifyU.
-    
-    rewrite ResultSucRDef.
-    go.
-    eagerUnifyC.
-    forward_reason.
-    ren_hyp au AssumptionsAndUpdates.
-    subst.
-    Forward.rwHyps.
-    eagerUnifyC.
-    go.
+    Forward.forward_reason.
+    Forward.rwHyps. go.
     rewrite <- wp_const_const_delete.
     go.
+    setoid_rewrite ExecutionResultRdef at 1.
+    go.
     rewrite <- wp_const_const_delete.
-    go.
-
-    wapplyObserve recObserve. eagerUnifyU.
-    (* iAssert (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) _x_1) as  "#?"%string;[admit|]. *)
-    go.
-(*    unshelve rewrite <- wp_init_implicit. *)
     go.
     setoid_rewrite ResultSucRDef.
+    unhideAllFromWork.
     go.
-    repeat (iExists _). eagerUnifyC. go.
-
-    (* too many temps need to be destructed just before returning *)
-
-    go.
-    rewrite <- wp_const_const_delete.
-    go.
-    go.
-    setoid_rewrite ResultSucRDef.
-    go.
-    go.
-    autorewrite with syntactic in *.
     iClear "#"%string.
+    autorewrite with syntactic in *.
     match goal with
     | H: _.1 = applyUpdates _ _ |- _ => revert H
     end.
     unfold stateAfterTransaction.
-    rewrite <- Heqsaf.
+    repeat rewrite <- Heqsaf.
     go.
     rewrite ResultSucRDef. go.
 }
 Qed.
-*)
 End with_Sigma.

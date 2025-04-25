@@ -265,17 +265,10 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
             evmc::from_hex<Bytes48>(
                 validator_info_json["bls_pubkey"].get<std::string>())
                 .value();
-        auto const expected_total_stake =
-            intx::from_string<uint256_t>(validator_info_json["total_stake"]);
         auto const expected_active_stake =
             intx::from_string<uint256_t>(validator_info_json["active_stake"]);
         auto const expected_active_shares =
             intx::from_string<uint256_t>(validator_info_json["active_shares"]);
-        auto const expected_activating_stake = intx::from_string<uint256_t>(
-            validator_info_json["activating_stake"]);
-        // auto const expected_deactivating_stake =
-        // intx::from_string<uint256_t>(
-        //     validator_info_json["deactivating_shares"]);
         auto const expected_rewards0 =
             intx::from_string<uint256_t>(validator_info_json["rewards"][0]);
         auto const expected_rewards1 =
@@ -283,15 +276,9 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
 
         EXPECT_EQ(expected_auth_address, validator_info->auth_address);
         EXPECT_EQ(expected_bls_pubkey.bytes, validator_info->bls_pubkey);
-        EXPECT_EQ(expected_total_stake, validator_info->total_stake.native());
         EXPECT_EQ(expected_active_stake, validator_info->active_stake.native());
         EXPECT_EQ(
             expected_active_shares, validator_info->active_shares.native());
-        EXPECT_EQ(
-            expected_activating_stake,
-            validator_info->activating_stake.native());
-        // EXPECT_EQ(
-        //     expected_deactivating_stake validator_info->deactivating_shares);
         EXPECT_EQ(expected_rewards0, validator_info->rewards[0].native());
         EXPECT_EQ(expected_rewards1, validator_info->rewards[1].native());
     }

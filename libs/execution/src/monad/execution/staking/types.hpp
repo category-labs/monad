@@ -23,19 +23,14 @@ struct ValidatorInfo
 {
     Address auth_address;
     byte_string_fixed<48> bls_pubkey;
-    Uint256BE total_stake;
     Uint256BE active_stake;
     Uint256BE active_shares;
-    Uint256BE activating_stake;
-    Uint256BE deactivating_shares;
     Uint256BE rewards[2];
 };
 
 struct DelegatorInfo
 {
     Uint256BE active_shares; // shares
-    Uint256BE deactivating_shares; // shares
-    Uint256BE activating_stake; // MON
     Uint256BE balance;
 };
 

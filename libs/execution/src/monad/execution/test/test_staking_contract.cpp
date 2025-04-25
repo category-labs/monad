@@ -318,22 +318,10 @@ TEST_F(Stake, add_validator_then_remove)
     ASSERT_TRUE(validator_info.has_value());
     EXPECT_EQ(validator_info->auth_address, 0xababab_address);
     EXPECT_EQ(validator_info->bls_pubkey, bls_serialized);
-    EXPECT_EQ(validator_info->total_stake, Uint256Native{stake}.to_be());
     EXPECT_EQ(validator_info->active_stake, Uint256BE{});
     EXPECT_EQ(validator_info->active_shares, Uint256BE{});
-    EXPECT_EQ(validator_info->activating_stake, Uint256Native{stake}.to_be());
-    EXPECT_EQ(validator_info->deactivating_shares, Uint256BE{});
     EXPECT_EQ(validator_info->rewards[0], Uint256BE{});
     EXPECT_EQ(validator_info->rewards[1], Uint256BE{});
-
-    auto const delegator_info =
-        contract.vars.delegator_info(validator_id.value(), 0xababab_address)
-            .load();
-    ASSERT_TRUE(delegator_info.has_value());
-    EXPECT_EQ(delegator_info->active_shares, Uint256BE{});
-    EXPECT_EQ(delegator_info->deactivating_shares, Uint256BE{});
-    EXPECT_EQ(delegator_info->activating_stake, Uint256Native{stake}.to_be());
-    EXPECT_EQ(delegator_info->balance, Uint256BE{});
 
     ASSERT_FALSE(contract.vars.epoch.load().has_value()); // epoch 0
     auto const update_epoch = Uint256Native{2}.to_be();
@@ -361,11 +349,8 @@ TEST_F(Stake, add_validator_then_remove)
     ASSERT_TRUE(validator_info.has_value());
     EXPECT_EQ(validator_info->auth_address, 0xababab_address);
     EXPECT_EQ(validator_info->bls_pubkey, bls_serialized);
-    EXPECT_EQ(validator_info->total_stake, Uint256Native{stake}.to_be());
     EXPECT_EQ(validator_info->active_stake, Uint256Native{stake}.to_be());
     EXPECT_EQ(validator_info->active_shares, Uint256Native{stake}.to_be());
-    EXPECT_EQ(validator_info->activating_stake, Uint256BE{});
-    EXPECT_EQ(validator_info->deactivating_shares, Uint256BE{});
     EXPECT_EQ(validator_info->rewards[0], Uint256BE{});
     EXPECT_EQ(validator_info->rewards[1], Uint256BE{});
 

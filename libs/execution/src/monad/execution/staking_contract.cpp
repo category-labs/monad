@@ -219,11 +219,8 @@ StakingContract::Status StakingContract::precompile_add_validator(
         .store(ValidatorInfo{
             .auth_address = auth_address,
             .bls_pubkey = bls_pubkey_serialized,
-            .total_stake = {},
             .active_stake = {},
             .active_shares = {},
-            .activating_stake = {},
-            .deactivating_shares = {},
             .rewards = {}});
 
     vars.validator_set.push(validator_id);
@@ -249,14 +246,9 @@ StakingContract::Status StakingContract::add_stake(
         return MINIMUM_STAKE_NOT_MET;
     }
 
-    auto valinfo_slot = vars.validator_info(validator_id);
-    auto valinfo = valinfo_slot.load();
-    if (MONAD_UNLIKELY(!valinfo.has_value())) {
+    if (MONAD_UNLIKELY(!vars.validator_info(validator_id).load().has_value())) {
         return UNKNOWN_VALIDATOR;
     }
-
-    auto delinfo_slot = vars.delegator_info(validator_id, delegator);
-    auto delinfo = delinfo_slot.load_unchecked();
 
     auto const deposit_id =
         vars.last_deposit_request_id.load_unchecked().native().add(1).to_be();
@@ -268,17 +260,6 @@ StakingContract::Status StakingContract::add_stake(
             .validator_id = validator_id,
             .delegator = delegator,
             .amount = amount});
-
-    auto const amount_native = amount.native();
-    delinfo.activating_stake =
-        delinfo.activating_stake.native().add(amount_native).to_be();
-    valinfo->activating_stake =
-        valinfo->activating_stake.native().add(amount_native).to_be();
-    valinfo->total_stake =
-        valinfo->total_stake.native().add(amount_native).to_be();
-    delinfo_slot.store(delinfo);
-    valinfo_slot.store(valinfo.value());
-
     return SUCCESS;
 }
 
@@ -312,15 +293,11 @@ StakingContract::Status StakingContract::precompile_remove_stake(
     auto const shares = unaligned_load<Uint256BE>(
         input.substr(sizeof(Uint256BE), sizeof(Uint256BE)).data());
 
-    auto const shares_native = shares.native();
-    auto valinfo_slot = vars.validator_info(validator_id);
-    auto valinfo = valinfo_slot.load();
-    if (MONAD_UNLIKELY(!valinfo.has_value())) {
+    if (MONAD_UNLIKELY(!vars.validator_info(validator_id).load().has_value())) {
         return UNKNOWN_VALIDATOR;
     }
 
-    auto delinfo_slot = vars.delegator_info(validator_id, msg_sender);
-    auto delinfo = delinfo_slot.load();
+    auto const delinfo = vars.delegator_info(validator_id, msg_sender).load();
     if (MONAD_UNLIKELY(!delinfo.has_value())) {
         return UNKNOWN_DELEGATOR;
     }
@@ -343,18 +320,6 @@ StakingContract::Status StakingContract::precompile_remove_stake(
             .delegator = msg_sender,
             .shares = shares});
 
-    delinfo->deactivating_shares.native().add(shares_native);
-    valinfo->deactivating_shares.native().add(shares_native);
-    valinfo->total_stake = valinfo->total_stake.native()
-                               .sub(shares_to_tokens(
-                                   valinfo->total_stake.native(),
-                                   valinfo->active_shares.native() -
-                                       valinfo->deactivating_shares.native(),
-                                   shares.native()))
-                               .to_be();
-    delinfo_slot.store(delinfo.value());
-    valinfo_slot.store(valinfo.value());
-
     return SUCCESS;
 }
 
@@ -375,8 +340,6 @@ StakingContract::syscall_reward_validator(Address const &block_author)
     state_.add_to_balance(ca_, BASE_STAKING_REWARD);
     validator_info->rewards[1] =
         validator_info->rewards[1].native().add(BASE_STAKING_REWARD).to_be();
-    validator_info->total_stake =
-        validator_info->total_stake.native().add(BASE_STAKING_REWARD).to_be();
     validator_info_storage.store(validator_info.value());
 
     return success();
@@ -418,58 +381,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo_storage.store(valinfo.value());
     }
 
-    // 2. Apply deposits
-    auto deposit_queue_storage = vars.deposit_queue(epoch);
-    uint256_t const num_deposits = deposit_queue_storage.length();
-    for (uint256_t i = 0; i < num_deposits; i += 1) {
-        auto deposit_id = deposit_queue_storage.pop();
-        auto deposit_request_storage = vars.deposit_request(deposit_id);
-        auto deposit_request = deposit_request_storage.load();
-        if (MONAD_UNLIKELY(!deposit_request.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
-
-        auto valinfo_storage =
-            vars.validator_info(deposit_request->validator_id);
-        auto valinfo = valinfo_storage.load();
-        if (MONAD_UNLIKELY(!valinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
-
-        auto delinfo_storage = vars.delegator_info(
-            deposit_request->validator_id, deposit_request->delegator);
-        auto delinfo = delinfo_storage.load();
-        if (MONAD_UNLIKELY(!delinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
-
-        auto val_active_stake = valinfo->active_stake.native();
-        auto val_active_shares = valinfo->active_shares.native();
-        auto const deposit_amount = deposit_request->amount.native();
-
-        auto const shares_to_mint = tokens_to_shares(
-            val_active_stake, val_active_shares, deposit_amount);
-
-        valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
-        valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
-        delinfo->active_shares =
-            delinfo->active_shares.native().add(shares_to_mint).to_be();
-
-        valinfo->activating_stake =
-            valinfo->activating_stake.native().sub(deposit_amount).to_be();
-        delinfo->activating_stake =
-            delinfo->activating_stake.native().sub(deposit_amount).to_be();
-
-        valinfo_storage.store(valinfo.value());
-        delinfo_storage.store(delinfo.value());
-
-        deposit_request_storage.clear();
-    }
-    if (MONAD_UNLIKELY(deposit_queue_storage.length() != 0)) {
-        return StakingSyscallError::CouldNotClearStorage;
-    }
-
-    // 3. Apply withdrawal requests
+    // 2. Apply withdrawal requests
     auto withdrawal_queue_storage = vars.withdrawal_queue(epoch);
     uint256_t const num_withdrawals = withdrawal_queue_storage.length();
     std::set<uint256_t, std::greater<uint256_t>> valset_removals;
@@ -491,10 +403,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         auto delinfo_storage = vars.delegator_info(
             withdrawal_request->validator_id, withdrawal_request->delegator);
-        auto delinfo = delinfo_storage.load();
-        if (MONAD_UNLIKELY(!delinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto delinfo = delinfo_storage.load_unchecked();
 
         auto val_active_stake = valinfo->active_stake.native();
         auto val_active_shares = valinfo->active_stake.native();
@@ -506,19 +415,16 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo->active_stake = val_active_stake.sub(tokens_to_burn).to_be();
         valinfo->active_shares =
             val_active_shares.sub(withdrawal_shares).to_be();
-        valinfo->deactivating_shares =
-            valinfo->activating_stake.native().sub(withdrawal_shares).to_be();
 
-        delinfo->balance =
-            delinfo->balance.native().add(tokens_to_burn).to_be();
-        delinfo->active_shares =
-            delinfo->active_shares.native().sub(withdrawal_shares).to_be();
+        delinfo.balance = delinfo.balance.native().add(tokens_to_burn).to_be();
+        delinfo.active_shares =
+            delinfo.active_shares.native().sub(withdrawal_shares).to_be();
 
         if (withdrawal_request->delegator == valinfo->auth_address) {
             auto const tokens_after_withdrawal = shares_to_tokens(
                 val_active_stake,
                 val_active_shares,
-                delinfo->active_shares.native());
+                delinfo.active_shares.native());
             if (MONAD_LIKELY(tokens_after_withdrawal < MIN_STAKE_AMOUNT)) {
                 valset_removals.insert(
                     val_id_to_index[withdrawal_request->validator_id]);
@@ -526,11 +432,54 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         valinfo_storage.store(valinfo.value());
-        delinfo_storage.store(delinfo.value());
+        delinfo_storage.store(delinfo);
 
         withdrawal_request_storage.clear();
     }
     if (MONAD_UNLIKELY(withdrawal_queue_storage.length() != 0)) {
+        return StakingSyscallError::CouldNotClearStorage;
+    }
+
+    // 3. Apply deposit requests
+    auto deposit_queue_storage = vars.deposit_queue(epoch);
+    uint256_t const num_deposits = deposit_queue_storage.length();
+    for (uint256_t i = 0; i < num_deposits; i += 1) {
+        auto deposit_id = deposit_queue_storage.pop();
+        auto deposit_request_storage = vars.deposit_request(deposit_id);
+        auto deposit_request = deposit_request_storage.load();
+        if (MONAD_UNLIKELY(!deposit_request.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
+
+        auto valinfo_storage =
+            vars.validator_info(deposit_request->validator_id);
+        auto valinfo = valinfo_storage.load();
+        if (MONAD_UNLIKELY(!valinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
+
+        auto delinfo_storage = vars.delegator_info(
+            deposit_request->validator_id, deposit_request->delegator);
+        auto delinfo = delinfo_storage.load_unchecked();
+
+        auto val_active_stake = valinfo->active_stake.native();
+        auto val_active_shares = valinfo->active_shares.native();
+        auto const deposit_amount = deposit_request->amount.native();
+
+        auto const shares_to_mint = tokens_to_shares(
+            val_active_stake, val_active_shares, deposit_amount);
+
+        valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
+        valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
+        delinfo.active_shares =
+            delinfo.active_shares.native().add(shares_to_mint).to_be();
+
+        valinfo_storage.store(valinfo.value());
+        delinfo_storage.store(delinfo);
+
+        deposit_request_storage.clear();
+    }
+    if (MONAD_UNLIKELY(deposit_queue_storage.length() != 0)) {
         return StakingSyscallError::CouldNotClearStorage;
     }
 

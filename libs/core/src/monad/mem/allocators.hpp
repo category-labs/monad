@@ -7,7 +7,6 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -748,82 +747,6 @@ namespace allocators
             }
         }
     };
-
-    /**************************************************************************/
-
-    template <unique_ptr T>
-    void delayed_reset(T &&ptr);
-
-    /*! \class thread_local_delayed_unique_ptr_resetter
-    \brief Collects unique ptrs upon whom `delayed_reset()` is called into
-    a thread local list. When the resetter is reset, destroys those unique ptrs.
-    */
-    template <unique_ptr T>
-    class thread_local_delayed_unique_ptr_resetter
-    {
-        friend void delayed_reset<T>(T &&ptr);
-        thread_local_delayed_unique_ptr_resetter *_prev{nullptr};
-        std::vector<T> _ptrs;
-
-        static thread_local_delayed_unique_ptr_resetter *&_inst()
-        {
-            static thread_local thread_local_delayed_unique_ptr_resetter *v;
-            return v;
-        }
-
-        void _add(T &&v)
-        {
-            _ptrs.push_back(std::move(v));
-        }
-
-    public:
-        using unique_ptr_type = T;
-
-        thread_local_delayed_unique_ptr_resetter()
-            : _prev(_inst())
-        {
-            _inst() = this;
-            _ptrs.reserve(256);
-        }
-
-        thread_local_delayed_unique_ptr_resetter(
-            thread_local_delayed_unique_ptr_resetter const &) = delete;
-        thread_local_delayed_unique_ptr_resetter(
-            thread_local_delayed_unique_ptr_resetter &&) = delete;
-        thread_local_delayed_unique_ptr_resetter &
-        operator=(thread_local_delayed_unique_ptr_resetter const &) = delete;
-        thread_local_delayed_unique_ptr_resetter &
-        operator=(thread_local_delayed_unique_ptr_resetter &&) = delete;
-
-        ~thread_local_delayed_unique_ptr_resetter()
-        {
-            reset();
-            _inst() = _prev;
-        }
-
-        //! Returns a pointer to the instance for the calling thread, if any
-        static thread_local_delayed_unique_ptr_resetter *thread_instance()
-        {
-            return _inst();
-        }
-
-        //! Executes destructing all the enqueued unique ptrs.
-        void reset()
-        {
-            _ptrs.clear();
-        }
-    };
-
-    //! \brief Delay the reset of the specified unique ptr. If there is not a
-    //! `thread_local_delayed_unique_ptr_resetter` instance earlier in the
-    //! calling thread's stack, terminates the process.
-    template <unique_ptr T>
-    void delayed_reset(T &&ptr)
-    {
-        using resetter_type = thread_local_delayed_unique_ptr_resetter<T>;
-        MONAD_ASSERT(resetter_type::thread_instance() != nullptr);
-        resetter_type::thread_instance()->_add(std::move(ptr));
-    }
 }
 
 MONAD_NAMESPACE_END

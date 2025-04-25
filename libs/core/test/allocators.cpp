@@ -209,26 +209,4 @@ namespace
         EXPECT_EQ(destructed, 16);
         EXPECT_EQ(deallocated, 0);
     }
-
-    TEST(AllocatorsTest, thread_local_delayed_unique_ptr_resetter)
-    {
-        using namespace MONAD_NAMESPACE::allocators;
-        reset();
-        {
-            using type = std::unique_ptr<Foo>;
-            thread_local_delayed_unique_ptr_resetter<type> const resetter;
-            {
-                type x = std::make_unique<Foo>();
-                EXPECT_EQ(constructed, 1);
-                EXPECT_EQ(destructed, 0);
-                delayed_reset(std::move(x));
-                EXPECT_EQ(constructed, 1);
-                EXPECT_EQ(destructed, 0);
-            }
-            EXPECT_EQ(constructed, 1);
-            EXPECT_EQ(destructed, 0);
-        }
-        EXPECT_EQ(constructed, 1);
-        EXPECT_EQ(destructed, 1);
-    }
 }

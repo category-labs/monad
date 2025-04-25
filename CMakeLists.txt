@@ -88,8 +88,9 @@ ExternalProject_Add(
   rpmalloc-external
   GIT_REPOSITORY "https://github.com/mjansson/rpmalloc.git"
   GIT_TAG "e4393ff85585d91400bcbad2e7266c011075b673" # 1.4.5
-  CONFIGURE_COMMAND CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}
-                    ./configure.py --toolchain ${RPMALLOC_TOOLCHAIN}
+  CONFIGURE_COMMAND
+    CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} CFLAGS=${CMAKE_C_FLAGS}
+    CXXFLAGS=${CMAKE_CXX_FLAGS} ./configure.py --toolchain ${RPMALLOC_TOOLCHAIN}
   BUILD_COMMAND ninja -v
   BUILD_IN_SOURCE ON
   BUILD_BYPRODUCTS

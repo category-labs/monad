@@ -347,6 +347,7 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     assert (numConsumed + 1 <= lengthN producedL) by lia.
     rewrite (dropNaddle 0); try nia.
     simpl. go.
+    rename inProduce into inProduce0.
     icancel (cancel_at this).
     {
       repeat (f_equiv; intros; hnf; try lia).
@@ -365,17 +366,17 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     1:{ intros. apply False_rect.
         apply n.
         apply modulo.zmod_inj in p; try nia.
-        destruct _v_1; simpl in *; try nia.
+        destruct inProduce0; simpl in *; try nia.
     }
     go.
     callAtomicCommitCinv.
     go.
     wapply (logicalR_update (inConsumeLoc lpp) false). eagerUnifyU. go.
-    wapply (logicalR_update (numConsumedLoc lpp) (1+_v_4)%N). eagerUnifyC. go.
+    wapply (logicalR_update (numConsumedLoc lpp) (1+numConsumed)%N). eagerUnifyC. go.
     closeCinvqs.
     go.
     misc.slauto1.
-    replace ((Z.to_N (Z.of_N _v_4 + 1))) with (1 + _v_4)%N by lia.
+    replace ((Z.to_N (Z.of_N numConsumed + 1))) with (1 + numConsumed)%N by lia.
     repeat rewrite _at_big_sepL.
     icancel (@big_sepL_mono).
     {

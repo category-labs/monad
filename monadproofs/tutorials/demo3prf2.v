@@ -596,7 +596,7 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
   subst.
   ren_hyp slh State.
   simpl in *.
-  pose proof (spsc_mod_iff2 slh false v ltac:(simpl; lia)). simpl in *.
+  pose proof (spsc_mod_iff2 slh false inConsume ltac:(simpl; lia)). simpl in *.
   destruct (decide (lengthZ (produced slh) = (numConsumed slh + (bufsize-1)))).
   {
     closeCinvqs.
@@ -685,8 +685,8 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     go.
     autorewrite with syntactic.
     rewrite big_opL_app. go.
-    assert (Z.to_N(numConsumedAtStore + boolZ v) - lengthN producedL = 0)%N as Hle by
-      (destruct v; simpl; try (Arith.arith_solve; fail)).
+    assert (Z.to_N(numConsumedAtStore + boolZ inConsume) - lengthN producedL = 0)%N as Hle by
+      (destruct inConsume; simpl; try (Arith.arith_solve; fail)).
     rewrite Hle.
     simpl.
     go.
@@ -696,8 +696,8 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     autorewrite with syntactic.
     rewrite length_dropN.
     autorewrite with syntactic.
-    assert ((numConsumedAtStore + boolZ v + (length producedL -
-                                                       N.to_nat (Z.to_N (numConsumedAtStore + boolZ v)))%nat) = lengthZ producedL) as Hew by ( unfold lengthN in *; simpl in *;destruct v; try Arith.arith_solve).
+    assert ((numConsumedAtStore + boolZ inConsume + (length producedL -
+                                                       N.to_nat (Z.to_N (numConsumedAtStore + boolZ inConsume)))%nat) = lengthZ producedL) as Hew by ( unfold lengthN in *; simpl in *;destruct inConsume; try Arith.arith_solve).
     rewrite Hew. go.
 
     icancel (cancel_at this);[
@@ -778,7 +778,7 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     misc.slauto... (* cannot fail if lb *)
     case_decide; auto.
     apply False_rect.
-    revert H.
+    revert H0.
     fold (not (numConsumed0 < numProducedLb)).
     apply Zge_not_lt.
     nia. (* too many variables: each time we open invariant *)
@@ -821,7 +821,7 @@ Hint Resolve close_invstsgc_C: br_opacity.
     1:{ intros. apply False_rect.
         apply n.
         apply modulo.zmod_inj in p; try nia.
-        destruct _v_1; simpl in *; try nia.
+        destruct inProduce; simpl in *; try nia.
     }
     misc.slauto.
     destructStates.

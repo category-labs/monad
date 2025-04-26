@@ -94,7 +94,9 @@ Section with_Sigma.
                    \\// (Exists xv:Z, _global "y" |-> primR uint 1 xv)
                  |--  _global "y" |-> anyR uint 1.
   
-  Proof. rewrite bi.or_alt. go. destruct b; go. Qed.
+  Proof. rewrite bi.or_alt. go.
+         ren_hyp t bool.
+         destruct t; go. Qed.
 
   Remove Hints plogic.learnable_primR : br_opacity.
 
@@ -719,7 +721,7 @@ uint parallel_gcd_lcm2(uint a, uint b, uint &gcd_result) {
     ren b_addr bv'. (* context is now generalized to be the loopinv: av --> av', but H *)
     wp_if; intros.
     { (* loop cond true: exec body:  *)
-      do 10 run1. rename addr into temp_addr.
+      do 10 run1.
       (* reached end of loop body, asked to: 1) return FULL ownership of temp 2) reistablish loopinv *)
       (* av'0 := bv', bv'0:= av' `mod` bv' *)
       slauto. (* gcd of new values of a b = gcd of original a b *)
@@ -729,9 +731,13 @@ uint parallel_gcd_lcm2(uint a, uint b, uint &gcd_result) {
     { (* loop condition is false =>  bv'=0  and loop terminates*)
       slauto...
       (* C++ computes av' as return value but postcondition requires... *)
-      Check Z.gcd_0_r_nonneg.
       (* H comes from the loopinv *)
-      aac_rewriteh Z.gcd_0_r_nonneg in H;[| assumption]. subst. go.
+      match goal with
+        | H: _ |- _ =>
+            aac_rewriteh Z.gcd_0_r_nonneg in H;[| assumption]
+      end.
+      subst. go.
+          
     }
   Qed.
 

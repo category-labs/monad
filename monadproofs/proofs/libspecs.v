@@ -69,7 +69,7 @@ Context  {MODd : exb.module ⊧ CU}.
 
   Definition optionR {B} (bty:type) (baseRep: B-> Rep) (q:Qp) (o: option B): Rep :=
     match o with
-    | None => _field "engaged_" |-> boolR (cQp.mut q) false
+    | None => _field "option::engaged_" |-> boolR (cQp.mut q) false
     | Some b => opt_base_offset bty |-> baseRep b
     end.
   Definition addressR (q: Qp) (a: evm.address): Rep. Proof. Admitted.

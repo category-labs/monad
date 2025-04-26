@@ -574,9 +574,9 @@ cpp.spec "setThenGetU(int)" as setGetU_spec2 with (
   Lemma duplPrime (i:Z) :
     ([| isPrime i |]:mpred) |-- [| isPrime i |] ** [| isPrime i |] .
   Proof using. go. Qed.
-    
+
   Lemma duplPrime2 (i:Z) (this:ptr) :
-    let p := this ,, _field "v" |-> atomicR "int" 1 i ** [| isPrime i |] in
+    let p := this ,, _field "ff::vf" |-> atomicR "int" 1 i ** [| isPrime i |] in
     p |-- p ** [| isPrime i |].
   Proof using. go. Qed.
 
@@ -821,7 +821,8 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
         i_addr |-> primR uint 1 iv
         ** [| iv <= length l |]%nat
         ** result_addr |-> primR uint 1 ((fold_left Z.gcd (firstn iv l) 0))).
-    go. iExists 0%nat. go.
+    work.
+    rewrite <- (bi.exist_intro 0%nat). go.
     wp_if.
     {
       slauto.
@@ -834,6 +835,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
       slauto. (* call to gcd. we have already proved it's spec *)
       wapply gcd_proof. work. (* gcd_spec is now in context *)
       go. (* loop body finished, reistablish loopinv *)
+      rename t into iv.
       iExists (1+iv)%nat.
       slauto.
       simpl.
@@ -843,6 +845,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     }
     {
       slauto.
+      rename t into iv.
       assert (iv=length l) as Heq by lia.
       subst.
       autorewrite with syntactic.
@@ -876,6 +879,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
       go.
       unhideAllFromWork.
       slauto. (* loop body finished, reistablish loopinv *)
+      rename t into iv.
       iExists (1+iv)%nat.
       slauto.
       rewrite -> autogenhypr.
@@ -883,6 +887,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     }
     {
       slauto.
+      rename t into iv.
       assert (iv=length l) as Heq by lia.
       subst.
       autorewrite with syntactic.

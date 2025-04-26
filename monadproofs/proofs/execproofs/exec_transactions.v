@@ -269,7 +269,7 @@ Proof using MODd.
     repeat rewrite arrayR_nil.
     repeat rewrite parrayR_nil.
     go.
-    rename i_addr into i1_addr.
+(*    rename i_addr into i1_addr. *)
     simpl in *.
     go.
     remember (stateAfterTransactions (header block) preBlockState (transactions block)) as abc.

@@ -156,7 +156,7 @@ Hint Rewrite @firstn_all: syntactic.
 Hint Rewrite Nat.add_0_r Z.add_0_r :syntactic.
 Hint Rewrite @drop_all: syntactic.
 Hint Rewrite nat_N_Z: syntactic.
-Hint Rewrite offset_ptr_sub_0 using (auto; apply has_size; exact _): syntactic.
+Hint Rewrite @offset_ptr_sub_0 using (auto; apply has_size; exact _): syntactic.
 Hint Rewrite @skipn_0: syntactic.
 Ltac hideP fullyHiddenPostcond :=
   IPM.perm_left ltac:(fun L n =>

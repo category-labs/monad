@@ -38,7 +38,7 @@ Proof using MODd.
   Transparent VectorR.
   unfold BlockR, VectorR.
   work.
-  rename v into vectorbase. (* Fix *)
+  rename base into vectorbase.
   rewrite (arrLearn2 vectorbase).
   rewrite (arrLearn2 (_global "monad::senders")).
   rewrite parrLearn2.

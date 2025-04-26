@@ -1,6 +1,6 @@
 Require Import QArith.
 Require Import Lens.Elpi.Elpi.
-Require Import bluerock.lang.cpp.
+Require Import bluerock.lang.cpp.cpp.
 Require Import stdpp.gmap.
 Require Import monad.proofs.misc.
 Require Import monad.proofs.evmopsem.

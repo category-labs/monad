@@ -185,7 +185,7 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
   ren_hyp producedL (list Z).
   ren_hyp numConsumed N.
   normalize_ptrs. go.
-  pose proof (spsc_mod_iff1 (lengthN producedL) numConsumed false v ltac:(auto)).
+  pose proof (spsc_mod_iff1 (lengthN producedL) numConsumed false inConsume ltac:(auto)).
   (* now we already know whether queue is full *)
   destruct (decide (lengthZ producedL
                     = (numConsumed + (bufsize-1))))...
@@ -271,14 +271,18 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     autorewrite with syntactic.
     go.
     simpl.
-    rename _v_4 into numConsumedAtStore.
-    rename numConsumed into numConsumedHeadAtLoad.
+    match goal with
+      H: (Z.of_N ?n + boolZ inConsume <= _)%Z |- _ => rename n into numConsumedAtStore
+    end.
+(*    rename numConsumed into numConsumedHeadAtLoad. *)
     go.
     autorewrite with syntactic.
     rewrite big_opL_app. go.
-    assert (Z.to_N(numConsumedAtStore + boolZ v) - lengthN producedL = 0)%N as Hle.
-    destruct v; simpl; try (Arith.arith_solve; fail).
-    rewrite Hle.
+    assert (Z.to_N(numConsumedAtStore + boolZ inConsume) - lengthN producedL = 0)%N as Hle.
+    {
+      destruct inConsume; simpl; try (Arith.arith_solve; fail).
+    }
+    rewrite -> Hle.
     simpl.
     go.
     normalize_ptrs.
@@ -287,9 +291,9 @@ Proof using MODd with (fold cQpc; normalize_ptrs).
     autorewrite with syntactic.
     rewrite length_dropN.
     autorewrite with syntactic.
-    assert ((numConsumedAtStore + boolZ v +
+    assert ((numConsumedAtStore + boolZ inConsume +
                (length producedL -
-                  N.to_nat (Z.to_N (numConsumedAtStore + boolZ v)))%nat) = lengthZ producedL) as Hew by ( unfold lengthN in *; simpl in *;destruct v; try Arith.arith_solve).
+                  N.to_nat (Z.to_N (numConsumedAtStore + boolZ inConsume)))%nat) = lengthZ producedL) as Hew by ( unfold lengthN in *; simpl in *;destruct inConsume; try Arith.arith_solve).
     rewrite Hew. go.
     icancel (cancel_at this);[
         (repeat (try f_equiv; intros; hnf; try lia)) |].

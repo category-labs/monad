@@ -113,7 +113,6 @@ class Node
     };
 
 public:
-    static constexpr size_t max_size_for_boost_pools = 66544;
     static constexpr size_t max_number_of_children = 16;
     static constexpr uint8_t max_data_len = (1U << 6) - 1;
     static constexpr size_t max_disk_size =

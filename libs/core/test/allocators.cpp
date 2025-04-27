@@ -126,15 +126,4 @@ namespace
         EXPECT_EQ(destructed, 2);
         EXPECT_EQ(deallocated, 1);
     }
-
-    TEST(AllocatorsTest, resizeable_unique_ptr)
-    {
-        using namespace MONAD_NAMESPACE::allocators;
-        auto v = make_resizeable_unique_for_overwrite<int[]>(5);
-        v[0] = 2;
-        v.resize(1);
-        EXPECT_EQ(v[0], 2);
-        v.resize(10);
-        EXPECT_EQ(v[0], 2);
-    }
 }

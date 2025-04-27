@@ -350,8 +350,7 @@ namespace allocators
     };
 
     //! \brief A unique ptr whose pointee can be resized. Requires `T[0]` to be
-    //! trivially copyable so storage overhead can be avoided. `owning_span` is
-    //! suitable for more complex types.
+    //! trivially copyable so storage overhead can be avoided.
     //!
     //! \note Any custom constructor you might have gets ignored!
     //! `construction_equals_all_bits_zero<T>` is respected however.
@@ -479,96 +478,6 @@ namespace allocators
     {
         return resizeable_unique_ptr<T>(no);
     }
-
-    /**************************************************************************/
-
-    //! \brief An owning span, as we don't have `static_vector` yet.
-    template <class T, allocator Alloc = std::allocator<T>>
-    class owning_span : public std::span<T>
-    {
-        using _base = std::span<T>;
-        using _size_type = typename _base::size_type;
-        [[no_unique_address]] Alloc _alloc;
-
-        template <class... Args>
-        static _base _allocate(Alloc alloc, _size_type const no, Args &&...args)
-        {
-            using allocator_traits = std::allocator_traits<Alloc>;
-            auto *p = allocator_traits::allocate(alloc, no);
-            for (_size_type n = 0; n < no; n++) {
-                try {
-                    if constexpr (
-                        sizeof...(args) > 0 ||
-                        !construction_equals_all_bits_zero<T>::value) {
-                        allocator_traits::construct(
-                            alloc, &p[n], static_cast<Args &&>(args)...);
-                    }
-                }
-                catch (...) {
-                    while (n > 0) {
-                        allocator_traits::destroy(alloc, &p[--n]);
-                    }
-                    allocator_traits::deallocate(alloc, p, no);
-                    throw;
-                }
-            }
-            return _base(p, no);
-        }
-
-    public:
-        using size_type = _size_type;
-        owning_span() = default;
-
-        constexpr explicit owning_span(Alloc const &alloc)
-            : _alloc(alloc)
-        {
-        }
-
-        constexpr explicit owning_span(
-            size_type no, T const &v, Alloc const &alloc = Alloc())
-            : _base(_allocate(alloc, no, v))
-            , _alloc(alloc)
-        {
-        }
-
-        constexpr owning_span(size_type const no, Alloc const &alloc = Alloc())
-            : _base(_allocate(alloc, no))
-            , _alloc(alloc)
-        {
-        }
-
-        owning_span(owning_span const &) = delete;
-        owning_span &operator=(owning_span const &) = delete;
-
-        owning_span(owning_span &&o) noexcept
-            : _base(static_cast<_base &&>(o))
-            , _alloc(static_cast<Alloc &&>(o._alloc))
-        {
-            auto &&other = static_cast<_base &&>(o);
-            other = {};
-        }
-
-        owning_span &operator=(owning_span &&o) noexcept
-        {
-            if (this != &o) {
-                this->~owning_span();
-                new (this) owning_span(static_cast<owning_span &&>(o));
-            }
-            return *this;
-        }
-
-        ~owning_span()
-        {
-            using allocator_traits = std::allocator_traits<Alloc>;
-            for (auto &i : *this) {
-                allocator_traits::destroy(_alloc, &i);
-            }
-            if (_base::data() != nullptr) {
-                allocator_traits::deallocate(
-                    _alloc, _base::data(), _base::size());
-            }
-        }
-    };
 }
 
 MONAD_NAMESPACE_END

@@ -137,28 +137,4 @@ namespace
         v.resize(10);
         EXPECT_EQ(v[0], 2);
     }
-
-    TEST(AllocatorsTest, owning_span)
-    {
-        using namespace MONAD_NAMESPACE::allocators;
-        {
-            auto v = owning_span<int>(5, 2);
-            ASSERT_EQ(v.size(), 5);
-            for (auto const &i : v) {
-                EXPECT_EQ(i, 2);
-            }
-        }
-        reset();
-        {
-            auto v = owning_span<Foo, custom_allocator>(5, Foo(2));
-            ASSERT_EQ(v.size(), 5);
-            for (auto const &i : v) {
-                EXPECT_EQ(i.x, 2);
-            }
-        }
-        EXPECT_EQ(allocated, 1);
-        EXPECT_EQ(constructed, 6);
-        EXPECT_EQ(destructed, 6);
-        EXPECT_EQ(deallocated, 1);
-    }
 }

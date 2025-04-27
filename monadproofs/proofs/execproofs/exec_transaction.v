@@ -20,35 +20,13 @@ Section with_Sigma.
   Set Printing Coercions.
   #[global] Instance learnOpt a b c d e a1 b1 c1 d1 e1: Learnable (@libspecs.optionR _ _ _ _ a b c d e) (@libspecs.optionR _ _ _ _ a1 b1 c1 d1 e1) [a=a1] := ltac:(solve_learnable).
 
-  cpp.spec (
-          (Ninst
-             (Nscoped (Nglobal (Nid "monad"))
-                (Nfunction function_qualifiers.N ("execute_impl")
-                   [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Chain")))); "unsigned long"%cpp_type;
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHeader"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHashBuffer"))));
-                    Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState")));
-                    Tref
-                      (Tnamed
-                         (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "fibers")) (Nid "promise"))
-                            [Atype "void"]))]))
-             [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])) as fff inline.
+  cpp.spec (Ninst
+     "monad::execute_impl(const monad::Chain&, unsigned long, const monad::Transaction&, const evmc::address&, const monad::BlockHeader&, const monad::BlockHashBuffer&, monad::BlockState&, boost::fibers::promise<void>&)"
+     [Avalue (Eint 11 "enum evmc_revision")]) as fff inline.
 
-  cpp.spec  (Ninst
-             (Nscoped (Nglobal (Nid "monad"))
-                (Nfunction function_qualifiers.N ("static_validate_transaction")
-                   [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
-                    Tref
-                      (Tconst
-                         (Tnamed
-                            (Ninst (Nscoped (Nglobal (Nid "std")) (Nid "optional"))
-                               [Atype (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")]))])));
-                    Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])));
-                    "unsigned long"%cpp_type
-             ]))
-             [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))]) as validate_spec with
+  cpp.spec (Ninst
+        "monad::static_validate_transaction(const monad::Transaction&, const std::optional<intx::uint<256u>>&, const intx::uint<256u>&, unsigned long)"
+        [Avalue (Eint 11 "enum evmc_revision")])  as validate_spec with
       (
         \arg{txp} "tx" (Vref txp)
         \prepost{qtx t} txp |-> TransactionR qtx t
@@ -56,29 +34,12 @@ Section with_Sigma.
         \arg{chainidp} "chainid" (Vref chainidp)
         \arg{maxcodesize} "maxcodesize" (Vint maxcodesize)
        \post{retp} [Vptr retp] (reference_to
-    (Tnamed
-       (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-          [Atype "void";
-           Atype
-             (Tnamed
-                (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                   [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-           Atype
-             (Tnamed
-                (Ninst
-                   (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy"))
-                      (Nid "status_code_throw"))
-                   [Atype "void";
-                    Atype
-                      (Tnamed
-                         (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                            [Atype
-                               (Tnamed
-                                  (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                    Atype "void"]))]))
+     "boost::outcome_v2::basic_result<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>"
     retp ∗
  retp |-> emp)
-    ).
+      ).
+
+(* TODO : generalize over 256 *)
 Definition destr_u256 :=
 λ {thread_info : biIndex} {_Σ : gFunctors} {Sigma : cpp_logic thread_info _Σ} {CU : genv},
   specify
@@ -95,46 +56,7 @@ Definition destr_u256 :=
   #[global] Instance : LearnEq2 u256R := ltac:(solve_learnable).
 
   cpp.spec 
-          (Ninst
-             (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2"))
-                (Nfunction function_qualifiers.N ("try_operation_has_value")
-                   [Tref
-                      (Tnamed
-                         (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-                            [Atype "void";
-                             Atype
-                               (Tnamed
-                                  (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                     [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                             Atype
-                               (Tnamed
-                                  (Ninst (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy")) (Nid "status_code_throw"))
-                                     [Atype "void";
-                                      Atype
-                                        (Tnamed
-                                           (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                              [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                      Atype "void"]))]));
-                    Tnamed (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "detail")) (Nid "has_value_overload"))]))
-             [Atype
-                (Tref
-                   (Tnamed
-                      (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-                         [Atype "void";
-                          Atype
-                            (Tnamed
-                               (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                  [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                          Atype
-                            (Tnamed
-                               (Ninst (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy")) (Nid "status_code_throw"))
-                                  [Atype "void";
-                                   Atype
-                                     (Tnamed
-                                        (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                           [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                   Atype "void"]))])));
-              Atype "bool"]) as try_op_has_val with
+          "boost::outcome_v2::try_operation_has_value<boost::outcome_v2::basic_result<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>&, bool>(boost::outcome_v2::basic_result<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>&, boost::outcome_v2::detail::has_value_overload)" as try_op_has_val with
       (
         \arg{basefeep} "base" (Vref basefeep)
         \arg{chainidp} "base" (Vref chainidp)        
@@ -202,37 +124,9 @@ Require Import bluerock.prelude.lens.
           |}.
 
 
-    Fixpoint isFunctionNamed2 (fname: ident) (n:name): bool :=
-    match n with
-    | Nglobal  (Nfunction _ i _) => bool_decide (i=fname)
-    | Ninst nm _ => isFunctionNamed2 fname nm
-    | Nscoped _ (Nfunction _ i _) => bool_decide (i=fname)
-    | _ => false
-    end.
-
     Definition u256t : type :=
       Tnamed ((Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])).
-  (*cpp.spec (Nscoped "monad::State"
-          (Nctor
-             [Tref "monad::BlockState";
-              Tconst "monad::Incarnation";
-              Tref (Tconst "evmc::address");
-              Tconst ("unsigned long long"%cpp_type);
-              Tref (Tconst u256t)
-              
-    ]))
-    as StateConstrRelaxed with
-  (    fun (this:ptr) =>
-      \arg{bsp} "" (Vref bsp)
-      \arg{incp} "" (Vptr incp)
-      \arg{sender_addrp} "sender_addr" (Vptr sender_addrp)
-      \arg{sender_nonce:N} "sender_nonce" (Vint sender_nonce)
-      \arg{sender_balp} "sender_balp" (Vptr sender_balp)
-      \prepost{qbal sender_bal} sender_balp |-> u256R qbal sender_bal
-      \prepost{sender_addr q} sender_addrp |-> addressR q sender_addr
-      \prepost{q inc} incp |-> IncarnationR q inc 
-      \post Exists au, this |-> StateR au ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
-  *)  
+    
   cpp.spec (Nscoped "monad::State"
           (Nctor
              [Tref "monad::BlockState";
@@ -243,39 +137,23 @@ Require Import bluerock.prelude.lens.
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \prepost{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}
-            ** (reference_to "monad::State" this)). (* convenient but logically redundant *)
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}).
+  
+  Lemma observeState (state_addr:ptr) t: 
+    Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))) state_addr)
+            (state_addr |-> StateR t).
+  Proof using. Admitted.
 
-  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "set_original_nonce_and_balance")).
-  (*
-  cpp.spec ((Nscoped
-               (Nscoped (Nglobal (Nid "monad")) (Nid "State"))
-               (Nfunction function_qualifiers.N ("set_original_nonce_and_balance")
-                  [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address")))); Tconst ("unsigned long"%cpp_type)])))
-  as set_original_nonce_spec with
-    (fun this:ptr =>
-       \arg{addrp} "a" (Vptr addrp)
-       \arg{nonce} "a" (Vint nonce)
-       \prepost{addr q} addrp |-> addressR q addr
-       \pre{au} this |-> StateR au
-       \post Exists auf, this |-> StateR auf **
-                [| set_original_nonce addr (Zdigits.Z_to_binary 256 nonce) au auf |]
-    ). *)
+  Definition observeStateF r t := @observe_fwd _ _ _ (observeState r t).
+  Hint Resolve observeStateF : br_opacity.
+(*            ** (reference_to "monad::State" this)). (* convenient but logically redundant *) *)
+
 #[global] Instance : LearnEq2 (addressR) := ltac:(solve_learnable).
 #[global] Instance : LearnEq1 (StateR) := ltac:(solve_learnable).
 
-cpp.spec (Ninst
-             (Nscoped (Nglobal (Nid "monad"))
-                (Nfunction function_qualifiers.N ("execute_impl2")
-                   [
-                     Tref ((Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "CallTracerBase"))));
-                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Chain"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHeader"))));
-                    Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHashBuffer"))));
-                    Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State")))]))
-             [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])
+cpp.spec ( Ninst
+        "monad::execute_impl2(monad::CallTracerBase&, const monad::Chain&, const monad::Transaction&, const evmc::address&, const monad::BlockHeader&, const monad::BlockHashBuffer&, monad::State&)"
+        [Avalue (Eint 11 "enum evmc_revision")])
   as execute_impl2 with (execute_impl2_specg).
 
   
@@ -315,44 +193,16 @@ Ltac applyPHyp :=
   end.
 Lemma ResultSucRDef {T} (R: T-> _) t : ResultSuccessR R t  -|- o_field CU (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "value_fixme")) |-> R t.
 Proof using. Admitted.
-Ltac slauto2 := go; try name_locals; tryif progress(try (ego; eagerUnifyU; go; fail); try (apply False_rect; try contradiction; try congruence; try nia; fail); try autorewrite with syntactic)
-  then slauto2  else idtac.
-Ltac slauto1 := go; try name_locals; tryif progress(try (ego; eagerUnifyU; go; fail); try (apply False_rect; try contradiction; try congruence; try nia; fail))
-  then slauto1  else idtac.
-  (* TODO: generalize over evmc::Result *)
+
 cpp.spec 
-       (Ninst
-             (Nscoped (Nglobal (Nid "monad"))
-                (Nfunction function_qualifiers.N ("has_error")
-                   [Tref
-                      (Tconst
-                         (Tnamed
-                            (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-                               [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-                                Atype
-                                  (Tnamed
-                                     (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                        [Atype
-                                           (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                Atype
-                                  (Tnamed
-                                     (Ninst
-                                        (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy"))
-                                           (Nid "status_code_throw"))
-                                        [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-                                         Atype
-                                           (Tnamed
-                                              (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                                 [Atype
-                                                    (Tnamed
-                                                       (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                         Atype "void"]))])))]))
-             [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")))]) as has_error with
+       "monad::has_error<evmc::Result>(const boost::outcome_v2::basic_result<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>&)" as has_error with
       (\pre emp (* TODO: fix *)
          \arg{resp} "res" (Vptr resp)
          \prepost{res} resp |->  ResultSuccessR EvmcResultR (* TODO: EvmcResultR *) res
          \post [Vbool false] emp
-    ).
+      ).
+
+(* TODO: generalize *)
 Definition opt_value_or  :=
 specify
   {|
@@ -379,52 +229,22 @@ specify
 
 (*
 constexpr const value_type &&value() const && { return static_cast<value_type &&>(_value); }
-*)
-cpp.spec (Ninst
-             (Nscoped (Nglobal (Nid "monad"))
-                (Nfunction function_qualifiers.N ("value")
-                   [Tref
-                      (Tconst
-                         (Tnamed
-                            (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-                               [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-                                Atype
-                                  (Tnamed
-                                     (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                        [Atype
-                                           (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                Atype
-                                  (Tnamed
-                                     (Ninst
-                                        (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy"))
-                                           (Nid "status_code_throw"))
-                                        [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-                                         Atype
-                                           (Tnamed
-                                              (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                                                 [Atype
-                                                    (Tnamed
-                                                       (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                                         Atype "void"]))])))]))
-             [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")))]) as result_value with
-    (
+ *)
+
+cpp.spec "monad::value<evmc::Result>(const boost::outcome_v2::basic_result<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>&)" as result_value with
+          (
       \arg{this} "this" (Vptr this)
        \prepost{res} this |-> ResultSuccessR EvmcResultR (* TODO: EvmcResultR *) res
        \post [Vref (this ,, _field "boost::outcome_v2::value_fixme")] emp).
 
-
+(*
 Definition exec_final :=
   specify
   {|
     info_name :=
-      Ninst
-        (Nscoped (Nglobal (Nid "monad"))
-           (Nfunction function_qualifiers.N ("execute_final")
-              [Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))); Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
-               Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))));
-               Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])));
-               Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")))); Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))))]))
-        [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))];
+        Ninst
+        "monad::execute_final(monad::State&, const monad::Transaction&, const evmc::address&, const intx::uint<256u>&, const evmc::Result&, const evmc::address&)"
+        [Avalue (Eint 11 "enum evmc_revision")];
     info_type :=
       tFunction (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt")))
         [Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))); Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
@@ -432,6 +252,7 @@ Definition exec_final :=
          Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])));
          Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")))); Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address"))))]
   |} execute_final_spec.
+ *)
 
 (* TODO: generalize *)
 
@@ -496,50 +317,16 @@ cpp.spec (result_val_contr_name "monad::ExecutionResult")
                           \post emp
       ).
   (* TODO: fix *)
-  cpp.spec (Nscoped (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-       [Atype "void";
-        Atype
-          (Tnamed
-             (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-        Atype
-          (Tnamed
-             (Ninst
-                (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy"))
-                   (Nid "status_code_throw"))
-                [Atype "void";
-                 Atype
-                   (Tnamed
-                      (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                         [Atype
-                            (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-                 Atype "void"]))]) (Ndtor))
+  cpp.spec "boost::outcome_v2::basic_result<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<void, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::~basic_result()"
     as br_dtor with
       (fun (this:ptr) => \pre this |-> emp
                           \post emp
       ).
   Lemma resultObserve (result_addr:ptr) t: 
     Observe
-(  reference_to
-    (Tnamed
-       (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
-          [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-           Atype
-             (Tnamed
-                (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                   [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))]));
-           Atype
-             (Tnamed
-                (Ninst
-                   (Nscoped (Nscoped (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "experimental")) (Nid "policy"))
-                      (Nid "status_code_throw"))
-                   [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "Result")));
-                    Atype
-                      (Tnamed
-                         (Ninst (Nscoped (Nglobal (Nid "system_error2")) (Nid "errored_status_code"))
-                            [Atype (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "system_error2")) (Nid "detail")) (Nid "erased")) [Atype "long"]))])); 
-                   Atype "void"]))]))
-    result_addr) (result_addr |-> ResultSuccessR EvmcResultR t).
+(reference_to
+       "boost::outcome_v2::basic_result<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<evmc::Result, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>"
+       result_addr) (result_addr |-> ResultSuccessR EvmcResultR t).
   Proof using. Admitted.
 
   cpp.spec "monad::get_max_code_size(const monad::Chain&, unsigned long, unsigned long)"
@@ -551,10 +338,6 @@ cpp.spec (result_val_contr_name "monad::ExecutionResult")
         \post{maxcs:N} [Vint maxcs] emp
       ).
   
-  Lemma stateObserve (state_addr:ptr) t: 
-    Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))) state_addr)
-            (state_addr |-> StateR t).
-  Proof using. Admitted.
 #[global] Instance : LearnEq3 (BlockState.Rauth) := ltac:(solve_learnable).
 Existing Instance UNSAFE_read_prim_cancel.
   #[global] Instance : LearnEq1 ReceiptR := ltac:(solve_learnable).
@@ -563,15 +346,7 @@ Existing Instance UNSAFE_read_prim_cancel.
     Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Receipt"))) state_addr)
             (state_addr |-> ReceiptR t).
   Proof using. Admitted.
-  cpp.spec (Nscoped "monad::State"
-          (Nctor
-             [Tref "monad::BlockState";
-              Tnamed "monad::Incarnation";
-              Tref (Tconst "evmc::address");
-              ("unsigned long"%cpp_type);
-              Tref (Tconst u256t)
-              
-    ]))
+  cpp.spec "monad::State::State(monad::BlockState&, monad::Incarnation, const evmc::address&, unsigned long, const intx::uint<256u>&)"
     as StateConstrRelaxed with
   (    fun (this:ptr) =>
       \arg{bsp} "" (Vref bsp)
@@ -656,7 +431,7 @@ Existing Instance UNSAFE_read_prim_cancel.
     intros.
     lia.
   Qed.
-  Remove Hints primR_split_C: br_opacity.
+  Remove Hints primR_split_C: br_opacity. (* TODO: remove *)
   Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
     learn_exist_interface.Learnable
       (hdrp |-> BheaderR q hdr)
@@ -794,6 +569,12 @@ Opaque VectorR.
   Hint Resolve borrow_number_C: br_opacity.
     Definition observeResult r t := @observe_fwd _ _ _ (resultObserve r t).
     Hint Resolve observeResult : br_opacity.
+
+Ltac slautot rw := go; tryif progress(try (ego; eagerUnifyU; go; fail); try (apply False_rect; try contradiction; try congruence; try nia; fail); rw; try (erewrite take_S_r;[| eauto;fail]))
+  then slautot rw  else idtac.
+
+Ltac slauto := slautot idtac. (* try rewrite left_id; *)
+    
   Lemma prf: denoteModule module
              ** rec_dtor
              ** ct_dtor
@@ -844,7 +625,6 @@ Proof using MODd.
   go; try (ego; fail).
   Transparent BheaderR.
   unfold BheaderR.
-  slauto.
   go.
   iExists (_:nat). go. (* this manual intervention should not be needed. likely a bug in Refine1, reported to bluerock *)
   foldr BheaderR BheaderR.
@@ -858,7 +638,8 @@ Proof using MODd.
   forward_reason. 
   rewrite Hrr. simpl.
   progress autorewrite with syntactic.
-  iExists true.  slauto.
+  iExists true.
+  slauto.
   iExists preBlockState. (* dummy as we are in the speculative case where this is not used *)
   slauto.
   wp_if. (* case analysis on the result of can_merge *)
@@ -872,7 +653,7 @@ Proof using MODd.
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
         remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
     end.
-    rename result into resultOld.
+ (*   rename result into resultOld. *)
     destruct saf as [smid result].
     simpl in *.
     progress go.
@@ -908,10 +689,10 @@ Proof using MODd.
     work.
   }
   {
-    rename result_addr into result_addr_del.
-    rename state_addr into state_addr_del.
+(*    rename result_addr into result_addr_del.
+    rename state_addr into state_addr_del. *)
     slauto.
-    iExists (_:nat). rename call_tracer_addr into call_tracer_addr2. slauto. (* this manual intervention should not be needed. likely a bug in Refine1, reported to bluerock *)
+    iExists (_:nat). (* rename call_tracer_addr into call_tracer_addr2. *) slauto. (* this manual intervention should not be needed. likely a bug in Refine1, reported to bluerock *)
 (*  run1.
   wapplyObserve stateObserve.
   progress eagerUnifyU.
@@ -952,7 +733,6 @@ Proof using MODd.
 Hint Resolve recObserveF: br_opacity.
     rewrite ResultSucRDef.
     go.
-    rename result into resultOld.
     repeat (iExists _). eagerUnifyC.
     match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 

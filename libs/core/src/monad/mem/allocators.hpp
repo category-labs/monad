@@ -324,30 +324,6 @@ namespace allocators
             detail::GetStdAllocatorPair<T>>(
             storagebytes, static_cast<Args &&>(args)...);
     }
-
-    /**************************************************************************/
-
-    namespace detail
-    {
-        // The clang 16 on CI is just plain broken here. clang 14 on my machine
-        // is not broken.
-#if defined(__clang__) && (__clang_major__ >= 16 && __clang_major__ <= 18)
-        template <class T>
-        constexpr bool is_array_v = true;
-#else
-        template <class T>
-        constexpr bool is_array_v = std::is_array_v<T>;
-#endif
-    }
-
-    struct unique_ptr_free_deleter
-    {
-        template <class T>
-        constexpr void operator()(T *const p) const
-        {
-            MONAD_ASSERT(p == nullptr);
-        }
-    };
 }
 
 MONAD_NAMESPACE_END

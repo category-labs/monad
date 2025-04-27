@@ -120,10 +120,5 @@ namespace
         EXPECT_EQ(constructed, 1);
         EXPECT_EQ(destructed, 1);
         EXPECT_EQ(deallocated, 1);
-        make_aliasing_unique<Foo>(16);
-        EXPECT_EQ(allocated, 1);
-        EXPECT_EQ(constructed, 2);
-        EXPECT_EQ(destructed, 2);
-        EXPECT_EQ(deallocated, 1);
     }
 }

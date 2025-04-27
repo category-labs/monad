@@ -308,22 +308,6 @@ namespace allocators
             throw;
         }
     }
-
-    //! \brief A unique ptr whose storage is larger than its type, using
-    //! `std::allocator`.
-    template <class T, class... Args>
-    inline constexpr std::unique_ptr<
-        T, unique_ptr_aliasing_allocator_deleter<
-               std::allocator<T>, malloc_free_allocator<std::byte>,
-               detail::GetStdAllocatorPair<T>, nullptr>>
-    make_aliasing_unique(size_t const storagebytes, Args &&...args)
-    {
-        return allocate_aliasing_unique<
-            std::allocator<T>,
-            malloc_free_allocator<std::byte>,
-            detail::GetStdAllocatorPair<T>>(
-            storagebytes, static_cast<Args &&>(args)...);
-    }
 }
 
 MONAD_NAMESPACE_END

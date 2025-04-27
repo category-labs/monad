@@ -2,9 +2,10 @@
 
 #include <monad/config.hpp>
 #include <monad/core/unordered_map.hpp>
-#include <monad/mem/allocators.hpp>
 
 #include <boost/intrusive/list.hpp>
+
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -26,7 +27,7 @@ class static_lru_cache
     using ListIter = typename List::iterator;
     using Map = ankerl::unordered_dense::segmented_map<Key, ListIter, Hash>;
 
-    allocators::owning_span<list_node> array_;
+    std::vector<list_node> array_;
     boost::intrusive::list<list_node> list_;
     Map map_;
 

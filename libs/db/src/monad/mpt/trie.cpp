@@ -7,7 +7,6 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/nibble.h>
-#include <monad/mem/allocators.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
@@ -31,6 +30,7 @@
 #include <span>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "deserialize_node_from_receiver_result.hpp"
 
@@ -717,8 +717,9 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
 
 Node::UniquePtr create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
-    uint16_t const mask, std::span<ChildData> children, NibblesView const path,
-    std::optional<byte_string_view> const leaf_data, int64_t const version)
+    uint16_t const mask, std::span<ChildData> const children,
+    NibblesView const path, std::optional<byte_string_view> const leaf_data,
+    int64_t const version)
 {
     aux.collect_number_nodes_created_stats();
     // handle non child and single child cases
@@ -959,7 +960,7 @@ void create_new_trie_from_requests_(
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(requests.mask));
     uint16_t const mask = requests.mask;
-    allocators::owning_span<ChildData> const children(number_of_children);
+    std::vector<ChildData> children(number_of_children);
     for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
          ++i, bit <<= 1) {
         if (bit & requests.mask) {

@@ -346,7 +346,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
     }
 
     virtual unsigned compute_len(
-        std::span<ChildData> children, uint16_t mask, NibblesView,
+        std::span<ChildData> const children, uint16_t mask, NibblesView,
         std::optional<byte_string_view> const value) override
     {
         MONAD_ASSERT(mask);

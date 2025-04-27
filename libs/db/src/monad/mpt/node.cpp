@@ -53,8 +53,9 @@ Node::Node(
     NibblesView const path, int64_t const version)
     : mask(mask)
     , path_nibble_index_end(path.end_nibble_)
-    , value_len(static_cast<decltype(value_len)>(
-          value.transform(&byte_string_view::size).value_or(0)))
+    , value_len(
+          static_cast<decltype(value_len)>(
+              value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_DEBUG_ASSERT(
@@ -551,7 +552,7 @@ Node::UniquePtr make_node(
 // all children's offset are set before creating parent
 // create node with at least one child
 Node::UniquePtr create_node_with_children(
-    Compute &comp, uint16_t const mask, std::span<ChildData> children,
+    Compute &comp, uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     int64_t const version)
 {

@@ -828,7 +828,7 @@ int main(int argc, char *argv[])
 
     auto stdout_handler = quill::stdout_handler();
     stdout_handler->set_pattern(
-        "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
+        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
         "%(message)",
         "%Y-%m-%d %H:%M:%S.%Qns",
         quill::Timezone::GmtTime);

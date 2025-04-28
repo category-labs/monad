@@ -138,6 +138,8 @@ void FinalizedDeletions::clear_entry(uint64_t const i)
         entry.idx,
         entry.size);
     free_end_ += entry.size;
+    MONAD_ASSERT(entry.block_number == start_block_number_);
+    ++start_block_number_;
     std::lock_guard const lock{entry.mutex};
     entry.block_number = INVALID_BLOCK_ID;
     entry.idx = 0;
@@ -191,7 +193,6 @@ void FinalizedDeletions::write(
         while (free_deletions() < deletions.size()) {
             MONAD_ASSERT(start_block_number_ < end_block_number_);
             clear_entry(start_block_number_ % MAX_ENTRIES);
-            ++start_block_number_;
         }
         set_entry(target_idx, end_block_number_, deletions);
     }

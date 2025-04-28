@@ -406,7 +406,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
         auto delinfo = delinfo_storage.load_unchecked();
 
         auto val_active_stake = valinfo->active_stake.native();
-        auto val_active_shares = valinfo->active_stake.native();
+        auto val_active_shares = valinfo->active_shares.native();
         auto const withdrawal_shares = withdrawal_request->shares.native();
 
         auto const tokens_to_burn = shares_to_tokens(

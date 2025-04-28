@@ -1,5 +1,5 @@
+#include <monad/chain/monad_revision.h>
 #include <monad/chain/monad_testnet.hpp>
-
 #include <monad/config.hpp>
 #include <monad/core/int.hpp>
 

@@ -1,6 +1,7 @@
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -518,6 +519,8 @@ struct monad_eth_call_executor
                         return std::make_unique<MonadDevnet>();
                     case CHAIN_CONFIG_MONAD_TESTNET:
                         return std::make_unique<MonadTestnet>();
+                    case CHAIN_CONFIG_MONAD_MAINNET:
+                        return std::make_unique<MonadMainnet>();
                     }
                     MONAD_ASSERT(false);
                 }();

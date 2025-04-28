@@ -4,6 +4,7 @@
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
@@ -116,7 +117,8 @@ int main(int const argc, char const *argv[])
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
-         {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET}};
+         {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
+         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -318,6 +320,8 @@ int main(int const argc, char const *argv[])
             return std::make_unique<MonadDevnet>();
         case CHAIN_CONFIG_MONAD_TESTNET:
             return std::make_unique<MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>();
         }
         MONAD_ASSERT(false);
     }();
@@ -363,6 +367,7 @@ int main(int const argc, char const *argv[])
                 stop);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
+        case CHAIN_CONFIG_MONAD_MAINNET:
             return runloop_monad(
                 *chain,
                 block_db_path,

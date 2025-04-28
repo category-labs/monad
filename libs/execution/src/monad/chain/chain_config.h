@@ -10,6 +10,7 @@ enum monad_chain_config
     CHAIN_CONFIG_ETHEREUM_MAINNET = 0,
     CHAIN_CONFIG_MONAD_DEVNET = 1,
     CHAIN_CONFIG_MONAD_TESTNET = 2,
+    CHAIN_CONFIG_MONAD_MAINNET = 3,
 };
 
 #ifdef __cplusplus

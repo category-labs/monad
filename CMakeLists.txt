@@ -107,6 +107,11 @@ add_dependencies(rpmallocwrap rpmalloc-external)
 
 # quill
 add_subdirectory("third_party/quill")
+# TODO
+target_compile_options(
+  quill
+  PUBLIC
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-Wno-stringop-overflow>)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)

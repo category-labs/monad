@@ -294,6 +294,7 @@ bool BlockState::fix_account_mismatch(
             }
         }
     }
+    // rest of the code, execept the return is not needed as we dont check assumptions after the return anyway. but in case of future changes to the client code, it is good to leave the field in a logically consistent state
     if (nonce_mismatch) {
         original->nonce = actual->nonce;
     }

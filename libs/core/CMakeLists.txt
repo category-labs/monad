@@ -54,8 +54,6 @@ add_subdirectory("third_party/nlohmann_json" SYSTEM)
 
 add_subdirectory("third_party/unordered_dense")
 
-add_subdirectory("third_party/quill" SYSTEM)
-
 add_library(openssl_sha3 OBJECT)
 target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")

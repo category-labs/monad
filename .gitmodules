@@ -14,6 +14,9 @@
 [submodule "third_party/komihash"]
 	path = third_party/komihash
 	url = https://github.com/avaneev/komihash.git
+[submodule "third_party/quill"]
+	path = third_party/quill
+	url = https://github.com/odygrd/quill.git
 [submodule "third_party/silkpre"]
 	path = third_party/silkpre
 	url = https://github.com/category-labs/silkpre.git
@@ -29,9 +32,6 @@
 [submodule "core/third_party/nlohmann_json"]
 	path = libs/core/third_party/nlohmann_json
 	url = https://github.com/nlohmann/json.git
-[submodule "core/third_party/quill"]
-	path = libs/core/third_party/quill
-	url = https://github.com/odygrd/quill.git
 [submodule "core/third_party/unordered_dense"]
 	path = libs/core/third_party/unordered_dense
 	url = https://github.com/martinus/unordered_dense.git

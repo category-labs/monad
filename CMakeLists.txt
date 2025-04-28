@@ -60,7 +60,7 @@ set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
 # intx
-add_subdirectory(third_party/intx)
+add_subdirectory("third_party/intx")
 
 # compiler
 set(MONAD_COMPILER_STANDALONE OFF)
@@ -104,6 +104,9 @@ set_property(
     "${CMAKE_CURRENT_BINARY_DIR}/rpmalloc-external-prefix/src/rpmalloc-external/lib/linux/release/x86-64/librpmallocwrap.a"
 )
 add_dependencies(rpmallocwrap rpmalloc-external)
+
+# quill
+add_subdirectory("third_party/quill")
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)

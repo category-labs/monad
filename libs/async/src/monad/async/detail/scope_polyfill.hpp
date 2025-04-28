@@ -97,12 +97,12 @@ namespace monad
             constexpr scope_impl(scope_impl &&o) noexcept(
                 std::is_nothrow_move_constructible<EF>::value)
                 : _f(static_cast<EF &&>(o._f))
-                , released_(o._released)
+                , released_(o.released_)
     #if __cplusplus >= 201700 || _HAS_CXX17
-                , uncaught_exceptions_(o._uncaught_exceptions)
+                , uncaught_exceptions_(o.uncaught_exceptions_)
     #endif
             {
-                o._released = true;
+                o.released_ = true;
             }
 
             template <

@@ -80,6 +80,7 @@ struct monad_statesync_server_context final : public monad::Db
     monad::mpt::Db *ro;
     std::deque<monad::ProposedDeletions> proposals;
     monad::FinalizedDeletions deletions;
+    std::atomic<bool> aborted{false};
 
     explicit monad_statesync_server_context(monad::TrieDb &rw);
 

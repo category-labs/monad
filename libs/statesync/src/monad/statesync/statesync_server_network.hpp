@@ -2,11 +2,14 @@
 
 #include <monad/config.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/unaligned.hpp>
 #include <monad/statesync/statesync_messages.h>
 
 #include <quill/Quill.h>
 
 #include <chrono>
+#include <queue>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
@@ -15,11 +18,106 @@
 struct monad_statesync_server_network
 {
     int fd;
+    int stop_fd;
     monad::byte_string obuf;
+    std::thread read_thread;
+    std::condition_variable cv;
+    std::mutex mtx;
+    std::queue<monad_sync_request> rqs;
+    std::atomic_bool *aborted = nullptr;
+
+    static void thread_func(monad_statesync_server_network *const net)
+    {
+        enum class State
+        {
+            READ_TYPE,
+            READ_REQ,
+        };
+
+        unsigned char buf[sizeof(monad_sync_request)];
+        size_t off = 0;
+        auto state = State::READ_TYPE;
+
+        pthread_setname_np(pthread_self(), "statesync read request thread");
+
+        while (true) {
+            fd_set read_fds;
+            FD_ZERO(&read_fds);
+            FD_SET(net->fd, &read_fds);
+            FD_SET(net->stop_fd, &read_fds);
+
+            int max_fd = std::max(net->fd, net->stop_fd);
+            int ret = select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+
+            if (ret == -1 && errno != EINTR) {
+                perror("select");
+                MONAD_ASSERT(false);
+            }
+
+            if (FD_ISSET(net->stop_fd, &read_fds)) {
+                // stop_fd is signaled, exit the loop
+                break;
+            }
+
+            if (!FD_ISSET(net->fd, &read_fds)) {
+                continue;
+            }
+
+            if (state == State::READ_TYPE) {
+                auto read_ret = read(net->fd, buf, 1);
+                if (read_ret == 0) {
+                    continue;
+                }
+                MONAD_ASSERT(read_ret == 1);
+                unsigned char const type = buf[0];
+                if (type == SYNC_TYPE_REQUEST) {
+                    state = State::READ_REQ;
+                    // Reset aborted when new request is received
+                    if (net->aborted != nullptr) {
+                        *net->aborted = false;
+                    }
+                }
+                else if (type == SYNC_TYPE_ABORT) {
+                    if (net->aborted != nullptr) {
+                        *net->aborted = true;
+                    }
+                }
+                else {
+                    MONAD_ASSERT(false);
+                }
+            }
+            else {
+                auto read_ret =
+                    read(net->fd, buf + off, sizeof(monad_sync_request) - off);
+                if (read_ret == 0) {
+                    continue;
+                }
+                MONAD_ASSERT(
+                    read_ret > 0 && static_cast<size_t>(read_ret) <=
+                                        sizeof(monad_sync_request) - off);
+                off += static_cast<size_t>(read_ret);
+                if (off == sizeof(monad_sync_request)) {
+                    auto const &rq =
+                        monad::unaligned_load<monad_sync_request>(buf);
+                    {
+                        std::lock_guard<std::mutex> lock(net->mtx);
+                        net->rqs.push(rq);
+                    }
+                    net->cv.notify_one();
+                    off = 0;
+                    state = State::READ_TYPE;
+                }
+            }
+        }
+    }
 
     monad_statesync_server_network(char const *const path)
         : fd{socket(AF_UNIX, SOCK_STREAM, 0)}
+        , stop_fd{eventfd(0, 0)}
     {
+        MONAD_ASSERT(stop_fd != -1);
+        MONAD_ASSERT(fd != -1);
+
         struct sockaddr_un addr;
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
@@ -27,6 +125,17 @@ struct monad_statesync_server_network
         while (connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+
+        read_thread = std::thread(thread_func, this);
+    }
+
+    ~monad_statesync_server_network()
+    {
+        auto ret = eventfd_write(stop_fd, 1);
+        MONAD_ASSERT(ret == 0);
+        read_thread.join();
+        (void)close(stop_fd);
+        (void)close(fd);
     }
 };
 
@@ -50,10 +159,14 @@ namespace
     }
 }
 
-ssize_t statesync_server_recv(
-    monad_statesync_server_network *const net, unsigned char *buf, size_t n)
+monad_sync_request
+statesync_server_recv(monad_statesync_server_network *const net)
 {
-    return recv(net->fd, buf, n, MSG_DONTWAIT);
+    std::unique_lock<std::mutex> lock(net->mtx);
+    net->cv.wait(lock, [&] { return !net->rqs.empty(); });
+    monad_sync_request rq = net->rqs.front();
+    net->rqs.pop();
+    return rq;
 }
 
 void statesync_server_send_upsert(

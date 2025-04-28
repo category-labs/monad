@@ -76,21 +76,12 @@ namespace
         monad_statesync_client_handle_target(ctx, rlp.data(), rlp.size());
     }
 
-    ssize_t statesync_server_recv(
-        monad_statesync_server_network *const net, unsigned char *const buf,
-        size_t const len)
+    monad_sync_request
+    statesync_server_recv(monad_statesync_server_network *const net)
     {
-        if (len == 1) {
-            constexpr auto MSG_TYPE = SYNC_TYPE_REQUEST;
-            std::memcpy(buf, &MSG_TYPE, 1);
-        }
-        else {
-            EXPECT_EQ(len, sizeof(monad_sync_request));
-            std::memcpy(
-                buf, &net->client->rqs.front(), sizeof(monad_sync_request));
-            net->client->rqs.pop_front();
-        }
-        return static_cast<ssize_t>(len);
+        auto rq = net->client->rqs.front();
+        net->client->rqs.pop_front();
+        return rq;
     }
 
     void statesync_server_send_upsert(

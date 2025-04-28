@@ -28,8 +28,8 @@ struct monad_statesync_server
 {
     monad_statesync_server_context *context;
     monad_statesync_server_network *net;
-    ssize_t (*statesync_server_recv)(
-        monad_statesync_server_network *, unsigned char *, size_t);
+    monad_sync_request (*statesync_server_recv)(
+        monad_statesync_server_network *);
     void (*statesync_server_send_upsert)(
         struct monad_statesync_server_network *, monad_sync_type,
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
@@ -112,21 +112,28 @@ bool statesync_server_handle_request(
         NibblesView prefix;
         uint64_t from;
         uint64_t until;
+        std::atomic_bool &aborted;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
-            uint64_t const from, uint64_t const until)
+            uint64_t const from, uint64_t const until,
+            std::atomic_bool &aborted)
             : nibble{INVALID_BRANCH}
             , depth{0}
             , sync{sync}
             , prefix{prefix}
             , from{from}
             , until{until}
+            , aborted{aborted}
         {
         }
 
         virtual bool down(unsigned char const branch, Node const &node) override
         {
+            if (aborted.load(std::memory_order_relaxed)) {
+                return false;
+            }
+
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(depth == 0);
                 return true;
@@ -223,6 +230,9 @@ bool statesync_server_handle_request(
         virtual bool
         should_visit(Node const &node, unsigned char const branch) override
         {
+            if (aborted.load(std::memory_order_relaxed)) {
+                return false;
+            }
             if (depth == 0 && nibble == INVALID_BRANCH) {
                 MONAD_ASSERT(branch != INVALID_BRANCH);
                 return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
@@ -282,7 +292,8 @@ bool statesync_server_handle_request(
     }
 
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Traverse traverse(
+        sync, NibblesView{bytes}, rq.from, rq.until, ctx->aborted);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         return false;
     }
@@ -329,8 +340,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 struct monad_statesync_server *monad_statesync_server_create(
     monad_statesync_server_context *const ctx,
     monad_statesync_server_network *const net,
-    ssize_t (*statesync_server_recv)(
-        monad_statesync_server_network *, unsigned char *, size_t),
+    monad_sync_request (*statesync_server_recv)(
+        monad_statesync_server_network *),
     void (*statesync_server_send_upsert)(
         monad_statesync_server_network *, monad_sync_type,
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
@@ -348,22 +359,7 @@ struct monad_statesync_server *monad_statesync_server_create(
 
 void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
 {
-    unsigned char buf[sizeof(monad_sync_request)];
-    if (sync->statesync_server_recv(sync->net, buf, 1) != 1) {
-        return;
-    }
-    MONAD_ASSERT(buf[0] == SYNC_TYPE_REQUEST);
-    unsigned char *ptr = buf;
-    uint64_t n = sizeof(monad_sync_request);
-    while (n != 0) {
-        auto const res = sync->statesync_server_recv(sync->net, ptr, n);
-        if (res == -1) {
-            continue;
-        }
-        ptr += res;
-        n -= static_cast<size_t>(res);
-    }
-    auto const &rq = unaligned_load<monad_sync_request>(buf);
+    auto const rq = sync->statesync_server_recv(sync->net);
     monad_statesync_server_handle_request(sync, rq);
 }
 

@@ -266,6 +266,7 @@ int main(int const argc, char const *argv[])
     monad_statesync_server *sync = nullptr;
     if (!statesync.empty()) {
         ctx = std::make_unique<monad_statesync_server_context>(triedb);
+        net.value().aborted = &ctx->aborted;
         sync = monad_statesync_server_create(
             ctx.get(),
             &net.value(),

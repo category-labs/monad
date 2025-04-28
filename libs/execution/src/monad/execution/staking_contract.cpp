@@ -373,7 +373,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
         }
 
         // TODO: apply commission rate
-        valinfo->active_stake = valinfo->active_shares.native()
+        valinfo->active_stake = valinfo->active_stake.native()
                                     .add(valinfo->rewards[0].native())
                                     .to_be();
         valinfo->rewards[0] = valinfo->rewards[1];

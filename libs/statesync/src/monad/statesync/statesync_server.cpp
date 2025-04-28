@@ -8,6 +8,7 @@
 #include <monad/core/unaligned.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/traverse.hpp>
+#include <monad/statesync/statesync_protocol.hpp>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
 
@@ -42,15 +43,6 @@ using namespace monad;
 using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
-{
-    byte_string bytes;
-    for (size_t i = 0; i < n_bytes; ++i) {
-        bytes.push_back((prefix >> ((n_bytes - i - 1) * 8)) & 0xff);
-    }
-    return bytes;
-}
 
 bool send_deletion(
     monad_statesync_server *const sync, monad_sync_request const &rq,

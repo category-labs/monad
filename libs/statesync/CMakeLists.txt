@@ -37,4 +37,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   target_link_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
   monad_compile_options(fuzz_statesync)
   target_link_libraries(fuzz_statesync PUBLIC monad_statesync)
-endif()
+
+  add_executable(
+    fuzz_restore_prefix
+    "${PROJECT_SOURCE_DIR}/src/monad/statesync/test/fuzz_restore_prefix.cpp")
+  target_compile_options(fuzz_restore_prefix PRIVATE "-fsanitize=fuzzer")
+  target_link_options(fuzz_restore_prefix PRIVATE "-fsanitize=fuzzer")
+  monad_compile_options(fuzz_restore_prefix)
+  target_link_libraries(fuzz_restore_prefix PUBLIC monad_statesync)
+  endif()

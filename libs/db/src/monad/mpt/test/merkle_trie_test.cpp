@@ -41,6 +41,75 @@ using EraseTrieType = ::testing::Types<
     EraseFixture<InMemoryMerkleTrieGTest>, EraseFixture<OnDiskMerkleTrieGTest>>;
 TYPED_TEST_SUITE(EraseTrieTest, EraseTrieType);
 
+struct RestorePrefixTest : public OnDiskMerkleTrieGTest
+{
+    void restore_prefix_(NibblesView key, uint64_t version)
+    {
+        // Delete subtree starting with prefix
+        auto res = find_blocking(
+            this->aux,
+            *this->root,
+            key,
+            static_cast<uint64_t>(this->root->version));
+        auto delete_key = concat(
+            key,
+            NibblesView(
+                res.first.prefix_index,
+                res.first.node->path_nibble_index_end,
+                res.first.node->path_data()));
+        Update delete_update{
+            .key = delete_key,
+            .value = {},
+            .incarnation = false,
+            .prefix_update = true,
+            .next = UpdateList{},
+            .version = this->root->version + 1,
+        };
+        this->root = upsert_updates(
+            this->aux,
+            *this->sm,
+            std::move(this->root),
+            std::move(delete_update));
+
+        auto old_root = read_node_blocking(
+            this->aux, this->aux.get_root_offset_at_version(version), version);
+
+        // Insert previous version of node at prefix
+        res = find_blocking(this->aux, *old_root, key, version);
+        EXPECT_TRUE(
+            res.second == monad::mpt::find_result::success ||
+            res.second ==
+                monad::mpt::find_result::key_ends_earlier_than_node_failure);
+
+        auto node = make_node(
+            *res.first.node,
+            res.first.node->path_nibble_view(),
+            res.first.node->opt_value(),
+            res.first.node->version);
+
+        auto update_key = concat(
+            key,
+            NibblesView(
+                res.first.prefix_index,
+                res.first.node->path_nibble_index_end,
+                res.first.node->path_data()));
+        Update copy_update{
+            .key = update_key,
+            .value = {},
+            .incarnation = false,
+            .prefix_update = true,
+            .node = std::move(node),
+            .next = UpdateList{},
+            .version = this->root->version + 1,
+        };
+        this->root = upsert_updates(
+            this->aux,
+            *this->sm,
+            std::move(this->root),
+            std::move(copy_update));
+    }
+};
+
 TYPED_TEST(TrieTest, nested_leave_one_child_on_branch_with_leaf)
 {
     auto const key1 = 0x123456_hex;
@@ -292,6 +361,163 @@ TYPED_TEST(TrieTest, empty_trie_with_empty_update)
 }
 
 ////////////////////////////////////////////////////////////////////
+
+TEST_F(RestorePrefixTest, restore_prefix)
+{
+    monad::byte_string const keys[] = {
+        0xAAAB_hex,
+        0xAABC_hex,
+        0xABAB_hex,
+        0xACAC_hex,
+        0xBBAA_hex,
+        0xBBBB_hex,
+        0xCCAA_hex,
+        0xCCBA_hex,
+        0xCCCA_hex};
+
+    auto const value = 0xdeadbeef_hex;
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys) {
+            updates.push_back(make_update(key, value, false, {}, 1));
+        }
+
+        this->root = upsert_vector(
+            this->aux, *this->sm, std::move(this->root), std::move(updates), 1);
+    }
+
+    auto hash_1 = this->root_hash();
+
+    monad::byte_string const keys_1[] = {
+        0xAACB_hex,
+        0xAADC_hex,
+    };
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys_1) {
+            updates.push_back(make_update(key, value, false, {}, 2));
+        }
+
+        this->root = upsert_vector(
+            this->aux, *this->sm, std::move(this->root), std::move(updates), 2);
+    }
+
+    ASSERT_NE(hash_1, this->root_hash());
+
+    EXPECT_NO_FATAL_FAILURE(restore_prefix_(0xAA_hex, 1));
+
+    auto hash_2 = this->root_hash();
+
+    EXPECT_EQ(hash_1, hash_2);
+}
+
+TEST_F(RestorePrefixTest, restore_prefix_1)
+{
+    monad::byte_string const keys[] = {
+        0xAAABBB_hex,
+        0xAAACCC_hex,
+        0xAABBCC_hex,
+        0xAABC_hex,
+        0xABAB_hex,
+        0xACAC_hex,
+        0xBBAA_hex,
+        0xBBBB_hex,
+        0xCCAA_hex,
+        0xCCBA_hex,
+        0xCCCA_hex};
+
+    auto const value = 0xdeadbeef_hex;
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys) {
+            updates.push_back(make_update(key, value, false, {}, 1));
+        }
+
+        this->root =
+            upsert_vector(this->aux, *this->sm, {}, std::move(updates), 1);
+    }
+
+    auto hash_1 = this->root_hash();
+
+    monad::byte_string const keys_1[] = {
+        0xAACB_hex,
+        0xAADC_hex,
+    };
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys_1) {
+            updates.push_back(make_update(key, value, false, {}, 2));
+        }
+
+        this->root = upsert_vector(
+            this->aux, *this->sm, std::move(this->root), std::move(updates), 2);
+    }
+
+    ASSERT_NE(hash_1, this->root_hash());
+
+    EXPECT_NO_FATAL_FAILURE(restore_prefix_(0xAA_hex, 1));
+
+    auto hash_2 = this->root_hash();
+
+    EXPECT_EQ(hash_1, hash_2);
+}
+
+TEST_F(RestorePrefixTest, restore_prefix_2)
+{
+    monad::byte_string const keys[] = {
+        0xAAABBB_hex,
+        0xAAACCC_hex,
+        0xABAB_hex,
+        0xACAC_hex,
+        0xBBAA_hex,
+        0xBBBB_hex,
+        0xCCAA_hex,
+        0xCCBA_hex,
+        0xCCCA_hex};
+
+    auto const value = 0xdeadbeef_hex;
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys) {
+            updates.push_back(make_update(key, value, false, {}, 1));
+        }
+
+        this->root =
+            upsert_vector(this->aux, *this->sm, {}, std::move(updates), 1);
+    }
+
+    auto hash_1 = this->root_hash();
+
+    monad::byte_string const keys_1[] = {
+        0xAACB_hex,
+        0xAADC_hex,
+    };
+
+    {
+        std::vector<Update> updates;
+        for (auto const &key : keys_1) {
+            updates.push_back(make_update(key, value, false, {}, 2));
+        }
+
+        this->root = upsert_vector(
+            this->aux, *this->sm, std::move(this->root), std::move(updates), 2);
+    }
+
+    ASSERT_NE(hash_1, this->root_hash());
+
+    EXPECT_NO_FATAL_FAILURE(restore_prefix_(0xAA_hex, 1));
+
+    auto hash_2 = this->root_hash();
+
+    EXPECT_EQ(hash_1, hash_2);
+}
+
+////////////////////////////////////////////////////////////////////
 // Erase Trie Tests
 ////////////////////////////////////////////////////////////////////
 
@@ -475,9 +701,9 @@ TYPED_TEST(TrieTest, upsert_var_len_keys)
         0x7954fcaa023fb356d6c626119220461c7859b93abd6ea71eac342d8407d7051e_hex);
 
     // erase all storages of kv[0].
-    // TEMPORARY Note: when an existing account has no storages, the computed
-    // leaf data is the input value, we don't concatenate with `empty_trie_hash`
-    // in this poc impl yet.
+    // TEMPORARY Note: when an existing account has no storages, the
+    // computed leaf data is the input value, we don't concatenate with
+    // `empty_trie_hash` in this poc impl yet.
     this->root = upsert_updates(
         this->aux, *this->sm, std::move(this->root), make_erase(kv[4].first));
     EXPECT_EQ(

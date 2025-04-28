@@ -43,6 +43,9 @@ bool monad_statesync_client_finalize(struct monad_statesync_client_context *);
 void monad_statesync_client_context_destroy(
     struct monad_statesync_client_context *);
 
+void monad_statesync_client_restore_prefix(
+    monad_statesync_client_context *ctx, uint64_t const prefix);
+
 #ifdef __cplusplus
 }
 #endif

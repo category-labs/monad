@@ -1184,6 +1184,13 @@ Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const
     return it;
 }
 
+find_cursor_result_type Db::find_prefix(
+    NodeCursor root, NibblesView const key, uint64_t const block_id) const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->find_fiber_blocking(root, key, block_id);
+}
+
 NodeCursor Db::load_root_for_version(uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);

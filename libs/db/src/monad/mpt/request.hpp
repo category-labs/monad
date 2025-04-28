@@ -91,7 +91,7 @@ struct Requests
     }
 };
 
-static_assert(sizeof(Requests) == 352);
+static_assert(sizeof(Requests) == 360);
 static_assert(alignof(Requests) == 8);
 
 MONAD_MPT_NAMESPACE_END

@@ -80,6 +80,8 @@ void monad_statesync_client_context::commit()
     }
     UpdateList code_updates;
 
+    fprintf(stderr, "client commit accounts %ld\n", accounts.size());
+
     std::deque<bytes32_t> upserted;
     for (auto const &hash : pending) {
         if (code.contains(hash)) {
@@ -134,4 +136,140 @@ void monad_statesync_client_context::commit()
         MONAD_ASSERT(code.erase(hash) == 1);
     }
     deltas.clear();
+}
+
+namespace
+{
+    void delete_prefix(monad::mpt::Db &db, NibblesView prefix, uint64_t version)
+    {
+        auto state_root =
+            db.find(concat(finalized_nibbles, STATE_NIBBLE), version);
+        MONAD_ASSERT(state_root.has_value());
+        auto res = db.find_prefix(state_root.value(), prefix, version);
+        if (res.second != find_result::success &&
+            res.second != find_result::key_ends_earlier_than_node_failure) {
+            std::cerr << "deleting prefix " << prefix << " not found"
+                      << std::endl;
+            // Prefix already does not exist
+            return;
+        }
+        auto delete_key = concat(
+            prefix,
+            NibblesView(
+                res.first.prefix_index,
+                res.first.node->path_nibble_index_end,
+                res.first.node->path_data()));
+        Update prefix_delete = Update{
+            .key = delete_key,
+            .value = std::nullopt,
+            .incarnation = false,
+            .prefix_update = true,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(version)};
+        UpdateList deletes;
+        deletes.push_front(prefix_delete);
+
+        auto state_update = Update{
+            .key = state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(deletes),
+            .version = static_cast<int64_t>(version)};
+
+        UpdateList updates;
+        updates.push_front(state_update);
+
+        UpdateList finalized_updates;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(updates),
+            .version = static_cast<int64_t>(version)};
+        finalized_updates.push_front(finalized);
+
+        db.upsert(std::move(finalized_updates), version, false, false);
+    }
+}
+
+void monad_statesync_client_context::restore_prefix(NibblesView prefix)
+{
+    std::cerr << "deleting prefix " << prefix << std::endl;
+    delete_prefix(db, prefix, current);
+    if (current == 0) {
+        // Sync from genesis, prefix did not exist
+        return;
+    }
+    std::cerr << "restoring prefix " << prefix << " current " << current
+              << std::endl;
+    auto root = db.load_root_for_version(current - 1);
+    MONAD_ASSERT(root.is_valid());
+    auto state_root =
+        db.find(concat(finalized_nibbles, STATE_NIBBLE), current - 1);
+    MONAD_ASSERT(state_root.has_value());
+    auto res = db.find_prefix(state_root.value(), prefix, current - 1);
+    if (res.second != find_result::success &&
+        res.second != find_result::key_ends_earlier_than_node_failure) {
+        // Prefix does not exist before state sync
+        return;
+    }
+    auto node = res.first.node;
+    if (node->number_of_children() == 1) {
+        // Special case, compute requires the child pointer for single child
+        auto child_res = db.find_prefix(
+            NodeCursor{*node, node->path_nibble_index_end},
+            concat((unsigned char)std::countr_zero(node->mask)),
+            current - 1);
+        MONAD_ASSERT(
+            child_res.second == find_result::success ||
+            child_res.second ==
+                find_result::key_ends_earlier_than_node_failure);
+        auto child = child_res.first.node;
+        node->set_next(
+            0,
+            make_node(
+                *child,
+                child->path_nibble_view(),
+                child->opt_value(),
+                child->version));
+    }
+
+    auto update_key = concat(
+        prefix,
+        NibblesView(
+            res.first.prefix_index,
+            res.first.node->path_nibble_index_end,
+            res.first.node->path_data()));
+    Update prefix_update = Update{
+        .key = update_key,
+        .value = std::nullopt,
+        .incarnation = false,
+        .prefix_update = true,
+        .node = make_node(
+            *node, node->path_nibble_view(), node->opt_value(), node->version),
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(current)};
+
+    UpdateList prefix_updates;
+    prefix_updates.push_front(prefix_update);
+
+    auto state_update = Update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(prefix_updates),
+        .version = static_cast<int64_t>(current)};
+    UpdateList updates;
+    updates.push_front(state_update);
+
+    UpdateList finalized_updates;
+    Update finalized{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(updates),
+        .version = static_cast<int64_t>(current)};
+    finalized_updates.push_front(finalized);
+
+    db.upsert(std::move(finalized_updates), current, false, false);
 }

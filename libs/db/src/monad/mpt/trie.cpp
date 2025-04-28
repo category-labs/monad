@@ -74,6 +74,10 @@ void create_node_compute_data_possibly_async(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     tnode_unique_ptr, bool might_on_disk = true);
 
+void create_new_trie_from_node_(
+    UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
+    ChildData &entry, Node *copy_node, NibblesView const path, int64_t version);
+
 void compact_(
     UpdateAuxImpl &, StateMachine &, CompactTNode::unique_ptr_type,
     chunk_offset_t node_offset, bool copy_node_for_fast_or_slow);
@@ -883,7 +887,8 @@ void create_new_trie_(
     }
     if (updates.size() == 1) {
         Update &update = updates.front();
-        MONAD_DEBUG_ASSERT(update.value.has_value());
+        MONAD_ASSERT(
+            update.value.has_value() || (update.prefix_update && update.node));
         auto const path = update.key.substr(prefix_index);
         for (auto i = 0u; i < path.nibble_size(); ++i) {
             sm.down(path.get(i));
@@ -903,6 +908,10 @@ void create_new_trie_(
                 0,
                 update.value,
                 update.version);
+        }
+        else if (update.prefix_update && update.node != nullptr) {
+            create_new_trie_from_node_(
+                aux, sm, parent_version, entry, update.node.get(), path, 0);
         }
         else {
             aux.collect_number_nodes_created_stats();
@@ -947,6 +956,33 @@ void create_new_trie_(
         requests.opt_leaf.has_value() ? requests.opt_leaf.value().version : 0);
     if (prefix_index_start != prefix_index) {
         sm.up(prefix_index - prefix_index_start);
+    }
+}
+
+void create_new_trie_from_node_(
+    UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
+    ChildData &entry, Node *copy_node, NibblesView const path, int64_t version)
+{
+    // version will be updated bottom up
+    auto const number_of_children = copy_node->number_of_children();
+    uint16_t const mask = copy_node->mask;
+    allocators::owning_span<ChildData> const children(number_of_children);
+    for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
+         ++i, bit <<= 1) {
+        if (bit & copy_node->mask) {
+            children[j].copy_old_child(copy_node, i);
+            ++j;
+        }
+    }
+    // can have empty children
+    auto node = create_node_from_children_if_any(
+        aux, sm, mask, mask, children, path, copy_node->opt_value(), version);
+    MONAD_ASSERT(node);
+    parent_version = std::max(parent_version, node->version);
+    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+    if (sm.auto_expire()) {
+        MONAD_ASSERT(
+            entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
     }
 }
 
@@ -1025,7 +1061,7 @@ void upsert_(
             prefix_index == updates.front().key.nibble_size()) {
             auto &update = updates.front();
             MONAD_ASSERT(old->path_nibble_index_end == old_prefix_index);
-            MONAD_ASSERT(old->has_value());
+            MONAD_ASSERT(old->has_value() || update.prefix_update);
             update_value_and_subtrie_(
                 aux, sm, parent, entry, std::move(old), path, update);
             break;

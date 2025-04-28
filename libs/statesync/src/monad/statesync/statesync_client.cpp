@@ -146,6 +146,15 @@ void monad_statesync_client_handle_done(
     }
 }
 
+void monad_statesync_client_restore_prefix(
+    monad_statesync_client_context *const ctx, uint64_t const prefix)
+{
+    auto bytes = from_prefix(prefix, monad_statesync_client_prefix_bytes());
+    ctx->restore_prefix(bytes);
+    ctx->progress[prefix] = {ctx->current - 1, ctx->current - 1};
+    ctx->protocol.at(prefix)->send_request(ctx, prefix);
+}
+
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
     auto const &tgrt = ctx->tgrt;

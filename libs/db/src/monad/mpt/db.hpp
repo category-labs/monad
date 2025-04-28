@@ -94,6 +94,9 @@ public:
     // future.
     Result<NodeCursor> find(NodeCursor, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    find_cursor_result_type
+    find_prefix(NodeCursor root, NibblesView key, uint64_t block_id) const;
+
     Result<byte_string_view> get(NibblesView, uint64_t block_id) const;
     Result<byte_string_view> get_data(NibblesView, uint64_t block_id) const;
     Result<byte_string_view>

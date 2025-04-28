@@ -7,6 +7,7 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/mpt/nibbles_view.hpp>
 #include <monad/statesync/statesync_protocol.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -57,4 +58,6 @@ struct monad_statesync_client_context
             struct monad_statesync_client *, struct monad_sync_request));
 
     void commit();
+
+    void restore_prefix(monad::mpt::NibblesView prefix);
 };

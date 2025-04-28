@@ -21,16 +21,18 @@ struct Update
     NibblesView key{};
     std::optional<byte_string_view> value{std::nullopt};
     bool incarnation{false};
+    bool prefix_update{false};
+    Node::UniquePtr node{};
     UpdateList next;
     int64_t version{0};
 
     constexpr bool is_deletion() const noexcept
     {
-        return !value.has_value() && next.empty();
+        return !(value.has_value() || !next.empty() || node != nullptr);
     }
 };
 
-static_assert(sizeof(Update) == 80);
+static_assert(sizeof(Update) == 88);
 static_assert(alignof(Update) == 8);
 
 // An update can mean

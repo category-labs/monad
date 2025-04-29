@@ -1,0 +1,14 @@
+(env
+ (_
+  (binaries
+   (../../../../fm-ci-tools/coqc-tools/bin/coqc_perf.exe as coqc)
+   (../../../../fm-ci-tools/coqc-tools/bin/coqdep_werr.exe as coqdep))
+  (flags :standard -warn-error +A -w +A-4-29-40..45-48-58..59-63..65-68-70)
+  (ocamlopt_flags :standard -O3 -unbox-closures)
+  (coq
+   (flags
+    (:standard
+      -w +deprecated-hint-without-locality
+      -w +deprecated-instance-without-locality
+      -w +unknown-option
+      -w +future-coercion-class-field)))))

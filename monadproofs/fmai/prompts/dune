@@ -1,0 +1,16 @@
+(include_subdirs qualified)
+(coq.theory
+ (name monad.fmai.prompts)
+ (theories Ltac2 bluerock.ltac2.extra))
+
+(rule
+ (target main.v)
+ (deps (:source main.md) ./md_to_v.py)
+ (action (run ./md_to_v.py %{source} %{target})))
+
+; We generate a dummy file to force full dependency on the plugin package. is the dummy file still needed now that we have the main.v above?
+; The contents of the file is not important (no caching issue here).
+(rule
+ (targets dummy.v)
+ (deps (package ltac2-llm-plugin))
+ (action (with-stdout-to %{targets} (echo "(* dummy file *)"))))

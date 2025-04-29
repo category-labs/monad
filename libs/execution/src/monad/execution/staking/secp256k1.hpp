@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/config.hpp>
+#include <monad/core/blake3.hpp>
 #include <monad/core/byte_string.hpp>
 
 #include <secp256k1.h>
@@ -70,7 +71,7 @@ public:
     bool verify(Secp256k1_Pubkey const &pubkey, byte_string_view const message)
         const noexcept
     {
-        bytes32_t const digest = to_bytes(keccak256(message));
+        bytes32_t const digest = to_bytes(blake3(message));
         int res = secp256k1_ecdsa_verify(
             &context_, &sig_, digest.bytes, &pubkey.get());
         return res == 1;

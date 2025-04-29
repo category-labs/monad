@@ -1,8 +1,8 @@
 #include <monad/contract/uint256.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/blake3.hpp>
 #include <monad/core/byte_string.hpp>
-#include <monad/core/keccak.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/staking/secp256k1.hpp>
@@ -77,7 +77,7 @@ namespace
     sign_secp(byte_string_view const message, bytes32_t const &seckey)
     {
         secp256k1_ecdsa_signature sig;
-        auto const digest = keccak256(message);
+        auto const digest = blake3(message);
         MONAD_ASSERT(
             1 == secp256k1_ecdsa_sign(
                      secp_context.get(),
@@ -461,4 +461,19 @@ TEST_F(Stake, reward_success)
         valinfo_storage.load()->active_shares,
         Uint256Native{MIN_STAKE_AMOUNT}
             .to_be()); // active shares shouldn't change
+}
+
+TEST_F(Stake, invoke_fallback)
+{
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    auto const sender = 0xdeadbeef_address;
+    auto const value = intx::be::store<evmc_uint256be>(MIN_STAKE_AMOUNT);
+
+    byte_string_fixed<8> const signature_bytes = {0xff, 0xff, 0xff, 0xff};
+    auto signature = to_byte_string_view(signature_bytes);
+    auto const [func, cost] = contract.precompile_dispatch(signature);
+    EXPECT_EQ(cost, 0);
+    EXPECT_EQ(
+        (contract.*func)(byte_string_view{}, sender, value),
+        StakingContract::METHOD_NOT_SUPPORTED);
 }

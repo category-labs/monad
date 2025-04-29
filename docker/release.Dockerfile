@@ -45,6 +45,7 @@ RUN apt update && apt install -y \
 RUN apt update && apt install -y \
   gdb \
   git \
+  python-is-python3 \
   valgrind
 
 FROM base as build

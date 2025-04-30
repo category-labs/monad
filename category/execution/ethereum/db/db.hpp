@@ -11,6 +11,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <monad/vm/vm.hpp>
 
 #include <cstdint>
@@ -46,6 +47,8 @@ struct Db
         StateDeltas const &, Code const &, bytes32_t const &block_id,
         BlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<PreState> const & = {},
+        std::vector<StateDeltas> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
@@ -56,6 +59,8 @@ struct Db
         bytes32_t const &block_id, BlockHeader const &header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<PreState> const &pre_state_traces = {},
+        std::vector<StateDeltas> const &state_deltas_traces = {},
         std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
         std::vector<BlockHeader> const &ommers = {},
@@ -68,6 +73,8 @@ struct Db
             header,
             receipts,
             call_frames,
+            pre_state_traces,
+            state_deltas_traces,
             senders,
             transactions,
             ommers,

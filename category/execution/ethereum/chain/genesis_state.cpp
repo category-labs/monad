@@ -8,10 +8,12 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -38,6 +40,8 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         genesis.header,
         std::vector<Receipt>{},
         std::vector<std::vector<CallFrame>>{},
+        std::vector<PreState>{},
+        std::vector<StateDeltas>{},
         std::vector<Address>{},
         std::vector<Transaction>{},
         std::vector<BlockHeader>{},

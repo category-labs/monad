@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
@@ -128,10 +129,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         std::vector<Receipt> receipts(results.size());
         std::vector<std::vector<CallFrame>> call_frames(results.size());
+        std::vector<PreState> pre_state_traces(results.size());
+        std::vector<StateDeltas> state_deltas_traces(results.size());
         for (unsigned i = 0; i < results.size(); ++i) {
             auto &result = results[i];
             receipts[i] = std::move(result.receipt);
             call_frames[i] = (std::move(result.call_frames));
+            pre_state_traces[i] = std::move(result.pre_state);
+            state_deltas_traces[i] = std::move(result.state_deltas);
         }
 
         block_state.log_debug();
@@ -141,6 +146,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             block.header,
             receipts,
             call_frames,
+            pre_state_traces,
+            state_deltas_traces,
             senders,
             block.transactions,
             block.ommers,

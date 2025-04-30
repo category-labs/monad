@@ -514,6 +514,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
             {},
             {},
             {},
+            {},
+            {},
             std::nullopt);
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
@@ -564,6 +566,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
             {},
             {},
             {},
+            {},
+            {},
             std::nullopt);
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
@@ -602,6 +606,8 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.commit(
             NULL_HASH_BLAKE3,
             BlockHeader{.number = 0},
+            {},
+            {},
             {},
             {},
             {},
@@ -1173,6 +1179,8 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
         {},
         {},
         {},
+        {},
+        {},
         std::nullopt);
     this->tdb.finalize(0, NULL_HASH_BLAKE3);
     this->tdb.set_block_and_prefix(0);
@@ -1192,7 +1200,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    bs.commit(NULL_HASH_BLAKE3, {}, {}, {}, {}, {}, {}, std::nullopt);
+    bs.commit(NULL_HASH_BLAKE3, {}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
 
     EXPECT_EQ(
         this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
@@ -1239,7 +1247,7 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         bs.commit(
-            bytes32_t{10}, BlockHeader{.number = 10}, {}, {}, {}, {}, {}, {});
+            bytes32_t{10}, BlockHeader{.number = 10}, {}, {}, {}, {}, {}, {}, {});
         this->tdb.finalize(10, bytes32_t{10});
 
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);

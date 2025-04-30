@@ -84,6 +84,11 @@ public:
     {
         transient_storage_[key] = value;
     }
+
+    friend bool operator==(AccountState const &as, AccountState const &bs)
+    {
+        return as.account_ == bs.account_ && as.storage_ == bs.storage_;
+    }
 };
 
 MONAD_NAMESPACE_END

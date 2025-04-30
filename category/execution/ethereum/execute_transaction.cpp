@@ -16,6 +16,7 @@
 #include <category/execution/ethereum/switch_evmc_revision.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -267,9 +268,17 @@ Result<ExecutionResult> execute(
             call_tracer.on_finish(receipt.gas_used);
             block_state.merge(state);
 
+#ifdef ENABLE_PRESTATE_TRACING
+            PrestateTracer prestate_tracer{state};
+#else
+            NoopPrestateTracer prestate_tracer{};
+#endif
+
             return ExecutionResult{
                 .receipt = receipt,
-                .call_frames = std::move(call_tracer).get_frames()};
+                .call_frames = std::move(call_tracer).get_frames(),
+                .pre_state = prestate_tracer.get_pre_state(),
+                .state_deltas = prestate_tracer.get_state_deltas()};
         }
     }
     block_metrics.inc_retries();
@@ -303,9 +312,17 @@ Result<ExecutionResult> execute(
         call_tracer.on_finish(receipt.gas_used);
         block_state.merge(state);
 
+#ifdef ENABLE_PRESTATE_TRACING
+        PrestateTracer prestate_tracer{state};
+#else
+        NoopPrestateTracer prestate_tracer{};
+#endif
+
         return ExecutionResult{
             .receipt = receipt,
-            .call_frames = std::move(call_tracer).get_frames()};
+            .call_frames = std::move(call_tracer).get_frames(),
+            .pre_state = prestate_tracer.get_pre_state(),
+            .state_deltas = prestate_tracer.get_state_deltas()};
     }
 }
 

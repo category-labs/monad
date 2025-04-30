@@ -1,0 +1,64 @@
+#pragma once
+
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
+
+#include <ankerl/unordered_dense.h>
+
+#include <nlohmann/json.hpp>
+
+#include <optional>
+#include <vector>
+
+MONAD_NAMESPACE_BEGIN
+
+class State;
+struct Transaction;
+
+struct PrestateTracerBase
+{
+    template <class Key, typename T>
+    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
+
+    virtual Map<Address, AccountState> &&get_pre_state() = 0;
+    virtual StateDeltas &&get_state_deltas() = 0;
+};
+
+struct NoopPrestateTracer final : public PrestateTracerBase
+{
+    virtual Map<Address, AccountState> &&get_pre_state() override;
+    virtual StateDeltas &&get_state_deltas() override;
+
+    Map<Address, AccountState> null_pre_state_;
+    StateDeltas null_state_deltas_;
+};
+
+class PrestateTracer final : public PrestateTracerBase
+{
+    Map<Address, AccountState> pre_state_;
+    StateDeltas state_deltas_;
+
+public:
+    PrestateTracer() = delete;
+    PrestateTracer(PrestateTracer const &) = delete;
+    PrestateTracer(PrestateTracer &&) = delete;
+    explicit PrestateTracer(State &state);
+
+    virtual Map<Address, AccountState> &&get_pre_state() override;
+    virtual StateDeltas &&get_state_deltas() override;
+};
+
+using PreState = PrestateTracerBase::Map<Address, AccountState>;
+
+// debug methods
+nlohmann::json state_to_json(PreState const &);
+nlohmann::json state_deltas_to_json(StateDeltas const &);
+
+nlohmann::json
+state_to_json_with_tx_hash(PreState const &, Transaction const &);
+nlohmann::json
+state_deltas_to_json_with_tx_hash(StateDeltas const &, Transaction const &);
+
+MONAD_NAMESPACE_END

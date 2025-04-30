@@ -7,6 +7,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 
 #include <evmc/evmc.h>
 
@@ -31,6 +32,8 @@ struct ExecutionResult
 {
     Receipt receipt;
     std::vector<CallFrame> call_frames;
+    PreState pre_state;
+    StateDeltas state_deltas;
 };
 
 uint64_t g_star(

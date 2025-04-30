@@ -169,10 +169,14 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
+    std::vector<PreState> pre_state_traces(results.size());
+    std::vector<StateDeltas> state_deltas_traces(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         auto &result = results[i];
         receipts[i] = std::move(result.receipt);
         call_frames[i] = (std::move(result.call_frames));
+        pre_state_traces[i] = std::move(result.pre_state);
+        state_deltas_traces[i] = std::move(result.state_deltas);
     }
 
     block_state.log_debug();
@@ -182,6 +186,8 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         consensus_header.execution_inputs,
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         senders,
         block.transactions,
         block.ommers,

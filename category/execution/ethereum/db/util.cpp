@@ -529,8 +529,10 @@ void MachineBase::down(unsigned char const nibble)
          nibble == RECEIPT_NIBBLE || nibble == CALL_FRAME_NIBBLE ||
          nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
-         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
-        depth != prefix_length);
+         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE ||
+         nibble == BFT_BLOCK_NIBBLE) ||
+        nibble == PRE_STATE_TRACE_NIBBLE ||
+        nibble == STATE_DELTAS_TRACE_NIBBLE || depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         if (nibble == STATE_NIBBLE) {
@@ -558,8 +560,10 @@ void MachineBase::down(unsigned char const nibble)
             // No subtrie in the rest tables, thus treated the same as
             // Table::Prefix
             MONAD_ASSERT(
-                nibble == BLOCKHEADER_NIBBLE || nibble == OMMER_NIBBLE ||
-                nibble == CALL_FRAME_NIBBLE);
+                nibble == BLOCKHEADER_NIBBLE || nibble == OMMER_NIBBLE || 
+                nibble == CALL_FRAME_NIBBLE ||
+                nibble == PRE_STATE_TRACE_NIBBLE ||
+                nibble == STATE_DELTAS_TRACE_NIBBLE);
         }
     }
 }

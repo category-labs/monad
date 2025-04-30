@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -31,6 +32,7 @@
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
 #include <intx/intx.hpp>
+#include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <gmock/gmock.h>
@@ -69,6 +71,24 @@ namespace
     auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
     auto const REFUND_TEST_ICODE = vm::make_shared_intercode(REFUND_TEST_CODE);
 
+    // clang-format off
+    auto const CA1_CODE = 
+        evmc::from_hex("0x3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500")
+            .value();
+    // clang-format on
+    auto const CA1_CODE_HASH = to_bytes(keccak256(CA1_CODE));
+    auto const CA1_CODE_ICODE =
+        vm::make_shared_intercode(CA1_CODE);
+
+    // clang-format off
+    auto const CA2_CODE = 
+        evmc::from_hex("0x3060025560206000600039602060006000f000")
+            .value();
+    // clang-format on
+    auto const CA2_CODE_HASH = to_bytes(keccak256(CA2_CODE));
+    auto const CA2_CODE_ICODE =
+        vm::make_shared_intercode(CA2_CODE);
+
     constexpr auto key1 =
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto key2 =
@@ -85,6 +105,16 @@ namespace
             uint64_t /* timestamp */) const override
         {
             return EVMC_SHANGHAI;
+        }
+    };
+
+    struct CancunEthereumMainnet : EthereumMainnet
+    {
+        virtual evmc_revision get_revision(
+            uint64_t /* block_number */,
+            uint64_t /* timestamp */) const override
+        {
+            return EVMC_CANCUN;
         }
     };
 
@@ -109,8 +139,10 @@ namespace
     ///////////////////////////////////////////
     // DB Getters
     ///////////////////////////////////////////
-    std::vector<CallFrame> read_call_frame(
-        mpt::Db &db, uint64_t const block_number, uint64_t const txn_idx)
+
+    byte_string read_trace(
+        unsigned char nibble, mpt::Db &db, uint64_t const block_number,
+        uint64_t const tx_idx)
     {
         using namespace mpt;
 
@@ -118,13 +150,12 @@ namespace
 
         Nibbles const min = mpt::concat(
             FINALIZED_NIBBLE,
-            CALL_FRAME_NIBBLE,
-            NibblesView{serialize_as_big_endian<sizeof(uint32_t)>(txn_idx)});
+            nibble,
+            NibblesView{serialize_as_big_endian<sizeof(uint32_t)>(tx_idx)});
         Nibbles const max = mpt::concat(
             FINALIZED_NIBBLE,
-            CALL_FRAME_NIBBLE,
-            NibblesView{
-                serialize_as_big_endian<sizeof(uint32_t)>(txn_idx + 1)});
+            nibble,
+            NibblesView{serialize_as_big_endian<sizeof(uint32_t)>(tx_idx + 1)});
 
         std::vector<KeyedChunk> chunks;
         RangedGetMachine machine{
@@ -143,19 +174,43 @@ namespace
                 return c.first < NibblesView{c2.first};
             });
 
-        byte_string const call_frames_encoded = std::accumulate(
+        return std::accumulate(
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
             [](byte_string const acc, KeyedChunk const chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
+    }
 
-        byte_string_view view{call_frames_encoded};
+    std::vector<CallFrame> read_call_frame(
+        mpt::Db &db, uint64_t const block_number, uint64_t const tx_idx)
+    {
+        byte_string const call_frame_bs =
+            read_trace(CALL_FRAME_NIBBLE, db, block_number, tx_idx);
+        byte_string_view view{call_frame_bs};
         auto const call_frame = rlp::decode_call_frames(view);
         MONAD_ASSERT(!call_frame.has_error());
         MONAD_ASSERT(view.empty());
         return call_frame.value();
+    }
+
+    nlohmann::json read_pre_state_traces(
+        mpt::Db &db, uint64_t const block_number, uint64_t const tx_idx)
+    {
+        auto const trace_bs =
+            read_trace(PRE_STATE_TRACE_NIBBLE, db, block_number, tx_idx);
+        std::vector<uint8_t> trace_cbor(trace_bs.begin(), trace_bs.end());
+        return nlohmann::json::from_cbor(trace_cbor);
+    }
+
+    nlohmann::json read_state_deltas_traces(
+        mpt::Db &db, uint64_t const block_number, uint64_t const tx_idx)
+    {
+        auto const trace_bs =
+            read_trace(STATE_DELTAS_TRACE_NIBBLE, db, block_number, tx_idx);
+        std::vector<uint8_t> trace_cbor(trace_bs.begin(), trace_bs.end());
+        return nlohmann::json::from_cbor(trace_cbor);
     }
 
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
@@ -546,6 +601,10 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.resize(receipts.size());
+    std::vector<PreState> pre_state_traces;
+    pre_state_traces.resize(receipts.size());
+    std::vector<StateDeltas> state_deltas_traces;
+    state_deltas_traces.resize(receipts.size());
     constexpr uint64_t first_block = 1;
     std::vector<Address> senders = recover_senders(transactions);
     commit_sequential(
@@ -555,6 +614,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         BlockHeader{.number = first_block},
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         senders,
         transactions);
     EXPECT_EQ(
@@ -633,6 +694,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
+    pre_state_traces.resize(receipts.size());
+    state_deltas_traces.resize(receipts.size());
     senders = recover_senders(transactions);
     commit_sequential(
         tdb,
@@ -641,6 +704,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         BlockHeader{.number = second_block},
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         senders,
         transactions);
     EXPECT_EQ(
@@ -833,6 +898,8 @@ TYPED_TEST(DBTest, commit_call_frames)
 
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
+    std::vector<PreState> pre_state_traces(NUM_TXNS);
+    std::vector<StateDeltas> state_deltas_traces(NUM_TXNS);
     std::vector<std::vector<CallFrame>> call_frames;
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
         call_frames.emplace_back(call_frame);
@@ -851,6 +918,8 @@ TYPED_TEST(DBTest, commit_call_frames)
         BlockHeader{},
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         senders,
         transactions);
 
@@ -861,6 +930,118 @@ TYPED_TEST(DBTest, commit_call_frames)
         ASSERT_TRUE(res.size() == 2);
         EXPECT_EQ(res[0], call_frame1);
         EXPECT_EQ(res[1], call_frame2);
+    }
+}
+
+TYPED_TEST(DBTest, commit_prestate_traces)
+{
+    TrieDb tdb{this->db};
+
+    PreState pre_state;
+    {
+        Account a{.balance = 0x20000, .nonce = 1};
+        AccountState as{a};
+        pre_state.emplace(ADDR_A, as);
+    }
+    {
+        Account b{.balance = 0x100100, .code_hash = B_CODE_HASH, .nonce = 1337};
+        AccountState bs{b};
+        bs.storage_.emplace(key1, value1);
+        bs.storage_.emplace(key2, value2);
+        pre_state.emplace(ADDR_B, bs);
+    }
+    nlohmann::json const expected_json = state_to_json(pre_state);
+
+    constexpr uint64_t NUM_TXNS = 1000;
+
+    static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
+    std::vector<PreState> pre_state_traces{};
+    std::vector<StateDeltas> state_deltas_traces(NUM_TXNS);
+    std::vector<std::vector<CallFrame>> call_frames(NUM_TXNS);
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        pre_state_traces.emplace_back(pre_state);
+    }
+    std::vector<Receipt> const receipts(NUM_TXNS);
+    // need to increment the nonce of transactions
+    std::vector<Transaction> transactions;
+    for (uint64_t nonce = 0; nonce < NUM_TXNS; ++nonce) {
+        transactions.push_back(Transaction{.nonce = nonce});
+    }
+    std::vector<Address> const senders(NUM_TXNS);
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{},
+        BlockHeader{},
+        receipts,
+        call_frames,
+        pre_state_traces,
+        state_deltas_traces,
+        senders,
+        transactions);
+
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        auto const &res_json =
+            read_pre_state_traces(this->db, tdb.get_block_number(), txn);
+        ASSERT_TRUE(!res_json.empty());
+        EXPECT_EQ(res_json, expected_json);
+    }
+}
+
+TYPED_TEST(DBTest, commit_state_deltas_traces)
+{
+    TrieDb tdb{this->db};
+
+    auto const state_deltas = StateDeltas{
+        {ADDR_A,
+         StateDelta{
+             .account =
+                 {Account{.balance = 0x200000, .nonce = 0},
+                  Account{.balance = 0x1f0000, .nonce = 1}}}},
+        {ADDR_B,
+         StateDelta{
+             .account =
+                 {Account{.balance = 0, .nonce = 0},
+                  Account{.balance = 0x10000}},
+             .storage =
+                 {{key1, {bytes32_t{}, value1}}, {key2, {value1, value2}}}}},
+    };
+
+    nlohmann::json const expected_json = state_deltas_to_json(state_deltas);
+
+    constexpr uint64_t NUM_TXNS = 1000;
+
+    static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
+    std::vector<PreState> pre_state_traces(NUM_TXNS);
+    std::vector<StateDeltas> state_deltas_traces{};
+    std::vector<std::vector<CallFrame>> call_frames(NUM_TXNS);
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        state_deltas_traces.emplace_back(state_deltas);
+    }
+    std::vector<Receipt> const receipts(NUM_TXNS);
+    // need to increment the nonce of transactions
+    std::vector<Transaction> transactions;
+    for (uint64_t nonce = 0; nonce < NUM_TXNS; ++nonce) {
+        transactions.push_back(Transaction{.nonce = nonce});
+    }
+    std::vector<Address> const senders(NUM_TXNS);
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{},
+        BlockHeader{},
+        receipts,
+        call_frames,
+        pre_state_traces,
+        state_deltas_traces,
+        senders,
+        transactions);
+
+    for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
+        auto const &res_json =
+            read_state_deltas_traces(this->db, tdb.get_block_number(), txn);
+        ASSERT_TRUE(!res_json.empty());
+        EXPECT_EQ(res_json, expected_json);
     }
 }
 
@@ -945,6 +1126,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
     }
+    std::vector<PreState> const pre_state_traces(receipts.size());
+    std::vector<StateDeltas> const state_deltas_traces(receipts.size());
     auto const &transactions = block.value().transactions;
     BlockHeader const header{.number = 1};
     bytes32_t const block_id{header.number};
@@ -953,6 +1136,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         header,
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         recover_senders(transactions),
         transactions,
         {},
@@ -1059,6 +1244,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         receipts.emplace_back(std::move(result.receipt));
         call_frames.emplace_back(std::move(result.call_frames));
     }
+    std::vector<PreState> const pre_state_traces(receipts.size());
+    std::vector<StateDeltas> const state_deltas_traces(receipts.size());
 
     auto const &transactions = block.value().transactions;
     BlockHeader const header = block.value().header;
@@ -1068,6 +1255,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         header,
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         recover_senders(transactions),
         transactions,
         {},
@@ -1094,5 +1283,238 @@ TYPED_TEST(DBTest, call_frames_refund)
     EXPECT_EQ(actual_call_frames[0], expected);
 #else
     EXPECT_EQ(actual_call_frames.size(), 0);
+#endif
+}
+
+// test reference from:
+// https://github.com/ethereum/tests/blob/e46e1db503ee2711ad02e1f5b3ea45d43e9cd8cb/BlockchainTests/GeneralStateTests/stInitCodeTest/CallRecursiveContract.json
+TYPED_TEST(DBTest, prestate_trace_test)
+{
+    TrieDb tdb{this->db};
+    vm::VM vm{};
+
+    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+    auto const ca1 = 0x000f3df6d732807ef1319fb7b8bb8522d0beac02_address;
+    auto const ca2 = 0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x989680,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {ca1,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x0,
+                          .code_hash = CA1_CODE_HASH,
+                          .nonce = 0x01}}}},
+            {ca2,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0x28, .code_hash = CA2_CODE_HASH}}}}},
+        Code{
+            {CA1_CODE_HASH, CA1_CODE_ICODE},
+            {CA2_CODE_HASH, CA2_CODE_ICODE},
+        },
+        BlockHeader{.number = 0});
+
+    // clang-format off
+    byte_string const block_rlp = evmc::from_hex("0xf902a4f9023ba072dba3cc0c0508842208e4db53246154a9b7143b63bd3af54183e9664577ca43a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa007db5f315754432195b1954616123a44627d91bacb6c4c12a33ed9de27182901a05b7703b5c43ffb90d35cb2929bc59b874eeecc3e753bbcd8cb6f522ec02a86bda024a18d364b1ee6377484245abffe445a18a35d1d6962c97ea3cd3477dbd3e985b901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018405f5e1008305d8a38203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b4218080a00000000000000000000000000000000000000000000000000000000000000000f862f860800a83061a8094095e7baea6a6c7c4c2dfeb977efac326af552d8701001ca0330a37bd0d233b9945f18b10d7ec2035befd8c2cef7f2f3dd21dfd7d0d7da247a07c82e786a416f4f46742e593a1cd6a6c9e7eb86417d211f160f165b55a859bf0c0c0")
+            .value();
+    // clang-format on
+    byte_string_view block_rlp_view{block_rlp};
+    auto block = rlp::decode_block(block_rlp_view);
+    ASSERT_TRUE(!block.has_error());
+    EXPECT_EQ(block.value().header.number, 1);
+
+    BlockHashBufferFinalized block_hash_buffer;
+    block_hash_buffer.set(
+        block.value().header.number - 1, block.value().header.parent_hash);
+
+    BlockState bs(tdb, vm);
+    BlockMetrics metrics;
+
+    fiber::PriorityPool pool{1, 1};
+
+    auto const recovered_senders =
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        MONAD_ASSERT(recovered_senders[i].has_value());
+        senders[i] = recovered_senders[i].value();
+    }
+
+    auto const results = execute_block<EVMC_CANCUN>(
+        CancunEthereumMainnet{},
+        block.value(),
+        senders,
+        bs,
+        block_hash_buffer,
+        pool, metrics);
+
+    ASSERT_TRUE(!results.has_error());
+
+    bs.log_debug();
+
+    std::vector<Receipt> receipts;
+    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<PreState> pre_state_traces;
+    std::vector<StateDeltas> state_deltas_traces;
+    for (auto &result : results.value()) {
+        receipts.emplace_back(std::move(result.receipt));
+        call_frames.emplace_back(std::move(result.call_frames));
+        pre_state_traces.emplace_back(std::move(result.pre_state));
+        state_deltas_traces.emplace_back(std::move(result.state_deltas));
+    }
+
+    auto const &transactions = block.value().transactions;
+    
+    auto block_id = bytes32_t{NULL_HASH_BLAKE3};
+
+    bs.commit(
+        block_id,
+        block.value().header,
+        receipts,
+        call_frames,
+        pre_state_traces,
+        state_deltas_traces,
+        recover_senders(transactions),
+        transactions,
+        {},
+        std::nullopt);
+    tdb.finalize(1, block_id);
+    tdb.set_block_and_prefix(1);
+
+    auto const actual_pre_state_traces =
+        read_pre_state_traces(this->db, tdb.get_block_number(), 0);
+    auto const actual_state_deltas_traces =
+        read_state_deltas_traces(this->db, tdb.get_block_number(), 0);
+
+#ifdef ENABLE_PRESTATE_TRACING
+
+    // PreState
+    auto const expected_pre_state_traces = R"(
+        {
+            "0x095e7baea6a6c7c4c2dfeb977efac326af552d87":{
+                "balance":"0x28",
+                "code_hash":"0x2c80a521f0a06ac0974795a9de86a1c39fb19c2031a168584d45723a2d389d32",
+                "storage":{
+                    "0x0000000000000000000000000000000000000000000000000000000000000002":"0x0000000000000000000000000000000000000000000000000000000000000000"
+                }
+            },
+            "0x283b585ba5bc85d64a99cb5ecb9a8495ac944948":{
+                "balance":"0x0"
+            },
+            "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba":{
+                "balance":"0x0"
+            },
+            "0x4326e4b5aa29095a293f86c51e4776beeeb13c9b":{
+                "balance":"0x0"
+            },
+            "0x6965235e025001fb620d441803fedb005f7ac710":{
+                "balance":"0x0"
+            },
+            "0x91ed00a0a906270d466af043c4e111dadca970a3":{
+                "balance":"0x0"
+            },
+            "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b":{
+                "balance":"0x989680",
+                "code_hash":"0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+            },
+            "0xb679828fa6040990410b3282e916bfbd6c74f890":{
+                "balance":"0x0"
+            },
+            "0xd2571607e241ecf590ed94b12d87c94babe36db6":{
+                "balance":"0x0"
+            }
+        }
+    )";
+    EXPECT_EQ(
+        actual_pre_state_traces,
+        nlohmann::json::parse(expected_pre_state_traces));
+
+    // StateDelta
+    auto const expected_state_delta_traces = R"(
+        {
+        "post": {
+            "0x095e7baea6a6c7c4c2dfeb977efac326af552d87": {
+            "balance": "0x29",
+            "nonce": 1,
+            "storage": {
+                "0x0000000000000000000000000000000000000000000000000000000000000002": "0x000000000000000000000000095e7baea6a6c7c4c2dfeb977efac326af552d87"
+            }
+            },
+            "0x283b585ba5bc85d64a99cb5ecb9a8495ac944948": {
+            "balance": "0x0",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": 2
+            },
+            "0x6965235e025001fb620d441803fedb005f7ac710": {
+            "balance": "0x0",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": 2
+            },
+            "0x91ed00a0a906270d466af043c4e111dadca970a3": {
+            "balance": "0x0",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": 2
+            },
+            "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b": {
+            "balance": "0x5e2021",
+            "nonce": 1
+            },
+            "0xb679828fa6040990410b3282e916bfbd6c74f890": {
+            "balance": "0x0",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": 2
+            },
+            "0xd2571607e241ecf590ed94b12d87c94babe36db6": {
+            "balance": "0x0",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+            "nonce": 2
+            }
+        },
+        "pre": {
+            "0x095e7baea6a6c7c4c2dfeb977efac326af552d87": {
+            "balance": "0x28",
+            "code_hash": "0x2c80a521f0a06ac0974795a9de86a1c39fb19c2031a168584d45723a2d389d32"
+            },
+            "0x283b585ba5bc85d64a99cb5ecb9a8495ac944948": {
+            "balance": "0x0"
+            },
+            "0x6965235e025001fb620d441803fedb005f7ac710": {
+            "balance": "0x0"
+            },
+            "0x91ed00a0a906270d466af043c4e111dadca970a3": {
+            "balance": "0x0"
+            },
+            "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b": {
+            "balance": "0x989680",
+            "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+            },
+            "0xb679828fa6040990410b3282e916bfbd6c74f890": {
+            "balance": "0x0"
+            },
+            "0xd2571607e241ecf590ed94b12d87c94babe36db6": {
+            "balance": "0x0"
+            }
+        }
+        }
+    )";
+    EXPECT_EQ(
+        actual_state_deltas_traces,
+        nlohmann::json::parse(expected_state_delta_traces));
+#else
+    EXPECT_EQ(actual_pre_state_traces.size(), 0);
+    EXPECT_EQ(actual_state_deltas_traces.size(), 0)
 #endif
 }

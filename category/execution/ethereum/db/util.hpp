@@ -95,11 +95,18 @@ inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
+inline constexpr unsigned char BFT_BLOCK_NIBBLE = 10;
+inline constexpr unsigned char PRE_STATE_TRACE_NIBBLE = 11;
+inline constexpr unsigned char STATE_DELTAS_TRACE_NIBBLE = 12;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
 inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
 inline mpt::Nibbles const call_frame_nibbles = mpt::concat(CALL_FRAME_NIBBLE);
+inline mpt::Nibbles const pre_state_trace_nibble =
+    mpt::concat(PRE_STATE_TRACE_NIBBLE);
+inline mpt::Nibbles const state_deltas_trace_nibble =
+    mpt::concat(STATE_DELTAS_TRACE_NIBBLE);
 inline mpt::Nibbles const transaction_nibbles = mpt::concat(TRANSACTION_NIBBLE);
 inline mpt::Nibbles const block_header_nibbles =
     mpt::concat(BLOCKHEADER_NIBBLE);

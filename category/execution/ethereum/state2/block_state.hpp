@@ -47,6 +47,8 @@ public:
         bytes32_t const &block_id, BlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<PreState> const & = {},
+        std::vector<StateDeltas> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},

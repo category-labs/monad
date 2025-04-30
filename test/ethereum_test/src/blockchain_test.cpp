@@ -232,9 +232,14 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             metrics));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
+    std::vector<PreState> pre_state_traces(results.size());
+    std::vector<StateDeltas> state_deltas_traces(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
-        receipts[i] = std::move(results[i].receipt);
-        call_frames[i] = std::move(results[i].call_frames);
+        auto &result = results[i];
+        receipts[i] = std::move(result.receipt);
+        call_frames[i] = std::move(result.call_frames);
+        pre_state_traces[i] = std::move(result.pre_state);
+        state_deltas_traces[i] = std::move(result.state_deltas);
     }
 
     block_state.log_debug();
@@ -243,6 +248,8 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         block.header,
         receipts,
         call_frames,
+        pre_state_traces,
+        state_deltas_traces,
         senders,
         block.transactions,
         block.ommers,
@@ -396,6 +403,8 @@ void BlockchainTest::TestBody()
                 header,
                 {} /* receipts */,
                 {} /* call frames */,
+                {} /* prestate_trace */,
+                {} /* statedelta_trace*/,
                 {} /* senders */,
                 {} /* transactions */,
                 {} /* ommers */,

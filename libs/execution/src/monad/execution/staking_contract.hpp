@@ -274,6 +274,12 @@ public:
 
     Output precompile_get_validator_info(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Output precompile_get_delegator_info(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Output precompile_get_deposit_request(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Output precompile_get_withdrawal_request(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     Output precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);

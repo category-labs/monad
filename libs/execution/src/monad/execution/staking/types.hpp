@@ -67,5 +67,8 @@ static_assert(alignof(DepositRequest) == 1);
 #pragma pack(pop)
 
 std::span<uint8_t> abi_encode_validator_info(ValidatorInfo const &);
+std::span<uint8_t> abi_encode_delegator_info(DelegatorInfo const &);
+std::span<uint8_t> abi_encode_deposit_request(DepositRequest const &);
+std::span<uint8_t> abi_encode_withdrawal_request(WithdrawalRequest const &);
 
 MONAD_NAMESPACE_END

@@ -110,6 +110,15 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case 0x0d809fd3:
         return make_pair(
             &StakingContract::precompile_get_validator_info, 0 /* fixme */);
+    case 0x5d727e40:
+        return make_pair(
+            &StakingContract::precompile_get_deposit_request, 0 /* fixme */);
+    case 0x9a662694:
+        return make_pair(
+            &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */);
+    case 0x1f82be31:
+        return make_pair(
+            &StakingContract::precompile_get_delegator_info, 0 /* fixme */);
     case 0xc7a52e25:
         return make_pair(
             &StakingContract::precompile_add_validator, 0 /* fixme */);
@@ -132,6 +141,47 @@ StakingContract::Output StakingContract::precompile_get_validator_info(
     auto const validator_id = unaligned_load<Uint256BE>(input.data());
     auto const valinfo = vars.validator_info(validator_id).load_unchecked();
     return Output(SUCCESS, abi_encode_validator_info(valinfo));
+}
+
+StakingContract::Output StakingContract::precompile_get_delegator_info(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    constexpr size_t MESSAGE_SIZE = sizeof(Uint256BE) + sizeof(Address);
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+        return INVALID_INPUT;
+    }
+    auto const validator_id = unaligned_load<Uint256BE>(input.data());
+    auto const delegator =
+        unaligned_load<Address>(input.data() + sizeof(Uint256BE));
+    auto const delinfo =
+        vars.delegator_info(validator_id, delegator).load_unchecked();
+    return Output(SUCCESS, abi_encode_delegator_info(delinfo));
+}
+
+StakingContract::Output StakingContract::precompile_get_deposit_request(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
+        return INVALID_INPUT;
+    }
+
+    auto const deposit_id = unaligned_load<Uint256BE>(input.data());
+    auto const deposit_request =
+        vars.deposit_request(deposit_id).load_unchecked();
+    return Output(SUCCESS, abi_encode_deposit_request(deposit_request));
+}
+
+StakingContract::Output StakingContract::precompile_get_withdrawal_request(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
+        return INVALID_INPUT;
+    }
+
+    auto const withdrawal_id = unaligned_load<Uint256BE>(input.data());
+    auto const withdrawal_request =
+        vars.withdrawal_request(withdrawal_id).load_unchecked();
+    return Output(SUCCESS, abi_encode_withdrawal_request(withdrawal_request));
 }
 
 StakingContract::Output StakingContract::precompile_fallback(

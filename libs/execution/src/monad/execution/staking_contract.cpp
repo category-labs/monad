@@ -107,6 +107,9 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
+    case 0x0d809fd3:
+        return make_pair(
+            &StakingContract::precompile_get_validator_info, 0 /* fixme */);
     case 0xc7a52e25:
         return make_pair(
             &StakingContract::precompile_add_validator, 0 /* fixme */);
@@ -120,13 +123,24 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     }
 }
 
-StakingContract::Status StakingContract::precompile_fallback(
+StakingContract::Output StakingContract::precompile_get_validator_info(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
+        return INVALID_INPUT;
+    }
+    auto const validator_id = unaligned_load<Uint256BE>(input.data());
+    auto const valinfo = vars.validator_info(validator_id).load_unchecked();
+    return Output(SUCCESS, abi_encode_validator_info(valinfo));
+}
+
+StakingContract::Output StakingContract::precompile_fallback(
     byte_string_view const, evmc_address const &, evmc_uint256be const &)
 {
     return METHOD_NOT_SUPPORTED;
 }
 
-StakingContract::Status StakingContract::precompile_add_validator(
+StakingContract::Output StakingContract::precompile_add_validator(
     byte_string_view const input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -238,7 +252,7 @@ StakingContract::Status StakingContract::precompile_add_validator(
     return add_stake(validator_id, msg_value, auth_address);
 }
 
-StakingContract::Status StakingContract::add_stake(
+StakingContract::Output StakingContract::add_stake(
     Uint256BE const &validator_id, Uint256BE const &amount,
     Address const &delegator)
 {
@@ -263,7 +277,7 @@ StakingContract::Status StakingContract::add_stake(
     return SUCCESS;
 }
 
-StakingContract::Status StakingContract::precompile_add_stake(
+StakingContract::Output StakingContract::precompile_add_stake(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -279,7 +293,7 @@ StakingContract::Status StakingContract::precompile_add_stake(
     return add_stake(validator_id, Uint256BE{msg_value}, msg_sender);
 }
 
-StakingContract::Status StakingContract::precompile_remove_stake(
+StakingContract::Output StakingContract::precompile_remove_stake(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &)
 {

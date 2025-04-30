@@ -176,16 +176,16 @@ void MonadSpecTest::TestBody()
             }
         }
 
-        bool const has_meta = j_contents.contains("meta");
+        bool const has_staking_post_state =
+            j_contents.contains("stakingPostState");
         bool const has_post_state = j_contents.contains("postState");
-        if (has_post_state && !has_meta) {
+        if (has_post_state && !has_staking_post_state) {
             validate_post_state(j_contents.at("postState"), db_post_state);
         }
-        if (has_meta) {
+        if (has_staking_post_state) {
             BlockState block_state{tdb};
             State state{block_state, Incarnation{0, 0}};
-            validate_staking_post_state(
-                j_contents["meta"]["stakingPostState"], state);
+            validate_staking_post_state(j_contents["stakingPostState"], state);
         }
         LOG_DEBUG("post_state: {}", db_post_state.dump());
     }

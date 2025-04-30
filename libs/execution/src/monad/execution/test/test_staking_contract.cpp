@@ -191,11 +191,11 @@ TEST_F(Stake, add_validator_invalid_input_size)
 
     byte_string_view too_short{};
     auto res = contract.precompile_add_validator(too_short, sender, value);
-    EXPECT_EQ(res, StakingContract::INVALID_INPUT);
+    EXPECT_EQ(res.status, StakingContract::INVALID_INPUT);
 
     byte_string too_long(2000, 0xa);
     res = contract.precompile_add_validator(too_short, sender, value);
-    EXPECT_EQ(res, StakingContract::INVALID_INPUT);
+    EXPECT_EQ(res.status, StakingContract::INVALID_INPUT);
 }
 
 TEST_F(Stake, add_validator_bad_signature)
@@ -219,7 +219,8 @@ TEST_F(Stake, add_validator_bad_signature)
         input += to_byte_string_view(sign_secp(message, bad_secp_keys.second));
         input += to_byte_string_view(sign_bls(message, good_bls_keys.second));
         auto res = contract.precompile_add_validator(input, sender, value);
-        EXPECT_EQ(res, StakingContract::SECP_SIGNATURE_VERIFICATION_FAILED);
+        EXPECT_EQ(
+            res.status, StakingContract::SECP_SIGNATURE_VERIFICATION_FAILED);
     }
 
     // bad bls signature
@@ -229,7 +230,8 @@ TEST_F(Stake, add_validator_bad_signature)
         input += to_byte_string_view(sign_secp(message, good_secp_keys.second));
         input += to_byte_string_view(sign_bls(message, bad_bls_keys.second));
         auto res = contract.precompile_add_validator(input, sender, value);
-        EXPECT_EQ(res, StakingContract::BLS_SIGNATURE_VERIFICATION_FAILED);
+        EXPECT_EQ(
+            res.status, StakingContract::BLS_SIGNATURE_VERIFICATION_FAILED);
     }
 }
 
@@ -240,9 +242,8 @@ TEST_F(Stake, invalid_state)
     auto const sender = 0xdeadbeef_address;
     auto const value = intx::be::store<evmc_uint256be>(stake);
     auto const input = craft_add_validator_input(0xababab_address, stake);
-    EXPECT_EQ(
-        contract.precompile_add_validator(input, sender, value),
-        StakingContract::SUCCESS);
+    auto const res = contract.precompile_add_validator(input, sender, value);
+    EXPECT_EQ(res.status, StakingContract::SUCCESS);
     ASSERT_TRUE(contract.vars.last_validator_id.load().has_value());
     EXPECT_EQ(
         contract.vars.last_validator_id.load().value(),
@@ -252,9 +253,9 @@ TEST_F(Stake, invalid_state)
     contract.vars.validator_info(contract.vars.last_validator_id.load().value())
         .clear();
     contract.vars.epoch.store(Uint256Native{1}.to_be());
-    auto const res = contract.syscall_on_epoch_change();
-    ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.assume_error(), StakingSyscallError::InvalidState);
+    auto const res2 = contract.syscall_on_epoch_change();
+    ASSERT_TRUE(res2.has_error());
+    EXPECT_EQ(res2.assume_error(), StakingSyscallError::InvalidState);
 }
 
 TEST_F(Stake, add_validator_msg_value_not_signed)
@@ -265,7 +266,7 @@ TEST_F(Stake, add_validator_msg_value_not_signed)
     auto const input =
         craft_add_validator_input(0xababab_address, uint256_t{2e18});
     auto const res = contract.precompile_add_validator(input, sender, value);
-    EXPECT_EQ(res, StakingContract::INVALID_INPUT);
+    EXPECT_EQ(res.status, StakingContract::INVALID_INPUT);
 }
 
 TEST_F(Stake, add_validator_already_exists)
@@ -276,10 +277,10 @@ TEST_F(Stake, add_validator_already_exists)
     auto const input =
         craft_add_validator_input(0xababab_address, MIN_STAKE_AMOUNT);
     EXPECT_EQ(
-        contract.precompile_add_validator(input, sender, value),
+        contract.precompile_add_validator(input, sender, value).status,
         StakingContract::SUCCESS);
     EXPECT_EQ(
-        contract.precompile_add_validator(input, sender, value),
+        contract.precompile_add_validator(input, sender, value).status,
         StakingContract::VALIDATOR_EXISTS);
 }
 
@@ -290,9 +291,8 @@ TEST_F(Stake, add_validator_minimum_stake_not_met)
     auto const value = intx::be::store<evmc_uint256be>(uint256_t{1});
     auto const input =
         craft_add_validator_input(0xababab_address, uint256_t{1});
-    EXPECT_EQ(
-        contract.precompile_add_validator(input, sender, value),
-        StakingContract::MINIMUM_STAKE_NOT_MET);
+    auto const res = contract.precompile_add_validator(input, sender, value);
+    EXPECT_EQ(res.status, StakingContract::MINIMUM_STAKE_NOT_MET);
 }
 
 TEST_F(Stake, add_validator_then_remove)
@@ -303,7 +303,7 @@ TEST_F(Stake, add_validator_then_remove)
     auto const value = intx::be::store<evmc_uint256be>(stake);
     auto const input = craft_add_validator_input(0xababab_address, stake);
     EXPECT_EQ(
-        contract.precompile_add_validator(input, sender, value),
+        contract.precompile_add_validator(input, sender, value).status,
         StakingContract::SUCCESS);
     auto const validator_id = contract.vars.last_validator_id.load();
     ASSERT_TRUE(validator_id.has_value());
@@ -357,8 +357,10 @@ TEST_F(Stake, add_validator_then_remove)
     byte_string remove_stake_payload = craft_remove_stake_input(
         validator_id.value(), Uint256Native{stake}.to_be());
     EXPECT_EQ(
-        contract.precompile_remove_stake(
-            remove_stake_payload, 0xababab_address, evmc_uint256be{}),
+        contract
+            .precompile_remove_stake(
+                remove_stake_payload, 0xababab_address, evmc_uint256be{})
+            .status,
         StakingContract::SUCCESS);
 
     auto const update_epoch2 = Uint256Native{4}.to_be();
@@ -404,7 +406,7 @@ TEST_F(Stake, reward_success)
     auto const input =
         craft_add_validator_input(0xababab_address, MIN_STAKE_AMOUNT);
     auto const res = contract.precompile_add_validator(input, sender, value);
-    EXPECT_EQ(res, StakingContract::SUCCESS);
+    EXPECT_EQ(res.status, StakingContract::SUCCESS);
     EXPECT_TRUE(contract.vars.last_validator_id.load().has_value());
     EXPECT_EQ(
         contract.vars.last_validator_id.load().value(),
@@ -473,7 +475,7 @@ TEST_F(Stake, invoke_fallback)
     auto signature = to_byte_string_view(signature_bytes);
     auto const [func, cost] = contract.precompile_dispatch(signature);
     EXPECT_EQ(cost, 0);
-    EXPECT_EQ(
-        (contract.*func)(byte_string_view{}, sender, value),
-        StakingContract::METHOD_NOT_SUPPORTED);
+
+    auto const res = (contract.*func)(byte_string_view{}, sender, value);
+    EXPECT_EQ(res.status, StakingContract::METHOD_NOT_SUPPORTED);
 }

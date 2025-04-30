@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 
 MONAD_NAMESPACE_BEGIN
@@ -64,6 +65,23 @@ public:
         SECP_SIGNATURE_VERIFICATION_FAILED,
         BLS_SIGNATURE_VERIFICATION_FAILED,
         STATUS_CODES_LENGTH,
+    };
+
+    struct Output
+    {
+        Status status;
+        std::span<uint8_t> data;
+
+        Output(Status const status_)
+            : status{status_}
+        {
+        }
+
+        Output(Status const status_, std::span<uint8_t> data_)
+            : status{status_}
+            , data{data_}
+        {
+        }
     };
 
     static std::string_view error_message(Status const res)
@@ -240,24 +258,30 @@ public:
     ///////////////////
 private:
     // helper used by add_stake() and add_validator()
-    Status add_stake(
+    Output add_stake(
         Uint256BE const &validator_id, Uint256BE const &amount,
         Address const &);
 
 public:
-    using PrecompileFunc = Status (StakingContract::*)(
+    using PrecompileFunc = Output (StakingContract::*)(
         byte_string_view, evmc_address const &, evmc_bytes32 const &);
 
+    /////////////////
+    // Precompiles //
+    /////////////////
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
-    Status precompile_fallback(
+    Output precompile_get_validator_info(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Status precompile_add_validator(
+
+    Output precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Status precompile_add_stake(
+    Output precompile_add_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Status precompile_remove_stake(
+    Output precompile_add_stake(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Output precompile_remove_stake(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     ////////////////////

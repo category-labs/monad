@@ -24,14 +24,21 @@ monad_check_call_precompile(State &state, evmc_message const &msg)
 
     state.touch(STAKING_CONTRACT_ADDRESS);
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
-    auto const status = (contract.*method)(input, msg.sender, msg.value);
-    if (MONAD_LIKELY(status == StakingContract::SUCCESS)) {
-        return evmc::Result(
-            EVMC_SUCCESS,
-            msg.gas - static_cast<int64_t>(cost) /* gas left */,
-            0 /* gas refund */);
+    auto const output = (contract.*method)(input, msg.sender, msg.value);
+    if (MONAD_LIKELY(output.status == StakingContract::SUCCESS)) {
+        return evmc::Result{evmc_result{
+            .status_code = EVMC_SUCCESS,
+            .gas_left = msg.gas - static_cast<int64_t>(cost),
+            .gas_refund = 0,
+            .output_data = output.data.data(),
+            .output_size = output.data.size(),
+            .release = evmc_free_result_memory,
+            .create_address = {},
+            .padding = {},
+        }};
     }
-    std::string_view const message = StakingContract::error_message(status);
+    std::string_view const message =
+        StakingContract::error_message(output.status);
     return evmc::Result(
         EVMC_REVERT,
         0 /* gas left */,

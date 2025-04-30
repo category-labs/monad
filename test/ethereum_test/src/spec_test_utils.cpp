@@ -185,7 +185,8 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
     auto const expected_balance = intx::from_string<uint256_t>(json["balance"]);
     auto const actual_balance =
         intx::be::load<uint256_t>(state.get_balance(STAKING_CONTRACT_ADDRESS));
-    EXPECT_EQ(expected_balance, actual_balance);
+    EXPECT_EQ(expected_balance, actual_balance) << fmt::format(
+        "expected {}, actual {}", expected_balance, actual_balance);
 
     // contract constants
     EXPECT_EQ(

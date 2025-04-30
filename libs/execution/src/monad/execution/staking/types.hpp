@@ -7,7 +7,9 @@
 #include <monad/core/bytes.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <span>
 
 #include <intx/intx.hpp>
 
@@ -19,6 +21,8 @@ inline constexpr Address STAKING_CONTRACT_ADDRESS{0x1000};
 inline constexpr auto MIN_STAKE_AMOUNT = 1000000000000000000_u256;
 inline constexpr auto BASE_STAKING_REWARD = 1000000000000000000_u256;
 
+#pragma pack(push, 1)
+
 struct ValidatorInfo
 {
     Address auth_address;
@@ -28,11 +32,17 @@ struct ValidatorInfo
     Uint256BE rewards[2];
 };
 
+static_assert(sizeof(ValidatorInfo) == 196);
+static_assert(alignof(ValidatorInfo) == 1);
+
 struct DelegatorInfo
 {
     Uint256BE active_shares; // shares
     Uint256BE balance;
 };
+
+static_assert(sizeof(DelegatorInfo) == 64);
+static_assert(alignof(DelegatorInfo) == 1);
 
 struct WithdrawalRequest
 {
@@ -41,11 +51,21 @@ struct WithdrawalRequest
     Uint256BE shares;
 };
 
+static_assert(sizeof(WithdrawalRequest) == 84);
+static_assert(alignof(WithdrawalRequest) == 1);
+
 struct DepositRequest
 {
     Uint256BE validator_id;
     Address delegator;
     Uint256BE amount;
 };
+
+static_assert(sizeof(DepositRequest) == 84);
+static_assert(alignof(DepositRequest) == 1);
+
+#pragma pack(pop)
+
+std::span<uint8_t> abi_encode_validator_info(ValidatorInfo const &);
 
 MONAD_NAMESPACE_END

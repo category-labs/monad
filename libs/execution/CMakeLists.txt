@@ -123,6 +123,7 @@ add_library(
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/staking/bls.hpp"
   "src/monad/execution/staking/secp256k1.hpp"
+  "src/monad/execution/staking/types.cpp"
   "src/monad/execution/staking/types.hpp"
   "src/monad/execution/staking_contract.cpp"
   "src/monad/execution/staking_contract.hpp"

@@ -109,14 +109,35 @@ Node::UniquePtr upsert(
         ChildData &entry = sentinel->children[0];
         sentinel->children[0] = ChildData{.branch = 0};
         if (old) {
-            upsert_(
-                aux,
-                sm,
-                *sentinel,
-                entry,
-                std::move(old),
-                INVALID_OFFSET,
-                std::move(updates));
+            if (updates.empty()) {
+                auto const old_path = old->path_nibble_view();
+                auto const old_path_nibbles_len = old_path.nibble_size();
+                for (unsigned n = 0; n < old_path_nibbles_len; ++n) {
+                    sm.down(old_path.get(n));
+                }
+                // simply dispatch empty update and potentially do compaction
+                Requests requests;
+                dispatch_updates_flat_list_(
+                    aux,
+                    sm,
+                    *sentinel,
+                    entry,
+                    std::move(old),
+                    requests,
+                    old_path,
+                    old_path_nibbles_len);
+                sm.up(old_path_nibbles_len);
+            }
+            else {
+                upsert_(
+                    aux,
+                    sm,
+                    *sentinel,
+                    entry,
+                    std::move(old),
+                    INVALID_OFFSET,
+                    std::move(updates));
+            }
             if (sentinel->npending) {
                 aux.io->flush();
                 MONAD_ASSERT(sentinel->npending == 0);
@@ -972,6 +993,7 @@ void upsert_(
     Node::UniquePtr old, chunk_offset_t const old_offset, UpdateList &&updates,
     unsigned prefix_index, unsigned old_prefix_index)
 {
+    MONAD_ASSERT(!updates.empty());
     if (!old) {
         update_receiver receiver(
             &aux,
@@ -994,8 +1016,7 @@ void upsert_(
     while (true) {
         NibblesView path{
             old_prefix_index_start, old_prefix_index, old->path_data()};
-        auto const update_size = updates.size();
-        if (update_size == 1 &&
+        if (updates.size() == 1 &&
             prefix_index == updates.front().key.nibble_size()) {
             auto &update = updates.front();
             MONAD_ASSERT(old->path_nibble_index_end == old_prefix_index);
@@ -1006,20 +1027,6 @@ void upsert_(
         }
         unsigned const number_of_sublists = requests.split_into_sublists(
             std::move(updates), prefix_index); // NOLINT
-        if (!update_size) { // no updates at all
-            for (unsigned n = 0;
-                 n < old->path_nibble_index_end - old_prefix_index;
-                 ++n) { // continue going down to the end of old path
-                sm.down(old->path_nibble_view().get(n));
-            }
-            MONAD_ASSERT(number_of_sublists == 0);
-            MONAD_ASSERT(requests.opt_leaf == std::nullopt);
-            prefix_index += old->path_nibble_index_end - old_prefix_index;
-            old_prefix_index = old->path_nibble_index_end;
-            path = NibblesView{
-                old_prefix_index_start, old_prefix_index, old->path_data()};
-            // will just call dispatch and break;
-        }
         if (old_prefix_index == old->path_nibble_index_end) {
             dispatch_updates_flat_list_(
                 aux,
@@ -1197,9 +1204,8 @@ void dispatch_updates_flat_list_(
             --parent.npending;
             return;
         }
-        if (opt_leaf.value().value.has_value()) {
-            opt_leaf_data = opt_leaf.value().value;
-        }
+        MONAD_ASSERT(opt_leaf.value().value.has_value());
+        opt_leaf_data = opt_leaf.value().value;
     }
     int64_t const version =
         opt_leaf.has_value() ? opt_leaf.value().version : old->version;

@@ -66,6 +66,9 @@ add_subdirectory("third_party/intx")
 set(MONAD_COMPILER_STANDALONE OFF)
 set(MONAD_COMPILER_TESTING OFF)
 add_subdirectory("third_party/compiler")
+# TODO
+target_compile_options(evmone PRIVATE "-Wno-attributes")
+target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")
 
 # komihash
 add_library(komihash INTERFACE)
@@ -76,10 +79,15 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   set(RPMALLOC_TOOLCHAIN
       "gcc"
       CACHE STRING "")
+  set(RPMALLOC_C_FLAGS ${CMAKE_C_FLAGS})
 elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
   set(RPMALLOC_TOOLCHAIN
       "clang"
       CACHE STRING "")
+  # TODO clang 19
+  set(RPMALLOC_C_FLAGS
+      "${CMAKE_C_FLAGS} -Wno-format -Wno-pre-c11-compat -Wno-unknown-warning-option"
+  )
 else()
   message(FATAL_ERROR "unsupported compiler")
 endif()
@@ -89,8 +97,9 @@ ExternalProject_Add(
   GIT_REPOSITORY "https://github.com/mjansson/rpmalloc.git"
   GIT_TAG "e4393ff85585d91400bcbad2e7266c011075b673" # 1.4.5
   CONFIGURE_COMMAND
-    CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} CFLAGS=${CMAKE_C_FLAGS}
-    CXXFLAGS=${CMAKE_CXX_FLAGS} ./configure.py --toolchain ${RPMALLOC_TOOLCHAIN}
+    env CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}
+    CFLAGS=${RPMALLOC_C_FLAGS} CXXFLAGS=${CMAKE_CXX_FLAGS} ./configure.py
+    --toolchain ${RPMALLOC_TOOLCHAIN}
   BUILD_COMMAND ninja -v
   BUILD_IN_SOURCE ON
   BUILD_BYPRODUCTS

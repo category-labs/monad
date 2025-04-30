@@ -18,7 +18,7 @@ RUN apt update && apt install -y \
 COPY scripts/ubuntu-build/ /opt
 
 RUN apt update && apt install -y \
-  clang-18 \
+  clang-19 \
   gcc-13 \
   g++-13
 

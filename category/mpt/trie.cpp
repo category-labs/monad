@@ -334,7 +334,6 @@ struct update_receiver
         Node::UniquePtr old = detail::deserialize_node_from_receiver_result(
             std::move(buffer_), buffer_off, io_state);
         // continue recurse down the trie starting from `old`
-        unsigned const old_prefix_index = old->path_start_nibble();
         upsert_(
             *aux,
             *sm,
@@ -343,8 +342,7 @@ struct update_receiver
             std::move(old),
             INVALID_OFFSET,
             std::move(updates),
-            prefix_index,
-            old_prefix_index);
+            prefix_index);
         sm->up(1);
         upward_update(*aux, *sm, parent);
     }
@@ -1006,20 +1004,17 @@ void upsert_(
         async_read(aux, std::move(receiver));
         return;
     }
-    if (old_prefix_index == INVALID_PATH_INDEX) {
-        old_prefix_index = old->path_start_nibble();
-        MONAD_DEBUG_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
-    }
-    unsigned const old_prefix_index_start = old_prefix_index;
+    MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
+    auto const old_prefix_index_start = old_prefix_index;
     auto const prefix_index_start = prefix_index;
     Requests requests;
     while (true) {
-        NibblesView path{
-            old_prefix_index_start, old_prefix_index, old->path_data()};
+        NibblesView path = old->path_nibble_view().substr(
+            old_prefix_index_start, old_prefix_index - old_prefix_index_start);
         if (updates.size() == 1 &&
             prefix_index == updates.front().key.nibble_size()) {
             auto &update = updates.front();
-            MONAD_ASSERT(old->path_nibble_index_end == old_prefix_index);
+            MONAD_ASSERT(old->path_nibbles_len() == old_prefix_index);
             MONAD_ASSERT(old->has_value());
             update_value_and_subtrie_(
                 aux, sm, parent, entry, std::move(old), path, update);
@@ -1027,7 +1022,7 @@ void upsert_(
         }
         unsigned const number_of_sublists = requests.split_into_sublists(
             std::move(updates), prefix_index); // NOLINT
-        if (old_prefix_index == old->path_nibble_index_end) {
+        if (old_prefix_index == old->path_nibbles_len()) {
             dispatch_updates_flat_list_(
                 aux,
                 sm,
@@ -1039,7 +1034,7 @@ void upsert_(
                 prefix_index);
             break;
         }
-        if (auto old_nibble = get_nibble(old->path_data(), old_prefix_index);
+        if (auto old_nibble = old->path_nibble_view().get(old_prefix_index);
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
             MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
@@ -1116,8 +1111,7 @@ void dispatch_updates_impl_(
                     old->move_next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
                     std::move(requests)[branch],
-                    prefix_index + 1,
-                    INVALID_PATH_INDEX);
+                    prefix_index + 1);
                 sm.up(1);
             }
             else {
@@ -1229,12 +1223,13 @@ void mismatch_handler_(
     Node::UniquePtr old_ptr, Requests &requests, NibblesView const path,
     unsigned const old_prefix_index, unsigned const prefix_index)
 {
+    MONAD_ASSERT(old_ptr);
     Node &old = *old_ptr;
     MONAD_DEBUG_ASSERT(old.has_path());
     // Note: no leaf can be created at an existing non-leaf node
     MONAD_DEBUG_ASSERT(!requests.opt_leaf.has_value());
     unsigned char const old_nibble =
-        get_nibble(old.path_data(), old_prefix_index);
+        old.path_nibble_view().get(old_prefix_index);
     uint16_t const orig_mask =
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
     auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
@@ -1275,10 +1270,8 @@ void mismatch_handler_(
         else if (branch == old_nibble) {
             sm.down(old_nibble);
             // nexts[j] is a path-shortened old node, trim prefix
-            NibblesView const path_suffix{
-                old_prefix_index + 1,
-                old.path_nibble_index_end,
-                old.path_data()};
+            NibblesView const path_suffix =
+                old.path_nibble_view().substr(old_prefix_index + 1);
             for (auto i = 0u; i < path_suffix.nibble_size(); ++i) {
                 sm.down(path_suffix.get(i));
             }

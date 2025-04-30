@@ -46,40 +46,27 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
         extra_data.substr(0, sizeof(uint64_t)).data());
     auto const block_author = unaligned_load<Address>(
         extra_data.substr(sizeof(uint64_t), sizeof(Address)).data());
+    State state{
+        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
+    state.touch(STAKING_CONTRACT_ADDRESS);
+
+    if (MONAD_UNLIKELY(block_author != Address{})) {
+        BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
+    }
+    auto const contract_epoch = contract.vars.epoch.load_unchecked().native();
+    if (MONAD_UNLIKELY(epoch != contract_epoch)) {
+        contract.vars.epoch.store(Uint256Native{epoch}.to_be());
+        BOOST_OUTCOME_TRY(contract.syscall_on_epoch_change());
+    }
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
 
     std::vector<ExecutionResult> results;
-    {
-        State state{
-            block_state,
-            Incarnation{block.header.number, Incarnation::LAST_TX}};
-        StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
-        state.touch(STAKING_CONTRACT_ADDRESS);
-
-        auto const contract_epoch =
-            contract.vars.epoch.load_unchecked().native();
-        if (MONAD_UNLIKELY(epoch != contract_epoch)) {
-            contract.vars.epoch.store(Uint256Native{epoch}.to_be());
-            BOOST_OUTCOME_TRY(contract.syscall_on_epoch_change());
-            MONAD_ASSERT(block_state.can_merge(state));
-            block_state.merge(state);
-        }
-        BOOST_OUTCOME_TRY(
-            results,
-            execute_block<rev>(
-                chain, block, block_state, block_hash_buffer, priority_pool));
-    }
-
-    {
-        State state{
-            block_state,
-            Incarnation{block.header.number, Incarnation::LAST_TX}};
-        StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
-        state.touch(STAKING_CONTRACT_ADDRESS);
-
-        BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
+    BOOST_OUTCOME_TRY(
+        results,
+        execute_block<rev>(
+            chain, block, block_state, block_hash_buffer, priority_pool));
 
     return results;
 }

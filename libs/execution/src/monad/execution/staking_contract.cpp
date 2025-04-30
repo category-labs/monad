@@ -143,7 +143,7 @@ StakingContract::Output StakingContract::precompile_get_validator_info(
     }
     auto const validator_id = unaligned_load<Uint256BE>(input.data());
     auto const valinfo = vars.validator_info(validator_id).load_unchecked();
-    return Output(SUCCESS, abi_encode_validator_info(valinfo));
+    return abi_encode_validator_info(valinfo);
 }
 
 StakingContract::Output StakingContract::precompile_get_delegator_info(
@@ -158,7 +158,7 @@ StakingContract::Output StakingContract::precompile_get_delegator_info(
         unaligned_load<Address>(input.data() + sizeof(Uint256BE));
     auto const delinfo =
         vars.delegator_info(validator_id, delegator).load_unchecked();
-    return Output(SUCCESS, abi_encode_delegator_info(delinfo));
+    return abi_encode_delegator_info(delinfo);
 }
 
 StakingContract::Output StakingContract::precompile_get_deposit_request(
@@ -171,7 +171,7 @@ StakingContract::Output StakingContract::precompile_get_deposit_request(
     auto const deposit_id = unaligned_load<Uint256BE>(input.data());
     auto const deposit_request =
         vars.deposit_request(deposit_id).load_unchecked();
-    return Output(SUCCESS, abi_encode_deposit_request(deposit_request));
+    return abi_encode_deposit_request(deposit_request);
 }
 
 StakingContract::Output StakingContract::precompile_get_withdrawal_request(
@@ -184,7 +184,7 @@ StakingContract::Output StakingContract::precompile_get_withdrawal_request(
     auto const withdrawal_id = unaligned_load<Uint256BE>(input.data());
     auto const withdrawal_request =
         vars.withdrawal_request(withdrawal_id).load_unchecked();
-    return Output(SUCCESS, abi_encode_withdrawal_request(withdrawal_request));
+    return abi_encode_withdrawal_request(withdrawal_request);
 }
 
 StakingContract::Output StakingContract::precompile_fallback(

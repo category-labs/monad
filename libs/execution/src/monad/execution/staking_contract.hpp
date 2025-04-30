@@ -77,8 +77,8 @@ public:
         {
         }
 
-        Output(Status const status_, std::span<uint8_t> data_)
-            : status{status_}
+        Output(std::span<uint8_t> const data_)
+            : status{SUCCESS}
             , data{data_}
         {
         }

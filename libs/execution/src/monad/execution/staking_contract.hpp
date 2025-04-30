@@ -289,6 +289,8 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Output precompile_remove_stake(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Output precompile_withdraw_balance(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     ////////////////////
     //  System Calls  //

@@ -127,6 +127,9 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case 0x1b3a5c4c:
         return make_pair(
             &StakingContract::precompile_remove_stake, 0 /* fixme */);
+    case 0x2565b1b8:
+        return make_pair(
+            &StakingContract::precompile_withdraw_balance, 0 /* fixme */);
     default:
         return make_pair(&StakingContract::precompile_fallback, 0);
     }
@@ -331,10 +334,8 @@ StakingContract::Output StakingContract::precompile_add_stake(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
-    constexpr size_t MESSAGE_SIZE = sizeof(Uint256BE) /* validatorId */;
-
     // Validate input size
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
         return INVALID_INPUT;
     }
 
@@ -383,6 +384,35 @@ StakingContract::Output StakingContract::precompile_remove_stake(
             .validator_id = validator_id,
             .delegator = msg_sender,
             .shares = shares});
+
+    return SUCCESS;
+}
+
+StakingContract::Output StakingContract::precompile_withdraw_balance(
+    byte_string_view const input, evmc_address const &msg_sender,
+    evmc_uint256be const &)
+{
+    if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
+        return INVALID_INPUT;
+    }
+
+    auto const validator_id = unaligned_load<Uint256BE>(input.data());
+    auto const delinfo = vars.delegator_info(validator_id, msg_sender).load();
+    if (MONAD_UNLIKELY(!delinfo.has_value())) {
+        return UNKNOWN_DELEGATOR;
+    }
+
+    auto const balance = delinfo->balance.native();
+    if (MONAD_UNLIKELY(balance == 0)) {
+        return SUCCESS;
+    }
+
+    auto const contract_balance =
+        intx::be::load<uint256_t>(state_.get_balance(ca_));
+    MONAD_ASSERT(contract_balance >= balance);
+
+    state_.add_to_balance(msg_sender, balance);
+    state_.subtract_from_balance(ca_, balance);
 
     return SUCCESS;
 }

@@ -1,8 +1,13 @@
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/blake3.hpp>
+#include <monad/core/bytes.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/likely.h>
 #include <monad/db/db_snapshot_filesystem.h>
 
 #include <ankerl/unordered_dense.h>
+#include <blake3.h>
 
 #include <fcntl.h>
 #include <filesystem>
@@ -11,11 +16,23 @@
 #include <linux/mman.h>
 #include <sys/mman.h>
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+struct SnapshotShardStream
+{
+    std::ofstream foutput;
+    std::ofstream fchecksum;
+    blake3_hasher hasher;
+};
+
+using SnapshotShard = std::array<SnapshotShardStream, 4>;
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
 struct monad_db_snapshot_filesystem_write_user_context
 {
     std::filesystem::path root;
-    ankerl::unordered_dense::map<uint64_t, std::array<std::ofstream, 4>>
-        shard_to_stream;
+    ankerl::unordered_dense::map<uint64_t, monad::SnapshotShard> shard;
 
     explicit monad_db_snapshot_filesystem_write_user_context(
         std::filesystem::path const root)
@@ -40,6 +57,13 @@ monad_db_snapshot_filesystem_write_user_context_create(
 void monad_db_snapshot_filesystem_write_user_context_destroy(
     monad_db_snapshot_filesystem_write_user_context *context)
 {
+    for (auto &[_, stream] : context->shard) {
+        for (auto &shard : stream) {
+            monad::bytes32_t hash;
+            blake3_hasher_finalize(&shard.hasher, hash.bytes, BLAKE3_OUT_LEN);
+            shard.fchecksum << fmt::format("{}", hash);
+        }
+    }
     delete context;
 }
 
@@ -50,30 +74,37 @@ uint64_t monad_db_snapshot_write_filesystem(
     auto *const context =
         reinterpret_cast<monad_db_snapshot_filesystem_write_user_context *>(
             user);
-    if (MONAD_UNLIKELY(!context->shard_to_stream.contains(shard))) {
+    if (MONAD_UNLIKELY(!context->shard.contains(shard))) {
         auto const shard_dir = context->root / std::to_string(shard);
         MONAD_ASSERT(std::filesystem::create_directory(shard_dir));
-        auto const [it, success] = context->shard_to_stream.emplace(
-            shard, std::array<std::ofstream, 4>{});
+        auto const [it, success] =
+            context->shard.emplace(shard, monad::SnapshotShard{});
         MONAD_ASSERT(success);
         constexpr std::array files = {
             "eth_header", "account", "storage", "code"};
         for (size_t i = 0; i < it->second.size(); ++i) {
-            auto &stream = it->second.at(i);
-            std::filesystem::path const path = shard_dir / files[i];
-            stream.open(path, std::ios::binary | std::ios::out);
+            auto &[foutput, fchecksum, hasher] = it->second.at(i);
+            std::filesystem::path const output = shard_dir / files[i];
+            foutput.open(output, std::ios::binary | std::ios::out);
+            std::filesystem::path const checksum{
+                std::format("{}.blake3", output.c_str())};
+            fchecksum.open(checksum, std::ios::out);
             MONAD_ASSERT_PRINTF(
-                stream.is_open(), "failed to open %s", path.c_str());
+                foutput.is_open(), "failed to open %s", output.c_str());
+            MONAD_ASSERT_PRINTF(
+                fchecksum.is_open(), "failed to open %s", checksum.c_str());
+            blake3_hasher_init(&hasher);
         }
     }
 
-    std::ofstream &out = context->shard_to_stream.at(shard).at(type);
-    auto const before = out.tellp();
-    out.write(
+    auto &stream = context->shard.at(shard).at(type);
+    auto const before = stream.foutput.tellp();
+    stream.foutput.write(
         reinterpret_cast<char const *>(bytes),
         static_cast<std::streamsize>(len));
-    MONAD_ASSERT(out.good());
-    return static_cast<uint64_t>(out.tellp() - before);
+    MONAD_ASSERT(stream.foutput.good());
+    blake3_hasher_update(&stream.hasher, bytes, len);
+    return static_cast<uint64_t>(stream.foutput.tellp() - before);
 }
 
 void monad_db_snapshot_load_filesystem(
@@ -87,6 +118,7 @@ void monad_db_snapshot_load_filesystem(
         block, dbname_paths, len, sq_thread_cpu);
 
     auto const do_mmap = [](std::filesystem::path const file) {
+        using namespace monad;
         MONAD_ASSERT(std::filesystem::is_regular_file(file));
         int fd = open(file.c_str(), O_RDONLY);
         MONAD_ASSERT(fd != -1);
@@ -98,6 +130,24 @@ void monad_db_snapshot_load_filesystem(
             MONAD_ASSERT(data != MAP_FAILED);
             // optimize for sequential accesses
             MONAD_ASSERT(madvise(data, size, MADV_SEQUENTIAL) == 0);
+
+            std::filesystem::path const checksum{
+                std::format("{}.blake3", file.c_str())};
+            MONAD_ASSERT_PRINTF(
+                std::filesystem::is_regular_file(checksum),
+                "missing checksum file %s",
+                checksum.c_str());
+            std::ifstream t(checksum);
+            std::stringstream buffer;
+            buffer << t.rdbuf();
+            auto const stored_hash = evmc::from_hex<bytes32_t>(buffer.str());
+            auto const calculated_hash = to_bytes(
+                blake3({reinterpret_cast<unsigned char const *>(data), size}));
+            MONAD_ASSERT_PRINTF(
+                stored_hash == calculated_hash,
+                "calculated checksum does not match stored checksum for file "
+                "%s",
+                file.c_str());
         }
         return std::make_tuple(
             fd, reinterpret_cast<unsigned char const *>(data), size);

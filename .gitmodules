@@ -35,9 +35,6 @@
 [submodule "core/third_party/unordered_dense"]
 	path = libs/core/third_party/unordered_dense
 	url = https://github.com/martinus/unordered_dense.git
-[submodule "libs/runloop/third_party/binutils-gdb"]
-	path = libs/runloop/third_party/binutils-gdb
-	url = git@github.com:category-labs/binutils-gdb.git
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3
 	url = https://github.com/BLAKE3-team/BLAKE3.git

@@ -383,7 +383,8 @@ TEST_F(Stake, add_validator_then_remove)
     EXPECT_EQ(withdrawal_request->shares, Uint256Native{stake}.to_be());
 
     contract.vars.epoch.store(update_epoch2);
-    auto const syscall_res = contract.syscall_on_epoch_change();
+    ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
+    contract.vars.epoch.store(update_epoch2.native().add(2).to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
     EXPECT_EQ(deposit_queue.length(), 0);
     EXPECT_EQ(contract.vars.validator_set.length(), 0);

@@ -475,12 +475,12 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo_storage.store(valinfo.value());
     }
 
-    // 2. Apply withdrawal requests
-    auto withdrawal_queue_storage = vars.withdrawal_queue(epoch);
-    uint256_t const num_withdrawals = withdrawal_queue_storage.length();
+    // 2. Apply remove stake requests
+    auto remove_stake_storage = vars.withdrawal_queue(epoch);
+    uint256_t const num_removal_requests = remove_stake_storage.length();
     std::set<uint256_t, std::greater<uint256_t>> valset_removals;
-    for (uint256_t i = 0; i < num_withdrawals; i += 1) {
-        auto withdrawal_id = withdrawal_queue_storage.pop();
+    for (uint256_t i = 0; i < num_removal_requests; i += 1) {
+        auto const withdrawal_id = remove_stake_storage.get(i).load_unchecked();
         auto withdrawal_request_storage =
             vars.withdrawal_request(withdrawal_id);
         auto withdrawal_request = withdrawal_request_storage.load();
@@ -510,10 +510,44 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo->active_shares =
             val_active_shares.sub(withdrawal_shares).to_be();
 
+        valinfo_storage.store(valinfo.value());
+        delinfo_storage.store(delinfo);
+    }
+
+    // 3. Burn tokens and transfer balances from epoch N-2
+    auto withdrawal_queue_storage =
+        vars.withdrawal_queue(epoch.native().sub(2).to_be());
+    uint256_t const num_withdrawals = withdrawal_queue_storage.length();
+    for (uint256_t i = 0; i < num_withdrawals; i += 1) {
+        auto const withdrawal_id = withdrawal_queue_storage.pop();
+        auto withdrawal_request_storage =
+            vars.withdrawal_request(withdrawal_id);
+        auto withdrawal_request = withdrawal_request_storage.load();
+        if (MONAD_UNLIKELY(!withdrawal_request.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
+
+        auto valinfo_storage =
+            vars.validator_info(withdrawal_request->validator_id);
+        auto valinfo = valinfo_storage.load();
+        if (MONAD_UNLIKELY(!valinfo.has_value())) {
+            return StakingSyscallError::InvalidState;
+        }
+
+        auto delinfo_storage = vars.delegator_info(
+            withdrawal_request->validator_id, withdrawal_request->delegator);
+        auto delinfo = delinfo_storage.load_unchecked();
+
+        auto val_active_stake = valinfo->active_stake.native();
+        auto val_active_shares = valinfo->active_shares.native();
+        auto const withdrawal_shares = withdrawal_request->shares.native();
+
+        auto const tokens_to_burn = shares_to_tokens(
+            val_active_stake, val_active_shares, withdrawal_shares);
+
         delinfo.balance = delinfo.balance.native().add(tokens_to_burn).to_be();
         delinfo.active_shares =
             delinfo.active_shares.native().sub(withdrawal_shares).to_be();
-
         if (withdrawal_request->delegator == valinfo->auth_address) {
             auto const tokens_after_withdrawal = shares_to_tokens(
                 val_active_stake,
@@ -530,11 +564,8 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         withdrawal_request_storage.clear();
     }
-    if (MONAD_UNLIKELY(withdrawal_queue_storage.length() != 0)) {
-        return StakingSyscallError::CouldNotClearStorage;
-    }
 
-    // 3. Apply deposit requests
+    // 4. Apply deposit requests
     auto deposit_queue_storage = vars.deposit_queue(epoch);
     uint256_t const num_deposits = deposit_queue_storage.length();
     for (uint256_t i = 0; i < num_deposits; i += 1) {

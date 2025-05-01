@@ -24,7 +24,7 @@ find_cursor_result_type find_blocking(
     unsigned prefix_index = 0;
     while (prefix_index < key.nibble_size()) {
         unsigned char const nibble = key.get(prefix_index);
-        if (node->path_nibble_index_end == node_prefix_index) {
+        if (node->path_nibbles_len() == node_prefix_index) {
             if (!(node->mask & (1u << nibble))) {
                 return {
                     NodeCursor{*node, node_prefix_index},
@@ -47,11 +47,11 @@ find_cursor_result_type find_blocking(
             }
             MONAD_ASSERT(node->next(node->to_child_index(nibble)));
             node = node->next(node->to_child_index(nibble));
-            node_prefix_index = node->bitpacked.path_nibble_index_start;
+            node_prefix_index = 0;
             ++prefix_index;
             continue;
         }
-        if (nibble != get_nibble(node->path_data(), node_prefix_index)) {
+        if (nibble != node->path_nibble_view().get(node_prefix_index)) {
             // return the last matched node and first mismatch prefix index
             return {
                 NodeCursor{*node, node_prefix_index},
@@ -61,7 +61,7 @@ find_cursor_result_type find_blocking(
         ++prefix_index;
         ++node_prefix_index;
     }
-    if (node_prefix_index != node->path_nibble_index_end) {
+    if (node_prefix_index != node->path_nibbles_len()) {
         // prefix key exists but no leaf ends at `key`
         return {
             NodeCursor{*node, node_prefix_index},

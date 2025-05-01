@@ -208,7 +208,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
         unsigned node_prefix_index = root_.prefix_index;
         MONAD_ASSERT(root_.is_valid());
         Node *node = root_.node;
-        for (; node_prefix_index < node->path_nibble_index_end;
+        for (; node_prefix_index < node->path_nibbles_len();
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
                 res_ = {T{}, find_result::key_ends_earlier_than_node_failure};
@@ -216,7 +216,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 return success();
             }
             if (key_.get(prefix_index) !=
-                get_nibble(node->path_data(), node_prefix_index)) {
+                node->path_nibble_view().get(node_prefix_index)) {
                 res_ = {T{}, find_result::key_mismatch_failure};
                 io_state->completed(success());
                 return success();

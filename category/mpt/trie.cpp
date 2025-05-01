@@ -235,10 +235,8 @@ struct load_all_impl_
     {
         Node *const node = node_cursor.node;
         for (auto const [idx, i] : NodeChildrenRange(node->mask)) {
-            NibblesView const nv(
-                node_cursor.prefix_index,
-                node->path_nibble_index_end,
-                node->path_data());
+            NibblesView const nv =
+                node->path_nibble_view().substr(node_cursor.prefix_index);
             for (uint8_t n = 0; n < nv.nibble_size(); n++) {
                 sm.down(nv.get(n));
             }

@@ -205,7 +205,7 @@ void find_notify_fiber_future(
     unsigned prefix_index = 0;
     unsigned node_prefix_index = root.prefix_index;
     Node *node = root.node;
-    for (; node_prefix_index < node->path_nibble_index_end;
+    for (; node_prefix_index < node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
             promise.set_value(
@@ -214,7 +214,7 @@ void find_notify_fiber_future(
             return;
         }
         if (key.get(prefix_index) !=
-            get_nibble(node->path_data(), node_prefix_index)) {
+            node->path_nibble_view().get(node_prefix_index)) {
             promise.set_value(
                 {NodeCursor{*node, node_prefix_index},
                  find_result::key_mismatch_failure});
@@ -287,7 +287,7 @@ void find_owning_notify_fiber_future(
     unsigned prefix_index = 0;
     unsigned node_prefix_index = start.prefix_index;
     auto node = start.node;
-    for (; node_prefix_index < node->path_nibble_index_end;
+    for (; node_prefix_index < node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
             promise.set_value(
@@ -296,7 +296,7 @@ void find_owning_notify_fiber_future(
             return;
         }
         if (key.get(prefix_index) !=
-            get_nibble(node->path_data(), node_prefix_index)) {
+            node->path_nibble_view().get(node_prefix_index)) {
             promise.set_value(
                 {OwningNodeCursor{node, node_prefix_index},
                  find_result::key_mismatch_failure});

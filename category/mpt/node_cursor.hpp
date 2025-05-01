@@ -17,14 +17,9 @@ struct NodeCursor
     {
     }
 
-    constexpr NodeCursor(Node &node_, unsigned prefix_index_)
+    constexpr NodeCursor(Node &node_, unsigned prefix_index_ = 0)
         : node{&node_}
         , prefix_index{prefix_index_}
-    {
-    }
-
-    constexpr NodeCursor(Node &node_)
-        : NodeCursor{node_, node_.bitpacked.path_nibble_index_start}
     {
     }
 
@@ -49,15 +44,9 @@ struct OwningNodeCursor
     {
     }
 
-    OwningNodeCursor(std::shared_ptr<Node> node_, unsigned prefix_index_)
+    OwningNodeCursor(std::shared_ptr<Node> node_, unsigned prefix_index_ = 0)
         : node{node_}
         , prefix_index{prefix_index_}
-    {
-    }
-
-    explicit OwningNodeCursor(std::shared_ptr<Node> node_)
-        : OwningNodeCursor{
-              node_, node_ ? node_->bitpacked.path_nibble_index_start : 0u}
     {
     }
 

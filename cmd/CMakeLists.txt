@@ -3,18 +3,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 find_package(CLI11 REQUIRED)
 
 add_executable(
-  monad
-  monad/main.cpp
-  monad/runloop_ethereum.cpp
-  monad/runloop_ethereum.hpp
-  monad/runloop_monad.cpp
-  monad/runloop_monad.hpp)
+  monad monad/main.cpp monad/runloop_ethereum.cpp monad/runloop_ethereum.hpp
+        monad/runloop_monad.cpp monad/runloop_monad.hpp)
 
 monad_compile_options(monad)
 
 target_link_libraries(monad PRIVATE monad_execution monad_statesync
                                     CLI11::CLI11)
-target_link_libraries(monad PRIVATE rpmallocwrap)
+if(NOT ${CMAKE_C_FLAGS} MATCHES ".*sanitize.*")
+  target_link_libraries(monad PRIVATE rpmallocwrap)
+endif()
 
 add_executable(monad_cli monad_cli.cpp)
 monad_compile_options(monad_cli)
@@ -31,4 +29,5 @@ else()
 endif()
 
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
-target_compile_definitions(monad_cli PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+target_compile_definitions(monad_cli
+                           PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")

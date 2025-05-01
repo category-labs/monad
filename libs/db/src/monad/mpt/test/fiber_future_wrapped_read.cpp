@@ -1,6 +1,5 @@
 #include "test_fixtures_gtest.hpp" // NOLINT
 
-#include <monad/async/boost_fiber_wrappers.hpp>
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/erased_connected_operation.hpp>
@@ -76,7 +75,6 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
         }
     };
 
-    // Two diff implementations,
     // impl_sender: request read thru an io sender
     auto impl_sender = [&]() -> result<std::vector<std::byte>> {
         // This initiates the i/o reading DISK_PAGE_SIZE bytes from a
@@ -102,32 +100,6 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
         // Return a copy of the registered buffer with lifetime held by fut
         return std::vector<std::byte>(bytesread.begin(), bytesread.end());
     };
-    // impl_fiber_wrapper_sender: request read thru fiber wrapped io sender
-    auto impl_fiber_wrapper_sender = []() -> result<std::vector<std::byte>> {
-        // This initiates the i/o reading DISK_PAGE_SIZE bytes from offset
-        // 0, returning a boost fiber future like object
-        auto fut = boost_fibers::read_single_buffer(
-            *shared_state_()->testio, chunk_offset_t{0, 0}, DISK_PAGE_SIZE);
-        std::cout << "fiber wrapped sender..." << std::endl;
-        // You can do other stuff here, like initiate more i/o or do compute
-
-        // When you really do need the result to progress further, suspend
-        // execution until the i/o completes. The TRY operation will
-        // propagate any failures out the return type of this lambda, if the
-        // operation was successful `res` get the result.
-        BOOST_OUTCOME_TRY(auto bytesread_, fut.get());
-        auto &bytesread = bytesread_.get();
-
-        EXPECT_EQ(DISK_PAGE_SIZE, bytesread.size());
-        EXPECT_EQ(
-            0,
-            memcmp(
-                bytesread.data(),
-                shared_state_()->testfilecontents.data(),
-                DISK_PAGE_SIZE));
-        // Return a copy of the registered buffer with lifetime held by fut
-        return std::vector<std::byte>(bytesread.begin(), bytesread.end());
-    };
 
     // Launch the fiber task
     std::vector<::boost::fibers::future<result<std::vector<std::byte>>>>
@@ -136,7 +108,6 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
     futures.reserve(MAX_CONCURRENCY);
     for (int i = 0; i < n_each; ++i) {
         futures.emplace_back(::boost::fibers::async(impl_sender));
-        futures.emplace_back(::boost::fibers::async(impl_fiber_wrapper_sender));
     }
 
     // Pump the loop until the fiber completes

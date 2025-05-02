@@ -1146,6 +1146,19 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     return root;
 }
 
+std::pair<compact_virtual_chunk_offset_t, compact_virtual_chunk_offset_t>
+UpdateAuxImpl::min_referenced_offsets(Node &node) const
+{
+    auto [min_offset_fast, min_offset_slow] = calc_min_offsets(node);
+    if (min_offset_fast == INVALID_COMPACT_VIRTUAL_OFFSET) {
+        min_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
+    }
+    if (min_offset_slow == INVALID_COMPACT_VIRTUAL_OFFSET) {
+        min_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+    }
+    return {min_offset_fast, min_offset_slow};
+}
+
 void UpdateAuxImpl::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
@@ -1154,10 +1167,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
         get_root_offset_at_version(min_valid_version),
         min_valid_version);
     auto const [min_offset_fast, min_offset_slow] =
-        deserialize_compaction_offsets(root_to_erase->value());
-    MONAD_ASSERT(
-        min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
-        min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
+        min_referenced_offsets(*root_to_erase);
     chunks_to_remove_before_count_fast_ = min_offset_fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offset_slow.get_count();
     MONAD_ASSERT(
@@ -1297,7 +1307,17 @@ void UpdateAuxImpl::advance_compact_offsets(
     if (fast_disk_usage < fast_usage_limit_start_compaction) {
         return;
     }
-
+    // Update compaction head to the higher of:
+    // - current compaction offset, and
+    // - the minimum referenced offsets from the previous version.
+    auto const [min_offset_fast, min_offset_slow] =
+        min_referenced_offsets(prev_root);
+    if (compact_offset_fast < min_offset_fast) {
+        compact_offset_fast = min_offset_fast;
+    }
+    if (compact_offset_slow < min_offset_slow) {
+        compact_offset_slow = min_offset_slow;
+    }
     MONAD_ASSERT(
         compact_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         compact_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);

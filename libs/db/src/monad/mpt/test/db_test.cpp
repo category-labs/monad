@@ -870,21 +870,6 @@ TEST(DbTest, history_length_adjustment_never_under_min)
         .dbname_paths = {dbname}};
     Db db{machine, config};
 
-    constexpr unsigned nkeys = 1000;
-
-    // prepare updates with 8KB size value
-    std::deque<monad::byte_string> bytes_alloc;
-    std::deque<Update> updates_alloc;
-    auto const &large_value =
-        bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
-    for (size_t i = 0; i < nkeys; ++i) {
-        updates_alloc.push_back(Update{
-            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
-            .value = large_value,
-            .incarnation = false,
-            .next = UpdateList{}});
-    }
-
     // construct a read-only aux
     monad::async::storage_pool::creation_flags pool_options;
     pool_options.open_read_only = true;
@@ -898,7 +883,21 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     monad::async::AsyncIO io_ctx(pool, read_buffers);
     UpdateAux aux_reader{&io_ctx};
 
+    monad::byte_string const large_value(2048, 0xf);
+
     auto batch_upsert_once = [&](uint64_t const version) {
+        constexpr unsigned nkeys = 1000;
+        // prepare updates with 8KB size value
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
+        for (size_t i = 0; i < nkeys; ++i) {
+            updates_alloc.push_back(Update{
+                .key = bytes_alloc.emplace_back(
+                    keccak_int_to_string(version * nkeys + i)),
+                .value = large_value,
+                .incarnation = false,
+                .next = UpdateList{}});
+        }
         UpdateList ls;
         for (auto &u : updates_alloc) {
             ls.push_front(u);
@@ -910,13 +909,17 @@ TEST(DbTest, history_length_adjustment_never_under_min)
         batch_upsert_once(block_id);
         ++block_id;
     }
-    auto const disk_usage_before = aux_reader.disk_usage();
-    while (aux_reader.disk_usage() == disk_usage_before) {
+    std::cout
+        << "History length adjusted to minimum, committing more updates ..."
+        << std::endl;
+
+    do {
         batch_upsert_once(block_id);
         ++block_id;
     }
+    while (aux_reader.disk_usage() <=
+           0.8); // TODO: expose the disk usage upper bound
     // Db stops adjusting down history length at MIN_HISTORY_LENGTH
-    EXPECT_GT(aux_reader.disk_usage(), disk_usage_before);
     EXPECT_EQ(db.get_history_length(), MIN_HISTORY_LENGTH);
 
     remove(dbname);

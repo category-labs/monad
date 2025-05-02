@@ -201,6 +201,12 @@ class UpdateAuxImpl
 
     void update_disk_growth_data();
 
+    // Get minimum virtual offsets that a given trie has reference, note that
+    // a `MIN_COMPACT_VIRTUAL_OFFSET` return means the trie has no underlying
+    // node in that chunk list.
+    std::pair<compact_virtual_chunk_offset_t, compact_virtual_chunk_offset_t>
+    min_referenced_offsets(Node &node) const;
+
     /******** Compaction ********/
     uint32_t chunks_to_remove_before_count_fast_{0};
     uint32_t chunks_to_remove_before_count_slow_{0};

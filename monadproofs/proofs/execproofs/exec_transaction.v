@@ -8,8 +8,6 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.ext.
 Require Import monad.proofs.exec_specs.
-Require Import bluerock.ltac2.llm.llm.
-(*Ltac2 Eval LLM.query_gpt "implement addition on natural numbers in Rocq (previously called Coq)". *)
 
 Opaque libspecs.optionR.
 

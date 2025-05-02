@@ -1,7 +1,7 @@
-;; Buffer-local list that stores the alternating user / assistant messages.
-(defvar-local gpt-4o-conversation nil
-  "Conversation history for `gpt-4o-chat'.  Each element is a string, 
-alternating USER, ASSISTANT, USER, … in the order they were sent.")
+;; ;; Buffer-local list that stores the alternating user / assistant messages.
+;; (defvar-local gpt-4o-conversation nil
+;;   "Conversation history for `gpt-4o-chat'.  Each element is a string, 
+;; alternating USER, ASSISTANT, USER, … in the order they were sent.")
 
 
 (defun gpt-4o--append (role text)
@@ -132,3 +132,101 @@ If no region is active, signal an error."
                 result))
       (read-only-mode 1)
       (display-buffer (current-buffer)))))
+
+
+
+(defvar coq-programmer-preamble
+  (with-temp-buffer
+    (insert-file-contents "../../prompts/coding.md")
+    (buffer-string)))
+
+(defvar coq-programmer-response-format
+  "# Response Format (IMPORTANT)
+You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
+Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
+If you do not follow this format, my automated engine cannot parse your response.
+An example of a valid response is:
+```coqquery
+Print Stmt.
+```
+An examplf of an answer (not to the the current task) is:
+```gallina
+Definition foo : nat := 1+2.
+```
+
+Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasnt available in the queries you have issued so far.
+")
+
+(defun coq-programmer-first-prompt2 (core-prompt)
+  (concat coq-programmer-preamble core-prompt coq-programmer-response-format)
+  )
+
+(defun coq-programmer-first-prompt ()
+  (let ((core-prompt (read-string "You: ")))
+    (coq-programmer-first-prompt2 core-prompt)
+    )
+  )
+
+
+;;;###autoload
+(defun coq-programmer-loop ()
+  "Run an autonomous GPT-4o ⇄ Coq session.
+
+The command assumes you invoke it from an **open Coq script buffer**
+that is already under Proof-General control.  It:
+
+1. Creates (or switches to) a side buffer *Coq Programmer* where the
+   conversation is displayed.
+2. Builds the *first* prompt with `coq-programmer-first-prompt`.
+3. Sends that prompt to GPT-4o via `gpt-4o--send`.
+4. Feeds GPT’s reply to `gpt-handle-coq-output` *inside the original
+   Coq buffer* — this may run a query, insert Gallina, or return an
+   error string.
+5. If `gpt-handle-coq-output` returns the sentinel string
+   \"Success098\" (meaning the code compiled with no error), or an
+   empty string, the loop stops.  Otherwise the returned text is sent
+   back to GPT as the next user message and the cycle repeats.
+
+You can always abort with \\[keyboard-quit] (C-g) in the chat buffer."
+  (interactive)
+  (let* ((coq-buf   (current-buffer))               ; the .v buffer
+         (chat-buf  (get-buffer-create "*Coq Programmer*")))
+    ;; show / select the chat window but keep a handle on the script buffer
+    (pop-to-buffer chat-buf)
+    (with-current-buffer chat-buf
+      (text-mode)
+      ;; conversation state lives *locally* in the chat buffer
+      (unless (local-variable-p 'gpt-4o-conversation)
+        (setq-local gpt-4o-conversation nil))
+
+      ;; helper: append labelled text
+      (cl-labels ((log (role msg)
+                       (goto-char (point-max))
+                       (gpt-4o--append role msg)
+                       (goto-char (point-max))))
+
+        ;; ---------- 1. First prompt ----------
+        (let* ((first-prompt (coq-programmer-first-prompt))
+               (assistant    (progn
+                               (log "User" first-prompt)
+                               (gpt-4o--send first-prompt))))
+          (log "Assistant" assistant)
+
+          ;; ---------- 2. Conversation loop ----------
+          (let ((quit nil))
+            (while (not quit)
+              (let* ((next-prompt
+                      ;; Evaluate GPT's message *inside* the Coq buffer
+                      (with-current-buffer coq-buf
+                        (gpt-handle-coq-output assistant))))
+                (cond
+                 ;; Successful insertion → stop
+                 ((or (string-empty-p next-prompt)
+                      (string= next-prompt "Success098"))
+                  (setq quit t))
+                 (t
+                  ;; Otherwise continue: show ↔ send ↔ log reply
+                  (log "User" next-prompt)
+                  (setq assistant (gpt-4o--send next-prompt))
+                  (log "Assistant" assistant)))))))))))
+

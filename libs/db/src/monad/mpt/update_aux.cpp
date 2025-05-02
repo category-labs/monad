@@ -1124,7 +1124,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Time elapsed: %ld us. Disk usage: %.4f. "
         "Chunks: %u fast, %u slow, %u free. Writer offsets: fast={%u,%u}, "
-        "slow={%u,%u}.",
+        "slow={%u,%u}. Compaction head fast=%u, slow=%u.",
         version,
         duration.count(),
         disk_usage(),
@@ -1134,7 +1134,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         curr_fast_writer_offset.count,
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
-        curr_slow_writer_offset.offset);
+        curr_slow_writer_offset.offset,
+        (uint32_t)compact_offset_fast,
+        (uint32_t)compact_offset_slow);
     if (duration > std::chrono::microseconds(500'000)) {
         LOG_WARNING_CFORMAT(
             "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",

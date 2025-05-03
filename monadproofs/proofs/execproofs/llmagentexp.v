@@ -2,6 +2,8 @@ Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
 Import linearity.
 
+
+
 Require Import Coq.Strings.String.
 Require Import Coq.Lists.List.
 Import ListNotations.
@@ -6096,7 +6098,8 @@ with eval_list (l : ExprList) : nat :=
 ```
 
 # Current Task
-I want you to write a Coq function to pretty print Stmt, an Inductive type I have defined for C++ statements. the type should be Stmt -> String.string.# Response Format (IMPORTANT)
+I want you to write a Coq function to pretty print Stmt, an Inductive type I have defined for C++ statements. the type should be Stmt -> String.string.
+# Response Format (IMPORTANT)
 You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
 Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
 If you do not follow this format, my automated engine cannot parse your response.

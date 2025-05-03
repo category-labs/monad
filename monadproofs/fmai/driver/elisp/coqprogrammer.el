@@ -123,7 +123,6 @@ return the fixed error prompt demanded by the guidelines."
 	 (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
-	   (message "kind %s %s" proof-shell-last-output-kind proof-shell-last-output)
            (if (eq proof-shell-last-output-kind 'error)
                (progn
 		 ;; remember the region so we can delete it later
@@ -182,7 +181,9 @@ If no region is active, signal an error."
     (buffer-string)))
 
 (defvar coq-programmer-response-format
-  "# Response Format (IMPORTANT)
+  "
+
+# Response Format (IMPORTANT)
 You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
 Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
 If you do not follow this format, my automated engine cannot parse your response.

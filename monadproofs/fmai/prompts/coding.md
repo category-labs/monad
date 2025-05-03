@@ -8,9 +8,10 @@ However, in that case, you need to come up with the type of the helper function.
 For example, you admit a helper function to convert a Z to a String.string, as follows"
 
 ```coq
-Definition Ztostring (z: Z) : String.string. Admitted.
+Definition Ztostring (z: Z) : String.string. Admitted. (* TODO: FILL IN LATER *)
 ```
 This mechanism allows you to get the higher-level details right before implementing the low-level obvious details.
+Do not forget the "TODO: FILL IN LATER" comment, as this will be used to find the holes to fill in later. Also ensure there is just 1 space after `Admitted.` and before the comment as above.
 
 ## Error Messages
 You are talking to an automated bot that will process your responses. If the Coq program you emit has errors, this bot will respond with the errors emitted by Coq.
@@ -32,6 +33,8 @@ Check (Nat.add 1 1). (* check type of a term *)
 Locate nat. (* print the possible fully qualified name(s) of `nat`. unless the user defined their own `nat` type, this will print `Corelib.Init.Datatypes.nat` . this will print multiple items if there are several items whose fully qualified names have `nat` as the leaf, e.g. `A.nat`, `Corelib.Init.Datatypes.nat`. It would also print shorter names for each fully qualified name. The shorter name depends on the set and order of Imports in the current file. When writing Coq code, you should refer to the located item by a name not any shorter than the shorter name mentioned here: the longer the better as that is robust to moving code around where the order of imports are different. *)
 
 Use the queries judiciously. Be very careful with `Search`: it can return too many items unless you chose a fairly discriminative query to rule out what you dont want.
+
+Queries other than `Locate` need enough references to definitions/inductives to be sufficiently qualified depending on the set of `Import`s. For example, you may need to say `A.foo` instead of just `foo` if you havent `Import`ed A. You can can use `Locate` to figure out the missing qualifications. No query allows you to search by substrings of leaf names. For example, there is no way to search by `na` to find `nat`.
 
 ## Mutual Inductives
 If you want do define a function that recurses on inductive data, you typically use the `Fixpoint` keyword. If the inductive type is mutually indutive with other types, often the needed recursion is also mutually recursive. In such cases, you need to define your function using mutual Fixpoints. Below is an exampe:
@@ -59,5 +62,22 @@ with eval_list (l : ExprList) : nat :=
   end.
   
 ```
+
+## Common mistakes
+
+In Coq, string escaping works wierdly. 
+You would expect the following to define a string containing just the double quote character.
+
+```gallina
+Definition doubleQuote : String.string := "\"".
+```
+
+But that is not valid Coq syntax. Instead, the following works:
+```gallina
+Definition doubleQuote : String.string := """".
+Compute (String.length doubleQuote). (* returns 1 *)
+```
+If this is confusing, you can just add the above `doubleQuote` definition and use it
+when producing strings.
 
 # Current Task

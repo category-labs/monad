@@ -19,33 +19,6 @@
     (push reply gpt-4o-conversation)
     reply))
 
-;;;###autoload
-(defun gpt-4o-chat-loop ()
-  "Open *GPT-4o Chat* buffer and keep chatting until the user quits.
-Type an empty line (or press C-g) to exit the loop."
-  (interactive)
-  (let ((buf (get-buffer-create "*GPT-4o Chat*")))
-    (pop-to-buffer buf)
-    (with-current-buffer buf
-      (text-mode)                          ; simple major mode
-      (unless (local-variable-p 'gpt-4o-conversation)
-        (setq-local gpt-4o-conversation nil))
-      ;; main REPL-style loop
-      (let ((quit nil))
-        (while (not quit)
-          (condition-case nil
-              (let ((user (read-string "You: ")))
-                (if (string-blank-p user)
-                    (setq quit t)          ; empty input ⇒ leave loop
-                  ;; show user line
-                  (goto-char (point-max))
-                  (gpt-4o--append "User" user)
-                  ;; get assistant reply
-                  (let ((assistant (gpt-4o--send user)))
-                    (gpt-4o--append "Assistant" assistant)
-                    (goto-char (point-max)))))
-            (quit                            ; C-g to abort read-string
-             (setq quit t))))))))
 
 ;;; context pruning: 1) on Search response, ask GPT to filter in items it thinks are useful. also omit larger types.
 ;;;                  2) always keep conversation ength to 3 max? ask GPT to summarize other stuff?

@@ -80,29 +80,58 @@ LANG is down-cased.  BODY has no closing ``` line."
   (while (proof-shell-busy)
     (sleep-for 1)))
 
-;;;; ---------------  main entry point ---------------
+(defun proof-shell-wait1 ()
+  "Block until Proof General’s action queue is empty."
+  (proof-shell-wait)
+  (sleep-for 10))
+
+;; In the same file as gpt-handle-coq-output ─ above the function definition
+(defvar-local coq-programmer--pending-error-region nil
+  "Cons of (START . END) markers delimiting the last Gallina block
+that failed to compile.  The region stays in the buffer so the
+user can read it; on the *next* GPT reply it is deleted just
+before the new block (if any) is processed.")
+
+
 (defun gpt-handle-coq-output (gpt-text)
   "Interpret GPT-TEXT, talk to Coq, and return the string to feed back.
 If GPT did not end with a valid ```gallina``` or ```coqquery``` block,
 return the fixed error prompt demanded by the guidelines."
+  ;; ----- 0.  Clean up any *previous* failed block -----
+  (when coq-programmer--pending-error-region
+    (let ((beg (car coq-programmer--pending-error-region))
+          (end (cdr coq-programmer--pending-error-region)))
+      (when (and (marker-position beg) (marker-position end))
+        (delete-region beg end)))
+    (setq coq-programmer--pending-error-region nil))
+
+  ;; ----- 1.  Parse the *new* GPT reply -----
   (pcase-let ((`(,lang ,body) (gpt--extract-last-code-block gpt-text)))
     (pcase lang
-      ;; ---------------- 1. Gallina code ----------------
+      ;; ---------- Gallina code ----------
       ("gallina"
        (let ((beg (point)) (inhibit-read-only t))
-         (insert body "\n")                       ; literal paste
-         (proof-assert-until-point)               ; type-check:contentReference[oaicite:0]{index=0}
-         (proof-shell-wait)       ; helper below
-         (if (eq proof-shell-last-output-kind 'error) ; PG tells us:contentReference[oaicite:1]{index=1}
-             proof-shell-last-output            ; relay error
-           "Success098")))                                  ; success ⇒ empty prompt
+         (insert body "\n")
+         (proof-assert-until-point)
+         (proof-shell-wait1)
+         (if (eq proof-shell-last-output-kind 'error)
+             (progn
+               ;; remember the region so we can delete it later
+               (setq coq-programmer--pending-error-region
+                     (cons (copy-marker beg) (copy-marker (point))))
+               proof-shell-last-output)            ; send the error back
+           (progn
+             ;; success ⇒ nothing to delete next time
+             (setq coq-programmer--pending-error-region nil)
+             "Success098"))))
 
-      ;; ---------------- 2. Coq query -------------------
+      ;; ---------- Coq query ----------
       ("coqquery"
-         (query-coq (string-trim body)))
+       (query-coq (string-trim body)))
 
-      ;; ---------------- 3. Anything else ---------------
-      (_ "could not parse your response. please follow the formatting guidelines strictly"))))
+      ;; ---------- Un-parsable ----------
+      (_
+       "could not parse your response. please follow the formatting guidelines strictly"))))
 
 ;;;###autoload
 (defun gpt-test-handle-coq-output-region (beg end)
@@ -134,10 +163,11 @@ If no region is active, signal an error."
       (display-buffer (current-buffer)))))
 
 
-
 (defvar coq-programmer-preamble
   (with-temp-buffer
-    (insert-file-contents "../../prompts/coding.md")
+    (insert-file-contents
+     (expand-file-name "../../prompts/coding.md"
+                       (file-name-directory load-file-name)))
     (buffer-string)))
 
 (defvar coq-programmer-response-format
@@ -166,7 +196,6 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
     (coq-programmer-first-prompt2 core-prompt)
     )
   )
-
 
 ;;;###autoload
 (defun coq-programmer-loop ()

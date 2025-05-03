@@ -74,10 +74,63 @@ user can read it; on the *next* GPT reply it is deleted just
 before the new block (if any) is processed.")
 
 
+;;;; ------------------------------------------------------------------
+;;;;  helpers for detecting and prompting about `Admitted.` holes
+;;;; ------------------------------------------------------------------
+
+(defun coq-programmer--buffer-has-admit-p ()
+  "Return non-nil if the current buffer still contains an `Admitted.` line."
+  (save-excursion
+    (goto-char (point-min))
+    (re-search-forward "^[ \t]*Admitted\\." nil t)))
+
+(defun coq-programmer--build-admit-prompt ()
+  "Construct a follow-up prompt for GPT asking to fill one of NAMES."
+  (format
+   (concat
+    "The code now compiles but still contains `Admitted.` holes.\n"
+    "Here are the remaining ones (choose the most **high-level** to implement next):\n%s\n\n"
+    "Please replace the **entire admitted definition** (not just its body) "
+    "and output the full replacement inside a ```gallina``` block.  "
+    "End your message with exactly one ```gallina``` or ```coqquery``` block as per the guidelines.")))
+
+(defvar coq-programmer-response-format
+  "
+The code now compiles but still contains `Admitted.` holes.
+Please pick one or more holes to implement.
+Prefer picking hole(s) that are more higher level.
+The expected response format remains the same (end with ```gallina or ```coqquery block).
+If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN.
+")
+
+
+
+# Response Format (IMPORTANT)
+You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
+Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
+If you do not follow this format, my automated engine cannot parse your response.
+An example of a valid response is:
+```coqquery
+Print Stmt.
+```
+An examplf of an answer (not to the the current task) is:
+```gallina
+Definition foo : nat := 1+2.
+```
+
+Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasnt available in the queries you have issued so far.
+")
+
+;;;; ------------------------------------------------------------------
+;;;;  main entry – replacement for gpt-handle-coq-output
+;;;; ------------------------------------------------------------------
+
 (defun gpt-handle-coq-output (gpt-text)
   "Interpret GPT-TEXT, talk to Coq, and return the string to feed back.
 If GPT did not end with a valid ```gallina``` or ```coqquery``` block,
-return the fixed error prompt demanded by the guidelines."
+return the fixed error prompt demanded by the guidelines.
+If compilation succeeds but `Admitted.` holes remain, return a prompt
+asking GPT to implement one of them; otherwise return \"Success098\"."
   ;; ----- 0.  Clean up any *previous* failed block -----
   (when coq-programmer--pending-error-region
     (let ((beg (car coq-programmer--pending-error-region))
@@ -93,19 +146,21 @@ return the fixed error prompt demanded by the guidelines."
       ("gallina"
        (let ((beg (point)) (inhibit-read-only t))
          (insert body "\n")
-	 (let ((end (point)))
+         (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
            (if (eq proof-shell-last-output-kind 'error)
+               ;; ---- still a compile error ----
                (progn
-		 ;; remember the region so we can delete it later
-		 (setq coq-programmer--pending-error-region
+                 (setq coq-programmer--pending-error-region
                        (cons (copy-marker beg) (copy-marker end)))
-		 proof-shell-last-output)            ; send the error back
-             (progn
-               ;; success ⇒ nothing to delete next time
-;;	       (message "done %s" body)
-               (setq coq-programmer--pending-error-region nil)
+                 proof-shell-last-output)
+             ;; ---- compiled OK ----
+             (if (coq-programmer--buffer-has-admit-p)
+                 ;; ask GPT to fill a hole
+                 (coq-programmer--build-admit-prompt
+                  (coq-programmer--list-admit-names))
+               ;; no holes left – success sentinel
                "Success098")))))
 
       ;; ---------- Coq query ----------

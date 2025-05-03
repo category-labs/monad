@@ -80,10 +80,18 @@ LANG is down-cased.  BODY has no closing ``` line."
   (while (proof-shell-busy)
     (sleep-for 1)))
 
-(defun proof-shell-wait1 ()
-  "Block until Proof General’s action queue is empty."
-  (proof-shell-wait)
-  (sleep-for 10))
+(defun wait-for-coq ()
+  "Wait until processing is complete."
+  (while (or proof-second-action-list-active
+             (consp proof-action-list))
+    ;; (message "wait for coq/compilation with %d items queued\n"
+    ;;          (length proof-action-list))
+    ;;
+    ;; accept-process-output without timeout returns rather quickly,
+    ;; apparently most times without process output or any other event
+    ;; to process.
+    (accept-process-output nil 0.1)))
+
 
 ;; In the same file as gpt-handle-coq-output ─ above the function definition
 (defvar-local coq-programmer--pending-error-region nil
@@ -112,18 +120,21 @@ return the fixed error prompt demanded by the guidelines."
       ("gallina"
        (let ((beg (point)) (inhibit-read-only t))
          (insert body "\n")
-         (proof-assert-until-point)
-         (proof-shell-wait1)
-         (if (eq proof-shell-last-output-kind 'error)
+	 (let ((end (point)))
+           (proof-assert-until-point)
+           (wait-for-coq)
+	   (message "kind %s %s" proof-shell-last-output-kind proof-shell-last-output)
+           (if (eq proof-shell-last-output-kind 'error)
+               (progn
+		 ;; remember the region so we can delete it later
+		 (setq coq-programmer--pending-error-region
+                       (cons (copy-marker beg) (copy-marker end)))
+		 proof-shell-last-output)            ; send the error back
              (progn
-               ;; remember the region so we can delete it later
-               (setq coq-programmer--pending-error-region
-                     (cons (copy-marker beg) (copy-marker (point))))
-               proof-shell-last-output)            ; send the error back
-           (progn
-             ;; success ⇒ nothing to delete next time
-             (setq coq-programmer--pending-error-region nil)
-             "Success098"))))
+               ;; success ⇒ nothing to delete next time
+;;	       (message "done %s" body)
+               (setq coq-programmer--pending-error-region nil)
+               "Success098")))))
 
       ;; ---------- Coq query ----------
       ("coqquery"

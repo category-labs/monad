@@ -1,5 +1,5 @@
 
- n;; ;; Buffer-local list that stores the alternating user / assistant messages.
+;; ;; Buffer-local list that stores the alternating user / assistant messages.
 ;; (defvar-local gpt-4o-conversation nil
 ;;   "Conversation history for `gpt-4o-chat'.  Each element is a string, 
 ;; alternating USER, ASSISTANT, USER, … in the order they were sent.")
@@ -85,17 +85,8 @@ before the new block (if any) is processed.")
     (goto-char (point-min))
     (re-search-forward "^[ \t]*Admitted\\." nil t)))
 
-(defun coq-programmer--build-admit-prompt ()
-  "Construct a follow-up prompt for GPT asking to fill one of NAMES."
-  (format
-   (concat
-    "The code now compiles but still contains `Admitted.` holes.\n"
-    "Here are the remaining ones (choose the most **high-level** to implement next):\n%s\n\n"
-    "Please replace the **entire admitted definition** (not just its body) "
-    "and output the full replacement inside a ```gallina``` block.  "
-    "End your message with exactly one ```gallina``` or ```coqquery``` block as per the guidelines.")))
 
-(defvar coq-programmer-response-format
+(defvar coq-programmer--build-admit-prompt
   "
 The code now compiles but still contains `Admitted.` holes.
 Please pick one or more holes to implement.
@@ -142,8 +133,7 @@ asking GPT to implement one of them; otherwise return \"Success098\"."
              ;; ---- compiled OK ----
              (if (coq-programmer--buffer-has-admit-p)
                  ;; ask GPT to fill a hole
-                 (coq-programmer--build-admit-prompt
-                  (coq-programmer--list-admit-names))
+                 coq-programmer--build-admit-prompt
                ;; no holes left – success sentinel
                "Success098")))))
 

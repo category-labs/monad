@@ -2,6 +2,8 @@ Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
 Import linearity.
 
+Locate Stmt.
+Locate string.
 Require Import Coq.Strings.String.
 Require Import Coq.Lists.List.
 Require Import Coq.Init.Nat.

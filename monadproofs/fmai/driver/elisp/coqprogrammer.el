@@ -106,6 +106,7 @@ If GPT did not end with a valid ```gallina``` or ```coqquery``` block,
 return the fixed error prompt demanded by the guidelines.
 If compilation succeeds but `Admitted.` holes remain, return a prompt
 asking GPT to implement one of them; otherwise return \"Success098\"."
+  (set-buffer proof-script-buffer)
   ;; ----- 0.  Clean up any *previous* failed block -----
   (when coq-programmer--pending-error-region
     (let ((beg (car coq-programmer--pending-error-region))

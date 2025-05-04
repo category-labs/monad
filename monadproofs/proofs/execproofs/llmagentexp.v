@@ -2,6 +2,88 @@ Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
 Import linearity.
 
+Require Import Coq.Lists.List.
+Require Import Stdlib.Strings.String.
+Import ListNotations.
+Open Scope pstring_scope.  (* string literals are PrimString.string *)
+
+(* stubs for sub‐printers over the same string type *)
+Definition print_expr    (e : Expr)    : PrimString.string. Admitted. (* TODO: FILL IN LATER *)
+Definition print_vardecl (d : VarDecl) : PrimString.string. Admitted. (* TODO: FILL IN LATER *)
+Definition print_ident   (id : ident)  : PrimString.string. Admitted. (* TODO: FILL IN LATER *)
+
+Fixpoint stmt_to_string (s : Stmt) : PrimString.string :=
+  match s with
+  | Sseq ss =>
+      printer.sepBy "" ["{"; printer.sepBy "; " (map stmt_to_string ss); "}"]
+  | Sdecl ds =>
+      printer.sepBy "" ["{"; printer.sepBy "; " (map print_vardecl ds); "}"]
+  | Sif odecl cond thn els =>
+      let init := match odecl with
+                  | Some d => printer.sepBy "" [print_vardecl d; "; "]
+                  | None   => ""
+                  end in
+      printer.sepBy "" [init; "if ("; print_expr cond; ") ";
+                        stmt_to_string thn; " else "; stmt_to_string els]
+  | Sif_consteval thn els =>
+      printer.sepBy "" ["if consteval "; stmt_to_string thn;
+                        " else "; stmt_to_string els]
+  | Swhile odecl cond body =>
+      let init := match odecl with
+                  | Some d => printer.sepBy "" [print_vardecl d; "; "]
+                  | None   => ""
+                  end in
+      printer.sepBy "" [init; "while ("; print_expr cond; ") ";
+                        stmt_to_string body]
+  | Sfor init cond2 incr body =>
+      let s_init := match init  with Some st => stmt_to_string st | None => "" end in
+      let s_cond := match cond2 with Some e  => print_expr e    | None => "" end in
+      let s_incr := match incr  with Some e  => print_expr e    | None => "" end in
+      printer.sepBy "" ["for ("; s_init; "; "; s_cond; "; "; s_incr; ") ";
+                        stmt_to_string body]
+  | Sdo body cond =>
+      printer.sepBy "" ["do "; stmt_to_string body;
+                        " while ("; print_expr cond; ");"]
+  | Sswitch odecl e body =>
+      let init := match odecl with
+                  | Some d => printer.sepBy "" [print_vardecl d; "; "]
+                  | None   => ""
+                  end in
+      printer.sepBy "" [init; "switch ("; print_expr e; ") ";
+                        stmt_to_string body]
+  | Scase br =>
+      "case /*branch*/ :"
+  | Sdefault =>
+      "default:"
+  | Sbreak =>
+      "break;"
+  | Scontinue =>
+      "continue;"
+  | Sreturn oe =>
+      printer.sepBy "" ["return";
+        match oe with
+        | Some e => printer.sepBy "" [" "; print_expr e]
+        | None   => ""
+        end; ";"]
+  | Sexpr e =>
+      printer.sepBy "" [print_expr e; ";"]
+  | Sattr attrs st =>
+      printer.sepBy "" ["["; printer.sepBy ", " (map print_ident attrs); "] ";
+                        stmt_to_string st]
+  | Sasm sstr vol inps outs clob =>
+      printer.sepBy "" ["asm("; sstr; ");"]
+  | Slabeled id st =>
+      printer.sepBy "" [print_ident id; ": "; stmt_to_string st]
+  | Sgoto id =>
+      printer.sepBy "" ["goto "; print_ident id; ";"]
+  | Sunsupported s =>
+      printer.sepBy "" ["/* unsupported: "; s; " */"]
+  end.
+
+Definition pretty_print_stmt : Stmt → PrimString.string := stmt_to_string.
+Check printer.sepBy.
+
+
 Locate Stmt.
 Locate string.
 Require Import Coq.Strings.String.

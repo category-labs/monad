@@ -100,19 +100,17 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
 ;;;; ------------------------------------------------------------------
 
 (defun gpt-handle-coq-output (gpt-text)
-  "Interpret GPT-TEXT, talk to Coq, and return the string to feed back.
-If GPT did not end with ```gallina``` or ```coqquery```, return the fixed
-error prompt.
-If compilation succeeds but `Admitted.` holes remain, remember the inserted
-region (so it can be deleted next time) and return a prompt asking GPT to
-fill the holes.  If no holes remain, return \"Success098\"."
-  ;; Always operate in the proof script buffer
+  "Interpret GPT-TEXT, interact with Coq, and return the next prompt for GPT.
+‘Success098’ means finished; any other non-empty string continues the loop.
+If a `coqquery` yields no output, return a fixed explanatory string rather
+than the empty string."
+  ;; Ensure we work inside the proof script buffer
   (set-buffer proof-script-buffer)
 
-  ;; ---------- 0.  delete any region we kept from last turn ----------
+  ;; ---------- 0.  delete previous failed snippet, if any ----------
   (when coq-programmer--pending-error-region
-    (let ((beg (car  coq-programmer--pending-error-region))
-          (end (cdr  coq-programmer--pending-error-region)))
+    (let ((beg (car coq-programmer--pending-error-region))
+          (end (cdr coq-programmer--pending-error-region)))
       (when (and (marker-position beg) (marker-position end))
         (delete-region beg end)))
     (setq coq-programmer--pending-error-region nil))
@@ -120,45 +118,47 @@ fill the holes.  If no holes remain, return \"Success098\"."
   ;; ---------- 1.  parse GPT reply ----------
   (pcase-let ((`(,lang ,body) (gpt--extract-last-code-block gpt-text)))
     (pcase lang
-      ;; =========================================================
+      ;; =====================================================
       ;; 1. Gallina code
-      ;; =========================================================
+      ;; =====================================================
       ("gallina"
        (let ((inhibit-read-only t)
-             (beg (point)))               ; before insert
+             (beg (point)))
          (insert body "\n")
-         (let ((end (point)))             ; after insert
+         (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
 
            (cond
-            ;; --- (a) compile error --------------------------------
+            ;; compile error
             ((eq proof-shell-last-output-kind 'error)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
              proof-shell-last-output)
 
-            ;; --- (b) compiles but still has Admitted. -------------
+            ;; compiles but still has Admitted.
             ((coq-programmer--buffer-has-admit-p body)
-             ;; keep region so we can delete it when GPT sends the fix
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
              coq-programmer--build-admit-prompt)
 
-            ;; --- (c) perfect: no error, no admit ------------------
+            ;; perfect success
             (t "Success098")))))
 
-      ;; =========================================================
+      ;; =====================================================
       ;; 2. Coq query block
-      ;; =========================================================
+      ;; =====================================================
       ("coqquery"
-       (query-coq (string-trim body)))
+       (let* ((raw (query-coq (string-trim body)))
+              (res (string-trim (or raw ""))))
+         (if (string-empty-p res)
+             "That query has no errors but returned an empty result. For `Search` wueries, this means nothing in the current context matches the search criteria."
+           res)))
 
-      ;; =========================================================
+      ;; =====================================================
       ;; 3. parse failure
-      ;; =========================================================
+      ;; =====================================================
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))
-
 
 ;;;###autoload
 (defun gpt-test-handle-coq-output-region (beg end)

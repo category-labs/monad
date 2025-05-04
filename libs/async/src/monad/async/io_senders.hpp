@@ -511,38 +511,4 @@ static_assert(sizeof(timed_delay_sender) == 24);
 static_assert(alignof(timed_delay_sender) == 8);
 static_assert(sender<timed_delay_sender>);
 
-/*! \class threadsafe_sender
-\brief A Sender which completes on the kernel thread executing an `AsyncIO`
-instance, but which can be initiated thread safely from any other kernel
-thread.
-
-```
-Benchmarking threadsafe_sender ...
-   Did 1.5978e+06 completions per second
-```
-*/
-class threadsafe_sender
-{
-public:
-    using result_type = result<void>;
-
-    static constexpr operation_type my_operation_type =
-        operation_type::threadsafeop;
-
-public:
-    threadsafe_sender() = default;
-
-    void reset() {}
-
-    result<void> operator()(erased_connected_operation *io_state) noexcept
-    {
-        io_state->executor()->submit_threadsafe_invocation_request(io_state);
-        return success();
-    }
-};
-
-static_assert(sizeof(threadsafe_sender) == 1);
-static_assert(alignof(threadsafe_sender) == 1);
-static_assert(sender<threadsafe_sender>);
-
 MONAD_ASYNC_NAMESPACE_END

@@ -221,33 +221,6 @@ TEST_F(AsyncIO, timed_delay_sender_receiver)
         std::chrono::milliseconds(0));
 }
 
-TEST_F(AsyncIO, threadsafe_sender_receiver)
-{
-    using namespace MONAD_ASYNC_NAMESPACE;
-
-    struct receiver_t
-    {
-        std::atomic<bool> done{false};
-        receiver_t() = default;
-
-        receiver_t(receiver_t const &) {}
-
-        void set_value(erased_connected_operation *, result<void> res)
-        {
-            ASSERT_TRUE(res);
-            done = true;
-        }
-    };
-
-    auto state =
-        connect(*shared_state_()->testio, threadsafe_sender{}, receiver_t{});
-    auto fut = std::async(std::launch::async, [&state] { state.initiate(); });
-    while (!state.receiver().done) {
-        shared_state_()->testio->poll_blocking(1);
-    }
-    fut.get();
-}
-
 TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
 {
     using namespace MONAD_ASYNC_NAMESPACE;
@@ -720,8 +693,9 @@ TEST_F(AsyncIO, stack_overflow_avoided)
                         timed_delay_sender(std::chrono::seconds(0)),
                         receiver_t{counter++})));
                     p->initiate();
-                    ops.push_back(std::unique_ptr<erased_connected_operation>(
-                        p.release()));
+                    ops.push_back(
+                        std::unique_ptr<erased_connected_operation>(
+                            p.release()));
                 };
                 if (stack_level > stack_depth) {
                     std::cout << "Stack depth reaches " << stack_level
@@ -814,8 +788,9 @@ TEST_F(AsyncIO, erased_complete_overloads_decay_to_void)
     out.reset();
     state.reset(std::tuple{}, std::tuple{});
     state.initiate();
-    state.completed(result<std::reference_wrapper<filled_read_buffer>>(
-        errc::address_in_use));
+    state.completed(
+        result<std::reference_wrapper<filled_read_buffer>>(
+            errc::address_in_use));
     ASSERT_TRUE(out.has_value());
     ASSERT_FALSE(*out);
     ASSERT_EQ(out->error(), errc::address_in_use);
@@ -832,8 +807,9 @@ TEST_F(AsyncIO, erased_complete_overloads_decay_to_void)
     out.reset();
     state.reset(std::tuple{}, std::tuple{});
     state.initiate();
-    state.completed(result<std::reference_wrapper<filled_write_buffer>>(
-        errc::address_in_use));
+    state.completed(
+        result<std::reference_wrapper<filled_write_buffer>>(
+            errc::address_in_use));
     ASSERT_TRUE(out.has_value());
     ASSERT_FALSE(*out);
     ASSERT_EQ(out->error(), errc::address_in_use);
@@ -896,8 +872,9 @@ TEST_F(AsyncIO, erased_complete_overloads_decay_to_bytes_transferred)
     out.reset();
     state.reset(std::tuple{}, std::tuple{});
     state.initiate();
-    state.completed(result<std::reference_wrapper<filled_read_buffer>>(
-        errc::address_in_use));
+    state.completed(
+        result<std::reference_wrapper<filled_read_buffer>>(
+            errc::address_in_use));
     ASSERT_TRUE(out.has_value());
     ASSERT_FALSE(*out);
     ASSERT_EQ(out->error(), errc::address_in_use);
@@ -914,8 +891,9 @@ TEST_F(AsyncIO, erased_complete_overloads_decay_to_bytes_transferred)
     out.reset();
     state.reset(std::tuple{}, std::tuple{});
     state.initiate();
-    state.completed(result<std::reference_wrapper<filled_write_buffer>>(
-        errc::address_in_use));
+    state.completed(
+        result<std::reference_wrapper<filled_write_buffer>>(
+            errc::address_in_use));
     ASSERT_TRUE(out.has_value());
     ASSERT_FALSE(*out);
     ASSERT_EQ(out->error(), errc::address_in_use);

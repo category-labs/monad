@@ -461,8 +461,9 @@ int main(int argc, char *argv[])
 
             // init uring
             monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
-            monad::io::Ring ring2(16
-                                  /* max concurrent write buffers in use <= 6 */
+            monad::io::Ring ring2(
+                16
+                /* max concurrent write buffers in use <= 6 */
             );
 
             // init buffer
@@ -969,149 +970,6 @@ int main(int argc, char *argv[])
                             request.start,
                             request.key);
                     }
-                }
-                std::cout << "   Joining threads 2 ..." << std::endl;
-                signal_done = -1;
-                for (auto &thread : threads) {
-                    thread.join();
-                }
-                std::cout << "   Joining poll fiber ..." << std::endl;
-                poll_fiber.join();
-                std::cout << "   Done!" << std::endl;
-            }
-
-            if (!use_iopoll) {
-                auto db = load_db();
-                UpdateAux<> &aux = std::get<0>(*db);
-                NodeCursor const state_start = get<2>(*db);
-                printf(
-                    "\n********************************************************"
-                    "*"
-                    "*****\n\nDoing random read benchmark with a fiber "
-                    "on %u threads using threadsafe_sender for "
-                    "synchronisation for ten seconds ...\n",
-                    random_read_benchmark_threads);
-
-                std::atomic<uint64_t> ops{0};
-                std::atomic<int> signal_done{0};
-                auto find = [n_slices, &ops, &signal_done, &aux](
-                                NodeCursor const state_start, unsigned n) {
-                    monad::small_prng rand(n);
-                    struct receiver_t
-                    {
-                        UpdateAuxImpl &aux;
-                        monad::threadsafe_boost_fibers_promise<
-                            monad::mpt::find_cursor_result_type>
-                            p;
-                        monad::byte_string key;
-                        fiber_find_request_t request;
-                        inflight_map_t &inflights;
-
-                        explicit receiver_t(
-                            UpdateAuxImpl &aux_, inflight_map_t &inflights_)
-                            : aux(aux_)
-                            , inflights(inflights_)
-                        {
-                            key.resize(32);
-                        }
-
-                        void reset(NodeCursor const state_start)
-                        {
-                            p.reset();
-                            request = fiber_find_request_t{
-                                .promise = &p,
-                                .start = state_start,
-                                .key = key};
-                        }
-                        void set_value(
-                            MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-                            MONAD_ASYNC_NAMESPACE::threadsafe_sender::
-                                result_type res)
-                        {
-                            MONAD_ASSERT(res);
-                            // We are now on the triedb thread
-                            find_notify_fiber_future(
-                                aux,
-                                inflights,
-                                *request.promise,
-                                request.start,
-                                request.key);
-                        }
-                    };
-                    inflight_map_t inflights;
-                    using connected_state_type = decltype(connect(
-                        *aux.io,
-                        MONAD_ASYNC_NAMESPACE::threadsafe_sender{},
-                        receiver_t{aux, inflights}));
-                    auto states = ::monad::make_array<connected_state_type, 4>(
-                        std::piecewise_construct,
-                        *aux.io,
-                        std::piecewise_construct,
-                        std::tuple{},
-                        std::tuple<UpdateAuxImpl &, inflight_map_t &>{
-                            aux, inflights});
-                    auto *state_it = states.begin();
-                    while (0 == signal_done.load(std::memory_order_relaxed)) {
-                        auto &state = *state_it++;
-                        if (state_it == states.end()) {
-                            state_it = states.begin();
-                        }
-                        size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                        keccak256(
-                            (unsigned char const *)&key_src,
-                            8,
-                            state.receiver().key.data());
-
-                        state.reset(std::tuple{}, std::tuple{state_start});
-                        state.initiate();
-                        auto const [node_cursor, errc] =
-                            state.receiver().p.get_future().get();
-                        MONAD_ASSERT(node_cursor.is_valid());
-                        MONAD_ASSERT(errc == monad::mpt::find_result::success);
-                        MONAD_ASSERT(node_cursor.node->has_value());
-                        ops.fetch_add(1, std::memory_order_relaxed);
-                    }
-                    signal_done.fetch_add(1, std::memory_order_relaxed);
-                    while (signal_done.load(std::memory_order_relaxed) > 0) {
-                        std::this_thread::yield();
-                    }
-                };
-                auto poll = [&signal_done](UpdateAuxImpl *aux) {
-                    for (;;) {
-                        boost::this_fiber::yield();
-                        if (signal_done.load(std::memory_order_relaxed) >= 0) {
-                            aux->io->poll_nonblocking(1);
-                        }
-                        else {
-                            aux->io->wait_until_done();
-                            return;
-                        }
-                    }
-                };
-
-                std::vector<std::thread> threads;
-                threads.reserve(random_read_benchmark_threads);
-                for (unsigned n = 0; n < random_read_benchmark_threads; n++) {
-                    threads.emplace_back(find, state_start, n);
-                }
-                boost::fibers::fiber poll_fiber(poll, &aux);
-                auto begin = std::chrono::steady_clock::now();
-                do {
-                    boost::this_fiber::yield();
-                }
-                while (std::chrono::steady_clock::now() - begin <
-                       std::chrono::seconds(10));
-                auto end = std::chrono::steady_clock::now();
-                auto diff =
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        end - begin);
-                printf(
-                    "   Did %f random reads per second.\n",
-                    1000000.0 * double(ops) / double(diff.count()));
-                signal_done = 1;
-                std::cout << "   Joining threads 1 ..." << std::endl;
-                while (signal_done < int(random_read_benchmark_threads + 1)) {
-                    boost::this_fiber::yield();
                 }
                 std::cout << "   Joining threads 2 ..." << std::endl;
                 signal_done = -1;

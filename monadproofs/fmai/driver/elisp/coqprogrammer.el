@@ -88,8 +88,10 @@ before the new block (if any) is processed.")
 The code now compiles but still contains `Admitted.` holes.
 Please pick one or more holes to implement.
 Prefer picking hole(s) that are more higher level.
+Implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
+Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.
 The expected response format remains the same (end with ```gallina or ```coqquery block).
-If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN.
+If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN. This is important because the non-human, non-LLM programmetic e-lisp loop that is chatting with you does not know to apply partial diffs and merely replaces full old solutions with the new one.
 ")
 
 

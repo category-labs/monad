@@ -40,27 +40,42 @@ Queries other than `Locate` need enough references to definitions/inductives to 
 If you want do define a function that recurses on inductive data, you typically use the `Fixpoint` keyword. If the inductive type is mutually indutive with other types, often the needed recursion is also mutually recursive. In such cases, you need to define your function using mutual Fixpoints. Below is an exampe:
 
 ```gallina
-(* Define mutual inductive types Expr and ExprList. the type of at least one constructor of each mutual inductive type refers to the other mutual inductive type *)
 Inductive Expr : Type :=
-| Const : nat -> Expr
-| Add : Expr -> Expr -> Expr
-| Seq : ExprList -> Expr
-with ExprList : Type :=
-| ENil : ExprList
-| ECons : Expr -> ExprList -> ExprList.
+| EConst : nat -> Expr
+| EAdd : Expr -> Expr -> Expr
+| ELet : string -> Com -> Expr -> Expr
 
-Fixpoint eval_expr (e : Expr) : nat :=
-  match e with
-  | Const n => n
-  | Add e1 e2 => eval_expr e1 + eval_expr e2
-  | Seq el => eval_list el
-  end
-with eval_list (l : ExprList) : nat :=
-  match l with
-  | ENil => 0
-  | ECons e rest => eval_expr e + eval_list rest
-  end.
+with Com : Type :=
+| CSkip : Com
+| CAssign : string -> Expr -> Com
+| CSeq : Com -> Com -> Com
+| CIf : Expr -> Com -> Com -> Com.
+
+
+Definition env := string -> nat.
+
+(* Update environment *)
+Definition update (ρ : env) (x : string) (v : nat) : env :=
+  fun y => if String.eqb x y then v else ρ y.
   
+Fixpoint eval_expr (ρ : env) (e : Expr) : nat :=
+  match e with
+  | EConst n => n
+  | EAdd e1 e2 => eval_expr ρ e1 + eval_expr ρ e2
+  | ELet x c e' =>
+      let ρ' := eval_com ρ c in
+      eval_expr ρ' e'
+  end
+
+with eval_com (ρ : env) (c : Com) : env :=
+  match c with
+  | CSkip => ρ
+  | CAssign x e => update ρ x (eval_expr ρ e)
+  | CSeq c1 c2 => let ρ' := eval_com ρ c1 in eval_com ρ' c2
+  | CIf e c1 c2 =>
+      if Nat.eqb (eval_expr ρ e) 0 then eval_com ρ c2 else eval_com ρ c1
+  end.
+
 ```
 
 ## Common mistakes

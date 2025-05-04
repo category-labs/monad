@@ -104,23 +104,6 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
 ")
 
 
-
-# Response Format (IMPORTANT)
-You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
-Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
-If you do not follow this format, my automated engine cannot parse your response.
-An example of a valid response is:
-```coqquery
-Print Stmt.
-```
-An examplf of an answer (not to the the current task) is:
-```gallina
-Definition foo : nat := 1+2.
-```
-
-Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasnt available in the queries you have issued so far.
-")
-
 ;;;; ------------------------------------------------------------------
 ;;;;  main entry – replacement for gpt-handle-coq-output
 ;;;; ------------------------------------------------------------------

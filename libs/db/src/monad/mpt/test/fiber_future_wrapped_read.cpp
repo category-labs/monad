@@ -104,9 +104,8 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
     // Launch the fiber task
     std::vector<::boost::fibers::future<result<std::vector<std::byte>>>>
         futures;
-    int const n_each = MAX_CONCURRENCY / 2;
     futures.reserve(MAX_CONCURRENCY);
-    for (int i = 0; i < n_each; ++i) {
+    for (size_t i = 0; i < MAX_CONCURRENCY; ++i) {
         futures.emplace_back(::boost::fibers::async(impl_sender));
     }
 

@@ -1,4 +1,5 @@
-;; ;; Buffer-local list that stores the alternating user / assistant messages.
+
+ n;; ;; Buffer-local list that stores the alternating user / assistant messages.
 ;; (defvar-local gpt-4o-conversation nil
 ;;   "Conversation history for `gpt-4o-chat'.  Each element is a string, 
 ;; alternating USER, ASSISTANT, USER, … in the order they were sent.")
@@ -222,63 +223,65 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
 
 ;;;###autoload
 (defun coq-programmer-loop ()
-  "Run an autonomous GPT-4o ⇄ Coq session.
+  "Run an autonomous GPT-4o ⇄ Coq session, logging the dialogue in Markdown
+with numbered headings:
 
-The command assumes you invoke it from an **open Coq script buffer**
-that is already under Proof-General control.  It:
+    ## User 1
+    ...
+    ## Assistant 1
+    ...
 
-1. Creates (or switches to) a side buffer *Coq Programmer* where the
-   conversation is displayed.
-2. Builds the *first* prompt with `coq-programmer-first-prompt`.
-3. Sends that prompt to GPT-4o via `gpt-4o--send`.
-4. Feeds GPT’s reply to `gpt-handle-coq-output` *inside the original
-   Coq buffer* — this may run a query, insert Gallina, or return an
-   error string.
-5. If `gpt-handle-coq-output` returns the sentinel string
-   \"Success098\" (meaning the code compiled with no error), or an
-   empty string, the loop stops.  Otherwise the returned text is sent
-   back to GPT as the next user message and the cycle repeats.
-
-You can always abort with \\[keyboard-quit] (C-g) in the chat buffer."
+Counts restart when you open a fresh *Coq Programmer* buffer."
   (interactive)
-  (let* ((coq-buf   (current-buffer))               ; the .v buffer
-         (chat-buf  (get-buffer-create "*Coq Programmer*")))
-    ;; show / select the chat window but keep a handle on the script buffer
+  (let* ((coq-buf  (current-buffer))                 ; the .v buffer
+         (chat-buf (get-buffer-create "*Coq Programmer*")))
+    ;; show / select the chat window but keep handle on script buffer
     (pop-to-buffer chat-buf)
     (with-current-buffer chat-buf
       (text-mode)
-      ;; conversation state lives *locally* in the chat buffer
+
+      ;; ---------------- buffer-local state ----------------
       (unless (local-variable-p 'gpt-4o-conversation)
         (setq-local gpt-4o-conversation nil))
+      (unless (local-variable-p 'coq-prog-user-count)
+        (setq-local coq-prog-user-count 0))
+      (unless (local-variable-p 'coq-prog-assist-count)
+        (setq-local coq-prog-assist-count 0))
 
-      ;; helper: append labelled text
-      (cl-labels ((log (role msg)
-                       (goto-char (point-max))
-                       (gpt-4o--append role msg)
-                       (goto-char (point-max))))
+      ;; ---------------- markdown logger ----------------
+      (cl-labels
+          ((log (role msg)
+                (goto-char (point-max))
+                (let ((n (pcase role
+                           ("User"      (setq coq-prog-user-count
+                                              (1+ coq-prog-user-count)))
+                           ("Assistant" (setq coq-prog-assist-count
+                                              (1+ coq-prog-assist-count))))))
+                  (insert (format "## %s %d\n\n%s\n\n"
+                                  role n msg))
+                  (goto-char (point-max)))))
 
-        ;; ---------- 1. First prompt ----------
-        (let* ((first-prompt (coq-programmer-first-prompt))
-               (assistant    (progn
-                               (log "User" first-prompt)
-                               (gpt-4o--send first-prompt))))
+        ;; ------------- 1. first prompt -------------
+        (let* ((first (coq-programmer-first-prompt))
+               (assistant (progn
+                            (log "User" first)
+                            (gpt-4o--send first))))
           (log "Assistant" assistant)
 
-          ;; ---------- 2. Conversation loop ----------
+          ;; ------------- 2. conversation loop -------------
           (let ((quit nil))
             (while (not quit)
-              (let* ((next-prompt
-                      ;; Evaluate GPT's message *inside* the Coq buffer
+              (let* ((next
                       (with-current-buffer coq-buf
                         (gpt-handle-coq-output assistant))))
                 (cond
-                 ;; Successful insertion → stop
-                 ((or (string-empty-p next-prompt)
-                      (string= next-prompt "Success098"))
+                 ;; successful compile + no admits  → stop
+                 ((or (string-empty-p next)
+                      (string= next "Success098"))
                   (setq quit t))
-                 (t
-                  ;; Otherwise continue: show ↔ send ↔ log reply
-                  (log "User" next-prompt)
-                  (setq assistant (gpt-4o--send next-prompt))
-                  (log "Assistant" assistant)))))))))))
 
+                 ;; otherwise keep cycling
+                 (t
+                  (log "User" next)
+                  (setq assistant (gpt-4o--send next))
+                  (log "Assistant" assistant)))))))))))

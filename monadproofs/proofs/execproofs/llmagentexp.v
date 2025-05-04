@@ -2,6 +2,73 @@ Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
 Import linearity.
 
+Require Import Coq.Strings.String.
+Require Import Coq.Lists.List.
+Require Import Coq.Init.Nat.
+Require Import Coq.Strings.Ascii.
+Import ListNotations.
+Open Scope string_scope.
+
+(* -------------------------------------------------------------------- *)
+(* Assume Expr is defined elsewhere in your development, with its own
+   pretty‐printer (not yet implemented here):                          *)
+Parameter Expr : Type.
+Fixpoint pretty_expr (n : nat) (e : Expr) : string. Admitted.  (* TODO: FILL IN LATER *)
+
+(* -------------------------------------------------------------------- *)
+(* Your C++‐stmt AST:                                                  *)
+Inductive Stmt : Type :=
+  | SEmpty  : Stmt
+  | SExpr   : Expr -> Stmt
+  | SReturn : option Expr -> Stmt
+  | SIf     : Expr -> Stmt -> option Stmt -> Stmt
+  | SWhile  : Expr -> Stmt -> Stmt
+  | SBlock  : list Stmt -> Stmt.
+
+(* -------------------------------------------------------------------- *)
+(* High‐level pretty‐printer for statements.  We leave it admitted for now *)
+Fixpoint pretty_stmt (n : nat) (s : Stmt) : string. Admitted.  (* TODO: FILL IN LATER *)
+
+(* -------------------------------------------------------------------- *)
+(* Hole #1: two‐space indentation per nesting level *)
+Fixpoint indent (n : nat) : string :=
+  match n with
+  | O    => ""               
+  | S n' => "  " ++ indent n'
+  end.
+
+(* -------------------------------------------------------------------- *)
+(* A single newline character *)
+Definition newline : string :=
+  String (Ascii.ascii_of_nat 10) EmptyString.
+
+(* -------------------------------------------------------------------- *)
+(* Hole #2: pretty‐printer for a { … } block of statements *)
+Definition pretty_block (n : nat) (stmts : list Stmt) : string :=
+  let ind   := indent n in
+  let ind_s := indent (S n) in
+  (* render each sub‐statement at level (S n) *)
+  let lines := List.map (fun s => pretty_stmt (S n) s) stmts in
+  (* join them with “newline ++ deeper‐indent” *)
+  let body  := String.concat (newline ++ ind_s) lines in
+  (* assemble:
+       indent(n) ++ "{" ++ "\n"
+     ++ indent(n+1) ++ stmt1 ++ ("\n" ++ indent(n+1) ++ stmt2 …)
+     ++ "\n" ++ indent(n) ++ "}"
+  *)
+  ind
+  ++ "{"
+  ++ newline
+  ++ ind_s
+  ++ body
+  ++ newline
+  ++ ind
+  ++ "}".
+
+(* -------------------------------------------------------------------- *)
+(* Once you implement [pretty_stmt], you can remove its Admitted.      *)
+
+
 
 
 Require Import Coq.Strings.String.

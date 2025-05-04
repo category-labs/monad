@@ -79,12 +79,9 @@ before the new block (if any) is processed.")
 ;;;;  helpers for detecting and prompting about `Admitted.` holes
 ;;;; ------------------------------------------------------------------
 
-(defun coq-programmer--buffer-has-admit-p ()
-  "Return non-nil if the current buffer still contains an `Admitted.` line."
-  (save-excursion
-    (goto-char (point-min))
-    (re-search-forward "^[ \t]*Admitted\\." nil t)))
-
+(defun coq-programmer--buffer-has-admit-p (body)
+  "Return non-nil if BODY (a string) contains the substring \"Admitted.\"."
+  (string-match-p "Admitted\\." body))
 
 (defvar coq-programmer--build-admit-prompt
   "
@@ -132,7 +129,7 @@ asking GPT to implement one of them; otherwise return \"Success098\"."
                        (cons (copy-marker beg) (copy-marker end)))
                  proof-shell-last-output)
              ;; ---- compiled OK ----
-             (if (coq-programmer--buffer-has-admit-p)
+             (if (coq-programmer--buffer-has-admit-p body)
                  ;; ask GPT to fill a hole
                  coq-programmer--build-admit-prompt
                ;; no holes left – success sentinel

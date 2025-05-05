@@ -378,11 +378,13 @@ inline bool preorder_traverse_ondisk(
     struct TraverseReceiver
     {
         bool &version_expired_before_traverse_complete_;
+        bool &completed_;
 
         explicit TraverseReceiver(
-            bool &version_expired_before_traverse_complete)
+            bool &version_expired_before_traverse_complete, bool &completed)
             : version_expired_before_traverse_complete_(
                   version_expired_before_traverse_complete)
+            , completed_(completed)
         {
         }
 
@@ -393,19 +395,21 @@ inline bool preorder_traverse_ondisk(
             MONAD_ASSERT(traverse_completed);
             version_expired_before_traverse_complete_ =
                 !traverse_completed.assume_value();
+            completed_ = true;
             delete traverse_state;
         }
     };
 
     bool version_expired_before_traverse_complete;
+    bool completed = false;
 
     auto *const state = new auto(async::connect(
         detail::TraverseSender(
             aux, copy_node(&node), machine.clone(), version, concurrency_limit),
-        TraverseReceiver{version_expired_before_traverse_complete}));
+        TraverseReceiver{version_expired_before_traverse_complete, completed}));
     state->initiate();
 
-    aux.io->wait_until_done();
+    aux.io->wait_until([&]() { return completed; });
 
     // return traversal succeeds or not
     return !version_expired_before_traverse_complete;

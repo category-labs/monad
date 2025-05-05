@@ -323,3 +323,22 @@ directory as the current `.v` file.  Stops when:
                   (setq llm-calls (1+ llm-calls))
                   (setq assistant (gpt-4o--send next))
                   (log "Assistant" assistant)))))))))))
+
+
+
+;; Bugs:
+
+;;Bug 1
+;; check that the LLM-generated claimed query is actually a query. At least it must have no sideeffects:
+
+;; ## Assistant 77
+
+;; I’ll implement the simplest high‐level printer: `pprint_ident` is just the identity on `ident`, since `ident` is already a `PrimString.string`. 
+
+;; ```coqquery
+;; Definition pprint_ident (i: bluerock.lang.cpp.syntax.preliminary.ident)
+;;   : PrimString.string := i.
+;; ```
+
+
+;;Bug 2

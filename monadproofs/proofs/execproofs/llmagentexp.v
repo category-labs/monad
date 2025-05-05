@@ -3,6 +3,26 @@ Require Import bluerock.auto.cpp.proof.
 Import linearity.
 Disable Notation atomic_name'.
 
+Search (name → string).
+Module PrettyPrintStmt.
+
+  Require Import Corelib.Strings.PrimString.
+  Import Corelib.Strings.PrimString.PStringNotations.
+
+  Require Import bluerock.lang.cpp.syntax.core.
+  Require Import bluerock.lang.cpp.syntax.preliminary.
+
+  Require Import Coq.ZArith.ZArith.
+  Local Open Scope Z_scope.
+
+  (* Bring in the pipeline notation *)
+  Local Notation "x |> f" := (f x) (at level 50, left associativity).
+
+  (* … rest unchanged … *)
+End PrettyPrintStmt.
+
+
+
 Search Z string.
 
 

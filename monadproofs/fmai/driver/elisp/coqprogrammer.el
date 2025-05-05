@@ -226,67 +226,96 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
     )
   )
 
+
+(defcustom coq-programmer-max-llm-calls 50
+  "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.
+Set to nil for no limit."
+  :type '(choice (const :tag "Unlimited" nil)
+                 (integer :tag "Number of calls"))
+  :group 'coq-programmer)
+
+;;;; ------------------------------------------------------------------
+;;;;  helpers for file-based Markdown log
+;;;; ------------------------------------------------------------------
+
+(defun coq-programmer--initial-counts (file)
+  "Return (USER . ASSISTANT) heading counts already present in FILE."
+  (if (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (cons (how-many "^## User" (point-min) (point-max))
+              (how-many "^## Assistant" (point-min) (point-max))))
+    '(0 . 0)))
+
+(defun coq-programmer--log-to-file (file role n msg)
+  "Append one markdown entry to FILE and flush to disk."
+  (append-to-file
+   (format "## %s %d\n\n%s\n\n" role n msg)
+   nil file))
+
+
 ;;;###autoload
 (defun coq-programmer-loop ()
-  "Run an autonomous GPT-4o ⇄ Coq session, logging the dialogue in Markdown
-with numbered headings:
-
-    ## User 1
-    ...
-    ## Assistant 1
-    ...
-
-Counts restart when you open a fresh *Coq Programmer* buffer."
+  "Autonomous GPT-4o ⇄ Coq session.
+Dialogue is written to a persistent `comm.md` in the same
+directory as the current `.v` file.  Stops when:
+ • code compiles with no `Admitted.`
+ • user hits C-g
+ • `coq-programmer-max-llm-calls` budget is exhausted."
   (interactive)
-  (let* ((coq-buf  (current-buffer))                 ; the .v buffer
-         (chat-buf (get-buffer-create "*Coq Programmer*")))
-    ;; show / select the chat window but keep handle on script buffer
-    (pop-to-buffer chat-buf)
-    (with-current-buffer chat-buf
-      (text-mode)
+  (let* ((coq-file (buffer-file-name proof-script-buffer))
+         (comm-file (expand-file-name "comm.md"
+                                      (file-name-directory coq-file)))
+         ;; running heading counters, initialised from existing file
+         (counts (coq-programmer--initial-counts comm-file))
+         (user-count (car counts))
+         (assist-count (cdr counts))
+         ;; call budget
+         (llm-calls 0))
+    ;; fresh conversation history for this session
+    (setq gpt-4o-conversation nil)
 
-      ;; ---------------- buffer-local state ----------------
-      (unless (local-variable-p 'gpt-4o-conversation)
-        (setq-local gpt-4o-conversation nil))
-      (unless (local-variable-p 'coq-prog-user-count)
-        (setq-local coq-prog-user-count 0))
-      (unless (local-variable-p 'coq-prog-assist-count)
-        (setq-local coq-prog-assist-count 0))
+    ;; helper to log + update counters
+    (cl-labels ((log (role msg)
+                     (pcase role
+                       ("User"      (setq user-count   (1+ user-count)))
+                       ("Assistant" (setq assist-count (1+ assist-count))))
+                     (coq-programmer--log-to-file
+                      comm-file role
+                      (if (string= role "User") user-count assist-count)
+                      msg)))
 
-      ;; ---------------- markdown logger ----------------
-      (cl-labels
-          ((log (role msg)
-                (goto-char (point-max))
-                (let ((n (pcase role
-                           ("User"      (setq coq-prog-user-count
-                                              (1+ coq-prog-user-count)))
-                           ("Assistant" (setq coq-prog-assist-count
-                                              (1+ coq-prog-assist-count))))))
-                  (insert (format "## %s %d\n\n%s\n\n"
-                                  role n msg))
-                  (goto-char (point-max)))))
+      ;; -------- 1. get first prompt from user -----------
+      (let* ((first (coq-programmer-first-prompt))
+             (assistant (progn
+                          (log "User" first)
+                          (setq llm-calls (1+ llm-calls))
+                          (gpt-4o--send first))))
+        (log "Assistant" assistant)
 
-        ;; ------------- 1. first prompt -------------
-        (let* ((first (coq-programmer-first-prompt))
-               (assistant (progn
-                            (log "User" first)
-                            (gpt-4o--send first))))
-          (log "Assistant" assistant)
-
-          ;; ------------- 2. conversation loop -------------
-          (let ((quit nil))
-            (while (not quit)
+        ;; -------- 2. main loop -----------
+        (let ((quit nil))
+          (while (not quit)
+            ;; stop if cost limit hit
+            (when (and coq-programmer-max-llm-calls
+                       (>= llm-calls coq-programmer-max-llm-calls))
+              (log "System"
+                   (format "LLM call budget (%d) exhausted.  Stopping session."
+                           coq-programmer-max-llm-calls))
+              (setq quit t))
+            (unless quit
               (let* ((next
-                      (with-current-buffer coq-buf
+                      (with-current-buffer proof-script-buffer
                         (gpt-handle-coq-output assistant))))
                 (cond
-                 ;; successful compile + no admits  → stop
+                 ;; finished
                  ((or (string-empty-p next)
                       (string= next "Success098"))
                   (setq quit t))
 
-                 ;; otherwise keep cycling
+                 ;; keep cycling
                  (t
                   (log "User" next)
+                  (setq llm-calls (1+ llm-calls))
                   (setq assistant (gpt-4o--send next))
                   (log "Assistant" assistant)))))))))))

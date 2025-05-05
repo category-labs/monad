@@ -8,10 +8,12 @@ However, in that case, you need to come up with the type of the helper function.
 For example, you admit a helper function to convert a Z to a String.string, as follows"
 
 ```coq
-Definition Ztostring (z: Z) : String.string. Admitted. (* TODO: FILL IN LATER *)
+Definition Ztostring (z: Z) : String.string. Admitted. (* TOFIXLATER *)
 ```
 This mechanism allows you to get the higher-level details right before implementing the low-level obvious details.
-Do not forget the "TODO: FILL IN LATER" comment, as this will be used to find the holes to fill in later. Also ensure there is just 1 space after `Admitted.` and before the comment as above.
+Do not forget the "TOFIXLATER" comment, as this will be used to find the holes to fill in later.
+
+Sometimes you cannot leave some holes for later because that may jeopardize Coq's termination checker for recursive functions, or the hole may need to be defined simultaneously with what you are currently defining. These issues are explained later in this tutorial.
 
 ## Error Messages
 You are talking to an automated bot that will process your responses. If the Coq program you emit has errors, this bot will respond with the errors emitted by Coq.
@@ -36,7 +38,91 @@ Use the queries judiciously. Be very careful with `Search`: it can return too ma
 
 Queries other than `Locate` need enough references to definitions/inductives to be sufficiently qualified depending on the set of `Import`s. For example, you may need to say `A.foo` instead of just `foo` if you havent `Import`ed A. You can can use `Locate` to figure out the missing qualifications. No query allows you to search by substrings of leaf names. For example, there is no way to search by `na` to find `nat`.
 
-## Mutual Inductives
+## Structural Recursion
+Beyond the minor surface-level sytax differences, one of the main difference between Coq and other functional programming languages like Ocaml/Haskell is that functions must be terminating. For example, functions of type `nat -> nat` cannot recurse forever. To ensure that, Coq follows a very simple approach, which unfortunately can make life harder for programmers.
+For any `Fixpoint` definition, Coq must identify one argument that is decreasing in all recursive calls to the function being defined.
+That arugment must be of an `Inductive` type. A term `a` of an Inductive type `I` is a structural subter of another term `b` if `a` is obtained by peeling off one or more constructors of the type `I`, possibly after computational reductions on open terms.
+
+For example, a function to compute sum of a list of numbers can be defined as:
+```gallina
+Fixpoint listsum (l: list nat) : nat :=
+  match l with
+  | [] => 0
+  | h::tl => h + listsum tl
+  end.
+```
+The recursive call is on `tl` which is a structural subterm of `h::tl` which is the first argument (`l`). 
+
+In contrast, the following definition, which is logically equivalent and also terminating, is not allowed by Coq:
+
+```gallina
+Fixpoint listsum (l: list nat) : nat :=
+  match l with
+  | [] => 0
+  | h::tl => h + listsum (rev tl)
+  end.
+(*
+Error:
+Recursive definition of listsum is ill-formed.
+In environment
+listsum : list nat → nat
+l : list nat
+h : nat
+tl : list nat
+Recursive call to listsum has principal argument equal to "rev tl" instead of "tl".
+Recursive definition is: "λ l : list nat, match l with
+                                          | [] => 0
+                                          | h :: tl => h + listsum (rev tl)
+                                          end".
+*)
+```
+`rev tl` is not a *structural* subterm of `h::tl`.
+
+### Nested Inductives
+Constructor arguments of some inductive types can themselves be of Inductive types, e.g. the last (`children`) argument below of the `node` constructor:
+```gallina
+Inductive Tree (T:Type) : Type :=
+| node : T -> list (Tree T) (* children *) -> Tree T
+| empty : Tree T.
+
+Arguments node {_} _ _. (* make the T argument implicit *)
+Arguments empty {_}. (* make the T argument implicit *)
+
+```
+
+In such cases, Coq allows us to define nested recursive functions, e.g.
+```gallina
+Fixpoint sum (t: Tree nat) : nat :=
+  match t with
+  | empty => 0
+  | node nodeVal children => nodeVal + list_sum (List.map sum children)
+  end.
+```
+Coq unfolds the definition of List.map, which is itself a structurally recursive function, to observe that `sum` is only 
+called on subterms of `children` which itself is a subterm of `node nodeVal children`.
+More concretely, Coq expands `nodeVal + list_sum (List.map sum children)` in the definition of `sum` to:
+```gallina
+nodeVal + list_sum ((fix map (l : list (Tree nat)) : list nat := match l with
+                                                                   | [] => []
+                                                                   | a :: l0 => sum a :: map l0
+                                                                   end) children)
+```
+and then observes the only recursive call is on `a`, which is a subterm of `children`.
+
+This unfolding of `List.map` is essential for Coq to figure out that this is valid structural recursion. 
+If List.map where opaque or an `Axiom`, Coq would not be able to figure that out and Coq would reject that definition.
+Thus, when leaving out admitted holes in the strategy in the previous section, please be mindful to not leave out holes around the recursive calls.
+
+### Well-founded recursion
+Coq provides the `Program Fixpoint` mechanism to workaround the rather restrictive syntactic criteria above. With `Program Fixpoint`
+a user can define an arbitrary measure function but then Coq asks the user to prove that all recursive calls are on an argument with a smaller measure. You are already aware of this mechanism but you tend to overuse it. 
+`Program Fixpoint` is not a primitive construct in Coq. Instead it encodes the user-supplied recursive function into a typicall 100x larger function that actually does *structural recursion* on proofs of measure decrements. Functions defined using `Program Fixpoint` often do not reduce well or at all, especially when the proof of measure reduction in recursive call arguments are opaque or have opaque subterms.
+`Program Fixpoint` does prove unfolding equationional lemmas (propositional equality) but that is not as convenient as reduction (definitional equality). So only `Program Fixpoint` if a structurally recursive formulation would be much much more complex.
+Definitely PREFER TO IMPLEMENT ADMITTED HOLES if they get in the way of Coq seeing structural recursion, instead of switching to `Program Fixpoint`.
+
+
+
+## Mutual Inductives and Fixpoints (recursion)
 If you want do define a function that recurses on inductive data, you typically use the `Fixpoint` keyword. If the inductive type is mutually indutive with other types, often the needed recursion is also mutually recursive. In such cases, you need to define your function using mutual Fixpoints. Below is an exampe:
 
 ```gallina
@@ -75,8 +161,10 @@ with eval_com (ρ : env) (c : Com) : env :=
   | CIf e c1 c2 =>
       if Nat.eqb (eval_expr ρ e) 0 then eval_com ρ c2 else eval_com ρ c1
   end.
-
 ```
+In the above example, `eval_expr` calls `eval_com` (`ELet` case) and `eval_com` calls `eval_expr` (`CAssign` case).
+Thus, neither of these functions can be defined before the other and they need to be defined together, using mutual recursion.
+WHILE DECIDING WHAT TO LEAVE ADMITTED FOR LATER, ENSURE THAT WHAT YOU DECIDE TO LEAVE FOR LATER DOESNT NEED TO BE DEFINED MUTUALLY RECURSIVELY WITH WHAT YOU ARE CURRENTLY DEFINING.
 
 ## Common mistakes
 

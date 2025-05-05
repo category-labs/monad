@@ -439,33 +439,6 @@ void AsyncIO::submit_request_(
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
 }
 
-void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
-{
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    poll_uring_while_submission_queue_full_();
-    struct io_uring_sqe *sqe =
-        io_uring_get_sqe(const_cast<io_uring *>(&uring_.get_ring()));
-    MONAD_ASSERT(sqe);
-
-    if (state->ts.tv_sec != 0 || state->ts.tv_nsec != 0) {
-        unsigned flags = 0;
-        if (state->timespec_is_absolute) {
-            flags |= IORING_TIMEOUT_ABS;
-        }
-        if (state->timespec_is_utc_clock) {
-            flags |= IORING_TIMEOUT_REALTIME;
-        }
-        io_uring_prep_timeout(sqe, &state->ts, unsigned(-1), flags);
-    }
-    else {
-        io_uring_prep_nop(sqe);
-    }
-
-    io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASYNC_IO_URING_RETRYABLE(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
-}
-
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
     auto *ring = const_cast<io_uring *>(&uring_.get_ring());

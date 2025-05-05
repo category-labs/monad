@@ -380,28 +380,6 @@ public:
         }
     }
 
-    // WARNING: Must exist until completion!
-    struct timed_invocation_state
-    {
-        struct __kernel_timespec ts
-        {
-            0, 0
-        };
-
-        bool timespec_is_absolute{false};
-        bool timespec_is_utc_clock{false};
-    };
-
-    void submit_timed_invocation_request(
-        timed_invocation_state *info, erased_connected_operation *uring_data)
-    {
-        submit_request_(info, uring_data);
-        if (capture_io_latencies_) {
-            uring_data->initiated = std::chrono::steady_clock::now();
-        }
-        ++records_.inflight_tm;
-    }
-
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
     get i/o buffers into which to place connected i/o states.
     */

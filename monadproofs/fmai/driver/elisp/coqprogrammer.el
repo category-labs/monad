@@ -88,7 +88,11 @@ before the new block (if any) is processed.")
 The code now compiles but still contains `Admitted.` holes.
 Please pick one or more holes to implement.
 Prefer picking hole(s) that are more higher level.
-Implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
+
+IMPORTANT: First check whether what you want to implement is already implemented somewhere.
+You can use the `Search` query and then use the `Print` query on promising names/results to confirm that they are implementing exactly what was assumed by the callers.
+
+If the implementation doesnt exist or you cannot find it using the queries, implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
 Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.
 The expected response format remains the same (end with ```gallina or ```coqquery block).
 If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN. This is important because the non-human, non-LLM programmetic e-lisp loop that is chatting with you does not know to apply partial diffs and merely replaces full old solutions with the new one.
@@ -208,12 +212,12 @@ An example of a valid response is:
 ```coqquery
 Print Stmt.
 ```
-An examplf of an answer (not to the the current task) is:
+An example of an answer (not to the the current task) is:
 ```gallina
 Definition foo : nat := 1+2.
 ```
 
-Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasnt available in the queries you have issued so far.
+Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
 ")
 
 (defun coq-programmer-first-prompt2 (core-prompt)

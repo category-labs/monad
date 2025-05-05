@@ -1058,18 +1058,20 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
 
+    if (prev_root) {
+        // previous compaction offset
+        std::tie(compact_offset_fast, compact_offset_slow) =
+            deserialize_compaction_offsets(prev_root->value());
+    }
     if (compaction) {
         if (enable_dynamic_history_length_) {
             // WARNING: this step may remove historical versions and free disk
             // chunks
             adjust_history_length_based_on_disk_usage();
         }
-        if (prev_root) {
-            advance_compact_offsets(*prev_root, version);
-        }
-        else { // no compaction if trie upsert on an empty trie
-            compact_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
-            compact_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+        if (!version_is_valid_ondisk(version)) {
+            // only advance compaction progress for non existent version
+            advance_compact_offsets();
         }
     }
 
@@ -1092,10 +1094,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
-        version_is_valid_ondisk(version)
-            ? byte_string{prev_root->value()}
-            : serialize((uint32_t)compact_offset_fast) +
-                  serialize((uint32_t)compact_offset_slow);
+        serialize((uint32_t)compact_offset_fast) +
+        serialize((uint32_t)compact_offset_slow);
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
@@ -1259,8 +1259,7 @@ void UpdateAuxImpl::update_disk_growth_data()
     last_block_end_offset_slow_ = curr_slow_writer_offset;
 }
 
-void UpdateAuxImpl::advance_compact_offsets(
-    Node &prev_root, uint64_t const version)
+void UpdateAuxImpl::advance_compact_offsets()
 {
     /* Note on ring based compaction:
     Fast list compaction is steady pace based on disk growth over recent blocks,
@@ -1284,11 +1283,6 @@ void UpdateAuxImpl::advance_compact_offsets(
     */
     MONAD_ASSERT(is_on_disk());
 
-    std::tie(compact_offset_fast, compact_offset_slow) =
-        deserialize_compaction_offsets(prev_root.value());
-    if (version_is_valid_ondisk(version)) {
-        return;
-    }
     constexpr auto fast_usage_limit_start_compaction = 0.1;
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();

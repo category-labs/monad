@@ -175,7 +175,7 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets(Node &prev_root, uint64_t version);
+    void advance_compact_offsets();
 
     void free_compacted_chunks();
 

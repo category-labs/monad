@@ -802,26 +802,6 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
     }
 }
 
-void AsyncIO::submit_threadsafe_invocation_request(
-    erased_connected_operation *uring_data)
-{
-    // WARNING: This function is usually called from foreign kernel threads!
-    records_.inflight_ts.fetch_add(1, std::memory_order_acq_rel);
-    // All writes to uring_data must be flushed before doing this
-    std::atomic_thread_fence(std::memory_order_release);
-    for (;;) {
-        if (capture_io_latencies_) {
-            uring_data->initiated = std::chrono::steady_clock::now();
-        }
-        auto written = ::write(fds_.msgwrite, &uring_data, sizeof(uring_data));
-        if (written == sizeof(uring_data)) {
-            break;
-        }
-        MONAD_ASSERT(written == -1);
-        MONAD_ASSERT(errno == EINTR);
-    }
-}
-
 unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
 {
     /* Prevent any new i/o initiation as we cannot exit until an i/o

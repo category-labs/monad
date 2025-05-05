@@ -402,9 +402,6 @@ public:
         ++records_.inflight_tm;
     }
 
-    void submit_threadsafe_invocation_request(
-        erased_connected_operation *uring_data);
-
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
     get i/o buffers into which to place connected i/o states.
     */

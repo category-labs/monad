@@ -20,9 +20,14 @@
     (push reply gpt-4o-conversation)
     reply))
 
+(defvar-local coq-programmer--last-working-with-holes nil
+  "Stores the most recent Gallina snippet that *compiled* but still
+contained `Admitted.`.  If the LLM-call budget is exhausted, this
+snippet is re-inserted into the proof script before the session ends.")
+
 
 ;;; context pruning: 1) on Search response, ask GPT to filter in items it thinks are useful. also omit larger types.
-;;;                  2) always keep conversation ength to 3 max? ask GPT to summarize other stuff?
+;;;                  2) always keep conversation length to 3 max? ask GPT to summarize other stuff?
 
 
 ;;;; ---------------  shared regexp  ---------------
@@ -94,6 +99,9 @@ You can use the `Search` query and then use the `Print` query on promising names
 
 If the implementation doesnt exist or you cannot find it using the queries, implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
 Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.
+
+Beware that if you plan to implement a hole by structural recursion on an argument, the argument must have an `Inductive` type. Also if the `Inductive` type is defined mutually with other `Inductive` types, you may need to define your function as a mutually-recursive Fixpoint. If you have already implemented parts of this set of mutually recursive Fixpoints, you may need to put the new and old parts together in the same block of mutually-recursive `Fixpoint`s.
+
 The expected response format remains the same (end with ```gallina or ```coqquery block).
 If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN. This is important because the non-human, non-LLM programmetic e-lisp loop that is chatting with you does not know to apply partial diffs and merely replaces full old solutions with the new one.
 ")
@@ -104,27 +112,19 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
 ;;;; ------------------------------------------------------------------
 
 (defun gpt-handle-coq-output (gpt-text)
-  "Interpret GPT-TEXT, interact with Coq, and return the next prompt for GPT.
-‘Success098’ means finished; any other non-empty string continues the loop.
-If a `coqquery` yields no output, return a fixed explanatory string rather
-than the empty string."
-  ;; Ensure we work inside the proof script buffer
+  "Interact with Coq according to GPT-TEXT and return the next prompt."
   (set-buffer proof-script-buffer)
 
-  ;; ---------- 0.  delete previous failed snippet, if any ----------
+  ;; ---------- 0. delete previous kept region ----------
   (when coq-programmer--pending-error-region
-    (let ((beg (car coq-programmer--pending-error-region))
-          (end (cdr coq-programmer--pending-error-region)))
-      (when (and (marker-position beg) (marker-position end))
-        (delete-region beg end)))
+    (delete-region (car coq-programmer--pending-error-region)
+                   (cdr coq-programmer--pending-error-region))
     (setq coq-programmer--pending-error-region nil))
 
-  ;; ---------- 1.  parse GPT reply ----------
+  ;; ---------- 1. parse GPT reply ----------
   (pcase-let ((`(,lang ,body) (gpt--extract-last-code-block gpt-text)))
     (pcase lang
-      ;; =====================================================
-      ;; 1. Gallina code
-      ;; =====================================================
+      ;; =================================================  Gallina
       ("gallina"
        (let ((inhibit-read-only t)
              (beg (point)))
@@ -132,36 +132,34 @@ than the empty string."
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
-
            (cond
-            ;; compile error
+            ;; ---------- compile error ----------
             ((eq proof-shell-last-output-kind 'error)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
              proof-shell-last-output)
 
-            ;; compiles but still has Admitted.
+            ;; ---------- compiles but has Admitted ----------
             ((coq-programmer--buffer-has-admit-p body)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
+             (setq coq-programmer--last-working-with-holes body)  ;; NEW
              coq-programmer--build-admit-prompt)
 
-            ;; perfect success
-            (t "Success098")))))
+            ;; ---------- perfect success ----------
+            (t
+             (setq coq-programmer--last-working-with-holes nil)   ;; NEW
+             "Success098")))))
 
-      ;; =====================================================
-      ;; 2. Coq query block
-      ;; =====================================================
+      ;; =================================================  Coq query
       ("coqquery"
        (let* ((raw (query-coq (string-trim body)))
               (res (string-trim (or raw ""))))
          (if (string-empty-p res)
-             "That query has no errors but returned an empty result. For `Search` wueries, this means nothing in the current context matches the search criteria."
+             "That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria."
            res)))
 
-      ;; =====================================================
-      ;; 3. parse failure
-      ;; =====================================================
+      ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))
 
 ;;;###autoload
@@ -205,7 +203,7 @@ If no region is active, signal an error."
   "
 
 # Response Format (IMPORTANT)
-You can either give me the anwer or ask me to run a Coq query like `Search/About/Check`.
+You can either give me the answer or ask me to run a Coq query like `Search/About/Check`.
 Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
 If you do not follow this format, my automated engine cannot parse your response.
 An example of a valid response is:
@@ -231,7 +229,7 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
   )
 
 
-(defcustom coq-programmer-max-llm-calls 50
+(defcustom coq-programmer-max-llm-calls 30
   "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.
 Set to nil for no limit."
   :type '(choice (const :tag "Unlimited" nil)
@@ -301,12 +299,17 @@ directory as the current `.v` file.  Stops when:
         (let ((quit nil))
           (while (not quit)
             ;; stop if cost limit hit
-            (when (and coq-programmer-max-llm-calls
-                       (>= llm-calls coq-programmer-max-llm-calls))
-              (log "System"
-                   (format "LLM call budget (%d) exhausted.  Stopping session."
-                           coq-programmer-max-llm-calls))
-              (setq quit t))
+	    (when (and coq-programmer-max-llm-calls
+		       (>= llm-calls coq-programmer-max-llm-calls))
+	      ;; If we have a fallback snippet with admits, re-insert it
+	      (with-current-buffer coq-buf
+		(when coq-programmer--last-working-with-holes
+		  (goto-char (point-max))
+		  (insert coq-programmer--last-working-with-holes "\n")))
+	      (log "System"
+		   (format "LLM call budget (%d) exhausted.  Stopping session."
+			   coq-programmer-max-llm-calls))
+	      (setq quit t))
             (unless quit
               (let* ((next
                       (with-current-buffer proof-script-buffer
@@ -323,7 +326,6 @@ directory as the current `.v` file.  Stops when:
                   (setq llm-calls (1+ llm-calls))
                   (setq assistant (gpt-4o--send next))
                   (log "Assistant" assistant)))))))))))
-
 
 
 ;; Bugs:

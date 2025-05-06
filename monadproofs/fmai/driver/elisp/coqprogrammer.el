@@ -359,22 +359,11 @@ directory as the current `.v` file.  Stops when:
                   (log "Assistant" assistant)))))))))))
 
 
-;; Bugs:
-
-;;Bug 1
-;; check that the LLM-generated claimed query is actually a query. At least it must have no sideeffects:
-
-;; ## Assistant 77
-
-;; I’ll implement the simplest high‐level printer: `pprint_ident` is just the identity on `ident`, since `ident` is already a `PrimString.string`. 
-
-;; ```coqquery
-;; Definition pprint_ident (i: bluerock.lang.cpp.syntax.preliminary.ident)
-;;   : PrimString.string := i.
-;; ```
-
-
-;;Bug 2
+;; TODO:
+;; GPT often gets some holes correct, but later forgets them in the later/final answer where they go back to Admitted.
+;; one solution could be at timeout, give it all non-erroring versions and ask it to take the maximal subset.
+;; or do this programattically: easiest would be to see if there is a name match between an axiom in the last version and a
+;; Definition in the older version. emacs could put all versions in a module and 
 
 
 

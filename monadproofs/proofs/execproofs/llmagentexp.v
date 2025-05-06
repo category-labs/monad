@@ -18,81 +18,245 @@ So, `(a ++ b)%pstring` appends `a:PrimString.string` and `b:PrimString.string`.
 PrimString.string is different from Stdlib.Strings.String.string, which is the type of the non-primitive strings that have been in the Coq stdlib for decades. Stdlib.Strings.String.string is slower so I avoid using it in this application where speed is important.
 *)
 
-Require Import Corelib.Strings.PrimString.
-Open Scope string.
+Local Open Scope pstring.
 
-(* stubs for sub-printers *)
-Definition pp_expr (e : Expr) : string. Admitted.  (* TOFIXLATER *)
-Definition pp_vardecl (d : VarDecl) : string. Admitted.  (* TOFIXLATER *)
+(* ------------------------------------------------------------------ *)
+(* single‐char double‐quote for pstring *)
+Definition dq : string := """".
 
-(* a small list‐printer combinator *)
-Fixpoint pp_list {A} (ppA : A → string) (sep : string) (l : list A) : string :=
+(* ------------------------------------------------------------------ *)
+(* transparent list‐printer for structural recursion *)
+Fixpoint print_list {A : Type} (sep : string) (f : A → string) (l : list A) : string :=
   match l with
   | [] => ""
-  | [x] => ppA x
-  | x :: xs => cat (ppA x) (cat sep (pp_list ppA sep xs))
+  | x :: xs =>
+      let rest := match xs with
+                  | [] => ""
+                  | _  => sep ++ print_list sep f xs
+                  end in
+      f x ++ rest
   end.
 
-(* mutually recursive printing of Stmt and list of Stmt *)
-Fixpoint pp_stmt_list (l : list Stmt) : string :=
-  match l with
-  | [] => ""
-  | [s] => pp_stmt s
-  | s :: ss => cat (pp_stmt s) (cat "; " (pp_stmt_list ss))
-  end
+(* ------------------------------------------------------------------ *)
+(* still to implement *)
+Definition print_name (n : name) : string. Admitted.        (* TOFIXLATER *)
+Definition print_type (t : type) : string. Admitted.        (* TOFIXLATER *)
+Definition print_expr (e : Expr) : string. Admitted.        (* TOFIXLATER *)
 
-with pp_stmt (s : Stmt) : string :=
+(* ------------------------------------------------------------------ *)
+(* function-qualifiers printer *)
+Definition print_fq (fq : function_qualifiers.t) : string :=
+  match fq with
+  | function_qualifiers.N    => ""
+  | function_qualifiers.Nl   => "&"
+  | function_qualifiers.Nr   => "&&"
+  | function_qualifiers.Nc   => " const"
+  | function_qualifiers.Ncl  => " const&"
+  | function_qualifiers.Ncr  => " const&&"
+  | function_qualifiers.Nv   => " volatile"
+  | function_qualifiers.Nvl  => " volatile&"
+  | function_qualifiers.Nvr  => " volatile&&"
+  | function_qualifiers.Ncv  => " const volatile"
+  | function_qualifiers.Ncvl => " const volatile&"
+  | function_qualifiers.Ncvr => " const volatile&&"
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* OverloadableOperator printer *)
+Definition print_oo (o : OverloadableOperator) : string :=
+  match o with
+  | OOTilde               => "~"
+  | OOExclaim             => "!"
+  | OOPlusPlus            => "++"
+  | OOMinusMinus          => "--"
+  | OOStar                => "*"
+  | OOPlus                => "+"
+  | OOMinus               => "-"
+  | OOSlash               => "/"
+  | OOPercent             => "%"
+  | OOCaret               => "^"
+  | OOAmp                 => "&"
+  | OOPipe                => "|"
+  | OOEqual               => "="
+  | OOLessLess            => "<<"
+  | OOGreaterGreater      => ">>"
+  | OOPlusEqual           => "+="
+  | OOMinusEqual          => "-="
+  | OOStarEqual           => "*="
+  | OOSlashEqual          => "/="
+  | OOPercentEqual        => "%="
+  | OOCaretEqual          => "^="
+  | OOAmpEqual            => "&="
+  | OOPipeEqual           => "|="
+  | OOLessLessEqual       => "<<="
+  | OOGreaterGreaterEqual => ">>="
+  | OOEqualEqual          => "=="
+  | OOExclaimEqual        => "!="
+  | OOLess                => "<"
+  | OOGreater             => ">"
+  | OOLessEqual           => "<="
+  | OOGreaterEqual        => ">="
+  | OOSpaceship           => "<=>"
+  | OOComma               => ","
+  | OOArrowStar           => "->*"
+  | OOArrow               => "->"
+  | OOSubscript           => "[]"
+  | OOAmpAmp              => "&&"
+  | OOPipePipe            => "||"
+  | OONew array           => if array then "new[]" else "new"
+  | OODelete array        => if array then "delete[]" else "delete"
+  | OOCall                => "()"
+  | OOCoawait             => "co_await"
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* SwitchBranch printer *)
+Definition print_switch_branch (sb : SwitchBranch) : string :=
+  match sb with
+  | Exact z     => printer.showN.showZ z
+  | Range z1 z2 => printer.showN.showZ z1 ++ "..." ++ printer.showN.showZ z2
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* BindingDecl printer *)
+Definition print_binding_decl (b : BindingDecl) : string :=
+  match b with
+  | Bvar id ty e =>
+      print_type ty ++ " " ++ id ++ " = " ++ print_expr e
+  | Bbind id ty e =>
+      "(" ++ id ++ " : " ++ print_type ty ++ ") = " ++ print_expr e
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* temp_arg printer *)
+Fixpoint print_temp_arg (a : temp_arg) : string :=
+  match a with
+  | Atype t        => print_type t
+  | Avalue e       => print_expr e
+  | Apack args     => "pack<" ++ print_list "," print_temp_arg args ++ ">"
+  | Atemplate nm   => print_name nm
+  | Aunsupported s => s
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* VarDecl printer *)
+Definition print_var_decl (d : VarDecl) : string :=
+  match d with
+  | Dvar id ty None =>
+      print_type ty ++ " " ++ id
+  | Dvar id ty (Some e) =>
+      print_type ty ++ " " ++ id ++ " = " ++ print_expr e
+  | Ddecompose e id binds =>
+      print_expr e ++ " = " ++ id ++ " unpack {"
+      ++ print_list "," print_binding_decl binds ++ "}"
+  | Dinit thread_safe nm ty None =>
+      (if thread_safe then "/*ts*/ " else "")
+      ++ print_name nm ++ " " ++ print_type ty
+  | Dinit thread_safe nm ty (Some e) =>
+      (if thread_safe then "/*ts*/ " else "")
+      ++ print_name nm ++ " " ++ print_type ty ++ " = " ++ print_expr e
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* inline asm printer *)
+Definition print_asm
+           (body : string)
+           (vol : bool)
+           (ins outs : list (ident * Expr))
+           (clob : list ident)
+         : string :=
+  "asm " ++ (if vol then "volatile " else "") ++ "("
+    ++ dq ++ body ++ dq ++ ":"
+    ++ print_list ","
+         (fun '(id,e) => dq ++ id ++ dq ++ "(" ++ print_expr e ++ ")")
+         outs
+    ++ ":"
+    ++ print_list ","
+         (fun '(id,e) => dq ++ id ++ dq ++ "(" ++ print_expr e ++ ")")
+         ins
+    ++ ":"
+    ++ print_list ","
+         (fun id => dq ++ id ++ dq)
+         clob
+    ++ ");".
+
+(* ------------------------------------------------------------------ *)
+(* now fully implemented: Cast printer *)
+Definition print_cast (c : Cast) : string :=
+  match c with
+  | Cdependent t       => "dependent_cast<" ++ print_type t ++ ">"
+  | Cbitcast t         => "bitcast<" ++ print_type t ++ ">"
+  | Clvaluebitcast t   => "lvalue_bitcast<" ++ print_type t ++ ">"
+  | Cl2r               => "l2r"
+  | Cl2r_bitcast t     => "l2r_bitcast<" ++ print_type t ++ ">"
+  | Cnoop t            => "noop<" ++ print_type t ++ ">"
+  | Carray2ptr         => "array2ptr"
+  | Cfun2ptr           => "fun2ptr"
+  | Cint2ptr t         => "int2ptr<" ++ print_type t ++ ">"
+  | Cptr2int t         => "ptr2int<" ++ print_type t ++ ">"
+  | Cptr2bool          => "ptr2bool"
+  | Cintegral t        => "integral<" ++ print_type t ++ ">"
+  | Cint2bool          => "int2bool"
+  | Cfloat2int t       => "float2int<" ++ print_type t ++ ">"
+  | Cint2float t       => "int2float<" ++ print_type t ++ ">"
+  | Cfloat t           => "float<" ++ print_type t ++ ">"
+  | Cnull2ptr t        => "null2ptr<" ++ print_type t ++ ">"
+  | Cnull2memberptr t  => "null2memberptr<" ++ print_type t ++ ">"
+  | Cbuiltin2fun t     => "builtin2fun<" ++ print_type t ++ ">"
+  | C2void             => "to_void"
+  | Cctor t            => "ctor_conv<" ++ print_type t ++ ">"
+  | Cuser              => "user_conv"
+  | Cdynamic t         => "dynamic_cast<" ++ print_type t ++ ">"
+  | Cderived2base ps t => "derived2base<"
+                            ++ print_list "," print_type ps ++ "," ++ print_type t ++ ">"
+  | Cbase2derived ps t => "base2derived<"
+                            ++ print_list "," print_type ps ++ "," ++ print_type t ++ ">"
+  | Cunsupported _ _   => "unsupported_cast"
+  end.
+
+(* ------------------------------------------------------------------ *)
+(* the main Stmt printer *)
+Fixpoint print_stmt (s : Stmt) : string :=
   match s with
-  | Sseq ss =>
-      cat "{ " (cat (pp_stmt_list ss) " }")
-  | Sdecl ds =>
-      cat (pp_list pp_vardecl "; " ds) ";"
-  | Sif vd_opt cond thn els =>
-      let vd_s := match vd_opt with
-                  | None => ""
-                  | Some vd => cat (pp_vardecl vd) " "
-                  end in
-      cat "if (" (cat (pp_expr cond) (cat ") " (cat vd_s (cat (pp_stmt thn) (cat " else " (pp_stmt els))))))
-  | Sif_consteval thn els =>
-      cat "if consteval " (cat (pp_stmt thn) (cat " else " (pp_stmt els)))
-  | Swhile vd_opt cond body =>
-      let vd_s := match vd_opt with
-                  | None => ""
-                  | Some vd => cat (pp_vardecl vd) " "
-                  end in
-      cat "while (" (cat (pp_expr cond) (cat ") " (cat vd_s (pp_stmt body))))
-  | Sfor init cond incr body =>
-      let i1 := match init with None => "" | Some st => pp_stmt st end in
-      let c2 := match cond with None => "" | Some e => pp_expr e end in
-      let i3 := match incr with None => "" | Some e => pp_expr e end in
-      cat "for (" (cat i1 (cat "; " (cat c2 (cat "; " (cat i3 (cat ") " (pp_stmt body))))))
-  | Sdo body cond =>
-      cat "do " (cat (pp_stmt body) (cat " while (" (cat (pp_expr cond) ");")))
-  | Sswitch vd_opt e br =>
-      let vd_s := match vd_opt with None => "" | Some vd => cat (pp_vardecl vd) " " end in
-      cat "switch (" (cat (pp_expr e) (cat ") " (cat vd_s (pp_stmt br))))
-  | Scase sb =>
-      cat "case " (cat (pp_expr sb.1) (cat ": " (pp_stmt sb.2)))
-  | Sdefault => "default:;"
-  | Sbreak => "break;"
-  | Scontinue => "continue;"
-  | Sreturn eo =>
-      cat "return" (match eo with None => ";" | Some e => cat " " (cat (pp_expr e) ";") end)
-  | Sexpr e => cat (pp_expr e) ";"
-  | Sattr attrs st =>
-      cat "[[" (cat (pp_list (fun i => i) ", ") (cat "]] " (pp_stmt st)))
-  | Sasm txt vol inouts outouts clobs =>
-      let in_s  := pp_list (fun io => cat io.1 (cat "(" (cat (pp_expr io.2) ")"))) ", " inouts in
-      let out_s := pp_list (fun io => cat io.1 (cat "(" (cat (pp_expr io.2) ")"))) ", " outouts in
-      let clob_s := pp_list (fun i => i) ", " clobs in
-      cat "asm " (cat txt (cat " " (cat (if vol then "volatile " else "")
-        (cat "(" (cat in_s (cat ") (" (cat out_s (cat ") {" (cat clob_s "};")))))))))
-  | Slabeled lbl st => cat lbl (cat ": " (pp_stmt st))
-  | Sgoto lbl => cat "goto " (cat lbl ";")
-  | Sunsupported txt => txt
+  | Sseq ss     => "(" ++ print_list ";" print_stmt ss ++ ")"
+  | Sdecl ds    => print_list ";" print_var_decl ds ++ ";"
+  | Sif od e t f =>
+      let cs := match od with
+                | None   => print_expr e
+                | Some d => print_var_decl d ++ "; " ++ print_expr e
+                end in
+      "if(" ++ cs ++ ")" ++ print_stmt t ++ "else" ++ print_stmt f
+  | Sif_consteval t f =>
+      "__builtin_consteval ? " ++ print_stmt t ++ " : " ++ print_stmt f
+  | Swhile od e body =>
+      let cs := match od with
+                | None   => print_expr e
+                | Some d => print_var_decl d ++ "; " ++ print_expr e
+                end in
+      "while(" ++ cs ++ ")" ++ print_stmt body
+  | Sfor o1 o2 o3 body =>
+      let i := match o1 with Some st => print_stmt st | None => "" end in
+      let c := match o2 with Some e  => print_expr e  | None => "" end in
+      let p := match o3 with Some e  => print_expr e  | None => "" end in
+      "for(" ++ i ++ "; " ++ c ++ "; " ++ p ++ ")" ++ print_stmt body
+  | Sdo body e   => "do" ++ print_stmt body ++ "while(" ++ print_expr e ++ ");"
+  | Sswitch od e b =>
+      let cs := match od with
+                | None   => print_expr e
+                | Some d => print_var_decl d ++ "; " ++ print_expr e
+                end in
+      "switch(" ++ cs ++ ")" ++ print_stmt b
+  | Scase sb     => "case " ++ print_switch_branch sb ++ ":"
+  | Sdefault     => "default:"
+  | Sbreak       => "break;"
+  | Scontinue    => "continue;"
+  | Sreturn oe   =>
+      "return" ++ match oe with Some e => " " ++ print_expr e | None => "" end ++ ";"
+  | Sexpr e      => print_expr e ++ ";"
+  | Sattr as_ st => print_list " " (fun id => id) as_ ++ " " ++ print_stmt st
+  | Sasm b v i o cl => print_asm b v i o cl
+  | Slabeled id st   => id ++ ":" ++ print_stmt st
+  | Sgoto id         => "goto " ++ id ++ ";"
+  | Sunsupported s   => s
   end.
-
-
-
-
 

@@ -85,13 +85,13 @@ before the new block (if any) is processed.")
 ;;;; ------------------------------------------------------------------
 
 (defun coq-programmer--buffer-has-admit-p (body)
-  "Return non-nil if BODY (a string) contains the substring \"Admitted.\"."
-  (string-match-p "Admitted\\." body))
+  "Return non-nil if BODY (a string) contains \"Admitted.\" or \"TOFIXLATER\"."
+  (string-match-p "\\(?:Admitted\\.\\|TOFIXLATER\\)" body))
 
 (defvar coq-programmer--build-admit-prompt
   "
-The code now compiles but still contains `Admitted.` holes.
-Please pick one or more holes to implement.
+The code now compiles but still contains `Admitted.` holes or TOFIXLATER items.
+Please pick one or more holes to implement or TOFIXLATER iteems to fix.
 Prefer picking hole(s) that are more higher level.
 
 IMPORTANT: First check whether what you want to implement is already implemented somewhere.

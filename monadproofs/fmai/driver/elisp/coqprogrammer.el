@@ -123,12 +123,15 @@ before the new block (if any) is processed.")
 
 (defvar coq-programmer--build-admit-prompt
   "
-The code now compiles but still contains `Admitted.` holes or TOFIXLATER items.
-Please pick one or more holes to implement or TOFIXLATER iteems to fix.
-Prefer picking hole(s) that are more higher level.
+The code now compiles but still contains `Admitted.`/TOFIXLATER holes.
+Please pick exactly ONE hole to implement.
+In the call chain/tree from the function that is the main task, which you have already implemented,
+pick a hole which is closest to the root.
+If you were asked to implement a function on an Inductive type which is defined mutually inductive with other Inductive types, the task implicitly includes implementing the analogous functions on those types as well, likely as a block of mutually recursive functions. Implementing such holes should be the highest priority.
 
-IMPORTANT: First check whether what you want to implement is already implemented somewhere.
-You can use the `Search` query and then use the `Print` query on promising names/results to confirm that they are implementing exactly what was assumed by the callers.
+Once you have chosen the hole to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. If that doesnt yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
+
+Also, double check whether the hole was already implemented in the current conversation and you forgot to include it in the previous message.
 
 If the implementation doesnt exist or you cannot find it using the queries, implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
 Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.

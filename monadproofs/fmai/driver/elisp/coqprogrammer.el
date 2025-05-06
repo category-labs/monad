@@ -47,12 +47,45 @@ LANG is down-cased.  BODY has no closing ``` line."
     (when lang (list lang body))))               ; nil if none found
 
 
+(defconst coq-query--allowed-prefix-re
+  "^[[:space:]]*\\(Search\\|About\\|Print\\|Locate\\|Check\\)\\>"
+  "Regexp that a valid Coq query must start with.")
+
 (defun query-coq (query)
-  "Return a tuple with the first and second words of the first line starting with 'Module' from the 'Locate %s' Coq query."
-  (with-current-buffer proof-response-buffer (read-only-mode -1))
-  (let* ((resp (proof-shell-invisible-cmd-get-result
-                query)))
-    resp))
+  "Return a cleaned up Coq response to QUERY."
+  (let* ((trimmed-query (string-trim query))
+         ;; Commands that are valid prefixes for the query
+         (valid-commands '("Search" "About" "Locate" "Check" "Print"))
+         ;; Check if the beginning of the query matches any valid command
+         (is-valid-command
+          (seq-some (lambda (cmd)
+                      (string-prefix-p cmd trimmed-query t))
+                    valid-commands)))
+    (if (not is-valid-command)
+        ;; If not valid, return explanation without contacting Coq
+        "Not a valid query. A query must begin with Search/About/Locate/Check/Print. \
+Also do not add any Require Imports before the actual query. All the available modules \
+are already `Require`d. But they may not have been `Import`ed. You should use \
+fully/more qualified names instead of importing modules."
+      ;; Otherwise, the command is valid => proceed
+      (with-current-buffer proof-response-buffer
+        (read-only-mode -1))
+      (let ((raw (proof-shell-invisible-cmd-get-result trimmed-query))
+            (max-length 100000))
+        (let ((res (string-trim (or raw ""))))
+          (cond
+           ((string-empty-p res)
+            "That query has no errors but returned an empty result. \
+For `Search` queries, this means nothing in the current context matches the search criteria. \
+Before assuming non-existence of what you are looking for, try relaxing some constraints. \
+Consider the possibility of argument order being different, or names being different \
+(e.g. `toString` vs `to_string` vs `print` vs `showString`). \
+Make the most minimal assumptions about how stuff is named.")
+           ((> (length res) max-length)
+            "That query returned too many results. Please make it more discriminative.")
+           (t
+            res)))))))
+
 
 (defun proof-shell-wait-until-no-output ()
   "Block until Proof General’s action queue is empty."
@@ -152,12 +185,7 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
              "Success098")))))
 
       ;; =================================================  Coq query
-      ("coqquery"
-       (let* ((raw (query-coq (string-trim body)))
-              (res (string-trim (or raw ""))))
-         (if (string-empty-p res)
-             "That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria. Before assuming non-existence of what you are looking for, try relaxing some constraints. Consider the possiblity of the arugment order being different, or the names being different: toString vs to_string vs print vs showString: make most minimal assumptions about how stuff is named"
-           (if (> (length res) 100000) "That query returned too many results. Please make it more discriminative." res))))
+      ("coqquery" (query-coq (string-trim body)))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))
@@ -276,6 +304,8 @@ directory as the current `.v` file.  Stops when:
          (assist-count (cdr counts))
          ;; call budget
          (llm-calls 0))
+    ;; ---- 0. truncate / create comm.md so we start from scratch ----
+    (with-temp-file comm-file)  ; write nothing => clears file
     ;; fresh conversation history for this session
     (setq gpt-4o-conversation nil)
 
@@ -345,3 +375,6 @@ directory as the current `.v` file.  Stops when:
 
 
 ;;Bug 2
+
+
+

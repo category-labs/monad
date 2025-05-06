@@ -5,6 +5,7 @@ Disable Notation atomic_name'.
 Open Scope pstring_scope.
 
 
+
 (*
 Write a Coq function to pretty print bluerock.lang.cpp.syntax.stmt.Stmt, an Inductive type I have defined for C++ statements.
 bluerock.lang.cpp.syntax.stmt.Stmt is defined mutually Inductively with many other types like Expr.
@@ -15,6 +16,8 @@ It is different from Stdlib.Strings.String.string, which are the non-primitive s
 The are slower so I avoid using them in this application where speed is important.
  *)
 
+Set Printing All.
+Print Stmt.
 
 
 

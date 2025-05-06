@@ -157,7 +157,7 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
               (res (string-trim (or raw ""))))
          (if (string-empty-p res)
              "That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria. Before assuming non-existence of what you are looking for, try relaxing some constraints. Consider the possiblity of the arugment order being different, or the names being different: toString vs to_string vs print vs showString: make most minimal assumptions about how stuff is named"
-           res)))
+           (if (> (length res) 100000) "That query returned too many results. Please make it more discriminative." res))))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))

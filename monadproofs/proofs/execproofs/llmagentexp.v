@@ -5,10 +5,6 @@ Disable Notation atomic_name'.
 Open Scope pstring_scope.
 
 
-
-
-Locate string.
-
 (*
 Write a Coq function to pretty print bluerock.lang.cpp.syntax.stmt.Stmt, an Inductive type I have defined for C++ statements.
 bluerock.lang.cpp.syntax.stmt.Stmt is defined mutually Inductively with many other types like Expr.
@@ -18,6 +14,8 @@ PrimString.string is a new type in Coq's core standard library. It axiomatizes p
 It is different from Stdlib.Strings.String.string, which are the non-primitive strings that have been in the Coq stdlib for decades.
 The are slower so I avoid using them in this application where speed is important.
  *)
+
+
 
 
 

@@ -3,6 +3,9 @@ Require Import bluerock.auto.cpp.proof.
 Import linearity.
 Disable Notation atomic_name'.
 
+Search (nat -> nat -> nat) "add" -"mul".
+Definition doubleQuote : PrimString.string := """".
+
 Search (name → string).
 Module PrettyPrintStmt.
 

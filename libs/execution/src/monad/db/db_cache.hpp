@@ -101,18 +101,13 @@ public:
     virtual std::shared_ptr<CodeAnalysis>
     read_code(bytes32_t const &code_hash) override
     {
-        bool truncated = false;
-        std::shared_ptr<CodeAnalysis> result;
-        if (proposals_.try_read_code(code_hash, result, truncated)) {
-            return result;
+        CodeCache::ConstAccessor it{};
+        if (code_.find(it, code_hash)) {
+            return it->second.value_;
         }
-        if (!truncated) {
-            CodeCache::ConstAccessor it{};
-            if (code_.find(it, code_hash)) {
-                return it->second.value_;
-            }
-        }
-        return db_.read_code(code_hash);
+        auto code_analysis = db_.read_code(code_hash);
+        code_.insert(code_hash, code_analysis);
+        return code_analysis;
     }
 
     virtual void set_block_and_round(
@@ -129,13 +124,12 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, round_number);
         if (ps) {
-            insert_in_lru_caches(ps->state(), ps->code());
+            insert_in_lru_caches(ps->state());
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
             accounts_.clear();
             storage_.clear();
-            code_.clear();
         }
         db_.finalize(block_number, round_number);
     }
@@ -183,9 +177,7 @@ public:
             ommers,
             withdrawals);
         proposals_.commit(
-            std::move(state_deltas), std::move(code), consensus_header.round);
-        MONAD_ASSERT(!state_deltas);
-        MONAD_ASSERT(!code);
+            std::move(state_deltas), consensus_header.round);
     }
 
     virtual BlockHeader read_eth_header() override
@@ -220,7 +212,7 @@ public:
     }
 
 private:
-    void insert_in_lru_caches(StateDeltas const &state_deltas, Code const &code)
+    void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
@@ -238,12 +230,6 @@ private:
                         StorageKey(address, incarnation, key),
                         storage_delta.second);
                 }
-            }
-        }
-        for (auto const &[code_hash, code_analysis] : code) {
-            CodeCache::ConstAccessor it{};
-            if (!code_.find(it, code_hash)) {
-                code_.insert(code_hash, code_analysis);
             }
         }
     }

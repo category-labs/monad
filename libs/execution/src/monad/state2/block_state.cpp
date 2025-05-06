@@ -105,7 +105,7 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
     {
         Code::const_accessor it{};
         MONAD_ASSERT(code_);
-        if (MONAD_LIKELY(code_->find(it, code_hash))) {
+        if (code_->find(it, code_hash)) {
             return it->second;
         }
     }
@@ -115,9 +115,7 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
         MONAD_ASSERT(result);
         MONAD_ASSERT(
             code_hash == NULL_HASH || !result->executable_code().empty());
-        Code::const_accessor it{};
-        code_->emplace(it, code_hash, result);
-        return it->second;
+        return result;
     }
 }
 

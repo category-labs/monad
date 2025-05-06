@@ -1122,10 +1122,12 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
     LOG_INFO_CFORMAT(
-        "Finish upserting version %lu. Time elapsed: %ld us. Disk usage: %.4f. "
-        "Chunks: %u fast, %u slow, %u free. Writer offsets: fast={%u,%u}, "
-        "slow={%u,%u}.",
+        "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
+        "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
+        "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
+        "slow=%u",
         version,
+        db_history_min_valid_version(),
         duration.count(),
         disk_usage(),
         num_chunks(chunk_list::fast),
@@ -1134,7 +1136,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         curr_fast_writer_offset.count,
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
-        curr_slow_writer_offset.offset);
+        curr_slow_writer_offset.offset,
+        (uint32_t)compact_offset_fast,
+        (uint32_t)compact_offset_slow);
     if (duration > std::chrono::microseconds(500'000)) {
         LOG_WARNING_CFORMAT(
             "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",
@@ -1147,17 +1151,25 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 void UpdateAuxImpl::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
-    Node::UniquePtr root_to_erase = read_node_blocking(
+    Node::UniquePtr min_valid_root = read_node_blocking(
         *this,
         get_root_offset_at_version(min_valid_version),
         min_valid_version);
     auto const [min_offset_fast, min_offset_slow] =
-        deserialize_compaction_offsets(root_to_erase->value());
+        deserialize_compaction_offsets(min_valid_root->value());
     MONAD_ASSERT(
         min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     chunks_to_remove_before_count_fast_ = min_offset_fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offset_slow.get_count();
+    LOG_INFO_CFORMAT(
+        "Min valid version %lu compaction offset fast=%u, slow=%u. Remove "
+        "chunks before count fast=%u, slow=%u",
+        min_valid_version,
+        (uint32_t)min_offset_fast,
+        (uint32_t)min_offset_slow,
+        chunks_to_remove_before_count_fast_,
+        chunks_to_remove_before_count_slow_);
     MONAD_ASSERT(
         db_metadata()->root_offsets.version_lower_bound_ >= min_valid_version);
     free_compacted_chunks();
@@ -1165,6 +1177,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
 
 void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 {
+    LOG_INFO_CFORMAT("Erase versions up to and including %lu", version);
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
 }

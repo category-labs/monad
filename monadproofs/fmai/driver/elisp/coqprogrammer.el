@@ -302,7 +302,7 @@ directory as the current `.v` file.  Stops when:
 	    (when (and coq-programmer-max-llm-calls
 		       (>= llm-calls coq-programmer-max-llm-calls))
 	      ;; If we have a fallback snippet with admits, re-insert it
-	      (with-current-buffer coq-buf
+	      (with-current-buffer proof-script-buffer
 		(when coq-programmer--last-working-with-holes
 		  (goto-char (point-max))
 		  (insert coq-programmer--last-working-with-holes "\n")))

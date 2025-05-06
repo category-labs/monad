@@ -1,5 +1,4 @@
-
-## User 16
+## User 8
 
 # General Background
 This is a Coq programming task. First, some general guidelines about Coq programming tasks.
@@ -195,12 +194,14 @@ when producing strings.
 
 # Current Task
 Write a Coq function to pretty print bluerock.lang.cpp.syntax.stmt.Stmt, an Inductive type I have defined for C++ statements.
-bluerock.lang.cpp.syntax.stmt.Stmt is defined mutually Inductively with many other types like Expr.
+`bluerock.lang.cpp.syntax.stmt.Stmt` is defined mutually Inductively with many other types like `Expr`.
 As a part of this job, you need to write pretty printers for them as well, likely together using mutual recursion.
-The type of the printer should be bluerock.lang.cpp.syntax.stmt.Stmt -> PrimString.string.
+The type of the printer should be `bluerock.lang.cpp.syntax.stmt.Stmt -> string`.
+In the current context, `string` refers to `PrimString.string`, which is unusual in non-recent Coq developments. 
 PrimString.string is a new type in Coq's core standard library. It axiomatizes primitive strings.
 It is different from Stdlib.Strings.String.string, which are the non-primitive strings that have been in the Coq stdlib for decades.
 The are slower so I avoid using them in this application where speed is important.
+
 
 # Response Format (IMPORTANT)
 You can either give me the answer or ask me to run a Coq query like `Search/About/Check`.
@@ -220,15 +221,15 @@ Please include exactly one query in a ```coqquery block.
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
 
 
-## Assistant 14
+## Assistant 7
 
-We need to inspect the constructors of the mutually‐inductive `Stmt` type (and its related AST nodes) in order to write the pretty‐printer. The definition isn’t yet visible in our context, so let’s print it:
+We need to see the exact constructors of `bluerock.lang.cpp.syntax.stmt.Stmt` (and its mutually defined siblings) before writing the pretty‐printer. Since we don’t yet know its form, let’s inspect it:
 
 ```coqquery
 Print bluerock.lang.cpp.syntax.stmt.Stmt.
 ```
 
-## User 17
+## User 9
 
 Notation Stmt := Stmt
 
@@ -527,173 +528,426 @@ Arguments Cderived2base path%_list_scope END%_cpp_type_scope
 Arguments Cbase2derived path%_list_scope END%_cpp_type_scope
 Arguments Cunsupported _%_bs_scope _%_cpp_type_scope
 
-## Assistant 15
+## Assistant 8
 
-Here is a minimal skeleton of a pretty‐printer for `Stmt : Set → PrimString.string`, together with a very simple printer for `Expr` (called by `Stmt`) and stubs for all of the atomic pieces.  You can fill in the admitted holes (`(* TOFIXLATER *)`) later with real name/ident/ops‐to‐string conversions, and extend the match‐arms to cover all constructors in detail.  
+I need to know what string‐concat operator is available for the primitive `string` (i.e. `PrimString.string`) so I can assemble sub‐strings in the pretty‐printer. This isn’t evident yet, so let me look up the usual `++` notation:
 
-```gallina
-Require Import PrimString.
-Require Import List.
-Import ListNotations.
-
-(*------------------------------------------------------*)
-(*   primitive string literal → PrimString.string      *)
-Definition pstr (s: string) : PrimString.string.
-Admitted.  (* TOFIXLATER *)
-
-(* stubs for all the “atoms” that we will need            *)
-Definition ppIdent          (id: ident)                       : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppAtomicName     (an: atomic_name)                : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppRUnOp          (op: RUnOp)                      : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppRBinOp         (op: RBinOp)                     : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppUnOp           (op: UnOp)                       : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppBinOp          (op: BinOp)                      : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppOverOp         (op: OverloadableOperator)       : PrimString.string. Admitted. (* TOFIXLATER *)
-Definition ppCast           (c: Cast)                        : PrimString.string. Admitted. (* TOFIXLATER *)
-
-(* a tiny helper to interleave a separator between a list *)
-Fixpoint interleave (sep: PrimString.string) (ss: list PrimString.string) : PrimString.string :=
-  match ss with
-  | []    => pstr ""
-  | [x]   => x
-  | x::xs => PrimString.append x (PrimString.append sep (interleave sep xs))
-  end.
-
-(*------------------------------------------------------*)
-(* mutual recursion: Expr and Stmt (and later you can add 
-   VarDecl, BindingDecl, Type, Name, TempArg, etc.) *)
-Fixpoint ppExpr (e: Expr) : PrimString.string :=
-  match e with
-  | Eparam id             => ppIdent id
-  | Eunresolved_global n  => ppAtomicName n
-  | Eunresolved_unop op e1  => PrimString.append (ppRUnOp op) (ppExpr e1)
-  | Eunresolved_binop op l r => 
-      PrimString.append
-        (PrimString.append (ppExpr l) (ppRBinOp op))
-        (ppExpr r)
-  | Ecall f args =>
-      PrimString.append
-        (ppExpr f)
-        (PrimString.append (pstr "(") 
-          (PrimString.append (interleave (pstr ",") (map ppExpr args))
-                             (pstr ")")))
-  | _ => pstr "<expr>"  (* expand to cover all cases *)
-  end
-
-with ppStmt (s: Stmt) : PrimString.string :=
-  match s with
-  | Sseq ss =>
-      PrimString.append (pstr "{")
-        (PrimString.append (interleave (pstr ";") (map ppStmt ss))
-                           (pstr "}"))
-  | Sdecl ds        => pstr "decl(...)"    (* expand, call ppVarDecl, etc. *)
-  | Sif _ cond thn els =>
-      PrimString.append
-        (PrimString.append (pstr "if ") (ppExpr cond))
-        (PrimString.append (pstr " then ") 
-          (PrimString.append (ppStmt thn)
-                             (PrimString.append (pstr " else ")
-                                                (ppStmt els))))
-  | Swhile _ cond body =>
-      PrimString.append (PrimString.append (pstr "while ") (ppExpr cond))
-                        (PrimString.append (pstr " ") (ppStmt body))
-  | Sfor lo c1 c2 body =>
-      pstr "for(...)"     (* expand: print c1,c2,body *)
-  | Sreturn (Some e1) => PrimString.append (pstr "return ") (ppExpr e1)
-  | Sreturn None      => pstr "return"
-  | Sexpr e1          => ppExpr e1
-  | _                 => pstr "<stmt>"     (* expand all other cases *)
-  end.
-
-(** You can now export the top‐level printer **)
-Definition pretty_print_stmt (s: Stmt) : PrimString.string :=
-  ppStmt s.
-
-(* END of skeleton *)
+```coqquery
+Search (_ ++ _) (string -> string -> string).
 ```
 
-## User 18
+## User 10
+
+That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria. Before assuming non-existence of what you are looking for, try relaxing some constraints. Consider the possibility of argument order being different, or names being different (e.g. `toString` vs `to_string` vs `print` vs `showString`). Make the most minimal assumptions about how stuff is named.
+
+## Assistant 9
+
+I expect the `String` module’s `append` function works on the primitive `string` (i.e. `PrimString.string`), so we can concatenate pieces via `String.append`. Let me confirm:
+
+```coqquery
+Check String.append.
+```
+
+## User 11
+
+String.app
+     : String.string → String.string → String.string
+
+## Assistant 10
+
+I’ll provide a lightweight pretty‐printer for `Stmt` that focuses on statement structure and leaves expression and variable‐decl printing to admitted stubs (marked `TOFIXLATER`).  We use a small list‐printer and only recurse structurally on `Stmt`.  Once the expression and decl printers are filled in, this will give a working `pp_stmt : Stmt → string`.
+
+```gallina
+Require Import Coq.Strings.PrimString.
+Import String.StringSyntax.
+
+(* stubs for sub-printers *)
+Definition pp_expr (e : Expr) : string. Admitted.  (* TOFIXLATER *)
+Definition pp_vardecl (d : VarDecl) : string. Admitted.  (* TOFIXLATER *)
+
+(* a small list‐printer combinator *)
+Fixpoint pp_list {A} (ppA : A → string) (sep : string) (l : list A) : string :=
+  match l with
+  | [] => ""
+  | [x] => ppA x
+  | x :: xs => String.app (ppA x) (String.app sep (pp_list ppA sep xs))
+  end.
+
+(* two mutually recursive functions for printing Stmt and list of Stmt *)
+Fixpoint pp_stmt_list (l : list Stmt) : string :=
+  match l with
+  | [] => ""
+  | [s] => pp_stmt s
+  | s :: ss =>
+      String.app (pp_stmt s)
+                 (String.app "; " (pp_stmt_list ss))
+  end
+
+with pp_stmt (s : Stmt) : string :=
+  match s with
+  | Sseq ss =>
+      String.app "{ " (String.app (pp_stmt_list ss) " }")
+  | Sdecl ds =>
+      String.app (pp_list pp_vardecl "; " ds) ";"
+  | Sif vd_opt cond then_br else_br =>
+      let vd_s := match vd_opt with
+                  | None => ""
+                  | Some vd => String.app (pp_vardecl vd) " "
+                  end in
+      String.app "if ("
+                 (String.app (pp_expr cond) ") "
+                   (String.app vd_s
+                     (String.app (pp_stmt then_br)
+                       (String.app " else " (pp_stmt else_br)))))
+  | Sif_consteval thn els =>
+      String.app "if consteval " (String.app (pp_stmt thn) (String.app " else " (pp_stmt els)))
+  | Swhile vd_opt cond body =>
+      let vd_s := match vd_opt with
+                  | None => ""
+                  | Some vd => String.app (pp_vardecl vd) " "
+                  end in
+      String.app "while ("
+                 (String.app (pp_expr cond) ") "
+                   (String.app vd_s (pp_stmt body)))
+  | Sfor init cond incr body =>
+      let i1 := match init with None => "" | Some st => pp_stmt st end in
+      let c2 := match cond with None => "" | Some e => pp_expr e end in
+      let i3 := match incr with None => "" | Some e => pp_expr e end in
+      String.app "for ("
+                 (String.app i1
+                   (String.app "; "
+                     (String.app c2
+                       (String.app "; "
+                         (String.app i3 (String.app ") " (pp_stmt body)))))))
+  | Sdo body cond =>
+      String.app "do " (String.app (pp_stmt body) (String.app " while (" (String.app (pp_expr cond) ");")))
+  | Sswitch vd_opt e br =>
+      let vd_s := match vd_opt with None => "" | Some vd => String.app (pp_vardecl vd) " " end in
+      String.app "switch (" (String.app (pp_expr e) (String.app ") " (String.app vd_s (pp_stmt br))))
+  | Scase sb => String.app "case " (String.app (pp_expr sb.1) (String.app ": " (pp_stmt sb.2)))
+  | Sdefault => "default:;"
+  | Sbreak => "break;"
+  | Scontinue => "continue;"
+  | Sreturn eo =>
+      String.app "return"
+                 (match eo with None => ";" | Some e => String.app " " (String.app (pp_expr e) ";") end)
+  | Sexpr e => String.app (pp_expr e) ";"
+  | Sattr attrs st =>
+      String.app "[["
+                 (String.app (String.app (pp_list (fun i => i) ", ") "]] ")
+                   (pp_stmt st))
+  | Sasm txt vol inouts outouts clobs =>
+      let in_s  := pp_list (fun io => String.app io.1 ("(" ++ pp_expr io.2 ++ ")")) ", " inouts in
+      let out_s := pp_list (fun io => String.app io.1 ("(" ++ pp_expr io.2 ++ ")")) ", " outouts in
+      let clob_s := pp_list (fun i => i) ", " clobs in
+      String.app "asm "
+                 (String.app txt
+                   (String.app " "
+                     (String.app (if vol then "volatile " else "")
+                       (String.app "("
+                         (String.app in_s
+                           (String.app ") ("
+                             (String.app out_s
+                               (String.app ") {"
+                                 (String.app clob_s "};")))))))))
+  | Slabeled lbl st => String.app lbl (String.app ": " (pp_stmt st))
+  | Sgoto lbl => String.app "goto " (String.app lbl ";")
+  | Sunsupported txt => txt
+  end.
+```
+
+## User 12
+
+Toplevel input, characters 154-159:
+>   | x :: xs => String.app (ppA x) (String.app sep (pp_list ppA sep xs))
+>                            ^^^^^
+Error:
+In environment
+pp_list : ∀ A : Type, (A → string) → string → list A → string
+A : Type
+ppA : A → string
+sep : string
+l : list A
+x : A
+xs : list A
+a : A
+l0 : list A
+xs0 := a :: l0 : list A
+The term "ppA x" has type "string" while it is expected to have type "String.string".
 
 
-The code now compiles but still contains `Admitted.` holes or TOFIXLATER items.
-Please pick one or more holes to implement or TOFIXLATER iteems to fix.
-Prefer picking hole(s) that are more higher level.
+## Assistant 11
 
-IMPORTANT: First check whether what you want to implement is already implemented somewhere.
-You can use the `Search` query and then use the `Print` query on promising names/results to confirm that they are implementing exactly what was assumed by the callers.
+We need the primitive‐string concatenation function from `PrimString`. Let’s check its name:
 
-If the implementation doesnt exist or you cannot find it using the queries, implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
-Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.
+```coqquery
+Check PrimString.append.
+```
 
-Beware that if you plan to implement a hole by structural recursion on an argument, the argument must have an `Inductive` type. Also if the `Inductive` type is defined mutually with other `Inductive` types, you may need to define your function as a mutually-recursive Fixpoint. If you have already implemented parts of this set of mutually recursive Fixpoints, you may need to put the new and old parts together in the same block of mutually-recursive `Fixpoint`s.
+## User 13
 
-The expected response format remains the same (end with ```gallina or ```coqquery block).
-If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN. This is important because the non-human, non-LLM programmetic e-lisp loop that is chatting with you does not know to apply partial diffs and merely replaces full old solutions with the new one.
+Toplevel input, characters 6-23:
+> Check PrimString.append.
+>       ^^^^^^^^^^^^^^^^^
+Error: The reference PrimString.append was not found in the current environment.
 
+## Assistant 12
 
-## Assistant 16
+`pp_list`’s result type is our primitive `string`, but `String.app` takes `String.string` (the old non-primitive strings). We need a concatenation for primitive `string`. 
 
-To implement `pstr : string → PrimString.string` correctly, let’s see what functions are available in the `PrimString` module for building primitive strings from Coq’s built-in `string`.  
+That lives in the module `PrimitiveString`: 
+
+```coqquery
+Search _ (_ ^ _)%string.
+```
+
+## User 14
+
+Nat.pow_1_r: ∀ a : nat, a ^ 1 = a
+Nat.pow_0_r: ∀ a : nat, a ^ 0 = 1
+Nat.pow_1_l: ∀ a : nat, 1 ^ a = 1
+Nat.pow_le_mono_l: ∀ a b c : nat, a ≤ b → a ^ c ≤ b ^ c
+Nat.pow_neg_r: ∀ a b : nat, b < 0 → a ^ b = 0
+Nat.pow_0_l: ∀ a : nat, a ≠ 0 → 0 ^ a = 0
+Nat.pow_gt_lin_r: ∀ a b : nat, 1 < a → b < a ^ b
+Nat.pow_mul_r: ∀ a b c : nat, a ^ (b * c) = (a ^ b) ^ c
+Nat.pow_2_r: ∀ a : nat, a ^ 2 = a * a
+Nat.pow_succ_r': ∀ a b : nat, a ^ S b = a * a ^ b
+Nat.shiftl_1_l: ∀ n : nat, Nat.shiftl 1 n = 2 ^ n
+Nat.pow_nonzero: ∀ a b : nat, a ≠ 0 → a ^ b ≠ 0
+RIneq.pow_INR: ∀ m n : nat, Raxioms.INR (m ^ n) = Rpow_def.pow (Raxioms.INR m) n
+Nat.pow_mul_l: ∀ a b c : nat, (a * b) ^ c = a ^ c * b ^ c
+Nat2N.inj_pow: ∀ n n' : nat, N.of_nat (n ^ n') = (N.of_nat n ^ N.of_nat n')%N
+Nat.ones_equiv: ∀ n : nat, Nat.ones n = Nat.pred (2 ^ n)
+N2Nat.inj_pow: ∀ a a' : N, N.to_nat (a ^ a') = N.to_nat a ^ N.to_nat a'
+Pos2Nat.inj_pow: ∀ p q : positive, Pos.to_nat (p ^ q) = Pos.to_nat p ^ Pos.to_nat q
+Nat2Z.inj_pow: ∀ n m : nat, n ^ m = (n ^ m)%Z
+Z2Nat.inj_pow: ∀ x y : nat, x ^ y = (x ^ y)%Z
+Nat.pow_eq_0: ∀ a b : nat, b ≠ 0 → a ^ b = 0 → a = 0
+Nat.pow_add_r: ∀ a b c : nat, a ^ (b + c) = a ^ b * a ^ c
+Nat.pow2_bits_true: ∀ n : nat, Nat.testbit (2 ^ n) n = true
+Nat.log2_pow2: ∀ a : nat, 0 ≤ a → Nat.log2 (2 ^ a) = a
+Nat.pow_lower_bound: ∀ a b : nat, a ≠ 0 → 1 ≤ a ^ b
+Nat.log2_up_pow2: ∀ a : nat, 0 ≤ a → Nat.log2_up (2 ^ a) = a
+Nat.setbit_spec': ∀ a n : nat, Nat.setbit a n = Nat.lor a (2 ^ n)
+Nat.shiftr_div_pow2: ∀ a n : nat, Nat.shiftr a n = a `div` 2 ^ n
+Nat.pow_lt_mono_r: ∀ a b c : nat, 1 < a → b < c → a ^ b < a ^ c
+Nat.clearbit_spec': ∀ a n : nat, Nat.clearbit a n = Nat.ldiff a (2 ^ n)
+Nat.shiftl_mul_pow2: ∀ a n : nat, Nat.shiftl a n = a * 2 ^ n
+Nat.odd_pow: ∀ a b : nat, b ≠ 0 → Nat.odd (a ^ b) = Nat.odd a
+Nat.even_pow: ∀ a b : nat, b ≠ 0 → Nat.even (a ^ b) = Nat.even a
+Nat.log2_up_succ_pow2: ∀ a : nat, 0 ≤ a → Nat.log2_up (S (2 ^ a)) = S a
+Nat.pow_inj_l: ∀ a b c : nat, c ≠ 0 → a ^ c = b ^ c → a = b
+Nat.pow_succ_r: ∀ a b : nat, 0 ≤ b → a ^ S b = a * a ^ b
+Nat.pow2_bits_eqb: ∀ n m : nat, Nat.testbit (2 ^ n) m = (n =? m)
+Nat.pow_le_mono_r: ∀ a b c : nat, a ≠ 0 → b ≤ c → a ^ b ≤ a ^ c
+Nat.pow_lt_mono_r_iff: ∀ a b c : nat, 1 < a → b < c ↔ a ^ b < a ^ c
+Nat.pow_lt_mono_l: ∀ a b c : nat, c ≠ 0 → a < b → a ^ c < b ^ c
+Nat.pow_inj_r: ∀ a b c : nat, 1 < a → a ^ b = a ^ c → b = c
+Nat.land_ones: ∀ a n : nat, Nat.land a (Nat.ones n) = a `mod` 2 ^ n
+Nat.log2_lt_pow2: ∀ a b : nat, 0 < a → a < 2 ^ b ↔ Nat.log2 a < b
+Nat.pow_gt_1: ∀ a b : nat, 1 < a → b ≠ 0 → 1 < a ^ b
+Nat.log2_pred_pow2: ∀ a : nat, 0 < a → Nat.log2 (Nat.pred (2 ^ a)) = Nat.pred a
+Nat.pow_eq_0_iff: ∀ a b : nat, a ^ b = 0 ↔ b ≠ 0 ∧ a = 0
+Nat.log2_up_lt_pow2: ∀ a b : nat, 0 < a → 2 ^ b < a ↔ b < Nat.log2_up a
+Nat.pow_le_mono_r_iff: ∀ a b c : nat, 1 < a → b ≤ c ↔ a ^ b ≤ a ^ c
+Nat.pow_lt_mono_l_iff: ∀ a b c : nat, c ≠ 0 → a < b ↔ a ^ c < b ^ c
+Nat.pow_le_mono_l_iff: ∀ a b c : nat, c ≠ 0 → a ≤ b ↔ a ^ c ≤ b ^ c
+Nat.ones_mod_pow2: ∀ n m : nat, m ≤ n → Nat.ones n `mod` 2 ^ m = Nat.ones m
+Nat.log2_le_pow2: ∀ a b : nat, 0 < a → 2 ^ b ≤ a ↔ b ≤ Nat.log2 a
+Nat.log2_up_le_pow2: ∀ a b : nat, 0 < a → a ≤ 2 ^ b ↔ Nat.log2_up a ≤ b
+Nat2Pos.inj_pow: ∀ n m : nat, m ≠ 0 → Pos.of_nat (n ^ m) = (Pos.of_nat n ^ Pos.of_nat m)%positive
+Nat.pow_le_mono: ∀ a b c d : nat, a ≠ 0 → a ≤ c → b ≤ d → a ^ b ≤ c ^ d
+Nat.log2_up_eq_succ_is_pow2: ∀ a : nat, Nat.log2_up (S a) = S (Nat.log2_up a) → ∃ b : nat, a = 2 ^ b
+Nat.pow_add_lower: ∀ a b c : nat, c ≠ 0 → a ^ c + b ^ c ≤ (a + b) ^ c
+Nat.pow2_bits_false: ∀ n m : nat, n ≠ m → Nat.testbit (2 ^ n) m = false
+Znat.Z2Nat.inj_pow: ∀ n m : Z, (0 ≤ n)%Z → (0 ≤ m)%Z → Z.to_nat (n ^ m) = Z.to_nat n ^ Z.to_nat m
+Nat.pow_lt_mono: ∀ a b c d : nat, 0 < a < c → 0 < b < d → a ^ b < c ^ d
+Nat.ones_add: ∀ n m : nat, Nat.ones (m + n) = 2 ^ m * Nat.ones n + Nat.ones m
+Nat.log2_eq_succ_is_pow2: ∀ a : nat, Nat.log2 (S a) = S (Nat.log2 a) → ∃ b : nat, S a = 2 ^ b
+Nat.mul_pow2_bits_add: ∀ a n m : nat, Nat.testbit (a * 2 ^ n) (m + n) = Nat.testbit a m
+Nat.div_pow2_bits: ∀ a n m : nat, Nat.testbit (a `div` 2 ^ n) m = Nat.testbit a (m + n)
+Nat.testbit_spec': ∀ a n : nat, Nat.b2n (Nat.testbit a n) = (a `div` 2 ^ n) `mod` 2
+Nat.ones_div_pow2: ∀ n m : nat, m ≤ n → Nat.ones n `div` 2 ^ m = Nat.ones (n - m)
+Nat.mul_pow2_bits_low: ∀ a n m : nat, m < n → Nat.testbit (a * 2 ^ n) m = false
+Nat.mod_pow2_bits_high: ∀ a n m : nat, n ≤ m → Nat.testbit (a `mod` 2 ^ n) m = false
+Nat.mod_pow2_bits_low: ∀ a n m : nat, m < n → Nat.testbit (a `mod` 2 ^ n) m = Nat.testbit a m
+length_list_power: ∀ [A B : Type] (l : list A) (l' : list B), length (list_power l l') = length l' ^ length l
+Nat.log2_spec: ∀ n : nat, 0 < n → 2 ^ Nat.log2 n <= n < 2 ^ S (Nat.log2 n)
+Nat.log2_log2_up_spec: ∀ a : nat, 0 < a → 2 ^ Nat.log2 a <= a <= 2 ^ Nat.log2_up a
+Nat.pow_sub_r: ∀ a b c : nat, a ≠ 0 → c ≤ b → a ^ (b - c) = a ^ b `div` a ^ c
+Nat.testbit_eqb: ∀ a n : nat, Nat.testbit a n = ((a `div` 2 ^ n) `mod` 2 =? 1)
+Nat.pow_div_l: ∀ a b c : nat, b ≠ 0 → a `mod` b = 0 → (a `div` b) ^ c = a ^ c `div` b ^ c
+Nat.mul_pow2_bits_high: ∀ a n m : nat, n ≤ m → Nat.testbit (a * 2 ^ n) m = Nat.testbit a (m - n)
+Nat.log2_log2_up_exact: ∀ a : nat, 0 < a → Nat.log2 a = Nat.log2_up a ↔ ∃ b : nat, a = 2 ^ b
+Nat.log2_up_mul_pow2: ∀ a b : nat, 0 < a → 0 ≤ b → Nat.log2_up (a * 2 ^ b) = b + Nat.log2_up a
+Nat.log2_up_eq_succ_iff_pow2: ∀ a : nat, 0 < a → Nat.log2_up (S a) = S (Nat.log2_up a) ↔ ∃ b : nat, a = 2 ^ b
+Nat.log2_mul_pow2: ∀ a b : nat, 0 < a → 0 ≤ b → Nat.log2 (a * 2 ^ b) = b + Nat.log2 a
+Nat.log2_up_spec: ∀ a : nat, 1 < a → 2 ^ Nat.pred (Nat.log2_up a) < a <= 2 ^ Nat.log2_up a
+Nat.log2_eq_succ_iff_pow2: ∀ a : nat, 0 < a → Nat.log2 (S a) = S (Nat.log2 a) ↔ ∃ b : nat, S a = 2 ^ b
+Nat.testbit_false: ∀ a n : nat, Nat.testbit a n = false ↔ (a `div` 2 ^ n) `mod` 2 = 0
+Nat.log2_unique: ∀ a b : nat, 0 ≤ b → 2 ^ b <= a < 2 ^ S b → Nat.log2 a = b
+Nat.testbit_true: ∀ a n : nat, Nat.testbit a n = true ↔ (a `div` 2 ^ n) `mod` 2 = 1
+vec_card: ∀ {A : Type} {EqDecision0 : EqDecision A} {H : Finite A} (n : nat), card (vec A n) = card A ^ n
+ClassicalDedekindReals.Qpower_2_invneg_le_pow: ∀ n : Z, (1 # Pos.of_nat (2 ^ Z.to_nat (- n)) <= 2 ^ n)%Q
+Nat.log2_up_unique: ∀ a b : nat, 0 < b → 2 ^ Nat.pred b < a <= 2 ^ b → Nat.log2_up a = b
+ClassicalDedekindReals.Qpower_2_neg_eq_natpow_inv: ∀ n : nat, (2 ^ (- n) == 1 # Pos.of_nat (2 ^ n))%Q
+Nat.pow_add_upper: ∀ a b c : nat, c ≠ 0 → (a + b) ^ c ≤ 2 ^ Nat.pred c * (a ^ c + b ^ c)
+Nat.add_nocarry_mod_lt_pow2: ∀ a b n : nat, Nat.land a b = 0 → a `mod` 2 ^ n + b `mod` 2 ^ n < 2 ^ n
+Nat.add_nocarry_lt_pow2: ∀ a b n : nat, Nat.land a b = 0 → a < 2 ^ n → b < 2 ^ n → a + b < 2 ^ n
+Nat.log2_unique': ∀ a b c : nat, 0 ≤ b → 0 <= c < 2 ^ b → a = 2 ^ b + c → Nat.log2 a = b
+Nat.log2_spec_alt: ∀ a : nat, 0 < a → ∃ r : nat, a = 2 ^ Nat.log2 a + r ∧ 0 <= r < 2 ^ Nat.log2 a
+Nat.testbit_unique: ∀ (a n : nat) (a0 : bool) (l h : nat), l < 2 ^ n → a = l + (Nat.b2n a0 + 2 * h) * 2 ^ n → Nat.testbit a n = a0
+Nat.testbit_spec: ∀ a n : nat, ∃ l h : nat, 0 <= l < 2 ^ n ∧ a = l + (Nat.b2n (Nat.testbit a n) + 2 * h) * 2 ^ n
+Nat.log2_iter_spec: ∀ k p q r : nat, 2 ^ S p = q + S r → r < 2 ^ p → let s := Nat.log2_iter k p q r in 2 ^ s <= k + q < 2 ^ S s
+ClassicalDedekindReals.DRealQlimExp2:
+  ∀ (x : ClassicalDedekindReals.DReal) (n : nat), {q : Q | (`x) q = true ∧ (`x) (q + (1 # Pos.of_nat (2 ^ n)))%Q = false}
+list_card: ∀ {A : Type} {EqDecision0 : EqDecision A} {H : Finite A} (n : nat), card {l : list A | length l = n} = card A ^ n
+
+## Assistant 13
+
+I need to see the contents of the `PrimString` module to find its concatenation function (and perhaps empty‐string). Let’s inspect it:
 
 ```coqquery
 Print PrimString.
 ```
 
-## User 19
+## User 15
 
 Module PrimString := Struct  End
 
-## Assistant 17
+## Assistant 14
 
-We need to locate the built-in converter from Coq’s `string` to `PrimString.string` so we can implement
-
-    Definition pstr (s: string) : PrimString.string.
-
-Let’s search for any function of type `string → PrimString.string` in the libraries:
+To find the primitive‐string concatenation operator, let’s locate the notation for `^` on `string`:
 
 ```coqquery
-Search (string -> PrimString.string).
+Locate "^".
 ```
 
-## User 20
+## User 16
 
-id_string: string → string
-mangle_name: string → string
-pretty.with_space: string → string
-printer.angles: string → string
-pretty.parens: string → string
-printer.parens: string → string
-pretty.angles: string → string
+Notation "x ^ y" := (N.pow x y) (* x in scope _N_scope, y in scope _N_scope *) : N_scope (from Stdlib.NArith.BinNat)
+Notation " q ^ z " := (Qpower q z) (* q in scope _Q_scope, z in scope _Z_scope *) : Q_scope (from Stdlib.QArith.QArith_base)
+Notation "x ^ y" := (Z.pow x y) (* x in scope _Z_scope, y in scope _Z_scope *) : Z_scope (from Stdlib.ZArith.BinInt)
+Notation "x ^ y" := (Nat.pow x y) (* x in scope _nat_scope, y in scope _nat_scope *) : nat_scope (default interpretation)
+  (from Stdlib.Arith.PeanoNat)
+Notation "x ^ y" := (Pos.pow x y) (* x in scope _positive_scope, y in scope _positive_scope *) : positive_scope (from Stdlib.PArith.BinPos)
+
+## Assistant 15
+
+I need to see what `string` refers to in our file: whether it’s `String.string` or `PrimString.string`. This will clarify the concatenation mismatch. Let’s ask:
+
+```coqquery
+About string.
+```
+
+## User 17
+
+string : Set
+
+string is not universe polymorphic
+Expands to: Constant Corelib.Strings.PrimString.string
+Declared in library Corelib.Strings.PrimString, line 5, characters 10-16
+
+## Assistant 16
+
+To find the primitive‐string concatenator, let’s search for any function of type `string → string → string` (where `string` is the primitive `PrimString.string`):
+
+```coqquery
+Search (string -> string -> string).
+```
+
+## User 18
+
 printer.postfix: string → string → string
 printer.prefix: string → string → string
 cat: string → string → string
-Buf.contents_aux: Buf.t → string → string
-to_ident.pp_N_aux: nat → N → string → string
-N.to_string_aux: ∀ n : N, Acc N.lt n → string → string
-Buf.concat_aux: (Buf.t → string → string) → Buf.t → list Buf.t → string → string
 
-## Assistant 18
+## Assistant 17
 
-To see how `PrimString.string` is implemented and what conversions exist, let us inspect its definition:
+Here is the same pretty‐printer revised to use the primitive‐string `cat` for concatenation.  Once you fill in the `pp_expr` and `pp_vardecl` stubs, you will have a working `pp_stmt : Stmt → string`.
 
-```coqquery
-Check PrimString.string.
+```gallina
+Require Import Corelib.Strings.PrimString.
+Open Scope string.
+
+(* stubs for sub-printers *)
+Definition pp_expr (e : Expr) : string. Admitted.  (* TOFIXLATER *)
+Definition pp_vardecl (d : VarDecl) : string. Admitted.  (* TOFIXLATER *)
+
+(* a small list‐printer combinator *)
+Fixpoint pp_list {A} (ppA : A → string) (sep : string) (l : list A) : string :=
+  match l with
+  | [] => ""
+  | [x] => ppA x
+  | x :: xs => cat (ppA x) (cat sep (pp_list ppA sep xs))
+  end.
+
+(* mutually recursive printing of Stmt and list of Stmt *)
+Fixpoint pp_stmt_list (l : list Stmt) : string :=
+  match l with
+  | [] => ""
+  | [s] => pp_stmt s
+  | s :: ss => cat (pp_stmt s) (cat "; " (pp_stmt_list ss))
+  end
+
+with pp_stmt (s : Stmt) : string :=
+  match s with
+  | Sseq ss =>
+      cat "{ " (cat (pp_stmt_list ss) " }")
+  | Sdecl ds =>
+      cat (pp_list pp_vardecl "; " ds) ";"
+  | Sif vd_opt cond thn els =>
+      let vd_s := match vd_opt with
+                  | None => ""
+                  | Some vd => cat (pp_vardecl vd) " "
+                  end in
+      cat "if (" (cat (pp_expr cond) (cat ") " (cat vd_s (cat (pp_stmt thn) (cat " else " (pp_stmt els))))))
+  | Sif_consteval thn els =>
+      cat "if consteval " (cat (pp_stmt thn) (cat " else " (pp_stmt els)))
+  | Swhile vd_opt cond body =>
+      let vd_s := match vd_opt with
+                  | None => ""
+                  | Some vd => cat (pp_vardecl vd) " "
+                  end in
+      cat "while (" (cat (pp_expr cond) (cat ") " (cat vd_s (pp_stmt body))))
+  | Sfor init cond incr body =>
+      let i1 := match init with None => "" | Some st => pp_stmt st end in
+      let c2 := match cond with None => "" | Some e => pp_expr e end in
+      let i3 := match incr with None => "" | Some e => pp_expr e end in
+      cat "for (" (cat i1 (cat "; " (cat c2 (cat "; " (cat i3 (cat ") " (pp_stmt body))))))
+  | Sdo body cond =>
+      cat "do " (cat (pp_stmt body) (cat " while (" (cat (pp_expr cond) ");")))
+  | Sswitch vd_opt e br =>
+      let vd_s := match vd_opt with None => "" | Some vd => cat (pp_vardecl vd) " " end in
+      cat "switch (" (cat (pp_expr e) (cat ") " (cat vd_s (pp_stmt br))))
+  | Scase sb =>
+      cat "case " (cat (pp_expr sb.1) (cat ": " (pp_stmt sb.2)))
+  | Sdefault => "default:;"
+  | Sbreak => "break;"
+  | Scontinue => "continue;"
+  | Sreturn eo =>
+      cat "return" (match eo with None => ";" | Some e => cat " " (cat (pp_expr e) ";") end)
+  | Sexpr e => cat (pp_expr e) ";"
+  | Sattr attrs st =>
+      cat "[[" (cat (pp_list (fun i => i) ", ") (cat "]] " (pp_stmt st)))
+  | Sasm txt vol inouts outouts clobs =>
+      let in_s  := pp_list (fun io => cat io.1 (cat "(" (cat (pp_expr io.2) ")"))) ", " inouts in
+      let out_s := pp_list (fun io => cat io.1 (cat "(" (cat (pp_expr io.2) ")"))) ", " outouts in
+      let clob_s := pp_list (fun i => i) ", " clobs in
+      cat "asm " (cat txt (cat " " (cat (if vol then "volatile " else "")
+        (cat "(" (cat in_s (cat ") (" (cat out_s (cat ") {" (cat clob_s "};")))))))))
+  | Slabeled lbl st => cat lbl (cat ": " (pp_stmt st))
+  | Sgoto lbl => cat "goto " (cat lbl ";")
+  | Sunsupported txt => txt
+  end.
 ```
 
-## User 21
+## User 19
 
-string
-     : Set
+Toplevel input, characters 1342-1344:
+>   | Sdo body cond =>
+>                   ^^
+Error: Syntax error: ')' expected after [term level 200] (in [term]).
 
-## Assistant 19
-
-I see no existing converter `string → PrimString.string`. Therefore, we implement `pstr` by hand using the primitive‐string API: convert each Coq‐`ascii` character to its byte and build a `PrimString.string` via `PrimString.from_bytes` if available, or else via `PrimString.append` iteratively. Let's inspect `PrimString` for such primitives:
-
-```coqquery
-Search (list Byte.byte -> _) in PrimString.
-```
-
-## User 22
-
-That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria. Before assuming non-existence of what you are looking for, try relaxing some constraints. Consider the possibility of argument order being different, or names being different (e.g. `toString` vs `to_string` vs `print` vs `showString`). Make the most minimal assumptions about how stuff is named.
 

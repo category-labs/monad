@@ -143,7 +143,7 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
             ((coq-programmer--buffer-has-admit-p body)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
-             (setq coq-programmer--last-working-with-holes body)  ;; NEW
+             (setq coq-programmer--last-working-with-holes gpt-text)  ;; NEW
              coq-programmer--build-admit-prompt)
 
             ;; ---------- perfect success ----------
@@ -156,7 +156,7 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
        (let* ((raw (query-coq (string-trim body)))
               (res (string-trim (or raw ""))))
          (if (string-empty-p res)
-             "That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria."
+             "That query has no errors but returned an empty result. For `Search` queries, this means nothing in the current context matches the search criteria. Before assuming non-existence of what you are looking for, try relaxing some constraints. Consider the possiblity of the arugment order being different, or the names being different: toString vs to_string vs print vs showString: make most minimal assumptions about how stuff is named"
            res)))
 
       ;; =================================================  parse failure
@@ -214,6 +214,8 @@ An example of an answer (not to the the current task) is:
 ```gallina
 Definition foo : nat := 1+2.
 ```
+
+Please include exactly one query in a ```coqquery block.
 
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
 ")
@@ -304,8 +306,7 @@ directory as the current `.v` file.  Stops when:
 	      ;; If we have a fallback snippet with admits, re-insert it
 	      (with-current-buffer proof-script-buffer
 		(when coq-programmer--last-working-with-holes
-		  (goto-char (point-max))
-		  (insert coq-programmer--last-working-with-holes "\n")))
+		  (gpt-handle-coq-output coq-programmer--last-working-with-holes)))
 	      (log "System"
 		   (format "LLM call budget (%d) exhausted.  Stopping session."
 			   coq-programmer-max-llm-calls))

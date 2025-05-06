@@ -2,83 +2,88 @@ Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
 Import linearity.
 Disable Notation atomic_name'.
+Open Scope pstring_scope.
 
+Locate string.
 
-Require Import Corelib.Strings.PrimString.
-Require Import Coq.Strings.Ascii.
-Require Import Coq.Strings.String.
+(*
+Write a Coq function to pretty print bluerock.lang.cpp.syntax.stmt.Stmt, an Inductive type I have defined for C++ statements.
+bluerock.lang.cpp.syntax.stmt.Stmt is defined mutually Inductively with many other types like Expr.
+As a part of this job, you need to write pretty printers for them as well, likely together using mutual recursion.
+The type of the printer should be bluerock.lang.cpp.syntax.stRequire Import List.
+*)
+
 Require Import Coq.Lists.List.
-Require Import Corelib.Numbers.Cyclic.Int63.Uint63Axioms.
+Require Import Corelib.Strings.PrimString.
 Import ListNotations.
+Open Scope pstring_scope.
 
-(* ------------------------------------------------------------------- *)
-(* Primitive‐int constants for PrimInt63.int *)
-Definition zero63 : PrimInt63.int := of_Z 0.
-Definition one63  : PrimInt63.int := of_Z 1.
+(* ------------------------------------------------------------------ *)
+(* STUBS FOR ALL OF THE OTHER PRINTERS.  TOFIXLATER                   *)
+(* ------------------------------------------------------------------ *)
+Axiom pp_name         : name       -> string.  (* TOFIXLATER *)
+Axiom pp_temp_arg     : temp_arg   -> string.  (* TOFIXLATER *)
+Axiom pp_type         : type       -> string.  (* TOFIXLATER *)
+Axiom pp_expr         : Expr       -> string.  (* TOFIXLATER *)
+Axiom pp_vardecl      : VarDecl    -> string.  (* TOFIXLATER *)
+Axiom pp_bindingdecl  : BindingDecl-> string.  (* TOFIXLATER *)
+Axiom pp_cast         : Cast       -> string.  (* TOFIXLATER *)
 
-(* Opaque conversion from Coq ascii to the primitive‐char63 type *)
-Parameter char63_of_ascii : ascii → PrimString.char63.  (* TOFIXLATER *)
-
-(* Build a single‐character primitive string *)
-Definition pstring_of_char (a: ascii) : PrimString.string :=
-  let c := char63_of_ascii a in
-  PrimString.make one63 c.
-
-(* Convert a Coq `string` into a `PrimString.string` by structural recursion *)
-Fixpoint string_to_pstring (s: string) : PrimString.string :=
-  match s with
-  | EmptyString =>
-      PrimString.make zero63 (char63_of_ascii "0"%char)
-  | String a rest =>
-      PrimString.cat (pstring_of_char a)
-                     (string_to_pstring rest)
-  end.
-
-(* ------------------------------------------------------------------- *)
-(* Generic list‐joining utility *)
-Fixpoint pp_list {A:Type} (sep: string)
-         (pp: A → PrimString.string)
-         (l: list A) : PrimString.string :=
+(* ------------------------------------------------------------------ *)
+(* A little list‐printer                                              *)
+(* ------------------------------------------------------------------ *)
+Definition pp_list {A} (pp : A -> string) (sep : string) (l : list A) : string :=
   match l with
-  | [] => string_to_pstring ""
-  | x :: xs =>
-    let init := pp x in
-    fold_left
-      (fun acc y =>
-         PrimString.cat
-           (PrimString.cat acc (string_to_pstring sep))
-           (pp y))
-      xs init
+  | []    => ""
+  | x::xs => fold_left
+               (fun acc y => cat (cat acc sep) (pp y))
+               xs
+               (pp x)
   end.
 
-(* ------------------------------------------------------------------- *)
-(* High‐level stubs for sub‐printers; to be implemented later *)
-Parameter pp_expr           : Expr → PrimString.string.         (* TOFIXLATER *)
-Parameter pp_var_decl       : VarDecl → PrimString.string.      (* TOFIXLATER *)
-Parameter pp_switch_branch  : SwitchBranch → PrimString.string. (* TOFIXLATER *)
-
-(* ------------------------------------------------------------------- *)
-(* Skeleton pretty‐printer for C++ statements *)
-Fixpoint pp_stmt (s: Stmt) : PrimString.string :=
+(* ------------------------------------------------------------------ *)
+(* THE STATEMENT PRINTER                                              *)
+(* ------------------------------------------------------------------ *)
+Fixpoint pp_stmt (s: Stmt) : string :=
   match s with
-  | Sseq ss       => string_to_pstring "{…}"
-  | Sdecl ds      => string_to_pstring "decl …"
-  | Sif _ _ _ _   => string_to_pstring "if (…) …"
-  | Sif_consteval _ _ => string_to_pstring "if constexpr …"
-  | Swhile _ _ _  => string_to_pstring "while (…) …"
-  | Sfor _ _ _ _  => string_to_pstring "for (…) …"
-  | Sdo _ _       => string_to_pstring "do …"
-  | Sswitch _ _ _ => string_to_pstring "switch (…) …"
-  | Scase _       => string_to_pstring "case …"
-  | Sdefault      => string_to_pstring "default:"
-  | Sbreak        => string_to_pstring "break;"
-  | Scontinue     => string_to_pstring "continue;"
-  | Sreturn _     => string_to_pstring "return …;"
-  | Sexpr _       => string_to_pstring "expr;"
-  | Sattr _ _     => string_to_pstring "[[…]]"
-  | Sasm _ _ _ _ _=> string_to_pstring "asm(…);"
-  | Slabeled _ _  => string_to_pstring "lbl: …"
-  | Sgoto _       => string_to_pstring "goto …;"
-  | Sunsupported _=> string_to_pstring "/* unsupported */"
+  | Sseq ss =>
+      let inner := pp_list pp_stmt "; " ss in
+      printer.prefix "{ " (printer.postfix " }" inner)
+
+  | Sdecl ds =>
+      cat "decl " (pp_list pp_vardecl ", " ds)
+
+  | Sif _vd e thn els =>
+      let c := pp_expr e in
+      let t := pp_stmt thn in
+      let e := pp_stmt els in
+      cat (cat "if(" c) (cat ") " (cat t (cat " else " e)))
+
+  | Swhile _vd e body =>
+      cat (cat "while(" (pp_expr e)) (cat ") " (pp_stmt body))
+
+  | Sfor init cond post body =>
+      (* build the "for(init; cond; post)" header in steps *)
+      let i := match init with Some st => pp_stmt st | None => "" end in
+      let c := match cond with Some e => pp_expr e | None => "" end in
+      let p := match post with Some e => pp_expr e | None => "" end in
+      let header1 := cat "for(" (cat i "; ") in
+      let header2 := cat header1 (cat c "; ") in
+      let header3 := cat header2 p in
+      cat header3 (cat ") " (pp_stmt body))
+
+  | Sreturn oe =>
+      cat "return" (match oe with None => "" | Some e => cat " " (pp_expr e) end)
+
+  | Sexpr e =>
+      pp_expr e
+
+  | Sunsupported s' =>
+      cat "/* unsupported Stmt: " (cat s' " */")
+
+  | _ =>
+      (* catch‐all for cases not yet implemented *)
+      printer.prefix "/* unimpl stmt: " (printer.postfix " */" "")
+
   end.
 

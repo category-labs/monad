@@ -57,7 +57,7 @@ public:
         UNKNOWN_VALIDATOR,
         UNKNOWN_DELEGATOR,
         MINIMUM_STAKE_NOT_MET,
-        NOT_ENOUGH_SHARES_TO_WITHDRAW,
+        NOT_ENOUGH_SHARES_TO_UNDELEGATE,
         INVALID_SECP_PUBKEY,
         INVALID_BLS_PUBKEY,
         INVALID_SECP_SIGNATURE,
@@ -134,12 +134,12 @@ public:
             ca_,
             0xcb5af3efd03d626a8756769ffe0b848d51f4dd9a8a4ea88b7d83db13535be6bd_bytes32};
 
-        StorageVariable<Uint256BE> last_deposit_request_id{
+        StorageVariable<Uint256BE> last_delegate_request_id{
             state_,
             ca_,
             0x59725fc1e48c9d8be01f7e99fd22a7aebdb81ead6f187a3aa7f1ed9c2d5786c9_bytes32};
 
-        StorageVariable<Uint256BE> last_withdrawal_request_id{
+        StorageVariable<Uint256BE> last_undelegate_request_id{
             state_,
             ca_,
             0xfc1f685954d77928bb8b43407904dc3510647b966f75e0efe3575b5ef5056e80_bytes32};
@@ -204,33 +204,33 @@ public:
                     address)};
         }
 
-        // mapping(uint256 => DepositRequest) deposit_request
-        StorageVariable<DepositRequest>
-        deposit_request(Uint256BE const &deposit_id) const noexcept
+        // mapping(uint256 => DelegateRequest) delegate_request
+        StorageVariable<DelegateRequest>
+        delegate_request(Uint256BE const &id) const noexcept
         {
-            return StorageVariable<DepositRequest>{
+            return StorageVariable<DelegateRequest>{
                 state_,
                 ca_,
                 mapping(
                     0xad6040bcddfdc4135a29f90043f4d16f58b32de144dc68b689436b2f3c83a9f8_bytes32,
-                    deposit_id)};
+                    id)};
         }
 
-        // mapping(uint256 => WithdrawalRequest) withdrawal_request
-        StorageVariable<WithdrawalRequest>
-        withdrawal_request(Uint256BE const &withdrawal_id) const noexcept
+        // mapping(uint256 => UndelegateRequest) undelegate_request
+        StorageVariable<UndelegateRequest>
+        undelegate_request(Uint256BE const &id) const noexcept
         {
-            return StorageVariable<WithdrawalRequest>{
+            return StorageVariable<UndelegateRequest>{
                 state_,
                 ca_,
                 mapping(
                     0x310389d7b283e0188edf5a44370f9302f17158d3bee6e3fe8939b11f862f0918_bytes32,
-                    withdrawal_id)};
+                    id)};
         }
 
-        // mapping(uint256 /* epoch */ => Array[u256]) deposit_queue
+        // mapping(uint256 /* epoch */ => Array[u256]) delegate_queue
         StorageArray<Uint256BE>
-        deposit_queue(Uint256BE const &epoch) const noexcept
+        delegate_queue(Uint256BE const &epoch) const noexcept
         {
             return StorageArray<Uint256BE>{
                 state_,
@@ -240,15 +240,27 @@ public:
                     epoch)};
         }
 
-        // mapping(uint256 /* epoch */ => Array[u256]) withdrawal_queue
+        // mapping(uint256 /* epoch */ => Array[u256]) undelegate_queue
         StorageArray<Uint256BE>
-        withdrawal_queue(Uint256BE const &epoch) const noexcept
+        undelegate_queue(Uint256BE const &epoch) const noexcept
         {
             return StorageArray<Uint256BE>{
                 state_,
                 ca_,
                 mapping(
                     0x2e9329d8bc51599706422b7b26be828c8aa29f11009e2407b9db7897c8b6a6e7_bytes32,
+                    epoch)};
+        }
+
+        // mapping(uint256 /* epoch */ => Array[u256]) withdrawal_queue
+        StorageArray<WithdrawalRequest>
+        withdrawal_queue(Uint256BE const &epoch) const noexcept
+        {
+            return StorageArray<WithdrawalRequest>{
+                state_,
+                ca_,
+                mapping(
+                    0x2a417053468170675efce089b55ec998904481f89a2bbc92dd89b894267dd12e_bytes32,
                     epoch)};
         }
     } vars;
@@ -276,18 +288,18 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Output precompile_get_delegator_info(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Output precompile_get_deposit_request(
+    Output precompile_get_delegate_request(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Output precompile_get_withdrawal_request(
+    Output precompile_get_undelegate_request(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     Output precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Output precompile_add_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Output precompile_add_stake(
+    Output precompile_delegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Output precompile_remove_stake(
+    Output precompile_undelegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Output precompile_withdraw_balance(
         byte_string_view, evmc_address const &, evmc_uint256be const &);

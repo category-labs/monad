@@ -29,10 +29,10 @@ struct ValidatorInfo
     byte_string_fixed<48> bls_pubkey;
     Uint256BE active_stake;
     Uint256BE active_shares;
-    Uint256BE rewards[2];
+    Uint256BE rewards;
 };
 
-static_assert(sizeof(ValidatorInfo) == 196);
+static_assert(sizeof(ValidatorInfo) == 164);
 static_assert(alignof(ValidatorInfo) == 1);
 
 struct DelegatorInfo
@@ -44,31 +44,41 @@ struct DelegatorInfo
 static_assert(sizeof(DelegatorInfo) == 64);
 static_assert(alignof(DelegatorInfo) == 1);
 
-struct WithdrawalRequest
+struct UndelegateRequest
 {
     Uint256BE validator_id;
     Address delegator;
     Uint256BE shares;
 };
 
-static_assert(sizeof(WithdrawalRequest) == 84);
-static_assert(alignof(WithdrawalRequest) == 1);
+static_assert(sizeof(UndelegateRequest) == 84);
+static_assert(alignof(UndelegateRequest) == 1);
 
-struct DepositRequest
+struct DelegateRequest
 {
     Uint256BE validator_id;
     Address delegator;
     Uint256BE amount;
 };
 
-static_assert(sizeof(DepositRequest) == 84);
-static_assert(alignof(DepositRequest) == 1);
+static_assert(sizeof(DelegateRequest) == 84);
+static_assert(alignof(DelegateRequest) == 1);
+
+struct WithdrawalRequest
+{
+    Uint256BE validator_id;
+    Address delegator;
+    Uint256BE pending_balance;
+};
+
+static_assert(sizeof(WithdrawalRequest) == 84);
+static_assert(alignof(WithdrawalRequest) == 1);
 
 #pragma pack(pop)
 
 std::span<uint8_t> abi_encode_validator_info(ValidatorInfo const &);
 std::span<uint8_t> abi_encode_delegator_info(DelegatorInfo const &);
-std::span<uint8_t> abi_encode_deposit_request(DepositRequest const &);
-std::span<uint8_t> abi_encode_withdrawal_request(WithdrawalRequest const &);
+std::span<uint8_t> abi_encode_delegate_request(DelegateRequest const &);
+std::span<uint8_t> abi_encode_undelegate_request(UndelegateRequest const &);
 
 MONAD_NAMESPACE_END

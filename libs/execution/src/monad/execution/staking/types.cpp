@@ -37,7 +37,7 @@ std::span<uint8_t> abi_encode_delegator_info(DelegatorInfo const &d)
     return {ptr, 64};
 }
 
-std::span<uint8_t> abi_encode_deposit_request(DepositRequest const &r)
+std::span<uint8_t> abi_encode_delegate_request(DelegateRequest const &r)
 {
     auto *const ptr = static_cast<uint8_t *>(malloc(96));
     MONAD_ASSERT(ptr);
@@ -52,7 +52,7 @@ std::span<uint8_t> abi_encode_deposit_request(DepositRequest const &r)
     return {ptr, 96};
 }
 
-std::span<uint8_t> abi_encode_withdrawal_request(WithdrawalRequest const &r)
+std::span<uint8_t> abi_encode_undelegate_request(UndelegateRequest const &r)
 {
     auto *const ptr = static_cast<uint8_t *>(malloc(96));
     MONAD_ASSERT(ptr);

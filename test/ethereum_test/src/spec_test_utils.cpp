@@ -196,11 +196,11 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
         intx::from_string<uint256_t>(json["last_validator_id"]),
         contract.vars.last_validator_id.load_unchecked().native());
     EXPECT_EQ(
-        intx::from_string<uint256_t>(json["last_deposit_request_id"]),
-        contract.vars.last_deposit_request_id.load_unchecked().native());
+        intx::from_string<uint256_t>(json["last_delegate_request_id"]),
+        contract.vars.last_delegate_request_id.load_unchecked().native());
     EXPECT_EQ(
-        intx::from_string<uint256_t>(json["last_withdrawal_request_id"]),
-        contract.vars.last_withdrawal_request_id.load_unchecked().native());
+        intx::from_string<uint256_t>(json["last_undelegate_request_id"]),
+        contract.vars.last_undelegate_request_id.load_unchecked().native());
 
     auto const &validator_set_json = json["validator_set"];
     ASSERT_EQ(validator_set_json.size(), contract.vars.validator_set.length());
@@ -210,43 +210,40 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
             contract.vars.validator_set.get(i).load().value().native());
     }
 
-    for (auto const &[epoch_json, deposit_queue_json] :
-         json["deposit_queue"].items()) {
+    for (auto const &[epoch_json, delegate_queue_json] :
+         json["delegate_queue"].items()) {
 
         auto const epoch = intx::from_string<Uint256Native>(epoch_json).to_be();
-        auto const deposit_queue = contract.vars.deposit_queue(epoch);
-        ASSERT_EQ(deposit_queue_json.size(), deposit_queue.length());
+        auto const delegate_queue = contract.vars.delegate_queue(epoch);
+        ASSERT_EQ(delegate_queue_json.size(), delegate_queue.length());
 
-        for (size_t i = 0; i < deposit_queue_json.size(); ++i) {
-            auto deposit_id_str = deposit_queue_json[i];
-            auto const expected_deposit_id =
-                intx::from_string<uint256_t>(deposit_id_str);
-            auto const actual_deposit_id = deposit_queue.get(i).load().value();
-            EXPECT_EQ(expected_deposit_id, actual_deposit_id.native());
+        for (size_t i = 0; i < delegate_queue_json.size(); ++i) {
+            auto const expected_id =
+                intx::from_string<uint256_t>(delegate_queue_json[i]);
+            auto const actual_id = delegate_queue.get(i).load().value();
+            EXPECT_EQ(expected_id, actual_id.native());
         }
     }
 
-    for (auto const &[deposit_id_str, deposit_request_json] :
-         json["deposit_request"].items()) {
-        auto const deposit_id =
-            intx::from_string<Uint256Native>(deposit_id_str).to_be();
-        auto const deposit_request =
-            contract.vars.deposit_request(deposit_id).load();
-        ASSERT_TRUE(deposit_request.has_value())
-            << "deposit_request: mapping not found: " << deposit_id_str;
+    for (auto const &[delegate_id_str, delegate_request_json] :
+         json["delegate_request"].items()) {
+        auto const id =
+            intx::from_string<Uint256Native>(delegate_id_str).to_be();
+        auto const request = contract.vars.delegate_request(id).load();
+        ASSERT_TRUE(request.has_value())
+            << "delegate_request: mapping not found: " << delegate_id_str;
 
         auto const expected_validator_id = intx::from_string<uint256_t>(
-            deposit_request_json["validator_id"].get<std::string>());
+            delegate_request_json["validator_id"].get<std::string>());
         auto const expected_delegator =
             evmc::from_hex<Address>(
-                deposit_request_json["delegator"].get<std::string>())
+                delegate_request_json["delegator"].get<std::string>())
                 .value();
         auto const expected_amount = intx::from_string<uint256_t>(
-            deposit_request_json["amount"].get<std::string>());
-        EXPECT_EQ(
-            expected_validator_id, deposit_request->validator_id.native());
-        EXPECT_EQ(expected_delegator, deposit_request->delegator);
-        EXPECT_EQ(expected_amount, deposit_request->amount.native());
+            delegate_request_json["amount"].get<std::string>());
+        EXPECT_EQ(expected_validator_id, request->validator_id.native());
+        EXPECT_EQ(expected_delegator, request->delegator);
+        EXPECT_EQ(expected_amount, request->amount.native());
     }
 
     for (auto const &[validator_id_str, validator_info_json] :
@@ -270,18 +267,15 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
             intx::from_string<uint256_t>(validator_info_json["active_stake"]);
         auto const expected_active_shares =
             intx::from_string<uint256_t>(validator_info_json["active_shares"]);
-        auto const expected_rewards0 =
-            intx::from_string<uint256_t>(validator_info_json["rewards"][0]);
-        auto const expected_rewards1 =
-            intx::from_string<uint256_t>(validator_info_json["rewards"][1]);
+        auto const expected_rewards =
+            intx::from_string<uint256_t>(validator_info_json["rewards"]);
 
         EXPECT_EQ(expected_auth_address, validator_info->auth_address);
         EXPECT_EQ(expected_bls_pubkey.bytes, validator_info->bls_pubkey);
         EXPECT_EQ(expected_active_stake, validator_info->active_stake.native());
         EXPECT_EQ(
             expected_active_shares, validator_info->active_shares.native());
-        EXPECT_EQ(expected_rewards0, validator_info->rewards[0].native());
-        EXPECT_EQ(expected_rewards1, validator_info->rewards[1].native());
+        EXPECT_EQ(expected_rewards, validator_info->rewards.native());
     }
 
     for (auto const &[preimage_json, validator_id_str] :

@@ -146,7 +146,7 @@ namespace
         return input;
     }
 
-    byte_string craft_remove_stake_input(
+    byte_string craft_undelegate_input(
         Uint256BE const &validator_id, Uint256BE const &amount)
     {
         byte_string input;
@@ -235,29 +235,6 @@ TEST_F(Stake, add_validator_bad_signature)
     }
 }
 
-TEST_F(Stake, invalid_state)
-{
-    StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
-    auto const stake = 50000000000000000000_u256;
-    auto const sender = 0xdeadbeef_address;
-    auto const value = intx::be::store<evmc_uint256be>(stake);
-    auto const input = craft_add_validator_input(0xababab_address, stake);
-    auto const res = contract.precompile_add_validator(input, sender, value);
-    EXPECT_EQ(res.status, StakingContract::SUCCESS);
-    ASSERT_TRUE(contract.vars.last_validator_id.load().has_value());
-    EXPECT_EQ(
-        contract.vars.last_validator_id.load().value(),
-        Uint256Native{1}.to_be());
-
-    // screw up contract internal state
-    contract.vars.validator_info(contract.vars.last_validator_id.load().value())
-        .clear();
-    contract.vars.epoch.store(Uint256Native{1}.to_be());
-    auto const res2 = contract.syscall_on_epoch_change();
-    ASSERT_TRUE(res2.has_error());
-    EXPECT_EQ(res2.assume_error(), StakingSyscallError::InvalidState);
-}
-
 TEST_F(Stake, add_validator_msg_value_not_signed)
 {
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
@@ -320,30 +297,30 @@ TEST_F(Stake, add_validator_then_remove)
     EXPECT_EQ(validator_info->bls_pubkey, bls_serialized);
     EXPECT_EQ(validator_info->active_stake, Uint256BE{});
     EXPECT_EQ(validator_info->active_shares, Uint256BE{});
-    EXPECT_EQ(validator_info->rewards[0], Uint256BE{});
-    EXPECT_EQ(validator_info->rewards[1], Uint256BE{});
+    EXPECT_EQ(validator_info->rewards, Uint256BE{});
 
     ASSERT_FALSE(contract.vars.epoch.load().has_value()); // epoch 0
-    auto const update_epoch = Uint256Native{2}.to_be();
-    auto const deposit_queue = contract.vars.deposit_queue(update_epoch);
-    auto const withdrawal_queue = contract.vars.withdrawal_queue(update_epoch);
-    EXPECT_EQ(deposit_queue.length(), 1);
-    EXPECT_EQ(withdrawal_queue.length(), 0);
+    auto const delegate_queue =
+        contract.vars.delegate_queue(Uint256Native{1}.to_be());
+    auto const undelegate_queue =
+        contract.vars.undelegate_queue(Uint256Native{1}.to_be());
+    EXPECT_EQ(delegate_queue.length(), 1);
+    EXPECT_EQ(undelegate_queue.length(), 0);
 
-    auto const deposit_request_id = deposit_queue.get(0).load();
-    ASSERT_TRUE(deposit_request_id.has_value());
-    EXPECT_EQ(deposit_request_id.value(), Uint256Native{1}.to_be());
+    auto const delegate_request_id = delegate_queue.get(0).load();
+    ASSERT_TRUE(delegate_request_id.has_value());
+    EXPECT_EQ(delegate_request_id.value(), Uint256Native{1}.to_be());
 
-    auto const deposit_request =
-        contract.vars.deposit_request(deposit_request_id.value()).load();
-    ASSERT_TRUE(deposit_request.has_value());
-    EXPECT_EQ(deposit_request->validator_id, validator_id.value());
-    EXPECT_EQ(deposit_request->delegator, 0xababab_address);
-    EXPECT_EQ(deposit_request->amount, Uint256Native{stake}.to_be());
+    auto const delegate_request =
+        contract.vars.delegate_request(delegate_request_id.value()).load();
+    ASSERT_TRUE(delegate_request.has_value());
+    EXPECT_EQ(delegate_request->validator_id, validator_id.value());
+    EXPECT_EQ(delegate_request->delegator, 0xababab_address);
+    EXPECT_EQ(delegate_request->amount, Uint256Native{stake}.to_be());
 
-    contract.vars.epoch.store(update_epoch);
+    contract.vars.epoch.store(Uint256Native{1}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    EXPECT_EQ(deposit_queue.length(), 0);
+    EXPECT_EQ(delegate_queue.length(), 0);
 
     validator_info = contract.vars.validator_info(validator_id.value()).load();
     ASSERT_TRUE(validator_info.has_value());
@@ -351,42 +328,41 @@ TEST_F(Stake, add_validator_then_remove)
     EXPECT_EQ(validator_info->bls_pubkey, bls_serialized);
     EXPECT_EQ(validator_info->active_stake, Uint256Native{stake}.to_be());
     EXPECT_EQ(validator_info->active_shares, Uint256Native{stake}.to_be());
-    EXPECT_EQ(validator_info->rewards[0], Uint256BE{});
-    EXPECT_EQ(validator_info->rewards[1], Uint256BE{});
+    EXPECT_EQ(validator_info->rewards, Uint256BE{});
 
-    byte_string remove_stake_payload = craft_remove_stake_input(
+    byte_string undelegate_payload = craft_undelegate_input(
         validator_id.value(), Uint256Native{stake}.to_be());
     EXPECT_EQ(
         contract
-            .precompile_remove_stake(
-                remove_stake_payload, 0xababab_address, evmc_uint256be{})
+            .precompile_undelegate(
+                undelegate_payload, 0xababab_address, evmc_uint256be{})
             .status,
         StakingContract::SUCCESS);
 
-    auto const update_epoch2 = Uint256Native{4}.to_be();
-    auto const deposit_queue2 = contract.vars.deposit_queue(update_epoch2);
-    auto const withdrawal_queue2 =
-        contract.vars.withdrawal_queue(update_epoch2);
-    EXPECT_EQ(deposit_queue2.length(), 0);
-    EXPECT_EQ(withdrawal_queue2.length(), 1);
+    auto const delegate_queue2 =
+        contract.vars.delegate_queue(Uint256Native{2}.to_be());
+    auto const undelegate_queue2 =
+        contract.vars.undelegate_queue(Uint256Native{2}.to_be());
+    EXPECT_EQ(delegate_queue2.length(), 0);
+    EXPECT_EQ(undelegate_queue2.length(), 1);
     EXPECT_EQ(contract.vars.validator_set.length(), 1);
 
     // delete validator
-    auto const withdrawal_request_id = withdrawal_queue2.get(0).load();
-    ASSERT_TRUE(withdrawal_request_id.has_value());
-    EXPECT_EQ(withdrawal_request_id.value(), Uint256Native{1}.to_be());
-    auto const withdrawal_request =
-        contract.vars.withdrawal_request(withdrawal_request_id.value()).load();
-    ASSERT_TRUE(withdrawal_request.has_value());
-    EXPECT_EQ(withdrawal_request->validator_id, validator_id.value());
-    EXPECT_EQ(withdrawal_request->delegator, 0xababab_address);
-    EXPECT_EQ(withdrawal_request->shares, Uint256Native{stake}.to_be());
+    auto const undelegate_request_id = undelegate_queue2.get(0).load();
+    ASSERT_TRUE(undelegate_request_id.has_value());
+    EXPECT_EQ(undelegate_request_id.value(), Uint256Native{1}.to_be());
+    auto const undelegate_request =
+        contract.vars.undelegate_request(undelegate_request_id.value()).load();
+    ASSERT_TRUE(undelegate_request.has_value());
+    EXPECT_EQ(undelegate_request->validator_id, validator_id.value());
+    EXPECT_EQ(undelegate_request->delegator, 0xababab_address);
+    EXPECT_EQ(undelegate_request->shares, Uint256Native{stake}.to_be());
 
-    contract.vars.epoch.store(update_epoch2);
+    contract.vars.epoch.store(Uint256Native{2}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    contract.vars.epoch.store(update_epoch2.native().add(2).to_be());
+    contract.vars.epoch.store(Uint256Native{3}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    EXPECT_EQ(deposit_queue.length(), 0);
+    EXPECT_EQ(delegate_queue.length(), 0);
     EXPECT_EQ(contract.vars.validator_set.length(), 0);
 }
 
@@ -417,7 +393,7 @@ TEST_F(Stake, reward_success)
     EXPECT_TRUE(valinfo_storage.load().has_value());
 
     EXPECT_FALSE(contract.vars.epoch.load().has_value());
-    contract.vars.epoch.store(Uint256Native(2).to_be());
+    contract.vars.epoch.store(Uint256Native{1}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
     EXPECT_EQ(
         valinfo_storage.load()->active_stake,
@@ -442,20 +418,7 @@ TEST_F(Stake, reward_success)
         intx::be::load<uint256_t>(state.get_balance(STAKING_CONTRACT_ADDRESS)),
         BASE_STAKING_REWARD);
 
-    contract.vars.epoch.store(Uint256Native(3).to_be());
-    ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    EXPECT_EQ(
-        valinfo_storage.load()->active_stake,
-        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
-    EXPECT_EQ(
-        valinfo_storage.load()->active_shares,
-        Uint256Native{MIN_STAKE_AMOUNT}.to_be());
-    EXPECT_EQ(
-        valinfo_storage.load()->rewards[0],
-        Uint256Native{BASE_STAKING_REWARD}.to_be());
-    EXPECT_EQ(valinfo_storage.load()->rewards[1], Uint256BE{});
-
-    contract.vars.epoch.store(Uint256Native(4).to_be());
+    contract.vars.epoch.store(Uint256Native{2}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
     EXPECT_EQ(
         valinfo_storage.load()->active_stake,

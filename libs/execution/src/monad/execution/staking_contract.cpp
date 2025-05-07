@@ -112,10 +112,10 @@ StakingContract::precompile_dispatch(byte_string_view &input)
             &StakingContract::precompile_get_validator_info, 0 /* fixme */);
     case 0x5d727e40:
         return make_pair(
-            &StakingContract::precompile_get_deposit_request, 0 /* fixme */);
+            &StakingContract::precompile_get_delegate_request, 0 /* fixme */);
     case 0x9a662694:
         return make_pair(
-            &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */);
+            &StakingContract::precompile_get_undelegate_request, 0 /* fixme */);
     case 0x1f82be31:
         return make_pair(
             &StakingContract::precompile_get_delegator_info, 0 /* fixme */);
@@ -123,10 +123,10 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         return make_pair(
             &StakingContract::precompile_add_validator, 0 /* fixme */);
     case 0x91b3006c:
-        return make_pair(&StakingContract::precompile_add_stake, 0 /* fixme */);
+        return make_pair(&StakingContract::precompile_delegate, 0 /* fixme */);
     case 0x1b3a5c4c:
         return make_pair(
-            &StakingContract::precompile_remove_stake, 0 /* fixme */);
+            &StakingContract::precompile_undelegate, 0 /* fixme */);
     case 0x2565b1b8:
         return make_pair(
             &StakingContract::precompile_withdraw_balance, 0 /* fixme */);
@@ -161,30 +161,28 @@ StakingContract::Output StakingContract::precompile_get_delegator_info(
     return abi_encode_delegator_info(delinfo);
 }
 
-StakingContract::Output StakingContract::precompile_get_deposit_request(
+StakingContract::Output StakingContract::precompile_get_delegate_request(
     byte_string_view const input, evmc_address const &, evmc_uint256be const &)
 {
     if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
         return INVALID_INPUT;
     }
 
-    auto const deposit_id = unaligned_load<Uint256BE>(input.data());
-    auto const deposit_request =
-        vars.deposit_request(deposit_id).load_unchecked();
-    return abi_encode_deposit_request(deposit_request);
+    auto const id = unaligned_load<Uint256BE>(input.data());
+    auto const request = vars.delegate_request(id).load_unchecked();
+    return abi_encode_delegate_request(request);
 }
 
-StakingContract::Output StakingContract::precompile_get_withdrawal_request(
+StakingContract::Output StakingContract::precompile_get_undelegate_request(
     byte_string_view const input, evmc_address const &, evmc_uint256be const &)
 {
     if (MONAD_UNLIKELY(input.size() != sizeof(Uint256BE))) {
         return INVALID_INPUT;
     }
 
-    auto const withdrawal_id = unaligned_load<Uint256BE>(input.data());
-    auto const withdrawal_request =
-        vars.withdrawal_request(withdrawal_id).load_unchecked();
-    return abi_encode_withdrawal_request(withdrawal_request);
+    auto const id = unaligned_load<Uint256BE>(input.data());
+    auto const request = vars.undelegate_request(id).load_unchecked();
+    return abi_encode_undelegate_request(request);
 }
 
 StakingContract::Output StakingContract::precompile_fallback(
@@ -317,20 +315,19 @@ StakingContract::Output StakingContract::add_stake(
         return UNKNOWN_VALIDATOR;
     }
 
-    auto const deposit_id =
-        vars.last_deposit_request_id.load_unchecked().native().add(1).to_be();
-    vars.last_deposit_request_id.store(deposit_id);
-    vars.deposit_queue(vars.epoch.load_unchecked().native().add(2).to_be())
-        .push(deposit_id);
-    vars.deposit_request(deposit_id)
-        .store(DepositRequest{
-            .validator_id = validator_id,
-            .delegator = delegator,
-            .amount = amount});
+    auto const id =
+        vars.last_delegate_request_id.load_unchecked().native().add(1).to_be();
+    vars.last_delegate_request_id.store(id);
+    vars.delegate_queue(vars.epoch.load_unchecked().native().add(1).to_be())
+        .push(id);
+    vars.delegate_request(id).store(DelegateRequest{
+        .validator_id = validator_id,
+        .delegator = delegator,
+        .amount = amount});
     return SUCCESS;
 }
 
-StakingContract::Output StakingContract::precompile_add_stake(
+StakingContract::Output StakingContract::precompile_delegate(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -344,7 +341,7 @@ StakingContract::Output StakingContract::precompile_add_stake(
     return add_stake(validator_id, Uint256BE{msg_value}, msg_sender);
 }
 
-StakingContract::Output StakingContract::precompile_remove_stake(
+StakingContract::Output StakingContract::precompile_undelegate(
     byte_string_view const input, evmc_address const &msg_sender,
     evmc_uint256be const &)
 {
@@ -369,18 +366,18 @@ StakingContract::Output StakingContract::precompile_remove_stake(
 
     // enough shares?
     if (MONAD_UNLIKELY(delinfo->active_shares.native() < shares.native())) {
-        return NOT_ENOUGH_SHARES_TO_WITHDRAW;
+        return NOT_ENOUGH_SHARES_TO_UNDELEGATE;
     }
 
-    auto const withdrawal_id = vars.last_withdrawal_request_id.load_unchecked()
+    auto const undelegate_id = vars.last_undelegate_request_id.load_unchecked()
                                    .native()
                                    .add(1)
                                    .to_be();
-    vars.last_withdrawal_request_id.store(withdrawal_id);
-    vars.withdrawal_queue(vars.epoch.load_unchecked().native().add(2).to_be())
-        .push(withdrawal_id);
-    vars.withdrawal_request(withdrawal_id)
-        .store(WithdrawalRequest{
+    vars.last_undelegate_request_id.store(undelegate_id);
+    vars.undelegate_queue(vars.epoch.load_unchecked().native().add(1).to_be())
+        .push(undelegate_id);
+    vars.undelegate_request(undelegate_id)
+        .store(UndelegateRequest{
             .validator_id = validator_id,
             .delegator = msg_sender,
             .shares = shares});
@@ -432,8 +429,8 @@ StakingContract::syscall_reward_validator(Address const &block_author)
     }
 
     state_.add_to_balance(ca_, BASE_STAKING_REWARD);
-    validator_info->rewards[1] =
-        validator_info->rewards[1].native().add(BASE_STAKING_REWARD).to_be();
+    validator_info->rewards =
+        validator_info->rewards.native().add(BASE_STAKING_REWARD).to_be();
     validator_info_storage.store(validator_info.value());
 
     return success();
@@ -446,165 +443,120 @@ Result<void> StakingContract::syscall_on_epoch_change()
         return success();
     }
     auto const epoch = maybe_epoch.value();
+    auto const next_epoch = epoch.native().add(1).to_be();
 
     // 1. Apply staking rewards
     std::unordered_map<Uint256BE, uint256_t, BytesHashCompare<Uint256BE>>
         val_id_to_index;
     uint256_t const num_validators = vars.validator_set.length();
     for (uint256_t i = 0; i < num_validators; i += 1) {
-        auto const validator_id_storage = vars.validator_set.get(i);
-        auto const validator_id = validator_id_storage.load();
-        if (MONAD_UNLIKELY(!validator_id.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto const validator_id = vars.validator_set.get(i).load_unchecked();
+        val_id_to_index[validator_id] = i;
 
-        val_id_to_index[validator_id.value()] = i;
-
-        auto valinfo_storage = vars.validator_info(validator_id.value());
-        auto valinfo = valinfo_storage.load();
-        if (MONAD_UNLIKELY(!valinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto valinfo_storage = vars.validator_info(validator_id);
+        auto valinfo = valinfo_storage.load_unchecked();
 
         // TODO: apply commission rate
-        valinfo->active_stake = valinfo->active_stake.native()
-                                    .add(valinfo->rewards[0].native())
-                                    .to_be();
-        valinfo->rewards[0] = valinfo->rewards[1];
-        valinfo->rewards[1] = Uint256BE{};
-        valinfo_storage.store(valinfo.value());
+        valinfo.active_stake =
+            valinfo.active_stake.native().add(valinfo.rewards.native()).to_be();
+        valinfo.rewards = Uint256BE{};
+        valinfo_storage.store(valinfo);
     }
 
     // 2. Apply remove stake requests
-    auto remove_stake_storage = vars.withdrawal_queue(epoch);
-    uint256_t const num_removal_requests = remove_stake_storage.length();
+    auto undelegate_queue = vars.undelegate_queue(epoch);
     std::set<uint256_t, std::greater<uint256_t>> valset_removals;
-    for (uint256_t i = 0; i < num_removal_requests; i += 1) {
-        auto const withdrawal_id = remove_stake_storage.get(i).load_unchecked();
-        auto withdrawal_request_storage =
-            vars.withdrawal_request(withdrawal_id);
-        auto withdrawal_request = withdrawal_request_storage.load();
-        if (MONAD_UNLIKELY(!withdrawal_request.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+    for (uint256_t i = 0; i < undelegate_queue.length(); i += 1) {
+        auto const id = undelegate_queue.get(i).load_unchecked();
+        auto request = vars.undelegate_request(id).load_unchecked();
 
-        auto valinfo_storage =
-            vars.validator_info(withdrawal_request->validator_id);
-        auto valinfo = valinfo_storage.load();
-        if (MONAD_UNLIKELY(!valinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto valinfo_storage = vars.validator_info(request.validator_id);
+        auto valinfo = valinfo_storage.load_unchecked();
 
-        auto delinfo_storage = vars.delegator_info(
-            withdrawal_request->validator_id, withdrawal_request->delegator);
+        auto delinfo_storage =
+            vars.delegator_info(request.validator_id, request.delegator);
         auto delinfo = delinfo_storage.load_unchecked();
 
-        auto val_active_stake = valinfo->active_stake.native();
-        auto val_active_shares = valinfo->active_shares.native();
-        auto const withdrawal_shares = withdrawal_request->shares.native();
+        auto val_active_stake = valinfo.active_stake.native();
+        auto val_active_shares = valinfo.active_shares.native();
+        auto const shares = request.shares.native();
 
-        auto const tokens_to_burn = shares_to_tokens(
-            val_active_stake, val_active_shares, withdrawal_shares);
+        auto const tokens_to_burn =
+            shares_to_tokens(val_active_stake, val_active_shares, shares);
 
-        valinfo->active_stake = val_active_stake.sub(tokens_to_burn).to_be();
-        valinfo->active_shares =
-            val_active_shares.sub(withdrawal_shares).to_be();
+        valinfo.active_stake = val_active_stake.sub(tokens_to_burn).to_be();
+        valinfo.active_shares = val_active_shares.sub(shares).to_be();
 
-        valinfo_storage.store(valinfo.value());
+        vars.withdrawal_queue(next_epoch)
+            .push(WithdrawalRequest{
+                .validator_id = request.validator_id,
+                .delegator = request.delegator,
+                .pending_balance = tokens_to_burn.to_be()});
+
+        valinfo_storage.store(valinfo);
         delinfo_storage.store(delinfo);
     }
 
-    // 3. Burn tokens and transfer balances from epoch N-2
-    auto withdrawal_queue_storage =
-        vars.withdrawal_queue(epoch.native().sub(2).to_be());
-    uint256_t const num_withdrawals = withdrawal_queue_storage.length();
+    auto withdrawal_queue = vars.withdrawal_queue(epoch);
+    auto const num_withdrawals = withdrawal_queue.length();
     for (uint256_t i = 0; i < num_withdrawals; i += 1) {
-        auto const withdrawal_id = withdrawal_queue_storage.pop();
-        auto withdrawal_request_storage =
-            vars.withdrawal_request(withdrawal_id);
-        auto withdrawal_request = withdrawal_request_storage.load();
-        if (MONAD_UNLIKELY(!withdrawal_request.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto const request = withdrawal_queue.pop();
 
-        auto valinfo_storage =
-            vars.validator_info(withdrawal_request->validator_id);
-        auto valinfo = valinfo_storage.load();
-        if (MONAD_UNLIKELY(!valinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
-
-        auto delinfo_storage = vars.delegator_info(
-            withdrawal_request->validator_id, withdrawal_request->delegator);
+        auto delinfo_storage =
+            vars.delegator_info(request.validator_id, request.delegator);
         auto delinfo = delinfo_storage.load_unchecked();
+        auto valinfo =
+            vars.validator_info(request.validator_id).load_unchecked();
 
-        auto val_active_stake = valinfo->active_stake.native();
-        auto val_active_shares = valinfo->active_shares.native();
-        auto const withdrawal_shares = withdrawal_request->shares.native();
-
-        auto const tokens_to_burn = shares_to_tokens(
-            val_active_stake, val_active_shares, withdrawal_shares);
-
-        delinfo.balance = delinfo.balance.native().add(tokens_to_burn).to_be();
-        delinfo.active_shares =
-            delinfo.active_shares.native().sub(withdrawal_shares).to_be();
-        if (withdrawal_request->delegator == valinfo->auth_address) {
+        if (request.delegator == valinfo.auth_address) {
             auto const tokens_after_withdrawal = shares_to_tokens(
-                val_active_stake,
-                val_active_shares,
+                valinfo.active_stake.native(),
+                valinfo.active_shares.native(),
                 delinfo.active_shares.native());
             if (MONAD_LIKELY(tokens_after_withdrawal < MIN_STAKE_AMOUNT)) {
-                valset_removals.insert(
-                    val_id_to_index[withdrawal_request->validator_id]);
+                valset_removals.insert(val_id_to_index[request.validator_id]);
             }
         }
-
-        valinfo_storage.store(valinfo.value());
+        delinfo.balance = request.pending_balance;
+        delinfo.active_shares = Uint256BE{};
         delinfo_storage.store(delinfo);
-
-        withdrawal_request_storage.clear();
+    }
+    if (MONAD_UNLIKELY(withdrawal_queue.length() != 0)) {
+        return StakingSyscallError::CouldNotClearStorage;
     }
 
-    // 4. Apply deposit requests
-    auto deposit_queue_storage = vars.deposit_queue(epoch);
-    uint256_t const num_deposits = deposit_queue_storage.length();
-    for (uint256_t i = 0; i < num_deposits; i += 1) {
-        auto deposit_id = deposit_queue_storage.pop();
-        auto deposit_request_storage = vars.deposit_request(deposit_id);
-        auto deposit_request = deposit_request_storage.load();
-        if (MONAD_UNLIKELY(!deposit_request.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+    // 4. Apply delegation requests
+    auto delegate_queue = vars.delegate_queue(epoch);
+    for (uint256_t i = 0; i < delegate_queue.length(); i += 1) {
+        auto id = delegate_queue.pop();
+        auto request_storage = vars.delegate_request(id);
+        auto request = request_storage.load_unchecked();
 
-        auto valinfo_storage =
-            vars.validator_info(deposit_request->validator_id);
-        auto valinfo = valinfo_storage.load();
-        if (MONAD_UNLIKELY(!valinfo.has_value())) {
-            return StakingSyscallError::InvalidState;
-        }
+        auto valinfo_storage = vars.validator_info(request.validator_id);
+        auto valinfo = valinfo_storage.load_unchecked();
 
-        auto delinfo_storage = vars.delegator_info(
-            deposit_request->validator_id, deposit_request->delegator);
+        auto delinfo_storage =
+            vars.delegator_info(request.validator_id, request.delegator);
         auto delinfo = delinfo_storage.load_unchecked();
 
-        auto val_active_stake = valinfo->active_stake.native();
-        auto val_active_shares = valinfo->active_shares.native();
-        auto const deposit_amount = deposit_request->amount.native();
+        auto val_active_stake = valinfo.active_stake.native();
+        auto val_active_shares = valinfo.active_shares.native();
+        auto const amount = request.amount.native();
 
-        auto const shares_to_mint = tokens_to_shares(
-            val_active_stake, val_active_shares, deposit_amount);
+        auto const shares_to_mint =
+            tokens_to_shares(val_active_stake, val_active_shares, amount);
 
-        valinfo->active_stake = val_active_stake.add(deposit_amount).to_be();
-        valinfo->active_shares = val_active_shares.add(shares_to_mint).to_be();
+        valinfo.active_stake = val_active_stake.add(amount).to_be();
+        valinfo.active_shares = val_active_shares.add(shares_to_mint).to_be();
         delinfo.active_shares =
             delinfo.active_shares.native().add(shares_to_mint).to_be();
 
-        valinfo_storage.store(valinfo.value());
+        valinfo_storage.store(valinfo);
         delinfo_storage.store(delinfo);
 
-        deposit_request_storage.clear();
+        request_storage.clear();
     }
-    if (MONAD_UNLIKELY(deposit_queue_storage.length() != 0)) {
+    if (MONAD_UNLIKELY(delegate_queue.length() != 0)) {
         return StakingSyscallError::CouldNotClearStorage;
     }
 

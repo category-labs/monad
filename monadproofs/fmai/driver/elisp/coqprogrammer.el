@@ -124,12 +124,12 @@ before the new block (if any) is processed.")
 (defvar coq-programmer--build-admit-prompt
   "
 The code now compiles but still contains `Admitted.`/TOFIXLATER holes.
-Please pick exactly ONE hole to implement.
+Please pick one or more holes to implement.
 In the call chain/tree from the function that is the main task, which you have already implemented,
-pick a hole which is closest to the root.
+pick hole(s) which are closest to the root.
 If you were asked to implement a function on an Inductive type which is defined mutually inductive with other Inductive types, the task implicitly includes implementing the analogous functions on those types as well, likely as a block of mutually recursive functions. Implementing such holes should be the highest priority.
 
-Once you have chosen the hole to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. If that doesnt yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
+Once you have chosen the hole(s) to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. If that doesnt yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
 
 Also, double check whether the hole was already implemented in the current conversation and you forgot to include it in the previous message.
 
@@ -368,5 +368,6 @@ directory as the current `.v` file.  Stops when:
 ;; or do this programattically: easiest would be to see if there is a name match between an axiom in the last version and a
 ;; Definition in the older version. emacs could put all versions in a module and 
 
+;; allow multiple queries
 
 

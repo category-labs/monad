@@ -1,4 +1,4 @@
-# General Background
+# General Coq Background
 This is a Coq programming task. First, some general guidelines about Coq programming tasks.
 
 ## Admitting holes (defer less critical/important parts)
@@ -24,11 +24,18 @@ Here are some general tips to avoid errors:
 
 ## Coq Vernacular Queries instead of Hallucinations
 If you are not sure about the exact name of a definition/fixpoint/inductive in the standard library or the libraries available to you can issue Coq queries to get more information about the available context. Some of the widely used queries are `Search`/`About`/`Check`/`Locate`. Here are some examples of search:
-
+```coqquery
 Search (nat -> nat). (* search the library for items of type nat -> nat *)
+```
 
+Sometimes, you incorrectly issue the above query as:
+```coqquery
+Search (_ : nat -> nat). (* this is wrong. it returns everything in the current context, regardless of the type *)
+```
+
+Other examples:
+```coqquery
 Search (nat -> list ?a -> list ?a). (* unification variables can be used to constrain occurrences: e.g. here the 2 occurrences of ?a must match the same term *)
-
 
 Search "add". (* Search all definitions whose name contains "add" *)
 
@@ -39,6 +46,7 @@ About Nat.add (* show documentation for an item *)
 Check (Nat.add 1 1). (* check type of a term *)
 
 Locate nat. (* print the possible fully qualified name(s) of `nat`. unless the user defined their own `nat` type, this will print `Corelib.Init.Datatypes.nat` . this will print multiple items if there are several items whose fully qualified names have `nat` as the leaf, e.g. `A.nat`, `Corelib.Init.Datatypes.nat`. It would also print shorter names for each fully qualified name. The shorter name depends on the set and order of Imports in the current file. When writing Coq code, you should refer to the located item by a name not any shorter than the shorter name mentioned here: the longer the better as that is robust to moving code around where the order of imports are different. *)
+```
 
 `Search`: can return too many items unless you chose a fairly discriminative query.
 However, don't use the `Search ... in module` syntax which only searches in a particular module: instead, search in all modules by not specifying the `in` part.
@@ -209,6 +217,5 @@ The following is one way to correctly write the above definition:
 ```gallina
 Definition foo (n:nat): nat:= if bool_decide (0<n) then 1 else 0.
 ```
-
 
 # Current Task

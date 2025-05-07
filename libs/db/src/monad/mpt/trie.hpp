@@ -660,9 +660,10 @@ public:
             {
                 version_lower_bound_.store(0, std::memory_order_release);
                 next_version_.store(0, std::memory_order_release);
-                for (size_t i = 0; i < capacity(); ++i) {
-                    push(INVALID_OFFSET);
-                }
+                memset(
+                    (void *)root_offsets_chunks_.data(),
+                    0xff,
+                    root_offsets_chunks_.size() * sizeof(chunk_offset_t));
                 version_lower_bound_.store(version, std::memory_order_release);
                 next_version_.store(version, std::memory_order_release);
             }

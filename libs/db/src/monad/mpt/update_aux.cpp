@@ -200,8 +200,10 @@ void UpdateAuxImpl::fast_forward_next_version(
         auto g = m->hold_dirty();
         auto ro = root_offsets(m == db_metadata_[1].main);
         uint64_t curr_version = ro.max_version();
+        MONAD_ASSERT(
+            curr_version == INVALID_BLOCK_ID || new_version > curr_version);
 
-        if (new_version >= curr_version &&
+        if (curr_version == INVALID_BLOCK_ID ||
             new_version - curr_version >= ro.capacity()) {
             ro.reset_all(new_version);
         }

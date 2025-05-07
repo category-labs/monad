@@ -48,31 +48,30 @@ TYPED_TEST(TrieTest, nested_leave_one_child_on_branch_with_leaf)
     auto const subkey3 = 0x2345_hex;
     auto const value = 0xdeadbeef_hex;
 
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        {},
-        make_update(key1, value),
-        make_update(key1 + subkey2, value),
-        make_update(key1 + subkey3, value));
+    {
+        UpdateList next;
+        Update sub2 = make_update(subkey2, value);
+        Update sub3 = make_update(subkey3, value);
+        next.push_front(sub2);
+        next.push_front(sub3);
+        this->root = upsert_updates(
+            this->aux,
+            *this->sm,
+            {},
+            make_update(key1, value, false, std::move(next)));
+    }
 
-    UpdateList next;
-    Update sub1{
-        .key = subkey2,
-        .value = std::nullopt,
-        .incarnation = false,
-        .next = UpdateList{}};
-    next.push_front(sub1);
-    Update base{
-        .key = key1,
-        .value = value,
-        .incarnation = false,
-        .next = std::move(next)};
-    UpdateList updates;
-    updates.push_front(base);
+    {
+        UpdateList next;
+        Update sub2 = make_erase(subkey2);
+        next.push_front(sub2);
+        this->root = upsert_updates(
+            this->aux,
+            *this->sm,
+            std::move(this->root),
+            make_update(key1, value, false, std::move(next)));
+    }
 
-    this->root = upsert(
-        this->aux, 0, *this->sm, std::move(this->root), std::move(updates));
     EXPECT_EQ(
         this->root_hash(),
         0xeefbd82ec11d1d2d83a23d661a8eece950f1e29fa72665f07b57fc9a903257cc_hex);
@@ -372,132 +371,7 @@ TYPED_TEST(EraseTrieTest, delete_one_at_a_time)
         0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex);
 }
 
-TYPED_TEST(TrieTest, upsert_var_len_keys)
-{
-    // 2 accounts, kv[0] and kv[1]
-    // kv[2,3,4] are of kv[0]'s storages
-    // kv[5,6,7] are of kv[1]'s storages
-    std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,
-         0x0a0b_hex}, // 0
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbcc_hex,
-         0x1234_hex}, // 1
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,
-         0xbeef_hex}, // 2
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbddabcdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xdeadbeef_hex}, // 3
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbddabcdeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xcafe_hex}, // 4
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,
-         0xbeef_hex}, // 5
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbccabcdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xdeadbeef_hex}, // 6
-        {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbccabcdeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_hex,
-         0xcafe_hex}}; // 7
-
-    // insert kv 0,1
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        {},
-        make_update(kv[0].first, kv[0].second),
-        make_update(kv[1].first, kv[1].second),
-        make_update(kv[2].first, kv[2].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0xd02534184b896dd4cb37fb34f176cafb508aa2ebc19a773c332514ca8c65ca10_hex);
-
-    // update first trie's account value
-    auto acc1 =
-        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex;
-    auto new_val = 0x1234_hex;
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(acc1, new_val));
-    EXPECT_EQ(
-        this->root_hash(),
-        0xe9e9d8bd0c74fe45b27ac36169fd6d58a0ee4eb6573fdf6a8680be814a63d2f5_hex);
-
-    // update storages
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(kv[3].first, kv[3].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0xc2f4c0bf52f5b277252ecfe9df3c38b44d1787b3f89febde1d29406eb06e8f93_hex);
-
-    // update storages again
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(kv[4].first, kv[4].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0x9050b05948c3aab28121ad71b3298a887cdadc55674a5f234c34aa277fbd0325_hex);
-
-    // erase storage kv 3, 4
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_erase(kv[3].first),
-        make_erase(kv[4].first));
-    EXPECT_EQ(
-        this->root_hash(),
-        0xe9e9d8bd0c74fe45b27ac36169fd6d58a0ee4eb6573fdf6a8680be814a63d2f5_hex);
-
-    // incarnation: now acc(kv[0]) only has 1 storage
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(kv[0].first, new_val, true),
-        make_update(kv[4].first, kv[4].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0x2667b2bcc7c6a9afcd5a621be863fc06bf76022450e7e2e11ef792d63c7a689c_hex);
-
-    // insert storages to the second account
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_update(kv[5].first, kv[5].second),
-        make_update(kv[6].first, kv[6].second),
-        make_update(kv[7].first, kv[7].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0x7954fcaa023fb356d6c626119220461c7859b93abd6ea71eac342d8407d7051e_hex);
-
-    // erase all storages of kv[0].
-    // TEMPORARY Note: when an existing account has no storages, the computed
-    // leaf data is the input value, we don't concatenate with `empty_trie_hash`
-    // in this poc impl yet.
-    this->root = upsert_updates(
-        this->aux, *this->sm, std::move(this->root), make_erase(kv[4].first));
-    EXPECT_EQ(
-        this->root_hash(),
-        0x055a9738d15fb121afe470905ca2254da172da7a188d8caa690f279c10422380_hex);
-
-    // erase whole first account (kv[0])
-    this->root = upsert_updates(
-        this->aux,
-        *this->sm,
-        std::move(this->root),
-        make_erase(kv[0].first),
-        make_update(kv[3].first, kv[3].second), /*the following are ignored*/
-        make_update(kv[4].first, kv[4].second));
-    EXPECT_EQ(
-        this->root_hash(),
-        0x2c077fecb021212686442677ecd59ac2946c34e398b723cf1be431239cb11858_hex);
-}
-
-TYPED_TEST(TrieTest, upsert_var_len_keys_nested)
+TYPED_TEST(TrieTest, nested_fixed_length_tries)
 {
     std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
         {0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbdd_hex,

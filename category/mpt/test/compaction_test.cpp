@@ -45,12 +45,11 @@ TEST_F(CompactionTest, first_chunk_is_compacted)
     for (auto &i : updates) {
         update_ls.push_front(i);
     }
-    state()->root = upsert(
-        state()->aux,
-        state()->version++,
-        state()->sm,
+    state()->root = state()->aux.do_update(
         std::move(state()->root),
-        std::move(update_ls));
+        state()->sm,
+        std::move(update_ls),
+        state()->version++);
     std::cout << "\nBefore compaction:";
     state()->print(std::cout);
     // TODO DO COMPACTION

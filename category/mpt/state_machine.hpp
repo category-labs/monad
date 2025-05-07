@@ -18,6 +18,7 @@ struct StateMachine
     virtual Compute &get_compute() const = 0;
     virtual bool cache() const = 0;
     virtual bool compact() const = 0;
+    virtual bool is_variable_length() const = 0;
 
     virtual bool auto_expire() const
     {

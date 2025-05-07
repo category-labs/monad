@@ -42,10 +42,6 @@ using namespace MONAD_ASYNC_NAMESPACE;
  `old_prefix_index` is nibble index of path in previous node - old.
  `*_prefix_index_start` is the starting nibble index in current function frame
 */
-void dispatch_updates_flat_list_(
-    UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::UniquePtr old, Requests &, NibblesView path, unsigned prefix_index);
-
 void dispatch_updates_impl_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::UniquePtr old, Requests &, unsigned prefix_index, NibblesView path,
@@ -117,15 +113,18 @@ Node::UniquePtr upsert(
                 }
                 // simply dispatch empty update and potentially do compaction
                 Requests requests;
-                dispatch_updates_flat_list_(
+                Node const &old_node = *old;
+                dispatch_updates_impl_(
                     aux,
                     sm,
                     *sentinel,
                     entry,
                     std::move(old),
                     requests,
+                    old_path_nibbles_len,
                     old_path,
-                    old_path_nibbles_len);
+                    old_node.opt_value(),
+                    old_node.version);
                 sm.up(old_path_nibbles_len);
             }
             else {
@@ -901,6 +900,10 @@ void create_new_trie_(
             sm.down(path.get(i));
         }
         MONAD_DEBUG_ASSERT(update.value.has_value());
+        MONAD_ASSERT(
+            !sm.is_variable_length() || update.next.empty(),
+            "Invalid update detected: variable-length tables do not "
+            "support updates with a next list");
         Requests requests;
         // requests would be empty if update.next is empty
         requests.split_into_sublists(std::move(update.next), 0);
@@ -921,12 +924,23 @@ void create_new_trie_(
         }
         return;
     }
+    // Requests contain more than 2 updates
     Requests requests;
     auto const prefix_index_start = prefix_index;
-    while (requests.split_into_sublists(
-               std::move(updates), prefix_index) == // NOLINT
-               1 &&
-           !requests.opt_leaf) {
+    // Iterate to find the prefix index where update paths diverge due to key
+    // termination or branching
+    while (true) {
+        unsigned const num_branches =
+            requests.split_into_sublists(std::move(updates), prefix_index);
+        MONAD_ASSERT(num_branches > 0); // because updates.size() > 1
+        // sanity checks on user input
+        MONAD_ASSERT(
+            !requests.opt_leaf || sm.is_variable_length(),
+            "Invalid update input: must mark the state machine as "
+            "variable-length to allow variable length updates");
+        if (num_branches > 1 || requests.opt_leaf) {
+            break;
+        }
         sm.down(requests.get_first_branch());
         updates = std::move(requests).first_and_only_list();
         ++prefix_index;
@@ -990,6 +1004,12 @@ void upsert_(
     unsigned prefix_index, unsigned old_prefix_index)
 {
     MONAD_ASSERT(!updates.empty());
+    // Variable-length tables support only a one-time insert; no deletions or
+    // further updates are allowed.
+    MONAD_ASSERT(
+        !sm.is_variable_length(),
+        "Invalid update detected: current implementation does not "
+        "support updating variable-length tables");
     if (!old) {
         update_receiver receiver(
             &aux,
@@ -1020,16 +1040,25 @@ void upsert_(
         }
         unsigned const number_of_sublists = requests.split_into_sublists(
             std::move(updates), prefix_index); // NOLINT
+        MONAD_ASSERT(requests.mask > 0);
         if (old_prefix_index == old->path_nibbles_len()) {
-            dispatch_updates_flat_list_(
+            MONAD_ASSERT(
+                !requests.opt_leaf.has_value(),
+                "Invalid update detected: cannot apply variable-length "
+                "updates to a fixed-length table in the database");
+            int64_t const version = old->version;
+            auto const opt_leaf_data = old->opt_value();
+            dispatch_updates_impl_(
                 aux,
                 sm,
                 parent,
                 entry,
                 std::move(old),
                 requests,
+                prefix_index,
                 path,
-                prefix_index);
+                opt_leaf_data,
+                version);
             break;
         }
         if (auto old_nibble = old->path_nibble_view().get(old_prefix_index);
@@ -1162,56 +1191,6 @@ void dispatch_updates_impl_(
         }
     }
     fillin_entry(aux, sm, std::move(tnode), parent, entry);
-}
-
-void dispatch_updates_flat_list_(
-    UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::UniquePtr old, Requests &requests, NibblesView const path,
-    unsigned prefix_index)
-{
-    auto &opt_leaf = requests.opt_leaf;
-    auto opt_leaf_data = old->opt_value();
-    if (opt_leaf.has_value()) {
-        MONAD_ASSERT(opt_leaf->next.empty());
-        if (opt_leaf.value().incarnation) {
-            // incarnation means there are new children keys longer than
-            // curr update's key
-            MONAD_DEBUG_ASSERT(!opt_leaf.value().is_deletion());
-            create_new_trie_from_requests_(
-                aux,
-                sm,
-                parent.version,
-                entry,
-                requests,
-                path,
-                prefix_index,
-                opt_leaf.value().value,
-                opt_leaf.value().version);
-            --parent.npending;
-            return;
-        }
-        else if (opt_leaf.value().is_deletion()) {
-            parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
-            entry.erase();
-            --parent.npending;
-            return;
-        }
-        MONAD_ASSERT(opt_leaf.value().value.has_value());
-        opt_leaf_data = opt_leaf.value().value;
-    }
-    int64_t const version =
-        opt_leaf.has_value() ? opt_leaf.value().version : old->version;
-    dispatch_updates_impl_(
-        aux,
-        sm,
-        parent,
-        entry,
-        std::move(old),
-        requests,
-        prefix_index,
-        path,
-        opt_leaf_data,
-        version);
 }
 
 // Split `old` at old_prefix_index, `updates` are already splitted at

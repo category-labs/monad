@@ -506,6 +506,13 @@ mpt::Compute &MachineBase::get_compute() const
     }
 }
 
+bool MachineBase::is_variable_length() const
+{
+    return depth > prefix_len() &&
+           (table == TableType::Transaction || table == TableType::Receipt ||
+            table == TableType::Withdrawal || table == TableType::CallFrame);
+}
+
 void MachineBase::down(unsigned char const nibble)
 {
     ++depth;
@@ -554,12 +561,17 @@ void MachineBase::down(unsigned char const nibble)
         else if (nibble == BLOCK_HASH_NIBBLE) {
             table = TableType::BlockHash;
         }
+        else if (nibble == BLOCKHEADER_NIBBLE) {
+            table = TableType::BlockHeader;
+        }
+        else if (nibble == OMMER_NIBBLE) {
+            table = TableType::Ommer;
+        }
+        else if (nibble == CALL_FRAME_NIBBLE) {
+            table = TableType::CallFrame;
+        }
         else {
-            // No subtrie in the rest tables, thus treated the same as
-            // Table::Prefix
-            MONAD_ASSERT(
-                nibble == BLOCKHEADER_NIBBLE || nibble == OMMER_NIBBLE ||
-                nibble == CALL_FRAME_NIBBLE);
+            MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);
         }
     }
 }

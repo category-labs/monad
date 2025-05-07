@@ -87,6 +87,11 @@ namespace
         {
             return false;
         }
+
+        virtual bool is_variable_length() const override
+        {
+            return false;
+        }
     };
 }
 
@@ -103,21 +108,15 @@ struct StateMachineTestFixture : public Base
         this->sm = std::make_unique<TestStateMachine>(
             down_calls, up_calls, compute_calls, cache_calls);
 
-        UpdateList updates;
-        UpdateList sub;
-        auto const key1 = 0x11_hex;
-        auto const key2 = 0x22_hex;
-        auto sub1 = make_update(key1, monad::byte_string_view{});
-        auto sub2 = make_update(key2, monad::byte_string_view{});
-        sub.push_front(sub1);
-        sub.push_front(sub2);
-        auto const keytop = 0x11_hex;
-        auto top =
-            make_update(keytop, monad::byte_string{}, false, std::move(sub));
-        updates.push_front(top);
+        auto const key1 = 0x1111_hex;
+        auto const key2 = 0x1122_hex;
 
-        this->root = upsert(
-            this->aux, 0, *this->sm, std::move(this->root), std::move(updates));
+        this->root = upsert_updates(
+            this->aux,
+            *this->sm,
+            std::move(this->root),
+            make_update(key1, monad::byte_string_view{}),
+            make_update(key2, monad::byte_string_view{}));
     }
 
     void validate_down_calls(DownCalls const &expected)

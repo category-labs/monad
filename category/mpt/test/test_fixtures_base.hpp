@@ -105,6 +105,11 @@ namespace monad::test
         {
             return true;
         }
+
+        virtual bool is_variable_length() const override
+        {
+            return false;
+        }
     };
 
     static_assert(sizeof(StateMachineMerkleWithPrefix<>) == 16);
@@ -159,6 +164,11 @@ namespace monad::test
         {
             return true;
         }
+
+        virtual bool is_variable_length() const override
+        {
+            return depth > prefix_len;
+        }
     };
 
     static_assert(sizeof(StateMachineVarLenTrieWithPrefix<>) == 16);
@@ -168,6 +178,7 @@ namespace monad::test
     {
         bool expire{false};
         size_t cache_depth{6};
+        size_t variable_length_start_depth{size_t(-1)};
     };
 
     template <class Compute, StateMachineConfig config = StateMachineConfig{}>
@@ -215,11 +226,20 @@ namespace monad::test
         {
             return config.expire;
         }
+
+        virtual constexpr bool is_variable_length() const override
+        {
+            return depth > config.variable_length_start_depth;
+        }
     };
 
     using StateMachineAlwaysEmpty = StateMachineAlways<EmptyCompute>;
     using StateMachineAlwaysMerkle = StateMachineAlways<MerkleCompute>;
-    using StateMachineAlwaysVarLen = StateMachineAlways<VarLenMerkleCompute<>>;
+    using StateMachineAlwaysVarLen = StateMachineAlways<
+        VarLenMerkleCompute<>,
+        StateMachineConfig{.variable_length_start_depth = 0}>;
+    using StateMachinePlainVarLen = StateMachineAlways<
+        EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;
 
     Node::UniquePtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,

@@ -86,14 +86,15 @@ TYPED_TEST(AppendTest, works)
     while (it != this->state()->keys.end()) {
         std::vector<Update> updates;
         updates.reserve(1000);
+        UpdateList update_ls;
         for (auto i = 0; i < 1000; ++i, ++it) {
-            updates.push_back(make_update(it->first, it->first));
+            update_ls.push_front(
+                updates.emplace_back(make_update(it->first, it->first)));
         }
-        this->state()->root = upsert_vector(
-            this->state()->aux,
-            this->state()->sm,
+        this->state()->root = this->state()->aux.do_update(
             std::move(this->state()->root),
-            std::move(updates),
+            this->state()->sm,
+            std::move(update_ls),
             this->state()->version++);
     }
 

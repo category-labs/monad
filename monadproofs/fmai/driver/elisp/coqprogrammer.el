@@ -71,7 +71,7 @@ fully/more qualified names instead of importing modules."
       (with-current-buffer proof-response-buffer
         (read-only-mode -1))
       (let ((raw (proof-shell-invisible-cmd-get-result trimmed-query))
-            (max-length 100000))
+            (max-length 500000))
         (let ((res (string-trim (or raw ""))))
           (cond
            ((string-empty-p res)
@@ -262,7 +262,7 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
   )
 
 
-(defcustom coq-programmer-max-llm-calls 100
+(defcustom coq-programmer-max-llm-calls 30
   "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.
 Set to nil for no limit."
   :type '(choice (const :tag "Unlimited" nil)
@@ -362,6 +362,80 @@ directory as the current `.v` file.  Stops when:
                   (log "Assistant" assistant)))))))))))
 
 
+(defun typeOf (fqn)
+  "Return the type information of fqn from the 'Check %s' Coq query, without trailing newline."
+  (let* ((resp (proof-shell-invisible-cmd-get-result
+                (format "Check %s." fqn)))
+         (type-pos (string-match ": " resp)))
+    (if type-pos
+        ;; Remove trailing newlines from the substring
+        (replace-regexp-in-string "\n\\'" "" (substring resp (+ type-pos 2)))
+      nil)))  ; Return nil if ": " is not found
+
+(defun coq-prog--parse-short-module-output (print-output)
+  "Given the string produced by `Print Module _` in *short* mode,
+return a list of (KIND . NAME) pairs, where KIND is one of the
+symbols `parameter`, `definition`, `inductive`."
+  (let* (;; isolate the part between \"Struct\" and \"End\"
+         (struct-start (string-match "Struct[ \t\n]+" print-output))
+         (end-pos      (and struct-start
+                            (string-match "[ \t\n]*End\\>" print-output
+                                          (+ struct-start 6))))
+         (body (if (and struct-start end-pos)
+                   (substring print-output (+ struct-start 6) end-pos)
+                 ""))                ; if not recognised, parse empty
+         (rx "\\_<\\(Parameter\\|Definition\\|Inductive\\)[ \t\n]+\\([[:word:]'._]+\\)")
+         (pos 0)
+         items)
+    (while (and (< pos (length body))
+                (string-match rx body pos))
+      (let* ((kind-str (match-string 1 body))
+             (name     (match-string 2 body))
+             (kind-sym (pcase kind-str
+                         ("Parameter"  'parameter)
+                         ("Definition" 'definition)
+                         ("Inductive"  'inductive))))
+        (push (cons kind-sym name) items)
+        (setq pos (match-end 0))))
+    (nreverse items)))
+
+
+;;;###autoload
+(defun coq-prog-show-module-items-at-point ()
+  "Parse the short `Print Module` output for the identifier at point.
+
+* Uses `thing-at-point` to obtain the symbol under the cursor.
+* Runs `Print Module <symbol>.` via Proof General’s invisible shell.
+* Passes the raw output to `coq-prog--parse-short-module-output`.
+* Displays the parsed (KIND . NAME) list both in the echo area and in
+  a buffer called *Coq-Module-Items*.
+
+Assumes `Set Short Module Printing.` is in effect."
+  (interactive)
+  (let* ((mod (thing-at-point 'symbol t)))
+    (unless mod
+      (user-error "No symbol at point"))
+    (with-current-buffer proof-response-buffer (read-only-mode -1))
+    (let* ((raw (proof-shell-invisible-cmd-get-result
+                 (format "Print Module %s." mod)))
+           (items (coq-prog--parse-short-module-output raw)))
+      ;; echo-area summary
+      (message "Module %s items: %s" mod items)
+      ;; detailed buffer
+      (with-current-buffer (get-buffer-create "*Coq-Module-Items*")
+        (read-only-mode -1)
+        (erase-buffer)
+        (insert (format "Items in module %s (short print):\n\n" mod))
+        (dolist (it items)
+          (insert (format "- %s: %s\n"
+                          (pcase (car it)
+                            ('parameter  "Parameter")
+                            ('definition "Definition")
+                            ('inductive  "Inductive"))
+                          (cdr it))))
+        (read-only-mode 1)
+        (display-buffer (current-buffer))))))
+
 ;; TODO:
 ;; GPT often gets some holes correct, but later forgets them in the later/final answer where they go back to Admitted.
 ;; one solution could be at timeout, give it all non-erroring versions and ask it to take the maximal subset.
@@ -369,5 +443,7 @@ directory as the current `.v` file.  Stops when:
 ;; Definition in the older version. emacs could put all versions in a module and 
 
 ;; allow multiple queries
+
+
 
 

@@ -129,7 +129,8 @@ In the call chain/tree from the function that is the main task, which you have a
 pick hole(s) which are closest to the root.
 If you were asked to implement a function on an Inductive type which is defined mutually inductive with other Inductive types, the task implicitly includes implementing the analogous functions on those types as well, likely as a block of mutually recursive functions. Implementing such holes should be the highest priority.
 
-Once you have chosen the hole(s) to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. If that doesnt yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
+Once you have chosen the hole(s) to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. For example, if the type of the hole is `foo -> bar`, issue the query `Search (foo -> bar).`, NOT `Search (_ : foo->bar)`: the latter is equivalent to `Search (_)` which will return everything and will go beyond your context length.
+If `Search (foo -> bar)` doesn't yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
 
 Also, double check whether the hole was already implemented in the current conversation and you forgot to include it in the previous message.
 

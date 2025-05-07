@@ -5,10 +5,10 @@ This is a Coq programming task. First, some general guidelines about Coq program
 Complex Coq programs are often written incrementally. 
 Coq allows us to "admit" helper functions temporarily so that they can be defined later.
 However, in that case, you need to come up with the type of the helper function. 
-For example, you admit a helper function to convert a Z to a String.string, as follows:
+For example, you can admit a helper function to convert a Z to a `string`, as follows:
 
 ```coq
-Definition Ztostring (z: Z) : String.string. Admitted. (* TOFIXLATER *)
+Definition Ztostring (z: Z) : string. Admitted. (* TOFIXLATER *)
 ```
 This mechanism allows you to get the higher-level details right before implementing the low-level obvious details.
 Do not forget the "TOFIXLATER" comment, as this will be used to find the holes to fill in later.
@@ -149,7 +149,7 @@ Definition env := string -> nat.
 
 (* Update environment *)
 Definition update (ρ : env) (x : string) (v : nat) : env :=
-  fun y => if String.eqb x y then v else ρ y.
+  fun y => if bool_decide (x = y) then v else ρ y.
   
 Fixpoint eval_expr (ρ : env) (e : Expr) : nat :=
   match e with
@@ -175,19 +175,40 @@ WHILE DECIDING WHAT TO LEAVE ADMITTED FOR LATER, ENSURE THAT WHAT YOU DECIDE TO 
 
 ## Common mistakes
 
+### String Escaping
 In Coq, string escaping works non-intuitively. 
 You would expect the following to define a string containing just the double quote character.
 
 ```gallina
-Definition doubleQuote : String.string := "\"".
+Definition doubleQuote : string := "\"".
 ```
 
 But that is not valid Coq syntax. Instead, the following works:
 ```gallina
-Definition doubleQuote : String.string := """".
-Compute (String.length doubleQuote). (* returns 1 *)
+Definition doubleQuote : string := """".
+Compute (length doubleQuote). (* returns 1 *)
 ```
 If this is confusing, you can just add the above `doubleQuote` definition and use it
 when producing strings.
+
+### Prop vs bool
+`Prop` is a type of mathematical assertions, e.g. `1=2`. 
+`bool` is a datatype with 2 elements: `true` and `false`.
+Many logics do not distinguish between them but the difference in crucial in constructive logics as some `Prop`s may be undecidable.
+In Gallina functions, which are computable unless you add axioms, you can NOT do a case analysis on a `Prop`.
+You can do a case analysis on a `bool`. 
+If `P:Prop` is decidable and there is an instance of the `Decidable P` typeclass in the current context, `bool_decide P` is a `bool` which is true iff `P`.
+
+A common mistake beginners do is to write:
+```gallina
+Definition foo (n:nat): nat:= if (0<n) then 1 else 0.
+```
+That doesnt typecheck: `if` is sugar for `match` and the discriminee must be an element of an Inductive type like bool/nat...
+But `Prop` is not an Inductive type.
+The following is one way to correctly write the above definition:
+```gallina
+Definition foo (n:nat): nat:= if bool_decide (0<n) then 1 else 0.
+```
+
 
 # Current Task

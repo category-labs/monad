@@ -262,7 +262,7 @@ Before the final ```gallina or ```coqquery block, explain why: explain your answ
   )
 
 
-(defcustom coq-programmer-max-llm-calls 30
+(defcustom coq-programmer-max-llm-calls 100
   "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.
 Set to nil for no limit."
   :type '(choice (const :tag "Unlimited" nil)

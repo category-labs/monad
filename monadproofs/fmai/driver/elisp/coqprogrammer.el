@@ -179,7 +179,7 @@ If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE O
             ((eq proof-shell-last-output-kind 'error)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
-             (concat "Below is the error I get when I give that to Coq. Once you fix the error, YOU MUST GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
+             (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
 
             ;; ---------- compiles but has Admitted ----------
             ((coq-programmer--buffer-has-admit-p body)

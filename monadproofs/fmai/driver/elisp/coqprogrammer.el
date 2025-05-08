@@ -240,16 +240,23 @@ If no region is active, signal an error."
   "
 
 # Response Format (IMPORTANT)
-You can either give me the answer or ask me to run a Coq query like `Search/About/Check`.
-Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```. 
-If you do not follow this format, my automated engine cannot parse your response.
+You can either give me (an elisp chat loop) the answer or ask me to run a Coq query like `Search/About/Check`.
+Your response MUST either END with the Coq answer in a ```gallina ... ``` code block , or a Coq query inside a ```coqquery ... ```.
+If you do not follow this format, I would not be able to respond to you properly.
+Although I log and publish your responses in entirety, to respond to you, I ONLY LOOK AT THE LAST CODE BLOCK (```gallina or ```coqquery) IN YOUR RESPONSE.
+If that is a ```coqquery block, I will send the queries to coqtop and give you back the responses.
+If that is a ```gallina block, I will insert it into emacs+proof-general+company-coq and ask proof-general to check till the end.
+If there are coq errors, I will respond with the errors.
+
 An example of a valid response is:
 ```coqquery
 Print Stmt.
+Print Expr.
 ```
 An example of an answer (not to the the current task) is:
 ```gallina
 Definition foo : nat := 1+2.
+Definition bar : nat := 1+3.
 ```
 
 You can include multiple queries in a ```coqquery block: one in each line.

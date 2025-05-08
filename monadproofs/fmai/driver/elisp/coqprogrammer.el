@@ -269,12 +269,39 @@ DO NOT emit any `Require Import/Export` commands. All the availble libraries hav
   (concat coq-programmer-preamble core-prompt coq-programmer-response-format)
   )
 
-(defun coq-programmer-first-prompt ()
+(defun coq-programmer-first-prompt-interactive ()
   (let ((core-prompt (read-string "You: ")))
     (coq-programmer-first-prompt2 core-prompt)
     )
   )
 
+(defun coq-comment-start ()
+  (interactive)
+  (coq-find-comment-start)
+  )
+
+(defun coq-comment-end ()
+  (interactive)
+  (forward-comment 1)
+  )
+
+(defun coq-programmer-first-prompt ()
+  "Extract the GPT prompt from the Coq comment around point, excluding the `(*` and `*)`.
+
+Inserts a newline after the `*)` so inserted code appears after the comment."
+  (coq-find-comment-start)
+  (let ((beg (point)))
+    (coq-comment-end)
+    (let ((end (point)))
+      ;; Move point to just after the comment
+      (goto-char end)
+      (insert "\n")
+      (let ((core-prompt (string-trim
+                          (buffer-substring-no-properties (+ beg 2) (- end 2)))))
+        (coq-programmer-first-prompt2 core-prompt)))))
+
+(with-eval-after-load 'coq
+  (define-key coq-mode-map (kbd "C-c l") #'coq-programmer-loop))
 
 (defcustom coq-programmer-max-llm-calls 30
   "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.

@@ -14,6 +14,12 @@ monad_revision MonadMainnet::get_monad_revision(
 uint256_t MonadMainnet::get_chain_id() const
 {
     return 143;
-};
+}
+
+GenesisState MonadMainnet::get_genesis_state() const
+{
+    MONAD_ASSERT_PRINTF(false, "TODO");
+    return {};
+}
 
 MONAD_NAMESPACE_END

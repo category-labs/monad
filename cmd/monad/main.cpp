@@ -3,6 +3,7 @@
 
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/genesis_state.hpp>
 #include <monad/chain/monad_devnet.hpp>
 #include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
@@ -17,7 +18,6 @@
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -108,7 +108,6 @@ int main(int const argc, char const *argv[])
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
-    fs::path genesis;
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
@@ -152,8 +151,6 @@ int main(int const argc, char const *argv[])
         "directory to dump state to at the end of run");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
-    group->add_option("--genesis", genesis, "genesis file")
-        ->check(CLI::ExistingFile);
     group
         ->add_option(
             "--snapshot", snapshot, "snapshot file path to load db from")
@@ -169,7 +166,7 @@ int main(int const argc, char const *argv[])
         });
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
-    group->require_option(1);
+    group->require_option(0, 1);
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -232,6 +229,20 @@ int main(int const argc, char const *argv[])
         return mpt::Db{*machine};
     }();
 
+    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return std::make_unique<EthereumMainnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>();
+        }
+        MONAD_ASSERT(false);
+    }();
+
     TrieDb triedb{db}; // init block number to latest finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
@@ -256,9 +267,9 @@ int main(int const argc, char const *argv[])
         }
         else if (!db.root().is_valid()) {
             MONAD_ASSERT(statesync.empty());
-            LOG_INFO("loading from genesis {}", genesis);
-            TrieDb tdb{db};
-            read_genesis(genesis, tdb);
+            LOG_INFO("loading from genesis");
+            GenesisState const genesis_state = chain->get_genesis_state();
+            load_genesis_state(genesis_state, triedb);
         }
         return triedb.get_block_number();
     }();
@@ -311,20 +322,6 @@ int main(int const argc, char const *argv[])
     fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     auto const start_time = std::chrono::steady_clock::now();
-
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            return std::make_unique<MonadMainnet>();
-        }
-        MONAD_ASSERT(false);
-    }();
 
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;

@@ -1,5 +1,6 @@
 #include <monad/chain/ethereum_mainnet.hpp>
 
+#include <monad/chain/ethereum_mainnet_alloc.hpp>
 #include <monad/config.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
@@ -139,6 +140,18 @@ size_t EthereumMainnet::get_max_code_size(
     return get_revision(block_number, timestamp) >= EVMC_SPURIOUS_DRAGON
                ? MAX_CODE_SIZE_EIP170
                : std::numeric_limits<size_t>::max();
+}
+
+GenesisState EthereumMainnet::get_genesis_state() const
+{
+    BlockHeader header;
+    header.difficulty = 17179869184;
+    header.gas_limit = 5000;
+    intx::be::unsafe::store<uint64_t>(header.nonce.data(), 66);
+    header.extra_data = evmc::from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
+                                       "db3db69cbdb7a38e1e50b1b82fa")
+                            .value();
+    return {header, ETHEREUM_MAINNET_ALLOC};
 }
 
 MONAD_NAMESPACE_END

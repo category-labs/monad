@@ -1,4 +1,6 @@
 #include <monad/async/util.hpp>
+#include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/genesis_state.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
@@ -7,7 +9,6 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_server.h>
@@ -42,7 +43,7 @@ struct monad_statesync_server_network
 
 namespace
 {
-    auto const genesis = test_resource::ethereum_genesis_dir / "mainnet.json";
+    GenesisState const GENESIS_STATE = EthereumMainnet{}.get_genesis_state();
 
     std::filesystem::path tmp_dbname()
     {
@@ -282,15 +283,14 @@ TEST_F(StateSyncFixture, sync_from_some)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
+        load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
         tdb.commit(
             {},
             {},
             MonadConsensusBlockHeader::from_eth_header(
                 BlockHeader{.number = 1}, 0));
-
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);
@@ -473,8 +473,8 @@ TEST_F(StateSyncFixture, deletion_proposal)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);
@@ -530,8 +530,8 @@ TEST_F(StateSyncFixture, duplicate_deletion_round)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);

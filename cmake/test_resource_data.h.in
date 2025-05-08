@@ -30,10 +30,6 @@ namespace test_resource
     inline auto const self_compressed_block_data_dir =
         test_data_dir / "common" / "blocks" / "self_compressed_blocks";
 
-    // genesis
-    inline auto const ethereum_genesis_dir =
-        test_data_dir / "common" / "genesis" / "ethereum";
-
     // ethereum tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
 

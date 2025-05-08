@@ -3,6 +3,7 @@
 #include <from_json.hpp>
 
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -19,7 +20,6 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -55,27 +55,105 @@
 #include <string>
 #include <vector>
 
-MONAD_TEST_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-namespace
+struct EthereumMainnetRev : EthereumMainnet
 {
-    struct EthereumMainnetRev : EthereumMainnet
+    evmc_revision const rev;
+
+    EthereumMainnetRev(evmc_revision const rev)
+        : rev{rev}
     {
-        evmc_revision const rev;
+    }
 
-        EthereumMainnetRev(evmc_revision const rev)
-            : rev{rev}
-        {
-        }
+    virtual evmc_revision get_revision(
+        uint64_t /* block_number */, uint64_t /* timestamp */) const override
+    {
+        return rev;
+    }
+};
 
-        virtual evmc_revision get_revision(
-            uint64_t /* block_number */,
-            uint64_t /* timestamp */) const override
-        {
-            return rev;
-        }
-    };
+BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
+{
+    BlockHeader block_header{};
+
+    block_header.difficulty = intx::from_string<uint256_t>(
+        genesis_json["difficulty"].get<std::string>());
+
+    auto const extra_data =
+        evmc::from_hex(genesis_json["extraData"].get<std::string>());
+    MONAD_ASSERT(extra_data.has_value());
+    block_header.extra_data = extra_data.value();
+
+    block_header.gas_limit =
+        std::stoull(genesis_json["gasLimit"].get<std::string>(), nullptr, 0);
+
+    auto const mix_hash_byte_string =
+        evmc::from_hex(genesis_json["mixHash"].get<std::string>());
+    MONAD_ASSERT(mix_hash_byte_string.has_value());
+    std::copy_n(
+        mix_hash_byte_string.value().begin(),
+        mix_hash_byte_string.value().length(),
+        block_header.prev_randao.bytes);
+
+    uint64_t const nonce{
+        std::stoull(genesis_json["nonce"].get<std::string>(), nullptr, 0)};
+    intx::be::unsafe::store<uint64_t>(block_header.nonce.data(), nonce);
+
+    auto const parent_hash_byte_string =
+        evmc::from_hex(genesis_json["parentHash"].get<std::string>());
+    MONAD_ASSERT(parent_hash_byte_string.has_value());
+    std::copy_n(
+        parent_hash_byte_string.value().begin(),
+        parent_hash_byte_string.value().length(),
+        block_header.parent_hash.bytes);
+
+    block_header.timestamp =
+        std::stoull(genesis_json["timestamp"].get<std::string>(), nullptr, 0);
+
+    if (genesis_json.contains("coinbase")) {
+        auto const coinbase =
+            evmc::from_hex(genesis_json["coinbase"].get<std::string>());
+        MONAD_ASSERT(coinbase.has_value());
+        std::copy_n(
+            coinbase.value().begin(),
+            coinbase.value().length(),
+            block_header.beneficiary.bytes);
+    }
+
+    // London fork
+    if (genesis_json.contains("baseFeePerGas")) {
+        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
+            genesis_json["baseFeePerGas"].get<std::string>());
+    }
+
+    // Shanghai fork
+    if (genesis_json.contains("blobGasUsed")) {
+        block_header.blob_gas_used = std::stoull(
+            genesis_json["blobGasUsed"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("excessBlobGas")) {
+        block_header.excess_blob_gas = std::stoull(
+            genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("parentBeaconBlockRoot")) {
+        auto const parent_beacon_block_root = evmc::from_hex(
+            genesis_json["parentBeaconBlockRoot"].get<std::string>());
+        MONAD_ASSERT(parent_beacon_block_root.has_value());
+        auto &write_to =
+            block_header.parent_beacon_block_root.emplace(bytes32_t{});
+        std::copy_n(
+            parent_beacon_block_root.value().begin(),
+            parent_beacon_block_root.value().length(),
+            write_to.bytes);
+    }
+
+    return block_header;
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> BlockchainTest::execute(

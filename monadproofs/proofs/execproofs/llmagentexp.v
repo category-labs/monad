@@ -16,24 +16,12 @@ So, `(a ++ b)%pstring` appends `a:PrimString.string` and `b:PrimString.string`.
 PrimString.string is different from Stdlib.Strings.String.string, which is the type of the non-primitive strings that have been in the Coq stdlib for decades. Stdlib.Strings.String.string is slower so I avoid using it in this application where speed is important.
 *)
 
-Fixpoint pp_name        (n:name)        : string :=
-  match n with
-  | Ninst on args    => pp_name on ++ "<"%pstring ++ join "," (map pp_temp_arg args) ++ ">"%pstring
-  | Nglobal an       => pp_atomic_name an
-  | Ndependent ty    => pp_type ty
-  | Nscoped parent an=> pp_name parent ++ "::"%pstring ++ pp_atomic_name an
-  | Nunsupported s   => s
-  end
 
-with pp_temp_arg   (a:temp_arg)    : string :=
-  match a with
-  | Atype ty         => pp_type ty
-  | Avalue e         => pp_expr e
-  | Apack ps         => "..."%pstring ++ join "," (map pp_temp_arg ps)
-  | Atemplate n      => pp_name n
-  | Aunsupported s   => s
-  end
+```coqquery
+Require Import Coq.Strings.PrimString.
+Locate "%pstring".
 
-(* …and so on for pp_type, pp_expr, pp_stmt, etc. … *)
-
+Require Import Coq.Strings.Primitive.
+Locate "%pstring".
+```
 

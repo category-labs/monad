@@ -255,6 +255,7 @@ Definition foo : nat := 1+2.
 You can include multiple queries in a ```coqquery block: one in each line.
 
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
+DO NOT emit any `Require Import/Export` commands. All the availble libraries have already been `Require`d, so they are availble, at least with fully qualified names. If needed, you can Import (but not `Require Import`) modules defining notations.
 ")
 
 (defun coq-programmer-first-prompt2 (core-prompt)

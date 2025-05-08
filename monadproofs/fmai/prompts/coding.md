@@ -218,4 +218,44 @@ The following is one way to correctly write the above definition:
 Definition foo (n:nat): nat:= if bool_decide (0<n) then 1 else 0.
 ```
 
+### confusing Arguments output of Print on Inductives
+Below an example showing the output of the `Print` query on `Inductive` types.
+```
+Inductive pairnat: Set :=
+  pairn (l: nat) (r: nat).
+Print pairnat.
+
+(*
+Inductive pairnat : Set :=  pairn : Corelib.Init.Datatypes.nat → Corelib.Init.Datatypes.nat → monad.proofs.execproofs.test.pairnat.
+
+Arguments monad.proofs.execproofs.test.pairn (l r)%_nat_scope
+ *)
+```
+The `(l r)%_nat_scope` part in may be confusing to you. It should actually be read as:
+```
+Arguments monad.proofs.execproofs.test.pairn l%_nat_scope r%_nat_scope
+```
+When printing, Coq puts consequetive arguments in a pair of parentheses if they have the same notation scope, so as to only print the notation scope once for all of them.
+But DO NOT GET CONFUSED into thinking that the contents inside the parentheses are a single (e.g. tuple) argument: they are different arguments. Keep this in mind when generating pattern matching on constructors of inductive types.
+For example, the following 2 pattern matches are WRONG:
+
+```gallina
+match p with 
+| pairn (l,r) =>...
+end
+```
+
+```gallina
+match p with 
+| pairn lr  => let '(l,r) := lr in ...
+end
+```
+
+The correct way to write the pattern match is:
+```gallina
+match p with 
+| pairn l r  => ...
+end
+```
+
 # Current Task

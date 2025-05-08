@@ -55,54 +55,46 @@ LANG is down-cased.  BODY has no closing ``` line."
   "Regexp that every valid Coq query must start with.")
 
 (defun query-coq (queries)
-  "Execute one **or several** Coq queries and return their responses.
+  "Run one or more Coq queries (newline-separated) and return a single string.
 
-`queries` may contain multiple lines; each non-blank line is treated as
-an independent query.  A query must start with one of the allowed
-keywords: Search / About / Print / Locate / Check.
+Rules per line:
+  · If it begins with Search / About / Print / Locate / Check,
+    execute it via Proof General and include the response.
+  · Otherwise, do **not** execute the line; instead include the standard
+    \"not a valid query\" error message for that line.
 
-The result is a single string.  For each query we emit
+Every processed line is emitted in the form:
 
-    >>> <the query exactly as written>
-    <the trimmed Coq response or an explanatory message>
+    >>> <original line>
+    <response or error>
 
-with a blank line separating blocks.
-
-If any query is malformed we immediately return an explanation without
-contacting Coq.  Very large outputs are truncated with a warning."
-  (let ((lines (split-string queries "\n"))
-        (blocks '()))
-    (dolist (line lines)
-      (let ((q (string-trim line)))
-        ;; skip empty lines
+Blocks are separated by a blank line."
+  (let* ((valid-prefixes '("Search" "About" "Print" "Locate" "Check"))
+         (blocks '()))
+    (dolist (line (split-string queries "\n"))
+      (let* ((q (string-trim line)))
         (unless (string-empty-p q)
-          ;; ----- validate prefix -----
-          (unless (string-match-p coq-query--allowed-prefix-re q)
-            (cl-return-from query-coq
-              "Not a valid query.  Each line must begin with Search / About / Locate / Check / Print, \
-and must not contain extra vernacular (e.g. Require)."))
-
-          ;; ----- run query -----
-          (with-current-buffer proof-response-buffer (read-only-mode -1))
-          (let* ((raw (proof-shell-invisible-cmd-get-result q))
-                 (res (string-trim (or raw "")))
-                 (pretty
-                  (cond
-                   ((string-empty-p res)
-                    "That query has no errors but returned an empty result. \
-For `Search` queries this means the current context contains no match. \
-Consider relaxing constraints, varying argument order, or trying different names \
-(e.g. toString / to_string / print / showString).")
-
-                   ((> (length res) max-query-response-strlen)
-                    "That query returned too many results — please refine it.")
-
-                   (t res))))
-            (push (format ">>> %s\n%s" q pretty) blocks)))))
-    ;; ----- concatenate all blocks in the original order -----
-    (if blocks
-        (string-join (nreverse blocks) "\n\n")
-      "No non-blank query lines found.")))
+          (let ((prefix (car (split-string q))))
+            (if (member prefix valid-prefixes)
+                ;; ---------- valid query ----------
+                (progn
+                  (with-current-buffer proof-response-buffer (read-only-mode -1))
+                  (let* ((raw (proof-shell-invisible-cmd-get-result q))
+                         (res (string-trim (or raw ""))))
+                    (push (format ">>> %s\n%s"
+                                  q
+                                  (cond
+                                   ((string-empty-p res) "∅ (no results)")
+                                   ((> (length res) max-query-response-strlen)
+                                    "That query returned too many results — please refine it.")
+                                   (t res)))
+                          blocks)))
+              ;; ---------- invalid line ----------
+              (push (format ">>> %s\nNot a valid query.  A query must begin with Search/About/Locate/Check/Print. \
+Do not add Require/Import or other vernacular here." q)
+                    blocks))))))
+    ;; concatenate in original order
+    (string-join (nreverse blocks) "\n\n")))
 
 
 (defun wait-for-coq ()

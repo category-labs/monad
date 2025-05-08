@@ -318,8 +318,7 @@ StakingContract::Output StakingContract::add_stake(
     auto const id =
         vars.last_delegate_request_id.load_unchecked().native().add(1).to_be();
     vars.last_delegate_request_id.store(id);
-    vars.delegate_queue(vars.epoch.load_unchecked().native().add(1).to_be())
-        .push(id);
+    vars.delegate_queue.push(id);
     vars.delegate_request(id).store(DelegateRequest{
         .validator_id = validator_id,
         .delegator = delegator,
@@ -374,8 +373,7 @@ StakingContract::Output StakingContract::precompile_undelegate(
                                    .add(1)
                                    .to_be();
     vars.last_undelegate_request_id.store(undelegate_id);
-    vars.undelegate_queue(vars.epoch.load_unchecked().native().add(1).to_be())
-        .push(undelegate_id);
+    vars.undelegate_queue.push(undelegate_id);
     vars.undelegate_request(undelegate_id)
         .store(UndelegateRequest{
             .validator_id = validator_id,
@@ -438,12 +436,9 @@ StakingContract::syscall_reward_validator(Address const &block_author)
 
 Result<void> StakingContract::syscall_on_epoch_change()
 {
-    auto const maybe_epoch = vars.epoch.load();
-    if (MONAD_UNLIKELY(!maybe_epoch.has_value())) {
+    if (MONAD_UNLIKELY(!vars.epoch.load().has_value())) {
         return success();
     }
-    auto const epoch = maybe_epoch.value();
-    auto const next_epoch = epoch.native().add(1).to_be();
 
     // 1. Apply staking rewards
     std::unordered_map<Uint256BE, uint256_t, BytesHashCompare<Uint256BE>>
@@ -463,44 +458,10 @@ Result<void> StakingContract::syscall_on_epoch_change()
         valinfo_storage.store(valinfo);
     }
 
-    // 2. Apply remove stake requests
-    auto undelegate_queue = vars.undelegate_queue(epoch);
+    // 2. Apply withdrawal requests from the previous epoch
     std::set<uint256_t, std::greater<uint256_t>> valset_removals;
-    for (uint256_t i = 0; i < undelegate_queue.length(); i += 1) {
-        auto const id = undelegate_queue.get(i).load_unchecked();
-        auto request = vars.undelegate_request(id).load_unchecked();
-
-        auto valinfo_storage = vars.validator_info(request.validator_id);
-        auto valinfo = valinfo_storage.load_unchecked();
-
-        auto delinfo_storage =
-            vars.delegator_info(request.validator_id, request.delegator);
-        auto delinfo = delinfo_storage.load_unchecked();
-
-        auto val_active_stake = valinfo.active_stake.native();
-        auto val_active_shares = valinfo.active_shares.native();
-        auto const shares = request.shares.native();
-
-        auto const tokens_to_burn =
-            shares_to_tokens(val_active_stake, val_active_shares, shares);
-
-        valinfo.active_stake = val_active_stake.sub(tokens_to_burn).to_be();
-        valinfo.active_shares = val_active_shares.sub(shares).to_be();
-
-        vars.withdrawal_queue(next_epoch)
-            .push(WithdrawalRequest{
-                .validator_id = request.validator_id,
-                .delegator = request.delegator,
-                .pending_balance = tokens_to_burn.to_be()});
-
-        valinfo_storage.store(valinfo);
-        delinfo_storage.store(delinfo);
-    }
-
-    auto withdrawal_queue = vars.withdrawal_queue(epoch);
-    auto const num_withdrawals = withdrawal_queue.length();
-    for (uint256_t i = 0; i < num_withdrawals; i += 1) {
-        auto const request = withdrawal_queue.pop();
+    while (!vars.withdrawal_queue.empty()) {
+        auto const request = vars.withdrawal_queue.pop();
 
         auto delinfo_storage =
             vars.delegator_info(request.validator_id, request.delegator);
@@ -521,14 +482,44 @@ Result<void> StakingContract::syscall_on_epoch_change()
         delinfo.active_shares = Uint256BE{};
         delinfo_storage.store(delinfo);
     }
-    if (MONAD_UNLIKELY(withdrawal_queue.length() != 0)) {
+    if (MONAD_UNLIKELY(vars.withdrawal_queue.length() != 0)) {
         return StakingSyscallError::CouldNotClearStorage;
     }
 
+    // 3. Apply remove stake requests
+    while (!vars.undelegate_queue.empty()) {
+        auto const id = vars.undelegate_queue.pop();
+        auto request = vars.undelegate_request(id).load_unchecked();
+
+        auto valinfo_storage = vars.validator_info(request.validator_id);
+        auto valinfo = valinfo_storage.load_unchecked();
+
+        auto delinfo_storage =
+            vars.delegator_info(request.validator_id, request.delegator);
+        auto delinfo = delinfo_storage.load_unchecked();
+
+        auto val_active_stake = valinfo.active_stake.native();
+        auto val_active_shares = valinfo.active_shares.native();
+        auto const shares = request.shares.native();
+
+        auto const tokens_to_burn =
+            shares_to_tokens(val_active_stake, val_active_shares, shares);
+
+        valinfo.active_stake = val_active_stake.sub(tokens_to_burn).to_be();
+        valinfo.active_shares = val_active_shares.sub(shares).to_be();
+
+        vars.withdrawal_queue.push(WithdrawalRequest{
+            .validator_id = request.validator_id,
+            .delegator = request.delegator,
+            .pending_balance = tokens_to_burn.to_be()});
+
+        valinfo_storage.store(valinfo);
+        delinfo_storage.store(delinfo);
+    }
+
     // 4. Apply delegation requests
-    auto delegate_queue = vars.delegate_queue(epoch);
-    for (uint256_t i = 0; i < delegate_queue.length(); i += 1) {
-        auto id = delegate_queue.pop();
+    while (!vars.delegate_queue.empty()) {
+        auto id = vars.delegate_queue.pop();
         auto request_storage = vars.delegate_request(id);
         auto request = request_storage.load_unchecked();
 
@@ -556,7 +547,7 @@ Result<void> StakingContract::syscall_on_epoch_change()
 
         request_storage.clear();
     }
-    if (MONAD_UNLIKELY(delegate_queue.length() != 0)) {
+    if (MONAD_UNLIKELY(vars.delegate_queue.length() != 0)) {
         return StakingSyscallError::CouldNotClearStorage;
     }
 

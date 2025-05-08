@@ -40,6 +40,11 @@ public:
         return len.value().native();
     }
 
+    bool empty() const noexcept
+    {
+        return length() == 0;
+    }
+
     StorageVariable<T> get(uint256_t const index) const noexcept
     {
         MONAD_ASSERT(index < length());

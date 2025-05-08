@@ -210,19 +210,13 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
             contract.vars.validator_set.get(i).load().value().native());
     }
 
-    for (auto const &[epoch_json, delegate_queue_json] :
-         json["delegate_queue"].items()) {
-
-        auto const epoch = intx::from_string<Uint256Native>(epoch_json).to_be();
-        auto const delegate_queue = contract.vars.delegate_queue(epoch);
-        ASSERT_EQ(delegate_queue_json.size(), delegate_queue.length());
-
-        for (size_t i = 0; i < delegate_queue_json.size(); ++i) {
-            auto const expected_id =
-                intx::from_string<uint256_t>(delegate_queue_json[i]);
-            auto const actual_id = delegate_queue.get(i).load().value();
-            EXPECT_EQ(expected_id, actual_id.native());
-        }
+    auto const &delegate_queue_json = json["delegate_queue"];
+    for (size_t i = 0; i < delegate_queue_json.size(); ++i) {
+        auto const expected_id =
+            intx::from_string<uint256_t>(delegate_queue_json[i]);
+        auto const actual_id =
+            contract.vars.delegate_queue.get(i).load().value();
+        EXPECT_EQ(expected_id, actual_id.native());
     }
 
     for (auto const &[delegate_id_str, delegate_request_json] :

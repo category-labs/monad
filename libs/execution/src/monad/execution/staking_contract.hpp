@@ -149,12 +149,27 @@ public:
             ca_,
             0x72ae25330cca2b1fbd02fe7c6d1ab3960b26f14196d8d23d5f70da5a02c0a073_bytes32};
 
+        StorageArray<Uint256BE> delegate_queue{
+            state_,
+            ca_,
+            0xca6c90673d5b5445f10b56983d278ce9580be99dd91290b64d4c4a0cd10512ee_bytes32};
+
+        StorageArray<Uint256BE> undelegate_queue{
+            state_,
+            ca_,
+            0x2e9329d8bc51599706422b7b26be828c8aa29f11009e2407b9db7897c8b6a6e7_bytes32};
+
+        StorageArray<WithdrawalRequest> withdrawal_queue{
+            state_,
+            ca_,
+            0x2a417053468170675efce089b55ec998904481f89a2bbc92dd89b894267dd12e_bytes32};
+
         ////////////////
         //  Mappings  //
         ////////////////
 
         // mapping (address => uint256) validator_id
-        StorageVariable<Uint256BE> validator_id(Address const &address) noexcept
+        auto validator_id(Address const &address) noexcept
         {
             return StorageVariable<Uint256BE>(
                 state_,
@@ -167,8 +182,7 @@ public:
         // mapping (address => uint256) validator_id
         // This mapping only exists to ensure the same bls_key cannot be
         // assigned to multiple validator ids.
-        StorageVariable<Uint256BE>
-        validator_id_bls(byte_string_fixed<48> const &bls_pubkey) noexcept
+        auto validator_id_bls(byte_string_fixed<48> const &bls_pubkey) noexcept
         {
             return StorageVariable<Uint256BE>(
                 state_,
@@ -179,8 +193,7 @@ public:
         }
 
         // mapping(uint256 => ValidatorInfo) validator_info
-        StorageVariable<ValidatorInfo>
-        validator_info(Uint256BE const &id) noexcept
+        auto validator_info(Uint256BE const &id) noexcept
         {
             return StorageVariable<ValidatorInfo>(
                 state_,
@@ -191,7 +204,7 @@ public:
         }
 
         // mapping(uint256 => mapping(address => DelegatorInfo)) delegator_info
-        StorageVariable<DelegatorInfo> delegator_info(
+        auto delegator_info(
             Uint256BE const &validator_id,
             Address const &address) const noexcept
         {
@@ -205,8 +218,7 @@ public:
         }
 
         // mapping(uint256 => DelegateRequest) delegate_request
-        StorageVariable<DelegateRequest>
-        delegate_request(Uint256BE const &id) const noexcept
+        auto delegate_request(Uint256BE const &id) const noexcept
         {
             return StorageVariable<DelegateRequest>{
                 state_,
@@ -217,8 +229,7 @@ public:
         }
 
         // mapping(uint256 => UndelegateRequest) undelegate_request
-        StorageVariable<UndelegateRequest>
-        undelegate_request(Uint256BE const &id) const noexcept
+        auto undelegate_request(Uint256BE const &id) const noexcept
         {
             return StorageVariable<UndelegateRequest>{
                 state_,
@@ -226,42 +237,6 @@ public:
                 mapping(
                     0x310389d7b283e0188edf5a44370f9302f17158d3bee6e3fe8939b11f862f0918_bytes32,
                     id)};
-        }
-
-        // mapping(uint256 /* epoch */ => Array[u256]) delegate_queue
-        StorageArray<Uint256BE>
-        delegate_queue(Uint256BE const &epoch) const noexcept
-        {
-            return StorageArray<Uint256BE>{
-                state_,
-                ca_,
-                mapping(
-                    0xca6c90673d5b5445f10b56983d278ce9580be99dd91290b64d4c4a0cd10512ee_bytes32,
-                    epoch)};
-        }
-
-        // mapping(uint256 /* epoch */ => Array[u256]) undelegate_queue
-        StorageArray<Uint256BE>
-        undelegate_queue(Uint256BE const &epoch) const noexcept
-        {
-            return StorageArray<Uint256BE>{
-                state_,
-                ca_,
-                mapping(
-                    0x2e9329d8bc51599706422b7b26be828c8aa29f11009e2407b9db7897c8b6a6e7_bytes32,
-                    epoch)};
-        }
-
-        // mapping(uint256 /* epoch */ => Array[u256]) withdrawal_queue
-        StorageArray<WithdrawalRequest>
-        withdrawal_queue(Uint256BE const &epoch) const noexcept
-        {
-            return StorageArray<WithdrawalRequest>{
-                state_,
-                ca_,
-                mapping(
-                    0x2a417053468170675efce089b55ec998904481f89a2bbc92dd89b894267dd12e_bytes32,
-                    epoch)};
         }
     } vars;
 

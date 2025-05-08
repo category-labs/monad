@@ -300,14 +300,10 @@ TEST_F(Stake, add_validator_then_remove)
     EXPECT_EQ(validator_info->rewards, Uint256BE{});
 
     ASSERT_FALSE(contract.vars.epoch.load().has_value()); // epoch 0
-    auto const delegate_queue =
-        contract.vars.delegate_queue(Uint256Native{1}.to_be());
-    auto const undelegate_queue =
-        contract.vars.undelegate_queue(Uint256Native{1}.to_be());
-    EXPECT_EQ(delegate_queue.length(), 1);
-    EXPECT_EQ(undelegate_queue.length(), 0);
+    EXPECT_EQ(contract.vars.delegate_queue.length(), 1);
+    EXPECT_EQ(contract.vars.undelegate_queue.length(), 0);
 
-    auto const delegate_request_id = delegate_queue.get(0).load();
+    auto const delegate_request_id = contract.vars.delegate_queue.get(0).load();
     ASSERT_TRUE(delegate_request_id.has_value());
     EXPECT_EQ(delegate_request_id.value(), Uint256Native{1}.to_be());
 
@@ -320,7 +316,7 @@ TEST_F(Stake, add_validator_then_remove)
 
     contract.vars.epoch.store(Uint256Native{1}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    EXPECT_EQ(delegate_queue.length(), 0);
+    EXPECT_EQ(contract.vars.delegate_queue.length(), 0);
 
     validator_info = contract.vars.validator_info(validator_id.value()).load();
     ASSERT_TRUE(validator_info.has_value());
@@ -339,16 +335,13 @@ TEST_F(Stake, add_validator_then_remove)
             .status,
         StakingContract::SUCCESS);
 
-    auto const delegate_queue2 =
-        contract.vars.delegate_queue(Uint256Native{2}.to_be());
-    auto const undelegate_queue2 =
-        contract.vars.undelegate_queue(Uint256Native{2}.to_be());
-    EXPECT_EQ(delegate_queue2.length(), 0);
-    EXPECT_EQ(undelegate_queue2.length(), 1);
+    EXPECT_EQ(contract.vars.delegate_queue.length(), 0);
+    EXPECT_EQ(contract.vars.undelegate_queue.length(), 1);
     EXPECT_EQ(contract.vars.validator_set.length(), 1);
 
     // delete validator
-    auto const undelegate_request_id = undelegate_queue2.get(0).load();
+    auto const undelegate_request_id =
+        contract.vars.undelegate_queue.get(0).load();
     ASSERT_TRUE(undelegate_request_id.has_value());
     EXPECT_EQ(undelegate_request_id.value(), Uint256Native{1}.to_be());
     auto const undelegate_request =
@@ -360,10 +353,12 @@ TEST_F(Stake, add_validator_then_remove)
 
     contract.vars.epoch.store(Uint256Native{2}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
+    EXPECT_EQ(contract.vars.withdrawal_queue.length(), 1);
     contract.vars.epoch.store(Uint256Native{3}.to_be());
     ASSERT_FALSE(contract.syscall_on_epoch_change().has_error());
-    EXPECT_EQ(delegate_queue.length(), 0);
+    EXPECT_EQ(contract.vars.delegate_queue.length(), 0);
     EXPECT_EQ(contract.vars.validator_set.length(), 0);
+    EXPECT_EQ(contract.vars.withdrawal_queue.length(), 0);
 }
 
 TEST_F(Stake, reward_unknown_validator)

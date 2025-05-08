@@ -47,50 +47,63 @@ LANG is down-cased.  BODY has no closing ``` line."
     (when lang (list lang body))))               ; nil if none found
 
 
+(defvar max-query-response-strlen  500000)
+
+
 (defconst coq-query--allowed-prefix-re
   "^[[:space:]]*\\(Search\\|About\\|Print\\|Locate\\|Check\\)\\>"
-  "Regexp that a valid Coq query must start with.")
+  "Regexp that every valid Coq query must start with.")
 
-(defun query-coq (query)
-  "Return a cleaned up Coq response to QUERY."
-  (let* ((trimmed-query (string-trim query))
-         ;; Commands that are valid prefixes for the query
-         (valid-commands '("Search" "About" "Locate" "Check" "Print"))
-         ;; Check if the beginning of the query matches any valid command
-         (is-valid-command
-          (seq-some (lambda (cmd)
-                      (string-prefix-p cmd trimmed-query t))
-                    valid-commands)))
-    (if (not is-valid-command)
-        ;; If not valid, return explanation without contacting Coq
-        "Not a valid query. A query must begin with Search/About/Locate/Check/Print. \
-Also do not add any Require Imports before the actual query. All the available modules \
-are already `Require`d. But they may not have been `Import`ed. You should use \
-fully/more qualified names instead of importing modules."
-      ;; Otherwise, the command is valid => proceed
-      (with-current-buffer proof-response-buffer
-        (read-only-mode -1))
-      (let ((raw (proof-shell-invisible-cmd-get-result trimmed-query))
-            (max-length 500000))
-        (let ((res (string-trim (or raw ""))))
-          (cond
-           ((string-empty-p res)
-            "That query has no errors but returned an empty result. \
-For `Search` queries, this means nothing in the current context matches the search criteria. \
-Before assuming non-existence of what you are looking for, try relaxing some constraints. \
-Consider the possibility of argument order being different, or names being different \
-(e.g. `toString` vs `to_string` vs `print` vs `showString`). \
-Make the most minimal assumptions about how stuff is named.")
-           ((> (length res) max-length)
-            "That query returned too many results. Please make it more discriminative.")
-           (t
-            res)))))))
+(defun query-coq (queries)
+  "Execute one **or several** Coq queries and return their responses.
 
+`queries` may contain multiple lines; each non-blank line is treated as
+an independent query.  A query must start with one of the allowed
+keywords: Search / About / Print / Locate / Check.
 
-(defun proof-shell-wait-until-no-output ()
-  "Block until Proof General’s action queue is empty."
-  (while (proof-shell-busy)
-    (sleep-for 1)))
+The result is a single string.  For each query we emit
+
+    >>> <the query exactly as written>
+    <the trimmed Coq response or an explanatory message>
+
+with a blank line separating blocks.
+
+If any query is malformed we immediately return an explanation without
+contacting Coq.  Very large outputs are truncated with a warning."
+  (let ((lines (split-string queries "\n"))
+        (blocks '()))
+    (dolist (line lines)
+      (let ((q (string-trim line)))
+        ;; skip empty lines
+        (unless (string-empty-p q)
+          ;; ----- validate prefix -----
+          (unless (string-match-p coq-query--allowed-prefix-re q)
+            (cl-return-from query-coq
+              "Not a valid query.  Each line must begin with Search / About / Locate / Check / Print, \
+and must not contain extra vernacular (e.g. Require)."))
+
+          ;; ----- run query -----
+          (with-current-buffer proof-response-buffer (read-only-mode -1))
+          (let* ((raw (proof-shell-invisible-cmd-get-result q))
+                 (res (string-trim (or raw "")))
+                 (pretty
+                  (cond
+                   ((string-empty-p res)
+                    "That query has no errors but returned an empty result. \
+For `Search` queries this means the current context contains no match. \
+Consider relaxing constraints, varying argument order, or trying different names \
+(e.g. toString / to_string / print / showString).")
+
+                   ((> (length res) max-query-response-strlen)
+                    "That query returned too many results — please refine it.")
+
+                   (t res))))
+            (push (format ">>> %s\n%s" q pretty) blocks)))))
+    ;; ----- concatenate all blocks in the original order -----
+    (if blocks
+        (string-join (nreverse blocks) "\n\n")
+      "No non-blank query lines found.")))
+
 
 (defun wait-for-coq ()
   "Wait until processing is complete."
@@ -247,7 +260,7 @@ An example of an answer (not to the the current task) is:
 Definition foo : nat := 1+2.
 ```
 
-Please include exactly one query in a ```coqquery block.
+You can include multiple queries in a ```coqquery block: one in each line.
 
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
 ")
@@ -442,9 +455,9 @@ Assumes `Set Short Module Printing.` is in effect."
 ;; one solution could be at timeout, give it all non-erroring versions and ask it to take the maximal subset.
 ;; or do this programattically: easiest would be to see if there is a name match between an axiom in the last version and a
 ;; Definition in the older version. emacs could put all versions in a module and 
+;; put every version in a new module. dont ask GPT to include all code. just the defns that are being added/replaced. (no need to ever delete defns). the unreplaced ones become shallow notations to the previous module version and then add the new/replaced defns in the new module.
 
-;; allow multiple queries
+;; allow multiple queries: already implemented
 
-
-
+;; at the end, allow the user to issue a prompt and continue the discussion. maybe summarize/compress the prev chat to continue discussion (just aggregate query responses keep them in an emacs list so no need to parse the chat. discard the rest, except the initial prompt)
 

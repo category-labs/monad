@@ -45,7 +45,7 @@ About Nat.add (* show documentation for an item *)
 
 Check (Nat.add 1 1). (* check type of a term *)
 
-Locate nat. (* print the possible fully qualified name(s) of `nat`. unless the user defined their own `nat` type, this will print `Corelib.Init.Datatypes.nat` . this will print multiple items if there are several items whose fully qualified names have `nat` as the leaf, e.g. `A.nat`, `Corelib.Init.Datatypes.nat`. It would also print shorter names for each fully qualified name. The shorter name depends on the set and order of Imports in the current file. When writing Coq code, you should refer to the located item by a name not any shorter than the shorter name mentioned here: the longer the better as that is robust to moving code around where the order of imports are different. *)
+Locate nat. (* print fully qualified name(s) of all items whose fully qualified name ends in `.nat`. *)
 ```
 
 `Search`: can return too many items unless you chose a fairly discriminative query.

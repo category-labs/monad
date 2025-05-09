@@ -883,36 +883,21 @@ void create_new_trie_(
         for (auto i = 0u; i < path.nibble_size(); ++i) {
             sm.down(path.get(i));
         }
-        if (!update.next.empty()) { // nested updates
-            MONAD_DEBUG_ASSERT(update.value.has_value());
-            Requests requests;
-            requests.split_into_sublists(std::move(update.next), 0);
-            MONAD_ASSERT(requests.opt_leaf == std::nullopt);
-            create_new_trie_from_requests_(
-                aux,
-                sm,
-                parent_version,
-                entry,
-                requests,
-                path,
-                0,
-                update.value,
-                update.version);
-        }
-        else {
-            aux.collect_number_nodes_created_stats();
-            entry.finalize(
-                make_node(
-                    0, {}, path, update.value.value(), {}, update.version),
-                sm.get_compute(),
-                sm.cache());
-            if (sm.auto_expire()) {
-                MONAD_ASSERT(
-                    entry.subtrie_min_version >=
-                    aux.curr_upsert_auto_expire_version);
-            }
-            parent_version = std::max(parent_version, entry.ptr->version);
-        }
+        MONAD_DEBUG_ASSERT(update.value.has_value());
+        Requests requests;
+        // requests would be empty if update.next is empty
+        requests.split_into_sublists(std::move(update.next), 0);
+        MONAD_ASSERT(requests.opt_leaf == std::nullopt);
+        create_new_trie_from_requests_(
+            aux,
+            sm,
+            parent_version,
+            entry,
+            requests,
+            path,
+            0,
+            update.value,
+            update.version);
 
         if (path.nibble_size()) {
             sm.up(path.nibble_size());

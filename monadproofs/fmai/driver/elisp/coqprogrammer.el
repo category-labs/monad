@@ -433,12 +433,7 @@ Set to nil for no limit."
 
 (defun coq-programmer--initial-counts (file)
   "Return (USER . ASSISTANT) heading counts already present in FILE."
-  (if (file-exists-p file)
-      (with-temp-buffer
-        (insert-file-contents file)
-        (cons (how-many "^## User" (point-min) (point-max))
-              (how-many "^## Assistant" (point-min) (point-max))))
-    '(0 . 0)))
+    '(0 . 0))
 
 (defun coq-programmer--log-to-file (file role n msg)
   "Append one markdown entry to FILE and flush to disk."

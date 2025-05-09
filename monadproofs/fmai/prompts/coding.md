@@ -257,5 +257,15 @@ match p with
 | pairn l r  => ...
 end
 ```
+## Corelib.Strings.PrimString.string vs Stdlib.Strings.String.string
+Coq now provides 2 definitions string libraries. 
+`Stdlib.Strings.String.string` is inductively defined has has been around for decades and used by most Coq developments.
+`Corelib.Strings.PrimString.string` is a very recent addition. 
+It axiomatizes primitive strings. The scope delimiting key for `PrimString.string` is `pstring`.
+So, `(a ++ b)%pstring` appends `a:PrimString.string` and `b:PrimString.string`.
+The key for `String.string` is just `string`.
+You can open `pstring_scope` to elide the %pstring part.
+In applications where speed is important and you are given a choice to chose between the 2, you probably want to choose 
+`Corelib.Strings.PrimString.string`.
 
 # Current Task

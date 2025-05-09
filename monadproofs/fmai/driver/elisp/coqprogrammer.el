@@ -296,6 +296,8 @@ Inserts a newline after the `*)` so inserted code appears after the comment."
       ;; Move point to just after the comment
       (goto-char end)
       (insert "\n")
+      (proof-assert-until-point)
+      (wait-for-coq)
       (let ((core-prompt (string-trim
                           (buffer-substring-no-properties (+ beg 2) (- end 2)))))
         (coq-programmer-first-prompt2 core-prompt)))))
@@ -476,6 +478,45 @@ Assumes `Set Short Module Printing.` is in effect."
                           (cdr it))))
         (read-only-mode 1)
         (display-buffer (current-buffer))))))
+
+
+
+;;;###autoload
+(defun coq-prog-search-queries-at-point ()
+  "Build `Search` queries for every `Parameter` in the module at point.
+
+Assumes `Set Short Module Printing.` is active.
+The function:
+  1. Gets the symbol at point (module name).
+  2. Runs `Print Module <name>.`
+  3. Parses the short output with `coq-prog--parse-short-module-output`.
+  4. For each `Parameter` calls `typeOf` to obtain its type.
+  5. Returns a newline-separated string of `Search <type>.` lines and
+     also shows it in the echo area.
+
+If no parameters (or no types) are found, it returns nil."
+  (interactive)
+  (let ((mod (thing-at-point 'symbol t)))
+    (unless mod
+      (user-error "No symbol at point"))
+    ;; Fetch and parse the module signature
+    (with-current-buffer proof-response-buffer (read-only-mode -1))
+    (let* ((raw   (proof-shell-invisible-cmd-get-result
+                   (format "Print Module %s." mod)))
+           (items (coq-prog--parse-short-module-output raw))
+           (queries
+            (string-join
+             (delq nil
+                   (mapcar (lambda (it)
+                             (when (eq (car it) 'parameter)
+                               (let ((ty (typeOf (cdr it))))
+                                 (when ty (format "Search %s." ty)))))
+                           items))
+             "\n")))
+      (if (string-empty-p queries)
+          (message "No parameters (or no types found) in module %s." mod)
+        (message "%s" queries))
+      queries)))
 
 ;; TODO:
 ;; GPT often gets some holes correct, but later forgets them in the later/final answer where they go back to Admitted.

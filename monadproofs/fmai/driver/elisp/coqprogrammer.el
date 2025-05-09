@@ -358,6 +358,7 @@ If you do not follow this format, I would not be able to respond to you properly
 Although I log and publish your responses in entirety, to respond to you, I ONLY LOOK AT THE LAST CODE BLOCK (```gallina or ```coqquery) IN YOUR RESPONSE.
 If that is a ```coqquery block, I will send the queries to coqtop and give you back the responses.
 If that is a ```gallina block, I will insert it into emacs+proof-general+company-coq and ask proof-general to check till the end.
+I will wrap your solution in a `Module` so you should NOT wrap your soln in a module.
 If there are coq errors, I will respond with the errors.
 
 An example of a valid response is:

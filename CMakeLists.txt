@@ -122,6 +122,8 @@ target_compile_options(
   quill
   PUBLIC
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-Wno-stringop-overflow>)
+target_compile_options(
+  quill PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-tautological-compare>)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)

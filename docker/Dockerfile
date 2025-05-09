@@ -19,8 +19,8 @@ COPY scripts/ubuntu-build/ /opt
 
 RUN apt update && apt install -y \
   clang-19 \
-  gcc-13 \
-  g++-13
+  gcc-14 \
+  g++-14
 
 RUN /opt/install-boost.sh
 RUN /opt/install-tools.sh

@@ -15,7 +15,6 @@ using namespace monad::mpt;
 
 monad_statesync_client_context::monad_statesync_client_context(
     std::vector<std::filesystem::path> const dbname_paths,
-    std::filesystem::path const genesis,
     std::optional<unsigned> const sq_thread_cpu,
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
@@ -38,7 +37,6 @@ monad_statesync_client_context::monad_statesync_client_context(
     , tgrt{BlockHeader{.number = mpt::INVALID_BLOCK_ID}}
     , current{db.get_latest_block_id() == mpt::INVALID_BLOCK_ID ? 0 : db.get_latest_block_id() + 1}
     , n_upserts{0}
-    , genesis{genesis}
     , sync{sync}
     , statesync_send_request{statesync_send_request}
 {

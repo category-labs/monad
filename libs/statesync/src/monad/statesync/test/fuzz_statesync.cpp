@@ -259,7 +259,6 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         monad_statesync_client_context_create(
             &cdbname_str,
             1,
-            "",
             static_cast<unsigned>(get_nprocs() - 1),
             &client,
             &statesync_send_request);

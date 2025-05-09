@@ -154,7 +154,6 @@ namespace
             cctx = monad_statesync_client_context_create(
                 &str,
                 1,
-                genesis.c_str(),
                 static_cast<unsigned>(get_nprocs() - 1),
                 &client,
                 &statesync_send_request);
@@ -186,18 +185,6 @@ namespace
             std::filesystem::remove(sdbname);
         }
     };
-}
-
-TEST_F(StateSyncFixture, genesis)
-{
-    init();
-    handle_target(
-        cctx,
-        BlockHeader{
-            .state_root =
-                0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544_bytes32});
-    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
 TEST_F(StateSyncFixture, sync_from_latest)

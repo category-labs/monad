@@ -126,9 +126,10 @@ before the new block (if any) is processed.")
   "Return non-nil if BODY (a string) contains \"Admitted.\" or \"TOFIXLATER\"."
   (string-match-p "\\(?:Admitted\\.\\|TOFIXLATER\\)" body))
 
-(defvar coq-programmer--build-admit-prompt
+(defvar coq-programmer--admit-prompt
   "
-The code now compiles but still contains `Admitted.`/TOFIXLATER holes.
+I wrapped your solution in the LLMSOLN module, inserted it into emacs, and asked proof general to check it via coqtop.
+Proof general reported no errors but your solution still contains `Admitted.`/TOFIXLATER holes.
 Please pick one or more holes to implement.
 In the call chain/tree from the function that is the main task, which you have already implemented,
 pick hole(s) which are closest to the root.
@@ -151,9 +152,116 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 ")
 
 
-;;;; ------------------------------------------------------------------
-;;;;  main entry – replacement for gpt-handle-coq-output
-;;;; ------------------------------------------------------------------
+(defun typeOf (fqn)
+  "Return the type information of fqn from the 'Check %s' Coq query, without trailing newline."
+  (let* ((resp (proof-shell-invisible-cmd-get-result
+                (format "Check %s." fqn)))
+         (type-pos (string-match ": " resp)))
+    (if type-pos
+        ;; Remove trailing newlines from the substring
+        (replace-regexp-in-string "\n\\'" "" (substring resp (+ type-pos 2)))
+      nil)))  ; Return nil if ": " is not found
+
+(defun coq-prog--parse-short-module-output (print-output)
+  "Given the string produced by `Print Module _` in *short* mode,
+return a list of (KIND . NAME) pairs, where KIND is one of the
+symbols `parameter`, `definition`, `inductive`."
+  (let* (;; isolate the part between \"Struct\" and \"End\"
+         (struct-start (string-match "Struct[ \t\n]+" print-output))
+         (end-pos      (and struct-start
+                            (string-match "[ \t\n]*End\\>" print-output
+                                          (+ struct-start 6))))
+         (body (if (and struct-start end-pos)
+                   (substring print-output (+ struct-start 6) end-pos)
+                 ""))                ; if not recognised, parse empty
+         (rx "\\_<\\(Parameter\\|Definition\\|Inductive\\)[ \t\n]+\\([[:word:]'._]+\\)")
+         (pos 0)
+         items)
+    (while (and (< pos (length body))
+                (string-match rx body pos))
+      (let* ((kind-str (match-string 1 body))
+             (name     (match-string 2 body))
+             (kind-sym (pcase kind-str
+                         ("Parameter"  'parameter)
+                         ("Definition" 'definition)
+                         ("Inductive"  'inductive))))
+        (push (cons kind-sym name) items)
+        (setq pos (match-end 0))))
+    (nreverse items)))
+
+
+;;;###autoload
+(defun coq-prog-show-module-items-at-point ()
+  "Parse the short `Print Module` output for the identifier at point.
+
+* Uses `thing-at-point` to obtain the symbol under the cursor.
+* Runs `Print Module <symbol>.` via Proof General’s invisible shell.
+* Passes the raw output to `coq-prog--parse-short-module-output`.
+* Displays the parsed (KIND . NAME) list both in the echo area and in
+  a buffer called *Coq-Module-Items*.
+
+Assumes `Set Short Module Printing.` is in effect."
+  (interactive)
+  (let* ((mod (thing-at-point 'symbol t)))
+    (unless mod
+      (user-error "No symbol at point"))
+    (with-current-buffer proof-response-buffer (read-only-mode -1))
+    (let* ((raw (proof-shell-invisible-cmd-get-result
+                 (format "Print Module %s." mod)))
+           (items (coq-prog--parse-short-module-output raw)))
+      ;; echo-area summary
+      (message "Module %s items: %s" mod items)
+      ;; detailed buffer
+      (with-current-buffer (get-buffer-create "*Coq-Module-Items*")
+        (read-only-mode -1)
+        (erase-buffer)
+        (insert (format "Items in module %s (short print):\n\n" mod))
+        (dolist (it items)
+          (insert (format "- %s: %s\n"
+                          (pcase (car it)
+                            ('parameter  "Parameter")
+                            ('definition "Definition")
+                            ('inductive  "Inductive"))
+                          (cdr it))))
+        (read-only-mode 1)
+        (display-buffer (current-buffer))))))
+
+(defun coq-prog-search-queries-for-module-params (mod)
+  "Build `Search` queries for every `Parameter` in the module at point.
+
+Assumes `Set Short Module Printing.` is active.
+The function:
+  1. Gets the symbol at point (module name).
+  2. Runs `Print Module <name>.`
+  3. Parses the short output with `coq-prog--parse-short-module-output`.
+  4. For each `Parameter` calls `typeOf` to obtain its type.
+  5. Returns a newline-separated string of `Search <type>.` lines and
+     also shows it in the echo area.
+
+If no parameters (or no types) are found, it returns nil."
+  (interactive)
+    ;; Fetch and parse the module signature
+    (with-current-buffer proof-response-buffer (read-only-mode -1))
+    (let* ((raw   (proof-shell-invisible-cmd-get-result
+                   (format "Print Module %s." mod)))
+           (items (coq-prog--parse-short-module-output raw))
+           (queries
+            (string-join
+             (delq nil
+                   (mapcar (lambda (it)
+                             (when (eq (car it) 'parameter)
+                               (let ((ty (typeOf (concat mod "." (cdr it)))))
+                                 (when ty (format "Search (%s) (* for hole `%s` *) ." ty (cdr it))))))
+                           items))
+             "\n")))
+      (if (string-empty-p queries)
+          ""
+        (concat "I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries\n\n\n\n"  (query-coq queries)))))
+
+
+(defun coq-programmer--build-admit-prompt ()
+    (concat coq-programmer--admit-prompt (coq-prog-search-queries-for-module-params "LLMSOLN"))
+    )
 
 (defun gpt-handle-coq-output (gpt-text)
   "Interact with Coq according to GPT-TEXT and return the next prompt."
@@ -171,8 +279,10 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
       ;; =================================================  Gallina
       ("gallina"
        (let ((inhibit-read-only t)
-             (beg (point)))
-         (insert body "\n")
+             (beg (point))
+	     (modbody (concat "Module LLMSOLN.\n" body "End LLMSOLN."))
+	     )
+         (insert modbody "\n")
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
@@ -181,14 +291,14 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
             ((eq proof-shell-last-output-kind 'error)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
-             (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
+             (concat "Below is the error I get when I give that to Coq. (I wrapped your solution in the LLMSOLN module.) FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
 
             ;; ---------- compiles but has Admitted ----------
             ((coq-programmer--buffer-has-admit-p body)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
              (setq coq-programmer--last-working-with-holes gpt-text)  ;; NEW
-             coq-programmer--build-admit-prompt)
+             (coq-programmer--build-admit-prompt))
 
             ;; ---------- perfect success ----------
             (t
@@ -410,112 +520,6 @@ directory as the current `.v` file.  Stops when:
                   (log "Assistant" assistant)))))))))))
 
 
-(defun typeOf (fqn)
-  "Return the type information of fqn from the 'Check %s' Coq query, without trailing newline."
-  (let* ((resp (proof-shell-invisible-cmd-get-result
-                (format "Check %s." fqn)))
-         (type-pos (string-match ": " resp)))
-    (if type-pos
-        ;; Remove trailing newlines from the substring
-        (replace-regexp-in-string "\n\\'" "" (substring resp (+ type-pos 2)))
-      nil)))  ; Return nil if ": " is not found
-
-(defun coq-prog--parse-short-module-output (print-output)
-  "Given the string produced by `Print Module _` in *short* mode,
-return a list of (KIND . NAME) pairs, where KIND is one of the
-symbols `parameter`, `definition`, `inductive`."
-  (let* (;; isolate the part between \"Struct\" and \"End\"
-         (struct-start (string-match "Struct[ \t\n]+" print-output))
-         (end-pos      (and struct-start
-                            (string-match "[ \t\n]*End\\>" print-output
-                                          (+ struct-start 6))))
-         (body (if (and struct-start end-pos)
-                   (substring print-output (+ struct-start 6) end-pos)
-                 ""))                ; if not recognised, parse empty
-         (rx "\\_<\\(Parameter\\|Definition\\|Inductive\\)[ \t\n]+\\([[:word:]'._]+\\)")
-         (pos 0)
-         items)
-    (while (and (< pos (length body))
-                (string-match rx body pos))
-      (let* ((kind-str (match-string 1 body))
-             (name     (match-string 2 body))
-             (kind-sym (pcase kind-str
-                         ("Parameter"  'parameter)
-                         ("Definition" 'definition)
-                         ("Inductive"  'inductive))))
-        (push (cons kind-sym name) items)
-        (setq pos (match-end 0))))
-    (nreverse items)))
-
-
-;;;###autoload
-(defun coq-prog-show-module-items-at-point ()
-  "Parse the short `Print Module` output for the identifier at point.
-
-* Uses `thing-at-point` to obtain the symbol under the cursor.
-* Runs `Print Module <symbol>.` via Proof General’s invisible shell.
-* Passes the raw output to `coq-prog--parse-short-module-output`.
-* Displays the parsed (KIND . NAME) list both in the echo area and in
-  a buffer called *Coq-Module-Items*.
-
-Assumes `Set Short Module Printing.` is in effect."
-  (interactive)
-  (let* ((mod (thing-at-point 'symbol t)))
-    (unless mod
-      (user-error "No symbol at point"))
-    (with-current-buffer proof-response-buffer (read-only-mode -1))
-    (let* ((raw (proof-shell-invisible-cmd-get-result
-                 (format "Print Module %s." mod)))
-           (items (coq-prog--parse-short-module-output raw)))
-      ;; echo-area summary
-      (message "Module %s items: %s" mod items)
-      ;; detailed buffer
-      (with-current-buffer (get-buffer-create "*Coq-Module-Items*")
-        (read-only-mode -1)
-        (erase-buffer)
-        (insert (format "Items in module %s (short print):\n\n" mod))
-        (dolist (it items)
-          (insert (format "- %s: %s\n"
-                          (pcase (car it)
-                            ('parameter  "Parameter")
-                            ('definition "Definition")
-                            ('inductive  "Inductive"))
-                          (cdr it))))
-        (read-only-mode 1)
-        (display-buffer (current-buffer))))))
-
-(defun coq-prog-search-queries-for-module-params (mod)
-  "Build `Search` queries for every `Parameter` in the module at point.
-
-Assumes `Set Short Module Printing.` is active.
-The function:
-  1. Gets the symbol at point (module name).
-  2. Runs `Print Module <name>.`
-  3. Parses the short output with `coq-prog--parse-short-module-output`.
-  4. For each `Parameter` calls `typeOf` to obtain its type.
-  5. Returns a newline-separated string of `Search <type>.` lines and
-     also shows it in the echo area.
-
-If no parameters (or no types) are found, it returns nil."
-  (interactive)
-    ;; Fetch and parse the module signature
-    (with-current-buffer proof-response-buffer (read-only-mode -1))
-    (let* ((raw   (proof-shell-invisible-cmd-get-result
-                   (format "Print Module %s." mod)))
-           (items (coq-prog--parse-short-module-output raw))
-           (queries
-            (string-join
-             (delq nil
-                   (mapcar (lambda (it)
-                             (when (eq (car it) 'parameter)
-                               (let ((ty (typeOf (concat mod "." (cdr it)))))
-                                 (when ty (format "Search (%s)." ty)))))
-                           items))
-             "\n")))
-      (if (string-empty-p queries)
-          (message "No parameters (or no types found) in module %s." mod)
-        (message "%s" (concat "Below is a suggestion of queries to run to find out whether some of the holes are already implemented somewhere in the avaliable libraries\n"  queries)))
-      queries))
 
 
 ;;;###autoload
@@ -537,7 +541,7 @@ If no parameters (or no types) are found, it returns nil."
     (unless mod
       (user-error "No symbol at point"))
     ;; Fetch and parse the module signature
-    (coq-prog-search-queries-for-module-params mod)
+    (message "%s "(coq-prog-search-queries-for-module-params mod))
     ))
 
 ;; TODO:

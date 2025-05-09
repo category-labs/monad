@@ -51,13 +51,13 @@ Result<std::vector<ExecutionResult>> execute_monad_block(
     StakingContract contract(state, STAKING_CONTRACT_ADDRESS);
     state.touch(STAKING_CONTRACT_ADDRESS);
 
-    if (MONAD_UNLIKELY(block_author != Address{})) {
-        BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
-    }
     auto const contract_epoch = contract.vars.epoch.load_unchecked().native();
     if (MONAD_UNLIKELY(epoch != contract_epoch)) {
         contract.vars.epoch.store(Uint256Native{epoch}.to_be());
         BOOST_OUTCOME_TRY(contract.syscall_on_epoch_change());
+    }
+    if (MONAD_UNLIKELY(block_author != Address{})) {
+        BOOST_OUTCOME_TRY(contract.syscall_reward_validator(block_author));
     }
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);

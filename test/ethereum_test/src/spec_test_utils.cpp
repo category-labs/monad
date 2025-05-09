@@ -211,12 +211,50 @@ void validate_staking_post_state(nlohmann::json const &json, State &state)
     }
 
     auto const &delegate_queue_json = json["delegate_queue"];
+    ASSERT_EQ(
+        delegate_queue_json.size(), contract.vars.delegate_queue.length());
     for (size_t i = 0; i < delegate_queue_json.size(); ++i) {
         auto const expected_id =
             intx::from_string<uint256_t>(delegate_queue_json[i]);
         auto const actual_id =
-            contract.vars.delegate_queue.get(i).load().value();
-        EXPECT_EQ(expected_id, actual_id.native());
+            contract.vars.delegate_queue.get(i).load_unchecked().native();
+        EXPECT_EQ(expected_id, actual_id);
+    }
+
+    auto const &undelegate_queue_json = json["undelegate_queue"];
+    ASSERT_EQ(
+        undelegate_queue_json.size(), contract.vars.undelegate_queue.length());
+    for (size_t i = 0; i < undelegate_queue_json.size(); ++i) {
+        auto const expected_id =
+            intx::from_string<uint256_t>(undelegate_queue_json[i]);
+        auto const actual_id =
+            contract.vars.undelegate_queue.get(i).load_unchecked().native();
+        EXPECT_EQ(expected_id, actual_id);
+    }
+
+    auto const &withdrawal_queue_json = json["withdrawal_queue"];
+    ASSERT_EQ(
+        withdrawal_queue_json.size(), contract.vars.withdrawal_queue.length());
+    for (size_t i = 0; i < withdrawal_queue_json.size(); ++i) {
+        auto const &expected_withdrawal = withdrawal_queue_json[i];
+        auto const expected_validator_id =
+            intx::from_string<Uint256Native>(
+                expected_withdrawal["validator_id"])
+                .to_be();
+        auto const expected_delegator =
+            evmc::from_hex<Address>(
+                expected_withdrawal["delegator"].get<std::string>())
+                .value();
+        auto const expected_pending_balance = intx::from_string<uint256_t>(
+            expected_withdrawal["pending_balance"]);
+
+        auto const actual_withdrawal =
+            contract.vars.withdrawal_queue.get(i).load_unchecked();
+        EXPECT_EQ(expected_validator_id, actual_withdrawal.validator_id);
+        EXPECT_EQ(expected_delegator, actual_withdrawal.delegator);
+        EXPECT_EQ(
+            expected_pending_balance,
+            actual_withdrawal.pending_balance.native());
     }
 
     for (auto const &[delegate_id_str, delegate_request_json] :

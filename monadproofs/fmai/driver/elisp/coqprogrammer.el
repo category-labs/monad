@@ -484,6 +484,38 @@ Assumes `Set Short Module Printing.` is in effect."
         (read-only-mode 1)
         (display-buffer (current-buffer))))))
 
+(defun coq-prog-search-queries-for-module-params (mod)
+  "Build `Search` queries for every `Parameter` in the module at point.
+
+Assumes `Set Short Module Printing.` is active.
+The function:
+  1. Gets the symbol at point (module name).
+  2. Runs `Print Module <name>.`
+  3. Parses the short output with `coq-prog--parse-short-module-output`.
+  4. For each `Parameter` calls `typeOf` to obtain its type.
+  5. Returns a newline-separated string of `Search <type>.` lines and
+     also shows it in the echo area.
+
+If no parameters (or no types) are found, it returns nil."
+  (interactive)
+    ;; Fetch and parse the module signature
+    (with-current-buffer proof-response-buffer (read-only-mode -1))
+    (let* ((raw   (proof-shell-invisible-cmd-get-result
+                   (format "Print Module %s." mod)))
+           (items (coq-prog--parse-short-module-output raw))
+           (queries
+            (string-join
+             (delq nil
+                   (mapcar (lambda (it)
+                             (when (eq (car it) 'parameter)
+                               (let ((ty (typeOf (concat mod "." (cdr it)))))
+                                 (when ty (format "Search (%s)." ty)))))
+                           items))
+             "\n")))
+      (if (string-empty-p queries)
+          (message "No parameters (or no types found) in module %s." mod)
+        (message "%s" (concat "Below is a suggestion of queries to run to find out whether some of the holes are already implemented somewhere in the avaliable libraries\n"  queries)))
+      queries))
 
 
 ;;;###autoload
@@ -505,23 +537,8 @@ If no parameters (or no types) are found, it returns nil."
     (unless mod
       (user-error "No symbol at point"))
     ;; Fetch and parse the module signature
-    (with-current-buffer proof-response-buffer (read-only-mode -1))
-    (let* ((raw   (proof-shell-invisible-cmd-get-result
-                   (format "Print Module %s." mod)))
-           (items (coq-prog--parse-short-module-output raw))
-           (queries
-            (string-join
-             (delq nil
-                   (mapcar (lambda (it)
-                             (when (eq (car it) 'parameter)
-                               (let ((ty (typeOf (cdr it))))
-                                 (when ty (format "Search %s." ty)))))
-                           items))
-             "\n")))
-      (if (string-empty-p queries)
-          (message "No parameters (or no types found) in module %s." mod)
-        (message "%s" queries))
-      queries)))
+    (coq-prog-search-queries-for-module-params mod)
+    ))
 
 ;; TODO:
 ;; GPT often gets some holes correct, but later forgets them in the later/final answer where they go back to Admitted.

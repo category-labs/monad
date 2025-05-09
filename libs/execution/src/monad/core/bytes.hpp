@@ -53,6 +53,9 @@ inline constexpr bytes32_t NULL_LIST_HASH{
 inline constexpr bytes32_t NULL_ROOT{
     0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32};
 
+inline constexpr bytes32_t NULL_HASH_BLAKE3{
+    0xaf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262_bytes32};
+
 MONAD_NAMESPACE_END
 
 namespace boost

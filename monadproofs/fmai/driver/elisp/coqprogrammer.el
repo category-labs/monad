@@ -128,8 +128,8 @@ before the new block (if any) is processed.")
 
 (defvar coq-programmer--admit-prompt
   "
-I wrapped your solution in the LLMSOLN module, inserted it into emacs, and asked proof general to check it via coqtop.
-Proof general reported no errors but your solution still contains `Admitted.`/TOFIXLATER holes.
+I inserted your solution into emacs, and asked proof general to check it via coqtop.
+Congratulations! Proof general reported no errors. However, your solution still contains `Admitted.`/TOFIXLATER holes.
 Please pick one or more holes to implement.
 In the call chain/tree from the function that is the main task, which you have already implemented,
 pick hole(s) which are closest to the root.
@@ -256,12 +256,34 @@ If no parameters (or no types) are found, it returns nil."
              "\n")))
       (if (string-empty-p queries)
           ""
-        (concat "I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries\n\n\n\n"  (query-coq queries)))))
+        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries\n\n"  (query-coq queries)))))
 
 
 (defun coq-programmer--build-admit-prompt ()
     (concat coq-programmer--admit-prompt (coq-prog-search-queries-for-module-params "LLMSOLN"))
     )
+
+(defun trim-module (gallinacode)
+  "If GALLINACODE starts with ‘Module <id>. … End <id>.’ (same <id>),
+return just the interior; otherwise return it unchanged.
+
+The match is *strict*:
+  • ‘Module …’ must be the first non-blank thing.
+  • ‘End ….’ (same name + dot) must be the last non-blank thing."
+  (let* ((code   (string-trim gallinacode))         ;drop outer whitespace
+         (head-r "^Module[[:space:]]+\\([A-Za-z0-9_']+\\)\\.[[:space:]\n]*")
+         (tail-f (lambda (id)
+                   (format "End[[:space:]]+%s\\.[[:space:]]*$"
+                           (regexp-quote id)))))
+    (if (string-match head-r code)
+        (let* ((id        (match-string 1 code))
+               (body-start (match-end 0))
+               (tail-r     (funcall tail-f id)))
+          (if (string-match tail-r code body-start)
+              (string-trim                      ;strip interior edges too
+               (substring code body-start (match-beginning 0)))
+            code))                               ;mismatching ‘End’
+      code)))                                    ;no leading ‘Module’
 
 (defun gpt-handle-coq-output (gpt-text)
   "Interact with Coq according to GPT-TEXT and return the next prompt."
@@ -280,7 +302,7 @@ If no parameters (or no types) are found, it returns nil."
       ("gallina"
        (let ((inhibit-read-only t)
              (beg (point))
-	     (modbody (concat "Module LLMSOLN.\n" body "End LLMSOLN."))
+	     (modbody (concat "Module LLMSOLN.\n" (trim-module body) "\n End LLMSOLN."))
 	     )
          (insert modbody "\n")
          (let ((end (point)))
@@ -291,7 +313,7 @@ If no parameters (or no types) are found, it returns nil."
             ((eq proof-shell-last-output-kind 'error)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))
-             (concat "Below is the error I get when I give that to Coq. (I wrapped your solution in the LLMSOLN module.) FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
+             (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
 
             ;; ---------- compiles but has Admitted ----------
             ((coq-programmer--buffer-has-admit-p body)

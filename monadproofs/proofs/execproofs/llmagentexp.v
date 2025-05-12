@@ -6,6 +6,14 @@ Disable Notation atomic_name'.
 Disable Notation atomic_name.
 Open Scope pstring_scope.
 
+Notation foo := (nat+nat).
+Notation bar := foo.
+
+Print foo.
+(* Notation foo := bar *)
+Print bar.
+(* Notation bar := foo *)
+
 (*
 bluerock.lang.cpp.syntax.stmt.Stmt is an Inductive type I have defined for C++ statements.
 `bluerock.lang.cpp.syntax.stmt.Stmt` is defined mutually Inductively with many other types like `Expr`.
@@ -13,230 +21,246 @@ Write a set of mutually recursive pretty-printer functions for all such types.
 These Gallina functions should return `PrimString.string`.
 *)
 Module LLMSOLN.
-Module LLMSOLN.
-  Import bluerock.lang.cpp.syntax.core.
-  Open Scope pstring_scope.
+(* we use PrimString.string and its “++” *)
+Local Open Scope pstring_scope.
 
-  (* convert Z to PrimString.string via existing showZ *)
-  Definition Ztostring (z : Z) : string :=
-    bluerock.lang.cpp.syntax.name_notation.printer.showN.showZ z.
+(* helper to join a list of strings with a separator *)
+Fixpoint sep_by (sep:PrimString.string) (l:list PrimString.string) : PrimString.string :=
+  match l with
+  | []    => ""
+  | [x]   => x
+  | x::xs => x ++ sep ++ sep_by sep xs
+  end.
 
-  (* stub: convert byte‐string to PrimString.string *)
-  Definition bs_to_string (b : BS.Bytestring_notations.bs) : string. Admitted. (* TOFIXLATER *)
+(* Z‐printer from the library *)
+Definition pp_Z (z: Z) : PrimString.string :=
+  bluerock.lang.cpp.syntax.name_notation.printer.showN.showZ z.
 
-  (* tiny generic fold over lists *)
-  Fixpoint list_fold {A B:Type} (f: B->A->B) (l:list A) (b:B) : B :=
-    match l with
-    | [] => b
-    | x::xs => list_fold f xs (f b x)
-    end.
+(* bitsize is an inductive enum *)
+Definition pp_bitsize (b: bitsize) : PrimString.string :=
+  match b with
+  | bluerock.prelude.arith.types.bitsize.W8   => "8"
+  | bluerock.prelude.arith.types.bitsize.W16  => "16"
+  | bluerock.prelude.arith.types.bitsize.W32  => "32"
+  | bluerock.prelude.arith.types.bitsize.W64  => "64"
+  | bluerock.prelude.arith.types.bitsize.W128 => "128"
+  end.
 
-  (* printer for lists with separators *)
-  Definition pp_list {A:Type} (ppA:A->string) (sep:string) (l:list A) : string :=
-    match l with
-    | [] => ""%pstring
-    | x::xs =>
-      list_fold (fun acc a => acc ++ sep ++ ppA a) xs (ppA x)
-    end.
+(* implemented stubs *)
+Definition pp_ident (id:bluerock.lang.cpp.syntax.preliminary.ident) : PrimString.string := id.
 
-  (* structured‐binding printer: print just the names *)
-  Definition pp_bind_name (b:BindingDecl) : string :=
-    match b with
-    | Bvar ln _ _   => ln
-    | Bbind ln _ _  => ln
-    end.
+Definition pp_RUnOp (op:bluerock.lang.cpp.syntax.overloadable.RUnOp) : PrimString.string :=
+  bluerock.lang.cpp.syntax.pretty.printUO op.
 
-  (* print a switch‐branch *)
-  Definition pp_switch_branch (br: bluerock.lang.cpp.syntax.preliminary.SwitchBranch) : string :=
-    match br with
-    | bluerock.lang.cpp.syntax.preliminary.Exact z =>
-        "case " ++ Ztostring z ++ ":"%pstring
-    | bluerock.lang.cpp.syntax.preliminary.Range z1 z2 =>
-        "case " ++ Ztostring z1 ++ " ... " ++ Ztostring z2 ++ ":"%pstring
-    end.
+Definition pp_RBinOp (op:bluerock.lang.cpp.syntax.overloadable.RBinOp) : PrimString.string :=
+  bluerock.lang.cpp.syntax.pretty.printBO op.
 
-  Fixpoint pp_name (n : name) : string :=
-    match n with
-    | Ninst n0 args    => ""%pstring (* TOFIXLATER *)
-    | Nglobal an       => ""%pstring
-    | Ndependent t     => ""%pstring
-    | Nscoped n0 an    => ""%pstring
-    | Nunsupported s   => s
-    end
+Definition pp_literal_string
+  (ls:bluerock.lang.cpp.syntax.literal_string.literal_string.t) : PrimString.string :=
+  bluerock.lang.cpp.syntax.literal_string.literal_string.bytes ls.
 
-  with pp_temp_arg (a : temp_arg) : string :=
-    match a with
-    | Atype t          => ""%pstring (* TOFIXLATER *)
-    | Avalue e         => ""%pstring
-    | Apack args       => ""%pstring
-    | Atemplate n      => ""%pstring
-    | Aunsupported s   => s
-    end
+Definition pp_char_type
+  (ct:bluerock.lang.cpp.syntax.preliminary.char_type.t) : PrimString.string :=
+  match ct with
+  | bluerock.lang.cpp.syntax.preliminary.char_type.Cchar  => "char"
+  | bluerock.lang.cpp.syntax.preliminary.char_type.Cwchar => "wchar_t"
+  | bluerock.lang.cpp.syntax.preliminary.char_type.C8     => "char8_t"
+  | bluerock.lang.cpp.syntax.preliminary.char_type.C16    => "char16_t"
+  | bluerock.lang.cpp.syntax.preliminary.char_type.C32    => "char32_t"
+  end.
 
-  with pp_type (t : type) : string :=
-    match t with
-    | Tparam id                     => ""%pstring (* TOFIXLATER *)
-    | Tresult_param id              => ""%pstring
-    | Tresult_global n              => ""%pstring
-    | Tresult_unop op t1            => ""%pstring
-    | Tresult_binop op t1 t2        => ""%pstring
-    | Tresult_call n args           => ""%pstring
-    | Tresult_member_call n t0 args => ""%pstring
-    | Tresult_parenlist t0 ts       => ""%pstring
-    | Tresult_member t0 n           => ""%pstring
-    | Tptr t0                       => ""%pstring
-    | Tref t0                       => ""%pstring
-    | Trv_ref t0                    => ""%pstring
-    | Tnum r sgn                    => ""%pstring
-    | Tchar_ ct                     => ""%pstring
-    | Tvoid                         => ""%pstring
-    | Tarray t0 n                   => ""%pstring
-    | Tincomplete_array t0          => ""%pstring
-    | Tvariable_array t0 sz         => ""%pstring
-    | Tnamed n                      => ""%pstring
-    | Tenum n                       => ""%pstring
-    | Tfunction ft                  => ""%pstring
-    | Tbool                         => ""%pstring
-    | Tmember_pointer t0 t1         => ""%pstring
-    | Tfloat_ ft                    => ""%pstring
-    | Tqualified q t0               => ""%pstring
-    | Tnullptr                      => ""%pstring
-    | Tarch osz s                   => ""%pstring
-    | Tdecltype e                   => ""%pstring
-    | Texprtype e                   => ""%pstring
-    | Tunsupported s                => s
-    end
+Definition pp_int_rank
+  (ir:bluerock.lang.cpp.syntax.preliminary.int_rank.t) : PrimString.string :=
+  match ir with
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.Ichar     => "char"
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.Ishort    => "short"
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.Iint      => "int"
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.Ilong     => "long"
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.Ilonglong => "long long"
+  | bluerock.lang.cpp.syntax.preliminary.int_rank.I128      => "__int128"
+  end.
 
-  with pp_expr (e : Expr) : string :=
-    match e with
-    | Eparam id                        => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_global n             => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_unop op e1           => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_binop op e1 e2       => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_call n es            => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_member_call n e0 es  => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_parenlist to es      => ""%pstring (* TOFIXLATER *)
-    | Eunresolved_member e0 n          => ""%pstring (* TOFIXLATER *)
-    | Evar ln t0                       => ""%pstring (* TOFIXLATER *)
-    | Eenum_const n id                 => ""%pstring (* TOFIXLATER *)
-    | Eglobal n t0                     => ""%pstring (* TOFIXLATER *)
-    | Eglobal_member n t0              => ""%pstring (* TOFIXLATER *)
-    | Echar c t0                       => ""%pstring (* TOFIXLATER *)
-    | Estring s t0                     => ""%pstring (* TOFIXLATER *)
-    | Eint z t0                        => ""%pstring (* TOFIXლATER*)
-    | Ebool b                          => ""%pstring (* TOFIXلATER*)
-    | Eunop op e0 t0                   => ""%pstring (* TOFIXლATER*)
-    | Ebinop op e1 e2 t0               => ""%pstring (* TOFIXلATER*)
-    | Ederef e0 t0                     => ""%pstring (* TOFIXלATER*)
-    | Eaddrof e0                       => ""%pstring (* TOFIXลATER*)
-    | Eassign e1 e2 t0                 => ""%pstring (* TOFIX․․later*)
-    | Eassign_op op e1 e2 t0           => ""%pstring (* TOFIXlater*)
-    | Epreinc e0 t0                    => ""%pstring (* TOFIXlater*)
-    | Epostinc e0 t0                   => ""%pstring (* TOFIXlater*)
-    | Epredec e0 t0                    => ""%pstring (* TOFIXlater*)
-    | Epostdec e0 t0                   => ""%pstring (* TOFIXlATER*)
-    (* ... remaining Expr constructors stubbed ... *)
-    | Estmt s t0                       => ""%pstring (* TOFIXlater *)
-    | Eva_arg e0 t0                    => ""%pstring (* TOFIXlater *)
-    | Epseudo_destructor arrow t0 e0   => ""%pstring (* TOFIXlater *)
-    | Earrayloop_init lvl1 src lvl2 lvl3 init t0 => ""%pstring (* TOFIXlater *)
-    | Earrayloop_index lvl t0          => ""%pstring (* TOFIXlater *)
-    | Eopaque_ref lvl t0               => ""%pstring (* TOFIXlater *)
-    | Eunsupported s t0                => s
-    | _                                => ""%pstring (* TOFIXLATER *)
-    end
+Definition pp_signed (sg:bluerock.prelude.arith.types.signed) : PrimString.string :=
+  match sg with
+  | bluerock.prelude.arith.types.Signed   => "signed"
+  | bluerock.prelude.arith.types.Unsigned => "unsigned"
+  end.
 
-  with pp_stmt (s : Stmt) : string :=
-    match s with
-    | Sseq ss =>
-        "{ " ++ pp_list pp_stmt "; "%pstring ss ++ " }"
-    | Sdecl ds =>
-        pp_list pp_vardecl ", "%pstring ds
-    | Sif dvopt cond thn els =>
-        let init_str := match dvopt with Some dv => pp_vardecl dv ++ "; " | None => "" end in
-        "if (" ++ init_str ++ pp_expr cond ++ ") " ++ pp_stmt thn ++ " else " ++ pp_stmt els
-    | Sif_consteval s1 s2 =>
-        "if consteval " ++ pp_stmt s1 ++ " else " ++ pp_stmt s2
-    | Swhile dvopt cond body =>
-        let init_str := match dvopt with Some dv => pp_vardecl dv ++ "; " | None => "" end in
-        "while (" ++ init_str ++ pp_expr cond ++ ") " ++ pp_stmt body
-    | Sfor init cond incr body =>
-        let init_str := match init with Some s0 => pp_stmt s0 | None => "" end in
-        let cond_str := match cond with Some e0 => pp_expr e0 | None => "" end in
-        let incr_str := match incr with Some e0 => pp_expr e0 | None => "" end in
-        "for (" ++ init_str ++ "; " ++ cond_str ++ "; " ++ incr_str ++ ") " ++ pp_stmt body
-    | Sdo body cond =>
-        "do " ++ pp_stmt body ++ " while (" ++ pp_expr cond ++ ")"
-    | Sswitch dvopt e0 body =>
-        let init_str := match dvopt with Some dv => pp_vardecl dv ++ "; " | None => "" end in
-        "switch (" ++ init_str ++ pp_expr e0 ++ ") " ++ pp_stmt body
-    | Scase br =>
-        pp_switch_branch br
-    | Sdefault =>
-        "default:"%pstring
-    | Sbreak                         => "break;"%pstring
-    | Scontinue                      => "continue;"%pstring
-    | Sreturn eo                     =>
-        match eo with Some e => "return " ++ pp_expr e ++ ";"%pstring | None => "return;"%pstring end
-    | Sexpr e0                       => pp_expr e0 ++ ";"%pstring
-    | Sgoto id                       => "goto " ++ id ++ ";"%pstring
-    | Slabeled id s0                 => id ++ ": " ++ pp_stmt s0
-    | Sattr attrs s0                 =>
-        "__attribute__((" ++ pp_list (fun x=>x) ", " attrs ++ ")) " ++ pp_stmt s0
-    | Sasm s volatile inputs outputs clobbers =>
-        "asm " ++ (if volatile then "volatile " else "")
-             ++ "(" ++ s ++ ")"%pstring
-    | Sunsupported s                 => s
-    end
+Definition pp_cast_style (cs:bluerock.lang.cpp.syntax.core.cast_style.t) : PrimString.string :=
+  match cs with
+  | bluerock.lang.cpp.syntax.core.cast_style.functional  => "functional"
+  | bluerock.lang.cpp.syntax.core.cast_style.c           => "C-style"
+  | bluerock.lang.cpp.syntax.core.cast_style.static      => "static_cast"
+  | bluerock.lang.cpp.syntax.core.cast_style.dynamic     => "dynamic_cast"
+  | bluerock.lang.cpp.syntax.core.cast_style.reinterpret => "reinterpret_cast"
+  | bluerock.lang.cpp.syntax.core.cast_style.const       => "const_cast"
+  end.
 
-  with pp_vardecl (d : VarDecl) : string :=
-    match d with
-    | Dvar ln t0 eo =>
-        let base := pp_type t0 ++ " " ++ ln in
-        match eo with Some e => base ++ " = " ++ pp_expr e | None => base end
-    | Ddecompose e0 id binds =>
-        "auto [" ++ pp_list pp_bind_name ", " binds ++ "] = " ++ pp_expr e0
-    | Dinit thread ln t0 eo =>
-        (if thread then "thread_safe "%pstring else "")
-        ++ pp_type t0 ++ " " ++ pp_name ln
-        ++ match eo with Some e => " = " ++ pp_expr e | None => "" end
-    end
+Definition pp_new_form (nf:bluerock.lang.cpp.syntax.preliminary.new_form.t) : PrimString.string :=
+  match nf with
+  | bluerock.lang.cpp.syntax.preliminary.new_form.Allocating pass_align =>
+      if pass_align then "Allocating_align" else "Allocating"
+  | bluerock.lang.cpp.syntax.preliminary.new_form.NonAllocating       =>
+      "NonAllocating"
+  end.
 
-  with pp_binding (b : BindingDecl) : string :=
-    match b with
-    | Bvar ln _ _   => ln
-    | Bbind ln _ _  => ln
-    end
+Definition pp_valcat (vc:bluerock.lang.cpp.syntax.preliminary.ValCat) : PrimString.string :=
+  match vc with
+  | bluerock.lang.cpp.syntax.preliminary.Lvalue  => "lvalue"
+  | bluerock.lang.cpp.syntax.preliminary.Prvalue => "prvalue"
+  | bluerock.lang.cpp.syntax.preliminary.Xvalue  => "xvalue"
+  end.
 
-  with pp_cast (c : Cast) : string :=
-    match c with
-    | Cdependent t0               => ""%pstring (* TOFIXLATER *)
-    | Cbitcast t0                 => ""%pstring (* TOFIXLATER *)
-    | Clvaluebitcast t0           => ""%pstring (* TOFIXLATER *)
-    | Cl2r                        => ""%pstring (* TOFIXLATER *)
-    | Cl2r_bitcast t0             => ""%pstring (* TOFIXLATER *)
-    | Cnoop t0                    => ""%pstring (* TOFIXLATER *)
-    | Carray2ptr                  => ""%pstring (* TOFIXLATER *)
-    | Cfun2ptr                    => ""%pstring (* TOFIXלATER *)
-    | Cint2ptr t0                 => ""%pstring (* TOFIXלATER *)
-    | Cptr2int t0                 => ""%pstring (* TOFIXלATER *)
-    | Cptr2bool                   => ""%pstring (* TOFIXלATER *)
-    | Cintegral t0                => ""%pstring (* TOFIXלATER *)
-    | Cint2bool                   => ""%pstring (* TOFIXלATER *)
-    | Cfloat2int t0               => ""%pstring (* TOFIXלATER *)
-    | Cint2float t0               => ""%pstring (* TOFIXלATER *)
-    | Cfloat t0                   => ""%pstring (* TOFIXלATER *)
-    | Cnull2ptr t0                => ""%pstring (* TOFIXלATER *)
-    | Cnull2memberptr t0          => ""%pstring (* TOFIXלATER *)
-    | Cbuiltin2fun t0             => ""%pstring (* TOFIXלATER *)
-    | C2void                      => ""%pstring (* TOFIXלATER *)
-    | Cctor t0                    => ""%pstring (* TOFIXلATER *)
-    | Cuser                       => ""%pstring (* TOFIXלATER *)
-    | Cdynamic t0                 => ""%pstring (* TOFIXלATER *)
-    | Cderived2base path t0       => ""%pstring (* TOFIXלATER *)
-    | Cbase2derived path t0       => ""%pstring (* TOFIXלATER *)
-    | Cunsupported bs t0          => bs_to_string bs
-    end.
-End LLMSOLN.
-End LLMSOLN.
+Definition pp_AtomicOp (ao: bluerock.lang.cpp.syntax.preliminary.AtomicOp.t) : PrimString.string :=
+  ao.
+
+(* alias the library atomic_name_ printer, supplying its implicit [type] argument *)
+Definition printAN {A : Set} := bluerock.lang.cpp.syntax.pretty.printAN (type:=A).
+
+Fixpoint
+  pp_name          (n:bluerock.lang.cpp.syntax.core.name)          : PrimString.string :=
+  match n with
+  | bluerock.lang.cpp.syntax.core.Ninst base args =>
+      pp_name base ++ "<" ++ sep_by "," (List.map pp_temp_arg args) ++ ">"
+  | bluerock.lang.cpp.syntax.core.Nglobal an =>
+      printAN pp_type None an
+  | bluerock.lang.cpp.syntax.core.Ndependent ty =>
+      "dependent<" ++ pp_type ty ++ ">"
+  | bluerock.lang.cpp.syntax.core.Nscoped n' an =>
+      pp_name n' ++ "::" ++ printAN pp_type None an
+  | bluerock.lang.cpp.syntax.core.Nunsupported s =>
+      s
+  end
+
+with pp_temp_arg
+  (ta:bluerock.lang.cpp.syntax.core.temp_arg) : PrimString.string :=
+  match ta with
+  | bluerock.lang.cpp.syntax.core.Atype ty     => pp_type ty
+  | bluerock.lang.cpp.syntax.core.Avalue e      => pp_expr e
+  | bluerock.lang.cpp.syntax.core.Apack args    =>
+      "pack<" ++ sep_by "," (List.map pp_temp_arg args) ++ ">"
+  | bluerock.lang.cpp.syntax.core.Atemplate n   => pp_name n
+  | bluerock.lang.cpp.syntax.core.Aunsupported s => s
+  end
+
+with pp_type
+  (t:bluerock.lang.cpp.syntax.core.type)       : PrimString.string :=
+  match t with
+  | bluerock.lang.cpp.syntax.core.Tparam id              => pp_ident id
+  | bluerock.lang.cpp.syntax.core.Tresult_param id       => "result_param(" ++ pp_ident id ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_global n       => "result_global(" ++ pp_name n ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_unop op t1     => pp_RUnOp op ++ pp_type t1
+  | bluerock.lang.cpp.syntax.core.Tresult_binop op l r   =>
+      "(" ++ pp_RBinOp op ++ sep_by "," [pp_type l; pp_type r] ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_call n args    =>
+      pp_name n ++ "(" ++ sep_by "," (List.map pp_type args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_member_call n r args =>
+      pp_name n ++ "[" ++ pp_type r ++ "](" ++ sep_by "," (List.map pp_type args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_parenlist t args =>
+      "(" ++ pp_type t ++ ")(" ++ sep_by "," (List.map pp_type args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tresult_member t n      =>
+      pp_type t ++ "::" ++ pp_name n
+  | bluerock.lang.cpp.syntax.core.Tptr t                  => pp_type t ++ "*"
+  | bluerock.lang.cpp.syntax.core.Tref t                  => pp_type t ++ "&"
+  | bluerock.lang.cpp.syntax.core.Trv_ref t               => pp_type t ++ "&&"
+  | bluerock.lang.cpp.syntax.core.Tnum ir sgn             =>
+      pp_int_rank ir ++ " " ++ pp_signed sgn
+  | bluerock.lang.cpp.syntax.core.Tchar_ ct               => pp_char_type ct
+  | bluerock.lang.cpp.syntax.core.Tvoid                   => "void"
+  | bluerock.lang.cpp.syntax.core.Tarray t n              =>
+      pp_type t ++ "[" ++ pp_Z (Z.of_N n) ++ "]"
+  | bluerock.lang.cpp.syntax.core.Tincomplete_array t     => pp_type t ++ "[]"
+  | bluerock.lang.cpp.syntax.core.Tvariable_array t e     => pp_type t ++ "[" ++ pp_expr e ++ "]"
+  | bluerock.lang.cpp.syntax.core.Tnamed n                => pp_name n
+  | bluerock.lang.cpp.syntax.core.Tenum n                 => "enum " ++ pp_name n
+  | bluerock.lang.cpp.syntax.core.Tfunction ft            => "(…)"  (* TOFIXLATER *)
+  | bluerock.lang.cpp.syntax.core.Tbool                   => "bool"
+  | bluerock.lang.cpp.syntax.core.Tmember_pointer cbase cmem =>
+      pp_type cbase ++ "->*" ++ pp_type cmem
+  | bluerock.lang.cpp.syntax.core.Tfloat_ f               => "(float-type…)" (* TOFIXLATER *)
+  | bluerock.lang.cpp.syntax.core.Tqualified qs t'        => "(qual " ++ "(…)" ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tnullptr                => "nullptr_t"
+  | bluerock.lang.cpp.syntax.core.Tarch osz nm            =>
+      "arch(" ++
+        (match osz with
+         | None   => ""
+         | Some b => pp_bitsize b
+         end) ++
+      "," ++ nm ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tdecltype e             => "decltype(" ++ pp_expr e ++ ")"
+  | bluerock.lang.cpp.syntax.core.Texprtype e             => "exprtype(" ++ pp_expr e ++ ")"
+  | bluerock.lang.cpp.syntax.core.Tunsupported s          => s
+  end
+
+with pp_expr
+  (e:bluerock.lang.cpp.syntax.core.Expr) : PrimString.string :=
+  match e with
+  | bluerock.lang.cpp.syntax.core.Eparam id                => pp_ident id
+  | bluerock.lang.cpp.syntax.core.Eunresolved_global n     => pp_name n
+  | bluerock.lang.cpp.syntax.core.Eunresolved_unop op x    => pp_RUnOp op ++ pp_expr x
+  | bluerock.lang.cpp.syntax.core.Eunresolved_binop op l r =>
+      "(" ++ pp_expr l ++ pp_RBinOp op ++ pp_expr r ++ ")"
+  | bluerock.lang.cpp.syntax.core.Eunresolved_call n args  =>
+      pp_name n ++ "(" ++ sep_by "," (List.map pp_expr args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Eunresolved_member_call n obj args =>
+      pp_expr obj ++ "." ++ pp_name n ++ "(" ++ sep_by "," (List.map pp_expr args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Evar ln ty                => "(var " ++ ln ++ ":" ++ pp_type ty ++ ")"
+  | bluerock.lang.cpp.syntax.core.Eint z ty                 => pp_Z z ++ ":" ++ pp_type ty
+  | bluerock.lang.cpp.syntax.core.Ebool b                   => if b then "true" else "false"
+  | bluerock.lang.cpp.syntax.core.Estring ls ty             => pp_literal_string ls ++ ":" ++ pp_type ty
+  | bluerock.lang.cpp.syntax.core.Ebinop op a b ty          => "(" ++ pp_expr a ++ " " ++ "(…)" ++ " " ++ pp_expr b ++ ")"
+  | bluerock.lang.cpp.syntax.core.Ecall f args             => pp_expr f ++ "(" ++ sep_by "," (List.map pp_expr args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Eexplicit_cast cs ty x    => "(" ++ pp_cast_style cs ++ "<" ++ pp_type ty ++ ">)" ++ pp_expr x
+  | bluerock.lang.cpp.syntax.core.Emember arrow obj fld mut ty =>
+      pp_expr obj ++ (if arrow then "->" else ".") ++ "(…)"
+  | bluerock.lang.cpp.syntax.core.Eif c t e ty              => "if(" ++ pp_expr c ++ ") " ++ pp_expr t ++ " else " ++ pp_expr e
+  | bluerock.lang.cpp.syntax.core.Eatomic ao args ty        => pp_AtomicOp ao ++ "(" ++ sep_by "," (List.map pp_expr args) ++ ")"
+  | bluerock.lang.cpp.syntax.core.Estmt stm ty              => "(stmt:" ++ pp_stmt stm ++ ")"
+  | bluerock.lang.cpp.syntax.core.Eunsupported s _          => s
+  | _                                                      => "(…expr case unimplemented…)"
+  end
+
+with pp_stmt
+  (s:bluerock.lang.cpp.syntax.core.Stmt) : PrimString.string :=
+  match s with
+  | bluerock.lang.cpp.syntax.core.Sseq ss    => "{ " ++ sep_by "; " (List.map pp_stmt ss) ++ " }"
+  | bluerock.lang.cpp.syntax.core.Sdecl dvs  => "decl " ++ sep_by ", " (List.map pp_vardecl dvs)
+  | bluerock.lang.cpp.syntax.core.Sif None c t e   => "if(" ++ pp_expr c ++ ") " ++ pp_stmt t ++ " else " ++ pp_stmt e
+  | bluerock.lang.cpp.syntax.core.Sif (Some vd) c t e => "if(" ++ pp_vardecl vd ++ "; " ++ pp_expr c ++ ") " ++ pp_stmt t ++ " else " ++ pp_stmt e
+  | bluerock.lang.cpp.syntax.core.Swhile o c body     => "while(" ++ (match o with None => "" | Some vd => pp_vardecl vd ++ "; " end) ++ pp_expr c ++ ") " ++ pp_stmt body
+  | bluerock.lang.cpp.syntax.core.Sreturn None        => "return;"
+  | bluerock.lang.cpp.syntax.core.Sreturn (Some e)    => "return " ++ pp_expr e ++ ";"
+  | bluerock.lang.cpp.syntax.core.Sexpr e            => pp_expr e ++ ";"
+  | bluerock.lang.cpp.syntax.core.Sunsupported s     => "// unsupported: " ++ s
+  | _                                                => "(…stmt case unimplemented…)"
+  end
+
+with pp_vardecl
+  (vd:bluerock.lang.cpp.syntax.core.VarDecl) : PrimString.string :=
+  match vd with
+  | bluerock.lang.cpp.syntax.core.Dvar ln ty init    => pp_ident ln ++ ":" ++ pp_type ty ++ (match init with None => "" | Some e => " = " ++ pp_expr e end)
+  | bluerock.lang.cpp.syntax.core.Ddecompose e ln bd => "(decomp " ++ pp_expr e ++ " to " ++ ln ++ " and …)"
+  | bluerock.lang.cpp.syntax.core.Dinit b ln ty init => "(init " ++ (if b then "thread_safe " else "") ++ pp_name ln ++ ":" ++ pp_type ty ++ (match init with None => "" | Some e => " = " ++ pp_expr e end) ++ ")"
+  end
+
+with pp_bindingdecl
+  (bd:bluerock.lang.cpp.syntax.core.BindingDecl) : PrimString.string :=
+  match bd with
+  | bluerock.lang.cpp.syntax.core.Bvar ln ty e  => "(bind-var " ++ ln ++ ":" ++ pp_type ty ++ " = " ++ pp_expr e ++ ")"
+  | bluerock.lang.cpp.syntax.core.Bbind ln ty e => "(bind " ++ ln ++ ":" ++ pp_type ty ++ " = " ++ pp_expr e ++ ")"
+  end
+
+with pp_cast
+  (c:bluerock.lang.cpp.syntax.core.Cast) : PrimString.string :=
+  match c with
+  | bluerock.lang.cpp.syntax.core.Cdependent ty       => "dep-cast<" ++ pp_type ty ++ ">"
+  | bluerock.lang.cpp.syntax.core.Cbitcast ty         => "bitcast<" ++ pp_type ty ++ ">"
+  | bluerock.lang.cpp.syntax.core.Clvaluebitcast ty   => "lvalue-bitcast<" ++ pp_type ty ++ ">"
+  | bluerock.lang.cpp.syntax.core.Cl2r                 => "l2r"
+  | bluerock.lang.cpp.syntax.core.Carray2ptr           => "array2ptr"
+  | bluerock.lang.cpp.syntax.core.Cbuiltin2fun ty      => "builtin2fun<" ++ pp_type ty ++ ">"
+  | bluerock.lang.cpp.syntax.core.Cunsupported _ ty    => "(unsupported-cast)"
+  | _                                                   => "(…cast unimplemented…)"
+  end.
+ End LLMSOLN.
 

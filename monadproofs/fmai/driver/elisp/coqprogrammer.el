@@ -69,6 +69,7 @@ Every processed line is emitted in the form:
     <response or error>
 
 Blocks are separated by a blank line."
+  (message "queries: %s"  queries)
   (let* ((valid-prefixes '("Search" "About" "Print" "Locate" "Check"))
          (blocks '()))
     (dolist (line (split-string queries "\n"))
@@ -404,7 +405,7 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 ")
 
 (defun coq-programmer-first-prompt2 (core-prompt)
-  (concat coq-programmer-preamble core-prompt coq-programmer-response-format)
+  (concat coq-programmer-preamble "\n\n\n# Current Task\n" core-prompt coq-programmer-response-format)
   )
 
 (defun coq-programmer-first-prompt-interactive ()
@@ -423,22 +424,115 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
   (forward-comment 1)
   )
 
-(defun coq-programmer-first-prompt ()
-  "Extract the GPT prompt from the Coq comment around point, excluding the `(*` and `*)`.
 
-Inserts a newline after the `*)` so inserted code appears after the comment."
-  (coq-find-comment-start)
-  (let ((beg (point)))
-    (coq-comment-end)
-    (let ((end (point)))
-      ;; Move point to just after the comment
-      (goto-char end)
-      (insert "\n")
-      (proof-assert-until-point)
-      (wait-for-coq)
-      (let ((core-prompt (string-trim
-                          (buffer-substring-no-properties (+ beg 2) (- end 2)))))
-        (coq-programmer-first-prompt2 core-prompt)))))
+;;;; ------------------------------------------------------------
+;;;;  Helper: extract comment body *and* end position  (fatal-on-error style)
+;;;; ------------------------------------------------------------
+
+(defun coq-prog--comment-body ()
+  "Return (BODY . END-POS) for the Coq comment around point.
+
+BODY     ⇒ string between (* and *), trimmed of delimiters
+END-POS  ⇒ buffer position *just after* the closing `*)`.
+
+If point is not inside a comment, signal an error."
+    (coq-find-comment-start)
+    (let ((beg (point)))
+      (coq-comment-end)                ; now at char *after* '*)'
+      (let ((end (point)))
+	(message "comment range (%d, %d)" beg end)
+        (let ((body (buffer-substring-no-properties (+ beg 2) (- end 2))))
+          (cons body end)))))
+
+
+(defun coq-prog--split-sections (raw)
+  "Parse RAW (string) into (PROMPT queries files).
+
+Sections start with:
+  +++ QUERIES
+  +++ FILES
+Lines before the first +++ belong to PROMPT.  Order is free."
+  (let ((current 'prompt)
+        prompt-lines query-lines file-lines)
+    (dolist (ln (split-string raw "\n"))
+      (cond
+       ((string-match-p "^\\+\\+\\+[ \t]*QUERIES" ln)
+        (setq current 'queries))
+       ((string-match-p "^\\+\\+\\+[ \t]*FILES" ln)
+        (setq current 'files))
+       ((string-match-p "^\\+\\+\\+" ln) ; unknown label
+        (setq current 'prompt))
+       (t
+        (pcase current
+          ('prompt  (push ln prompt-lines))
+          ('queries (push ln query-lines))
+          ('files   (push (string-trim ln) file-lines))))))
+    (list (string-trim (string-join (nreverse prompt-lines) "\n"))
+          (string-trim (string-join (nreverse query-lines)  "\n"))
+          (nreverse file-lines))))
+
+(defun coq-prog--format-query-results (query-block)
+  "Run QUERY-BLOCK through `query-coq` and wrap under a markdown header."
+  (unless (string-empty-p query-block)
+    (concat "\n\n### Results of preliminary Coq queries\n"
+            (query-coq query-block))))
+
+;;;; ------------------------------------------------------------
+;;;;  Helper: read background files (fatal if unreadable)
+;;;; ------------------------------------------------------------
+
+(defun coq-prog--format-file-blocks (paths base-dir)
+  "Return markdown for each file in PATHS relative to BASE-DIR.
+
+If any file is unreadable, raise an error (do not continue silently)."
+  (mapconcat
+   (lambda (rel)
+     (let ((abs (expand-file-name rel base-dir)))
+       (unless (file-readable-p abs)
+         (error "Background file `%s` is missing or unreadable" rel))
+       (with-temp-buffer
+         (insert-file-contents abs)
+         (format "\n\n### Background file: %s\n%s"
+                 rel (string-trim (buffer-string))))))
+   paths ""))
+
+;;;; ------------------------------------------------------------
+;;;;  Shorter coq-programmer-first-prompt (uses new helpers)
+;;;; ------------------------------------------------------------
+
+(defun coq-programmer-first-prompt ()
+  "Build the initial GPT prompt from the rich comment around point.
+
+Recognised subsections:
+  • free text                 → core prompt
+  • +++ COQ-QUERIES           → run each line via `query-coq`
+  • +++ FILES                 → include those markdown files
+
+A newline is inserted right after the comment so GPT code is added
+outside the comment."
+  ;; 1. extract body & get end position
+  (interactive)
+  (pcase-let* ((`(,body . ,comment-end) (coq-prog--comment-body))
+	       (_ (message "comment body: %s" body))
+               (sections (coq-prog--split-sections body))
+               (prompt   (nth 0 sections))
+               (queries  (nth 1 sections))
+               (files    (nth 2 sections))
+	       (_ (message "prompt: %s\n\n files %s\n\n queries %s\n " prompt files queries))
+               ;; 2. run queries / read files (fatal on error)
+               (query-blk  (coq-prog--format-query-results queries))
+               (files-blk (coq-prog--format-file-blocks
+                           files (file-name-directory (buffer-file-name))))
+               ;; 3. assemble
+               (core      (concat prompt query-blk files-blk)))
+    ;; 4. move point after comment & insert newline
+    (goto-char comment-end)
+    (insert "\n")
+    (proof-assert-until-point)
+    (wait-for-coq)
+    ;; 5. hand off
+    (message "%s" (coq-programmer-first-prompt2 core))))
+
 
 (with-eval-after-load 'coq
   (define-key coq-mode-map (kbd "C-c l") #'coq-programmer-loop))

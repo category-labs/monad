@@ -267,5 +267,3 @@ The key for `String.string` is just `string`.
 You can open `pstring_scope` to elide the %pstring part.
 In applications where speed is important and you are given a choice to chose between the 2, you probably want to choose 
 `Corelib.Strings.PrimString.string`.
-
-# Current Task

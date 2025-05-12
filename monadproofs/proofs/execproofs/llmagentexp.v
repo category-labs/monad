@@ -13,8 +13,9 @@ Write a set of mutually recursive pretty-printer functions for all such types.
 These Gallina functions should return `PrimString.string`.
 
 +++ QUERIES
-Print Stmt.
+Print bluerock.lang.cpp.syntax.stmt.Stmt.
 *)
+
 
 
 

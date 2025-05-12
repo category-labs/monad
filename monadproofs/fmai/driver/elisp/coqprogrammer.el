@@ -440,9 +440,12 @@ If point is not inside a comment, signal an error."
     (let ((beg (point)))
       (coq-comment-end)                ; now at char *after* '*)'
       (let ((end (point)))
-	(message "comment range (%d, %d)" beg end)
+	(goto-char end)
+	(insert "\n")
+	(proof-assert-until-point)
+	(wait-for-coq)
         (let ((body (buffer-substring-no-properties (+ beg 2) (- end 2))))
-          (cons body end)))))
+          body))))
 
 
 (defun coq-prog--split-sections (raw)
@@ -474,7 +477,7 @@ Lines before the first +++ belong to PROMPT.  Order is free."
 (defun coq-prog--format-query-results (query-block)
   "Run QUERY-BLOCK through `query-coq` and wrap under a markdown header."
   (unless (string-empty-p query-block)
-    (concat "\n\n### Results of some relevant queries\n"
+    (concat "\n\n## Results of some relevant queries\n"
             (query-coq query-block))))
 
 ;;;; ------------------------------------------------------------
@@ -512,18 +515,12 @@ A newline is inserted right after the comment so GPT code is added
 outside the comment."
   ;; 1. extract body & get end position
   (interactive)
-  (pcase-let* ((`(,body . ,comment-end) (coq-prog--comment-body))
-	       (_ (message "comment body: %s" body))
+  (let*      ((body (coq-prog--comment-body))
                (sections (coq-prog--split-sections body))
                (prompt   (nth 0 sections))
                (queries  (nth 1 sections))
                (files    (nth 2 sections))
                ;; 2. run queries / read files (fatal on error)
-	       (_ (with-current-buffer proof-script-buffer
-		    (goto-char comment-end)
-		    (insert "\n")
-		    (proof-assert-until-point)
-		    (wait-for-coq)))
                (query-blk  (coq-prog--format-query-results queries))
                (files-blk (coq-prog--format-file-blocks
                            files (file-name-directory (buffer-file-name))))

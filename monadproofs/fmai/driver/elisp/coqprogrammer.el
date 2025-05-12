@@ -474,7 +474,7 @@ Lines before the first +++ belong to PROMPT.  Order is free."
 (defun coq-prog--format-query-results (query-block)
   "Run QUERY-BLOCK through `query-coq` and wrap under a markdown header."
   (unless (string-empty-p query-block)
-    (concat "\n\n### Results of preliminary Coq queries\n"
+    (concat "\n\n### Results of some relevant queries\n"
             (query-coq query-block))))
 
 ;;;; ------------------------------------------------------------
@@ -518,24 +518,22 @@ outside the comment."
                (prompt   (nth 0 sections))
                (queries  (nth 1 sections))
                (files    (nth 2 sections))
-	       (_ (message "prompt: %s\n\n files %s\n\n queries %s\n " prompt files queries))
                ;; 2. run queries / read files (fatal on error)
+	       (_ (with-current-buffer proof-script-buffer
+		    (goto-char comment-end)
+		    (insert "\n")
+		    (proof-assert-until-point)
+		    (wait-for-coq)))
                (query-blk  (coq-prog--format-query-results queries))
                (files-blk (coq-prog--format-file-blocks
                            files (file-name-directory (buffer-file-name))))
                ;; 3. assemble
                (core      (concat prompt query-blk files-blk)))
     ;; 4. move point after comment & insert newline
-    (goto-char comment-end)
-    (insert "\n")
-    (proof-assert-until-point)
-    (wait-for-coq)
     ;; 5. hand off
-    (message "%s" (coq-programmer-first-prompt2 core))))
+    (coq-programmer-first-prompt2 core)))
 
 
-(with-eval-after-load 'coq
-  (define-key coq-mode-map (kbd "C-c l") #'coq-programmer-loop))
 
 (defcustom coq-programmer-max-llm-calls 30
   "Maximum number of GPT calls allowed during a single `coq-programmer-loop` run.
@@ -632,7 +630,16 @@ directory as the current `.v` file.  Stops when:
                   (log "Assistant" assistant)))))))))))
 
 
-
+(defun print-coq-programmer-first-prompt ()
+  (interactive)
+  (let ((ip (coq-programmer-first-prompt)))
+    (with-current-buffer (get-buffer-create "*Initial Prompt*")
+      (read-only-mode -1)
+      (erase-buffer)
+      (markdown-mode)
+      (insert ip)
+      (read-only-mode 1)
+      (display-buffer (current-buffer)))))
 
 ;;;###autoload
 (defun coq-prog-search-queries-at-point ()
@@ -656,6 +663,13 @@ If no parameters (or no types) are found, it returns nil."
     (message "%s "(coq-prog-search-queries-for-module-params mod))
     ))
 
+
+(with-eval-after-load 'coq
+  (define-key coq-mode-map (kbd "C-c l") #'coq-programmer-loop))
+
+(with-eval-after-load 'coq
+  (define-key coq-mode-map (kbd "C-c k") #'print-coq-programmer-first-prompt))
+
 ;; TODO:
 ;; GPT often gets some holes correct, but later forgets them in the later/final answer where they go back to Admitted.
 ;; one solution could be at timeout, give it all non-erroring versions and ask it to take the maximal subset.
@@ -663,7 +677,10 @@ If no parameters (or no types) are found, it returns nil."
 ;; Definition in the older version. emacs could put all versions in a module and 
 ;; put every version in a new module. dont ask GPT to include all code. just the defns that are being added/replaced. (no need to ever delete defns). the unreplaced ones become shallow notations to the previous module version and then add the new/replaced defns in the new module.
 
-;; allow multiple queries: already implemented
 
 ;; at the end, allow the user to issue a prompt and continue the discussion. maybe summarize/compress the prev chat to continue discussion (just aggregate query responses keep them in an emacs list so no need to parse the chat. discard the rest, except the initial prompt)
+
+
+;; make query-coq return an error if there is any error in a query. use this for coq-programmer-first-prompt, but not on GPT-generated queries
+
 

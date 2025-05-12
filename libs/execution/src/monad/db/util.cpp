@@ -38,6 +38,8 @@
 #include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
 
+#include <zstd.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -840,6 +842,57 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
     ProposalTraverseMachine traverse(rounds);
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
     return rounds;
+}
+
+// compress call_frames, then concat it with the rlp_encoded original_size
+byte_string compress_call_frames(byte_string_view const rlp_call_frames)
+{
+    size_t const size_required = ZSTD_compressBound(rlp_call_frames.size());
+    MONAD_ASSERT(size_required);
+
+    thread_local std::unique_ptr<uint8_t[]> buffer;
+    thread_local size_t buffer_capacity = 0;
+
+    if (MONAD_UNLIKELY(buffer_capacity < size_required)) {
+        buffer.reset(new uint8_t[size_required]);
+        buffer_capacity = size_required;
+    }
+
+    size_t const size_compressed = ZSTD_compress(
+        buffer.get(),
+        size_required,
+        rlp_call_frames.data(),
+        rlp_call_frames.size(),
+        /* compressionLevel = */ 1);
+
+    MONAD_ASSERT(!ZSTD_isError(size_compressed));
+
+    byte_string const compressed_call_frames(
+        buffer.get(), buffer.get() + size_compressed);
+
+    return rlp::encode_unsigned(static_cast<uint64_t>(rlp_call_frames.size())) +
+           compressed_call_frames;
+}
+
+Result<byte_string>
+decompress_call_frames(byte_string_view &compressed_call_frames)
+{
+    BOOST_OUTCOME_TRY(
+        auto const expected_decompressed_size,
+        rlp::decode_unsigned<uint64_t>(compressed_call_frames));
+
+    byte_string buffer;
+    buffer.resize(expected_decompressed_size);
+
+    auto const decompressed_size = ZSTD_decompress(
+        buffer.data(),
+        buffer.length(),
+        compressed_call_frames.data(),
+        compressed_call_frames.length());
+
+    MONAD_ASSERT(expected_decompressed_size == decompressed_size);
+
+    return buffer;
 }
 
 MONAD_NAMESPACE_END

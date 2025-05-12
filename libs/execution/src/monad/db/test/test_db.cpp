@@ -142,7 +142,7 @@ namespace
                 return c.first < NibblesView{c2.first};
             });
 
-        byte_string const call_frames_encoded = std::accumulate(
+        byte_string const call_frames_compressed = std::accumulate(
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
@@ -150,10 +150,14 @@ namespace
                 return std::move(acc) + std::move(chunk.second);
             });
 
-        byte_string_view view{call_frames_encoded};
-        auto const call_frame = rlp::decode_call_frames(view);
+        byte_string_view view{call_frames_compressed};
+        auto const call_frames_encoded = decompress_call_frames(view);
+        MONAD_ASSERT(!call_frames_encoded.has_error());
+
+        byte_string_view view2{call_frames_encoded.value()};
+        auto const call_frame = rlp::decode_call_frames(view2);
         MONAD_ASSERT(!call_frame.has_error());
-        MONAD_ASSERT(view.empty());
+        MONAD_ASSERT(view2.empty());
         return call_frame.value();
     }
 

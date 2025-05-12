@@ -148,4 +148,8 @@ mpt::Nibbles proposal_prefix(uint64_t);
 
 std::vector<uint64_t> get_proposal_rounds(mpt::Db &, uint64_t block_number);
 
+byte_string compress_call_frames(byte_string_view const);
+
+Result<byte_string> decompress_call_frames(byte_string_view &);
+
 MONAD_NAMESPACE_END

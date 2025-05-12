@@ -166,6 +166,7 @@ target_link_libraries(
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli
+  PRIVATE PkgConfig::zstd
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC intx::intx

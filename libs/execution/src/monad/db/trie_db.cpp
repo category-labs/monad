@@ -296,8 +296,10 @@ void TrieDb::commit(
 
         // Call frames
         std::span<CallFrame const> frames{call_frames[i]};
+        auto const rlp_call_frames = rlp::encode_call_frames(frames);
+
         byte_string_view frame_view =
-            bytes_alloc_.emplace_back(rlp::encode_call_frames(frames));
+            bytes_alloc_.emplace_back(compress_call_frames(rlp_call_frames));
         uint8_t chunk_index = 0;
         auto const call_frame_prefix =
             serialize_as_big_endian<sizeof(uint32_t)>(i);

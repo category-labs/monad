@@ -1,6 +1,7 @@
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/genesis_state.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
@@ -73,5 +74,19 @@ TEST(MonadChain, Genesis)
         // the header generated at the time was not a valid header for the
         // cancun revision
         EXPECT_FALSE(static_validate_header<EVMC_CANCUN>(header).has_value());
+    }
+    {
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        TrieDb tdb{db};
+        MonadMainnet const chain;
+        load_genesis_state(chain.get_genesis_state(), tdb);
+        BlockHeader const header = tdb.read_eth_header();
+        bytes32_t const hash =
+            to_bytes(keccak256(rlp::encode_block_header(header)));
+        EXPECT_EQ(
+            hash,
+            0x4e023db33b196d5c1cb7cf4467eaf96a24b18473bc7d911991e35adc2267f247_bytes32);
+        EXPECT_TRUE(static_validate_header<EVMC_CANCUN>(header).has_value());
     }
 }

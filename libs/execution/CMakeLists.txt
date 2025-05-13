@@ -30,6 +30,7 @@ add_library(
   "src/monad/chain/monad_devnet_alloc.hpp"
   "src/monad/chain/monad_mainnet.cpp"
   "src/monad/chain/monad_mainnet.hpp"
+  "src/monad/chain/monad_mainnet_alloc.hpp"
   "src/monad/chain/monad_revision.h"
   "src/monad/chain/monad_testnet.cpp"
   "src/monad/chain/monad_testnet.hpp"

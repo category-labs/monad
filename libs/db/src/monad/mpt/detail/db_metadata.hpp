@@ -264,6 +264,14 @@ namespace detail
             return &chunk_info[idx];
         }
 
+        chunk_info_t atomic_load_chunk_info(
+            uint32_t const idx, std::memory_order load_ord =
+                                    std::memory_order_seq_cst) const noexcept
+        {
+            return reinterpret_cast<std::atomic<chunk_info_t> const *>(at(idx))
+                ->load(load_ord);
+        }
+
         chunk_info_t const &operator[](uint32_t idx) const noexcept
         {
             MONAD_DEBUG_ASSERT(idx < chunk_info_count);
@@ -333,50 +341,62 @@ namespace detail
 
         void append_(id_pair &list, chunk_info_t *i) noexcept
         {
+            // Insertion count is assigned to chunk_info_t *i atomically
             auto g = hold_dirty();
-            i->in_fast_list = (&list == &fast_list);
-            i->in_slow_list = (&list == &slow_list);
-            i->insertion_count0_ = i->insertion_count1_ = 0;
-            i->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+            chunk_info_t info;
+            info.in_fast_list = (&list == &fast_list);
+            info.in_slow_list = (&list == &slow_list);
+            info.insertion_count0_ = info.insertion_count1_ = 0;
+            info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
             if (list.end == UINT32_MAX) {
                 MONAD_DEBUG_ASSERT(list.begin == UINT32_MAX);
-                i->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+                info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = list.end = i->index(this);
-                return;
             }
-            MONAD_DEBUG_ASSERT((list.end & ~0xfffffU) == 0);
-            i->prev_chunk_id = list.end & 0xfffffU;
-            auto *tail = at_(list.end);
-            auto const insertion_count = tail->insertion_count() + 1;
-            MONAD_DEBUG_ASSERT(
-                tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-            i->insertion_count0_ = uint32_t(insertion_count) & 0x3ff;
-            i->insertion_count1_ = uint32_t(insertion_count >> 10) & 0x3ff;
-            list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
+            else {
+                MONAD_DEBUG_ASSERT((list.end & ~0xfffffU) == 0);
+                info.prev_chunk_id = list.end & 0xfffffU;
+                auto *tail = at_(list.end);
+                auto const insertion_count = tail->insertion_count() + 1;
+                MONAD_DEBUG_ASSERT(
+                    tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
+                info.insertion_count0_ = uint32_t(insertion_count) & 0x3ff;
+                info.insertion_count1_ =
+                    uint32_t(insertion_count >> 10) & 0x3ff;
+                list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
+            }
+            reinterpret_cast<std::atomic<chunk_info_t> *>(i)->store(
+                info, std::memory_order_release);
         }
 
         void prepend_(id_pair &list, chunk_info_t *i) noexcept
         {
+            // Insertion count is assigned to chunk_info_t *i atomically
             auto g = hold_dirty();
-            i->in_fast_list = (&list == &fast_list);
-            i->in_slow_list = (&list == &slow_list);
-            i->insertion_count0_ = i->insertion_count1_ = 0;
-            i->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+            chunk_info_t info;
+            info.in_fast_list = (&list == &fast_list);
+            info.in_slow_list = (&list == &slow_list);
+            info.insertion_count0_ = info.insertion_count1_ = 0;
+            info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
             if (list.begin == UINT32_MAX) {
                 MONAD_DEBUG_ASSERT(list.end == UINT32_MAX);
-                i->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+                info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = list.end = i->index(this);
-                return;
             }
-            MONAD_DEBUG_ASSERT((list.begin & ~0xfffffU) == 0);
-            i->next_chunk_id = list.begin & 0xfffffU;
-            auto *head = at_(list.begin);
-            auto const insertion_count = head->insertion_count() - 1;
-            MONAD_DEBUG_ASSERT(
-                head->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-            i->insertion_count0_ = uint32_t(insertion_count) & 0x3ff;
-            i->insertion_count1_ = uint32_t(insertion_count >> 10) & 0x3ff;
-            list.begin = head->prev_chunk_id = i->index(this) & 0xfffff;
+            else {
+                MONAD_DEBUG_ASSERT((list.begin & ~0xfffffU) == 0);
+                info.next_chunk_id = list.begin & 0xfffffU;
+                auto *head = at_(list.begin);
+                auto const insertion_count = head->insertion_count() - 1;
+                MONAD_DEBUG_ASSERT(
+                    head->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
+                info.insertion_count0_ = uint32_t(insertion_count) & 0x3ff;
+                info.insertion_count1_ =
+                    uint32_t(insertion_count >> 10) & 0x3ff;
+                list.begin = head->prev_chunk_id = i->index(this) & 0xfffff;
+            }
+            reinterpret_cast<std::atomic<chunk_info_t> *>(i)->store(
+                info, std::memory_order_release);
         }
 
         void remove_(chunk_info_t *i) noexcept

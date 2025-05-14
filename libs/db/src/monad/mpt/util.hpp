@@ -124,8 +124,7 @@ struct virtual_chunk_offset_t_hasher
 {
     constexpr size_t operator()(virtual_chunk_offset_t v) const noexcept
     {
-        v.spare = virtual_chunk_offset_t::max_spare;
-        return fnv1a_hash<virtual_chunk_offset_t>()(v);
+        return fnv1a_hash<file_offset_t>()(v.raw());
     }
 };
 
@@ -163,6 +162,7 @@ public:
         virtual_chunk_offset_t const offset)
         : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
     {
+        MONAD_DEBUG_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
     }
 
     void set_value(uint32_t v) noexcept

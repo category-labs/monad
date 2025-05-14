@@ -72,18 +72,27 @@ namespace
 // #define MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS 1
 #define MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS 1
 
+// Returns a virtual offset on successful translation; returns
+// INVALID_VIRTUAL_OFFSET if the input offset is invalid or the offset refers to
+// a chunk in the free list.
 virtual_chunk_offset_t
 UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
+    if (offset == INVALID_OFFSET) {
+        return INVALID_VIRTUAL_OFFSET;
+    }
     MONAD_ASSERT(offset.id < io->chunk_count());
-    auto const *ci = db_metadata()->at(offset.id);
-    // should never invoke a translation for offset in free list
-    MONAD_DEBUG_ASSERT(ci->in_fast_list || ci->in_slow_list);
-    return {
-        uint32_t(ci->insertion_count()),
-        offset.offset,
-        ci->in_fast_list,
-        offset.spare & virtual_chunk_offset_t::max_spare};
+    auto const chunk_info = db_metadata()->atomic_load_chunk_info(
+        offset.id, std::memory_order_acquire);
+    if (chunk_info.in_fast_list || chunk_info.in_slow_list) {
+        return virtual_chunk_offset_t{
+            uint32_t(chunk_info.insertion_count()),
+            offset.offset,
+            chunk_info.in_fast_list,
+            0};
+    }
+    // return invalid virtual offset when translate an offset from free list
+    return INVALID_VIRTUAL_OFFSET;
 }
 
 std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
@@ -358,8 +367,10 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     if (last_root_offset != INVALID_OFFSET) {
         auto const virtual_last_root_offset =
             physical_to_virtual(last_root_offset);
+        MONAD_DEBUG_ASSERT(virtual_last_root_offset != INVALID_VIRTUAL_OFFSET);
         if (db_metadata()->at(last_root_offset.id)->in_fast_list) {
             auto const virtual_fast_offset = physical_to_virtual(fast_offset);
+            MONAD_DEBUG_ASSERT(virtual_fast_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_fast_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
@@ -374,6 +385,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         }
         else if (db_metadata()->at(last_root_offset.id)->in_slow_list) {
             auto const virtual_slow_offset = physical_to_virtual(slow_offset);
+            MONAD_DEBUG_ASSERT(virtual_slow_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_slow_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "

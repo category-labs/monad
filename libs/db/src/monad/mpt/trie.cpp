@@ -431,6 +431,7 @@ struct read_single_child_receiver
         { // some sanity checks
             auto const virtual_child_offset =
                 aux->physical_to_virtual(child.offset);
+            MONAD_DEBUG_ASSERT(virtual_child_offset != INVALID_VIRTUAL_OFFSET);
             // child offset is older than current node writer's start offset
             MONAD_DEBUG_ASSERT(
                 virtual_child_offset <
@@ -750,9 +751,12 @@ Node::UniquePtr create_node_from_children_if_any(
                 MONAD_DEBUG_ASSERT(child.ptr);
                 child.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
+                auto const child_virtual_offset =
+                    aux.physical_to_virtual(child.offset);
+                MONAD_DEBUG_ASSERT(
+                    child_virtual_offset != INVALID_VIRTUAL_OFFSET);
                 std::tie(child.min_offset_fast, child.min_offset_slow) =
-                    calc_min_offsets(
-                        *child.ptr, aux.physical_to_virtual(child.offset));
+                    calc_min_offsets(*child.ptr, child_virtual_offset);
                 if (sm.compact()) {
                     MONAD_DEBUG_ASSERT(
                         child.min_offset_fast >= aux.compact_offset_fast);
@@ -1410,8 +1414,11 @@ void fillin_parent_after_expiration(
     else {
         auto const new_offset =
             async_write_node_set_spare(aux, *new_node, true);
+        auto const new_node_virtual_offset =
+            aux.physical_to_virtual(new_offset);
+        MONAD_DEBUG_ASSERT(new_node_virtual_offset != INVALID_VIRTUAL_OFFSET);
         auto const &[min_offset_fast, min_offset_slow] =
-            calc_min_offsets(*new_node, aux.physical_to_virtual(new_offset));
+            calc_min_offsets(*new_node, new_node_virtual_offset);
         MONAD_DEBUG_ASSERT(
             min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
             min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
@@ -1482,9 +1489,7 @@ void compact_(
     // otherwise rewrite to fast list
     // INVALID_OFFSET indicates node is being updated and not yet written, that
     // case we write to fast
-    auto const virtual_node_offset = node_offset == INVALID_OFFSET
-                                         ? INVALID_VIRTUAL_OFFSET
-                                         : aux.physical_to_virtual(node_offset);
+    auto const virtual_node_offset = aux.physical_to_virtual(node_offset);
     bool const rewrite_to_fast = [&aux, &virtual_node_offset] {
         if (virtual_node_offset == INVALID_VIRTUAL_OFFSET) {
             return true;
@@ -1541,8 +1546,10 @@ void try_fillin_parent_with_rewritten_node(
     }
     auto const new_offset =
         async_write_node_set_spare(aux, *tnode->node, tnode->rewrite_to_fast);
+    auto const new_node_virtual_offset = aux.physical_to_virtual(new_offset);
+    MONAD_DEBUG_ASSERT(new_node_virtual_offset != INVALID_VIRTUAL_OFFSET);
     compact_virtual_chunk_offset_t const truncated_new_virtual_offset{
-        aux.physical_to_virtual(new_offset)};
+        new_node_virtual_offset};
     // update min offsets in subtrie
     if (tnode->rewrite_to_fast) {
         min_offset_fast =

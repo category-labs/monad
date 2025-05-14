@@ -96,7 +96,7 @@ TEST(Validation, validate_enough_balance)
 
 TEST(Validation, successful_validation)
 {
-    using intx::operator"" _u256;
+    using intx::operator""_u256;
 
     static constexpr auto b{0x5353535353535353535353535353535353535353_address};
 

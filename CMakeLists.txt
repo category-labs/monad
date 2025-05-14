@@ -74,47 +74,6 @@ target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
 
-# rpmalloc
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  set(RPMALLOC_TOOLCHAIN
-      "gcc"
-      CACHE STRING "")
-  set(RPMALLOC_C_FLAGS ${CMAKE_C_FLAGS})
-elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-  set(RPMALLOC_TOOLCHAIN
-      "clang"
-      CACHE STRING "")
-  # TODO clang 19
-  set(RPMALLOC_C_FLAGS
-      "${CMAKE_C_FLAGS} -Wno-format -Wno-pre-c11-compat -Wno-unknown-warning-option"
-  )
-else()
-  message(FATAL_ERROR "unsupported compiler")
-endif()
-include(ExternalProject)
-ExternalProject_Add(
-  rpmalloc-external
-  GIT_REPOSITORY "https://github.com/mjansson/rpmalloc.git"
-  GIT_TAG "e4393ff85585d91400bcbad2e7266c011075b673" # 1.4.5
-  CONFIGURE_COMMAND
-    env CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}
-    CFLAGS=${RPMALLOC_C_FLAGS} CXXFLAGS=${CMAKE_CXX_FLAGS}
-    LDFLAGS=${CMAKE_EXE_LINKER_FLAGS} ./configure.py --toolchain
-    ${RPMALLOC_TOOLCHAIN}
-  BUILD_COMMAND ninja -v
-  BUILD_IN_SOURCE ON
-  BUILD_BYPRODUCTS
-    "${CMAKE_CURRENT_BINARY_DIR}/rpmalloc-external-prefix/src/rpmalloc-external/lib/linux/release/x86-64/librpmallocwrap.a"
-  INSTALL_COMMAND "")
-add_library(rpmallocwrap STATIC IMPORTED)
-set_property(
-  TARGET rpmallocwrap
-  PROPERTY
-    IMPORTED_LOCATION
-    "${CMAKE_CURRENT_BINARY_DIR}/rpmalloc-external-prefix/src/rpmalloc-external/lib/linux/release/x86-64/librpmallocwrap.a"
-)
-add_dependencies(rpmallocwrap rpmalloc-external)
-
 # quill
 add_subdirectory("third_party/quill")
 # TODO

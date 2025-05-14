@@ -35,9 +35,11 @@ Node::UniquePtr create_node_add_new_branch(
             if (aux.is_on_disk()) {
                 child.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
+                auto const child_virtual_offset =
+                    aux.physical_to_virtual(child.offset);
+                MONAD_DEBUG_ASSERT(child_virtual_offset.has_value());
                 std::tie(child.min_offset_fast, child.min_offset_slow) =
-                    calc_min_offsets(
-                        *child.ptr, aux.physical_to_virtual(child.offset));
+                    calc_min_offsets(*child.ptr, child_virtual_offset.value());
             }
             ++j;
         }
@@ -126,9 +128,11 @@ Node::UniquePtr copy_trie_impl(
         child.subtrie_min_version = calc_min_version(*child.ptr);
         if (aux.is_on_disk()) {
             child.offset = async_write_node_set_spare(aux, *child.ptr, true);
+            auto const child_virtual_offset =
+                aux.physical_to_virtual(child.offset);
+            MONAD_DEBUG_ASSERT(child_virtual_offset.has_value());
             std::tie(child.min_offset_fast, child.min_offset_slow) =
-                calc_min_offsets(
-                    *child.ptr, aux.physical_to_virtual(child.offset));
+                calc_min_offsets(*child.ptr, child_virtual_offset.value());
         }
         return make_node(
             static_cast<uint16_t>(1u << child.branch),

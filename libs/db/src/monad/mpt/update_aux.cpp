@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -72,18 +73,25 @@ namespace
 // #define MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS 1
 #define MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS 1
 
-virtual_chunk_offset_t
+// Returns a value on successful translation; returns std::nullopt if the input
+// offset is invalid or the offset refers to a chunk in the free list.
+std::optional<virtual_chunk_offset_t>
 UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
+    if (offset == INVALID_OFFSET) {
+        return std::nullopt;
+    }
     MONAD_ASSERT(offset.id < io->chunk_count());
     auto const *ci = db_metadata()->at(offset.id);
-    // should never invoke a translation for offset in free list
-    MONAD_DEBUG_ASSERT(ci->in_fast_list || ci->in_slow_list);
-    return {
-        uint32_t(ci->insertion_count()),
-        offset.offset,
-        ci->in_fast_list,
-        offset.spare & virtual_chunk_offset_t::max_spare};
+    if (ci->in_fast_list || ci->in_slow_list) {
+        return std::make_optional(virtual_chunk_offset_t{
+            uint32_t(ci->insertion_count()),
+            offset.offset,
+            ci->in_fast_list,
+            offset.spare & virtual_chunk_offset_t::max_spare});
+    }
+    // return nullopt when translate an offset from free list
+    return std::nullopt;
 }
 
 std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
@@ -356,32 +364,35 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     if (last_root_offset != INVALID_OFFSET) {
         auto const virtual_last_root_offset =
             physical_to_virtual(last_root_offset);
+        MONAD_DEBUG_ASSERT(virtual_last_root_offset.has_value());
         if (db_metadata()->at(last_root_offset.id)->in_fast_list) {
             auto const virtual_fast_offset = physical_to_virtual(fast_offset);
+            MONAD_DEBUG_ASSERT(virtual_fast_offset.has_value());
             MONAD_ASSERT_PRINTF(
-                virtual_fast_offset > virtual_last_root_offset,
+                *virtual_fast_offset > *virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
                 "offset=%d) is ahead of fast list offset (id=%d, "
                 "count=%d, offset=%d)",
                 last_root_offset.id,
-                virtual_last_root_offset.count,
+                virtual_last_root_offset->count,
                 last_root_offset.offset,
                 fast_offset.id,
                 fast_offset.offset,
-                virtual_fast_offset.count);
+                virtual_fast_offset->count);
         }
         else if (db_metadata()->at(last_root_offset.id)->in_slow_list) {
             auto const virtual_slow_offset = physical_to_virtual(slow_offset);
+            MONAD_DEBUG_ASSERT(virtual_slow_offset.has_value());
             MONAD_ASSERT_PRINTF(
-                virtual_slow_offset > virtual_last_root_offset,
+                *virtual_slow_offset > *virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
                 "offset=%d, is ahead of slow list offset (id=%d, "
                 "count=%d, offset=%d)",
                 last_root_offset.id,
-                virtual_last_root_offset.count,
+                virtual_last_root_offset->count,
                 last_root_offset.offset,
                 slow_offset.id,
-                virtual_slow_offset.count,
+                virtual_slow_offset->count,
                 slow_offset.offset);
         }
         else {
@@ -1019,10 +1030,16 @@ void UpdateAuxImpl::reset_node_writers()
     node_writer_slow =
         init_node_writer(db_metadata()->db_offsets.start_of_wip_offset_slow);
 
-    last_block_end_offset_fast_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_fast->sender().offset())};
-    last_block_end_offset_slow_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+    auto const fast_writer_virtual_offset =
+        physical_to_virtual(node_writer_fast->sender().offset());
+    MONAD_ASSERT(fast_writer_virtual_offset.has_value());
+    auto const slow_writer_virtual_offset =
+        physical_to_virtual(node_writer_slow->sender().offset());
+    MONAD_ASSERT(slow_writer_virtual_offset.has_value());
+    last_block_end_offset_fast_ =
+        compact_virtual_chunk_offset_t{fast_writer_virtual_offset.value()};
+    last_block_end_offset_slow_ =
+        compact_virtual_chunk_offset_t{slow_writer_virtual_offset.value()};
 }
 
 /* upsert() supports both on disk and in memory db updates. User should
@@ -1118,9 +1135,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         print_update_stats(version);
     }
     [[maybe_unused]] auto const curr_fast_writer_offset =
-        physical_to_virtual(node_writer_fast->sender().offset());
+        physical_to_virtual(node_writer_fast->sender().offset()).value();
     [[maybe_unused]] auto const curr_slow_writer_offset =
-        physical_to_virtual(node_writer_slow->sender().offset());
+        physical_to_virtual(node_writer_slow->sender().offset()).value();
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
         "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
@@ -1260,10 +1277,16 @@ void UpdateAuxImpl::move_trie_version_forward(
 
 void UpdateAuxImpl::update_disk_growth_data()
 {
+    auto const fast_writer_virtual_offset =
+        physical_to_virtual(node_writer_fast->sender().offset());
+    MONAD_DEBUG_ASSERT(fast_writer_virtual_offset.has_value());
+    auto const slow_writer_virtual_offset =
+        physical_to_virtual(node_writer_slow->sender().offset());
+    MONAD_DEBUG_ASSERT(slow_writer_virtual_offset.has_value());
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
+        fast_writer_virtual_offset.value()};
     compact_virtual_chunk_offset_t const curr_slow_writer_offset{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+        slow_writer_virtual_offset.value()};
     last_block_disk_growth_fast_ = // unused for speed control for now
         curr_fast_writer_offset - last_block_end_offset_fast_;
     last_block_disk_growth_slow_ =
@@ -1633,7 +1656,10 @@ void UpdateAuxImpl::collect_compaction_read_stats(
     chunk_offset_t const physical_node_offset, unsigned const bytes_to_read)
 {
 #if MONAD_MPT_COLLECT_STATS
-    auto const node_offset = physical_to_virtual(physical_node_offset);
+    auto const virtual_node_offset_opt =
+        physical_to_virtual(physical_node_offset);
+    MONAD_DEBUG_ASSERT(virtual_node_offset_opt.has_value());
+    auto const node_offset = virtual_node_offset_opt.value();
     if (compact_virtual_chunk_offset_t(node_offset) <
         (node_offset.in_fast_list() ? compact_offset_fast
                                     : compact_offset_slow)) {

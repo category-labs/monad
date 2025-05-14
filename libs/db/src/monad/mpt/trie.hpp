@@ -688,7 +688,8 @@ public:
     }
 
     // translate between virtual and physical addresses chunk_offset_t
-    virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;
+    std::optional<virtual_chunk_offset_t>
+        physical_to_virtual(chunk_offset_t) const noexcept;
 
     // age is relative to the beginning chunk's count
     std::pair<chunk_list, detail::unsigned_20>
@@ -1048,11 +1049,10 @@ using inflight_map_t = unordered_dense_map<
     chunk_offset_t_hasher>;
 
 using inflight_map_owning_t = unordered_dense_map<
-    chunk_offset_t,
-    std::pair< // pair: (max version of all requests, vector of continuations)
-        uint64_t, std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
-                      OwningNodeCursor &)>>>,
-    chunk_offset_t_hasher>;
+    virtual_chunk_offset_t,
+    std::vector<
+        std::function<MONAD_ASYNC_NAMESPACE::result<void>(OwningNodeCursor &)>>,
+    virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread
 // to work on
@@ -1068,7 +1068,8 @@ static_assert(alignof(fiber_find_request_t) == 8);
 static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 
 using NodeCache = static_lru_cache<
-    chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
+    virtual_chunk_offset_t, std::shared_ptr<Node>,
+    virtual_chunk_offset_t_hasher>;
 
 //! \warning this is not threadsafe, should only be called from triedb thread
 // during execution, DO NOT invoke it directly from a transaction fiber, as is

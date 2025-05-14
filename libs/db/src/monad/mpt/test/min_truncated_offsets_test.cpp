@@ -130,17 +130,18 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 parent->fnext(parent->to_child_index(branch_in_parent));
             auto const virtual_node_offset =
                 aux.physical_to_virtual(node_offset);
-            if (virtual_node_offset.in_fast_list()) {
+            MONAD_ASSERT(virtual_node_offset.has_value());
+            if (virtual_node_offset->in_fast_list()) {
                 root_to_node_records.push(
                     {&node,
-                     compact_virtual_chunk_offset_t{virtual_node_offset},
+                     compact_virtual_chunk_offset_t{*virtual_node_offset},
                      INVALID_COMPACT_VIRTUAL_OFFSET});
             }
             else {
                 root_to_node_records.push(
                     {&node,
                      INVALID_COMPACT_VIRTUAL_OFFSET,
-                     compact_virtual_chunk_offset_t{virtual_node_offset}});
+                     compact_virtual_chunk_offset_t{*virtual_node_offset}});
             }
             return true;
         }
@@ -154,10 +155,13 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             root_to_node_records.pop();
             if (root_to_node_records.empty()) { // node is root
                 // verify that offset equals calculated one in traversal
+                auto const virtual_root_offset =
+                    aux.physical_to_virtual(aux.get_latest_root_offset());
+                MONAD_ASSERT(virtual_root_offset.has_value());
                 auto [node_branch_min_fast_off, node_branch_min_slow_off] =
                     calc_min_offsets(
                         *const_cast<Node *>(&node),
-                        aux.physical_to_virtual(aux.get_latest_root_offset()));
+                        virtual_root_offset.value());
                 EXPECT_EQ(
                     node_record.test_min_offset_fast, node_branch_min_fast_off);
                 EXPECT_EQ(

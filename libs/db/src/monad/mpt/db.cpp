@@ -490,7 +490,9 @@ struct OnDiskWithWorkerThreadImpl
         {
             inflight_map_owning_t inflight;
             NodeCache node_cache{
-                node_lru_size, chunk_offset_t::invalid_value(), nullptr};
+                node_lru_size,
+                virtual_chunk_offset_t::invalid_value(),
+                nullptr};
 
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<find_owning_cursor_result_type>>

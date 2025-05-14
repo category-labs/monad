@@ -11,11 +11,11 @@
 #include <monad/core/fmt/int_fmt.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/account_state.hpp>
 #include <monad/state3/version_stack.hpp>
 #include <monad/types/incarnation.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.h>
 

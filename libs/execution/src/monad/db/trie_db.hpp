@@ -8,12 +8,12 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/state_machine.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <nlohmann/json.hpp>
 

@@ -6,14 +6,15 @@
 #include <monad/core/int.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
+#include <monad/execution/baseline_execute.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/explicit_evmc_revision.hpp>
 #include <monad/execution/precompiles.hpp>
 #include <monad/state3/state.hpp>
-#include <monad/vm/evmone/baseline_execute.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+
+#include <evmone/baseline.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -211,7 +212,8 @@ evmc::Result create(
         .code_size = 0,
     };
 
-    auto const input_code_analysis = analyze({msg.input_data, msg.input_size});
+    auto const input_code_analysis =
+        evmone::baseline::analyze({msg.input_data, msg.input_size}, false);
     auto result = baseline_execute(m_call, rev, host, input_code_analysis);
 
     if (result.status_code == EVMC_SUCCESS) {

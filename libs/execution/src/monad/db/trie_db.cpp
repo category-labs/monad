@@ -20,6 +20,7 @@
 #include <monad/core/rlp/withdrawal_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
+#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -33,7 +34,6 @@
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/types/incarnation.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
 
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>

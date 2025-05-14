@@ -6,7 +6,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+#include <monad/execution/code_analysis.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"

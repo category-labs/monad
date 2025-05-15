@@ -217,11 +217,21 @@ This spec would make more sense if the function had name `someEvenNumberBasedOn`
 
 ## Specs of functions passing arguments by reference
 
+`doubleInPlace` is similar to `twice` except the the argument is passed by reference and the result is stored in the same place.
 ```c++
 void doubleInPlace (uint & x) {x=2*x;}
 ```
+Below is its spec.
 
-
-
-
+```gallina
+  cpp.spec "doubleInPlace(unsigned int &)" as doubleInPlace_spec with (
+     \arg{xloc:ptr} "x" (Vptr xloc)
+     \pre{xv:Z} xloc |-> primR "unsigned int" (cQp.mut 1) (Vint xv)
+     \post xloc |-> primR "unsigned int" (cQp.mut 1) (Vint ((xv*2) `mod` (2^32)))
+      ).
+```
+Unlike in `twice(unsigned int)`, the argument now contains not an integer value but a memory location, say `xloc`.
+In the C++ axiomatization, an argument passed by reference is similar to an argument passed as a pointer.
+The `\pre` line then asserts full (1) ownership of `xloc` and asserts that it contains a primitive integer, say `xv`.
+The postcondition returns all that ownership of `xloc` but asserts the updated (twice) value.
 

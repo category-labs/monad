@@ -12,9 +12,19 @@ bluerock.lang.cpp.syntax.stmt.Stmt is an Inductive type I have defined for C++ s
 Write a set of mutually recursive pretty-printer functions for all such types.
 These Gallina functions should return `PrimString.string`.
 
-+++ QUERIES
-Print bluerock.lang.cpp.syntax.stmt.Stmt.
++++ FILES
+../../fmai/prompts/sep.md
+
 *)
+
+
+
+
+
+
+
+
+
 
 Print val.
 

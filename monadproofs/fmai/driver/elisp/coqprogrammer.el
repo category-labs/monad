@@ -478,26 +478,29 @@ Lines before the first +++ belong to PROMPT.  Order is free."
   "Run QUERY-BLOCK through `query-coq` and wrap under a markdown header."
   (unless (string-empty-p query-block)
     (concat "\n\n## Results of some relevant queries\n"
-            (query-coq query-block))))
-
-;;;; ------------------------------------------------------------
-;;;;  Helper: read background files (fatal if unreadable)
-;;;; ------------------------------------------------------------
+	                 (query-coq query-block))))
 
 (defun coq-prog--format-file-blocks (paths base-dir)
-  "Return markdown for each file in PATHS relative to BASE-DIR.
+  "Concatenate contents of listed Markdown FILES for the GPT prompt.
 
-If any file is unreadable, raise an error (do not continue silently)."
-  (mapconcat
-   (lambda (rel)
-     (let ((abs (expand-file-name rel base-dir)))
-       (unless (file-readable-p abs)
-         (error "Background file `%s` is missing or unreadable" rel))
-       (with-temp-buffer
-         (insert-file-contents abs)
-         (format "\n\n### Background file: %s\n%s"
-                 rel (string-trim (buffer-string))))))
-   paths ""))
+• `paths` – list of strings (may include blank lines).
+• `base-dir` – directory against which relative paths are resolved.
+• Every non-blank entry must name a regular, readable file;
+  otherwise signal `error` (no silent failure).
+
+Each file’s text is preceded by a single newline; no extra headers."
+  (let ((nonblank
+         (seq-filter (lambda (s) (not (string-empty-p (string-trim s))))
+                     paths)))
+    (mapconcat
+     (lambda (rel)
+       (let* ((abs (expand-file-name (string-trim rel) base-dir)))
+         (unless (and (file-regular-p abs) (file-readable-p abs))
+           (error "Background file `%s` is missing or unreadable" rel))
+         (with-temp-buffer
+           (insert-file-contents abs)
+           (concat "\n" (string-trim (buffer-string))))))
+     nonblank "")))
 
 ;;;; ------------------------------------------------------------
 ;;;;  Shorter coq-programmer-first-prompt (uses new helpers)

@@ -1,6 +1,8 @@
 This is a task about proving correctness of a C++ function in a separation logic we have setup in Coq for reasoning about C++ programs. This includes Coq definitions of C++ syntax and an axiomatic weakest precondition semantics.
 
+
 # Separtion Logic
+[FIXME: an updated version is in sep.md]
 First, some details about the separation logic.
 You already know about Prop, the type of logical propositions in Coq.
 For example. True -> False, True /\ False, forall n:nat, n=n, exists n:nat, n=n are propositions in Coq of type Prop.

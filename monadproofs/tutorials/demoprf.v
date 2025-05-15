@@ -77,14 +77,15 @@ Section with_Sigma.
   Open Scope Z_scope.
   Set Nested Proofs Allowed.
 
-  
+
   (* /root/fv-workspace/monad/proofs/demo.cpp *)
   cpp.spec "foo()" as foo_spec with (
-        \pre{xv:Z} _global "x" |-> primR uint (1/2) xv (* forall xv .. *)
-        \pre _global "y" |-> anyR uint 1
-        \post _global "y" |-> primR uint 1 (xv+1)
-              ** _global "x" |-> primR uint (1/2)  xv
-    ).
+        \pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
+        \pre _global "y" |-> anyR uint (cQp.mut 1)
+        \post _global "y" |-> primR uint (cQp.mut 1) (xv+1)
+              ** _global "x" |-> primR uint (cQp.mut (1/2))  xv
+      ).
+  Print foo_spec.
   (* fractions ∈ (0,1], write needs 1, read any*)
 
   (* what is wrong with the spec above? *)
@@ -151,9 +152,9 @@ how we lose:
   Hint Resolve plogic.learnable_primR : br_opacity.
 
   cpp.spec "foo()" as foo_spec_correct with (
-        \prepost{(xv:N) (q:Qp)} _global "x" |-> primR uint q xv
-        \pre{yv:N} _global "y" |-> primR uint 1 yv
-        \post _global "y" |-> primR uint 1 ((xv+1) `mod` (2^32))%N
+        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint q xv
+        \pre{yv:Z} _global "y" |-> primR uint 1 yv
+        \post _global "y" |-> primR uint 1 ((xv+1) `mod` (2^32))
       ).
 
   Lemma prf: denoteModule demo.module |-- foo_spec_correct.
@@ -216,7 +217,7 @@ how we lose:
       ** [| Znumtheory.prime bv |].
 
   Example conjP (P Q: Prop) := P /\ Q.
-  Example conjmpred (P Q: mpred) := P ** Q.
+  Example conjmpred (P Q: mpred) : mpred := P ** Q.
 
   (** -> is logical implication, aka => in math textbooks *)
   Lemma propDupl (P:Prop) : P -> P /\ P. Proof. tauto. Qed.
@@ -264,8 +265,8 @@ how we lose:
   (* [c198,206] *)
 
   cpp.spec "fooptr()" as ptrspec with
-      (\pre _global "ptr" |-> anyR "int *" 1
-       \post _global "ptr" |-> primR "int *" 1 (Vptr (_global "a")) 
+      (\pre _global "ptr" |-> anyR "int*" 1
+       \post _global "ptr" |-> primR "int*" 1 (Vptr (_global "a")) 
       ).
   (* [c209,241] *)
 
@@ -276,7 +277,40 @@ how we lose:
   Qed.
   (** "all" theorem statements in Coq have type Prop *)
   Example stm (L R : mpred): Prop := L |-- R.
+  
+  cpp.spec "twice(unsigned int)" as twice_weak_spec with (
+     \arg "x" (Vint 1)
+     \post [Vint 2] emp
+      ).
+  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
+      ).
+  
+  cpp.spec "twice(unsigned int)" as twice_spec with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post [Vint ((xv*2) `mod` (2^32))] emp
+      ).
+  (* no ownership received/returned *)
 
+  Lemma twice_proof: denoteModule module |-- twice_spec.
+  Proof using.
+    verify_spec'.
+    ego.
+  Qed.
+  
+  Lemma twice2_proof: denoteModule module |-- twice_weak_spec.
+  Proof using.
+    verify_spec'.
+    ego.
+  Qed.
+
+  cpp.spec "doubleInPlace(unsigned int &)" as doubleInPlace_spec with (
+     \arg{xloc:ptr} "x" (Vptr xloc)
+     \pre{xv:Z} xloc |-> primR "unsigned int" (cQp.mut 1) (Vint xv)
+     \post xloc |-> primR "unsigned int" (cQp.mut 1) (Vint ((xv*2) `mod` (2^32)))
+      ).
+  
   Lemma moreThanLogicalImpl :
     _global "x" |-> primR "int" (1/3) 0 |--
     _global "x" |-> primR "int" (1/2) 0.

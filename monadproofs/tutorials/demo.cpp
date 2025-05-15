@@ -13,16 +13,21 @@ void foo() {
 }
 
 int a = 0;
-int b = 0;
-void sfoo() {
-    b=a+1;
-}
-
 int *ptr;
 
 void fooptr () {
     ptr = &a;
 }
+
+int b = 0;
+void sfoo() {
+    b=a+1;
+}
+
+
+
+uint twice (uint x) {return 2*x;}
+void doubleInPlace (uint & x) {x=2*x;}
 
 /*
  pre |-- loopinv 

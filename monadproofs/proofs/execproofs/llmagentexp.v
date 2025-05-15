@@ -16,11 +16,8 @@ These Gallina functions should return `PrimString.string`.
 Print bluerock.lang.cpp.syntax.stmt.Stmt.
 *)
 
+Print val.
 
-
-
-
-
-
+Print WpSpec.
 
 

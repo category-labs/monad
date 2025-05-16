@@ -27,6 +27,16 @@ Open Scope pstring_scope.
 Set Printing FullyQualifiedNames.
 
 
+```gallina
+  Definition foo1: nat :=1.
+  Axiom foo: nat.
+  Inductive bar :=
+    |foot.
+
+```
+    
+
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : demo.module ⊧ CU}.
@@ -34,6 +44,10 @@ Section with_Sigma.
 
   Open Scope Z_scope.
   Set Nested Proofs Allowed.
+  Axiom foo: nat.
+  Definition foo1: nat :=1.
+  Inductive bar :=
+    |foot.
 
 
 (*

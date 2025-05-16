@@ -286,6 +286,28 @@ The match is *strict*:
             code))                               ;mismatching ‘End’
       code)))                                    ;no leading ‘Module’
 
+(defconst coq-prog--infomsg-axiom-re
+  ;;   1-identifier                 2-status
+  "^[[:space:]\n]*\\(`?\\(?:[[:word:][:digit:]_.'$]\\|[^[:ascii:][:cntrl:]]\\)+`?\\)[[:space:]\n]*is[[:space:]\n]*\\(declared\\|assumed\\)\\b"
+  "Matches text inside <infomsg> that announces an axiom.")
+
+
+
+(defun coq-prog--axioms-since (pos)
+  "Return a list of axiom names logged in *coq* **after** buffer position POS.
+
+It parses the slice with `libxml-parse-html-region` and extracts every
+<infomsg> whose text matches `coq-prog--infomsg-axiom-re`."
+  (with-current-buffer "*coq*"
+    (let* ((dom   (libxml-parse-html-region pos (point-max)))
+           (nodes (dom-by-tag dom 'infomsg))
+           (ax    '()))
+      (dolist (n nodes)
+        (let ((txt (string-trim (dom-text n))))
+          (when (string-match coq-prog--infomsg-axiom-re txt)
+            (push (match-string 1 txt) ax))))
+      (nreverse ax))))
+
 (defun gpt-handle-coq-output (gpt-text)
   "Interact with Coq according to GPT-TEXT and return the next prompt."
   (set-buffer proof-script-buffer)
@@ -303,12 +325,14 @@ The match is *strict*:
       ("gallina"
        (let ((inhibit-read-only t)
              (beg (point))
-	     (modbody (concat "Module LLMSOLN.\n" (trim-module body) "\n End LLMSOLN."))
+	     (log-start (with-current-buffer "*coq*"
+			  (point-max)))
 	     )
-         (insert modbody "\n")
+         (insert body "\n")
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
+	   (message "axioms: %s" (coq-prog--axioms-since log-start))
            (cond
             ;; ---------- compile error ----------
             ((eq proof-shell-last-output-kind 'error)
@@ -316,7 +340,7 @@ The match is *strict*:
                    (cons (copy-marker beg) (copy-marker end)))
              (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
 
-            ;; ---------- compiles but has Admitted ----------
+            ;; ---------- compiles but has Admitted ----------S
             ((coq-programmer--buffer-has-admit-p body)
              (setq coq-programmer--pending-error-region
                    (cons (copy-marker beg) (copy-marker end)))

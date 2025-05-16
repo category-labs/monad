@@ -5,7 +5,6 @@ Require Import Bool.
 Require Import List.
 Require Import String.
 Require Import Program.Wf.
-
 Require Import EVMOpSem.Lem.coqharness.
 
 Open Scope nat_scope.

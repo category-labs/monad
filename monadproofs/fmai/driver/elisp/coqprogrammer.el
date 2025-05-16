@@ -404,15 +404,6 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ")
 
-(defun coq-programmer-first-prompt2 (core-prompt)
-  (concat coq-programmer-preamble "\n\n\n# Current Task\n" core-prompt coq-programmer-response-format)
-  )
-
-(defun coq-programmer-first-prompt-interactive ()
-  (let ((core-prompt (read-string "You: ")))
-    (coq-programmer-first-prompt2 core-prompt)
-    )
-  )
 
 (defun coq-comment-start ()
   (interactive)
@@ -526,12 +517,9 @@ outside the comment."
                ;; 2. run queries / read files (fatal on error)
                (query-blk  (coq-prog--format-query-results queries))
                (files-blk (coq-prog--format-file-blocks
-                           files (file-name-directory (buffer-file-name))))
-               ;; 3. assemble
-               (core      (concat prompt query-blk files-blk)))
-    ;; 4. move point after comment & insert newline
-    ;; 5. hand off
-    (coq-programmer-first-prompt2 core)))
+                           files (file-name-directory (buffer-file-name)))))
+    (concat coq-programmer-preamble files-blk "\n\n\n# Current Task\n" prompt query-blk coq-programmer-response-format)
+    ))
 
 
 

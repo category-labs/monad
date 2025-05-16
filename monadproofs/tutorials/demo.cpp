@@ -29,6 +29,13 @@ void sfoo() {
 uint twice (uint x) {return 2*x;}
 void doubleInPlace (uint & x) {x=2*x;}
 
+
+void swap(int* p, int* q) {
+  auto t = *p;
+  *p = *q;
+  *q = t;
+}
+
 /*
  pre |-- loopinv 
  loopinv ** [| loopcond |] {loopbody} loopinv

@@ -666,18 +666,16 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-The spec is straightforward: we take two pointer‐arguments, say p1 and q1, both of type ptr, and universally quantify the two integers x and y currently stored at *p1 and *q1.  Since the body of swap both reads and writes each cell, we require full (fraction 1) ownership of each pre‐ and post‐swap.  The postcondition simply exchanges the two values.
+I’ll specify `swap(int*, int*)` by first binding the two pointer‐arguments to Gallina `ptr` variables, then requiring full ownership of the ints they point to (with values `pval` and `qval`), and finally in the post‐condition returning that ownership but swapping the two stored values.
 
 ```gallina
 cpp.spec "swap(int*, int*)" as swap_spec with (
-  \arg{(p1:ptr) (q1:ptr)} "p" (Vptr p1)
-  \arg           "q" (Vptr q1)
-  \pre{(x:Z) (y:Z)}
-    p1 |-> primR "int" (cQp.mut 1) (Vint x)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint y)
-  \post
-    p1 |-> primR "int" (cQp.mut 1) (Vint y)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint x)
+  \arg{ploc:ptr} "p" (Vptr ploc)
+  \arg{qloc:ptr} "q" (Vptr qloc)
+  \pre{pval:Z} ploc |-> primR "int"%cpp_type (cQp.mut 1) pval
+  \pre{qval:Z} qloc |-> primR "int"%cpp_type (cQp.mut 1) qval
+  \post ploc |-> primR "int"%cpp_type (cQp.mut 1) qval
+  \post qloc |-> primR "int"%cpp_type (cQp.mut 1) pval
 ).
 ```
 
@@ -685,44 +683,26 @@ cpp.spec "swap(int*, int*)" as swap_spec with (
 
 Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
 
-Toplevel input, characters 0-15:
-> Module LLMSOLN.
-> ^^^^^^^^^^^^^^^
-Error: Modules and Module Types are not allowed inside sections.
+Toplevel input, characters 295-300:
+>   \post qloc |-> primR "int"%cpp_type (cQp.mut 1) pval
+>   ^^^^^
+Error: Syntax error: ')' expected after [lconstr] (in [elpi_cmd_arg]).
 
 
 ## Assistant 2
 
-Coq is complaining because I accidentally wrapped the spec inside
+Coq is complaining because in our little ELPI‐DSL for `cpp.spec` you can only write a single `\post` clause—any extra `\post` is a syntax error.  To assert two post‐conditions you must combine them with `**` under the same `\post`, not write two `\post` lines.  
 
-  Module LLMSOLN.
-  …
-  End LLMSOLN.
-
-but the proof‐script is already inside a Section, and Coq does not allow nested Module/Module‐Type blocks inside a Section. The fix is simply to drop the `Module … End` wrapper and emit the `cpp.spec` declaration at top‐level.
-
-Here is the complete (and corrected) spec. Note that we omit any `Module` block and give the spec directly:
+Here is the corrected spec, which binds both pointer arguments, demands full ownership of the two ints they point to, and in one `\post` returns that ownership but swaps the stored values:
 
 ```gallina
 cpp.spec "swap(int*, int*)" as swap_spec with (
-  \arg{(p1:ptr) (q1:ptr)} "p" (Vptr p1)
-  \arg           "q" (Vptr q1)
-  \pre{(x:Z) (y:Z)}
-    p1 |-> primR "int" (cQp.mut 1) (Vint x)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint y)
-  \post
-    p1 |-> primR "int" (cQp.mut 1) (Vint y)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint x)
+  \arg{ploc:ptr} "p" (Vptr ploc)
+  \arg{qloc:ptr} "q" (Vptr qloc)
+  \pre{pval:Z} ploc |-> primR "int"%cpp_type (cQp.mut 1) pval
+  \pre{qval:Z} qloc |-> primR "int"%cpp_type (cQp.mut 1) qval
+  \post ploc |-> primR "int"%cpp_type (cQp.mut 1) qval
+        ** qloc |-> primR "int"%cpp_type (cQp.mut 1) pval
 ).
 ```
-
-## User 3
-
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
-
-Toplevel input, characters 0-15:
-> Module LLMSOLN.
-> ^^^^^^^^^^^^^^^
-Error: Modules and Module Types are not allowed inside sections.
-
 

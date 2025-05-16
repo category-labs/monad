@@ -27,37 +27,12 @@ Open Scope pstring_scope.
 Set Printing FullyQualifiedNames.
 
 
-Definition foo1: nat :=1.
-  Axiom foo: nat.
-  Inductive bar :=
-    |foot.
-
-  Search nat.
-  
-```gallina
-  Definition foo1: nat :=1.
-  Axiom foo: nat.
-  Inductive bar :=
-    |foot.
-
-  ```
-    messages buffer:
-axioms: (foo)
-    
-
-
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : demo.module ⊧ CU}.
   Coercion cQpc : Qp >-> cQp.t.
 
   Open Scope Z_scope.
-  Set Nested Proofs Allowed.
-  Axiom foo: nat.
-  Definition foo1: nat :=1.
-  Inductive bar :=
-    |foot.
-
 
 (*
 Write a spec in Coq for the following C++ function (using cpp.spec):
@@ -73,18 +48,21 @@ void swap(int* p, int* q) {
 ../../fmai/prompts/sep.md
 ../../fmai/prompts/specs.md
 
-*)
+ *)
 cpp.spec "swap(int*, int*)" as swap_spec with (
-  \arg{(p1:ptr) (q1:ptr)} "p" (Vptr p1)
-  \arg           "q" (Vptr q1)
-  \pre{(x:Z) (y:Z)}
-    p1 |-> primR "int" (cQp.mut 1) (Vint x)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint y)
-  \post
-    p1 |-> primR "int" (cQp.mut 1) (Vint y)
-  ** q1 |-> primR "int" (cQp.mut 1) (Vint x)
+  \arg{ploc:ptr} "p" (Vptr ploc)
+  \arg{qloc:ptr} "q" (Vptr qloc)
+  \pre{pval:Z} ploc |-> primR "int"%cpp_type (cQp.mut 1) pval
+  \pre{qval:Z} qloc |-> primR "int"%cpp_type (cQp.mut 1) qval
+  \post ploc |-> primR "int"%cpp_type (cQp.mut 1) qval
+        ** qloc |-> primR "int"%cpp_type (cQp.mut 1) pval
 ).
- End LLMSOLN.
+Search (bluerock.auto.cpp.database.spec.SpecFor.C "swap(int*, int* )").
+
+(* cpp.spec declares the following instance, which can be used for search
+Print swap_spec_spec_instance.
+Search (bluerock.auto.cpp.database.spec.SpecFor.C "swap(int*, int* )").
+*)
 
 
 
@@ -96,12 +74,5 @@ cpp.spec "swap(int*, int*)" as swap_spec with (
 
 
 
-
-
-
-
-Print val.
-
-Print WpSpec.
 
 

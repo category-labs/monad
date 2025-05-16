@@ -27,13 +27,13 @@ Open Scope pstring_scope.
 Set Printing FullyQualifiedNames.
 
 
-
 Definition foo1: nat :=1.
   Axiom foo: nat.
   Inductive bar :=
     |foot.
 
-
+  Search nat.
+  
 ```gallina
   Definition foo1: nat :=1.
   Axiom foo: nat.

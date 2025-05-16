@@ -230,6 +230,7 @@ Assumes `Set Short Module Printing.` is in effect."
         (read-only-mode 1)
         (display-buffer (current-buffer))))))
 
+;; DELETE
 (defun coq-prog-search-queries-for-module-params (mod)
   "Build `Search` queries for every `Parameter` in the module at point.
 
@@ -261,6 +262,32 @@ If no parameters (or no types) are found, it returns nil."
       (if (string-empty-p queries)
           ""
         (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries\n\n"  (query-coq queries)))))
+
+
+(defun coq-prog-search-queries-for-axioms (names)
+  "Build `Search` queries for each axiom NAME (a list of strings).
+
+Looks up the type of each name using `typeOf`, then builds:
+  Search (type) (* for hole `name` *) .
+
+Returns a formatted string of all queries + their Coq responses.
+
+If no types can be resolved, returns the empty string."
+  (let* ((queries
+          (string-join
+           (delq nil
+                 (mapcar (lambda (name)
+                           (let ((ty (typeOf name)))
+                             (when ty
+                               (format "Search (%s) (* for hole `%s` *) ." ty name))))
+                         names))
+           "\n")))
+    (if (string-empty-p queries)
+        ""
+      (concat "\n\nBelow, I ran some queries to help you find out whether "
+              "some of the holes are already implemented somewhere in the "
+              "available libraries.\n\n"
+              (query-coq queries)))))
 
 
 (defun coq-programmer--build-admit-prompt ()
@@ -337,28 +364,29 @@ It parses the slice with `libxml-parse-html-region` and extracts every
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
-	   (message "axioms: %s" (coq-prog--axioms-since log-start))
-           (cond
-            ;; ---------- compile error ----------
-            ((eq proof-shell-last-output-kind 'error)
-             (setq coq-programmer--pending-error-region
-                   (cons (copy-marker beg) (copy-marker end)))
-             (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
+	   (let* ((new-axioms (coq-prog--axioms-since log-start))
+		  )
+             (cond
+              ;; ---------- compile error ----------
+              ((eq proof-shell-last-output-kind 'error)
+               (setq coq-programmer--pending-error-region
+                     (cons (copy-marker beg) (copy-marker end)))
+               (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
 
-            ;; ---------- compiles but has Admitted ----------S
-            ((coq-programmer--buffer-has-admit-p body)
-             (setq coq-programmer--pending-error-region
-                   (cons (copy-marker beg) (copy-marker end)))
-             (setq coq-programmer--last-working-with-holes gpt-text)  ;; NEW
-             (coq-programmer--build-admit-prompt))
+              ;; ---------- compiles but has Admitted ----------S
+              ((consp new-axioms)
+               (setq coq-programmer--pending-error-region
+                     (cons (copy-marker beg) (copy-marker end)))
+               (setq coq-programmer--last-working-with-holes gpt-text)  ;; NEW
+               (concat coq-programmer--admit-prompt (coq-prog-search-queries-for-axioms new-axioms)))
 
-            ;; ---------- perfect success ----------
-            (t
-             (setq coq-programmer--last-working-with-holes nil)   ;; NEW
-             "Success098")))))
+              ;; ---------- perfect success ----------
+              (t
+               (setq coq-programmer--last-working-with-holes nil)   ;; NEW
+               "Success098"))))))
 
-      ;; =================================================  Coq query
-      ("coqquery" (query-coq (string-trim body)))
+       ;; =================================================  Coq query
+       ("coqquery" (query-coq (string-trim body)))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))

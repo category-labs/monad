@@ -1,4 +1,7 @@
 
+
+(setq proof-shell-silent-threshold 10000) ;;; TODO: do this locally, in coq-programmer-loop
+
 ;; ;; Buffer-local list that stores the alternating user / assistant messages.
 ;; (defvar-local gpt-4o-conversation nil
 ;;   "Conversation history for `gpt-4o-chat'.  Each element is a string, 
@@ -302,6 +305,8 @@ It parses the slice with `libxml-parse-html-region` and extracts every
     (let* ((dom   (libxml-parse-html-region pos (point-max)))
            (nodes (dom-by-tag dom 'infomsg))
            (ax    '()))
+      (message "DOM: %s" dom)
+      (message "Raw Coq XML slice:\n%s" (buffer-substring-no-properties pos (point-max)))
       (dolist (n nodes)
         (let ((txt (string-trim (dom-text n))))
           (when (string-match coq-prog--infomsg-axiom-re txt)

@@ -7,13 +7,13 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex_literal.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <category/core/result.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/unaligned.hpp>
-#include <category/core/fiber/priority_pool.hpp>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
@@ -927,13 +928,67 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     remove(dbname);
 }
 
-TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
+TEST_F(
+    OnDiskDbWithFileFixture, read_only_db_traverse_fail_upon_version_expiration)
 {
+    struct TraverseMachinePruneHistory final : public TraverseMachine
+    {
+        std::function<void(void)> upsert_callback;
+        Nibbles path;
+        bool has_done_callback;
+
+        explicit TraverseMachinePruneHistory(std::function<void(void)> callback)
+            : upsert_callback(callback)
+            , path{}
+            , has_done_callback{false}
+        {
+        }
+
+        virtual bool down(unsigned char branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                return true;
+            }
+            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            if (path.nibble_size() == KECCAK256_SIZE * 2 &&
+                has_done_callback == false) {
+                upsert_callback();
+                has_done_callback = true;
+            }
+
+            return true;
+        }
+
+        virtual void up(unsigned char branch, Node const &node) override
+        {
+            auto const path_view = NibblesView{path};
+            auto const rem_size = [&] {
+                if (branch == INVALID_BRANCH) {
+                    MONAD_ASSERT(path_view.nibble_size() == 0);
+                    return 0;
+                }
+                int const rem_size = path_view.nibble_size() - 1 -
+                                     node.path_nibble_view().nibble_size();
+                MONAD_ASSERT(rem_size >= 0);
+                MONAD_ASSERT(
+                    path_view.substr(static_cast<unsigned>(rem_size)) ==
+                    concat(branch, node.path_nibble_view()));
+                return rem_size;
+            }();
+            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<TraverseMachinePruneHistory>(*this);
+        }
+    };
+
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
     constexpr size_t nkeys = 20;
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
-
     uint64_t version = 0;
+
     auto upsert_once = [&] {
         UpdateList ls;
         for (auto &u : updates_alloc) {
@@ -942,36 +997,24 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
         db.upsert(std::move(ls), version);
     };
 
-    std::atomic<bool> done{false};
-
-    std::thread writer([&]() {
-        while (!done.load(std::memory_order_acquire)) {
-            upsert_once();
-            ++version;
-        }
-    });
-
+    while (version < DBTEST_HISTORY_LENGTH - 1) {
+        upsert_once();
+        ++version;
+    }
+    // traverse
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    size_t num_leaves_traversed = 0;
-    DummyTraverseMachine traverse_machine{num_leaves_traversed};
-
-    while (!ro_db.load_root_for_version(0).is_valid()) {
-    } // first block data is written to db by writer thread
-    auto const root_cursor = ro_db.load_root_for_version(0);
-    ASSERT_TRUE(root_cursor.is_valid());
-    // read thread loop to traverse block 0 until it gets erased
-    while (ro_db.traverse(root_cursor, traverse_machine, 0)) {
-        EXPECT_EQ(num_leaves_traversed, nkeys);
-        traverse_machine.reset();
-    }
-
-    done.store(true, std::memory_order_release);
-    writer.join();
-    EXPECT_TRUE(version >= ro_db.get_history_length())
-        << "Version " << version << " should be gte"
-        << ro_db.get_history_length();
+    TraverseMachinePruneHistory traverse_machine{upsert_once};
+    auto const read_version = ro_db.get_earliest_version();
+    ASSERT_EQ(read_version, 0);
+    auto const root_cursor = ro_db.load_root_for_version(read_version);
+    ASSERT_EQ(
+        ro_db.traverse(root_cursor, traverse_machine, read_version), true);
+    EXPECT_EQ(ro_db.get_earliest_version(), read_version);
+    ++version;
+    ASSERT_EQ(
+        ro_db.traverse(root_cursor, traverse_machine, read_version), false);
+    EXPECT_GT(ro_db.get_earliest_version(), read_version);
 }
 
 TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)

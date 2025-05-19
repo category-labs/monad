@@ -15,11 +15,6 @@ RUN apt update && apt install -y \
   software-properties-common \
   wget
 
-RUN add-apt-repository -y ppa:ubuntu-toolchain-r/test
-RUN add-apt-repository -y ppa:mhier/libboost-latest
-
-RUN apt update && apt install -y libstdc++-13-dev
-
 RUN apt update && apt install -y \
   libboost-atomic1.83.0 \
   libboost-container1.83.0 \

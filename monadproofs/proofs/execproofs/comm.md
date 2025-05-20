@@ -1032,50 +1032,53 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-I will define a polymorphic `Rep`‐predicate 
-
-  uint256R : cQp.t → list Z → Rep
-
-which (1) asserts that the list has exactly 4 limbs, (2) lays them out as a little‐endian 64‐bit array, and (3) wraps up the C++ identity with `structR "uint256"`.  Then I give a pure Gallina function `add256` which adds two 256‐bit numbers in 4×64‐bit limbs (dropping the final carry), and finally I call `cpp.spec` on the member‐function `"uint256::add(const uint256&)"`, quantifying over the “this” pointer’s limb‐list `alist`, the argument pointer’s limb‐list `blist`, and the two ownership‐fractions `q r`.  The precondition asks for full ownership of `this->data` and fractional (even read‐only) ownership of `other.data`, and the postcondition returns the same ownerships but with `this` updated to `alist+blist` modulo 2^256.
+Here is a self‐contained solution.  We first define a small pure Gallina computation for 64×4–limb addition (mod 2^64 with carries), then the `Rep` predicate `uint256R`, and finally the specification of the member function `uint256::add(const uint256&)`.
 
 ```gallina
-Definition uint256R (q: cQp.t) (l: list Z) : Rep :=
-  (* ensure exactly 4 limbs *)
-  pureR (length l = 4)
-  ** arrayR "unsigned long long"%cpp_type (fun x => primR "unsigned long long" q (Vint x)) l
+(* ---------------------------------------------------------------------- *)
+(** Pure Gallina helpers to compute 256‐bit addition on four 64‐bit limbs *)
+
+Definition two64 : Z := (2 ^ 64)%Z.
+
+Definition add_limbs (a b carry: Z) : Z * Z :=
+  let s := a + b + carry in
+  (Z.rem s two64, Z.quot s two64).
+
+Definition add_uint256 (a0 a1 a2 a3 b0 b1 b2 b3: Z) : Z * Z * Z * Z :=
+  let '(s0, c0) := add_limbs a0 b0 0     in
+  let '(s1, c1) := add_limbs a1 b1 c0    in
+  let '(s2, c2) := add_limbs a2 b2 c1    in
+  let '(s3, c3) := add_limbs a3 b3 c2    in
+  (s0, s1, s2, s3).
+
+(* ---------------------------------------------------------------------- *)
+(** The [Rep] predicate for [class uint256], parameterized by a fraction
+    [q] and four Z‐valued limbs [v0..v3], little‐endian.                     *)
+
+Definition uint256R (q: cQp.t) (v0 v1 v2 v3: Z) : Rep :=
+  (* the data array [data[0..3]] *)
+  _field "uint256::data"
+    |-> arrayR ("unsigned long long"%cpp_type)
+               (fun i => primR ("unsigned long long"%cpp_type) q i)
+               [v0; v1; v2; v3]
   ** structR "uint256" q.
 
-Definition add256 (a b: list Z) : list Z :=
-  match a, b with
-  | [a0; a1; a2; a3], [b0; b1; b2; b3] =>
-      let sum0 := (a0 + b0)%Z in
-      let r0   := Z.modulo sum0 (2^64)%Z in
-      let c0   := sum0 / (2^64)%Z in
+(* ---------------------------------------------------------------------- *)
+(** Spec of the member function
+     void uint256::add(const uint256& other);
+    which performs   this = this + other   modulo 2^256.                   *)
 
-      let sum1 := (a1 + b1 + c0)%Z in
-      let r1   := Z.modulo sum1 (2^64)%Z in
-      let c1   := sum1 / (2^64)%Z in
-
-      let sum2 := (a2 + b2 + c1)%Z in
-      let r2   := Z.modulo sum2 (2^64)%Z in
-      let c2   := sum2 / (2^64)%Z in
-
-      let sum3 := (a3 + b3 + c2)%Z in
-      let r3   := Z.modulo sum3 (2^64)%Z in
-
-      [r0; r1; r2; r3]
-  | _, _ => []  (* lengths wrong; uint256R will reject *) 
-  end.
-
-(* spec of member‐function void uint256::add(const uint256&) *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherLoc} "other" (Vptr otherLoc)
-  \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
-    this     |-> uint256R q alist
-    ** otherLoc |-> uint256R r blist
-  \post
-    this     |-> uint256R q (add256 alist blist)
-    ** otherLoc |-> uint256R r blist
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun this =>
+  (* the [other] parameter is passed by reference, i.e. we get a pointer *)
+  \arg{oth} "other" (Vptr oth)
+  (* precondition quantifies over the four limbs of [this] and [other] *)
+  \pre{a0 a1 a2 a3 b0 b1 b2 b3}
+    this |-> uint256R (cQp.mut 1) a0 a1 a2 a3
+    ** oth  |-> uint256R (cQp.mut 1) b0 b1 b2 b3
+  (* postcondition returns full ownership of [this], now containing the sum *)
+  \post{r0 r1 r2 r3}
+    this |-> uint256R (cQp.mut 1) r0 r1 r2 r3
+    ** [| (r0, r1, r2, r3) = add_uint256 a0 a1 a2 a3 b0 b1 b2 b3 |]
 ).
 ```
 
@@ -1083,155 +1086,114 @@ cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr)
 
 Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
 
-Toplevel input, characters 103-104:
->   pureR (length l = 4)
->                     ^
+Toplevel input, characters 248-264:
+>                [v0; v1; v2; v3]
+>                ^^^^^^^^^^^^^^^^
 Error:
 In environment
 thread_info : iris.bi.monpred.biIndex
 _Σ : iris.base_logic.lib.iprop.gFunctors
 Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
 CU : bluerock.lang.cpp.semantics.genv.genv
-MODd : monad.tutorials.demo.module ⊧ CU
+MODd : monad.tutorials.demo2.module ⊧ CU
 q : bluerock.lang.cpp.algebra.cfrac.cQp.t
-l : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z
-The term "4" has type "Corelib.Numbers.BinNums.Z" while it is expected to have type "Corelib.Init.Datatypes.nat".
+v0 : Corelib.Numbers.BinNums.Z
+v1 : Corelib.Numbers.BinNums.Z
+v2 : Corelib.Numbers.BinNums.Z
+v3 : Corelib.Numbers.BinNums.Z
+The term "[v0; v1; v2; v3]" has type "Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z" while it is expected to have type
+ "Corelib.Init.Datatypes.list bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val".
 
 
 ## Assistant 2
 
-Coq is complaining because in
+I see: the library’s array‐predicate expects a list of Coq “val”s, not a list of raw Zs.  In my `uint256R` I passed `[v0;v1;v2;v3] : list Z` but Coq found
 
-    pureR (length l = 4)
+    arrayR … expects `list val`
 
-the literal `4` is by default of type Z (Corelib.Numbers.BinNums.Z), whereas `length l` has type nat.  One must either convert one side or write the numeral in the nat‐notation (e.g. `4%nat`).  The simplest fix is:
+so you must wrap each limb in the constructor `Vint : Z→val` and give the arrayR a `val→Rep` argument, i.e. partially apply `primR`.  For example:
 
-    pureR (length l = 4%nat)
+    _field "uint256::data"
+      |-> arrayR ("unsigned long long"%cpp_type)
+                 (primR ("unsigned long long"%cpp_type) q)
+                 [Vint v0; Vint v1; Vint v2; Vint v3]
 
-Below is the entire solution with that one change.  Everything else is exactly as before.
+Let us confirm the exact type of `arrayR` in the library:  
 
-```gallina
-(** A 256‐bit unsigned int is laid out as 4 little‐endian 64‐bit limbs. *)
-
-Definition uint256R (q: cQp.t) (l: list Z) : Rep :=
-  (* enforce exactly 4 limbs *)
-  pureR (length l = 4%nat)
-  ** arrayR "unsigned long long"%cpp_type
-           (fun x => primR "unsigned long long" q (Vint x)) l
-  ** structR "uint256" q.
-
-(** A purely functional 256‐bit add (drop final carry). *)
-Definition add256 (a b: list Z) : list Z :=
-  match a, b with
-  | [a0; a1; a2; a3], [b0; b1; b2; b3] =>
-      let sum0 := (a0 + b0)%Z in
-      let r0   := Z.modulo sum0 (2^64)%Z in
-      let c0   := sum0 / (2^64)%Z in
-
-      let sum1 := (a1 + b1 + c0)%Z in
-      let r1   := Z.modulo sum1 (2^64)%Z in
-      let c1   := sum1 / (2^64)%Z in
-
-      let sum2 := (a2 + b2 + c1)%Z in
-      let r2   := Z.modulo sum2 (2^64)%Z in
-      let c2   := sum2 / (2^64)%Z in
-
-      let sum3 := (a3 + b3 + c2)%Z in
-      let r3   := Z.modulo sum3 (2^64)%Z in
-
-      [r0; r1; r2; r3]
-  | _, _ => []  (* lengths wrong; uint256R will reject *)
-  end.
-
-(** Separation‐logic spec of member‐function void uint256::add(const uint256&) *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherLoc} "other" (Vptr otherLoc)
-  \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
-    this     |-> uint256R q alist
-    ** otherLoc |-> uint256R r blist
-  \post
-    this     |-> uint256R q (add256 alist blist)
-    ** otherLoc |-> uint256R r blist
-).
+```coqquery
+Locate arrayR.
+Check arrayR.
 ```
 
 ## User 3
 
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
+>>> Locate arrayR.
+Constant bluerock.lang.cpp.logic.arr.arrayR
+  (shorter name to refer to it in current context is bluerock.lang.cpp.logic.arr.arrayR)
 
-Toplevel input, characters 93-109:
->   pureR (length l = 4%nat)
->          ^^^^^^^^^^^^^^^^
-Error:
-In environment
-thread_info : iris.bi.monpred.biIndex
-_Σ : iris.base_logic.lib.iprop.gFunctors
-Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-CU : bluerock.lang.cpp.semantics.genv.genv
-MODd : monad.tutorials.demo.module ⊧ CU
-q : bluerock.lang.cpp.algebra.cfrac.cQp.t
-l : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z
-The term "stdpp.base.length l = 4%nat" has type "Prop" while it is expected to have type
- "bluerock.iris.extra.base_logic.mpred.mpred".
-
+>>> Check arrayR.
+bluerock.lang.cpp.logic.arr.arrayR
+     : bluerock.lang.cpp.syntax.core.type
+       → (?X → bluerock.lang.cpp.logic.rep_defs.Rep) → Corelib.Init.Datatypes.list ?X → bluerock.lang.cpp.logic.rep_defs.Rep
+where
+?X :
+  [thread_info : iris.bi.monpred.biIndex
+   _Σ : iris.base_logic.lib.iprop.gFunctors
+   Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
+   CU : bluerock.lang.cpp.semantics.genv.genv
+   MODd : monad.tutorials.demo2.module ⊧ CU
+  |- Type]
 
 ## Assistant 3
 
-Coq is complaining because I wrote
+Coq complained because I passed a list of Z’s (`[v0;v1;v2;v3]`) to `arrayR`, whose element‐type `?X` must match the domain of the “Rep‐maker” function argument.  I had given a function `Z → Rep`, so Coq set `X := Z`, but `arrayR` for C++ arrays is meant to be a `list val → Rep` when the generator is `primR _ q` of type `val→Rep`.  
 
-    pureR (length l = 4%nat)
+The fix is to wrap each limb `vi:Z` as a `val` via the constructor `Vint`, and pass the partially applied `primR _ q : val → Rep`.  
 
-but `pureR` expects an Iris‐style `mpred` (not a bare `Prop`).  Recall that `[| P |]` injects a `Prop` into `mpred`.  Thus I must first turn `(length l = 4%nat)` into an `mpred` by writing `[| length l = 4%nat |]`, and *then* feed that to `pureR`.  In other words:
-
-    pureR ([| length l = 4%nat |])
-
-instead of `pureR (length l = 4%nat)`.
-
-Here is the complete solution with that one change:
+Below is the complete corrected solution:
 
 ```gallina
-(** A 256‐bit unsigned integer is laid out as 4 little‐endian 64‐bit limbs. *)
+(* ---------------------------------------------------------------------- *)
+(** Pure Gallina helpers to compute 256‐bit addition on four 64‐bit limbs *)
 
-Definition uint256R (q: cQp.t) (l: list Z) : Rep :=
-  (* enforce exactly 4 limbs *)
-  pureR ([| length l = 4%nat |])
-  ** arrayR "unsigned long long"%cpp_type
-           (fun x => primR "unsigned long long" q (Vint x)) l
+Definition two64 : Z := (2 ^ 64)%Z.
+
+Definition add_limbs (a b carry: Z) : Z * Z :=
+  let s := a + b + carry in
+  (Z.rem s two64, Z.quot s two64).
+
+Definition add_uint256 (a0 a1 a2 a3 b0 b1 b2 b3: Z) : Z * Z * Z * Z :=
+  let '(s0, c0) := add_limbs a0 b0 0  in
+  let '(s1, c1) := add_limbs a1 b1 c0 in
+  let '(s2, c2) := add_limbs a2 b2 c1 in
+  let '(s3, c3) := add_limbs a3 b3 c2 in
+  (s0, s1, s2, s3).
+
+(* ---------------------------------------------------------------------- *)
+(** The [Rep] predicate for [class uint256], parameterized by a fraction
+    [q] and the four 64-bit limbs [v0..v3] (little-endian).                *)
+
+Definition uint256R (q: cQp.t) (v0 v1 v2 v3: Z) : Rep :=
+  _field "uint256::data"
+    |-> bluerock.lang.cpp.logic.arr.arrayR
+           ("unsigned long long"%cpp_type)
+           (primR ("unsigned long long"%cpp_type) q)
+           [Vint v0; Vint v1; Vint v2; Vint v3]
   ** structR "uint256" q.
 
-(** A purely functional 256‐bit add (drop final carry). *)
-Definition add256 (a b: list Z) : list Z :=
-  match a, b with
-  | [a0; a1; a2; a3], [b0; b1; b2; b3] =>
-      let sum0 := (a0 + b0)%Z in
-      let r0   := Z.modulo sum0 (2^64)%Z in
-      let c0   := sum0 / (2^64)%Z in
+(* ---------------------------------------------------------------------- *)
+(** Spec of the member function
+     void uint256::add(const uint256& other);
+    performing  this := this + other  modulo 2^256.                      *)
 
-      let sum1 := (a1 + b1 + c0)%Z in
-      let r1   := Z.modulo sum1 (2^64)%Z in
-      let c1   := sum1 / (2^64)%Z in
-
-      let sum2 := (a2 + b2 + c1)%Z in
-      let r2   := Z.modulo sum2 (2^64)%Z in
-      let c2   := sum2 / (2^64)%Z in
-
-      let sum3 := (a3 + b3 + c2)%Z in
-      let r3   := Z.modulo sum3 (2^64)%Z in
-
-      [r0; r1; r2; r3]
-  | _, _ => []  (* wrong length; uint256R will reject *)
-  end.
-
-(** Separation‐logic spec of member‐function
-   void uint256::add(const uint256& other) *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherLoc} "other" (Vptr otherLoc)
-  \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
-    this     |-> uint256R q alist
-    ** otherLoc |-> uint256R r blist
-  \post
-    this     |-> uint256R q (add256 alist blist)
-    ** otherLoc |-> uint256R r blist
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun this =>
+  \arg{oth} "other" (Vptr oth)
+  \pre{a0 a1 a2 a3 b0 b1 b2 b3}
+    this |-> uint256R (cQp.mut 1) a0 a1 a2 a3
+    ** oth  |-> uint256R (cQp.mut 1) b0 b1 b2 b3
+  \post{r0 r1 r2 r3}
+    this |-> uint256R (cQp.mut 1) r0 r1 r2 r3
+    ** [| (r0, r1, r2, r3) = add_uint256 a0 a1 a2 a3 b0 b1 b2 b3 |]
 ).
 ```
 
@@ -1239,78 +1201,80 @@ cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr)
 
 Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
 
-Toplevel input, characters 0-345:
-> cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
->   \arg{otherLoc} "other" (Vptr otherLoc)
->   \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
->     this     |-> uint256R q alist
->     ** otherLoc |-> uint256R r blist
->   \post
->     this     |-> uint256R q (add256 alist blist)
->     ** otherLoc |-> uint256R r blist
-> ). 
-Error: cpp.spec: found no matching symbols
+Toplevel input, characters 255-265:
+> .................. }
+>     this .....................................
+Error: Syntax error: '}' '[' expected after [open_binders] (in [term]).
 
 
 ## Assistant 4
 
-Coq is complaining 
+Coq’s complaint
 
-    Error: cpp.spec: found no matching symbols
+    Syntax error: '}' '[' expected after [open_binders]
 
-because `cpp.spec` looks up your quoted string in the *symbol table* that was generated by the clang‐ast‐visitor.  The names there must match *exactly*, including the keyword `class` and spaces around the `&`.  In our module the member is recorded under
+happens because our `\pre{…}` and `\post{…}` notations expect each quantified binder to be parenthesized *and* to include a type.  We wrote
 
-    "uint256::add(const class uint256 &)"
+    \pre{a0 a1 a2 a3 b0 b1 b2 b3} …
 
-not under `"uint256::add(const uint256&)"`.  
+but the parser wants something like
 
-Once you change the string to exactly match the AST, the `cpp.spec` will succeed.  Here is the *entire* fixed solution:
+    \pre{(a0:Z) (a1:Z) … (b3:Z)} …
+
+Likewise `\post{r0 r1 r2 r3}` must be
+
+    \post{(r0:Z) (r1:Z) (r2:Z) (r3:Z)} …
+
+Once you fix those binders, the spec will parse.  
+
+Here is the *entire* corrected solution:
 
 ```gallina
-(** A 256‐bit unsigned integer is laid out as 4 little‐endian 64‐bit limbs. *)
+(* ---------------------------------------------------------------------- *)
+(** Pure Gallina helpers to compute 256‐bit addition on four 64‐bit limbs *)
 
-Definition uint256R (q: cQp.t) (l: list Z) : Rep :=
-  (* enforce exactly 4 limbs *)
-  pureR ([| length l = 4%nat |])
-  ** arrayR "unsigned long long"%cpp_type
-           (fun x => primR "unsigned long long" q (Vint x)) l
+Definition two64 : Z := (2 ^ 64)%Z.
+
+Definition add_limbs (a b carry: Z) : Z * Z :=
+  let s := a + b + carry in
+  (Z.rem s two64, Z.quot s two64).
+
+Definition add_uint256 (a0 a1 a2 a3 b0 b1 b2 b3: Z) : Z * Z * Z * Z :=
+  let '(s0, c0) := add_limbs a0 b0 0  in
+  let '(s1, c1) := add_limbs a1 b1 c0 in
+  let '(s2, c2) := add_limbs a2 b2 c1 in
+  let '(s3, c3) := add_limbs a3 b3 c2 in
+  (s0, s1, s2, s3).
+
+(* ---------------------------------------------------------------------- *)
+(** The [Rep] predicate for [class uint256], parameterized by a fraction
+    [q] and the four Z‐valued limbs [v0..v3] (little‐endian).             *)
+
+Definition uint256R (q: cQp.t) (v0 v1 v2 v3: Z) : Rep :=
+  _field "uint256::data"
+    |-> bluerock.lang.cpp.logic.arr.arrayR
+           ("unsigned long long"%cpp_type)
+           (primR ("unsigned long long"%cpp_type) q)
+           [Vint v0; Vint v1; Vint v2; Vint v3]
   ** structR "uint256" q.
 
-(** A purely functional 256‐bit add (drop final carry). *)
-Definition add256 (a b: list Z) : list Z :=
-  match a, b with
-  | [a0; a1; a2; a3], [b0; b1; b2; b3] =>
-      let sum0 := (a0 + b0)%Z in
-      let r0   := Z.modulo sum0 (2^64)%Z in
-      let c0   := sum0 / (2^64)%Z in
+(* ---------------------------------------------------------------------- *)
+(** Spec of the member function
+     void uint256::add(const uint256& other);
+    which does  this := this + other  modulo 2^256.                   *)
 
-      let sum1 := (a1 + b1 + c0)%Z in
-      let r1   := Z.modulo sum1 (2^64)%Z in
-      let c1   := sum1 / (2^64)%Z in
-
-      let sum2 := (a2 + b2 + c1)%Z in
-      let r2   := Z.modulo sum2 (2^64)%Z in
-      let c2   := sum2 / (2^64)%Z in
-
-      let sum3 := (a3 + b3 + c2)%Z in
-      let r3   := Z.modulo sum3 (2^64)%Z in
-
-      [r0; r1; r2; r3]
-  | _, _ => []  (* wrong length; uint256R will reject *)
-  end.
-
-(** Separation‐logic spec of member‐function
-   void uint256::add(const uint256& other) *)
-
-(* Note the *exact* name in the symbol table: class keyword and space before & *)
-cpp.spec "uint256::add(const class uint256 &)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherLoc} "other" (Vptr otherLoc)
-  \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
-    this     |-> uint256R q alist
-    ** otherLoc |-> uint256R r blist
-  \post
-    this     |-> uint256R q (add256 alist blist)
-    ** otherLoc |-> uint256R r blist
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun this =>
+  (* the [other] parameter is passed by reference *)
+  \arg{oth} "other" (Vptr oth)
+  (* pre: full ownership of both 256‐bit values *)
+  \pre{(a0:Z) (a1:Z) (a2:Z) (a3:Z)
+        (b0:Z) (b1:Z) (b2:Z) (b3:Z)}
+    this |-> uint256R (cQp.mut 1) a0 a1 a2 a3
+    ** oth  |-> uint256R (cQp.mut 1) b0 b1 b2 b3
+  (* post: full ownership of [this], now equal to the sum *)
+  \post{(r0:Z) (r1:Z) (r2:Z) (r3:Z)}
+    this |-> uint256R (cQp.mut 1) r0 r1 r2 r3
+    ** [| (r0, r1, r2, r3) = add_uint256 a0 a1 a2 a3 b0 b1 b2 b3 |]
 ).
 ```
 
@@ -1318,38 +1282,9 @@ cpp.spec "uint256::add(const class uint256 &)" as uint256_add_spec with (fun (th
 
 Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
 
-Toplevel input, characters 0-352:
-> cpp.spec "uint256::add(const class uint256 &)" as uint256_add_spec with (fun (this:ptr) =>
->   \arg{otherLoc} "other" (Vptr otherLoc)
->   \pre{(alist: list Z) (blist: list Z) (q r: cQp.t)}
->     this     |-> uint256R q alist
->     ** otherLoc |-> uint256R r blist
->   \post
->     this     |-> uint256R q (add256 alist blist)
->     ** otherLoc |-> uint256R r blist
-> ). 
-Error: cpp.spec: found no matching symbols
+Toplevel input, characters 478-488:
+> .................................. }
+>     this .....................................
+Error: Syntax error: '}' '[' expected after [open_binders] (in [term]).
 
-
-## Assistant 5
-
-The error means that the quoted string you passed to `cpp.spec` does not exactly match any symbol’s `info_name` in the translation‐unit’s table.  You must supply *exactly* the same name (including return‐type, spaces, `class` vs `struct`, qualifiers, etc.) that the clang‐visitor recorded.  
-
-Let us dump the symbol table so you can see the exact `info_name` entries and pick the right one:
-
-```coqquery
-Print monad.tutorials.demo.module.
-Print monad.tutorials.demo.module.(symbols).
-```
-
-## User 6
-
->>> Print monad.tutorials.demo.module.
-That query returned too many results — please refine it.
-
->>> Print monad.tutorials.demo.module.(symbols).
-Toplevel input, characters 33-35:
-> Print monad.tutorials.demo.module.(symbols).
->                                  ^^
-Error: Syntax error: '.' expected after [command] (in [vernac_aux]).
 

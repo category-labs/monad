@@ -455,11 +455,12 @@ One advantage is that we can now use NodeR with the standard `|->` (points_to) n
 ```gallina
   cpp.spec "incdata(Node *)"  as incd_spec_idiomatic with (
      \arg{nbase} "n" (Vptr nbase)
-     \pre{data nextLoc} nbase |-> NodeR 1 data nextLoc
+     \pre{data nextLoc} nbase |-> NodeR (cQp.mut 1) data nextLoc
      \pre [| data < 2^31 -1 |]
-     \post nbase |-> NodeR 1 (1+data) nextLoc
+     \post nbase |-> NodeR (cQp.mut 1) (1+data) nextLoc
    ).
 ```
+Because `incdata` modifies the object, it requires the full ownership as a precondition. Functions that do not modify or destruct the object can just get away with any fraction `q` in the precondition.
 
 Structs and classes can have methods. Method specs are exactly like function specs
 except that when `cpp.spec` determines that the C++ item being specified is a method/constructor/destructor (and not a regular function), it expects the last argument (just after `with`) to be a function taking the `this` memory location as argument. For example, consider the following `incdataM` method:
@@ -480,9 +481,9 @@ struct Node {
 Here is a spec of `incdataM`:
 ```gallina
   cpp.spec "Node::incdataM()"  as incdata_method_Spec with (fun (this:ptr) =>
-     \pre{data nextLoc} this |-> NodeR 1 data nextLoc
+     \pre{data nextLoc} this |-> NodeR (cQp.mut 1) data nextLoc
      \pre [| data < 2^31 -1 |]  
-     \post this |-> NodeR 1 (1+data) nextLoc
+     \post this |-> NodeR (cQp.mut 1) (1+data) nextLoc
    ).
 ```
 
@@ -492,7 +493,7 @@ Similarly, here is the spec of the `Node` constructor:
   cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
      \arg{nextLoc} "n" (Vptr nextLoc)
      \arg{data} "n" (Vint data)
-     \post this |-> NodeR 1 data nextLoc
+     \post this |-> NodeR (cQp.mut 1) data nextLoc
     ).
 
 ```
@@ -501,24 +502,91 @@ Conversely, destructor specs typically take the full ownership as precondition a
 
 ```gallina
   cpp.spec "Node::~Node()" as node_destr with (fun (this:ptr) =>
-    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR 1 data nextLoc
+    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR (cQp.mut 1) data nextLoc
     \post emp).
 ```
 
+We have registered `cQp.mut` as a coercion so that we can write just `1` instead of `(cQp.mut 1)` above, but coercions should be avoided when you are trying to debug a compile error.
+
 ### Fractional ownership of arrays/classes
-For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. A thread owning `mloc |-> primR "int" (cQp.mut q) v` can depend on the value of the location being 
+For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. 
+A thread owning `mloc |-> primR "int" (cQp.mut q) v` can depend on the value of the location `mloc` being `v`: because the thread has a q (0<q) fraction, 
+no other thread can have 1 fraction and thus no other thread can write to `mloc`.
+We (not the semantics) get to define `Rep`s of Classes and thus we get to decide whether the `Rep` predicates even takes a fraction (`cQp.t`) argument and 
+the significance of the fraction.
+A thread `base |-> NodeR (cQp.mut q) data nextLoc`, can rely on the Node object to not change and not be destructed: because the functions/methods that change the object (e.g. `incdataM`) require 1 ownership, as does the destructor.
+Given the `base |-> NodeR (cQp.mut q) data nextLoc`
+
 
 ```coq
-  Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
-   base |-> NodeR (q1+q2) data nextLoc -|- 
-      base |-> NodeR q1 data nextLoc 
-	  ** base |-> NodeR q2 data nextLoc.
+Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
+ base |-> NodeR (cQp.mut (q1+q2)) data nextLoc -|- base |-> NodeR (cQp.mut q1) data nextLoc ** base |-> NodeR (cQp.mut q2) data nextLoc.
 ```
 
 
 
 ### Abstraction with Rep Predicates for classes
 
+`NodeR` specs provided no abstraction: it just exposed the 2 C++ fields as 2 Gallina arguments of their corresponding Gallina types. Many `Rep` predicates provide a much more pure/clean/mathematical/high-level logical abstraction of C++ fields. For example, consider linked lists:
+
+```c++
+typedef Node * List;
+```
+
+We can define a Gallina `Rep` for `ListR` in a way that makes the users of the spec treat the linked list as just a mathematical/Gallina list of numbers, without having to deal with the complicated ways the list is laid out in memory:
+
+```gallina
+  Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
+    match l with
+    | [] => nullR
+    | hd :: tl =>
+        Exists (tlLoc: ptr),
+          NodeR q hd tlLoc
+          ** pureR (tlLoc |-> ListR q tl)
+    end.
+```
+
+Some example lemmas to illustrate `ListR`:
+```coq
+  Example listRUnfold (q:Qp) (head:ptr): head |-> ListR q [4;5;6] |--
+    Exists node5loc node6loc,
+       head |-> NodeR q 4 node5loc
+       ** node5loc |-> NodeR q 5 node6loc
+       ** node6loc |-> NodeR q 6 nullptr
+       (* ** [| node5loc <> node6loc <> head|] *).
+  Proof using. work. unfold NodeR.  go. Qed.
+
+  Example nullReq (p: ptr): p |-> nullR |-- [| p = nullptr |].
+  Proof. go. Qed.
+```
+
+Now we can write specs of linked list functions, e.g.:
+
+```c++
+List reverse(List l) {
+  List prev = nullptr;
+  List next = nullptr;
+  while (l != nullptr) {
+    next = l->next_;
+    l->next_ = prev;
+    prev = l;
+    l = next;
+  }
+    return prev;
+}
+```
+
+Spec:
+
+```gallina
+  cpp.spec "reverse(Node*)" as reverse_spec with
+    (\arg{lp} "l" (Vptr lp)
+     \pre{l: list Z} lp |-> ListR 1 l
+     \post{r}[Vptr r] r |-> ListR 1 (List.rev l)).
+```
+The spec essentially says that the c++ implementation should behave like the Gallina `List.rev` function for which we have several properties proven in the Coq standard library.
+
 
 
 ## Spec Examples
+TODO:

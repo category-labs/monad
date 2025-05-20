@@ -332,7 +332,7 @@ Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
     ).
 
   cpp.spec "Node::~Node()" as node_destr with (fun (this:ptr) =>
-    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR 1 data nextLoc
+    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR (cQp.mut 1) data nextLoc
     \post emp).
   
   Lemma nodeConstr: denoteModule module |-- node_constr.
@@ -344,8 +344,8 @@ Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
      \post this |-> NodeR 1 (1+data) nextLoc
    ).
   
-  Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
-   base |-> NodeR (q1+q2) data nextLoc -|- base |-> NodeR q1 data nextLoc ** base |-> NodeR q2 data nextLoc.
+Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
+ base |-> NodeR (cQp.mut (q1+q2)) data nextLoc -|- base |-> NodeR (cQp.mut q1) data nextLoc ** base |-> NodeR (cQp.mut q2) data nextLoc.
   Proof using.
     unfold NodeR. iSplit; go.
 

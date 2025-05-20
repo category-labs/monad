@@ -270,3 +270,15 @@ void incdata(Node * n){
 }
 
 std::atomic<uint> uldkjflkasj;// just to force clang to produce the ast of std::atomic<uint>. there is probably a better way to do it
+
+
+// uint256.hpp  ── core definition, no #includes
+class uint256 {
+public:
+  using limb_t = unsigned long long;          // assumes 64-bit limbs
+  limb_t data[4];                             // little-endian: data[0] is least-significant
+
+  uint256() : data{0, 0, 0, 0} {}
+  
+  void add(const uint256& other);
+};

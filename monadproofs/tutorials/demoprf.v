@@ -284,8 +284,20 @@ how we lose:
       ).
   cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
      \arg{xv:Z} "x" (Vint xv)
-     \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
+     \post{(xvfinal xvfinalhalf : Z)} [Vint xvfinal] [| xvfinalhalf * 2 =  xvfinal|]
       ).
+
+  cpp.spec "twice(unsigned int)" as twice_weak_spec3 with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post{(xvfinal : Z)} [Vint xvfinal] (Exists xvfinalhalf, [| xvfinalhalf * 2 =  xvfinal|])
+      ).
+
+  Lemma foospptr: denoteModule module |-- twice_weak_spec2.
+  Proof.
+    verify_spec'.
+    go.
+    slauto.
+  Qed.
   
   cpp.spec "twice(unsigned int)" as twice_spec with (
      \arg{xv:Z} "x" (Vint xv)

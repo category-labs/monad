@@ -81,4 +81,6 @@ cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr)
   ** otherPtr |-> uint256R (cQp.mut 1) v2
 ).
 
+Search (bluerock.auto.cpp.database.spec.SpecFor.C "uint256::add(const uint256&)").
+
 

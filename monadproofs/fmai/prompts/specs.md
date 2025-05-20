@@ -235,3 +235,290 @@ In the C++ axiomatization, an argument passed by reference is similar to an argu
 The `\pre` line then asserts full (1) ownership of `xloc` and asserts that it contains a primitive integer, say `xv`.
 The postcondition returns all that ownership of `xloc` but asserts the updated (twice) value.
 
+## Specs of functions with composite datatype arguments.
+
+`primR`, the representation of primitive types like int/char/long/.. is axiomatized by our C++ semantics.
+However, the representation of composite types like int[], structs can be constructed using `primR` and an axiomatized offset operation on memory locations (`ptr`):
+
+```gallina
+bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM._offset_ptr: ptr → offset → ptr
+```
+
+`offset` can be constructed in 2 ways: field offsets of structs/classes, array offsets.
+
+`o_sub` is the axiomatised operator to construct array offsets:
+```gallina
+bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_sub : genv → type → Z → offset
+```
+The `genv` is automatically inferred using typeclasses. When writing specs, a `Section` variable of type `genv` is typically always in context. 
+A `genv` represents platform parameters like endianness, word size of the machine. 
+The `type` argument is the C++ type of the array, and the `Z` argument is the array index.
+
+### Array offsets
+Consider the following global variable in a C++ file:
+```c++
+int arr[3];
+```
+
+In Gallina,  `_global "arr"` represents the memory location of that C++ global variable `arr`.
+`_offset_ptr (_global "arr") (o_sub _ "int" 2)` represents the C++ location `arr[2]`.
+We have defined a notation to make gallina array index offsets look somewhat like C++, except that `o_sub` needs the C++ type as well explicitly.
+
+```coq
+  Example notation_example1: (_global "arr").["int"!2] =  _offset_ptr (_global "arr") (o_sub _ "int" 2).
+  Proof.
+    reflexivity.
+  Qed.
+```
+
+
+With that notation, we can write the following assertion that asserts full ownership of the cell `arr[2]` in C++ and also asserts that that cell has the value 99.
+
+```gallina
+Example array_cell_assertion := (_global "arr").["int"!2]  |-> primR "int" 1 (Vint 99).
+```
+
+#### `arrayR`
+While writing specs of functions that return arrays or receive them as arguments, it can be verbose to separately assert ownership of every cell. Thus, we have `arrayR`, a recursive definition (NOT an axiom) which asserts ownership of all cells. Its definition has a few layers so lets just illustrate it with an example:
+
+```galina
+Example arrayR3Unfold {T:Type} (p:ptr) (n1 n2 n3: T) (R:T->Rep):
+  p |-> arrayR uint R [n1;n2;n3]
+    -|- ( valid_ptr (p .[ uint ! 3 ])
+            ** p |-> R n1
+            ** p .[ uint ! 1 ] |-> R n2
+            ** p .[ uint ! 2 ] |-> R n3).
+```
+The last 3 conjuncts just assert the ownership of the first 3 cells, parametrized by `R` which defines how a mathematical item of Gallina type `T` is represented in C++ memory.
+The first conjunct, `valid_ptr (p .[ uint ! 3 ])`, is crucial to show that pointer increments are not undefined behaviour (UB). For example, the following program has UB according to C++ semantics:
+
+```c++
+void ubptr(){
+  int arrl[3];
+  int *p=arrl;
+  p++;// proof generates gallina obligation `valid_ptr arrl[1]`
+  p++;// generates obligation `valid_ptr arrl[2]`
+  p++;// generates obligation `valid_ptr arrl[3]`
+  p++;// generates obligation `valid_ptr arrl[4]`: NOT PROVABLE`
+}
+```
+In C++, it is valid to have a pointer point one past the end of an array, but you must not dereference it.
+It is undefined behavior to increment a pointer past the "one past the end" position, EVEN IF YOU DONT DEREFERENCE THAT POINTER.
+The `arrayR` definition has the `valid_ptr` assertion for just the index last the last one and not for the previous indices because those assertions can be derived. For example, we can derive  `valid_ptr (p .[ uint ! 2 ])` from `valid_ptr (p .[ uint ! 3 ])`. Also, `valid_ptr` assertions are `Persistent`. Persistent separation logic assertions can be freely duplicated (not that `valid_ptr` doesnt mean that the pointer is live, it just prevents UB pointer increments):
+
+```coq
+Lemma valid_ptr_dup (p:ptr) : valid_ptr p |-- valid_ptr p ** valid_ptr p.
+Proof using. go. Qed.
+```
+
+Below is a more concrete example illustrating the use of `arrayR`:
+
+```coq
+  Example arrayR3 (p:ptr) (n1 n2 n3: Z) (q: Qp):
+    p |-> arrayR uint (fun i:Z => primR uint q i) [n1;n2;n3]
+      -|- ( valid_ptr (p .[ uint ! 3 ])
+              ** p |-> primR uint q n1
+              ** p .[ uint ! 1 ] |-> primR uint q n2
+              ** p .[ uint ! 2 ] |-> primR uint q n3).
+  Proof. ... Qed.
+```
+Using `arrayR` we can conveniently specify functions receiving/returning arrays, e.g.:
+
+```c++
+uint gcdl (uint * nums, uint length) {
+    uint result=0;
+    for (uint i=0; i<length; i++) {
+        result=gcd(result, nums[i]);
+    }
+    return result;
+}
+```
+It spec is:
+```gallina
+  cpp.spec "gcdl(unsigned int*, unsigned int)" as gcdl_spec with
+  (   \arg{numsp:ptr} "nums" (Vptr numsp)
+      \prepost{(l: list Z) (q:Qp)}
+             numsp |-> arrayR uint (fun i:Z => primR uint q i) l
+      \arg "length" (Vint (length l))
+      \post [Vint (Stdlib.Lists.List.fold_left Z.gcd l 0)] emp).
+```
+
+
+`Stdlib.Lists.List.fold_left`, `Z.gcd` are all Gallina functions from the standard library, independent of C++:
+
+```gallina
+  Example fold_left_gcd (n1 n2 n3: Z) :
+    Stdlib.Lists.List.fold_left Z.gcd [n1;n2;n3] 0 =  Z.gcd (Z.gcd (Z.gcd 0 n1) n2) n3.
+  Proof. reflexivity. Qed.
+```
+
+Many C++ specs connect C++ code to their pure versions in Gallina, which already have plenty of correctness properties proved in the standard library. Sometimes, new Gallina functions need to be defined to write the spec of C++ functions and in such cases, one needs to worry that the Gallina functions used in the spec themselves dont have bugs. These concerns can be alleviated by proving correctness properties about the new Gallina functions. 
+
+### Struct/Class field offsets
+Similarly, consider the following struct
+
+```c++
+struct Node {
+    Node(Node *next, int data) : next_(next), data_(data) {}
+
+    Node *next_;
+    int data_;
+};
+```
+
+Our semantics axiomatizes the following to refer to the offset of a struct/class field:
+
+```gallina
+bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM._field : bluerock.lang.cpp.syntax.core.name -> bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset
+```
+
+The first argument, bluerock.lang.cpp.syntax.core.name, is supposed to be the name of the field.
+We have custom notations (in scope `%cpp_name`) defined to parse string constants in regular double quotes as bluerock.lang.cpp.syntax.core.name.
+As an example, if `nbase:ptr` is the memory location where a struct object lives, 
+`_offset_ptr nbase (_field "::Node::data_"%cpp_name)` is the memory location where its `::data_` field lives.
+We don't need to explicitly write the `%cpp_name` part as Coq has been told (via the `Arguments` directive) that the argument of `_field` should be parsed in the `%cpp_name` notation scope.
+
+As with arrays, we have convenience notations to make gallina field offsets look somewhat like C++:
+```coq
+  Example notation_example2 (nbase:ptr) :
+    nbase ,, _field "::Node::data_" = _offset_ptr nbase (_field "::Node::data_").
+  Proof using. reflexivity. Qed.
+```
+We have an even more concise notation specialized to `_field` offsets:
+```coq
+  Example notation_example3 (nbase:ptr) :
+    nbase ., "::Node::data_" = _offset_ptr nbase (_field "::Node::data_").
+  Proof using. reflexivity. Qed.
+```
+
+Just we defined `arrayR` to describe ownership of entire arrays in `\pre` and `\post` conditions, we can define `NodeRf`:
+
+```gallina
+Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
+  fun (nodebase: ptr) =>
+  nodebase ,, _field "Node::data_" |-> primR "int" q (Vint data)
+  ** nodebase ,, _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+  ** nodebase |-> structR "Node" q.
+```
+
+
+`structR "Node" q` asserts that the intrinsic identiy of the object is `Node`. This assertion is used in our C++ semantics to rule out unsafe dynamic casts. In general, `structR` also denotes the ownership of the padding in the objects if there is any: `memcpy` needs ownersip of the padding as well. Also, the destructor proof requires returning full ownersips of not just all the fields but also the `structR "Node" 1`.
+Now we can use `NodeRf` in specs of `Node` functions, e.g.
+
+```c++
+void incdata(Node * n){
+  n->data_++;
+}
+```
+
+Its spec is
+
+```gallina
+  cpp.spec "incdata(Node *)"  as incd_spec with (
+     \arg{nbase} "n" (Vptr nbase)
+     \pre{data nextLoc} NodeRf 1 data nextLoc nbase
+     \pre [| data < 2^31 -1 |] (* to prevent overflow. overflow in signed addition is undefined behaviour *)
+     \post NodeRf 1 (1+data) nextLoc nbase
+      ).
+```
+
+However, we can write the above spec in an equivalent but more idiomatic way where we use the `|->` (points_to) notation just as we do for primitive C++ types like `int`.
+First, note that `Rep` is morally equivalent to `ptr -> mpred`, so the return type of `NodeRf` can just be `Rep`.
+Also, we have lifted the separation logic operators like `**`, `-*`, `//\\` to also work on `Rep` in the usual pointwise way.
+Also, we have `_offsetR : offset → Rep → Rep` and `|->` is overloaded to mean `_offsetR` when its left hand side is `offset` instead of `ptr`. 
+`_offsetR` is just a convenience defined to satisfy the following property:
+
+```coq
+Lemma _at_offsetR:
+  ∀ (p : ptr) (o : offset) (r : Rep),
+    (p |-> o |-> r) -|- (p ,, o |-> r).
+```
+
+
+With these tools, `NodeRf` can be dedfined more concisely, but equivalently as follows to return a `Rep` instead of a `ptr->mpred`.
+
+```gallina
+Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
+  _field "Node::data_" |-> primR "int" q (Vint data)
+  ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+  ** structR "Node" q.
+```
+One advantage is that we can now use NodeR with the standard `|->` (points_to) notation just like we do for primitive types:
+
+```gallina
+  Lemma nodeRequiv (base:ptr) (data:Z) (nextLoc: ptr) (q: cQp.t):
+    NodeRf q data nextLoc base -|- base |-> NodeR q data nextLoc.
+  Proof using. unfold NodeRf, NodeR. iSplit; go. Qed.
+```
+
+
+```gallina
+  cpp.spec "incdata(Node *)"  as incd_spec_idiomatic with (
+     \arg{nbase} "n" (Vptr nbase)
+     \pre{data nextLoc} nbase |-> NodeR 1 data nextLoc
+     \pre [| data < 2^31 -1 |]
+     \post nbase |-> NodeR 1 (1+data) nextLoc
+   ).
+```
+
+Structs and classes can have methods. Method specs are exactly like function specs
+except that when `cpp.spec` determines that the C++ item being specified is a method/constructor/destructor (and not a regular function), it expects the last argument (just after `with`) to be a function taking the `this` memory location as argument. For example, consider the following `incdataM` method:
+
+```c++
+struct Node {
+    Node(Node *next, int data) : next_(next), data_(data) {}
+
+    Node *next_;
+    int data_;
+    void incdataM(){
+      this->data_++;
+    }
+  
+};
+```
+
+Here is a spec of `incdataM`:
+```gallina
+  cpp.spec "Node::incdataM()"  as incdata_method_Spec with (fun (this:ptr) =>
+     \pre{data nextLoc} this |-> NodeR 1 data nextLoc
+     \pre [| data < 2^31 -1 |]  
+     \post this |-> NodeR 1 (1+data) nextLoc
+   ).
+```
+
+Similarly, here is the spec of the `Node` constructor:
+
+```coq
+  cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
+     \arg{nextLoc} "n" (Vptr nextLoc)
+     \arg{data} "n" (Vint data)
+     \post this |-> NodeR 1 data nextLoc
+    ).
+
+```
+Constructors typically return full(1) ownership of the object. This ownership can then be split into multiple pieces, e.g.  to share with different threads.
+Conversely, destructor specs typically take the full ownership as precondition and dont return any ownership of the object in the postcondition:
+
+```gallina
+  cpp.spec "Node::~Node()" as node_destr with (fun (this:ptr) =>
+    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR 1 data nextLoc
+    \post emp).
+```
+
+### Fractional ownership of arrays/classes
+For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. A thread owning `mloc |-> primR "int" (cQp.mut q) v` can depend on the value of the location being 
+
+```coq
+  Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
+   base |-> NodeR (q1+q2) data nextLoc -|- 
+      base |-> NodeR q1 data nextLoc 
+	  ** base |-> NodeR q2 data nextLoc.
+```
+
+
+
+### Abstraction with Rep Predicates for classes
+
+
+
+## Spec Examples

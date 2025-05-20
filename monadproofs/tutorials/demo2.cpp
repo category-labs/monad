@@ -9,6 +9,23 @@ uint gcdl (uint * nums, uint length) {
     return result;
 }
 
+void ubptr(){
+  int arrl[3];
+  int *p=arrl;
+  p++;
+  p++;
+  p++;
+  p++;
+}
+
+void okptr(){
+  int arrl[3];
+  int *p=arrl;
+  p++;
+  p++;
+  p++;
+}
+  
 uint parallel_gcdl(uint * nums, uint length) {
     uint mid=length/2;
     uint resultl;
@@ -48,6 +65,11 @@ struct Node {
 
     Node *next_;
     int data_;
+    void incdataM(){
+      this->data_++;
+    }
+  ~Node(){}
+  
 };
 
 typedef Node * List;
@@ -246,4 +268,5 @@ int testgcdl() {
 void incdata(Node * n){
   n->data_++;
 }
+
 std::atomic<uint> uldkjflkasj;// just to force clang to produce the ast of std::atomic<uint>. there is probably a better way to do it

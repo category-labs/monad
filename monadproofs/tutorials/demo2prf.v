@@ -14,11 +14,40 @@ Import Instances.Z.
 Import cQp_compat.
 Import Verbose.
 Import linearity.
+Notation mloc :=ptr.
+
 
 Section with_Sigma.
   Context `{Sigma:cpp_logic}  {CU: genv}.
   Context  {MODd : demo2.module ⊧ CU}.
+  Lemma learn1 (a:mloc) :
+    a |-> primR "int" (1/3) 1 |-- Exists (v:Z),  a |-> primR "int" (1/3) v.
+  Proof using.
+    go.
+  Abort.
+  Lemma learn2 (a:mloc) :
+    a |-> primR "int" (1/3) 29 |-- (Exists (v:Z) (q:Qp),  a |-> primR "int" q v) ** True.
+  Proof using.
+    go.
+  Abort.
 
+  Lemma auac (A C D:mpred) B : A |-- Exists P, B P ** (C -* P -* D).
+  Proof using.
+    intros.
+    go.
+    iExists _.
+    go.
+    iSplitR ""%string.
+    Focus 2.
+    iIntros "c"%string.
+    iIntros.
+    iRevert "c"%string.
+    iStopProof. reflexivity.
+    Focus 1.
+
+Abort.    
+
+    
 (*
 Hint Resolve learn_atomic_val : br_opacity.
 *)  
@@ -50,13 +79,26 @@ Hint Resolve learn_atomic_val : br_opacity.
     closed.norm closed.numeric_types; go.
   Qed.
 
+  Search (ptr -> offset -> ptr).
+  Locate ".[".
+  Locate o_sub.
+  Print _sub.
+  Check (_sub _ _).
   Example fold_left_gcd (n1 n2 n3: Z) :
     fold_left Z.gcd [n1;n2;n3] 0 =  Z.gcd (Z.gcd (Z.gcd 0 n1) n2) n3.
   Proof. reflexivity. Qed.
   
     
-  cpp.spec "gcdl(unsigned int*, unsigned int)" as gcdl_spec with (gcdl_spec_core).
+  cpp.spec "gcdl(unsigned int*, unsigned int)" as gcdl_spec2 with
+  (   \arg{numsp:ptr} "nums" (Vptr numsp)
+      \prepost{(l: list Z) (q:Qp)}
+             numsp |-> arrayR uint (fun i:Z => primR uint q i) l
+      \arg "length" (Vint (length l))
+      \post [Vint (fold_left Z.gcd l 0)] emp).
+  Locate fold_left.
 
+  cpp.spec "gcdl(unsigned int*, unsigned int)" as gcdl_spec with (gcdl_spec_core).
+  
   (** * 2+ ways to split an arrays
 
    +---+---+---+---+---+---+
@@ -125,6 +167,7 @@ Hint Resolve learn_atomic_val : br_opacity.
     unfold thread_class_specs.
     verify_spec'.
     name_locals.
+    go.
     wapplyObserve  obsUintArrayR.
     eagerUnifyU. go.
     rename a into lam.
@@ -250,33 +293,64 @@ Hint Resolve learn_atomic_val : br_opacity.
   Example array2Offset : offset := (.["int" ! 2]).
   Example fieldOffset : offset := _field "Node::data_".
   
-  Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
-    _field "Node::data_" |-> primR "int" q (Vint data)
-    ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
-    ** structR "Node" q.
+Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
+  _field "Node::data_"%cpp_name |-> primR "int" q (Vint data)
+  ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+  ** structR "Node" q.
 
-  Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
-    fun (nodebase: ptr) =>
-    (* nodebase.data_ *)  
-    nodebase,, _field "Node::data_" |-> primR "int" q (Vint data)
-    ** nodebase,, _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
-    ** nodebase |-> structR "Node" q.
+Lemma valid_ptr_dup (p:ptr) : valid_ptr p |-- valid_ptr p ** valid_ptr p.
+Proof using. go. Qed.
+
+Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
+  fun (nodebase: ptr) =>
+  nodebase,, _field "Node::data_" |-> primR "int" q (Vint data)
+  ** nodebase,, _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+  ** nodebase |-> structR "Node" q.
 
   cpp.spec "incdata(Node *)"  as incd_spec with (
-     \arg{np} "n" (Vptr np)
-     \pre{data nextLoc} NodeRf 1 data nextLoc np (* shorthand. unfold in prf *)
-     \pre [| data < 2^31 -1 |]
-     \post NodeRf 1 (1+data) nextLoc np
+     \arg{nbase} "n" (Vptr nbase)
+     \pre{data nextLoc} NodeRf 1 data nextLoc nbase
+     \pre [| data < 2^31 -1 |] (* to prevent overflow. overflow in signed addition is undefined behaviour *)
+     \post NodeRf 1 (1+data) nextLoc nbase
       ).
 
+  Check (_offsetR: offset -> Rep -> Rep).
+  Disable Notation "⊣⊢".
+  Search _offsetR _at.
+  
   cpp.spec "incdata(Node *)"  as incd_spec_idiomatic with (
-      \arg{np} "n" (Vptr np)
-      (* _global "x" |-> primR "int" 1 45 *)
-     \pre{data nextLoc} np |-> NodeR 1 data nextLoc
-     \pre [| data < 2^31 -1 |]
-     \post np |-> NodeR 1 (1+data) nextLoc
-      ).
+     \arg{nbase} "n" (Vptr nbase)
+     \pre{data nextLoc} nbase |-> NodeR 1 data nextLoc
+     \pre [| data < 2^31 -1 |]  
+     \post nbase |-> NodeR 1 (1+data) nextLoc
+   ).
 
+  cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
+     \arg{nextLoc} "n" (Vptr nextLoc)
+     \arg{data} "n" (Vint data)
+     \post this |-> NodeR 1 data nextLoc
+    ).
+
+  cpp.spec "Node::~Node()" as node_destr with (fun (this:ptr) =>
+    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR 1 data nextLoc
+    \post emp).
+  
+  Lemma nodeConstr: denoteModule module |-- node_constr.
+  Proof using MODd. verify_spec'. go. Qed.
+  
+  cpp.spec "Node::incdataM()"  as incdata_method_Spec with (fun (this:ptr) =>
+     \pre{data nextLoc} this |-> NodeR 1 data nextLoc
+     \pre [| data < 2^31 -1 |]  
+     \post this |-> NodeR 1 (1+data) nextLoc
+   ).
+  
+  Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
+   base |-> NodeR (q1+q2) data nextLoc -|- base |-> NodeR q1 data nextLoc ** base |-> NodeR q2 data nextLoc.
+  Proof using.
+    unfold NodeR. iSplit; go.
+
+
+    
   Lemma eqv (data:Z) (nextLoc:ptr) (nodebase:ptr) q :
     nodebase |-> NodeR q data nextLoc
     -|- NodeRf q data nextLoc nodebase.
@@ -809,8 +883,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     rewrite <- demoprf.gcd_proof.
     apply denoteModule_weaken.
     apply module_le_true.
-    exact _.
-  Qed.
+  Admitted.
 
   (* move this proof to the end? without discussing loopinv, this cannot be explained *)
   Lemma gcdl_proof: denoteModule module |-- gcdl_spec.
@@ -955,9 +1028,116 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     \pre emp
     \post [Vint 6] emp).
 
+  Locate _offset_ptr.
+  Example ex1:  _offset_ptr (_global "arr") (o_sub _ "int" 2) = (_global "arr").["int"!2].
+  Proof.
+    reflexivity.
+  Qed.
+
+
+  cpp.spec "incdata(Node *)"  as incd_spec_no_abstraction with (
+      \arg{nbase} "n" (Vptr nbase)
+     \pre{data} nbase ., "::Node::data_" |-> primR "int" 1 (Vint data)
+     \pre [| data < 2^31 -1 |]
+     \post nbase ., "::Node::data_" |-> primR "int" 1 (Vint data)
+      ).
+
+  Example notation_example2 (nbase:ptr) :
+    nbase ., "::Node::data_" = _offset_ptr nbase (_field "::Node::data_").
+  Proof using. reflexivity. Qed.
+
+  Example field_assertion (nbase: ptr) (data:Z) := nbase ., "::Node::data_" |-> primR "int" 1 (Vint data).
+
+  Example array_cell_assertion := (_global "arr").["int"!2]  |-> primR "int" 1 (Vint 99).
+
+  Unset Printing Implicit.
+  Set Printing FullyQualifiedNames.
+  Check @arrayR.
+
+  cpp.spec "ubptr()"  as pec with (
+        \pre emp
+        \post emp
+      ).
+
+  Unset Printing FullyQualifiedNames.
+Ltac slauto2 := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; normalize_ptrs)); try iPureIntro.
+  
+  Lemma ubprf: denoteModule module |-- pec.
+  Proof using.
+    verify_spec'.
+    go.
+    rewrite arrayR_eq.
+    unfold arrayR_def.
+    rewrite arrR_eq.
+    unfold arrR_def.
+    slauto2.
+  Abort.
+  cpp.spec "okptr()"  as okptr with (
+        \pre emp
+        \post emp
+      ).
+  Lemma ubprf: denoteModule module |-- okptr.
+  Proof using MODd.
+    verify_spec'.
+    go.
+    rewrite arrayR_eq.
+    unfold arrayR_def.
+    rewrite arrR_eq.
+    unfold arrR_def.
+    slauto2.
+    simpl in *.
+    go.
+    rewrite anyR_array'.
+    rewrite arrayR_eq.
+    unfold arrayR_def.
+    rewrite arrR_eq.
+    unfold arrR_def.
+    simpl.
+    slauto2.
+  Qed.
+  Search valid_ptr o_sub.
+
+  Lemma ubprf: denoteModule module |-- foo.
+  Proof using.
+    verify_spec'.
+    go.
+    rewrite arrayR_eq.
+    unfold arrayR_def.
+    rewrite arrR_eq.
+    unfold arrR_def.
+    autorewrite with syntactic.
+    normalize_ptrs.
+    go.
+    normalize_ptrs.
+    go.
+    normalize_ptrs.
+    go.
+  Abort.
+  
+Example arrayR3Unfold {T} (p:ptr) (n1 n2 n3: T) (R:T->Rep):
+  p |-> arrayR uint R [n1;n2;n3]
+    -|- ( valid_ptr (p .[ uint ! 3 ])
+            ** p |-> R n1
+            ** p .[ uint ! 1 ] |-> R n2
+            ** p .[ uint ! 2 ] |-> R n3).
+
+  Lemma testgcdl_prf: denoteModule module ** parallel_gcdl_spec |-- incd_spec_no_abstraction.
+  Proof using.
+    verify_spec'.
+    go.
+
+
+  Remove Hints UNSAFE_read_prim_cancel: br_opacity.
+
+
+
+  
+  Set Printing FullyQualifiedNames.
   Lemma testgcdl_prf: denoteModule module ** parallel_gcdl_spec |-- testspec.
   Proof using.
     verify_spec'.
+      Unset Printing Implicit.
+    go.
     slauto.
   Qed.
   

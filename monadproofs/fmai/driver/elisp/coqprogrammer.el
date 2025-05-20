@@ -141,6 +141,7 @@ If you were asked to implement a function on an Inductive type which is defined 
 
 Once you have chosen the hole(s) to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. For example, if the type of the hole is `foo -> bar`, issue the query `Search (foo -> bar).`, NOT `Search (_ : foo->bar)`: the latter is equivalent to `Search (_)` which will return everything and will go beyond your context length.
 If `Search (foo -> bar)` doesn't yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
+If it does return a result with a promising name, you must do a `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.
 
 Also, double check whether the hole was already implemented in the current conversation and you forgot to include it in the previous message.
 
@@ -261,7 +262,7 @@ If no parameters (or no types) are found, it returns nil."
              "\n")))
       (if (string-empty-p queries)
           ""
-        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries\n\n"  (query-coq queries)))))
+        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries. If you notice a result with promising name, you must do a `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.\n\n\n"  (query-coq queries)))))
 
 
 (defun coq-prog-search-queries-for-axioms (names)

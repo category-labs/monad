@@ -641,7 +641,7 @@ The first `\pre` asserts full ownership of `x`, even though the function only re
 ```
 
 
-### missing precondition
+### missing or too-weak precondition
 Carefully review the code to see which variables are being read or written. If the function calls other functions, search/review the preconditions in the callee's spec.
 For example, the following spec of `foo` is wrong because its precondition does not assert any ownership of `x` thus the function's proof would get stuck at the point it reads the variable `x`
 
@@ -651,6 +651,17 @@ For example, the following spec of `foo` is wrong because its precondition does 
         \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
       ).
 ```
+
+The following spec is wrong because the precondition only asserts some `qy` fractional ownership of `y`, which is not sufficient for writing to `y`.
+
+```gallina
+    cpp.spec "foo()" as foo_spec with (
+        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
+        \pre{(qy:Qp)} _global "y" |-> anyR uint (cQp.mut qy)
+        \post _global "y" |-> primR uint (cQp.mut qy) ((xv+1) `mod` (2^32))%N
+      ).
+```
+
 
 ### missing postcondition
 Ownership is only created at constructor calls and destructed at destructor calls.
@@ -701,7 +712,8 @@ Just to illustrate existential quantifications in `\post`, the above spec can be
       ).
 ```
 However, this spec is not idiomatic. The last argument of `\post` is of type `mpred` and and thus supports existential quantification. Thus the existential quantification over `xvfinalhalf` can be moved to the last argument:
-```
+
+```gallina
   cpp.spec "twice(unsigned int)" as twice_weak_spec3 with (
      \arg{xv:Z} "x" (Vint xv)
      \post{(xvfinal : Z)} [Vint xvfinal] (Exists xvfinalhalf, [| xvfinalhalf * 2 =  xvfinal|])

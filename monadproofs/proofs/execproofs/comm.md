@@ -1029,7 +1029,7 @@ The first `\pre` asserts full ownership of `x`, even though the function only re
 ```
 
 
-### missing precondition
+### missing or too-weak precondition
 Carefully review the code to see which variables are being read or written. If the function calls other functions, search/review the preconditions in the callee's spec.
 For example, the following spec of `foo` is wrong because its precondition does not assert any ownership of `x` thus the function's proof would get stuck at the point it reads the variable `x`
 
@@ -1039,6 +1039,17 @@ For example, the following spec of `foo` is wrong because its precondition does 
         \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
       ).
 ```
+
+The following spec is wrong because the precondition only asserts some `qy` fractional ownership of `y`, which is not sufficient for writing to `y`.
+
+```gallina
+    cpp.spec "foo()" as foo_spec with (
+        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
+        \pre{(qy:Qp)} _global "y" |-> anyR uint (cQp.mut qy)
+        \post _global "y" |-> primR uint (cQp.mut qy) ((xv+1) `mod` (2^32))%N
+      ).
+```
+
 
 ### missing postcondition
 Ownership is only created at constructor calls and destructed at destructor calls.
@@ -1089,7 +1100,8 @@ Just to illustrate existential quantifications in `\post`, the above spec can be
       ).
 ```
 However, this spec is not idiomatic. The last argument of `\post` is of type `mpred` and and thus supports existential quantification. Thus the existential quantification over `xvfinalhalf` can be moved to the last argument:
-```
+
+```gallina
   cpp.spec "twice(unsigned int)" as twice_weak_spec3 with (
      \arg{xv:Z} "x" (Vint xv)
      \post{(xvfinal : Z)} [Vint xvfinal] (Exists xvfinalhalf, [| xvfinalhalf * 2 =  xvfinal|])
@@ -1152,40 +1164,2232 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-I defined a small helper that splits a Z into the four 64-bit limbs, and then defined
+I want to make sure I use the right names and argument order for the arrayR and structR predicates in our C++ separation-logic library, so I’ll first look them up. 
 
-  uint256R q n  
-    := arrayR "unsigned long long"%cpp_type (fun i => primR "unsigned long long"%cpp_type q (Vint i))
-             (limbs_of_uint256 n).
+```coqquery
+Search arrayR.
+Search structR.
+```
 
-This `Rep` takes exactly one mathematical Z argument and a permission `q : cQp.t`.  The `add` method spec then takes full ownership of `*this` (since it mutates it) and any fraction of the operand (const&), and returns back the operand unchanged and updates `*this` to `(n_self + n_other) mod 2^256`.
+## User 2
+
+>>> Search arrayR.
+bluerock.lang.cpp.logic.arr.arrayR_valid_base_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) {xs : Corelib.Init.Datatypes.list X},
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.valid.validR (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.lang.cpp.logic.arr.arrayR_affine:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (t : bluerock.lang.cpp.syntax.core.type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T),
+    bluerock.iris.extra.bi.derived_laws.nary.Affine1 P → iris.bi.derived_connectives.Affine (bluerock.lang.cpp.logic.arr.arrayR t P l)
+bluerock.lang.cpp.logic.arr.arrayR_persistent:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (t : bluerock.lang.cpp.syntax.core.type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T),
+    bluerock.iris.extra.bi.derived_laws.nary.Persistent1 P
+    → iris.bi.derived_connectives.Persistent (bluerock.lang.cpp.logic.arr.arrayR t P l)
+bluerock.lang.cpp.logic.arr.arrayR_timeless:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (t : bluerock.lang.cpp.syntax.core.type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T),
+    bluerock.iris.extra.bi.derived_laws.nary.Timeless1 P → iris.bi.derived_connectives.Timeless (bluerock.lang.cpp.logic.arr.arrayR t P l)
+bluerock.cpp.array._at_arrayR_nil_B:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    bluerock.auto.core.hints.classes.bwd.Bwd (base |-> bluerock.lang.cpp.logic.arr.arrayR ty P [])
+bluerock.cpp.array._at_arrayR_nil_F:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    bluerock.auto.core.hints.classes.fwd.Fwd (base |-> bluerock.lang.cpp.logic.arr.arrayR ty P [])
+bluerock.lang.cpp.logic.arr.arrayR_fractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : stdpp.numbers.Qp → X → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : Corelib.Init.Datatypes.list X),
+    bluerock.iris.extra.bi.fractional.nary.Fractional1 R
+    → iris.bi.lib.fractional.Fractional (λ q : stdpp.numbers.Qp, bluerock.lang.cpp.logic.arr.arrayR ty (R q) l)
+bluerock.lang.cpp.logic.arr.arrayR_cfractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : bluerock.lang.cpp.algebra.cfrac.cQp.t
+                                                              → X → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list X),
+    (∀ a : X, bluerock.lang.cpp.bi.cfractional.CFractional (λ q : bluerock.lang.cpp.algebra.cfrac.cQp.t, R q a))
+    → bluerock.lang.cpp.bi.cfractional.CFractional
+        (λ q : bluerock.lang.cpp.algebra.cfrac.cQp.t, bluerock.lang.cpp.logic.arr.arrayR ty (R q) l)
+bluerock.lang.cpp.logic.arr.arrayR_valid_type_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (l : Corelib.Init.Datatypes.list X),
+    bluerock.iris.extra.bi.observe.Observe [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of resolve ty) |]
+      (bluerock.lang.cpp.logic.arr.arrayR ty R l)
+bluerock.cpp.array._at_arrayR_cons_B:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : T) (ms : Corelib.Init.Datatypes.list T),
+    bluerock.auto.core.hints.classes.bwd.Bwd (base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (m :: ms))
+bluerock.cpp.array._at_arrayR_cons_F:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : T) (ms : Corelib.Init.Datatypes.list T),
+    bluerock.auto.core.hints.classes.fwd.Fwd (base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (m :: ms))
+bluerock.cpp.array.arrayR_nil_build_B:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of σ ty)
+    → bluerock.auto.core.hints.classes.bwd.Bwd (l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR [])
+bluerock.lang.cpp.logic.cstring.cstring.R'_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.logic.arr.arrayR "char" (λ c : Corelib.Numbers.BinNums.N, bluerock.lang.cpp.primitives.charR q c) [0%N]
+    ⊢ bluerock.lang.cpp.logic.cstring.cstring.R' q ""
+bluerock.lang.cpp.logic.cstring.cstring.R_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.logic.arr.arrayR "char" (λ c : Corelib.Numbers.BinNums.N, bluerock.lang.cpp.primitives.charR q c) [0%N]
+    ⊢ bluerock.lang.cpp.logic.cstring.cstring.R q ""
+bluerock.lang.cpp.logic.arr.arrayR_singleton:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (x : X),
+    bluerock.lang.cpp.logic.arr.arrayR ty R [x] ⊣⊢ bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ R x
+bluerock.lang.cpp.logic.heap_pred.any.anyR_array':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (t : bluerock.lang.cpp.syntax.core.type) (n : Corelib.Numbers.BinNums.N) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t n) q
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR t (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR t q)
+         (bluerock.prelude.list_numbers.replicateN n ())
+bluerock.cpp.array.arrayR_observe_Forall:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (Q : T → Prop) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (l : Corelib.Init.Datatypes.list T),
+    (∀ x : T, bluerock.iris.extra.bi.observe.Observe [| Q x |] (R x))
+    → bluerock.iris.extra.bi.observe.Observe [| Corelib.Lists.ListDef.Forall Q l |] (bluerock.lang.cpp.logic.arr.arrayR ty R l)
+bluerock.lang.cpp.logic.heap_pred.any.anyR_array:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (t : bluerock.lang.cpp.syntax.core.type) (n : Corelib.Numbers.BinNums.N) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t n) q
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR t (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR t q)
+         (Corelib.Lists.ListDef.repeat () (Stdlib.NArith.BinNat.N.to_nat n))
+bluerock.cpp.array.arrayR_nil_build:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of σ ty)
+    → bluerock.lang.cpp.logic.pred.L.valid_ptr l ⊢ l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR []
+bluerock.cpp.array.arrayR_map':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A B : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : A → bluerock.lang.cpp.logic.rep_defs.Rep) (f : B → A) 
+    (ls : Corelib.Init.Datatypes.list B),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (f <$> ls) ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty (λ x : B, R (f x)) ls
+bluerock.lang.cpp.logic.arr.arrayR_as_cfractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (R' : X
+                                                                                                              → 
+                                                                                                              bluerock.lang.cpp.algebra.cfrac.cQp.t
+                                                                                                              → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : Corelib.Init.Datatypes.list X) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    (∀ x : X, bluerock.lang.cpp.bi.cfractional.AsCFractional (R x) (R' x) q)
+    → bluerock.lang.cpp.bi.cfractional.AsCFractional (bluerock.lang.cpp.logic.arr.arrayR ty R l)
+        (λ q0 : bluerock.lang.cpp.algebra.cfrac.cQp.t, bluerock.lang.cpp.logic.arr.arrayR ty (λ x : X, R' x q0) l) q
+bluerock.lang.cpp.logic.arr.arrayR_as_fractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (R' : X
+                                                                                                              → 
+                                                                                                              stdpp.numbers.Qp
+                                                                                                              → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : Corelib.Init.Datatypes.list X) (q : stdpp.numbers.Qp),
+    (∀ x : X, iris.bi.lib.fractional.AsFractional (R x) (R' x) q)
+    → iris.bi.lib.fractional.AsFractional (bluerock.lang.cpp.logic.arr.arrayR ty R l)
+        (λ q0 : stdpp.numbers.Qp, bluerock.lang.cpp.logic.arr.arrayR ty (λ x : X, R' x q0) l) q
+bluerock.lang.cpp.logic.arr.arrayR_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type),
+    bluerock.lang.cpp.logic.arr.arrayR ty R [] ⊣⊢ bluerock.lang.cpp.logic.heap_pred.valid.validR ∗
+    [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of resolve ty) |]
+bluerock.cpp.array.arrayR_nil_build'_B:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (sz : Corelib.Numbers.BinNums.N) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    (∀ x : bluerock.lang.cpp.semantics.genv.genv, bluerock.lang.cpp.semantics.types.size_of x ty = Corelib.Init.Datatypes.Some sz)
+    → bluerock.auto.core.hints.classes.bwd.Bwd (l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR [])
+bluerock.cpp.array.arrayR_nil_len0_B:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (A : Type) (l : Corelib.Init.Datatypes.list A),
+    stdpp.base.length l = 0
+    → ∀ ty : bluerock.lang.cpp.syntax.core.type,
+        bluerock.lang.cpp.semantics.types.HasSize ty
+        → ∀ (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (R : A → bluerock.lang.cpp.logic.rep_defs.Rep),
+            bluerock.auto.core.hints.classes.bwd.Bwd (x |-> bluerock.lang.cpp.logic.arr.arrayR ty R l)
+bluerock.cpp.array._at_arrayR_one_combine:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (x : T), bluerock.lang.cpp.logic.pred.L.type_ptr ty base ∗ base |-> P x ⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P [x]
+bluerock.lang.cpp.logic.arr.arrayR_valid_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X),
+    (i <= stdpp.base.length xs)%nat
+    → bluerock.iris.extra.bi.observe.Observe (.[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR)
+        (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.cpp.array._at_arrayR_one_split:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (x : T), base |-> bluerock.lang.cpp.logic.arr.arrayR ty P [x] ⊢ bluerock.lang.cpp.logic.pred.L.type_ptr ty base ∗ base |-> P x
+bluerock.cpp.array.arrayR_uninitR_anyR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (T : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (xs : Corelib.Init.Datatypes.list ()),
+    p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR T q) xs
+    ⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR T q) xs
+bluerock.lang.cpp.logic.arr.arrayR_sub_type_ptr_nat_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X),
+    (i < stdpp.base.length xs)%nat
+    → bluerock.iris.extra.bi.observe.Observe (.[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty)
+        (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.cpp.array.arrayR_replicateN_anyR_uninitR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (t : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (sz : Corelib.Numbers.BinNums.N),
+    p
+    |-> bluerock.lang.cpp.logic.arr.arrayR t (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR t q)
+          (bluerock.prelude.list_numbers.replicateN sz ())
+    ⊢ p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t sz) q
+bluerock.lang.cpp.logic.cstring.cstring.bufR_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z),
+    1 ≤ sz
+    → bluerock.lang.cpp.logic.arr.arrayR "char" (λ _ : (), bluerock.lang.cpp.primitives.charR q 0)
+        (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat sz))
+      ⊢ bluerock.lang.cpp.logic.cstring.cstring.bufR q sz ""
+monad.proofs.misc.learnArrUnsafe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (e : Type) (t : bluerock.lang.cpp.syntax.core.type) (a
+                                                                                                      a' : e
+                                                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (b b' : Corelib.Init.Datatypes.list e),
+    bluerock.auto.core.internal.lib.learn_exist_interface.HLearn bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
+      (bluerock.lang.cpp.logic.arr.arrayR t a b) (bluerock.lang.cpp.logic.arr.arrayR t a' b') [a = a'; b = b']
+bluerock.lang.cpp.logic.cstring.cstring.bufR'_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z),
+    1 ≤ sz
+    → bluerock.lang.cpp.logic.arr.arrayR "char" (λ _ : (), bluerock.lang.cpp.primitives.charR q 0)
+        (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat sz))
+      ⊢ bluerock.lang.cpp.logic.cstring.cstring.bufR' q sz ""
+bluerock.cpp.array.arrayR_nil_build':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (sz : Corelib.Numbers.BinNums.N) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    (∀ x : bluerock.lang.cpp.semantics.genv.genv, bluerock.lang.cpp.semantics.types.size_of x ty = Corelib.Init.Datatypes.Some sz)
+    → bluerock.lang.cpp.logic.pred.L.valid_ptr l ⊢ l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR []
+bluerock.lang.cpp.logic.arr.arrayR_mono:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper
+      (Corelib.Classes.Morphisms.pointwise_relation X iris.bi.interface.bi_entails ==>
+       Corelib.Init.Logic.eq ==> iris.bi.interface.bi_entails)
+      (bluerock.lang.cpp.logic.arr.arrayR ty)
+bluerock.cpp.array.arrayR_nil_len0:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (A : Type) (l : Corelib.Init.Datatypes.list A),
+    stdpp.base.length l = 0
+    → ∀ ty : bluerock.lang.cpp.syntax.core.type,
+        bluerock.lang.cpp.semantics.types.HasSize ty
+        → ∀ (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (R : A → bluerock.lang.cpp.logic.rep_defs.Rep),
+            bluerock.lang.cpp.logic.pred.L.valid_ptr x ⊢ x |-> bluerock.lang.cpp.logic.arr.arrayR ty R l
+bluerock.lang.cpp.logic.zstring.zstring.R'_unfold:
+  ∀ (ct : bluerock.lang.cpp.syntax.preliminary.char_type) {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
+    {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (zs : bluerock.lang.cpp.logic.zstring.zstring.t),
+    bluerock.lang.cpp.logic.zstring.zstring.R' ct q zs
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tchar_ ct)
+         (λ c : Corelib.Numbers.BinNums.N,
+            bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tchar_ ct) q
+              (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar c))
+         zs ∗
+    [| bluerock.lang.cpp.logic.zstring.zstring.WF' ct zs |]
+bluerock.lang.cpp.logic.zstring.zstring.R_unfold:
+  ∀ (ct : bluerock.lang.cpp.syntax.preliminary.char_type) {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
+    {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (zs : bluerock.lang.cpp.logic.zstring.zstring.t),
+    bluerock.lang.cpp.logic.zstring.zstring.R ct q zs
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tchar_ ct)
+         (λ c : Corelib.Numbers.BinNums.N,
+            bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tchar_ ct) q
+              (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar c))
+         zs ∗
+    [| bluerock.lang.cpp.logic.zstring.zstring.WF ct zs |]
+bluerock.lang.cpp.logic.arr.arrayR_validR_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Numbers.BinNums.Z) 
+    (xs : Corelib.Init.Datatypes.list X),
+    0 ≤ i ≤ stdpp.base.length xs
+    → bluerock.iris.extra.bi.observe.Observe (.[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR)
+        (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.lang.cpp.logic.cstring.cstring.R'_unfold:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (cstr : bluerock.lang.cpp.logic.cstring.cstring.t),
+    bluerock.lang.cpp.logic.cstring.cstring.R' q cstr
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR "char" (λ c : Corelib.Numbers.BinNums.N, bluerock.lang.cpp.primitives.charR q c)
+         (bluerock.lang.cpp.logic.cstring.cstring.to_zstring cstr) ∗
+    [| bluerock.lang.cpp.logic.cstring.cstring.WF' cstr |]
+bluerock.lang.cpp.logic.cstring.cstring.R_unfold:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (cstr : bluerock.lang.cpp.logic.cstring.cstring.t),
+    bluerock.lang.cpp.logic.cstring.cstring.R q cstr
+    ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR "char" (λ c : Corelib.Numbers.BinNums.N, bluerock.lang.cpp.primitives.charR q c)
+         (bluerock.lang.cpp.logic.cstring.cstring.to_zstring cstr) ∗
+    [| bluerock.lang.cpp.logic.cstring.cstring.WF cstr |]
+bluerock.lang.cpp.logic.arr.arrayR_sep:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {ty : bluerock.lang.cpp.syntax.core.type} {V : Type} (A B : V → bluerock.lang.cpp.logic.rep_defs.Rep) (xs : 
+                                                                                                           Corelib.Init.Datatypes.list V),
+    bluerock.lang.cpp.logic.arr.arrayR ty (λ v : V, A v ∗ B v) xs ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty (λ v : V, A v) xs ∗
+    bluerock.lang.cpp.logic.arr.arrayR ty (λ v : V, B v) xs
+bluerock.lang.cpp.logic.core_string.string_bytesR.unlock:
+  @bluerock.lang.cpp.logic.core_string.string_bytesR =
+  λ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) (Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ) (σ : bluerock.lang.cpp.semantics.genv.genv) 
+    (cty : bluerock.lang.cpp.syntax.preliminary.char_type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (s : bluerock.lang.cpp.syntax.literal_string.literal_string.t),
+    let ty := bluerock.lang.cpp.syntax.core.Tchar_ cty in
+    bluerock.lang.cpp.logic.arr.arrayR ty
+      (λ c : Corelib.Numbers.BinNums.N,
+         bluerock.lang.cpp.logic.heap_pred.primR ty q (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.N_to_char cty c))
+      (bluerock.lang.cpp.syntax.literal_string.literal_string.to_list_N s ++ [0%N])
+bluerock.lang.cpp.logic.arr.arrayR_sub_svalidR_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Numbers.BinNums.Z) 
+    (xs : Corelib.Init.Datatypes.list X),
+    0 ≤ i < stdpp.base.length xs
+    → bluerock.iris.extra.bi.observe.Observe (.[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.svalidR)
+        (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.lang.cpp.logic.arr.arrayR_combine:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs) ∗
+    .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn i xs) ⊢ bluerock.lang.cpp.logic.arr.arrayR ty R xs
+bluerock.cpp.array.arrayR_singl_build_T_uchar:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (x : Corelib.Numbers.BinNums.Z),
+    l |-> bluerock.lang.cpp.primitives.ucharR q x
+    ⊢ l
+      |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c) [x]
+bluerock.lang.cpp.logic.arr.arrayR_sub_type_ptr_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Numbers.BinNums.Z) 
+    (xs : Corelib.Init.Datatypes.list X),
+    0 ≤ i < stdpp.base.length xs
+    → bluerock.iris.extra.bi.observe.Observe (.[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty)
+        (bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.cpp.array._at_arrayR_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    base |-> bluerock.lang.cpp.logic.arr.arrayR ty P [] ⊣⊢ □ bluerock.lang.cpp.logic.pred.L.valid_ptr base ∗
+    [| bluerock.lang.cpp.semantics.types.HasSize ty |]
+monad.proofs.misc.obsUintArrayR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (l : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z),
+    bluerock.iris.extra.bi.observe.Observe [| ∀ a : Corelib.Numbers.BinNums.Z, Stdlib.Lists.List.In a l → 0 ≤ a |]
+      (p
+       |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned int"
+             (λ i : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR "unsigned int" q i) l)
+bluerock.cpp.array._at_arrayR_valid_obs__N:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {R : T → bluerock.lang.cpp.logic.rep_defs.Rep} {ty : bluerock.lang.cpp.syntax.core.type} (xs : Corelib.Init.Datatypes.list T) 
+    (i : Corelib.Numbers.BinNums.N) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    (i ≤ bluerock.prelude.list_numbers.lengthN xs)%N
+    → bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.pred.L.valid_ptr (p .[ ty ! i ]))
+        (p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.cpp.array.anyR_Tarray_0_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (n : Corelib.Numbers.BinNums.N),
+    n = 0%N
+    → ∀ (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+        l |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray "unsigned char" n) q
+        ⊢ l |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" TR []
+bluerock.lang.cpp.logic.arr.arrayR_proper_ho.arrayR_mono_ho:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {H : stdpp.base.Equiv T} (t : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper
+      ((stdpp.base.equiv ==> iris.bi.interface.bi_entails) ==> stdpp.base.equiv ==> iris.bi.interface.bi_entails)
+      (bluerock.lang.cpp.logic.arr.arrayR t)
+bluerock.cpp.array.arrayR_map:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A B : Type} (ty : bluerock.lang.cpp.syntax.core.type) (f : A → B) (g : B → A) (r : A → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (la : Corelib.Init.Datatypes.list A),
+    (∀ a : A, a ∈ la → g (f a) = a)
+    → bluerock.lang.cpp.logic.arr.arrayR ty (λ b : B, r (g b)) (Corelib.Lists.ListDef.map f la)
+      ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty r la
+monad.proofs.misc.generalize_arrayR_loopinv_produce:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (i : Corelib.Init.Datatypes.nat) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (xs : Corelib.Init.Datatypes.list X),
+    i = stdpp.base.length xs
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs ⊣⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs)
+bluerock.lang.cpp.logic.arr._at_arrayR_valid_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    (i <= stdpp.base.length xs)%nat
+    → bluerock.iris.extra.bi.observe.Observe (p .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR)
+        (p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.lang.cpp.logic.arr._at_arrayR_sub_type_ptrR_nat_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (xs : Corelib.Init.Datatypes.list X),
+    (i < stdpp.base.length xs)%nat
+    → bluerock.iris.extra.bi.observe.Observe (p .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty)
+        (p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+bluerock.lang.cpp.logic.arr.arrayR_proper:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper
+      (Corelib.Classes.Morphisms.pointwise_relation X stdpp.base.equiv ==> Corelib.Init.Logic.eq ==> stdpp.base.equiv)
+      (bluerock.lang.cpp.logic.arr.arrayR ty)
+monad.proofs.misc.arrayR_nils:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} {T : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : T
+                                                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep),
+    bluerock.lang.cpp.logic.arr.arrayR ty R [] =
+    (.[ ty ! 0%nat ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR ∗
+     [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of CU ty) |] ∗ emp)%I
+bluerock.cpp.array.arrayR_app__N:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {R : T → bluerock.lang.cpp.logic.rep_defs.Rep} {ty : bluerock.lang.cpp.syntax.core.type} (xs
+                                                                                                         ys : Corelib.Init.Datatypes.list T),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (xs ++ ys) ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty R xs ∗
+    .[ ty ! bluerock.prelude.list_numbers.lengthZ xs ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R ys
+bluerock.lang.cpp.logic.arr.arrayR_app:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (xs
+                                                                                                         ys : Corelib.Init.Datatypes.list X),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (xs ++ ys) ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty R xs ∗
+    .[ ty ! stdpp.base.length xs ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R ys
+bluerock.lang.cpp.logic.arr.arrayR_split:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X),
+    (i <= stdpp.base.length xs)%nat
+    → bluerock.lang.cpp.logic.arr.arrayR ty R xs ⊢ bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs) ∗
+      .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn i xs)
+bluerock.cpp.oprimR.arrayR_uninitR_oprimR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (T : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (n : Corelib.Numbers.BinNums.N),
+    p
+    |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR T q)
+          (bluerock.prelude.list_numbers.replicateN n ())
+    ⊢ p
+      |-> bluerock.lang.cpp.logic.arr.arrayR T
+            (λ ov : Corelib.Init.Datatypes.option bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val,
+               bluerock.cpp.oprimR.oprimR T q ov)
+            (bluerock.prelude.list_numbers.replicateN n Corelib.Init.Datatypes.None)
+bluerock.cpp.array.arrayR_combine2:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (i : Corelib.Numbers.BinNums.N) {T : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (la lb : Corelib.Init.Datatypes.list T),
+    Stdlib.NArith.BinNat.N.of_nat (stdpp.base.length la) = i
+    → .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R lb ∗ bluerock.lang.cpp.logic.arr.arrayR ty R la
+      ⊢ bluerock.lang.cpp.logic.arr.arrayR ty R (la ++ lb)
+bluerock.cpp.array.arrayR_replicateN_anyR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (t : bluerock.lang.cpp.syntax.core.type) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (R : bluerock.lang.cpp.algebra.cfrac.cQp.t → A → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (sz : Corelib.Numbers.BinNums.N) (a : A),
+    (∀ (q0 : bluerock.lang.cpp.algebra.cfrac.cQp.t) (a0 : A), R q0 a0 ⊢ bluerock.lang.cpp.logic.heap_pred.anyR t q0)
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR t (R q) (bluerock.prelude.list_numbers.replicateN sz a)
+      ⊢ p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t sz) q
+bluerock.lang.cpp.logic.arr.arrayR_cons:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (x : X) 
+    (xs : Corelib.Init.Datatypes.list X),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (x :: xs) ⊣⊢ bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ 
+    R x ∗ .[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs
+bluerock.cpp.array.into_sep_arrayR_cons:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (R : A → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (Q : bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (l : Corelib.Init.Datatypes.list A) (x : A) (l' : Corelib.Init.Datatypes.list A),
+    iris.proofmode.classes.IsCons l x l'
+    → iris.proofmode.classes_make.MakeSep (R x) (.[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R l') Q
+      → iris.proofmode.classes.IntoSep (bluerock.lang.cpp.logic.arr.arrayR ty R l) (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) Q
+bluerock.lang.cpp.logic.arr.arrayR_pureR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} {ty : bluerock.lang.cpp.syntax.core.type} (R : X → bluerock.iris.extra.base_logic.mpred.mpred) (l : 
+                                                                                                               Corelib.Init.Datatypes.list X),
+    bluerock.lang.cpp.logic.arr.arrayR ty (λ v : X, bluerock.lang.cpp.logic.rep_defs.pureR (R v)) l
+    ⊣⊢ bluerock.lang.cpp.logic.rep_defs.pureR ([∗ list] x ∈ l, R x) ∗ bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : X, emp) l
+bluerock.lang.cpp.logic.arr.arrayR_proper_ho.arrayR_proper_ho:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {H : stdpp.base.Equiv T} (t : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper ((stdpp.base.equiv ==> stdpp.base.equiv) ==> stdpp.base.equiv ==> stdpp.base.equiv)
+      (bluerock.lang.cpp.logic.arr.arrayR t)
+bluerock.lang.cpp.logic.arr.arrayR_flip_mono:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (ty : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper
+      (Corelib.Classes.Morphisms.pointwise_relation X (Corelib.Program.Basics.flip iris.bi.interface.bi_entails) ==>
+       Corelib.Init.Logic.eq ==> Corelib.Program.Basics.flip iris.bi.interface.bi_entails)
+      (bluerock.lang.cpp.logic.arr.arrayR ty)
+bluerock.lang.cpp.logic.arr._at_arrayR_sub_type_ptrR_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Numbers.BinNums.Z) 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (xs : Corelib.Init.Datatypes.list X),
+    0 ≤ i < stdpp.base.length xs
+    → bluerock.iris.extra.bi.observe.Observe (p .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty)
+        (p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs)
+monad.proofs.misc.generalize_arrayR_loopinv:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (i : Corelib.Init.Datatypes.nat) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (xs : Corelib.Init.Datatypes.list X),
+    i = 0%nat
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs
+      ⊣⊢ p .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn i xs)
+bluerock.lang.cpp.logic.arr.arrayR_cons_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (x : X) 
+    (xs : Corelib.Init.Datatypes.list X),
+    (∀ x0 : X, bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) (R x0))
+    → bluerock.lang.cpp.logic.arr.arrayR ty R (x :: xs) ⊣⊢ R x ∗ .[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs
+bluerock.cpp.array.arrayR_nil_build_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of σ ty)
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [bluerock.lang.cpp.logic.pred.L.valid_ptr l] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR []]
+bluerock.lang.cpp.logic.arr.arrayR_agree:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X T : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : T → X → bluerock.lang.cpp.logic.rep_defs.Rep) (q1 q2 : T) 
+    (l k : Corelib.Init.Datatypes.list X),
+    (∀ (q3 q4 : T) (x1 x2 : X), bluerock.iris.extra.bi.observe.Observe2 [| x1 = x2 |] (R q3 x1) (R q4 x2))
+    → stdpp.base.length l = stdpp.base.length k
+      → bluerock.iris.extra.bi.observe.Observe2 [| l = k |] (bluerock.lang.cpp.logic.arr.arrayR ty (R q1) l)
+          (bluerock.lang.cpp.logic.arr.arrayR ty (R q2) k)
+bluerock.cpp.array.arrayR_anyR_f:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (f : T → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (n : Corelib.Init.Datatypes.nat) (ty : bluerock.lang.cpp.syntax.core.type) (l : Corelib.Init.Datatypes.list T) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    n = stdpp.base.length l
+    → loc |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ x : T, bluerock.lang.cpp.logic.heap_pred.primR ty q (f x)) l
+      ⊢ loc
+        |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR ty q)
+              (Corelib.Lists.ListDef.repeat () n)
+bluerock.cpp.array.UNSAFE_LearnArrayPrimEqual.UNSAFE_learn_arrayR_primR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} (Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ) (resolve : bluerock.lang.cpp.semantics.genv.genv) 
+    {p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr} {q1 q2 : bluerock.lang.cpp.algebra.cfrac.cQp.t} 
+    {x y : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z} {T T' : bluerock.lang.cpp.syntax.core.type},
+    bluerock.auto.core.internal.lib.learn_exist_interface.HLearn bluerock.auto.core.internal.lib.learn_exist_interface.LearnAlways
+      (p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR T' q1 c) x)
+      (p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR T' q2 c) y)
+      [y = x]
+bluerock.lang.cpp.logic.arr.arrayR_ne:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) {T : iris.algebra.ofe.ofe} (n : Corelib.Init.Datatypes.nat),
+    Corelib.Classes.Morphisms.Proper
+      (Corelib.Classes.Morphisms.pointwise_relation T (iris.algebra.ofe.dist n) ==> Corelib.Init.Logic.eq ==> iris.algebra.ofe.dist n)
+      (bluerock.lang.cpp.logic.arr.arrayR ty)
+bluerock.cpp.array.arrayR_app_build_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (x1 x2 : Corelib.Init.Datatypes.list T),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR x1] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+      [l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR (x1 ++ x2)]
+bluerock.cpp.array.anyR_arrayR_shatter:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (T : bluerock.lang.cpp.syntax.core.type) (n : Corelib.Numbers.BinNums.N) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (o : Corelib.Numbers.BinNums.N),
+    bluerock.lang.cpp.semantics.types.size_of σ T = Corelib.Init.Datatypes.Some o
+    → l |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray T n) q
+      ⊣⊢ l
+         |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR T q)
+               (Corelib.Lists.ListDef.repeat () (Stdlib.NArith.BinNat.N.to_nat n))
+bluerock.cpp.array.arrayR_app_build:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (x1 x2 : Corelib.Init.Datatypes.list T),
+    l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR x1
+    ⊢ l .[ ty ! stdpp.base.length x1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty TR x2 -∗
+      l |-> bluerock.lang.cpp.logic.arr.arrayR ty TR (x1 ++ x2)
+bluerock.lang.cpp.logic.arr.arrayR_snoc:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (xs : Corelib.Init.Datatypes.list X) 
+    (y : X),
+    bluerock.lang.cpp.logic.arr.arrayR ty R (xs ++ [y]) ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty R xs ∗
+    .[ ty ! stdpp.base.length xs ] |-> (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ R y)
+bluerock.cpp.array.observe_arrayR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (P : Corelib.Numbers.BinNums.Z → A → bluerock.lang.cpp.logic.rep_defs.RepI) (T : bluerock.lang.cpp.syntax.core.type) 
+    (R : A → bluerock.lang.cpp.logic.rep_defs.Rep) (xs : Corelib.Init.Datatypes.list A),
+    (∀ (i : Corelib.Numbers.BinNums.Z) (x : A), bluerock.iris.extra.bi.observe.Observe (P i x) (.[ T ! i ] |-> R x))
+    → bluerock.iris.extra.bi.observe.Observe ([∗ list] i↦x ∈ xs, P i x) (bluerock.lang.cpp.logic.arr.arrayR T R xs)
+bluerock.cpp.array.arrayRpure:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) {T : Type} (R1 : T → bluerock.lang.cpp.logic.rep_defs.Rep) (R2 : T
+                                                                                                               → bluerock.iris.extra.base_logic.mpred.mpred) 
+    (l : Corelib.Init.Datatypes.list T),
+    bluerock.lang.cpp.logic.arr.arrayR ty (λ x : T, bluerock.lang.cpp.logic.rep_defs.pureR (R2 x) ∗ R1 x) l
+    ⊣⊢ bluerock.lang.cpp.logic.rep_defs.pureR ([∗ list] x ∈ l, R2 x) ∗ bluerock.lang.cpp.logic.arr.arrayR ty R1 l
+monad.proofs.misc.arrayR_combinep:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} {T : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : T
+                                                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (i : Corelib.Init.Datatypes.nat) (xs : Corelib.Init.Datatypes.list T) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs) ∗
+    p .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn i xs)
+    ⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs
+bluerock.cpp.array.arrayR_combine:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (i : Corelib.Init.Datatypes.nat) (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (m : Corelib.Init.Datatypes.list T),
+    base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.firstn i m) ∗
+    base .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.skipn i m)
+    ⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P m
+bluerock.lang.cpp.logic.arr.arrayR_agree_prefix:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X T : Type} (ty : bluerock.lang.cpp.syntax.core.type) (R : T → X → bluerock.lang.cpp.logic.rep_defs.Rep) (q1 q2 : T) 
+    (l k : Corelib.Init.Datatypes.list X),
+    (∀ (q3 q4 : T) (x1 x2 : X), bluerock.iris.extra.bi.observe.Observe2 [| x1 = x2 |] (R q3 x1) (R q4 x2))
+    → (stdpp.base.length l <= stdpp.base.length k)%nat
+      → bluerock.iris.extra.bi.observe.Observe2 [| l = Corelib.Lists.ListDef.firstn (stdpp.base.length l) k |]
+          (bluerock.lang.cpp.logic.arr.arrayR ty (R q1) l) (bluerock.lang.cpp.logic.arr.arrayR ty (R q2) k)
+bluerock.lang.cpp.logic.arr.arrayR_proper_ho.arrayR_ne_ho:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : iris.algebra.ofe.ofe} (t : bluerock.lang.cpp.syntax.core.type) (n : Corelib.Init.Datatypes.nat),
+    Corelib.Classes.Morphisms.Proper
+      ((iris.algebra.ofe.dist n ==> iris.algebra.ofe.dist n) ==> iris.algebra.ofe.dist n ==> iris.algebra.ofe.dist n)
+      (bluerock.lang.cpp.logic.arr.arrayR t)
+bluerock.cpp.array.arrayR_uninitR_anyR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (T : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (xs : Corelib.Init.Datatypes.list ()),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR T q) xs] [tele]
+      bluerock.auto.core.hints.classes.cancelx.CoverAny
+      [p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR T q) xs]
+bluerock.cpp.array.arrayR_anyR_take:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (f : T → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (n : Corelib.Init.Datatypes.nat) (l : Corelib.Init.Datatypes.list T) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    n ≤ stdpp.base.length l
+    → loc
+      |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ x : T, bluerock.lang.cpp.logic.heap_pred.primR ty q (f x))
+            (Corelib.Lists.ListDef.firstn n l)
+      ⊢ loc
+        |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR ty q)
+              (Corelib.Lists.ListDef.repeat () n)
+bluerock.cpp.array.arrayR_replicateN_anyR_uninitR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (t : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (sz : Corelib.Numbers.BinNums.N),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [p
+       |-> bluerock.lang.cpp.logic.arr.arrayR t (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR t q)
+             (bluerock.prelude.list_numbers.replicateN sz ())]
+      [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+      [p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t sz) q]
+bluerock.lang.cpp.logic.arr._at_arrayR_valid:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (i : Corelib.Init.Datatypes.nat) 
+    (xs : Corelib.Init.Datatypes.list X) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    (i <= stdpp.base.length xs)%nat
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs ⊣⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs ∗
+      p .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR
+bluerock.cpp.array.arrayR_split:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (i : Corelib.Init.Datatypes.nat) (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (m : Corelib.Init.Datatypes.list T),
+    (i <= stdpp.base.length m)%nat
+    → base |-> bluerock.lang.cpp.logic.arr.arrayR ty P m
+      ⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.firstn i m) ∗
+      base .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.skipn i m)
+bluerock.cpp.array._at_arrayR_cons:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : T) (ms : Corelib.Init.Datatypes.list T),
+    base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (m :: ms) ⊣⊢ bluerock.lang.cpp.logic.pred.L.type_ptr ty base ∗ 
+    base |-> P m ∗ base .[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms
+bluerock.lang.cpp.logic.arr.arrayR_proper_ho.arrayR_flip_mono_ho:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {H : stdpp.base.Equiv T} (t : bluerock.lang.cpp.syntax.core.type),
+    Corelib.Classes.Morphisms.Proper
+      ((stdpp.base.equiv --> Corelib.Program.Basics.flip iris.bi.interface.bi_entails) ==>
+       stdpp.base.equiv --> Corelib.Program.Basics.flip iris.bi.interface.bi_entails)
+      (bluerock.lang.cpp.logic.arr.arrayR t)
+bluerock.cpp.array.arrayR_singl_build_T_uchar_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (x : Corelib.Numbers.BinNums.Z),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [l |-> bluerock.lang.cpp.primitives.ucharR q x] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+      [l
+       |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c) [x]]
+bluerock.cpp.array.anyR_Tarray_0_nil_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (T : Type) (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (n : Corelib.Numbers.BinNums.N),
+    n = 0%N
+    → ∀ (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (l : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+        bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [l |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray "unsigned char" n) q] [tele]
+          bluerock.auto.core.hints.classes.cancelx.CoverAny [l |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" TR []]
+bluerock.cpp.array.arrayR_anyR_array_CX:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (Vctr : A → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (T : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (xs : Corelib.Init.Datatypes.list A) 
+    (len : Corelib.Numbers.BinNums.N),
+    bluerock.prelude.list_numbers.lengthN xs = len
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [p |-> bluerock.lang.cpp.logic.arr.arrayR T (λ v : A, bluerock.lang.cpp.logic.heap_pred.primR T q (Vctr v)) xs] [tele]
+        bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray T len) q]
+bluerock.cpp.array.arrayR_unsplit_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (i : Corelib.Numbers.BinNums.N) (T : Type) (l : 
+                                                                                                               Corelib.Init.Datatypes.list T) 
+    (v : T) (ty : bluerock.lang.cpp.syntax.core.type) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep),
+    Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat i) = Corelib.Init.Datatypes.Some v
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn (Stdlib.NArith.BinNat.N.to_nat i) l)] [tele]
+        bluerock.auto.core.hints.classes.cancelx.CoverAny [loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R l]
+bluerock.cpp.oprimR.arrayR_uninitR_oprimR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (T : bluerock.lang.cpp.syntax.core.type) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (n : Corelib.Numbers.BinNums.N),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [p
+       |-> bluerock.lang.cpp.logic.arr.arrayR T (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR T q)
+             (bluerock.prelude.list_numbers.replicateN n ())]
+      [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+      [p
+       |-> bluerock.lang.cpp.logic.arr.arrayR T
+             (λ ov : Corelib.Init.Datatypes.option bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val,
+                bluerock.cpp.oprimR.oprimR T q ov)
+             (bluerock.prelude.list_numbers.replicateN n Corelib.Init.Datatypes.None)]
+bluerock.cpp.array.arrayR_replicateN_anyR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (A : Type) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (t : bluerock.lang.cpp.syntax.core.type) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (R : bluerock.lang.cpp.algebra.cfrac.cQp.t → A → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (sz : Corelib.Numbers.BinNums.N) (a : A),
+    (∀ (q0 : bluerock.lang.cpp.algebra.cfrac.cQp.t) (a0 : A), R q0 a0 ⊢ bluerock.lang.cpp.logic.heap_pred.anyR t q0)
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [p |-> bluerock.lang.cpp.logic.arr.arrayR t (R q) (bluerock.prelude.list_numbers.replicateN sz a)] [tele]
+        bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t sz) q]
+bluerock.cpp.array.arrayR_put1:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) 
+    (TR : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T) (x : T),
+    Stdlib.Lists.List.nth_error l 0 = Corelib.Init.Datatypes.Some x
+    → loc |-> TR x
+      ⊢ bluerock.lang.cpp.logic.pred.L.type_ptr ty loc ∗
+        loc .[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty TR (Corelib.Lists.ListDef.skipn 1 l) -∗
+        loc |-> bluerock.lang.cpp.logic.arr.arrayR ty TR l
+bluerock.lang.cpp.logic.cstring.cstring.bufR'_unfold:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z) (cstr : bluerock.lang.cpp.logic.cstring.cstring.t),
+    bluerock.lang.cpp.logic.cstring.cstring.bufR' q sz cstr ⊣⊢ [| bluerock.lang.cpp.logic.cstring.cstring.size cstr ≤ sz |] ∗
+    bluerock.lang.cpp.logic.cstring.cstring.R' q cstr ∗
+    .[ "char" ! bluerock.lang.cpp.logic.cstring.cstring.size cstr ]
+    |-> bluerock.lang.cpp.logic.arr.arrayR "char" (λ _ : (), bluerock.lang.cpp.primitives.charR q 0)
+          (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat (sz - bluerock.lang.cpp.logic.cstring.cstring.size cstr)))
+bluerock.lang.cpp.logic.cstring.cstring.bufR_unfold:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z) (cstr : bluerock.lang.cpp.logic.cstring.cstring.t),
+    bluerock.lang.cpp.logic.cstring.cstring.bufR q sz cstr ⊣⊢ [| bluerock.lang.cpp.logic.cstring.cstring.size cstr ≤ sz |] ∗
+    bluerock.lang.cpp.logic.cstring.cstring.R q cstr ∗
+    .[ "char" ! bluerock.lang.cpp.logic.cstring.cstring.size cstr ]
+    |-> bluerock.lang.cpp.logic.arr.arrayR "char" (λ _ : (), bluerock.lang.cpp.primitives.charR q 0)
+          (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat (sz - bluerock.lang.cpp.logic.cstring.cstring.size cstr)))
+bluerock.cpp.array.arrayR_inrange_valid_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (T : Type) (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (i : Corelib.Numbers.BinNums.N) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T) (v : T),
+    Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat i) = Corelib.Init.Datatypes.Some v
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [x |-> bluerock.lang.cpp.logic.arr.arrayR ty R l] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [bluerock.lang.cpp.logic.pred.L.valid_ptr (x .[ ty ! i ])]
+bluerock.lang.cpp.logic.zstring.zstring.bufR'_unfold:
+  ∀ (ct : bluerock.lang.cpp.syntax.preliminary.char_type) {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
+    {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z) (cstr : bluerock.lang.cpp.logic.zstring.zstring.t),
+    bluerock.lang.cpp.logic.zstring.zstring.bufR' ct q sz cstr ⊣⊢ [| bluerock.lang.cpp.logic.zstring.zstring.size cstr ≤ sz |] ∗
+    bluerock.lang.cpp.logic.zstring.zstring.R' ct q cstr ∗
+    .[ bluerock.lang.cpp.syntax.core.Tchar_ ct ! bluerock.lang.cpp.logic.zstring.zstring.size cstr ]
+    |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tchar_ ct)
+          (λ _ : (),
+             bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tchar_ ct) q
+               (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar 0))
+          (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat (sz - bluerock.lang.cpp.logic.zstring.zstring.size cstr)))
+bluerock.lang.cpp.logic.zstring.zstring.bufR_unfold:
+  ∀ (ct : bluerock.lang.cpp.syntax.preliminary.char_type) {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
+    {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : Corelib.Numbers.BinNums.Z) (zs : bluerock.lang.cpp.logic.zstring.zstring.t),
+    bluerock.lang.cpp.logic.zstring.zstring.bufR ct q sz zs ⊣⊢ [| bluerock.lang.cpp.logic.zstring.zstring.size zs ≤ sz |] ∗
+    bluerock.lang.cpp.logic.zstring.zstring.R ct q zs ∗
+    .[ bluerock.lang.cpp.syntax.core.Tchar_ ct ! bluerock.lang.cpp.logic.zstring.zstring.size zs ]
+    |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tchar_ ct)
+          (λ _ : (),
+             bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tchar_ ct) q
+               (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar 0))
+          (Corelib.Lists.ListDef.repeat () (Stdlib.ZArith.BinInt.Z.to_nat (sz - bluerock.lang.cpp.logic.zstring.zstring.size zs)))
+bluerock.lang.cpp.logic.arr.arrayR_snoc_obs:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (xs : Corelib.Init.Datatypes.list X) (y : X),
+    (∀ x : X, bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) (R x))
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (xs ++ [y]) ⊣⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs ∗
+      p .[ ty ! stdpp.base.length xs ] |-> R y
+bluerock.cpp.array._arrayR_put1'_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (l : 
+                                                                                                               Corelib.Init.Datatypes.list
+                                                                                                               Corelib.Numbers.BinNums.Z) 
+    (x : Corelib.Numbers.BinNums.Z),
+    Stdlib.Lists.List.nth_error l 0 = Corelib.Init.Datatypes.Some x
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [loc |-> bluerock.lang.cpp.primitives.ucharR q x] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [loc
+         |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c) l]
+bluerock.cpp.array.arrayR_anyR_combine_char_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (b : bluerock.lang.cpp.syntax.preliminary.char_type) (ct : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    Corelib.Numbers.BinNums.N
+    → ∀ (zs : Corelib.Numbers.BinNums.N) (H : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N),
+        (bluerock.prelude.list_numbers.lengthN H ≤ zs)%N
+        → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+            [ct
+             |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tchar_ b)
+                   (λ c : Corelib.Numbers.BinNums.N,
+                      bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tchar_ b) 1$m
+                        (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar c))
+                   H]
+            [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+            [ct
+             |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray (bluerock.lang.cpp.syntax.core.Tchar_ b) zs)
+                   1$m]
+bluerock.auto.cpp.hints.layout.implicit_destruct_tblockR_arrayR_primR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type) {T : Type} 
+    (f : T → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (ls : Corelib.Init.Datatypes.list T) (len : Corelib.Numbers.BinNums.N) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    Stdlib.NArith.BinNat.N.of_nat (stdpp.base.length ls) = len
+    → q = 1%Qp
+      → p |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ v : T, bluerock.lang.cpp.logic.heap_pred.primR ty q (f v)) ls
+        ⊢ |={↑bluerock.lang.cpp.logic.pred.pred_ns}=>
+            p |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tarray ty len) q
+monad.proofs.misc.arrayR_combineC:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (T : Type) (ty : bluerock.lang.cpp.syntax.core.type) (R : T
+                                                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (i : Corelib.Init.Datatypes.nat) (xs : Corelib.Init.Datatypes.list T) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr),
+    bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+      [p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs);
+       p .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn i xs)]
+      [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny [p |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs]
+bluerock.cpp.array.arrayR_anyR_combine_char:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ct : bluerock.lang.cpp.syntax.preliminary.char_type) (t := bluerock.lang.cpp.syntax.core.Tchar_ ct) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (n : Corelib.Numbers.BinNums.N) (zs : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N),
+    let i := bluerock.prelude.list_numbers.lengthN zs in
+    (i ≤ n)%N
+    → p
+      |-> bluerock.lang.cpp.logic.arr.arrayR t
+            (λ c : Corelib.Numbers.BinNums.N,
+               bluerock.lang.cpp.logic.heap_pred.primR t 1$m (bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar c))
+            zs
+      ⊢ p .[ t ! i ] |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t (n - i)) 1$m -∗
+        p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t n) 1$m
+bluerock.cpp.array.arrayR_anyR_unfocus1_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type) (sz
+                                                                                                            r : Corelib.Numbers.BinNums.N),
+    (0 < r)%N
+    → bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some sz
+      → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [x |-> bluerock.lang.cpp.logic.heap_pred.anyR ty 1$m] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+          [x
+           |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR ty 1$m)
+                 (Corelib.Lists.ListDef.repeat () (Stdlib.NArith.BinNat.N.to_nat r))]
+bluerock.cpp.array.arrayR_append':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (l : Corelib.Init.Datatypes.list T) (v : T) (ty : bluerock.lang.cpp.syntax.core.type) (sz : Corelib.Numbers.BinNums.N),
+    bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some sz
+    → (∀ v' : T, bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) (R v'))
+      → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R l ∗ p .[ ty ! stdpp.base.length l ] |-> R v
+        ⊢ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (l ++ [v])
+bluerock.cpp.array.arrayR_append:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (l : Corelib.Init.Datatypes.list T) (v : T) (ty : bluerock.lang.cpp.syntax.core.type) (sz : Corelib.Numbers.BinNums.N),
+    bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some sz
+    → (∀ v' : T, bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) (R v'))
+      → p |-> bluerock.lang.cpp.logic.arr.arrayR ty R l
+        ⊢ p .[ ty ! stdpp.base.length l ] |-> R v -∗ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (l ++ [v])
+bluerock.cpp.array.wp_initlist_nil:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (Vctr : A → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (projV : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
+                                                                                              → Corelib.Init.Datatypes.option A) 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (ρ : bluerock.lang.cpp.logic.wp.region) (l : A) 
+    (ls_aux : Corelib.Init.Datatypes.list A) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ety : bluerock.lang.cpp.syntax.core.type) 
+    (Q : bluerock.lang.cpp.logic.wp.FreeTemps → bluerock.lang.cpp.logic.wp.epred),
+    ((let (cv, _) := bluerock.lang.cpp.syntax.types.decompose_type ety in
+      let qf := bluerock.lang.cpp.algebra.cfrac.cQp.mk (bluerock.lang.cpp.syntax.preliminary.q_const cv) 1 in
+      base
+      |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.types.erase_qualifiers ety)
+            (λ v : A, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.types.erase_qualifiers ety) qf (Vctr v))
+            (Stdlib.Lists.List.rev (l :: ls_aux))) -∗
+     Q 1%free)
+    ⊢ bluerock.cpp.array.wp_initlist Vctr projV tu ρ [] (l :: ls_aux) base ety Q
+bluerock.cpp.array.arrayR_split_eqv':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (i : Corelib.Init.Datatypes.nat) (ms : Corelib.Init.Datatypes.list T) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (ty : bluerock.lang.cpp.syntax.core.type) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (o : Corelib.Numbers.BinNums.N),
+    i ≤ stdpp.base.length ms
+    → bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some o
+      → base |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms
+        ⊣⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.firstn i ms) ∗
+        base .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.skipn i ms)
+bluerock.cpp.array.arrayR_split_eqv:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (i : Corelib.Init.Datatypes.nat) (ms : Corelib.Init.Datatypes.list T) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (ty : bluerock.lang.cpp.syntax.core.type) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (o : Corelib.Numbers.BinNums.N),
+    i < stdpp.base.length ms
+    → bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some o
+      → base |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms
+        ⊣⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.firstn i ms) ∗
+        base .[ ty ! i ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.skipn i ms)
+bluerock.cpp.array.arrayR_anyR_combine_int_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (b : bluerock.lang.cpp.syntax.preliminary.int_rank) (s : bluerock.prelude.arith.types.signed) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (n : Corelib.Numbers.BinNums.N) (zs : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z),
+    bluerock.prelude.list_numbers.lengthZ zs ≤ n
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [p
+         |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum b s)
+               (λ z : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum b s) 1$m z) zs]
+        [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray (bluerock.lang.cpp.syntax.core.Tnum b s) n) 1$m]
+bluerock.cpp.array.arrayR_append_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (T : Type) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (l : Corelib.Init.Datatypes.list T) (v : T) (ty : bluerock.lang.cpp.syntax.core.type) (sz : Corelib.Numbers.BinNums.N),
+    bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some sz
+    → (∀ v' : T, bluerock.iris.extra.bi.observe.Observe (bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty) (R v'))
+      → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [p |-> bluerock.lang.cpp.logic.arr.arrayR ty R l] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+          [p |-> bluerock.lang.cpp.logic.arr.arrayR ty R (l ++ [v])]
+bluerock.cpp.array.arrayR_anyR_combine_int:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (b : bluerock.lang.cpp.syntax.preliminary.int_rank) (s : bluerock.prelude.arith.types.signed) (t :=
+                                                                                                   bluerock.lang.cpp.syntax.core.Tnum b s) 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (n : Corelib.Numbers.BinNums.N) (zs : Corelib.Init.Datatypes.list
+                                                                                                         Corelib.Numbers.BinNums.Z),
+    let i := bluerock.prelude.list_numbers.lengthN zs in
+    i ≤ n
+    → p |-> bluerock.lang.cpp.logic.arr.arrayR t (λ z : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR t 1$m z) zs
+      ⊢ p .[ t ! i ] |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t (n - i)) 1$m -∗
+        p |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tarray t n) 1$m
+bluerock.cpp.array.arrayR_first:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (ms : Corelib.Init.Datatypes.list T),
+    (stdpp.base.length ms > 0)%nat
+    → (∃ (m : T) (ms' : Corelib.Init.Datatypes.list T), base |-> P m ∗ bluerock.lang.cpp.logic.pred.L.type_ptr ty base ∗
+         base .[ ty ! 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms' ∗ [| ms = m :: ms' |])
+      ⊣⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms
+monad.proofs.misc.arrLearn:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) {T : Type} 
+    (ltr : Corelib.Init.Datatypes.list T) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type),
+    p |-> bluerock.lang.cpp.logic.arr.arrayR ty R ltr ⊢ bluerock.lang.cpp.logic.pred.L.valid_ptr (p .[ ty ! stdpp.base.length ltr ]) ∗
+    [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of CU ty) |] ∗
+    □ ([∗ list] k↦_ ∈ ltr, bluerock.lang.cpp.logic.pred.L.type_ptr ty (p .[ ty ! k ])) ∗ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R ltr
+bluerock.cpp.array.observe_2_arrayR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (P : Corelib.Numbers.BinNums.Z → A → A → bluerock.lang.cpp.logic.rep_defs.RepI) (T : bluerock.lang.cpp.syntax.core.type) 
+    (R1 R2 : A → bluerock.lang.cpp.logic.rep_defs.Rep) (xs ys : Corelib.Init.Datatypes.list A),
+    (∀ (i : Corelib.Numbers.BinNums.Z) (x y : A),
+       bluerock.iris.extra.bi.observe.Observe2 (P i x y) (.[ T ! i ] |-> R1 x) (.[ T ! i ] |-> R2 y))
+    → bluerock.iris.extra.bi.observe.Observe2 ([∗ list] i↦xy ∈ stdpp.base.zip xs ys, P i xy.1 xy.2)
+        (bluerock.lang.cpp.logic.arr.arrayR T R1 xs) (bluerock.lang.cpp.logic.arr.arrayR T R2 ys)
+bluerock.auto.cpp.hints.wp.default_initialize_array_fusion:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (Q : bluerock.lang.cpp.logic.wp.FreeTemps
+                                                                           → bluerock.iris.extra.base_logic.mpred.mpred) 
+    (sz : Corelib.Numbers.BinNums.N) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type),
+    match ty with
+    | bluerock.lang.cpp.syntax.core.Tptr _ | bluerock.lang.cpp.syntax.core.Tnum _ _ | bluerock.lang.cpp.syntax.core.Tchar_ _ |
+      bluerock.lang.cpp.syntax.core.Tenum _ | "bool"%cpp_type | bluerock.lang.cpp.syntax.core.Tfloat_ _ | "nullptr_t"%cpp_type =>
+        Corelib.Init.Datatypes.true
+    | _ => Corelib.Init.Datatypes.false
+    end = Corelib.Init.Datatypes.true
+    → bluerock.lang.cpp.semantics.types.HasSize ty
+      → bluerock.lang.cpp.syntax.types.erase_qualifiers ty = ty
+        → (p
+           |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR ty 1$m)
+                 (bluerock.prelude.list_numbers.replicateN sz ()) -∗
+           p |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tarray ty sz) -∗ Q 1%free)
+          ⊢ bluerock.lang.cpp.logic.initializers.default_initialize_array (bluerock.lang.cpp.logic.initializers.default_initialize tu ty) tu
+              ty sz p Q
+bluerock.cpp.array.arrayR_unsplit:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (i : Corelib.Numbers.BinNums.N) (T : Type) (l : 
+                                                                                                               Corelib.Init.Datatypes.list T) 
+    (v : T) (ty : bluerock.lang.cpp.syntax.core.type) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep),
+    Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat i) = Corelib.Init.Datatypes.Some v
+    → loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn (Stdlib.NArith.BinNat.N.to_nat i) l)
+      ⊢ loc .[ ty ! i ] |-> R v ∗
+        loc .[ ty ! i + 1 ]
+        |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn (Stdlib.NArith.BinNat.N.to_nat (i + 1)) l) -∗
+        loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R l
+bluerock.cpp.array._arrayR_put1':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (l : 
+                                                                                                               Corelib.Init.Datatypes.list
+                                                                                                               Corelib.Numbers.BinNums.Z) 
+    (x : Corelib.Numbers.BinNums.Z),
+    Stdlib.Lists.List.nth_error l 0 = Corelib.Init.Datatypes.Some x
+    → loc |-> bluerock.lang.cpp.primitives.ucharR q x
+      ⊢ bluerock.lang.cpp.logic.pred.L.type_ptr "unsigned char" loc ∗
+        loc .[ "unsigned char" ! 1 ]
+        |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c)
+              (Corelib.Lists.ListDef.skipn 1 l) -∗
+        loc
+        |-> bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c) l
+monad.proofs.misc.arrLearn2:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) {T : Type} 
+    (ltr : Corelib.Init.Datatypes.list T) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type),
+    p |-> bluerock.lang.cpp.logic.arr.arrayR ty R ltr ⊢ bluerock.lang.cpp.logic.pred.L.valid_ptr p ∗
+    bluerock.lang.cpp.logic.pred.L.valid_ptr (p .[ ty ! stdpp.base.length ltr ]) ∗
+    [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of CU ty) |] ∗
+    □ ([∗ list] k↦_ ∈ ltr, bluerock.lang.cpp.logic.pred.L.type_ptr ty (p .[ ty ! k ])) ∗ p |-> bluerock.lang.cpp.logic.arr.arrayR ty R ltr
+bluerock.auto.cpp.hints.wp.wp_init_initlist_prim_array_implicit:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (ρ : bluerock.lang.cpp.logic.wp.region) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (arr_ty : bluerock.lang.cpp.syntax.core.type) (Q : bluerock.lang.cpp.logic.wp.FreeTemps → bluerock.iris.extra.base_logic.mpred.mpredI) 
+    (ty_prim : bluerock.lang.cpp.syntax.core.type) (len : Corelib.Numbers.BinNums.N) (init_val : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val),
+    bluerock.lang.cpp.logic.expr.E.zero_init_val tu ty_prim = Corelib.Init.Datatypes.Some init_val
+    → bluerock.lang.cpp.semantics.types.HasSize ty_prim
+      → bluerock.lang.cpp.logic.expr.E.is_array_of arr_ty ty_prim
+        → bluerock.lang.cpp.syntax.types.erase_qualifiers ty_prim = ty_prim
+          → (base |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tarray ty_prim len) -∗
+             base
+             |-> bluerock.lang.cpp.logic.arr.arrayR ty_prim (bluerock.lang.cpp.logic.heap_pred.primR ty_prim 1$m)
+                   (bluerock.prelude.list_numbers.replicateN len init_val) -∗
+             Q 1%free)
+            ⊢ ::wpPRᵢ
+                ρ
+                (Pointer ↦ base) 
+                (bluerock.lang.cpp.syntax.core.Einitlist []
+                   (Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.core.Eimplicit_init ty_prim)) arr_ty)
+                Q
+bluerock.cpp.array.arrayR_anyR_unfocus1:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type) (sz
+                                                                                                            r : Corelib.Numbers.BinNums.N),
+    (0 < r)%N
+    → bluerock.lang.cpp.semantics.types.size_of σ ty = Corelib.Init.Datatypes.Some sz
+      → x |-> bluerock.lang.cpp.logic.heap_pred.anyR ty 1$m
+        ⊢ bluerock.lang.cpp.logic.pred.L.type_ptr ty x ∗
+          x .[ ty ! 1 ]
+          |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR ty 1$m)
+                (Corelib.Lists.ListDef.repeat () (Stdlib.NArith.BinNat.N.to_nat (r - 1))) -∗
+          x
+          |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.anyR ty 1$m)
+                (Corelib.Lists.ListDef.repeat () (Stdlib.NArith.BinNat.N.to_nat r))
+bluerock.auto.cpp.hints.layout.implicit_destruct_tblockR_arrayR_primR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.type) (T : Type) 
+    (f : T → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (ls : Corelib.Init.Datatypes.list T) (len : Corelib.Numbers.BinNums.N) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    Stdlib.NArith.BinNat.N.of_nat (stdpp.base.length ls) = len
+    → q = 1%Qp
+      → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [p |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ v : T, bluerock.lang.cpp.logic.heap_pred.primR ty q (f v)) ls] [tele]
+          bluerock.auto.core.hints.classes.cancelx.CoverAny
+          [(|={↑bluerock.lang.cpp.logic.pred.pred_ns}=>
+              p |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tarray ty len) q)%I]
+bluerock.lang.cpp.logic.arr.arrayR_cell:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {X : Type} (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (xs : Corelib.Init.Datatypes.list X) 
+    (i : Corelib.Init.Datatypes.nat) (x : X) (iZ : Corelib.Numbers.BinNums.Z),
+    iZ = i
+    → xs !! i = Corelib.Init.Datatypes.Some x
+      → bluerock.lang.cpp.logic.arr.arrayR ty R xs ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs) ∗
+        .[ ty ! iZ ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ .[ ty ! iZ ] |-> R x ∗
+        .[ ty ! iZ + 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn (Corelib.Init.Datatypes.S i) xs)
+bluerock.cpp.array.arrayR_select:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {R : T → bluerock.lang.cpp.logic.rep_defs.Rep} {ty : bluerock.lang.cpp.syntax.core.type} (xs__i : 
+                                                                                                         Corelib.Init.Datatypes.list T) 
+    (x__i : T) (xs__n : Corelib.Init.Datatypes.list T) (i : Corelib.Numbers.BinNums.N),
+    bluerock.lang.cpp.semantics.types.HasSize ty
+    → bluerock.prelude.list_numbers.lengthN xs__i = i
+      → bluerock.lang.cpp.logic.arr.arrayR ty R (xs__i ++ [x__i] ++ xs__n)
+        ⊣⊢ .[ ty ! 0 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs__i ∗
+        .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ .[ ty ! i ] |-> R x__i ∗
+        .[ ty ! (i + 1)%N ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R xs__n
+bluerock.lang.cpp.logic.raw.decode_uint_primR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (sz : bluerock.lang.cpp.syntax.preliminary.int_rank) (x : Corelib.Numbers.BinNums.Z),
+    bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz bluerock.prelude.arith.types.Unsigned) q x
+    ⊣⊢ ∃ (rs : Corelib.Init.Datatypes.list bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte) (l : Corelib.Init.Datatypes.list
+                                                                                                               Corelib.Numbers.BinNums.N),
+         [| bluerock.lang.cpp.logic.raw.decodes_uint l x |] ∗
+         [| bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_int_byte <$> l = rs |] ∗
+         [| stdpp.base.length l = Stdlib.NArith.BinNat.N.to_nat (bluerock.lang.cpp.syntax.preliminary.int_rank.bytesN sz) |] ∗
+         bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tnum sz bluerock.prelude.arith.types.Unsigned) ∗
+         bluerock.lang.cpp.logic.arr.arrayR "unsigned char" (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.primitives.ucharR q c)
+           (Stdlib.ZArith.BinInt.Z.of_N <$> l)
+bluerock.cpp.array._at_arrayR_cell:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (P : T → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (ms : Corelib.Init.Datatypes.list T) (i : Corelib.Init.Datatypes.nat) (m : T),
+    Stdlib.Lists.List.nth_error ms i = Corelib.Init.Datatypes.Some m
+    → base |-> bluerock.lang.cpp.logic.arr.arrayR ty P ms
+      ⊣⊢ base |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.firstn i ms) ∗
+      □ bluerock.lang.cpp.logic.pred.L.type_ptr ty (base .[ ty ! i ]) ∗ base .[ ty ! i ] |-> P m ∗
+      base .[ ty ! Corelib.Init.Datatypes.S i ]
+      |-> bluerock.lang.cpp.logic.arr.arrayR ty P (Corelib.Lists.ListDef.skipn (Corelib.Init.Datatypes.S i) ms)
+bluerock.auto.cpp.hints.wp.wp_array_init_prim_implicit:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (ρ : bluerock.lang.cpp.logic.wp.region) (full_len
+                                                                                                               len : Corelib.Numbers.BinNums.N) 
+    (ty_prim : bluerock.lang.cpp.syntax.core.type) (cur : Corelib.Numbers.BinNums.N) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (Q : bluerock.lang.cpp.logic.wp.FreeTemps → bluerock.iris.extra.base_logic.mpred.mpredI) (v : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val),
+    bluerock.lang.cpp.syntax.types.erase_qualifiers ty_prim = ty_prim
+    → bluerock.lang.cpp.semantics.types.HasSize ty_prim
+      → bluerock.lang.cpp.logic.expr.E.zero_init_val tu ty_prim = Corelib.Init.Datatypes.Some v
+        → full_len = (len + cur)%N
+          → ((base |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tarray ty_prim full_len) -∗
+              base .[ ty_prim ! cur ]
+              |-> bluerock.lang.cpp.logic.arr.arrayR ty_prim (bluerock.lang.cpp.logic.heap_pred.tptsto_fuzzyR ty_prim 1$m)
+                    (bluerock.prelude.list_numbers.replicateN len v)) -∗
+             Q 1%free)
+            ⊢ bluerock.lang.cpp.logic.expr.E.wp_array_init tu ρ ty_prim base
+                (bluerock.prelude.list_numbers.replicateN len (bluerock.lang.cpp.syntax.core.Eimplicit_init ty_prim)) cur
+                (λ free : bluerock.lang.cpp.logic.wp.FreeTemps, Q free)
+monad.proofs.misc.arrDecompose:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} {T : Type} (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (ltr : Corelib.Init.Datatypes.list T) (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (ty : bluerock.lang.cpp.syntax.core.type),
+    p |-> bluerock.lang.cpp.logic.arr.arrayR ty R ltr
+    ⊣⊢ (bluerock.lang.cpp.logic.pred.L.valid_ptr (p .[ ty ! stdpp.base.length ltr ]) ∗
+        [| stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of CU ty) |] ∗
+        □ ([∗ list] k↦_ ∈ ltr, bluerock.lang.cpp.logic.pred.L.type_ptr ty (p .[ ty ! k ]))) ∗
+    ([∗ list] k↦t ∈ ltr, p .[ ty ! k ] |-> R t)
+bluerock.cpp.array.arrayR_inrange_valid:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (T : Type) (x : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (i : Corelib.Numbers.BinNums.N) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (l : Corelib.Init.Datatypes.list T) (v : T),
+    Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat i) = Corelib.Init.Datatypes.Some v
+    → x |-> bluerock.lang.cpp.logic.arr.arrayR ty R l
+      ⊢ (x |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn (Stdlib.NArith.BinNat.N.to_nat i) l) ∗
+         x .[ ty ! i ] |-> R v ∗
+         x .[ ty ! i + 1 ]
+         |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn (Stdlib.NArith.BinNat.N.to_nat (i + 1)) l)) ∗
+      bluerock.lang.cpp.logic.pred.L.valid_ptr (x .[ ty ! i ])
+monad.proofs.misc.arrayR_cell2:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                                  thread_info _Σ} 
+    {CU : bluerock.lang.cpp.semantics.genv.genv} (i : Corelib.Init.Datatypes.nat) {X : Type} (ty : bluerock.lang.cpp.syntax.core.type) 
+    (R : X → bluerock.lang.cpp.logic.rep_defs.Rep) (xs : Corelib.Init.Datatypes.list X),
+    i < stdpp.base.length xs
+    → ∃ x : X,
+        xs !! i = Corelib.Init.Datatypes.Some x
+        ∧ (bluerock.lang.cpp.logic.arr.arrayR ty R xs ⊣⊢ bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn i xs) ∗
+           .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ .[ ty ! i ] |-> R x ∗
+           .[ ty ! i + 1 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn (1 + i) xs))
+bluerock.cpp.array.arrayR_explode:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} {R : T → bluerock.lang.cpp.logic.rep_defs.Rep} {ty : bluerock.lang.cpp.syntax.core.type} (xs : Corelib.Init.Datatypes.list T) 
+    (i : Corelib.Numbers.BinNums.N) (x : T),
+    bluerock.lang.cpp.semantics.types.HasSize ty
+    → (i < bluerock.prelude.list_numbers.lengthN xs)%N
+      → bluerock.lang.cpp.logic.arr.arrayR ty R
+          (bluerock.prelude.list_numbers.takeN i xs ++ [x] ++ bluerock.prelude.list_numbers.dropN (i + 1) xs)
+        ⊣⊢ .[ ty ! 0 ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (bluerock.prelude.list_numbers.takeN i xs) ∗
+        .[ ty ! i ] |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR ty ∗ .[ ty ! i ] |-> R x ∗
+        .[ ty ! (i + 1)%N ] |-> bluerock.lang.cpp.logic.arr.arrayR ty R (bluerock.prelude.list_numbers.dropN (i + 1) xs)
+bluerock.cpp.array._at_arrayR_cellN:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {T : Type} (i : Corelib.Numbers.BinNums.N) (l : Corelib.Init.Datatypes.list T) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (R : T → bluerock.lang.cpp.logic.rep_defs.Rep) (loc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (v : T),
+    Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat i) = Corelib.Init.Datatypes.Some v
+    → loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R l
+      ⊣⊢ loc |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.firstn (Stdlib.NArith.BinNat.N.to_nat i) l) ∗
+      □ bluerock.lang.cpp.logic.pred.L.type_ptr ty (loc .[ ty ! i ]) ∗ loc .[ ty ! i ] |-> R v ∗
+      loc .[ ty ! i + 1 ]
+      |-> bluerock.lang.cpp.logic.arr.arrayR ty R (Corelib.Lists.ListDef.skipn (Stdlib.NArith.BinNat.N.to_nat (i + 1)) l)
+bluerock.cpp.array.array_combine_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (sz : bluerock.lang.cpp.syntax.preliminary.int_rank) (sgn : bluerock.prelude.arith.types.signed) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (l : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z) (z v : Corelib.Numbers.BinNums.Z) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    0 ≤ z
+    → Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat (Stdlib.ZArith.BinInt.Z.to_N z)) = Corelib.Init.Datatypes.Some v
+      → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [p .[ bluerock.lang.cpp.syntax.core.Tnum sz sgn ! Stdlib.ZArith.BinInt.Z.to_N z + 1 ]
+           |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum sz sgn)
+                 (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q c)
+                 (Corelib.Lists.ListDef.skipn (Stdlib.NArith.BinNat.N.to_nat (Stdlib.ZArith.BinInt.Z.to_N z + 1)) l)]
+          [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+          [p
+           |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum sz sgn)
+                 (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q c)
+                 l]
+bluerock.auto.cpp.hints.wp.default_initialize_array_fusion':
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (ty : bluerock.lang.cpp.syntax.core.type) 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (idx sz : Corelib.Numbers.BinNums.N) (Q : bluerock.lang.cpp.logic.wp.FreeTemps
+                                                                                                           → bluerock.iris.extra.base_logic.mpred.mpred),
+    bluerock.lang.cpp.semantics.types.HasSize ty
+    → match ty with
+      | bluerock.lang.cpp.syntax.core.Tptr _ | bluerock.lang.cpp.syntax.core.Tnum _ _ | bluerock.lang.cpp.syntax.core.Tchar_ _ |
+        bluerock.lang.cpp.syntax.core.Tenum _ | "bool"%cpp_type | bluerock.lang.cpp.syntax.core.Tfloat_ _ | "nullptr_t"%cpp_type =>
+          Corelib.Init.Datatypes.true
+      | _ => Corelib.Init.Datatypes.false
+      end = Corelib.Init.Datatypes.true
+      → bluerock.lang.cpp.syntax.types.erase_qualifiers ty = ty
+        → (p .[ ty ! idx ]
+           |-> bluerock.lang.cpp.logic.arr.arrayR ty (λ _ : (), bluerock.lang.cpp.logic.heap_pred.uninitR ty 1$m)
+                 (bluerock.prelude.list_numbers.replicateN sz ()) -∗
+           Q 1%free)
+          ⊢ stdpp.list.foldr
+              (λ (i : Corelib.Numbers.BinNums.N) (PP : bluerock.lang.cpp.logic.wp.epred),
+                 bluerock.lang.cpp.logic.initializers.default_initialize tu ty (p .[ ty ! i ])
+                   (λ free' : bluerock.lang.cpp.logic.wp.FreeTemps, ::interp { free' }  PP))
+              (p .[ ty ! idx + sz ] |-> bluerock.lang.cpp.logic.heap_pred.valid.validR -∗ Q 1%free)
+              (bluerock.prelude.list_numbers.seqN idx sz)
+bluerock.cpp.array.array_combine:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (sz : bluerock.lang.cpp.syntax.preliminary.int_rank) (sgn : bluerock.prelude.arith.types.signed) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (l : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z) (z v : Corelib.Numbers.BinNums.Z) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    0 ≤ z
+    → Stdlib.Lists.List.nth_error l (Stdlib.NArith.BinNat.N.to_nat (Stdlib.ZArith.BinInt.Z.to_N z)) = Corelib.Init.Datatypes.Some v
+      → p .[ bluerock.lang.cpp.syntax.core.Tnum sz sgn ! Stdlib.ZArith.BinInt.Z.to_N z + 1 ]
+        |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum sz sgn)
+              (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q c)
+              (Corelib.Lists.ListDef.skipn (Stdlib.NArith.BinNat.N.to_nat (Stdlib.ZArith.BinInt.Z.to_N z + 1)) l)
+        ⊢ p .[ bluerock.lang.cpp.syntax.core.Tnum sz sgn ! Stdlib.ZArith.BinInt.Z.to_N z ]
+          |-> bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q v ∗
+          p
+          |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum sz sgn)
+                (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q c)
+                (Corelib.Lists.ListDef.firstn (Stdlib.NArith.BinNat.N.to_nat (Stdlib.ZArith.BinInt.Z.to_N z)) l) -∗
+          p
+          |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.core.Tnum sz sgn)
+                (λ c : Corelib.Numbers.BinNums.Z, bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.core.Tnum sz sgn) q c) l
+bluerock.cpp.array.wp_array_init_initlist_aux:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {A : Type} (Vctr : A → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (projV : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
+                                                                                              → Corelib.Init.Datatypes.option A) 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (ρ : bluerock.lang.cpp.logic.wp.region) (ls : 
+                                                                                                               Corelib.Init.Datatypes.list
+                                                                                                               bluerock.lang.cpp.syntax.core.Expr) 
+    (ety : bluerock.lang.cpp.syntax.core.type) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (Q : 
+                                                                                                               bluerock.lang.cpp.logic.wp.FreeTemps
+                                                                                                               → bluerock.iris.extra.base_logic.mpred.mpredI) 
+    (ls_aux : Corelib.Init.Datatypes.list A) (sz : Corelib.Numbers.BinNums.N),
+    bluerock.prelude.list_numbers.lengthN ls_aux = sz
+    → stdpp.option.is_Some (bluerock.lang.cpp.semantics.types.size_of σ ety)
+      → bluerock.lang.cpp.syntax.types.is_scalar_type ety
+        → ~~ bluerock.lang.cpp.syntax.preliminary.q_volatile (bluerock.lang.cpp.syntax.types.decompose_type ety).1
+          → (∀ (a : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val) (b : A), projV a = Corelib.Init.Datatypes.Some b → a = Vctr b)
+            → (∀ a : A, ~~ bluerock.lang.cpp.logic.heap_pred.is_raw_or_undef (Vctr a))
+              → let sz' := (sz + bluerock.prelude.list_numbers.lengthN ls)%N in
+                let Q' :=
+                  λ free : bluerock.lang.cpp.logic.wp.FreeTemps,
+                    (base
+                     |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR
+                           (bluerock.lang.cpp.syntax.core.Tarray (bluerock.lang.cpp.syntax.types.erase_qualifiers ety) sz') -∗
+                     Q free)%I
+                  in
+                match ls_aux with
+                | [] => emp
+                | _ :: _ =>
+                    let (cv, _) := bluerock.lang.cpp.syntax.types.decompose_type ety in
+                    let qf := bluerock.lang.cpp.algebra.cfrac.cQp.mk (bluerock.lang.cpp.syntax.preliminary.q_const cv) 1 in
+                    base
+                    |-> bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR
+                          (bluerock.lang.cpp.syntax.core.Tarray (bluerock.lang.cpp.syntax.types.erase_qualifiers ety) sz') -∗
+                    base
+                    |-> bluerock.lang.cpp.logic.arr.arrayR (bluerock.lang.cpp.syntax.types.erase_qualifiers ety)
+                          (λ v : A,
+                             bluerock.lang.cpp.logic.heap_pred.primR (bluerock.lang.cpp.syntax.types.erase_qualifiers ety) qf (Vctr v))
+                          (Stdlib.Lists.List.rev ls_aux)
+                end ∗ bluerock.cpp.array.wp_initlist Vctr projV tu ρ ls ls_aux base ety Q'
+                ⊢ bluerock.lang.cpp.logic.expr.E.wp_array_init tu ρ ety base ls sz Q'
+
+>>> Search structR.
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_frac_valid:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.lang.cpp.bi.cfractional.CFracValid0 (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_fractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.lang.cpp.bi.cfractional.CFractional (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls)
+bluerock.auto.lazy_unfold.AutoUnlocking.Metadata_structR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (a : bluerock.lang.cpp.syntax.core.globname) (b : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.auto.lazy_unfold.AutoUnlocking.Metadata (bluerock.lang.cpp.logic.heap_pred.aggregate.structR a b)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_cfractional_eta:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.lang.cpp.bi.cfractional.CFractional
+      (λ q : bluerock.lang.cpp.algebra.cfrac.cQp.t, bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_frac_valid_eta:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.lang.cpp.bi.cfractional.CFracValid0
+      (λ q : bluerock.lang.cpp.algebra.cfrac.cQp.t, bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_timeless:
+  bluerock.iris.extra.bi.derived_laws.nary.Timeless6 (@bluerock.lang.cpp.logic.heap_pred.aggregate.structR)
+bluerock.auto.cpp.hints.layout.padding_valid_observe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.valid.validR
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_nonnull:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.null.nonnullR
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_valid_observe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.valid.validR
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_as_fractional:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.bi.cfractional.AsCFractional (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls) q
+bluerock.auto.cpp.hints.layout.padding_svalid_observe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (cls : bluerock.lang.cpp.syntax.core.globname),
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.valid.svalidR
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_strict_valid_observe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.iris.extra.bi.observe.Observe bluerock.lang.cpp.logic.heap_pred.valid.svalidR
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.lang.cpp.logic.heap_pred.aggregate.structR_type_ptr_observe:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (cls : bluerock.lang.cpp.syntax.core.name),
+    bluerock.lang.cpp.bi.spec.typed.Typed cls (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.auto.cpp.hints.anyR.anyR_structR_defined_using:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.name) (q q' : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.auto.lazy_unfold.AutoUnlocking.DefinedUsing
+      (bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q)
+      (bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q')
+bluerock.auto.cpp.pretty.my_pretty_internals.Internals.ParseObjectRep_structR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} (σ : bluerock.lang.cpp.semantics.genv.genv) 
+    (c : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (fields : Corelib.Init.Datatypes.list
+                                                                                                         bluerock.auto.cpp.pretty.my_pretty_internals.Internals.object_component),
+    bluerock.auto.cpp.pretty.my_pretty_internals.Internals.ParseObjectRep (bluerock.lang.cpp.logic.heap_pred.aggregate.structR c q) fields
+      (bluerock.auto.cpp.pretty.my_pretty_internals.Internals.OBJ_struct σ c q :: fields)
+bluerock.auto.borrowR.borrowR.unlock:
+  @bluerock.auto.borrowR.borrowR.body =
+  λ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) (Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ) (σ : bluerock.lang.cpp.semantics.genv.genv) 
+    (Field : Type) (EqDecision0 : stdpp.base.EqDecision Field) (H : stdpp.countable.Countable Field) (ToField0 : 
+                                                                                                      bluerock.auto.borrowR.ToField Field) 
+    (C : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (m : stdpp.gmap.gmap Field
+                                                                                                    bluerock.lang.cpp.logic.rep_defs.Rep),
+    (bluerock.auto.borrowR._borrowR m ∗ bluerock.lang.cpp.logic.heap_pred.aggregate.structR C q)%I
+bluerock.auto.cpp.hints.layout.auto_close_paddingR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (st : bluerock.lang.cpp.syntax.decl.Struct),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+          [base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+          [base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q]
+bluerock.auto.cpp.hints.layout.auto_open_paddingR_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → q = 1%Qp
+        → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+            [base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q] [tele]
+            bluerock.auto.core.hints.classes.cancelx.CoverAny [base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q]
+bluerock.auto.cpp.hints.const.wp_const_named_struct_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit} (from to : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (nm : bluerock.lang.cpp.syntax.core.globname) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (Q : bluerock.iris.extra.base_logic.mpred.mpredI),
+    bluerock.lang.cpp.syntax.translation_unit.types tu !! nm =[Vm?]=>
+    Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+        [p |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR nm from] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+        [bluerock.lang.cpp.logic.const.wp_const tu from to p (bluerock.lang.cpp.syntax.core.Tnamed nm) Q]
+bluerock.auto.cpp.hints.layout.implicit_destruct_tblockR_padding_C:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (cls : bluerock.lang.cpp.syntax.core.name) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.semantics.genv.glob_def resolve cls =
+    Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.lang.cpp.syntax.decl.s_trivially_destructible st
+      → q = 1%Qp
+        → bluerock.auto.core.hints.classes.cancelx.CancelX bluerock.auto.core.hints.classes.cancelx.MatchNormal
+            [p |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q] [tele] bluerock.auto.core.hints.classes.cancelx.CoverAny
+            [(|={↑bluerock.lang.cpp.logic.pred.pred_ns}=>
+                p |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tnamed cls) q)%I]
+bluerock.lang.cpp.logic.heap_pred.any.anyR_struct:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.name) (st : bluerock.lang.cpp.syntax.decl.Struct) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.semantics.genv.glob_def σ cls = Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+      ⊣⊢ ([∗ list] base ∈ bluerock.lang.cpp.syntax.decl.s_bases st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base σ cls base.1
+                                                                    |-> bluerock.lang.cpp.logic.heap_pred.anyR
+                                                                          (bluerock.lang.cpp.syntax.core.Tnamed base.1) q) ∗
+      ([∗ list] fld ∈ bluerock.lang.cpp.syntax.decl.s_fields st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                                                                   (bluerock.lang.cpp.syntax.core.Field cls
+                                                                      (bluerock.lang.cpp.syntax.decl.mem_name fld))
+                                                                 |-> bluerock.lang.cpp.logic.heap_pred.anyR
+                                                                       (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).2
+                                                                       (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).1) ∗
+      (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+      bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+bluerock.auto.cpp.hints.layout.close_class_anyR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → [∗] (Corelib.Lists.ListDef.map
+               (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                  base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                  |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+               (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+             Corelib.Lists.ListDef.map
+               (λ m0 : bluerock.lang.cpp.syntax.decl.Member,
+                  base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                            (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m0))
+                  |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).2
+                        (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).1)
+               (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+        base
+        |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+        base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+        ⊢ base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+bluerock.auto.cpp.hints.layout.any_class_fwd:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+        ⊢ [∗] (Corelib.Lists.ListDef.map
+                 (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                    base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                    |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+                 (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+               Corelib.Lists.ListDef.map
+                 (λ m0 : bluerock.lang.cpp.syntax.decl.Member,
+                    base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                              (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m0))
+                    |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).2
+                          (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).1)
+                 (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+        base
+        |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+        base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+bluerock.auto.cpp.hints.layout.auto_close_paddingR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (st : bluerock.lang.cpp.syntax.decl.Struct),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+        ⊢ [∗] (Corelib.Lists.ListDef.map
+                 (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                    base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                    |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+                 (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+               Corelib.Lists.ListDef.map
+                 (λ m0 : bluerock.lang.cpp.syntax.decl.Member,
+                    base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                              (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m0))
+                    |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).2
+                          (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).1)
+                 (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+          base
+          |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) -∗
+          base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+bluerock.auto.cpp.hints.const.wp_const_named_struct:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    {tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit} (from to : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (nm : bluerock.lang.cpp.syntax.core.globname) (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (Q : bluerock.iris.extra.base_logic.mpred.mpredI),
+    bluerock.lang.cpp.syntax.translation_unit.types tu !! nm =[Vm?]=>
+    Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → p |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR nm from
+      ⊢ Stdlib.Lists.List.fold_left
+          (λ (Q0 : bluerock.iris.extra.base_logic.mpred.mpred) '(b, _),
+             bluerock.lang.cpp.logic.const.wp_const tu from to (p ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base σ nm b)
+               (bluerock.lang.cpp.syntax.core.Tnamed b) Q0)
+          (bluerock.lang.cpp.syntax.decl.s_bases st)
+          (Stdlib.Lists.List.fold_left
+             (λ (Q0 : bluerock.iris.extra.base_logic.mpred.mpred) (m : bluerock.lang.cpp.syntax.decl.Member),
+                if
+                 bluerock.lang.cpp.syntax.decl.mem_mutable m
+                 || bluerock.auto.cpp.hints.const.type_is_const (bluerock.lang.cpp.syntax.decl.mem_type m)
+                then Q0
+                else
+                 bluerock.lang.cpp.logic.const.wp_const tu from to
+                   (p ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                           (bluerock.lang.cpp.syntax.core.Field nm (bluerock.lang.cpp.syntax.decl.mem_name m)))
+                   (bluerock.lang.cpp.syntax.decl.mem_type m) Q0)
+             (bluerock.lang.cpp.syntax.decl.s_fields st)
+             (p |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR nm to -∗
+              if bluerock.lang.cpp.syntax.decl.has_vtable st
+              then
+               ∃ path : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.globname,
+                 p |-> bluerock.lang.cpp.logic.heap_pred.simple.derivationR nm path from ∗
+                 (p |-> bluerock.lang.cpp.logic.heap_pred.simple.derivationR nm path to -∗ Q)
+              else Q)) -∗
+        bluerock.lang.cpp.logic.const.wp_const tu from to p (bluerock.lang.cpp.syntax.core.Tnamed nm) Q
+bluerock.auto.cpp.hints.layout.auto_open_paddingR:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (m : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    m ⊧ resolve
+    → bluerock.auto.cpp.definitions.find_struct cls m = Corelib.Init.Datatypes.Some st
+      → q = 1%Qp
+        → base |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+          ⊢ ([∗] (Corelib.Lists.ListDef.map
+                    (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                       base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                       |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+                    (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+                  Corelib.Lists.ListDef.map
+                    (λ m0 : bluerock.lang.cpp.syntax.decl.Member,
+                       base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                                 (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m0))
+                       |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).2
+                             (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m0 q).1)
+                    (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+             base
+             |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp)) ∗
+          base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+bluerock.lang.cpp.logic.layout.implicit_destruct_struct:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.name) (st : bluerock.lang.cpp.syntax.decl.Struct) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.semantics.genv.glob_def σ cls = Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.lang.cpp.syntax.decl.s_trivially_destructible st
+      → q = 1%Qp
+        → bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tnamed cls)
+          ⊢ ([∗ list] base ∈ bluerock.lang.cpp.syntax.decl.s_bases st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base σ cls
+                                                                         base.1
+                                                                       |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                                                             (bluerock.lang.cpp.syntax.core.Tnamed base.1) q) ∗
+            ([∗ list] fld ∈ bluerock.lang.cpp.syntax.decl.s_fields st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                                                                         (bluerock.lang.cpp.syntax.core.Field cls
+                                                                            (bluerock.lang.cpp.syntax.decl.mem_name fld))
+                                                                       |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                                                             (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).2
+                                                                             (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).1) ∗
+            (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+            bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q ={↑bluerock.lang.cpp.logic.pred.pred_ns}=∗
+            bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+bluerock.auto.cpp.hints.layout.implicit_destruct_tblockR_padding:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (cls : bluerock.lang.cpp.syntax.core.name) (st : bluerock.lang.cpp.syntax.decl.Struct) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.semantics.genv.glob_def resolve cls =
+    Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.lang.cpp.syntax.decl.s_trivially_destructible st
+      → q = 1%Qp
+        → p |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+          ⊢ [∗] (Corelib.Lists.ListDef.map
+                   (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                      p ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                      |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+                   (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+                 Corelib.Lists.ListDef.map
+                   (λ m : bluerock.lang.cpp.syntax.decl.Member,
+                      p ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                             (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m))
+                      |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                            (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1)
+                   (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+            p
+            |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ={↑bluerock.lang.cpp.logic.pred.pred_ns}=∗
+            p |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR (bluerock.lang.cpp.syntax.core.Tnamed cls) q
+bluerock.auto.cpp.hints.anyR.anyR_unfoldable:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    {tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit},
+    tu ⊧ resolve
+    → ∀ (cls : bluerock.lang.cpp.syntax.core.globname) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t) (su : bluerock.lang.cpp.syntax.decl.Struct +
+                                                                                                         bluerock.lang.cpp.syntax.decl.Union),
+        bluerock.auto.cpp.hints.anyR.find_aggregate tu cls =[Vm?]=> Corelib.Init.Datatypes.Some su
+        → bluerock.auto.lazy_unfold.AutoUnlocking.Unfoldable
+            (bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.syntax.core.Tnamed cls) q)
+            match su with
+            | Corelib.Init.Datatypes.inl s => bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q ∗
+                (if bluerock.lang.cpp.syntax.decl.has_vtable s then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp%I) ∗
+                ([∗ list] b ∈ bluerock.lang.cpp.syntax.decl.s_bases s, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls
+                                                                         b.1
+                                                                       |-> bluerock.lang.cpp.logic.heap_pred.anyR
+                                                                             (bluerock.lang.cpp.syntax.core.Tnamed b.1) q) ∗
+                ([∗ list] m ∈ bluerock.lang.cpp.syntax.decl.s_fields s, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                                                                          (bluerock.lang.cpp.syntax.core.Field cls
+                                                                             (bluerock.lang.cpp.syntax.decl.mem_name m))
+                                                                        |-> bluerock.lang.cpp.logic.heap_pred.anyR
+                                                                              (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                                                                              (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1)
+            | Corelib.Init.Datatypes.inr u =>
+                ∃ what : Corelib.Init.Datatypes.option Corelib.Init.Datatypes.nat,
+                  bluerock.lang.cpp.logic.heap_pred.aggregate.unionR cls q what ∗
+                  match what with
+                  | Corelib.Init.Datatypes.Some idx =>
+                      ∃ m : bluerock.lang.cpp.syntax.decl.Member,
+                        [| bluerock.lang.cpp.syntax.decl.u_fields u !! idx = Corelib.Init.Datatypes.Some m |] ∗
+                        bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                          (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m))
+                        |-> bluerock.lang.cpp.logic.heap_pred.anyR (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                              (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1
+                  | Corelib.Init.Datatypes.None => emp
+                  end
+            end
+bluerock.lang.cpp.logic.layout.struct_to_raw:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (cls : bluerock.lang.cpp.syntax.core.name) (st : bluerock.lang.cpp.syntax.decl.Struct) (rss : stdpp.gmap.gmap
+                                                                                                    bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.FieldOrBase.t
+                                                                                                    (Corelib.Init.Datatypes.list
+                                                                                                       bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte)) 
+    (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    bluerock.lang.cpp.semantics.genv.glob_def σ cls = Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st)
+    → bluerock.lang.cpp.syntax.decl.s_layout st ∈ [bluerock.lang.cpp.syntax.decl.POD; bluerock.lang.cpp.syntax.decl.Standard]
+      → bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q ∗
+        ([∗ list] b ∈ bluerock.lang.cpp.syntax.decl.s_bases st, ∃ rs : Corelib.Init.Datatypes.list
+                                                                         bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte,
+                                                                  [| rss
+                                                                     !! bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.FieldOrBase.Base
+                                                                          b.1 =
+                                                                     Corelib.Init.Datatypes.Some rs |] ∗
+                                                                  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base σ cls b.1
+                                                                  |-> bluerock.lang.cpp.logic.raw.rawsR q rs) ∗
+        ([∗ list] fld ∈ bluerock.lang.cpp.syntax.decl.s_fields st, ∃ rs : Corelib.Init.Datatypes.list
+                                                                            bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte,
+                                                                     [| rss
+                                                                        !! bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.FieldOrBase.Field
+                                                                             (bluerock.lang.cpp.syntax.decl.mem_name fld) =
+                                                                        Corelib.Init.Datatypes.Some rs |] ∗
+                                                                     bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                                                                       (bluerock.lang.cpp.syntax.core.Field cls
+                                                                          (bluerock.lang.cpp.syntax.decl.mem_name fld))
+                                                                     |-> bluerock.lang.cpp.logic.raw.rawsR q rs)
+        ⊣⊢ bluerock.lang.cpp.logic.heap_pred.valid.type_ptrR (bluerock.lang.cpp.syntax.core.Tnamed cls) ∗
+        ∃ rs : Corelib.Init.Datatypes.list bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte,
+          bluerock.lang.cpp.logic.raw.rawsR q rs ∗
+          [| bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_bytes_of_struct σ cls rss rs |]
+bluerock.auto.cpp.hints.layout.struct_def_layout:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (R : bluerock.lang.cpp.syntax.core.type
+                                                                         → bluerock.lang.cpp.algebra.cfrac.cQp.t
+                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (st : bluerock.lang.cpp.syntax.decl.Struct) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    [∗] (Corelib.Lists.ListDef.map
+           (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+              base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+              |-> R (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+           (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+         Corelib.Lists.ListDef.map
+           (λ m : bluerock.lang.cpp.syntax.decl.Member,
+              base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                        (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m))
+              |-> R (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                    (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1)
+           (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+    base |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+    base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+    ⊣⊢ base
+       |-> (([∗ list] base0 ∈ bluerock.lang.cpp.syntax.decl.s_bases st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve
+                                                                          cls base0.1
+                                                                        |-> R (bluerock.lang.cpp.syntax.core.Tnamed base0.1) q) ∗
+            ([∗ list] fld ∈ bluerock.lang.cpp.syntax.decl.s_fields st, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                                                                         (bluerock.lang.cpp.syntax.core.Field cls
+                                                                            (bluerock.lang.cpp.syntax.decl.mem_name fld))
+                                                                       |-> R (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).2
+                                                                             (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type fld q).1) ∗
+            (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+            bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q)
+bluerock.auto.cpp.hints.layout.struct_def_padding:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {resolve : bluerock.lang.cpp.semantics.genv.genv} 
+    (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (R : bluerock.lang.cpp.syntax.core.type
+                                                                         → bluerock.lang.cpp.algebra.cfrac.cQp.t
+                                                                           → bluerock.lang.cpp.logic.rep_defs.Rep) 
+    (cls : bluerock.lang.cpp.syntax.core.globname) (st : bluerock.lang.cpp.syntax.decl.Struct) (q : bluerock.lang.cpp.algebra.cfrac.cQp.t),
+    [∗] (Corelib.Lists.ListDef.map
+           (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+              base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+              |-> R (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+           (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+         Corelib.Lists.ListDef.map
+           (λ m : bluerock.lang.cpp.syntax.decl.Member,
+              base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                        (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m))
+              |-> R (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                    (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1)
+           (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+    base |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp) ∗
+    base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+    ⊣⊢ ([∗] (Corelib.Lists.ListDef.map
+               (λ x : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo,
+                  base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base resolve cls x.1
+                  |-> R (bluerock.lang.cpp.syntax.core.Tnamed x.1) q)
+               (bluerock.lang.cpp.syntax.decl.s_bases st) ++
+             Corelib.Lists.ListDef.map
+               (λ m : bluerock.lang.cpp.syntax.decl.Member,
+                  base ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field resolve
+                            (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m))
+                  |-> R (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).2
+                        (bluerock.lang.cpp.logic.heap_pred.everywhere.mut_type m q).1)
+               (bluerock.lang.cpp.syntax.decl.s_fields st))%list ∗
+        base
+        |-> (if bluerock.lang.cpp.syntax.decl.has_vtable st then bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls [] q else emp)) ∗
+    base |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls q
+bluerock.lang.cpp.logic.func.wp_dtor_intro:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (d : bluerock.lang.cpp.syntax.decl.Dtor) (args : 
+                                                                                                               Corelib.Init.Datatypes.list
+                                                                                                               bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (Q : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr → bluerock.lang.cpp.logic.wp.epred),
+    match bluerock.lang.cpp.syntax.decl.d_body d with
+    | Corelib.Init.Datatypes.Some body =>
+        match args with
+        | [] => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+        | [thisp] =>
+            match bluerock.lang.cpp.syntax.translation_unit.types tu !! bluerock.lang.cpp.syntax.decl.d_class d with
+            | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gunion _) =>
+                ▷ match body with
+                  | bluerock.lang.cpp.syntax.decl.Defaulted => λ k : bluerock.lang.cpp.logic.wp.Kpred, k bluerock.lang.cpp.logic.wp.Normal
+                  | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                      bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                  end
+                    (bluerock.lang.cpp.logic.func.Kreturn_void
+                       (thisp
+                        |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                              (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m ∗
+                        (thisp
+                         |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                               (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m -∗
+                         ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                             p
+                             |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                   bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                             Q p)))
+            | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) =>
+                ▷ match body with
+                  | bluerock.lang.cpp.syntax.decl.Defaulted => λ k : bluerock.lang.cpp.logic.wp.Kpred, k bluerock.lang.cpp.logic.wp.Normal
+                  | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                      bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                  end
+                    (bluerock.lang.cpp.logic.func.Kreturn_void
+                       (thisp |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR (bluerock.lang.cpp.syntax.decl.d_class d) 1$m ∗
+                        bluerock.lang.cpp.logic.func.wpd_members tu (bluerock.lang.cpp.syntax.decl.d_class d) thisp
+                          (bluerock.lang.cpp.syntax.decl.s_fields s)
+                          (bluerock.lang.cpp.logic.func.wp_revert_identity thisp tu (bluerock.lang.cpp.syntax.decl.d_class d)
+                             (bluerock.lang.cpp.logic.func.wpd_bases tu (bluerock.lang.cpp.syntax.decl.d_class d) thisp
+                                (Corelib.Lists.ListDef.map Corelib.Init.Datatypes.fst (bluerock.lang.cpp.syntax.decl.s_bases s))
+                                (thisp
+                                 |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                       (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m -∗
+                                 ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                                     p
+                                     |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                           bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                                     Q p)))))
+            | _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: not a structure or union"%bs
+            end
+        | thisp :: _ :: _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+        end
+    | Corelib.Init.Datatypes.None => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: no body"%bs
+    end ⊢ ::wpDtor Q
+bluerock.lang.cpp.logic.func.wp_dtor_elim:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (d : bluerock.lang.cpp.syntax.decl.Dtor) (args : 
+                                                                                                               Corelib.Init.Datatypes.list
+                                                                                                               bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
+    (Q : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr → bluerock.lang.cpp.logic.wp.epred),
+    ::wpDtor Q
+    ⊢ match bluerock.lang.cpp.syntax.decl.d_body d with
+      | Corelib.Init.Datatypes.Some body =>
+          match args with
+          | [] => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+          | [thisp] =>
+              match bluerock.lang.cpp.syntax.translation_unit.types tu !! bluerock.lang.cpp.syntax.decl.d_class d with
+              | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gunion _) =>
+                  ▷ match body with
+                    | bluerock.lang.cpp.syntax.decl.Defaulted =>
+                        λ k : bluerock.lang.cpp.logic.wp.Kpred, |={⊤}=> k bluerock.lang.cpp.logic.wp.Normal
+                    | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                        bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                    end
+                      (bluerock.lang.cpp.logic.func.Kreturn_void
+                         (thisp
+                          |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m ∗
+                          (thisp
+                           |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                 (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m ={⊤}=∗
+                           ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                               p
+                               |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                     bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                               Q p)))
+              | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) =>
+                  ▷ match body with
+                    | bluerock.lang.cpp.syntax.decl.Defaulted =>
+                        λ k : bluerock.lang.cpp.logic.wp.Kpred, |={⊤}=> k bluerock.lang.cpp.logic.wp.Normal
+                    | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                        bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                    end
+                      (bluerock.lang.cpp.logic.func.Kreturn_void
+                         (thisp |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR (bluerock.lang.cpp.syntax.decl.d_class d) 1$m ∗
+                          bluerock.lang.cpp.logic.func.wpd_members tu (bluerock.lang.cpp.syntax.decl.d_class d) thisp
+                            (bluerock.lang.cpp.syntax.decl.s_fields s)
+                            (bluerock.lang.cpp.logic.func.wp_revert_identity thisp tu (bluerock.lang.cpp.syntax.decl.d_class d)
+                               (bluerock.lang.cpp.logic.func.wpd_bases tu (bluerock.lang.cpp.syntax.decl.d_class d) thisp
+                                  (Corelib.Lists.ListDef.map Corelib.Init.Datatypes.fst (bluerock.lang.cpp.syntax.decl.s_bases s))
+                                  (thisp
+                                   |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                         (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class d)) 1$m ={⊤}=∗
+                                   ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                                       p
+                                       |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                             bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                                       Q p)))))
+              | _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: not a structure or union"%bs
+              end
+          | thisp :: _ :: _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+          end
+      | Corelib.Init.Datatypes.None => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: no body"%bs
+      end
+bluerock.lang.cpp.logic.func.wp_dtor.unlock:
+  @bluerock.lang.cpp.logic.func.wp_dtor =
+  λ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) (Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ) (σ : bluerock.lang.cpp.semantics.genv.genv) 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (dtor : bluerock.lang.cpp.syntax.decl.Dtor) 
+    (args : Corelib.Init.Datatypes.list bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (Q : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
+                                                                                                     → bluerock.lang.cpp.logic.wp.epred),
+    match bluerock.lang.cpp.syntax.decl.d_body dtor with
+    | Corelib.Init.Datatypes.Some body =>
+        match args with
+        | [] => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+        | [thisp] =>
+            match bluerock.lang.cpp.syntax.translation_unit.types tu !! bluerock.lang.cpp.syntax.decl.d_class dtor with
+            | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gunion _) =>
+                (▷ match body with
+                   | bluerock.lang.cpp.syntax.decl.Defaulted =>
+                       λ k : bluerock.lang.cpp.logic.wp.Kpred, |={⊤}=> k bluerock.lang.cpp.logic.wp.Normal
+                   | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                       bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                   end
+                     (bluerock.lang.cpp.logic.func.Kreturn_void
+                        (thisp
+                         |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                               (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class dtor)) 1$m ∗
+                         (thisp
+                          |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class dtor)) 1$m ={⊤}=∗
+                          ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                              p
+                              |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                    bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                              Q p))))%I
+            | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) =>
+                (▷ match body with
+                   | bluerock.lang.cpp.syntax.decl.Defaulted =>
+                       λ k : bluerock.lang.cpp.logic.wp.Kpred, |={⊤}=> k bluerock.lang.cpp.logic.wp.Normal
+                   | bluerock.lang.cpp.syntax.decl.UserDefined body0 =>
+                       bluerock.lang.cpp.logic.wp.WPE.wp tu [region: [this := thisp]; return {?: "void"}] body0
+                   end
+                     (bluerock.lang.cpp.logic.func.Kreturn_void
+                        (thisp |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR (bluerock.lang.cpp.syntax.decl.d_class dtor) 1$m ∗
+                         bluerock.lang.cpp.logic.func.wpd_members tu (bluerock.lang.cpp.syntax.decl.d_class dtor) thisp
+                           (bluerock.lang.cpp.syntax.decl.s_fields s)
+                           (bluerock.lang.cpp.logic.func.wp_revert_identity thisp tu (bluerock.lang.cpp.syntax.decl.d_class dtor)
+                              (bluerock.lang.cpp.logic.func.wpd_bases tu (bluerock.lang.cpp.syntax.decl.d_class dtor) thisp
+                                 (Corelib.Lists.ListDef.map Corelib.Init.Datatypes.fst (bluerock.lang.cpp.syntax.decl.s_bases s))
+                                 (thisp
+                                  |-> bluerock.lang.cpp.logic.heap_pred.block.tblockR
+                                        (bluerock.lang.cpp.syntax.core.Tnamed (bluerock.lang.cpp.syntax.decl.d_class dtor)) 1$m ={⊤}=∗
+                                  ▷ ∀ p : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr,
+                                      p
+                                      |-> bluerock.lang.cpp.logic.heap_pred.primR "void" 1$m
+                                            bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vvoid -∗
+                                      Q p))))))%I
+            | _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: not a structure or union"%bs
+            end
+        | thisp :: _ :: _ => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: expected one argument"%bs
+        end
+    | Corelib.Init.Datatypes.None => bluerock.iris.extra.bi.errors.Errors.ERROR.body "wp_dtor: no body"%bs
+    end
+bluerock.lang.cpp.logic.const.wp_const_intro:
+  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} {Σ : bluerock.lang.cpp.logic.mpred.LC.cpp_logic
+                                                                                              thread_info _Σ} {σ : bluerock.lang.cpp.semantics.genv.genv} 
+    (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit) (f t : bluerock.lang.cpp.algebra.cfrac.cQp.t) 
+    (a : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) (ty : bluerock.lang.cpp.syntax.core.decltype) (Q : bluerock.lang.cpp.logic.wp.epred),
+    (let
+     '(cv, rty) := bluerock.lang.cpp.syntax.types.decompose_type ty in
+      if bluerock.lang.cpp.syntax.preliminary.q_const cv
+      then |={⊤}=> Q
+      else
+       |={⊤}=>
+         match rty with
+         | bluerock.lang.cpp.syntax.core.Tref rty0 | bluerock.lang.cpp.syntax.core.Trv_ref rty0 =>
+             ∃ v : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val,
+               a
+               |-> bluerock.lang.cpp.logic.heap_pred.primR
+                     (bluerock.lang.cpp.syntax.core.Tref (bluerock.lang.cpp.syntax.types.erase_qualifiers rty0)) f v ∗
+               (a
+                |-> bluerock.lang.cpp.logic.heap_pred.primR
+                      (bluerock.lang.cpp.syntax.core.Tref (bluerock.lang.cpp.syntax.types.erase_qualifiers rty0)) t v ={⊤}=∗
+                Q)
+         | bluerock.lang.cpp.syntax.core.Tarray ety sz =>
+             Stdlib.Lists.List.fold_left
+               (λ (Q0 : bluerock.lang.cpp.logic.wp.epred) (i : Corelib.Numbers.BinNums.N),
+                  bluerock.lang.cpp.logic.const.wp_const tu f t (a .[ bluerock.lang.cpp.syntax.types.erase_qualifiers ety ! i ]) ety Q0)
+               (bluerock.prelude.list_numbers.seqN 0 sz) (|={⊤}=> Q)
+         | bluerock.lang.cpp.syntax.core.Tnamed cls =>
+             match bluerock.lang.cpp.syntax.translation_unit.types tu !! cls with
+             | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gunion u) =>
+                 ∃ br : Corelib.Init.Datatypes.option Corelib.Init.Datatypes.nat,
+                   a |-> bluerock.lang.cpp.logic.heap_pred.aggregate.unionR cls f br ∗
+                   (a |-> bluerock.lang.cpp.logic.heap_pred.aggregate.unionR cls t br -∗
+                    match br with
+                    | Corelib.Init.Datatypes.Some br0 =>
+                        match bluerock.lang.cpp.syntax.decl.u_fields u !! br0 with
+                        | Corelib.Init.Datatypes.Some m =>
+                            if bluerock.lang.cpp.syntax.decl.mem_mutable m
+                            then |={⊤}=> Q
+                            else
+                             bluerock.lang.cpp.logic.const.wp_const tu f t
+                               (a ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                                       (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m)))
+                               (bluerock.lang.cpp.syntax.decl.mem_type m) (|={⊤}=> Q)
+                        | Corelib.Init.Datatypes.None => bluerock.lang.cpp.logic.const.wp_const tu f t a ty (|={⊤}=> Q)
+                        end
+                    | Corelib.Init.Datatypes.None => |={⊤}=> Q
+                    end)
+             | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st) =>
+                 Stdlib.Lists.List.fold_left
+                   (λ (Q0 : bluerock.lang.cpp.logic.wp.epred) '(b, _),
+                      bluerock.lang.cpp.logic.const.wp_const tu f t (a ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_base σ cls b)
+                        (bluerock.lang.cpp.syntax.core.Tnamed b) Q0)
+                   (bluerock.lang.cpp.syntax.decl.s_bases st)
+                   (Stdlib.Lists.List.fold_left
+                      (λ (Q0 : bluerock.lang.cpp.logic.wp.epred) (m : bluerock.lang.cpp.syntax.decl.Member),
+                         if bluerock.lang.cpp.syntax.decl.mem_mutable m
+                         then Q0
+                         else
+                          bluerock.lang.cpp.logic.const.wp_const tu f t
+                            (a ,, bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field σ
+                                    (bluerock.lang.cpp.syntax.core.Field cls (bluerock.lang.cpp.syntax.decl.mem_name m)))
+                            (bluerock.lang.cpp.syntax.decl.mem_type m) Q0)
+                      (bluerock.lang.cpp.syntax.decl.s_fields st)
+                      (a |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls f ∗
+                       (a |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR cls t -∗
+                        if bluerock.lang.cpp.syntax.decl.has_vtable st
+                        then
+                         ∃ path : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.globname,
+                           a |-> bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls path f ∗
+                           (a |-> bluerock.lang.cpp.logic.heap_pred.simple.derivationR cls path t ={⊤}=∗ Q)
+                        else |={⊤}=> Q)))
+             | _ => bluerock.lang.cpp.logic.const.wp_const tu f t a ty (|={⊤}=> Q)
+             end
+         | bluerock.lang.cpp.syntax.core.Tptr _ | bluerock.lang.cpp.syntax.core.Tnum _ _ | bluerock.lang.cpp.syntax.core.Tchar_ _ |
+           "void"%cpp_type | bluerock.lang.cpp.syntax.core.Tenum _ | "bool"%cpp_type | bluerock.lang.cpp.syntax.core.Tmember_pointer _ _ |
+           bluerock.lang.cpp.syntax.core.Tfloat_ _ | "nullptr_t"%cpp_type =>
+             ∃ v : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val,
+               a |-> bluerock.lang.cpp.logic.heap_pred.tptstoR (bluerock.lang.cpp.syntax.types.erase_qualifiers rty) f v ∗
+               (a |-> bluerock.lang.cpp.logic.heap_pred.tptstoR (bluerock.lang.cpp.syntax.types.erase_qualifiers rty) t v ={⊤}=∗ Q)
+         | bluerock.lang.cpp.syntax.core.Tfunction _ | bluerock.lang.cpp.syntax.core.Tarch _ _ =>
+             bluerock.lang.cpp.logic.const.wp_const tu f t a ty (|={⊤}=> Q)
+         | _ => False
+         end)
+    ⊢ bluerock.lang.cpp.logic.const.wp_const tu f t a ty Q
+
+## Assistant 2
+
+I will define a single‐argument “model” predicate 
+
+  uint256R (q: cQp.t) (x:Z) : Rep
+
+which asserts that at `this→data` you have a 4‐limb little‐endian array of 64-bit words whose unsigned value is `x mod 2^256`, and also the usual `structR` tag of the class.  Then the spec for 
+
+    void uint256::add(const uint256& other)
+
+says that we take full (1) ownership of `this` (so we can write), and only fractional ownership of `other` (we only read), and upon return `this` contains `x_this + x_other mod 2^256`, and all ownership is returned.
 
 ```gallina
-(* shorthand for the 64-bit limb type *)
-Notation ull := "unsigned long long"%cpp_type.
+(* Rep‐predicate for uint256: one Z model, not four. *)
+Definition uint256R (q: cQp.t) (x: Z) : Rep :=
+  let mask := (2^64)%Z in
+  let l0 := (x mod mask)%Z in
+  let l1 := (Z.div x mask mod mask)%Z in
+  let l2 := (Z.div x (mask*mask) mod mask)%Z in
+  let l3 := (Z.div x (mask*mask*mask) mod mask)%Z in
+  (* at the data field we have a 4‐cell array of 64-bit limbs *)
+  _field "::uint256::data" |-> bluerock.lang.cpp.logic.arr.arrayR
+     "unsigned long long"%cpp_type
+     (fun limb => primR "unsigned long long"%cpp_type q (Vint limb))
+     [l0; l1; l2; l3]
+  ** structR "uint256" q.
 
-(* split a 256-bit integer into four 64-bit limbs, little-endian *)
-Definition limbs_of_uint256 (n: Z) : list Z :=
-  let tw := (2 ^ 64)%Z in
-  [ Z.modulo n tw;
-    Z.modulo (Z.div n tw) tw;
-    Z.modulo (Z.div n (tw * tw)%Z) tw;
-    Z.modulo (Z.div n (tw * tw * tw)%Z) tw ].
+(* Spec of the add method *)
+  cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (thisp: ptr) =>
+     \arg{xother:Z}{qother:Qp} "other" (Vptr thisp) (* we will rebind othersp next *)
+     \prepost{(xv:Z) (xother:Z) (q:Qp)}
+       thisp |-> uint256R (cQp.mut 1) xv
+     ** (othersp:ptr) |-> uint256R (cQp.mut q) xother
+     \post thisp |-> uint256R (cQp.mut 1) ((xv + xother) mod (2^256)%Z)
+   ).
+```
 
-(* the Rep for uint256 *)
-Definition uint256R (q: cQp.t) (n: Z) : Rep :=
-  arrayR ull (fun i => primR ull q (Vint i)) (limbs_of_uint256 n).
+Explanation:
 
-(* spec for: void uint256::add(const uint256&) *)
-cpp.spec "uint256::add(uint256 const &)" as uint256_add_spec with (fun (this: ptr) =>
-  (* incoming operand *)
-  \arg{otherPtr} "other" (Vptr otherPtr)
-  (* preserve whatever fraction q_other of “other” the client passed in *)
-  \prepost{n_other q_other} otherPtr |-> uint256R (cQp.mut q_other) n_other
-  (* full ownership of *this, old value n_self *)
-  \pre{n_self} this |-> uint256R (cQp.mut 1) n_self
-  (* result: *this holds the sum modulo 2^256, other unchanged *)
-  \post this |-> uint256R (cQp.mut 1) ((n_self + n_other) mod (2 ^ 256))%Z
-).
+-  We package the four 64-bit limbs into a single Gallina `Z` (the mathematical value modulo 2^256).
+-  `uint256R q x` uses `arrayR` at the `data` field plus `structR` for class‐identity.
+-  In the `add`‐spec we split off full ownership of `this` (so it can be written) and arbitrary fractional ownership `q` of `other` (only read).  `\prepost` on `this` returns its ownership unchanged, and `\post` on `other` returns unchanged fractional ownership.  The new `this` value is `(xv + xother) mod 2^256`.
+
+## User 3
+
+Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
+
+Toplevel input, characters 115-116:
+>      \arg{xother:Z}{qother:Qp} "other" (Vptr thisp) (* we will rebind othersp next *)
+>                              ^
+Error: Syntax error: '&' or '|' expected after [term level 200] (in [term]).
+
+
+## Assistant 3
+
+Coq is complaining on 
+
+    \arg{xother:Z}{qother:Qp} "other" (Vptr thisp)
+
+because the quantifier‐binding syntax for `\arg` expects all of its binders to be in one pair of `{…}` and each binder in its own parentheses, e.g.:
+
+    \arg{(othersp:ptr) (xother:Z) (q:Qp)} "other" (Vptr othersp)
+
+—and not two successive `{…}`.  In addition, we really need to bind not only `xother` and `q` but also the pointer variable (`othersp`) itself.  
+
+Here is the corrected, self‐contained solution.  I quantify `(othersp:ptr) (xother:Z) (q:Qp)` all together in one `\arg`.  
+
+```gallina
+(* Rep‐predicate for uint256: just one Z-model, not four separate limbs. *)
+Definition uint256R (q: cQp.t) (x: Z) : Rep :=
+  let mask := (2^64)%Z in
+  let l0 := (x mod mask)%Z in
+  let l1 := (Z.div x mask mod mask)%Z in
+  let l2 := (Z.div x (mask*mask) mod mask)%Z in
+  let l3 := (Z.div x (mask*mask*mask) mod mask)%Z in
+  (* the four‐element little‐endian array in data[], plus the struct tag *)
+  _field "::uint256::data" |-> bluerock.lang.cpp.logic.arr.arrayR
+     "unsigned long long"%cpp_type
+     (fun limb => primR "unsigned long long"%cpp_type q (Vint limb))
+     [l0; l1; l2; l3]
+  ** structR "uint256" q.
+
+(* Separation‐logic spec for uint256::add(const uint256&). *)
+  cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (thisp: ptr) =>
+     (* bind the actual C++ reference argument plus its model Z and fraction *)
+     \arg{(othersp:ptr) (xother:Z) (q:Qp)} "other" (Vptr othersp)
+     (* model for 'this' only Z, full ownership so we use \prepost *)
+     \prepost{(xv:Z)} thisp |-> uint256R (cQp.mut 1) xv
+     (* precondition also needs fractional read‐only ownership of 'other' *)
+     \pre othersp |-> uint256R (cQp.mut q) xother
+     (* postcondition: 'this' has been updated to xv+xother mod 2^256 *)
+     \post thisp |-> uint256R (cQp.mut 1) ((xv + xother) mod (2^256)%Z)
+   ).
 ```
 

@@ -58,30 +58,32 @@ public:
 Check "unsigned long long"%cpp_type.
 
  *)
-(* Rep‐predicate for uint256: just one Z-model, not four separate limbs. *)
-Definition uint256R (q: cQp.t) (x: Z) : Rep :=
-  let mask := (2^64)%Z in
-  let l0 := (x mod mask)%Z in
-  let l1 := (Z.div x mask mod mask)%Z in
-  let l2 := (Z.div x (mask*mask) mod mask)%Z in
-  let l3 := (Z.div x (mask*mask*mask) mod mask)%Z in
-  (* the four‐element little‐endian array in data[], plus the struct tag *)
-  _field "::uint256::data" |-> bluerock.lang.cpp.logic.arr.arrayR
-     "unsigned long long"%cpp_type
-     (fun limb => primR "unsigned long long"%cpp_type q (Vint limb))
-     [l0; l1; l2; l3]
+Notation ull := "unsigned long long"%cpp_type.
+
+Definition limbs256 (n: Z) : list Z :=
+  let base := (2 ^ 64)%Z in
+  let l0 := Z.modulo n base in
+  let n1 := Z.div n base in
+  let l1 := Z.modulo n1 base in
+  let n2 := Z.div n1 base in
+  let l2 := Z.modulo n2 base in
+  let n3 := Z.div n2 base in
+  let l3 := Z.modulo n3 base in
+  [l0; l1; l2; l3].
+
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  _field "uint256::data" |-> arrayR ull (fun v => primR ull q (Vint v)) (limbs256 n)
   ** structR "uint256" q.
 
-(* Separation‐logic spec for uint256::add(const uint256&). *)
-  cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (thisp: ptr) =>
-     (* bind the actual C++ reference argument plus its model Z and fraction *)
-     \arg{(othersp:ptr) (xother:Z) (q:Qp)} "other" (Vptr othersp)
-     (* model for 'this' only Z, full ownership so we use \prepost *)
-     \prepost{(xv:Z)} thisp |-> uint256R (cQp.mut 1) xv
-     (* precondition also needs fractional read‐only ownership of 'other' *)
-     \pre othersp |-> uint256R (cQp.mut q) xother
-     (* postcondition: 'this' has been updated to xv+xother mod 2^256 *)
-     \post thisp |-> uint256R (cQp.mut 1) ((xv + xother) mod (2^256)%Z)
-   ).
+(* Spec of the in‐place adder *)
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this: ptr) =>
+  \arg{otherPtr: ptr} "other" (Vptr otherPtr)
+  \pre{(n1: Z) (n2: Z) (q2: Qp)}
+    this    |-> uint256R (cQp.mut 1)    n1
+  ** otherPtr |-> uint256R (cQp.mut q2) n2
+  \post
+    this    |-> uint256R (cQp.mut 1) (Z.modulo (n1 + n2) (2 ^ 256)%Z)
+  ** otherPtr |-> uint256R (cQp.mut q2) n2
+).
 
 

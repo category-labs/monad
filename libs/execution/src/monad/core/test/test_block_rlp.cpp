@@ -1187,3 +1187,19 @@ TEST(Rlp_Block, MonadConsensusBlock)
         to_byte_string_view(body),
         rlp::encode_consensus_block_body(res2.value()));
 }
+
+TEST(Rlp_block, IntTypeMismatchRegression)
+{
+    using intx::operator""_u256;
+
+    auto const block_header = BlockHeader{
+        .base_fee_per_gas = 0xFFFFFFFFFFFFFFFFFF_u256,
+    };
+    auto const encoded_block_header = rlp::encode_block_header(block_header);
+    byte_string_view encoded_block_header_view{encoded_block_header};
+
+    auto const decoded_block_header =
+        rlp::decode_block_header(encoded_block_header_view);
+    ASSERT_FALSE(decoded_block_header.has_error());
+    EXPECT_EQ(decoded_block_header.value(), block_header);
+}

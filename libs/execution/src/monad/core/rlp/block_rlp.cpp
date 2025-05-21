@@ -140,7 +140,7 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
 
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(
-            block_header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
+            block_header.base_fee_per_gas, decode_unsigned<uint256_t>(payload));
         if (payload.size() > 0) {
             BOOST_OUTCOME_TRY(
                 block_header.withdrawals_root, decode_bytes32(payload));

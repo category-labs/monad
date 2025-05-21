@@ -54,36 +54,34 @@ public:
 ../../fmai/prompts/sep.md
 ../../fmai/prompts/specs.md
 
-+++ QUERIES
-Check "unsigned long long"%cpp_type.
-
  *)
-Notation ull := "unsigned long long"%cpp_type.
+Definition uint256R (q: cQp.t) (x: Z) : Rep :=
+  let two64   := Z.pow 2 64 in
+  let two128  := Z.pow 2 128 in
+  let two192  := Z.pow 2 192 in
+  let l0 := (x mod two64)%Z in
+  let l1 := (x / two64   mod two64)%Z in
+  let l2 := (x / two128  mod two64)%Z in
+  let l3 := (x / two192  mod two64)%Z in
+  arrayR "unsigned long long"%cpp_type
+         (fun v:Z => primR "unsigned long long"%cpp_type q (Vint v))
+         [l0; l1; l2; l3].
 
-Definition limbs256 (n: Z) : list Z :=
-  let base := (2 ^ 64)%Z in
-  let l0 := Z.modulo n base in
-  let n1 := Z.div n base in
-  let l1 := Z.modulo n1 base in
-  let n2 := Z.div n1 base in
-  let l2 := Z.modulo n2 base in
-  let n3 := Z.div n2 base in
-  let l3 := Z.modulo n3 base in
-  [l0; l1; l2; l3].
+(* spec of uint256::add(const uint256&) *)
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
+  (* the single reference parameter *)
+  \arg{otherp} "other" (Vptr otherp)
 
-Definition uint256R (q: cQp.t) (n: Z) : Rep :=
-  _field "uint256::data" |-> arrayR ull (fun v => primR ull q (Vint v)) (limbs256 n)
-  ** structR "uint256" q.
+  (* we need full ownership of [this] to write, but only any positive
+     fraction of [other] since we only read it *)
+  \prepost{(x xother:Z) (q:Qp)}
+    this   |-> uint256R (cQp.mut 1) x
+    ** otherp |-> uint256R (cQp.mut q) xother
 
-(* Spec of the in‐place adder *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this: ptr) =>
-  \arg{otherPtr: ptr} "other" (Vptr otherPtr)
-  \pre{(n1: Z) (n2: Z) (q2: Qp)}
-    this    |-> uint256R (cQp.mut 1)    n1
-  ** otherPtr |-> uint256R (cQp.mut q2) n2
+  (* post: [this] now contains the sum mod 2^256, other is returned unchanged *)
   \post
-    this    |-> uint256R (cQp.mut 1) (Z.modulo (n1 + n2) (2 ^ 256)%Z)
-  ** otherPtr |-> uint256R (cQp.mut q2) n2
+    this |-> uint256R (cQp.mut 1) (Z.modulo (x + xother) (Z.pow 2 256))
 ).
 
+(* lets look a the o4-mini conversation history that resulted in the above soln *)
 

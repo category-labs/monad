@@ -296,8 +296,7 @@ how we lose:
   Proof.
     verify_spec'.
     go.
-    slauto.
-  Qed.
+  Abort.
   
   cpp.spec "twice(unsigned int)" as twice_spec with (
      \arg{xv:Z} "x" (Vint xv)

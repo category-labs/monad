@@ -484,7 +484,7 @@ Now look at the first precondition in `foo_spec`:
 \pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
 ```
 `\pre` can be followed curly braces containing variable quantifications. 
-These variables are universally quantified over the entire spec.
+These variables are universally quantified and are in scope even in the subsequent `\pre` and `\post` items.
 In other words, the caller of the function gets to choose any well-typed instantiation of these variables.
 This precondition says that the memory location for the global variable `"x"` has the value `xv`, which is a Gallina variable (not a c++ variable). The type of `xv` is the familiar `Z` (`Corelib.Numbers.BinNums.Z`) from the Coq standard library.
 This precondition also asserts `1/2` ownership over the memory location. 
@@ -587,11 +587,18 @@ Now the precondition is relaxed to allow passing
 any non-negative integer as an argument.
 Even though the spec, as written, doesnt say that `xv` is non-negative,
 the way we have defined semantics of function calls allows the proof of this spec to assume `(0<=xv<2^32)`. This allows the spec to be less verbose and avoid mentioning the conditions on the `val` (last) argument of `arg` imposed by its type.
+More formally, in a proof that an implementation satisfies a spec, one gets to use implicit assumptions that 
+the values specified as last arguments of `\arg` satisfy `bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop`
+for the C++ type of the argument:
 
-[TODO: Print the exact Coq defnition that is implicitly plugged in]
+```gallina
+bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop
+     : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val → bluerock.lang.cpp.syntax.core.type → Prop
+```
+You can issue the query `Search bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop` if you need to more precisely know the implicit assumptions.
 
-Even the `\post` keyword allows variable quantification. 
-This is useful when we do not want the caller to assume know the exact returned value or when the returned value is non-deterministic.
+Even the `\post` keyword allows variable quantification in curly braces.  Unlike in `\pre`, `\arg`, `\prepost` where the variable quantifications are universal (instantiation chosen by caller and the implementation must consider all well-typed instantiations), the variable quantifications in the curly braces just after `\post` are existential in nature: the implementation of the function gets to choose the instantiation and the callers must consider all well-typed insantiations.
+Existential quantifications in `\post` are useful when we do not want the caller to know the exact returned value or when the returned value is non-deterministic.
 For example, lets weaken the spec above to weaken the postcondition to merely say that the returned value is even and not guarantee anything else: 
 
 ```gallina
@@ -600,7 +607,7 @@ For example, lets weaken the spec above to weaken the postcondition to merely sa
      \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
       ).
 ```
-This spec would make more sense if the function had name `someEvenNumberBasedOn` rather than `twice`.
+This spec would make more sense if the function had name `someEvenNumberBasedOn` rather than `twice`. A valid implementation could pick a random number less than half of INT_MAX and multiply it by 2 to compute the returned value. 
 
 
 ## Specs of functions passing arguments by reference
@@ -974,10 +981,122 @@ Spec:
 ```
 The spec essentially says that the c++ implementation should behave like the Gallina `List.rev` function for which we have several properties proven in the Coq standard library.
 
-
+When writing `Rep` predicates, carefully think whether some C++-related details can be abstracted away. Avoid `Rep` predicates that just expose all class fields unless the C++ class really provides no abstraction and is just a thin wrapper.
 
 ## Spec Examples
 TODO:
+
+
+## finding existing specs in the context
+
+You can use the regular Coq `Search` vernacular to find specs of C++ function of a given fully qualified C++ name exists in the current context. This works because `cpp.spec` declares an instance of the typeclass
+`bluerock.auto.cpp.database.spec.SpecFor.C`.
+More concretely, the above spec (`foo_spec`) declares a typeclass instance of type `bluerock.auto.cpp.database.spec.SpecFor.C "foo()" foo_spec`. 
+Thus, you can issue the following query to find out all the available specs for `foo()`.
+
+```coqquery
+Search (bluerock.auto.cpp.database.spec.SpecFor.C "foo()" _).
+```
+
+## Common mistakes in specs:
+
+### too much ownership
+Let's revisit the `foo` function:
+```c++
+void foo() {
+    y=0;
+    y=x+1;
+}
+```
+Here is a suboptimal spec:
+```gallina
+Notation uint := "unsigned int"%cpp_type.
+
+  cpp.spec "foo()" as foo_spec with (
+        \pre{xv:Z} _global "x" |-> primR uint (cQp.mut 1) xv (* forall xv .. *)
+        \pre _global "y" |-> anyR uint (cQp.mut 1)
+        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv
+      ).
+```
+The first `\pre` asserts full ownership of `x`, even though the function only reads `x`. So a stronger spec is to weaker the `\pre` to allow any `q` fractional ownership of `x`:
+
+```gallina
+    cpp.spec "foo()" as foo_spec with (
+        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
+        \pre _global "y" |-> anyR uint (cQp.mut 1)
+        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
+      ).
+```
+
+
+### missing precondition
+Carefully review the code to see which variables are being read or written. If the function calls other functions, search/review the preconditions in the callee's spec.
+For example, the following spec of `foo` is wrong because its precondition does not assert any ownership of `x` thus the function's proof would get stuck at the point it reads the variable `x`
+
+```gallina
+    cpp.spec "foo()" as foo_spec with (
+        \pre _global "y" |-> anyR uint (cQp.mut 1)
+        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
+      ).
+```
+
+### missing postcondition
+Ownership is only created at constructor calls and destructed at destructor calls.
+Every resource passed to a function as a part of its precondition must either be returned back (after possible modifications of the value), or destructed, or passed to some other (possibly new) thread (e.g. via signals/semaphores/fork). Functions can also rearrange ownersip: e.g. some ownersip pience can move from being attached to a function argument to some other argument (e.g. for functions that insert the argument into a data structure).
+
+For example, the following spec is wrong because it does not return back the ownerhip of `x`:
+```gallina
+    cpp.spec "foo()" as foo_spec with (
+        \pre{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
+        \pre _global "y" |-> anyR uint (cQp.mut 1)
+        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
+      ).
+```
+
+### quirks of `cpp.spec`:
+
+#### type required for `this`:
+for method/constructor/destructor specs, the `this` argument must have a type annotation, as in the example as below:
+
+```gallina
+  cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
+     \arg{nextLoc} "n" (Vptr nextLoc)
+     \arg{data} "n" (Vint data)
+     \post this |-> NodeR (cQp.mut 1) data nextLoc
+    ).
+```
+
+Replacing `(fun (this:ptr) => ...)` by `(fun this => ...)` will cause issues with parsing the spec notation.
+This parsing is done by custom Elpi code
+
+####  `\post` quirks
+Every spec can have at most one `\post`. multiple conjuncts can be compbined using `**`.
+Also, if you need existentially quantify something in the postcondition, there are 2 ways to do it.
+For example, consider the following spec of `twice`:
+
+```gallina
+  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
+      ).
+```
+Just to illustrate existential quantifications in `\post`, the above spec can be equivalently written as:
+
+```gallina
+  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post{(xvfinal xvfinalhalf : Z)} [Vint xvfinal] [| xvfinalhalf * 2 =  xvfinal|]
+      ).
+```
+However, this spec is not idiomatic. The last argument of `\post` is of type `mpred` and and thus supports existential quantification. Thus the existential quantification over `xvfinalhalf` can be moved to the last argument:
+```
+  cpp.spec "twice(unsigned int)" as twice_weak_spec3 with (
+     \arg{xv:Z} "x" (Vint xv)
+     \post{(xvfinal : Z)} [Vint xvfinal] (Exists xvfinalhalf, [| xvfinalhalf * 2 =  xvfinal|])
+      ).
+```
+Note the variables existentially quantified in the last argument are NOT in scope in the previous argument (square bracket denoting the return value). Thus, we can NOT move the quanification over `xvfinal`, which is mentioned in the return value, to the last argument to colocate it with the quantification over `xvfinalhalf`.
+Note that the (existential) variable quantifications in the curly brace just after `\post` is scope in the next argument (return value). Typically, in the curly braces after `\post`, we ONLY quantify the variables that are mentioned in the return value. In fact, `cpp.spec` has a quirk that if there is no return value (e.g. the function returns value, in which case, the square bracket is entirely omitted), there must be no curly brace.
 
 
 # Current Task
@@ -1033,30 +1152,40 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-Here is a “one‐word” 256‐bit unsigned‐integer Rep together with the spec of the in‐place `add` method.  We pack the four 64‐bit limbs in little endian order via `arrayR`, and we only expose the overall Z‐value `v : Z` (with the side‐condition `0 ≤ v < 2^256`) as the mathematical model.
+I defined a small helper that splits a Z into the four 64-bit limbs, and then defined
+
+  uint256R q n  
+    := arrayR "unsigned long long"%cpp_type (fun i => primR "unsigned long long"%cpp_type q (Vint i))
+             (limbs_of_uint256 n).
+
+This `Rep` takes exactly one mathematical Z argument and a permission `q : cQp.t`.  The `add` method spec then takes full ownership of `*this` (since it mutates it) and any fraction of the operand (const&), and returns back the operand unchanged and updates `*this` to `(n_self + n_other) mod 2^256`.
 
 ```gallina
-(** 256‐bit unsigned integers as four little‐endian 64‐bit limbs *)
-Definition uint256R (q: cQp.t) (v: Z) : Rep :=
-  (* require that the mathematical value is in range 0 .. 2^256-1 *)
-  [| 0 ≤ v < (2 ^ (64 * 4))%Z |]
-  ** arrayR "unsigned long long"%cpp_type
-       (fun l => primR "unsigned long long"%cpp_type q (Vint l))
-       [ Z.land    v                ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 64)     ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 128)    ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 192)    ((2 ^ 64 - 1)%Z)
-       ].
+(* shorthand for the 64-bit limb type *)
+Notation ull := "unsigned long long"%cpp_type.
 
-(** spec of uint256::add in place:  this->v := (this->v + other.v) mod 2^256 *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherPtr:ptr} "other" (Vptr otherPtr)
-  \pre{(v1:Z) (v2:Z)}
-     this     |-> uint256R (cQp.mut 1) v1
-  ** otherPtr |-> uint256R (cQp.mut 1) v2
-  \post
-     this     |-> uint256R (cQp.mut 1) (Z.modulo (v1 + v2) (2 ^ (64*4))%Z)
-  ** otherPtr |-> uint256R (cQp.mut 1) v2
+(* split a 256-bit integer into four 64-bit limbs, little-endian *)
+Definition limbs_of_uint256 (n: Z) : list Z :=
+  let tw := (2 ^ 64)%Z in
+  [ Z.modulo n tw;
+    Z.modulo (Z.div n tw) tw;
+    Z.modulo (Z.div n (tw * tw)%Z) tw;
+    Z.modulo (Z.div n (tw * tw * tw)%Z) tw ].
+
+(* the Rep for uint256 *)
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  arrayR ull (fun i => primR ull q (Vint i)) (limbs_of_uint256 n).
+
+(* spec for: void uint256::add(const uint256&) *)
+cpp.spec "uint256::add(uint256 const &)" as uint256_add_spec with (fun (this: ptr) =>
+  (* incoming operand *)
+  \arg{otherPtr} "other" (Vptr otherPtr)
+  (* preserve whatever fraction q_other of “other” the client passed in *)
+  \prepost{n_other q_other} otherPtr |-> uint256R (cQp.mut q_other) n_other
+  (* full ownership of *this, old value n_self *)
+  \pre{n_self} this |-> uint256R (cQp.mut 1) n_self
+  (* result: *this holds the sum modulo 2^256, other unchanged *)
+  \post this |-> uint256R (cQp.mut 1) ((n_self + n_other) mod (2 ^ 256))%Z
 ).
 ```
 

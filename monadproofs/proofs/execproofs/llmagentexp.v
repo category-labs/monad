@@ -58,29 +58,31 @@ public:
 Check "unsigned long long"%cpp_type.
 
  *)
-(** 256‐bit unsigned integers as four little‐endian 64‐bit limbs *)
-Definition uint256R (q: cQp.t) (v: Z) : Rep :=
-  (* require that the mathematical value is in range 0 .. 2^256-1 *)
-  [| 0 ≤ v < (2 ^ (64 * 4))%Z |]
-  ** arrayR "unsigned long long"%cpp_type
-       (fun l => primR "unsigned long long"%cpp_type q (Vint l))
-       [ Z.land    v                ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 64)     ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 128)    ((2 ^ 64 - 1)%Z)
-       ; Z.land (Z.shiftr v 192)    ((2 ^ 64 - 1)%Z)
-       ].
+(* shorthand for the 64-bit limb type *)
+Notation ull := "unsigned long long"%cpp_type.
 
-(** spec of uint256::add in place:  this->v := (this->v + other.v) mod 2^256 *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  \arg{otherPtr:ptr} "other" (Vptr otherPtr)
-  \pre{(v1:Z) (v2:Z)}
-     this     |-> uint256R (cQp.mut 1) v1
-  ** otherPtr |-> uint256R (cQp.mut 1) v2
-  \post
-     this     |-> uint256R (cQp.mut 1) (Z.modulo (v1 + v2) (2 ^ (64*4))%Z)
-  ** otherPtr |-> uint256R (cQp.mut 1) v2
+(* split a 256-bit integer into four 64-bit limbs, little-endian *)
+Definition limbs_of_uint256 (n: Z) : list Z :=
+  let tw := (2 ^ 64)%Z in
+  [ Z.modulo n tw;
+    Z.modulo (Z.div n tw) tw;
+    Z.modulo (Z.div n (tw * tw)%Z) tw;
+    Z.modulo (Z.div n (tw * tw * tw)%Z) tw ].
+
+(* the Rep for uint256 *)
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  arrayR ull (fun i => primR ull q (Vint i)) (limbs_of_uint256 n).
+
+(* spec for: void uint256::add(const uint256&) *)
+cpp.spec "uint256::add(uint256 const &)" as uint256_add_spec with (fun (this: ptr) =>
+  (* incoming operand *)
+  \arg{otherPtr} "other" (Vptr otherPtr)
+  (* preserve whatever fraction q_other of “other” the client passed in *)
+  \prepost{n_other q_other} otherPtr |-> uint256R (cQp.mut q_other) n_other
+  (* full ownership of *this, old value n_self *)
+  \pre{n_self} this |-> uint256R (cQp.mut 1) n_self
+  (* result: *this holds the sum modulo 2^256, other unchanged *)
+  \post this |-> uint256R (cQp.mut 1) ((n_self + n_other) mod (2 ^ 256))%Z
 ).
-
-Search (bluerock.auto.cpp.database.spec.SpecFor.C "uint256::add(const uint256&)").
 
 

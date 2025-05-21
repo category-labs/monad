@@ -4,6 +4,8 @@ Require Import bluerock.lang.cpp.cpp.
 Require Import stdpp.gmap.
 Require Import monad.proofs.misc.
 Require Import monad.proofs.evmopsem.
+Print block.step.
+Print evm.network.
 Import linearity.
 Require Import monad.asts.exb.
 Require Import bluerock.auto.invariants.

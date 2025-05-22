@@ -372,4 +372,69 @@ Node::UniquePtr copy_node(Node const *);
 
 int64_t calc_min_version(Node const &);
 
+// Iterate over the children of a node returning the index and the branch
+// Usage: for (auto const [index, branch] : NodeChildrenRange(node.mask)) {...}
+class NodeChildrenRange
+{
+public:
+    struct Sentinel
+    {
+    };
+
+    class iterator
+    {
+    public:
+        using value_type = std::pair<uint8_t, unsigned char>;
+        using difference_type = std::ptrdiff_t;
+        using iterator_category = std::input_iterator_tag;
+        using pointer = void;
+        using reference = value_type;
+
+        iterator(uint16_t mask)
+            : index_(0)
+            , mask_(mask)
+        {
+        }
+
+        value_type operator*() const
+        {
+            return {index_, __builtin_ctzl(mask_)};
+        }
+
+        iterator &operator++()
+        {
+            mask_ &= mask_ - 1;
+            ++index_;
+            return *this;
+        }
+
+        bool operator!=(Sentinel const &) const
+        {
+            return mask_ != 0;
+        }
+
+    private:
+        uint8_t index_;
+        uint16_t mask_;
+    };
+
+    explicit NodeChildrenRange(uint16_t mask)
+        : mask_(mask)
+    {
+    }
+
+    iterator begin() const
+    {
+        return iterator(mask_);
+    }
+
+    Sentinel end() const
+    {
+        return Sentinel();
+    }
+
+private:
+    uint16_t mask_;
+};
+
 MONAD_MPT_NAMESPACE_END

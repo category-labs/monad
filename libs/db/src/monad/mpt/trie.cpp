@@ -213,31 +213,26 @@ struct load_all_impl_
     void process(NodeCursor const node_cursor, StateMachine &sm)
     {
         Node *const node = node_cursor.node;
-        for (unsigned i = 0, idx = 0, bit = 1; idx < node->number_of_children();
-             ++i, bit <<= 1) {
-            if (node->mask & bit) {
-                NibblesView const nv(
-                    node_cursor.prefix_index,
-                    node->path_nibble_index_end,
-                    node->path_data());
-                for (uint8_t n = 0; n < nv.nibble_size(); n++) {
-                    sm.down(nv.get(n));
-                }
-                sm.down((unsigned char)i);
-                if (sm.cache()) {
-                    auto *const next = node->next(idx);
-                    if (next == nullptr) {
-                        receiver_t receiver(
-                            this, *node, uint8_t(idx), sm.clone());
-                        async_read(aux, std::move(receiver));
-                    }
-                    else {
-                        process(NodeCursor{*next}, sm);
-                    }
-                }
-                sm.up(1 + nv.nibble_size());
-                ++idx;
+        for (auto const [idx, i] : NodeChildrenRange(node->mask)) {
+            NibblesView const nv(
+                node_cursor.prefix_index,
+                node->path_nibble_index_end,
+                node->path_data());
+            for (uint8_t n = 0; n < nv.nibble_size(); n++) {
+                sm.down(nv.get(n));
             }
+            sm.down(i);
+            if (sm.cache()) {
+                auto *const next = node->next(idx);
+                if (next == nullptr) {
+                    receiver_t receiver(this, *node, uint8_t(idx), sm.clone());
+                    async_read(aux, std::move(receiver));
+                }
+                else {
+                    process(NodeCursor{*next}, sm);
+                }
+            }
+            sm.up(1 + nv.nibble_size());
         }
     }
 };
@@ -668,15 +663,11 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
     std::vector<uint16_t> child_data_offsets;
     orig_indexes.reserve(number_of_children);
     child_data_offsets.reserve(number_of_children);
-    auto const orig_n = static_cast<unsigned>(std::popcount(orig->mask));
-    for (unsigned orig_j = 0, bit = 1; orig_j < orig_n; bit <<= 1) {
-        if (bit & orig->mask) {
-            if (bit & mask) {
-                orig_indexes.push_back(orig_j);
-                total_child_data_size += (uint16_t)orig->child_data_len(orig_j);
-                child_data_offsets.push_back(total_child_data_size);
-            }
-            ++orig_j;
+    for (auto const [orig_index, branch] : NodeChildrenRange(orig->mask)) {
+        if (mask & (1u << branch)) {
+            orig_indexes.push_back(orig_index);
+            total_child_data_size += (uint16_t)orig->child_data_len(orig_index);
+            child_data_offsets.push_back(total_child_data_size);
         }
     }
     auto node = Node::make(
@@ -957,25 +948,19 @@ void create_new_trie_from_requests_(
     std::optional<byte_string_view> const opt_leaf_data, int64_t version)
 {
     // version will be updated bottom up
-    auto const number_of_children =
-        static_cast<unsigned>(std::popcount(requests.mask));
     uint16_t const mask = requests.mask;
-    std::vector<ChildData> children(number_of_children);
-    for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
-         ++i, bit <<= 1) {
-        if (bit & requests.mask) {
-            children[j] = ChildData{.branch = static_cast<uint8_t>(i)};
-            sm.down(children[j].branch);
-            create_new_trie_(
-                aux,
-                sm,
-                version,
-                children[j],
-                std::move(requests)[i],
-                prefix_index + 1);
-            sm.up(1);
-            ++j;
-        }
+    std::vector<ChildData> children(size_t(std::popcount(mask)));
+    for (auto const [index, branch] : NodeChildrenRange(mask)) {
+        children[index].branch = branch;
+        sm.down(branch);
+        create_new_trie_(
+            aux,
+            sm,
+            version,
+            children[index],
+            std::move(requests)[branch],
+            prefix_index + 1);
+        sm.up(1);
     }
     // can have empty children
     auto node = create_node_from_children_if_any(
@@ -1109,8 +1094,6 @@ void dispatch_updates_impl_(
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
-    auto const number_of_children =
-        static_cast<unsigned>(std::popcount(orig_mask));
     // tnode->version will be updated bottom up
     auto tnode = make_tnode(
         orig_mask,
@@ -1120,24 +1103,23 @@ void dispatch_updates_impl_(
         version,
         opt_leaf_data,
         opt_leaf_data.has_value() ? std::move(old_ptr) : Node::UniquePtr{});
-    MONAD_DEBUG_ASSERT(tnode->children.size() == number_of_children);
+    MONAD_DEBUG_ASSERT(
+        tnode->children.size() == size_t(std::popcount(orig_mask)));
     auto &children = tnode->children;
 
-    for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
-         ++i, bit <<= 1) {
-        MONAD_DEBUG_ASSERT(i <= std::numeric_limits<uint8_t>::max());
-        if (bit & requests.mask) {
-            children[j] = ChildData{.branch = static_cast<uint8_t>(i)};
-            sm.down(children[j].branch);
-            if (bit & old->mask) {
+    for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
+        if ((1 << branch) & requests.mask) {
+            children[index].branch = branch;
+            sm.down(branch);
+            if ((1 << branch) & old->mask) {
                 upsert_(
                     aux,
                     sm,
                     *tnode,
-                    children[j],
-                    old->move_next(old->to_child_index(i)),
-                    old->fnext(old->to_child_index(i)),
-                    std::move(requests)[i],
+                    children[index],
+                    old->move_next(old->to_child_index(branch)),
+                    old->fnext(old->to_child_index(branch)),
+                    std::move(requests)[branch],
                     prefix_index + 1,
                     INVALID_PATH_INDEX);
                 sm.up(1);
@@ -1147,17 +1129,16 @@ void dispatch_updates_impl_(
                     aux,
                     sm,
                     tnode->version,
-                    children[j],
-                    std::move(requests)[i],
+                    children[index],
+                    std::move(requests)[branch],
                     prefix_index + 1);
                 --tnode->npending;
                 sm.up(1);
             }
-            ++j;
         }
-        else if (bit & old->mask) {
-            auto &child = children[j];
-            child.copy_old_child(old, i);
+        else if ((1 << branch) & old->mask) {
+            auto &child = children[index];
+            child.copy_old_child(old, branch);
             if (aux.is_on_disk()) {
                 if (sm.auto_expire() &&
                     child.subtrie_min_version <
@@ -1165,7 +1146,7 @@ void dispatch_updates_impl_(
                     // expire_() is similar to dispatch_updates() except that it
                     // can cut off some branches for data expiration
                     auto expire_tnode = ExpireTNode::make(
-                        tnode.get(), i, j, std::move(child.ptr));
+                        tnode.get(), branch, index, std::move(child.ptr));
                     expire_(aux, sm, std::move(expire_tnode), child.offset);
                 }
                 else if (
@@ -1175,7 +1156,7 @@ void dispatch_updates_impl_(
                     bool const copy_node_for_fast =
                         child.min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
-                        tnode.get(), j, std::move(child.ptr));
+                        tnode.get(), index, std::move(child.ptr));
                     compact_(
                         aux,
                         sm,
@@ -1190,7 +1171,6 @@ void dispatch_updates_impl_(
             else {
                 --tnode->npending;
             }
-            ++j;
         }
     }
     fillin_entry(aux, sm, std::move(tnode), parent, entry);
@@ -1269,20 +1249,19 @@ void mismatch_handler_(
         tnode->children.size() == number_of_children && number_of_children > 0);
     auto &children = tnode->children;
 
-    for (unsigned i = 0, j = 0, bit = 1; j < number_of_children;
-         ++i, bit <<= 1) {
-        if (bit & requests.mask) {
-            children[j] = ChildData{.branch = static_cast<uint8_t>(i)};
-            sm.down(children[j].branch);
-            if (i == old_nibble) {
+    for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
+        if ((1 << branch) & requests.mask) {
+            children[index].branch = branch;
+            sm.down(branch);
+            if (branch == old_nibble) {
                 upsert_(
                     aux,
                     sm,
                     *tnode,
-                    children[j],
+                    children[index],
                     std::move(old_ptr),
                     INVALID_OFFSET,
-                    std::move(requests)[i],
+                    std::move(requests)[branch],
                     prefix_index + 1,
                     old_prefix_index + 1);
             }
@@ -1291,15 +1270,14 @@ void mismatch_handler_(
                     aux,
                     sm,
                     tnode->version,
-                    children[j],
-                    std::move(requests)[i],
+                    children[index],
+                    std::move(requests)[branch],
                     prefix_index + 1);
                 --tnode->npending;
             }
-            ++j;
             sm.up(1);
         }
-        else if (i == old_nibble) {
+        else if (branch == old_nibble) {
             sm.down(old_nibble);
             // nexts[j] is a path-shortened old node, trim prefix
             NibblesView const path_suffix{
@@ -1309,8 +1287,8 @@ void mismatch_handler_(
             for (auto i = 0u; i < path_suffix.nibble_size(); ++i) {
                 sm.down(path_suffix.get(i));
             }
-            auto &child = children[j];
-            child = ChildData{.branch = static_cast<uint8_t>(i)};
+            auto &child = children[index];
+            child.branch = branch;
             // Updated node inherits the version number directly from old node
             child.finalize(
                 make_node(old, path_suffix, old.opt_value(), old.version),
@@ -1325,7 +1303,7 @@ void mismatch_handler_(
                     child.subtrie_min_version <
                         aux.curr_upsert_auto_expire_version) {
                     auto expire_tnode = ExpireTNode::make(
-                        tnode.get(), i, j, std::move(child.ptr));
+                        tnode.get(), branch, index, std::move(child.ptr));
                     expire_(aux, sm, std::move(expire_tnode), INVALID_OFFSET);
                 }
                 else if (auto const [min_offset_fast, min_offset_slow] =
@@ -1338,7 +1316,7 @@ void mismatch_handler_(
                     bool const copy_node_for_fast =
                         min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
-                        tnode.get(), j, std::move(child.ptr));
+                        tnode.get(), index, std::move(child.ptr));
                     compact_(
                         aux,
                         sm,
@@ -1353,7 +1331,6 @@ void mismatch_handler_(
             else {
                 --tnode->npending;
             }
-            ++j;
         }
     }
     fillin_entry(aux, sm, std::move(tnode), parent, entry);
@@ -1393,31 +1370,27 @@ void expire_(
     // this loop might remove or update some branches
     // any fnext updates can be directly to node->fnext(), and we keep a
     // npending + current mask
-    for (unsigned i = 0, j = 0, bit = 1; j < node.number_of_children();
-         ++i, bit <<= 1) {
-        if (bit & node.mask) {
-            if (node.subtrie_min_version(j) <
-                aux.curr_upsert_auto_expire_version) {
-                auto child_tnode =
-                    ExpireTNode::make(tnode.get(), i, j, node.move_next(j));
-                expire_(aux, sm, std::move(child_tnode), node.fnext(j));
-            }
-            else if (
-                node.min_offset_fast(j) < aux.compact_offset_fast ||
-                node.min_offset_slow(j) < aux.compact_offset_slow) {
-                auto child_tnode =
-                    CompactTNode::make(tnode.get(), j, node.move_next(j));
-                compact_(
-                    aux,
-                    sm,
-                    std::move(child_tnode),
-                    node.fnext(j),
-                    node.min_offset_fast(j) < aux.compact_offset_fast);
-            }
-            else {
-                --tnode->npending;
-            }
-            ++j;
+    for (auto const [index, branch] : NodeChildrenRange(node.mask)) {
+        if (node.subtrie_min_version(index) <
+            aux.curr_upsert_auto_expire_version) {
+            auto child_tnode = ExpireTNode::make(
+                tnode.get(), branch, index, node.move_next(index));
+            expire_(aux, sm, std::move(child_tnode), node.fnext(index));
+        }
+        else if (
+            node.min_offset_fast(index) < aux.compact_offset_fast ||
+            node.min_offset_slow(index) < aux.compact_offset_slow) {
+            auto child_tnode =
+                CompactTNode::make(tnode.get(), index, node.move_next(index));
+            compact_(
+                aux,
+                sm,
+                std::move(child_tnode),
+                node.fnext(index),
+                node.min_offset_fast(index) < aux.compact_offset_fast);
+        }
+        else {
+            --tnode->npending;
         }
     }
     try_fillin_parent_after_expiration(aux, sm, std::move(tnode));

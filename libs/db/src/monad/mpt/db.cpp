@@ -1124,6 +1124,18 @@ RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
 
 RODb::~RODb() = default;
 
+uint64_t RODb::get_latest_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().db_history_max_version();
+}
+
+uint64_t RODb::get_earliest_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().db_history_min_valid_version();
+}
+
 Result<OwningNodeCursor> RODb::find(
     OwningNodeCursor &node_cursor, NibblesView const key,
     uint64_t const block_id) const

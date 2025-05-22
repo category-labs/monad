@@ -3,6 +3,7 @@
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/small_prng.hpp>
+#include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/test/test_fixtures_base.hpp>
@@ -34,10 +35,11 @@ sig_atomic_t volatile g_done = 0;
 
 static_assert(std::atomic<bool>::is_always_lock_free); // async signal safe
 
-static monad::hash256 to_key(uint64_t const key)
+static monad::byte_string to_key(uint64_t const key)
 {
     auto const as_bytes = serialize_as_big_endian<sizeof(key)>(key);
-    return monad::keccak256(as_bytes);
+    auto const hash = monad::keccak256(as_bytes);
+    return monad::byte_string{hash.bytes, sizeof(hash.bytes)};
 }
 
 static uint64_t
@@ -71,6 +73,8 @@ int main(int argc, char *const argv[])
     size_t num_nodes_per_version = 1;
     bool enable_compaction = true;
     uint32_t timeout_seconds = std::numeric_limits<uint32_t>::max();
+    bool overwrite_keys_mode = false;
+
     std::vector<std::filesystem::path> dbname_paths;
     CLI::App cli(
         "Tool for stress testing concurrent RO DB instances",
@@ -115,6 +119,12 @@ int main(int argc, char *const argv[])
                dbname_paths,
                "A comma-separated list of previously created database paths")
             ->required();
+        cli.add_flag(
+            "--overwrite-keys-mode",
+            overwrite_keys_mode,
+            "Enable mode to overwrite identical key sets, allowing faster disk "
+            "chunk reuse");
+
         cli.parse(argc, argv);
 
         quill::start(true);
@@ -125,18 +135,42 @@ int main(int argc, char *const argv[])
         sigaction(SIGINT, &sig, nullptr);
         sigaction(SIGALRM, &sig, nullptr);
 
+        monad::byte_string const long_value(1ul << 19, 5);
+        std::vector<monad::byte_string> values_overwrite_keys_mode;
+        for (uint64_t i = 0; i < num_nodes_per_version; ++i) {
+            values_overwrite_keys_mode.emplace_back(
+                long_value + serialize_as_big_endian<8>(i));
+        }
+
+        auto upsert_new_version_overwrite_keys = [&](Db &db,
+                                                     uint64_t const version) {
+            // RWDb writes the same set of nodes every block. While RODb
+            // concurrently read a random key from the latest block
+
+            UpdateList ul;
+
+            std::list<monad::byte_string> bytes_alloc;
+            std::list<Update> update_alloc;
+            serialize_as_big_endian<sizeof(uint64_t)>(version);
+            for (size_t k = 0; k < num_nodes_per_version; ++k) {
+                ul.push_front(update_alloc.emplace_back(make_update(
+                    bytes_alloc.emplace_back(to_key(k)),
+                    values_overwrite_keys_mode[k])));
+            }
+            db.upsert(std::move(ul), version);
+        };
+
         auto const prefix = 0x00_hex;
 
         auto upsert_new_version = [&](Db &db, uint64_t const version) {
             UpdateList ul;
-
-            std::list<monad::hash256> hash_alloc;
+            std::list<monad::byte_string> bytes_alloc;
             std::list<Update> update_alloc;
             auto const version_bytes =
                 serialize_as_big_endian<sizeof(uint64_t)>(version);
             for (size_t k = 0; k < num_nodes_per_version; ++k) {
                 ul.push_front(update_alloc.emplace_back(make_update(
-                    hash_alloc.emplace_back(
+                    bytes_alloc.emplace_back(
                         to_key(version * num_nodes_per_version + k)),
                     version_bytes)));
             }
@@ -432,32 +466,93 @@ int main(int argc, char *const argv[])
             std::cout << oss.str();
         };
 
+        auto async_read_nonblocking_rodb = [&] {
+            // RODb
+            RODb ro_db{ReadOnlyOnDiskDbConfig{
+                .dbname_paths = dbname_paths, .node_lru_size = 10240}};
+
+            constexpr unsigned num_fibers = 16;
+            monad::fiber::PriorityPool pool(
+                num_async_reader_threads, num_fibers);
+
+            std::atomic<size_t> inflight_requests = 0;
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            }
+            // read a random key on latest version
+            while (!g_done) {
+                if (inflight_requests.load() >= num_fibers) {
+                    sleep(1);
+                    continue;
+                }
+                auto const version = ro_db.get_latest_block_id();
+                inflight_requests++;
+                uint64_t const key_index =
+                    (size_t)rand() % num_nodes_per_version;
+                pool.submit(
+                    0,
+                    [ro_db = &ro_db,
+                     inflight_req_ptr = &inflight_requests,
+                     key_index = key_index,
+                     value = values_overwrite_keys_mode[key_index],
+                     version = version] {
+                        Nibbles const key{to_key(key_index)};
+                        // get random key
+                        auto res = ro_db->find(key, version);
+                        if (res.has_value()) {
+                            MONAD_ASSERT(res.value().node->value() == value);
+                        }
+                        else {
+                            MONAD_ASSERT_PRINTF(
+                                ro_db->get_earliest_block_id() > version,
+                                "db earliest version %lu, find to_key(%lu) at "
+                                "version %lu",
+                                ro_db->get_earliest_block_id(),
+                                key_index,
+                                version);
+                        }
+                        // finish read
+                        inflight_req_ptr->fetch_sub(1);
+                    });
+            }
+        };
+
         // construct RWDb
-        uint64_t version = 0;
         StateMachineAlwaysMerkle machine{};
-        OnDiskDbConfig const config{
-            .compaction = enable_compaction, .dbname_paths = {dbname_paths}};
+
+        auto const config =
+            overwrite_keys_mode
+                ? OnDiskDbConfig{.compaction = true, .dbname_paths = {dbname_paths}, .file_size_db = 4, .fixed_history_length = 40}
+                : OnDiskDbConfig{
+                      .compaction = enable_compaction,
+                      .dbname_paths = {dbname_paths}};
         Db db{machine, config};
 
         std::cout << "Running read only DB stress test..." << std::endl;
 
         std::vector<std::thread> readers;
-        for (unsigned i = 0; i < num_sync_reader_threads; ++i) {
-            readers.emplace_back(random_sync_read);
-        }
+        if (!overwrite_keys_mode) {
+            for (unsigned i = 0; i < num_sync_reader_threads; ++i) {
+                readers.emplace_back(random_sync_read);
+            }
 
-        for (unsigned i = 0; i < num_async_reader_threads; ++i) {
-            readers.emplace_back(random_async_read);
-        }
+            for (unsigned i = 0; i < num_async_reader_threads; ++i) {
+                readers.emplace_back(random_async_read);
+            }
 
-        for (unsigned i = 0; i < num_traverse_threads; ++i) {
-            readers.emplace_back(random_traverse);
+            for (unsigned i = 0; i < num_traverse_threads; ++i) {
+                readers.emplace_back(random_traverse);
+            }
         }
         readers.emplace_back(open_close_read_only);
+        if (overwrite_keys_mode) {
+            readers.emplace_back(async_read_nonblocking_rodb);
+        }
 
+        uint64_t version = 0;
         alarm(timeout_seconds);
         while (!g_done) {
-            upsert_new_version(db, version);
+            overwrite_keys_mode ? upsert_new_version_overwrite_keys(db, version)
+                                : upsert_new_version(db, version);
             ++version;
         }
         for (auto &t : readers) {

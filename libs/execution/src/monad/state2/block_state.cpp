@@ -25,10 +25,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db)
+BlockState::BlockState(Db &db, vm::VM &monad_vm)
     : db_{db}
+    , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
-    , code_(std::make_unique<Code>())
 {
 }
 
@@ -99,14 +99,17 @@ bytes32_t BlockState::read_storage(
     }
 }
 
-std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
+vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 {
+    // vm
+    if (auto vcode = vm_.find_varcode(code_hash)) {
+        return *vcode;
+    }
     // block state
     {
         Code::const_accessor it{};
-        MONAD_ASSERT(code_);
-        if (MONAD_LIKELY(code_->find(it, code_hash))) {
-            return it->second;
+        if (code_.find(it, code_hash)) {
+            return vm_.try_insert_varcode(code_hash, it->second);
         }
     }
     // database
@@ -114,10 +117,8 @@ std::shared_ptr<CodeAnalysis> BlockState::read_code(bytes32_t const &code_hash)
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
         MONAD_ASSERT(
-            code_hash == NULL_HASH || !result->executable_code().empty());
-        Code::const_accessor it{};
-        code_->emplace(it, code_hash, result);
-        return it->second;
+            code_hash == NULL_HASH || result->code_size() != 0);
+        return vm_.try_insert_varcode(code_hash, result);
     }
 }
 
@@ -164,13 +165,12 @@ void BlockState::merge(State const &state)
         }
     }
 
-    MONAD_ASSERT(code_);
     for (auto const &code_hash : code_hashes) {
         auto const it = state.code_.find(code_hash);
         if (it == state.code_.end()) {
             continue;
         }
-        code_->emplace(code_hash, it->second); // TODO try_emplace
+        code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
     }
 
     MONAD_ASSERT(state_);
@@ -210,7 +210,7 @@ void BlockState::commit(
 {
     db_.commit(
         std::move(state_),
-        std::move(code_),
+        code_,
         consensus_header,
         receipts,
         call_frames,
@@ -223,9 +223,8 @@ void BlockState::commit(
 void BlockState::log_debug()
 {
     MONAD_ASSERT(state_);
-    MONAD_ASSERT(code_);
     LOG_DEBUG("State Deltas: {}", *state_);
-    LOG_DEBUG("Code Deltas: {}", *code_);
+    LOG_DEBUG("Code Deltas: {}", code_);
 }
 
 MONAD_NAMESPACE_END

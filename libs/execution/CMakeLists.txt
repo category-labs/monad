@@ -160,7 +160,7 @@ target_include_directories(
 
 target_link_libraries(
   monad_execution
-  PUBLIC monad-compiler-vm
+  PUBLIC monad-vm
   PUBLIC monad_core
   PUBLIC monad_trie
   PRIVATE Boost::fiber

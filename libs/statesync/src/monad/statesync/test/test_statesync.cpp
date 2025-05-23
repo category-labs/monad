@@ -274,12 +274,18 @@ TEST_F(StateSyncFixture, sync_from_empty)
     TrieDb ctdb{cdb};
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
     EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
-    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
-    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
-    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code(), C_CODE);
-    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code(), D_CODE);
-    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code(), E_CODE);
-    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code(), H_CODE);
+    auto a_icode = ctdb.read_code(A_CODE_HASH);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
+    auto b_icode = ctdb.read_code(B_CODE_HASH);
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
+    auto c_icode = ctdb.read_code(C_CODE_HASH);
+    EXPECT_EQ(byte_string_view(c_icode->code(), c_icode->code_size()), C_CODE);
+    auto d_icode = ctdb.read_code(D_CODE_HASH);
+    EXPECT_EQ(byte_string_view(d_icode->code(), d_icode->code_size()), D_CODE);
+    auto e_icode = ctdb.read_code(E_CODE_HASH);
+    EXPECT_EQ(byte_string_view(e_icode->code(), e_icode->code_size()), E_CODE);
+    auto h_icode = ctdb.read_code(H_CODE_HASH);
+    EXPECT_EQ(byte_string_view(h_icode->code(), h_icode->code_size()), H_CODE);
 
     auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
     ASSERT_TRUE(raw.has_value());
@@ -368,8 +374,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                 "ffffffffffffffffffffff0160005500")
                 .value();
         auto const code_hash = to_bytes(keccak256(code));
-        auto const code_analysis =
-            std::make_shared<CodeAnalysis>(analyze(code));
+        auto const icode = vm::make_shared_intercode(code);
         commit_sequential(
             sctx,
             StateDeltas{
@@ -387,7 +392,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
 
             },
-            Code{{code_hash, code_analysis}},
+            Code{{code_hash, icode}},
             hdr3);
         EXPECT_EQ(stdb.read_eth_header(), hdr3);
     }
@@ -622,7 +627,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
         machine,
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
-    EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code().empty());
+    EXPECT_EQ(ctdb.read_code(code_hash)->code_size(), 0);
 }
 
 TEST_F(StateSyncFixture, sync_one_account)
@@ -1018,7 +1023,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
                        "ffffffffffffffffffffff0160005500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
-    auto const code_analysis = std::make_shared<CodeAnalysis>(analyze(code));
+    auto const icode = vm::make_shared_intercode(code);
 
     Account const a{
         .balance = 1337,
@@ -1040,7 +1045,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
 
         },
-        Code{{code_hash, code_analysis}},
+        Code{{code_hash, icode}},
         hdr);
     EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);

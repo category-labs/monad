@@ -77,8 +77,8 @@ TEST(DbBinarySnapshot, Basic)
                 reinterpret_cast<unsigned char const *>(bytes.data()),
                 bytes.size() * sizeof(uint64_t)};
             bytes32_t const hash = to_bytes(keccak256(code));
-            auto const analysis = std::make_shared<CodeAnalysis>(analyze(code));
-            code_delta.emplace(hash, analysis);
+            auto const icode = vm::make_shared_intercode(code);
+            code_delta.emplace(hash, icode);
         }
         TrieDb tdb{db};
         tdb.commit(
@@ -127,10 +127,12 @@ TEST(DbBinarySnapshot, Basic)
         tdb.set_block_and_round(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
         EXPECT_EQ(tdb.state_root(), root);
-        for (auto const &[hash, analysis] : code_delta) {
+        for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);
-            EXPECT_EQ(from_db->executable_code(), analysis->executable_code());
+            EXPECT_EQ(
+                byte_string_view(from_db->code(), from_db->code_size()),
+                byte_string_view(icode->code(), icode->code_size()));
         }
     }
 

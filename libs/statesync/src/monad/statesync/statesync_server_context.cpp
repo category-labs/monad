@@ -224,7 +224,7 @@ bytes32_t monad_statesync_server_context::read_storage(
     return rw.read_storage(addr, incarnation, key);
 }
 
-std::shared_ptr<CodeAnalysis>
+monad::vm::SharedIntercode
 monad_statesync_server_context::read_code(bytes32_t const &hash)
 {
     return rw.read_code(hash);

@@ -15,7 +15,7 @@
 #include <monad/state3/account_state.hpp>
 #include <monad/state3/version_stack.hpp>
 #include <monad/types/incarnation.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <evmc/evmc.h>
 
@@ -48,7 +48,7 @@ class State
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 
-    Map<bytes32_t, std::shared_ptr<CodeAnalysis>> code_{};
+    Map<bytes32_t, vm::SharedVarcode> code_{};
 
     unsigned version_{0};
 
@@ -146,6 +146,11 @@ public:
     }
 
     ////////////////////////////////////////
+
+    vm::VM &vm()
+    {
+        return block_state_.vm();
+    }
 
     std::optional<Account> const &recent_account(Address const &address)
     {
@@ -431,17 +436,8 @@ public:
 
     ////////////////////////////////////////
 
-    /**
-     * TODO code return reference
-     */
-
-    std::shared_ptr<CodeAnalysis> get_code(Address const &address)
+    vm::SharedVarcode read_code(bytes32_t const &code_hash)
     {
-        auto const &account = recent_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            return std::make_shared<CodeAnalysis>(analyze({}));
-        }
-        bytes32_t const &code_hash = account.value().code_hash;
         {
             auto const it = code_.find(code_hash);
             if (it != code_.end()) {
@@ -449,6 +445,15 @@ public:
             }
         }
         return block_state_.read_code(code_hash);
+    }
+
+    vm::SharedVarcode get_code(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            return block_state_.read_code(NULL_HASH);
+        }
+        return read_code(account.value().code_hash);
     }
 
     size_t get_code_size(Address const &address)
@@ -461,14 +466,14 @@ public:
         {
             auto const it = code_.find(code_hash);
             if (it != code_.end()) {
-                auto const &code_analysis = it->second;
-                MONAD_ASSERT(code_analysis);
-                return code_analysis->executable_code().size();
+                auto const &vcode = it->second;
+                MONAD_ASSERT(vcode);
+                return vcode->intercode()->code_size();
             }
         }
-        auto const code_analysis = block_state_.read_code(code_hash);
-        MONAD_ASSERT(code_analysis);
-        return code_analysis->executable_code().size();
+        auto const vcode = block_state_.read_code(code_hash);
+        MONAD_ASSERT(vcode);
+        return vcode->intercode()->code_size();
     }
 
     size_t copy_code(
@@ -480,23 +485,24 @@ public:
             return 0;
         }
         bytes32_t const &code_hash = account.value().code_hash;
-        std::shared_ptr<CodeAnalysis> code_analysis{};
+        vm::SharedVarcode vcode{};
         {
             auto const it = code_.find(code_hash);
             if (it != code_.end()) {
-                code_analysis = it->second;
+                vcode = it->second;
             }
             else {
-                code_analysis = block_state_.read_code(code_hash);
+                vcode = block_state_.read_code(code_hash);
             }
         }
-        MONAD_ASSERT(code_analysis);
-        auto const &code = code_analysis->executable_code();
-        if (offset > code.size()) {
+        MONAD_ASSERT(vcode);
+        auto const &icode = vcode->intercode();
+        auto const code_size = icode->code_size();
+        if (offset > code_size) {
             return 0;
         }
-        auto const n = std::min(code.size() - offset, buffer_size);
-        std::copy_n(code.data() + offset, n, buffer);
+        auto const n = std::min(code_size - offset, buffer_size);
+        std::copy_n(icode->code() + offset, n, buffer);
         return n;
     }
 
@@ -508,7 +514,8 @@ public:
         }
 
         auto const code_hash = to_bytes(keccak256(code));
-        code_[code_hash] = std::make_shared<CodeAnalysis>(analyze(code));
+        code_[code_hash] =
+            vm().try_insert_varcode(code_hash, vm::make_shared_intercode(code));
         account.value().code_hash = code_hash;
     }
 

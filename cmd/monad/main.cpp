@@ -26,6 +26,7 @@
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
 #include <monad/statesync/statesync_server_network.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -352,6 +353,7 @@ int main(int const argc, char const *argv[])
             ? std::numeric_limits<uint64_t>::max()
             : block_num + nblocks - 1;
 
+    vm::VM vm;
     DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {
@@ -360,6 +362,7 @@ int main(int const argc, char const *argv[])
                 *chain,
                 block_db_path,
                 db_cache,
+                vm,
                 block_hash_buffer,
                 priority_pool,
                 block_num,
@@ -373,6 +376,7 @@ int main(int const argc, char const *argv[])
                 block_db_path,
                 db,
                 db_cache,
+                vm,
                 block_hash_buffer,
                 priority_pool,
                 block_num,

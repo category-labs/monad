@@ -12,7 +12,7 @@
 #include <monad/core/withdrawal.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/state2/state_deltas.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -27,7 +27,7 @@ struct Db
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
-    virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) = 0;
+    virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
     virtual BlockHeader read_eth_header() = 0;
     virtual bytes32_t state_root() = 0;
@@ -53,7 +53,7 @@ struct Db
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) = 0;
 
     virtual void commit(
-        std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
+        std::unique_ptr<StateDeltas> state_deltas, Code const &code,
         MonadConsensusBlockHeader const &consensus_header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
@@ -64,7 +64,7 @@ struct Db
     {
         commit(
             *state_deltas,
-            *code,
+            code,
             consensus_header,
             receipts,
             call_frames,

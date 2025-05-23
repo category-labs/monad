@@ -54,16 +54,17 @@ namespace
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
     constexpr auto code1 =
         byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
-    auto const code_analysis1 = std::make_shared<CodeAnalysis>(analyze(code1));
+    auto const icode1 = vm::make_shared_intercode(code1);
     constexpr auto code2 =
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
-    auto const code_analysis2 = std::make_shared<CodeAnalysis>(analyze(code2));
+    auto const icode2 = vm::make_shared_intercode(code2);
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
         InMemoryMachine machine;
         mpt::Db db{machine};
         TrieDb tdb{db};
+        vm::VM vm;
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
@@ -71,6 +72,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
+        vm::VM vm;
     };
 
     struct TwoOnDisk : public ::testing::Test
@@ -86,6 +88,7 @@ namespace
                 .dbname_paths = {"/tmp/db2"}, .file_size_db = 8}};
         TrieDb tdb1{db1};
         TrieDb tdb2{db2};
+        vm::VM vm;
     };
 }
 
@@ -99,7 +102,7 @@ TYPED_TEST_SUITE(StateTest, DBTypes);
 
 TYPED_TEST(StateTest, access_account)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -119,7 +122,7 @@ TYPED_TEST(StateTest, access_account)
 
 TYPED_TEST(StateTest, account_exists)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -139,7 +142,7 @@ TYPED_TEST(StateTest, account_exists)
 
 TYPED_TEST(StateTest, create_contract)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -153,7 +156,7 @@ TYPED_TEST(StateTest, create_contract)
 
 TYPED_TEST(StateTest, get_balance)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -172,7 +175,7 @@ TYPED_TEST(StateTest, get_balance)
 
 TYPED_TEST(StateTest, add_to_balance)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -190,7 +193,7 @@ TYPED_TEST(StateTest, add_to_balance)
 
 TYPED_TEST(StateTest, get_nonce)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -207,7 +210,7 @@ TYPED_TEST(StateTest, get_nonce)
 
 TYPED_TEST(StateTest, set_nonce)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.set_nonce(b, 1);
@@ -217,7 +220,7 @@ TYPED_TEST(StateTest, set_nonce)
 
 TYPED_TEST(StateTest, get_code_hash)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -236,7 +239,7 @@ TYPED_TEST(StateTest, get_code_hash)
 
 TYPED_TEST(StateTest, set_code_hash)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
@@ -247,7 +250,7 @@ TYPED_TEST(StateTest, set_code_hash)
 
 TYPED_TEST(StateTest, selfdestruct)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -280,7 +283,7 @@ TYPED_TEST(StateTest, selfdestruct)
 
 TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -314,7 +317,7 @@ TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
 
 TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -348,7 +351,7 @@ TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
 
 TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -382,7 +385,7 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
 
 TYPED_TEST(StateTest, selfdestruct_self_same_tx)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -412,7 +415,7 @@ TYPED_TEST(StateTest, selfdestruct_self_same_tx)
 
 TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -441,7 +444,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -485,7 +488,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -520,7 +523,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -565,7 +568,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
 
 TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     {
         State s1{bs, Incarnation{1, 1}};
 
@@ -598,7 +601,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 
 TYPED_TEST(StateTest, create_conflict_address_incarnation)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -620,7 +623,7 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
 
 TYPED_TEST(StateTest, destruct_touched_dead)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -665,7 +668,7 @@ TYPED_TEST(StateTest, destruct_touched_dead)
 // Storage
 TYPED_TEST(StateTest, access_storage)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
@@ -680,7 +683,7 @@ TYPED_TEST(StateTest, access_storage)
 
 TYPED_TEST(StateTest, get_storage)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -710,7 +713,7 @@ TYPED_TEST(StateTest, get_storage)
 
 TYPED_TEST(StateTest, set_storage_modified)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -730,7 +733,7 @@ TYPED_TEST(StateTest, set_storage_modified)
 
 TYPED_TEST(StateTest, set_storage_deleted)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -754,7 +757,7 @@ TYPED_TEST(StateTest, set_storage_deleted)
 
 TYPED_TEST(StateTest, set_storage_added)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -773,7 +776,7 @@ TYPED_TEST(StateTest, set_storage_added)
 
 TYPED_TEST(StateTest, set_storage_different_assigned)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -795,7 +798,7 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
 
 TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -815,7 +818,7 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
 
 TYPED_TEST(StateTest, set_storage_added_deleted)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -832,7 +835,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
 
 TYPED_TEST(StateTest, set_storage_added_deleted_null)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -849,7 +852,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
 
 TYPED_TEST(StateTest, set_storage_modify_delete)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -870,7 +873,7 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
 
 TYPED_TEST(StateTest, set_storage_delete_restored)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -891,7 +894,7 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
 
 TYPED_TEST(StateTest, set_storage_modified_restored)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -913,12 +916,12 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 // Code
 TYPED_TEST(StateTest, get_code_size)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     Account acct{.code_hash = code_hash1};
     commit_sequential(
         this->tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
-        Code{{code_hash1, code_analysis1}},
+        Code{{code_hash1, icode1}},
         BlockHeader{});
 
     State s{bs, Incarnation{1, 1}};
@@ -927,7 +930,7 @@ TYPED_TEST(StateTest, get_code_size)
 
 TYPED_TEST(StateTest, copy_code)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
 
@@ -936,7 +939,7 @@ TYPED_TEST(StateTest, copy_code)
         StateDeltas{
             {a, StateDelta{.account = {std::nullopt, acct_a}}},
             {b, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{code_hash1, code_analysis1}, {code_hash2, code_analysis2}},
+        Code{{code_hash1, icode1}, {code_hash2, icode2}},
         BlockHeader{});
 
     static constexpr unsigned size{8};
@@ -981,7 +984,7 @@ TYPED_TEST(StateTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -989,25 +992,25 @@ TYPED_TEST(StateTest, get_code)
             {a,
              StateDelta{
                  .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
-        Code{{code_hash1, std::make_shared<CodeAnalysis>(analyze(contract))}},
+        Code{{code_hash1, vm::make_shared_intercode(contract)}},
         BlockHeader{});
 
     State s{bs, Incarnation{1, 1}};
 
     {
         s.access_account(a);
-        auto const c = s.get_code(a);
-        EXPECT_EQ(c->executable_code(), contract);
+        auto const c = s.get_code(a)->intercode();
+        EXPECT_EQ(byte_string_view(c->code(), c->code_size()), contract);
     }
     { // non-existant account
-        auto const c = s.get_code(b);
-        EXPECT_EQ(c->executable_code(), byte_string{});
+        auto const c = s.get_code(b)->intercode();
+        EXPECT_EQ(byte_string_view(c->code(), c->code_size()), byte_string{});
     }
 }
 
 TYPED_TEST(StateTest, set_code)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -1015,13 +1018,15 @@ TYPED_TEST(StateTest, set_code)
     s.set_code(a, code2);
     s.set_code(b, byte_string{});
 
-    EXPECT_EQ(s.get_code(a)->executable_code(), code2);
-    EXPECT_EQ(s.get_code(b)->executable_code(), byte_string{});
+    auto a_icode = s.get_code(a)->intercode();
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), code2);
+    auto b_icode = s.get_code(b)->intercode();
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), byte_string{});
 }
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1056,7 +1061,7 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
 
 TYPED_TEST(StateTest, cant_merge_colliding_storage)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1092,7 +1097,7 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
 
 TYPED_TEST(StateTest, merge_txn0_and_txn1)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1134,7 +1139,7 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
 
 TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 {
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1154,7 +1159,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
 TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    BlockState bs{this->tdb};
+    BlockState bs{this->tdb, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1195,7 +1200,7 @@ TYPED_TEST(StateTest, commit_twice)
 
     { // Commit to Block 10 Round 5, on top of block 9 finalized
         this->tdb.set_block_and_round(9);
-        BlockState bs{this->tdb};
+        BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1221,7 +1226,7 @@ TYPED_TEST(StateTest, commit_twice)
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
         this->tdb.set_block_and_round(10, 5);
-        BlockState bs{this->tdb};
+        BlockState bs{this->tdb, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
@@ -1286,7 +1291,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_round(10, 5);
-        BlockState bs{this->tdb};
+        BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1316,7 +1321,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_round(10, 5);
-        BlockState bs{this->tdb};
+        BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 44'000);
@@ -1347,7 +1352,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_round(10, 5);
-        BlockState bs{this->tdb};
+        BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 32'000);
@@ -1401,13 +1406,13 @@ TEST_F(OnDiskTrieDbFixture, proposal_basics)
 
     DbCache db_cache(db);
     db_cache.set_block_and_round(10, 100);
-    BlockState bs1(db_cache);
+    BlockState bs1(db_cache, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     bs1.commit(MonadConsensusBlockHeader::from_eth_header({.number = 11}, 101));
     db_cache.finalize(11, 101);
 
     db_cache.set_block_and_round(11, 101);
-    BlockState bs2(db_cache);
+    BlockState bs2(db_cache, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
     as.add_to_balance(a, 10'000);
@@ -1451,11 +1456,11 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
              .storage = {
                  {key1, {bytes32_t{}, value1}},
                  {key2, {bytes32_t{}, value2}}}}}}};
-    std::unique_ptr<Code> code{new Code{}};
+    Code code;
     db_cache.set_block_and_round(9);
     db_cache.commit(
         std::move(state_deltas),
-        std::move(code),
+        code,
         MonadConsensusBlockHeader::from_eth_header({.number = 10}, 100));
     db_cache.finalize(10, 100);
     EXPECT_TRUE(db_cache.read_account(a).has_value());
@@ -1471,7 +1476,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
     db_cache.set_block_and_round(10, 100);
-    BlockState bs_111(db_cache);
+    BlockState bs_111(db_cache, this->vm);
     // b11 r111 r100           +40 v2 --
     {
         State as{bs_111, Incarnation{11, 1}};
@@ -1498,7 +1503,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
     db_cache.set_block_and_round(11, 111);
-    BlockState bs_121(db_cache);
+    BlockState bs_121(db_cache, this->vm);
     // b12 r121 r111                        +10    v1
     {
         State as{bs_121, Incarnation{12, 1}};
@@ -1523,7 +1528,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
     db_cache.set_block_and_round(10, 100);
-    BlockState bs_112(db_cache);
+    BlockState bs_112(db_cache, this->vm);
     // b11 r112 r100    +20        --           --
     {
         State as{bs_112, Incarnation{11, 1}};
@@ -1538,7 +1543,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
     db_cache.set_block_and_round(11, 112);
-    BlockState bs_122(db_cache);
+    BlockState bs_122(db_cache, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
         State as{bs_122, Incarnation{12, 1}};
@@ -1552,7 +1557,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
     db_cache.set_block_and_round(12, 121);
-    BlockState bs_131(db_cache);
+    BlockState bs_131(db_cache, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
         State as{bs_131, Incarnation{13, 1}};
@@ -1570,7 +1575,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
     db_cache.set_block_and_round(12, 122);
-    BlockState bs_132(db_cache);
+    BlockState bs_132(db_cache, this->vm);
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
@@ -1643,6 +1648,7 @@ namespace
         std::mt19937_64 rng_;
         Db &db1_;
         Db &db2_;
+        vm::VM &vm_;
         uint64_t finalized_block_{0};
         uint64_t finalized_round_{0};
         uint64_t highest_round_{0};
@@ -1655,10 +1661,11 @@ namespace
         std::map<uint64_t, std::set<uint64_t>> blocks_;
 
     public:
-        RandomProposalGenerator(uint64_t const seed, Db &db1, Db &db2)
+        RandomProposalGenerator(uint64_t const seed, Db &db1, Db &db2, vm::VM &vm)
             : rng_(seed)
             , db1_(db1)
             , db2_(db2)
+            , vm_(vm)
         {
         }
 
@@ -1822,8 +1829,8 @@ namespace
             MONAD_ASSERT(block > 0);
             db1_.set_block_and_round(block - 1, parent);
             db2_.set_block_and_round(block - 1, parent);
-            BlockState bs1(db1_);
-            BlockState bs2(db2_);
+            BlockState bs1(db1_, vm_);
+            BlockState bs2(db2_, vm_);
             Incarnation inc{block, 1};
             State st1(bs1, inc);
             State st2(bs2, inc);
@@ -2007,7 +2014,7 @@ TEST_F(TwoOnDisk, random_proposals)
         return str ? std::stoull(std::string(str)) : 0;
     }();
     std::unique_ptr<RandomProposalGenerator> gen(
-        new RandomProposalGenerator(seed, db1, db2));
+        new RandomProposalGenerator(seed, db1, db2, this->vm));
     uint64_t const iters = [] {
         char const *str = std::getenv("MONAD_RANDOM_PROPOSALS_ITERATIONS");
         return str ? std::stoull(std::string(str)) : 100;

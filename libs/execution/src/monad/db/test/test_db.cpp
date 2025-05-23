@@ -12,7 +12,6 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
@@ -60,15 +59,13 @@ namespace
             .value();
     // clang-format on
     auto const STRESS_TEST_CODE_HASH = to_bytes(keccak256(STRESS_TEST_CODE));
-    auto const STRESS_TEST_CODE_ANALYSIS =
-        std::make_shared<CodeAnalysis>(analyze(STRESS_TEST_CODE));
+    auto const STRESS_TEST_ICODE = vm::make_shared_intercode(STRESS_TEST_CODE);
 
     auto const REFUND_TEST_CODE =
         evmc::from_hex("0x6000600155600060025560006003556000600455600060055500")
             .value();
     auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
-    auto const REFUND_TEST_CODE_ANALYSIS =
-        std::make_shared<CodeAnalysis>(analyze(REFUND_TEST_CODE));
+    auto const REFUND_TEST_ICODE = vm::make_shared_intercode(REFUND_TEST_CODE);
 
     constexpr auto key1 =
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
@@ -95,6 +92,7 @@ namespace
 
         InMemoryMachine machine;
         mpt::Db db{machine};
+        vm::VM vm;
     };
 
     struct OnDiskTrieDbFixture : public ::testing::Test
@@ -103,6 +101,7 @@ namespace
 
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
+        vm::VM vm;
     };
 
     ///////////////////////////////////////////
@@ -301,19 +300,21 @@ TYPED_TEST(DBTest, read_code)
     commit_sequential(
         tdb,
         StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
-        Code{{A_CODE_HASH, A_CODE_ANALYSIS}},
+        Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{});
 
-    EXPECT_EQ(tdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
+    auto const a_icode = tdb.read_code(A_CODE_HASH);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
     commit_sequential(
         tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
-        Code{{B_CODE_HASH, B_CODE_ANALYSIS}},
+        Code{{B_CODE_HASH, B_ICODE}},
         BlockHeader{});
 
-    EXPECT_EQ(tdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
+    auto const b_icode = tdb.read_code(B_CODE_HASH);
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
 }
 
 TEST_F(OnDiskTrieDbFixture, get_proposal_rounds)
@@ -773,24 +774,30 @@ TYPED_TEST(DBTest, load_from_binary)
     EXPECT_EQ(
         tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
+    auto const a_icode = tdb.read_code(A_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(A_CODE_HASH)->executable_code(),
-        A_CODE_ANALYSIS->executable_code());
+        byte_string_view(a_icode->code(), a_icode->code_size()),
+        byte_string_view(A_ICODE->code(), A_ICODE->code_size()));
+    auto const b_icode = tdb.read_code(B_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(B_CODE_HASH)->executable_code(),
-        B_CODE_ANALYSIS->executable_code());
+        byte_string_view(b_icode->code(), b_icode->code_size()),
+        byte_string_view(B_ICODE->code(), B_ICODE->code_size()));
+    auto const c_icode = tdb.read_code(C_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(C_CODE_HASH)->executable_code(),
-        C_CODE_ANALYSIS->executable_code());
+        byte_string_view(c_icode->code(), c_icode->code_size()),
+        byte_string_view(C_ICODE->code(), C_ICODE->code_size()));
+    auto const d_icode = tdb.read_code(D_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(D_CODE_HASH)->executable_code(),
-        D_CODE_ANALYSIS->executable_code());
+        byte_string_view(d_icode->code(), d_icode->code_size()),
+        byte_string_view(D_ICODE->code(), D_ICODE->code_size()));
+    auto const e_icode = tdb.read_code(E_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(E_CODE_HASH)->executable_code(),
-        E_CODE_ANALYSIS->executable_code());
+        byte_string_view(e_icode->code(), e_icode->code_size()),
+        byte_string_view(E_ICODE->code(), E_ICODE->code_size()));
+    auto const h_icode = tdb.read_code(H_CODE_HASH);
     EXPECT_EQ(
-        tdb.read_code(H_CODE_HASH)->executable_code(),
-        H_CODE_ANALYSIS->executable_code());
+        byte_string_view(h_icode->code(), h_icode->code_size()),
+        byte_string_view(H_ICODE->code(), H_ICODE->code_size()));
 }
 
 TYPED_TEST(DBTest, commit_call_frames)
@@ -895,7 +902,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
                  .account =
                      {std::nullopt,
                       Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
-        Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_CODE_ANALYSIS}},
+        Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
         BlockHeader{.number = 0});
 
     // clang-format off
@@ -910,7 +917,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
-    BlockState bs(tdb);
+    BlockState bs(tdb, this->vm);
 
     fiber::PriorityPool pool{1, 1};
 
@@ -998,7 +1005,7 @@ TYPED_TEST(DBTest, call_frames_refund)
                       {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
-        Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_CODE_ANALYSIS}},
+        Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_ICODE}},
         BlockHeader{.number = 0});
 
     // clang-format off
@@ -1014,7 +1021,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
-    BlockState bs(tdb);
+    BlockState bs(tdb, this->vm);
 
     fiber::PriorityPool pool{1, 1};
 

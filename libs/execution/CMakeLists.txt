@@ -97,13 +97,10 @@ add_library(
   "src/monad/db/util.cpp"
   "src/monad/db/util.hpp"
   # execution
-  "src/monad/execution/baseline_execute.cpp"
-  "src/monad/execution/baseline_execute.hpp"
   "src/monad/execution/block_hash_buffer.cpp"
   "src/monad/execution/block_hash_buffer.hpp"
   "src/monad/execution/block_reward.cpp"
   "src/monad/execution/block_reward.hpp"
-  "src/monad/execution/code_analysis.hpp"
   "src/monad/execution/create_contract_address.cpp"
   "src/monad/execution/create_contract_address.hpp"
   "src/monad/execution/ethereum/dao.hpp"
@@ -174,6 +171,7 @@ target_include_directories(
 
 target_link_libraries(
   monad_execution
+  PUBLIC monad-vm
   PUBLIC monad_core
   PUBLIC monad_trie
   PRIVATE blst::blst
@@ -182,7 +180,6 @@ target_link_libraries(
   PRIVATE PkgConfig::brotli
   PUBLIC ethash::keccak
   PUBLIC evmc
-  PUBLIC evmone
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill

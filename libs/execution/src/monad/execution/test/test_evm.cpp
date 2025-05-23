@@ -38,7 +38,8 @@ TEST(Evm, create_with_insufficient)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -80,7 +81,8 @@ TEST(Evm, eip684_existing_code)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -129,7 +131,8 @@ TEST(Evm, create_nonce_out_of_range)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -178,7 +181,8 @@ TEST(Evm, static_precompile_execution)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -233,7 +237,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -286,12 +291,13 @@ TEST(Evm, deploy_contract_code)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
+    vm::VM vm;
     commit_sequential(
         tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
-    BlockState bs{tdb};
+    BlockState bs{tdb, vm};
 
     // Frontier
     {
@@ -306,9 +312,10 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
+            auto const icode = s.get_code(a)->intercode();
             EXPECT_EQ(
-                s.get_code(a)->executable_code(),
-                byte_string(code, sizeof(code)));
+                byte_string_view(icode->code(), icode->code_size()),
+                byte_string_view(code, sizeof(code)));
         }
 
         // Initilization code succeeds, but deployment of code failed
@@ -338,9 +345,10 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
                       gas - 800); // G_codedeposit * size(code)
+            auto const icode = s.get_code(a)->intercode();
             EXPECT_EQ(
-                s.get_code(a)->executable_code(),
-                byte_string(code, sizeof(code)));
+                byte_string_view(icode->code(), icode->code_size()),
+                byte_string_view(code, sizeof(code)));
         }
 
         // Fail to deploy code - out of gas (EIP-2)

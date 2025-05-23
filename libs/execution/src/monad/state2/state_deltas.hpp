@@ -6,7 +6,7 @@
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
-#include <monad/execution/code_analysis.hpp>
+#include <monad/vm/vm.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -52,7 +52,7 @@ static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 
 using Code =
-    oneapi::tbb::concurrent_hash_map<bytes32_t, std::shared_ptr<CodeAnalysis>>;
+    oneapi::tbb::concurrent_hash_map<bytes32_t, vm::SharedIntercode>;
 
 static_assert(sizeof(Code) == 576);
 static_assert(alignof(Code) == 8);

@@ -199,13 +199,14 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> BlockchainTest::execute(
-    Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+    Block &block, test::db_t &db, vm::VM &vm,
+    BlockHashBuffer const &block_hash_buffer)
 {
     using namespace monad::test;
 
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
-    BlockState block_state(db);
+    BlockState block_state(db, vm);
     EthereumMainnetRev const chain{rev};
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     std::vector<Address> senders(block.transactions.size());
@@ -247,11 +248,11 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 }
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
-    evmc_revision const rev, Block &block, test::db_t &db,
+    evmc_revision const rev, Block &block, test::db_t &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(execute, block, db, block_hash_buffer);
+    SWITCH_EVMC_REVISION(execute, block, db, vm, block_hash_buffer);
     MONAD_ASSERT(false);
 }
 
@@ -342,6 +343,7 @@ void BlockchainTest::TestBody()
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
+        vm::VM vm;
         {
             auto const genesisJson = j_contents.at("genesisBlockHeader");
             auto header = read_genesis_blockheader(genesisJson);
@@ -376,7 +378,7 @@ void BlockchainTest::TestBody()
                 withdrawals.emplace(std::vector<Withdrawal>{});
             }
 
-            BlockState bs{tdb};
+            BlockState bs{tdb, vm};
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
@@ -426,7 +428,7 @@ void BlockchainTest::TestBody()
 
             uint64_t const curr_block_number = block.value().header.number;
             auto const result =
-                execute_dispatch(rev, block.value(), tdb, block_hash_buffer);
+                execute_dispatch(rev, block.value(), tdb, vm, block_hash_buffer);
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));

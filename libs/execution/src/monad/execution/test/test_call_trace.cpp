@@ -95,6 +95,7 @@ TEST(CallTrace, execute_success)
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
+    vm::VM vm;
 
     commit_sequential(
         tdb,
@@ -115,7 +116,7 @@ TEST(CallTrace, execute_success)
         Code{},
         BlockHeader{});
 
-    BlockState bs{tdb};
+    BlockState bs{tdb, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -163,6 +164,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
+    vm::VM vm;
 
     commit_sequential(
         tdb,
@@ -183,7 +185,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         Code{},
         BlockHeader{});
 
-    BlockState bs{tdb};
+    BlockState bs{tdb, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 

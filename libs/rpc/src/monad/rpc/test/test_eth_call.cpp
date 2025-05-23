@@ -509,7 +509,7 @@ TEST_F(EthCallFixture, from_contract_account)
         evmc::from_hex("0x6000600155600060025560006003556000600455600060055500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
-    auto const code_analysis = std::make_shared<CodeAnalysis>(analyze(code));
+    auto const icode = monad::vm::make_shared_intercode(code);
 
     auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
 
@@ -521,7 +521,7 @@ TEST_F(EthCallFixture, from_contract_account)
                  .account =
                      {std::nullopt,
                       Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
-        Code{{code_hash, code_analysis}},
+        Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
     std::string tx_data = "0x60025560";
@@ -581,8 +581,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
                     "0x6000600155600060025560006003556000600455600060055500")
                     .value();
             auto const code_hash = to_bytes(keccak256(code));
-            auto const code_analysis =
-                std::make_shared<CodeAnalysis>(analyze(code));
+            auto const icode = monad::vm::make_shared_intercode(code);
 
             commit_sequential(
                 tdb,
@@ -594,7 +593,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
                               Account{
                                   .balance = 0x1b58,
                                   .code_hash = code_hash}}}}},
-                Code{{code_hash, code_analysis}},
+                Code{{code_hash, icode}},
                 BlockHeader{.number = i});
         }
         else {

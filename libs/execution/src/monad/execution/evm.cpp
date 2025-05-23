@@ -6,7 +6,6 @@
 #include <monad/core/int.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/likely.h>
-#include <monad/execution/baseline_execute.hpp>
 #include <monad/execution/create_contract_address.hpp>
 #include <monad/execution/evm.hpp>
 #include <monad/execution/evmc_host.hpp>
@@ -212,9 +211,12 @@ evmc::Result create(
         .code_size = 0,
     };
 
-    auto const input_code_analysis =
-        evmone::baseline::analyze({msg.input_data, msg.input_size}, false);
-    auto result = baseline_execute(m_call, rev, host, input_code_analysis);
+    auto result = state.vm().execute_raw(
+        rev,
+        &host->get_interface(),
+        host->to_context(),
+        &m_call,
+        {msg.input_data, msg.input_size});
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<rev>(
@@ -266,8 +268,10 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         result = std::move(maybe_result.value());
     }
     else {
-        auto const code = state.get_code(msg.code_address);
-        result = baseline_execute(msg, rev, host, *code);
+        auto const hash = state.get_code_hash(msg.code_address);
+        auto const &code = state.read_code(hash);
+        result = state.vm().execute(
+            rev, &host->get_interface(), host->to_context(), &msg, hash, code);
     }
 
     post_call(state, result);

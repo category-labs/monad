@@ -20,7 +20,6 @@
 #include <monad/core/rlp/withdrawal_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -143,9 +142,9 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     #undef STATS_STORAGE_VALUE
 #endif
 
-std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
+vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
-    // TODO read code analysis object
+    // TODO read intercode object
     auto const value = db_.get(
         concat(
             prefix_,
@@ -153,9 +152,9 @@ std::shared_ptr<CodeAnalysis> TrieDb::read_code(bytes32_t const &code_hash)
             NibblesView{to_byte_string_view(code_hash.bytes)}),
         block_number_);
     if (!value.has_value()) {
-        return std::make_shared<CodeAnalysis>(analyze({}));
+        return vm::make_shared_intercode({});
     }
-    return std::make_shared<CodeAnalysis>(analyze(value.assume_value()));
+    return vm::make_shared_intercode(value.assume_value());
 }
 
 void TrieDb::commit(
@@ -238,12 +237,12 @@ void TrieDb::commit(
     }
 
     UpdateList code_updates;
-    for (auto const &[hash, code_analysis] : code) {
-        // TODO write code analysis object
-        MONAD_ASSERT(code_analysis);
+    for (auto const &[hash, icode] : code) {
+        // TODO write intercode object
+        MONAD_ASSERT(icode);
         code_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{to_byte_string_view(hash.bytes)},
-            .value = code_analysis->executable_code(),
+            .value = {{icode->code(), icode->code_size()}},
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
@@ -669,11 +668,10 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             json[key]["nonce"] =
                 fmt::format("0x{:x}", acct.value().second.nonce);
 
-            auto const code_analysis =
-                db.read_code(acct.value().second.code_hash);
-            MONAD_ASSERT(code_analysis);
+            auto const icode = db.read_code(acct.value().second.code_hash);
+            MONAD_ASSERT(icode);
             json[key]["code"] =
-                "0x" + evmc::hex(code_analysis->executable_code());
+                "0x" + evmc::hex({icode->code(), icode->code_size()});
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();

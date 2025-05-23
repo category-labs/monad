@@ -76,7 +76,7 @@ namespace
     Result<EthCallResult> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
-        Address const &sender, TrieRODb &tdb,
+        Address const &sender, TrieRODb &tdb, vm::VM &vm,
         BlockHashBufferFinalized const buffer,
         monad_state_override const &state_overrides, bool const trace)
     {
@@ -103,7 +103,7 @@ namespace
             block_number,
             round == mpt::INVALID_ROUND_NUM ? std::nullopt
                                             : std::make_optional(round));
-        BlockState block_state{tdb};
+        BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
@@ -241,7 +241,7 @@ namespace
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const round, Address const &sender, TrieRODb &tdb,
-        BlockHashBufferFinalized const &buffer,
+        vm::VM &vm, BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides, bool const trace)
     {
         SWITCH_EVMC_REVISION(
@@ -253,6 +253,7 @@ namespace
             round,
             sender,
             tdb,
+            vm,
             buffer,
             state_overrides,
             trace);
@@ -422,6 +423,7 @@ struct monad_eth_call_executor
     std::atomic<unsigned> high_pool_queued_count_{0};
 
     mpt::RODb db_;
+    vm::VM vm_;
 
     BlockHashCache blockhash_cache_{7200};
 
@@ -642,6 +644,7 @@ struct monad_eth_call_executor
                         block_round,
                         sender,
                         tdb,
+                        vm_,
                         *block_hash_buffer,
                         *state_overrides,
                         trace);

@@ -34,13 +34,14 @@ TEST(BlockReward, apply_block_reward)
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
+        vm::VM vm;
         commit_sequential(
             tdb,
             StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{},
             BlockHeader{});
 
-        BlockState bs{tdb};
+        BlockState bs{tdb, vm};
         State as{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(as.account_exists(a));
@@ -69,7 +70,8 @@ TEST(BlockReward, apply_block_reward)
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
-        BlockState bs{tdb};
+        vm::VM vm;
+        BlockState bs{tdb, vm};
         State as{bs, Incarnation{1, 1}};
         (void)as.get_balance(a);
 
@@ -100,7 +102,8 @@ TEST(BlockReward, apply_block_reward)
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
-        BlockState bs{tdb};
+        vm::VM vm;
+        BlockState bs{tdb, vm};
         State s{bs, Incarnation{0, 0}};
 
         Block const block{
@@ -130,7 +133,8 @@ TEST(BlockReward, apply_block_reward)
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
-        BlockState bs{tdb};
+        vm::VM vm;
+        BlockState bs{tdb, vm};
         State s{bs, Incarnation{0, 0}};
 
         apply_block_reward<EVMC_PARIS>(s, block);

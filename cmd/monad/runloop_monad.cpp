@@ -132,7 +132,7 @@ bool validate_delayed_execution_results(
 Result<std::pair<bytes32_t, uint64_t>> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
-    fiber::PriorityPool &priority_pool, bool const is_first_block)
+    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_round());
@@ -160,7 +160,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             return TransactionError::MissingSender;
         }
     }
-    BlockState block_state(db);
+    BlockState block_state(db, vm);
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
@@ -205,7 +205,8 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    mpt::Db &raw_db, Db &db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -343,6 +344,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     block_hash_chain,
                     chain,
                     db,
+                    vm,
                     priority_pool,
                     block_number == start_block_num));
             auto const &[block_hash, gas_used] = propose_result;

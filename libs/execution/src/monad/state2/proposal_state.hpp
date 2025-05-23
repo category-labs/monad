@@ -1,8 +1,8 @@
 #pragma once
 
 #include <monad/config.hpp>
-#include <monad/execution/code_analysis.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <quill/Quill.h>
 
@@ -14,15 +14,12 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     std::unique_ptr<StateDeltas> state_;
-    std::unique_ptr<Code> code_;
     uint64_t parent_;
 
 public:
     ProposalState(
-        std::unique_ptr<StateDeltas> state, std::unique_ptr<Code> code,
-        uint64_t const parent)
+        std::unique_ptr<StateDeltas> state, uint64_t const parent)
         : state_(std::move(state))
-        , code_(std::move(code))
         , parent_(parent)
     {
     }
@@ -35,11 +32,6 @@ public:
     StateDeltas const &state() const
     {
         return *state_;
-    }
-
-    Code const &code() const
-    {
-        return *code_;
     }
 
     bool try_read_account(
@@ -70,17 +62,6 @@ public:
         StorageDeltas::const_accessor it2{};
         if (storage.find(it2, key)) {
             result = it2->second.second;
-            return true;
-        }
-        return false;
-    }
-
-    bool try_read_code(
-        bytes32_t const &code_hash, std::shared_ptr<CodeAnalysis> &result) const
-    {
-        Code::const_accessor it{};
-        if (code_->find(it, code_hash)) {
-            result = it->second;
             return true;
         }
         return false;
@@ -121,16 +102,6 @@ public:
         return try_read(fn, truncated);
     }
 
-    bool try_read_code(
-        bytes32_t const &code_hash, std::shared_ptr<CodeAnalysis> &result,
-        bool &truncated) const
-    {
-        auto const fn = [&code_hash, &result](ProposalState const &ps) {
-            return ps.try_read_code(code_hash, result);
-        };
-        return try_read(fn, truncated);
-    }
-
     void set_block_and_round(
         uint64_t const block_number, std::optional<uint64_t> const round)
     {
@@ -139,8 +110,7 @@ public:
     }
 
     void commit(
-        std::unique_ptr<StateDeltas> state_deltas, std::unique_ptr<Code> code,
-        uint64_t const round)
+        std::unique_ptr<StateDeltas> state_deltas, uint64_t const round)
     {
         if (round_map_.size() >= MAX_ROUND_MAP_SIZE) {
             truncate_round_map();
@@ -149,7 +119,6 @@ public:
             round,
             std::unique_ptr<ProposalState>(new ProposalState(
                 std::move(state_deltas),
-                std::move(code),
                 round_ ? round_.value() : finalized_round_)));
         round_ = round;
     }

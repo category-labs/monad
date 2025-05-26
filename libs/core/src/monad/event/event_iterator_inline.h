@@ -20,13 +20,9 @@
 static inline uint64_t
 monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
 {
-    struct monad_event_descriptor const *event;
-    uint64_t const write_last_seqno =
+    uint64_t const MAX_SYNC_SPIN = 100;
+    uint64_t write_last_seqno =
         __atomic_load_n(&iter->control->last_seqno, __ATOMIC_ACQUIRE);
-    if (__builtin_expect(write_last_seqno == 0, 0)) {
-        // Nothing materialized anyway
-        return 0;
-    }
     // `write_last_seqno` is the last sequence number the writer has allocated.
     // The writer may still be in the process of recording the event associated
     // with that sequence number, so it may not be safe to read this event
@@ -35,16 +31,28 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
     // It is safe to read when the sequence number is atomically stored into
     // the associated descriptor array slot (which is `write_last_seqno - 1`)
     // with release memory ordering. This waits for that to happen, if it
-    // hasn't yet.
-    event =
-        &iter->descriptors[(write_last_seqno - 1) & iter->desc_capacity_mask];
-    while (__atomic_load_n(&event->seqno, __ATOMIC_ACQUIRE) <
-           write_last_seqno) {
+    // hasn't yet. If the process died unexpectedly before finalizing the write
+    // (or if we read from the wrong slot in a debugging scenario) then the
+    // loop will never terminate, so we scan backwards if it doesn't appear
+    // that the operation is finalizing.
+    while (write_last_seqno > 0) {
+        uint64_t spin_counter = 0;
+        size_t const index = (write_last_seqno - 1) & iter->desc_capacity_mask;
+        struct monad_event_descriptor const *event = &iter->descriptors[index];
+        while (__atomic_load_n(&event->seqno, __ATOMIC_ACQUIRE) !=
+                   write_last_seqno &&
+               spin_counter++ < MAX_SYNC_SPIN) {
 #if defined(__x86_64__)
-        __builtin_ia32_pause();
+            __builtin_ia32_pause();
 #endif
+        }
+        if (__atomic_load_n(&event->seqno, __ATOMIC_ACQUIRE) ==
+            write_last_seqno) {
+            return write_last_seqno;
+        }
+        --write_last_seqno;
     }
-    return write_last_seqno;
+    return 0;
 }
 
 inline enum monad_event_next_result monad_event_iterator_try_next(

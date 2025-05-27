@@ -55,33 +55,32 @@ public:
 ../../fmai/prompts/specs.md
 
  *)
-Definition uint256R (q: cQp.t) (x: Z) : Rep :=
-  let two64   := Z.pow 2 64 in
-  let two128  := Z.pow 2 128 in
-  let two192  := Z.pow 2 192 in
-  let l0 := (x mod two64)%Z in
-  let l1 := (x / two64   mod two64)%Z in
-  let l2 := (x / two128  mod two64)%Z in
-  let l3 := (x / two192  mod two64)%Z in
-  arrayR "unsigned long long"%cpp_type
-         (fun v:Z => primR "unsigned long long"%cpp_type q (Vint v))
-         [l0; l1; l2; l3].
+(* uint256R q n  describes a 256‐bit little‐endian
+   uint256 whose mathematical value is n mod 2^256,
+   stored as data[0..3] of 64‐bit unsigned limbs. *)
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  _field "uint256::data"%cpp_name
+    |-> arrayR "unsigned long long"%cpp_type
+         (fun d => primR "unsigned long long"%cpp_type q (Vint d))
+         [ Z.modulo n                (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 64))  (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 128)) (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 192)) (Z.pow 2 64) ].
 
-(* spec of uint256::add(const uint256&) *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  (* the single reference parameter *)
-  \arg{otherp} "other" (Vptr otherp)
+(* Spec for void uint256::add(const uint256& other); *)
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this: ptr) =>
+  (* argument ‘other’ passed as a pointer *)
+  \arg{otherLoc: ptr} "other" (Vptr otherLoc)
 
-  (* we need full ownership of [this] to write, but only any positive
-     fraction of [other] since we only read it *)
-  \prepost{(x xother:Z) (q:Qp)}
-    this   |-> uint256R (cQp.mut 1) x
-    ** otherp |-> uint256R (cQp.mut q) xother
+  (* full ownership of [this], modelling old value n1 *)
+  \pre{(n1: Z)} this  |-> uint256R (cQp.mut 1) n1
 
-  (* post: [this] now contains the sum mod 2^256, other is returned unchanged *)
-  \post
-    this |-> uint256R (cQp.mut 1) (Z.modulo (x + xother) (Z.pow 2 256))
+  (* read‐only fractional ownership of ‘other’, unchanged by the call *)
+  \prepost{(n2: Z) (q: Qp)} otherLoc |-> uint256R (cQp.mut q) n2
+
+  (* after return, [this] = (n1+n2) mod 2^256, with full ownership again *)
+  \post this  |-> uint256R (cQp.mut 1) (Z.modulo (n1 + n2) (Z.pow 2 256))
 ).
 
-(* lets look a the o4-mini conversation history that resulted in the above soln *)
+
 

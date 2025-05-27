@@ -1159,36 +1159,82 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-I’ve defined the 256‐bit “model” as a single `Z` and laid it out little‐endian into four 64‐bit limbs.  The `uint256R` predicate takes a fractional permission `q` and a mathematical value `x:Z`, splits `x` into four 64-bit chunks, and uses the existing `arrayR` over `unsigned long long`.  The `add` method spec then takes full ownership of the “this” object (so it can write), any positive fraction of the `other` object (since we only read it), and returns the updated `this` with value `(x + xother) mod 2^256`.
+I will define a single‐Z modelled predicate `uint256R` which stitches together the four 64‐bit limbs in little endian, and then give the method spec for `add` that takes full ownership of `this`, fractional (read‐only) ownership of `other`, and returns the updated `this` modulo 2²⁵⁶.
 
 ```gallina
-Definition uint256R (q: cQp.t) (x: Z) : Rep :=
-  let two64   := Z.pow 2 64 in
-  let two128  := Z.pow 2 128 in
-  let two192  := Z.pow 2 192 in
-  let l0 := (x mod two64)%Z in
-  let l1 := (x / two64   mod two64)%Z in
-  let l2 := (x / two128  mod two64)%Z in
-  let l3 := (x / two192  mod two64)%Z in
-  arrayR "unsigned long long"%cpp_type
-         (fun v:Z => primR "unsigned long long"%cpp_type q (Vint v))
-         [l0; l1; l2; l3].
+(* The 256‐bit unsigned is stored as a 4‐element array of 64‐bit limbs little‐endian:
+     value = d₀ + d₁·2⁶⁴ + d₂·2¹²⁸ + d₃·2¹⁹²  mod 2²⁵⁶
+   We turn that into a Rep by pointing at the 'data' field and using arrayR. *)
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  _field "::uint256::data"%cpp_name
+    |-> arrayR (type := "unsigned long long"%cpp_type)
+         (fun d => primR "unsigned long long" q (Vint d))
+         [ Z.modulo n         (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 64)) (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 128)) (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 192)) (Z.pow 2 64) ].
 
-(* spec of uint256::add(const uint256&) *)
-cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this:ptr) =>
-  (* the single reference parameter *)
-  \arg{otherp} "other" (Vptr otherp)
-
-  (* we need full ownership of [this] to write, but only any positive
-     fraction of [other] since we only read it *)
-  \prepost{(x xother:Z) (q:Qp)}
-    this   |-> uint256R (cQp.mut 1) x
-    ** otherp |-> uint256R (cQp.mut q) xother
-
-  (* post: [this] now contains the sum mod 2^256, other is returned unchanged *)
-  \post
-    this |-> uint256R (cQp.mut 1) (Z.modulo (x + xother) (Z.pow 2 256))
+(* Spec of the member void uint256::add(const uint256& other); *)
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this: ptr) =>
+  (* the 'other' reference is passed as a pointer argument *)
+  \arg{otherLoc: ptr} "other" (Vptr otherLoc)
+  (* full ownership of [this], modelling its old value n1 *)
+  \pre{n1: Z} this  |-> uint256R (cQp.mut 1) n1
+  (* read‐only (fractional) ownership of [other], carried through to post *)
+  \prepost{(n2: Z) (q: Qp)} otherLoc |-> uint256R (cQp.mut q) n2
+  (* after, [this] has been incremented modulo 2^256, [other] unchanged *)
+  \post this  |-> uint256R (cQp.mut 1) (Z.modulo (n1 + n2) (Z.pow 2 256))
 ).
 ```
 
-(* o4-mini produced the correct answer in the first attempt. often, it makes some errors that get fed back to it automatically *)
+## User 2
+
+Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.
+
+Toplevel input, characters 99-103:
+>     |-> arrayR (type := "unsigned long long"%cpp_type)
+>                 ^^^^
+Error: Wrong argument name type (possible names: thread_info _Σ Σ X σ).
+
+
+## Assistant 2
+
+Coq is complaining about the named‐argument syntax `(type := …)` because `arrayR` does not have a parameter called `type` – instead its first (unnamed) argument is the C++ element‐type string itself.  In other words, you must call it
+
+    arrayR "unsigned long long"%cpp_type R xs
+
+not
+
+    arrayR (type := "unsigned long long"%cpp_type) R xs.
+
+Once you simply pass the string as the first positional argument, the error disappears.  Here is the complete corrected solution:
+
+```gallina
+(* uint256R q n  describes a 256‐bit little‐endian
+   uint256 whose mathematical value is n mod 2^256,
+   stored as data[0..3] of 64‐bit unsigned limbs. *)
+Definition uint256R (q: cQp.t) (n: Z) : Rep :=
+  _field "uint256::data"%cpp_name
+    |-> arrayR "unsigned long long"%cpp_type
+         (fun d => primR "unsigned long long"%cpp_type q (Vint d))
+         [ Z.modulo n                (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 64))  (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 128)) (Z.pow 2 64);
+           Z.modulo (Z.div n  (Z.pow 2 192)) (Z.pow 2 64) ].
+
+(* Spec for void uint256::add(const uint256& other); *)
+cpp.spec "uint256::add(const uint256&)" as uint256_add_spec with (fun (this: ptr) =>
+  (* argument ‘other’ passed as a pointer *)
+  \arg{otherLoc: ptr} "other" (Vptr otherLoc)
+
+  (* full ownership of [this], modelling old value n1 *)
+  \pre{(n1: Z)} this  |-> uint256R (cQp.mut 1) n1
+
+  (* read‐only fractional ownership of ‘other’, unchanged by the call *)
+  \prepost{(n2: Z) (q: Qp)} otherLoc |-> uint256R (cQp.mut q) n2
+
+  (* after return, [this] = (n1+n2) mod 2^256, with full ownership again *)
+  \post this  |-> uint256R (cQp.mut 1) (Z.modulo (n1 + n2) (Z.pow 2 256))
+).
+```
+

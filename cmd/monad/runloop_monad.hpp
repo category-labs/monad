@@ -3,11 +3,10 @@
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <utility>
-
-#include <signal.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -28,6 +27,6 @@ namespace fiber
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &, std::filesystem::path const &, mpt::Db &, Db &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &);
+    std::atomic<bool> const &);
 
 MONAD_NAMESPACE_END

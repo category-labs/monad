@@ -1,4 +1,5 @@
 #include <monad/core/assert.h>
+#include <monad/core/async_signal_handling.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/keccak.hpp>
@@ -30,8 +31,6 @@
 using namespace monad::mpt;
 using namespace monad::test;
 
-sig_atomic_t volatile g_done = 0;
-
 static_assert(std::atomic<bool>::is_always_lock_free); // async signal safe
 
 static monad::hash256 to_key(uint64_t const key)
@@ -56,13 +55,10 @@ select_rand_version(Db const &db, monad::small_prng &rnd, double bias)
         version_range_start + r * (version_range_end - version_range_start));
 }
 
-static void on_signal(int)
-{
-    g_done = 1;
-}
-
 int main(int argc, char *const argv[])
 {
+    auto async_signal_handling_installation = monad::async_signal_handling();
+
     unsigned num_sync_reader_threads = 4;
     unsigned num_async_reader_threads = 2;
     size_t num_async_reads_inflight = 100;
@@ -119,11 +115,17 @@ int main(int argc, char *const argv[])
 
         quill::start(true);
 
-        struct sigaction sig;
-        sig.sa_handler = &on_signal;
-        sig.sa_flags = 0;
-        sigaction(SIGINT, &sig, nullptr);
-        sigaction(SIGALRM, &sig, nullptr);
+        static std::atomic<bool> g_done{false};
+        auto sigint_handler = monad::async_signal_handling::add_handler(
+            SIGINT,
+            0,
+            [](const struct signalfd_siginfo &,
+               monad::async_signal_handling::handler *) -> bool {
+                g_done = true;
+                return true;
+            });
+        auto mark_sigint_handler_handled = monad::make_scope_exit(
+            [&]() noexcept { sigint_handler->mark_as_handled(); });
 
         auto const prefix = 0x00_hex;
 
@@ -158,7 +160,8 @@ int main(int argc, char *const argv[])
             AsyncIOContext io_ctx{ro_config};
             Db ro_db{io_ctx};
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+                   !g_done.load(std::memory_order_acquire)) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -168,7 +171,7 @@ int main(int argc, char *const argv[])
             unsigned nfailed = 0;
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done) {
+            while (!g_done.load(std::memory_order_acquire)) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 auto const version_bytes =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
@@ -210,7 +213,8 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+                   !g_done.load(std::memory_order_acquire)) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -247,7 +251,7 @@ int main(int argc, char *const argv[])
             size_t completions{};
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done) {
+            while (!g_done.load(std::memory_order_acquire)) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 auto const version_bytes =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
@@ -298,7 +302,8 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+                   !g_done.load(std::memory_order_acquire)) {
             }
             // now the first version is written to db
             MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
@@ -308,10 +313,10 @@ int main(int argc, char *const argv[])
             {
                 Nibbles path{};
                 size_t num_nodes;
-                sig_atomic_t volatile &done;
+                std::atomic<bool> &done;
 
                 explicit VersionValidatorMachine(
-                    size_t num_nodes_, sig_atomic_t volatile &done_)
+                    size_t num_nodes_, std::atomic<bool> &done_)
                     : num_nodes(num_nodes_)
                     , done(done_)
                 {
@@ -340,7 +345,7 @@ int main(int argc, char *const argv[])
                         }
                         MONAD_ASSERT(found);
                     }
-                    return !g_done;
+                    return !g_done.load(std::memory_order_acquire);
                 }
 
                 virtual void up(unsigned char branch, Node const &node) override
@@ -370,7 +375,7 @@ int main(int argc, char *const argv[])
             };
 
             auto rnd = monad::thread_local_prng();
-            while (!g_done) {
+            while (!g_done.load(std::memory_order_acquire)) {
                 auto const version = select_rand_version(ro_db, rnd, prng_bias);
                 if (auto cursor = ro_db.find(prefix, version);
                     cursor.has_value()) {
@@ -403,7 +408,7 @@ int main(int argc, char *const argv[])
         auto open_close_read_only = [&]() {
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
-            while (!g_done) {
+            while (!g_done.load(std::memory_order_acquire)) {
                 ReadOnlyOnDiskDbConfig const ro_config{
                     .dbname_paths = dbname_paths};
                 AsyncIOContext io_ctx{ro_config};
@@ -455,8 +460,9 @@ int main(int argc, char *const argv[])
         }
         readers.emplace_back(open_close_read_only);
 
-        alarm(timeout_seconds);
-        while (!g_done) {
+        monad::async_signal_handling::invoke_after(
+            [&] { g_done = true; }, timeout_seconds * 1000000000ULL);
+        while (!g_done.load(std::memory_order_acquire)) {
             upsert_new_version(db, version);
             ++version;
         }

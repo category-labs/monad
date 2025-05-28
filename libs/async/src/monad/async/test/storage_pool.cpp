@@ -1,10 +1,10 @@
 #include "gtest/gtest.h"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <array>

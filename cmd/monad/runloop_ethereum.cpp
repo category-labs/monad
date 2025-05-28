@@ -1,5 +1,6 @@
 #include "runloop_ethereum.hpp"
 
+#include <atomic>
 #include <monad/chain/chain.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -65,7 +66,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    uint64_t const end_block_num, std::atomic<bool> const &stop)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -78,7 +79,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
-    while (block_num <= end_block_num && stop == 0) {
+    while (block_num <= end_block_num &&
+           stop.load(std::memory_order_relaxed) == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
             block_db.get(block_num, block),

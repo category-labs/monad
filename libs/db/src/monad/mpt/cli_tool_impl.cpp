@@ -386,6 +386,7 @@ struct impl_t
     bool create_chunk_increasing = false;
     bool debug_printing = false;
     std::filesystem::path archive_database;
+    std::filesystem::path archive_database_metadata;
     std::filesystem::path restore_database;
     std::vector<std::filesystem::path> storage_paths;
     int compression_level = 3;
@@ -1057,6 +1058,92 @@ public:
              << " Mb/sec." << std::endl;
     }
 
+    template <class F>
+    void do_archive_compression_loop(
+        struct archive *out, std::vector<chunk_info_archive_t *> &&tocompress,
+        F &map_chunk_into_memory)
+    {
+        for (auto it = tocompress.begin(); it != tocompress.end();) {
+            size_t max_concurrency = 0;
+            for (auto it2 = it;
+                 it2 != tocompress.end() &&
+                 max_concurrency < std::thread::hardware_concurrency() /
+                                       2 /* deliberately not
+                                            true_hardware_concurrency */
+                 ;
+                 ++it2, max_concurrency++) {
+                chunk_info_archive_t &i = **it2;
+                if (i.uncompressed_storage == nullptr) {
+                    map_chunk_into_memory(i);
+                }
+                else if (
+                    max_concurrency == 0 &&
+                    i.compression_thread.wait_for(std::chrono::milliseconds(
+                        10)) != std::future_status::timeout) {
+                    i.compression_thread.get();
+                    {
+                        auto const dist = std::distance(tocompress.begin(), it);
+                        cout << "\rProgress: " << dist << "/"
+                             << tocompress.size() << "  "
+                             << (100 * dist / ssize_t(tocompress.size()))
+                             << "%        " << std::flush;
+                    }
+                    ++it;
+                    struct archive_entry *entry = archive_entry_new();
+                    if (entry == nullptr) {
+                        throw std::runtime_error("libarchive failed");
+                    }
+                    auto unentry = monad::make_scope_exit(
+                        [&]() noexcept { archive_entry_free(entry); });
+                    std::string leafname;
+                    auto const [chunktype, chunkid] = i.chunk_ptr->zone_id();
+                    if (chunktype == pool->cnv) {
+                        leafname.append("cnv/");
+                    }
+                    else if (chunktype == pool->seq) {
+                        leafname.append("seq/");
+                    }
+                    else {
+                        MONAD_ASSERT(false);
+                    }
+                    leafname.append(std::to_string(chunkid));
+                    if (compression_level != 0) {
+
+                        leafname.append(".zst");
+                    }
+                    archive_entry_set_pathname(entry, leafname.c_str());
+                    archive_entry_set_size(
+                        entry, la_int64_t(i.compressed.size()));
+                    archive_entry_set_filetype(entry, AE_IFREG);
+                    archive_entry_set_perm(entry, 0644);
+                    archive_entry_xattr_add_entry(
+                        entry,
+                        "monad.triedb.metadata",
+                        &i.metadata,
+                        sizeof(i.metadata));
+                    struct timespec ts;
+                    clock_gettime(CLOCK_REALTIME, &ts);
+                    archive_entry_set_mtime(entry, ts.tv_sec, ts.tv_nsec);
+                    if (ARCHIVE_OK != archive_write_header(out, entry)) {
+                        std::stringstream ss;
+                        ss << "libarchive failed due to "
+                           << archive_error_string(out);
+                        throw std::runtime_error(ss.str());
+                    }
+                    if (-1 ==
+                        archive_write_data(
+                            out, i.compressed.data(), i.compressed.size())) {
+                        std::stringstream ss;
+                        ss << "libarchive failed due to "
+                           << archive_error_string(out);
+                        throw std::runtime_error(ss.str());
+                    }
+                    i.reset();
+                }
+            }
+        }
+    }
+
     void do_archive_database()
     {
         auto const begin = std::chrono::steady_clock::now();
@@ -1238,88 +1325,8 @@ public:
                 std::cerr << std::endl;
             }
             cout << std::endl;
-            for (auto it = tocompress.begin(); it != tocompress.end();) {
-                size_t max_concurrency = 0;
-                for (auto it2 = it;
-                     it2 != tocompress.end() &&
-                     max_concurrency < std::thread::hardware_concurrency() /
-                                           2 /* deliberately not
-                                                true_hardware_concurrency */
-                     ;
-                     ++it2, max_concurrency++) {
-                    chunk_info_archive_t &i = **it2;
-                    if (i.uncompressed_storage == nullptr) {
-                        map_chunk_into_memory(i);
-                    }
-                    else if (
-                        max_concurrency == 0 &&
-                        i.compression_thread.wait_for(std::chrono::milliseconds(
-                            10)) != std::future_status::timeout) {
-                        i.compression_thread.get();
-                        {
-                            auto const dist =
-                                std::distance(tocompress.begin(), it);
-                            cout << "\rProgress: " << dist << "/"
-                                 << tocompress.size() << "  "
-                                 << (100 * dist / ssize_t(tocompress.size()))
-                                 << "%        " << std::flush;
-                        }
-                        ++it;
-                        struct archive_entry *entry = archive_entry_new();
-                        if (entry == nullptr) {
-                            throw std::runtime_error("libarchive failed");
-                        }
-                        auto unentry = monad::make_scope_exit(
-                            [&]() noexcept { archive_entry_free(entry); });
-                        std::string leafname;
-                        auto const [chunktype, chunkid] =
-                            i.chunk_ptr->zone_id();
-                        if (chunktype == pool->cnv) {
-                            leafname.append("cnv/");
-                        }
-                        else if (chunktype == pool->seq) {
-                            leafname.append("seq/");
-                        }
-                        else {
-                            MONAD_ASSERT(false);
-                        }
-                        leafname.append(std::to_string(chunkid));
-                        if (compression_level != 0) {
-
-                            leafname.append(".zst");
-                        }
-                        archive_entry_set_pathname(entry, leafname.c_str());
-                        archive_entry_set_size(
-                            entry, la_int64_t(i.compressed.size()));
-                        archive_entry_set_filetype(entry, AE_IFREG);
-                        archive_entry_set_perm(entry, 0644);
-                        archive_entry_xattr_add_entry(
-                            entry,
-                            "monad.triedb.metadata",
-                            &i.metadata,
-                            sizeof(i.metadata));
-                        struct timespec ts;
-                        clock_gettime(CLOCK_REALTIME, &ts);
-                        archive_entry_set_mtime(entry, ts.tv_sec, ts.tv_nsec);
-                        if (ARCHIVE_OK != archive_write_header(out, entry)) {
-                            std::stringstream ss;
-                            ss << "libarchive failed due to "
-                               << archive_error_string(out);
-                            throw std::runtime_error(ss.str());
-                        }
-                        if (-1 == archive_write_data(
-                                      out,
-                                      i.compressed.data(),
-                                      i.compressed.size())) {
-                            std::stringstream ss;
-                            ss << "libarchive failed due to "
-                               << archive_error_string(out);
-                            throw std::runtime_error(ss.str());
-                        }
-                        i.reset();
-                    }
-                }
-            }
+            do_archive_compression_loop(
+                out, std::move(tocompress), map_chunk_into_memory);
         }
         cout << std::endl;
         auto const end = std::chrono::steady_clock::now();
@@ -1333,6 +1340,103 @@ public:
             throw std::system_error(errno, std::system_category());
         }
         cout << "\nDatabase has been archived to " << archive_database << " "
+             << print_bytes(monad::async::file_offset_t(stat.st_size))
+             << " long in " << secs << " seconds which is "
+             << (double(total_used) / 1024.0 / 1024.0 / secs) << " Mb/sec."
+             << std::endl;
+    }
+
+    void do_archive_database_metadata()
+    {
+        auto const begin = std::chrono::steady_clock::now();
+        if (!archive_database_metadata.has_extension()) {
+            archive_database_metadata.replace_extension(".tar");
+        }
+        int fd = ::open(
+            archive_database_metadata.c_str(),
+            O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC,
+            0660);
+        if (fd == -1) {
+            throw std::system_error(errno, std::system_category());
+        }
+        auto unfd1 = monad::make_scope_fail(
+            [&]() noexcept { ::unlink(archive_database_metadata.c_str()); });
+        auto unfd2 = monad::make_scope_exit([&]() noexcept { ::close(fd); });
+
+        {
+            struct archive *out = archive_write_new();
+            if (out == nullptr) {
+                throw std::runtime_error("libarchive failed");
+            }
+            auto unout = monad::make_scope_exit([&]() noexcept {
+                archive_write_close(out);
+                archive_write_free(out);
+            });
+            if (ARCHIVE_OK != archive_write_set_format_pax_restricted(out)) {
+                throw std::runtime_error("libarchive failed");
+            }
+            if (ARCHIVE_OK != archive_write_open_fd(out, fd)) {
+                throw std::runtime_error("libarchive failed");
+            }
+
+            uint32_t additional_cnv_chunks_to_archive = 0;
+            auto map_chunk_into_memory = [this,
+                                          &additional_cnv_chunks_to_archive](
+                                             chunk_info_archive_t &i) {
+                auto [fd2, offset] = i.chunk_ptr->read_fd();
+                i.uncompressed_storage = ::mmap(
+                    nullptr,
+                    i.chunk_ptr->size(),
+                    PROT_READ,
+                    MAP_SHARED,
+                    fd2,
+                    off_t(offset));
+                if (i.uncompressed_storage == MAP_FAILED) {
+                    throw std::system_error(errno, std::system_category());
+                }
+                i.uncompressed = {
+                    (std::byte const *)i.uncompressed_storage,
+                    i.chunk_ptr->size()};
+                if (i.chunk_ptr->zone_id() == std::pair{pool->cnv, 0u}) {
+                    auto const *m = monad::start_lifetime_as<
+                        monad::mpt::detail::db_metadata>(i.uncompressed.data());
+                    additional_cnv_chunks_to_archive =
+                        m->root_offsets.storage_.cnv_chunks_len;
+                }
+                i.compression_thread =
+                    std::async(std::launch::async, [i = &i, this] {
+                        i->run(compression_level);
+                    });
+            };
+
+            std::vector<chunk_info_archive_t *> tocompress;
+            tocompress.reserve(pool->chunks(pool->cnv));
+            std::vector<chunk_info_archive_t> cnv_infos;
+            cnv_infos.reserve(pool->chunks(pool->cnv));
+            for (uint32_t n = 0; n <= additional_cnv_chunks_to_archive; n++) {
+                cnv_infos.emplace_back(pool->activate_chunk(pool->cnv, n), -1);
+                tocompress.push_back(&cnv_infos.back());
+                if (n == 0) {
+                    // Need to determine additional_cnv_chunks_to_archive
+                    map_chunk_into_memory(cnv_infos.back());
+                }
+            }
+            do_archive_compression_loop(
+                out, std::move(tocompress), map_chunk_into_memory);
+        }
+        cout << std::endl;
+        auto const end = std::chrono::steady_clock::now();
+        double const secs =
+            double(std::chrono::duration_cast<std::chrono::microseconds>(
+                       end - begin)
+                       .count()) /
+            1000000.0;
+        struct stat stat;
+        if (-1 == ::fstat(fd, &stat)) {
+            throw std::system_error(errno, std::system_category());
+        }
+        cout << "\nDatabase metadata has been archived to "
+             << archive_database_metadata << " "
              << print_bytes(monad::async::file_offset_t(stat.st_size))
              << " long in " << secs << " seconds which is "
              << (double(total_used) / 1024.0 / 1024.0 / secs) << " Mb/sec."
@@ -1406,9 +1510,13 @@ opened.
                 "--archive",
                 impl.archive_database,
                 "archive an existing database to a compressed, portable file "
-                "which "
-                "can be later restored with this tool (implies "
+                "which can be later restored with this tool (implies "
                 "--allow-dirty).");
+            cli.add_option(
+                "--archive-metadata-only",
+                impl.archive_database_metadata,
+                "archive only the metadata of an existing database to a "
+                "compressed file (implies --allow-dirty).");
             cli.add_option(
                 "--restore",
                 impl.restore_database,
@@ -1452,9 +1560,11 @@ opened.
             }
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
-                impl.allow_dirty || !impl.archive_database.empty();
+                impl.allow_dirty || !impl.archive_database.empty() ||
+                !impl.archive_database_metadata.empty();
             if (!impl.restore_database.empty()) {
-                if (!impl.archive_database.empty()) {
+                if (!impl.archive_database.empty() ||
+                    !impl.archive_database_metadata.empty()) {
                     impl.cli_ask_question(
                         "WARNING: Combining --restore with --archive will "
                         "first restore and then archive. Are you sure?\n");
@@ -1618,6 +1728,9 @@ opened.
             }
             if (!impl.archive_database.empty()) {
                 impl.do_archive_database();
+            }
+            else if (!impl.archive_database_metadata.empty()) {
+                impl.do_archive_database_metadata();
             }
         }
     }

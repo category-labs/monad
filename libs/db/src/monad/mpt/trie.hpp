@@ -1114,6 +1114,7 @@ Node::UniquePtr read_node_blocking(
 // helpers
 inline constexpr unsigned num_pages(file_offset_t const offset, unsigned bytes)
 {
+    MONAD_ASSERT(bytes > 0);
     auto const rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
     bytes += static_cast<unsigned>(offset - rd_offset);
     return (bytes + DISK_PAGE_SIZE - 1) >> DISK_PAGE_BITS;

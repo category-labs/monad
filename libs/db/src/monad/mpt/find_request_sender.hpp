@@ -130,6 +130,7 @@ struct find_request_sender<T>::find_receiver
             node_disk_pages_spare_15{offset}.to_pages();
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
         rd_offset = offset;
         auto const new_offset = round_down_align<DISK_PAGE_BITS>(offset.offset);
         MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);

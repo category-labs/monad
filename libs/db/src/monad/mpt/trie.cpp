@@ -179,6 +179,7 @@ struct load_all_impl_
                 node_disk_pages_spare_15{offset}.to_pages();
             bytes_to_read =
                 static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+            MONAD_ASSERT(bytes_to_read > 0);
             rd_offset = offset;
             auto const new_offset =
                 round_down_align<DISK_PAGE_BITS>(offset.offset);
@@ -308,6 +309,7 @@ struct update_receiver
             round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
         rd_offset.set_spare(0);
     }
 
@@ -371,6 +373,7 @@ struct read_single_child_expire_receiver
             round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
         rd_offset.set_spare(0);
     }
 
@@ -456,6 +459,7 @@ struct read_single_child_receiver
             round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
     }
 
     template <class ResultType>
@@ -518,6 +522,7 @@ struct compaction_receiver
             round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
         rd_offset.set_spare(0);
 
         aux->collect_compaction_read_stats(offset, bytes_to_read);
@@ -590,6 +595,7 @@ struct expire_receiver
             round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        MONAD_ASSERT(bytes_to_read > 0);
         rd_offset.set_spare(0);
     }
 

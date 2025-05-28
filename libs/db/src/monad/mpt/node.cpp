@@ -390,6 +390,7 @@ uint32_t Node::get_disk_size() const noexcept
         static_cast<uint32_t>(next_data() - (unsigned char *)this);
     uint32_t const total_disk_size = node_disk_size + Node::disk_size_bytes;
     MONAD_DEBUG_ASSERT(total_disk_size <= Node::max_disk_size);
+    MONAD_ASSERT(total_disk_size > 0);
     return total_disk_size;
 }
 

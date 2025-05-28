@@ -30,6 +30,7 @@ Node::UniquePtr read_node_blocking(
     unsigned const num_pages_to_load_node =
         node_disk_pages_spare_15{node_offset}.to_pages();
     unsigned const bytes_to_read = num_pages_to_load_node << DISK_PAGE_BITS;
+    MONAD_ASSERT(bytes_to_read > 0);
     file_offset_t const rd_offset =
         round_down_align<DISK_PAGE_BITS>(node_offset.offset);
     uint16_t const buffer_off = uint16_t(node_offset.offset - rd_offset);

@@ -21,6 +21,7 @@ Section with_Sigma.
    *)
 
   Definition AccountStateR (q:Qp) (s: evm.account_state) : Rep. Proof. Admitted.
+  Print addressR.
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
@@ -41,4 +42,31 @@ Section with_Sigma.
           ** origp |-> AccountStateR 1 exactFixeeAssumption
           ** [| relaxedValidation auf = false |]
           ** [| applyUpdates auf actualPreTxState = applyUpdates au actualPreTxState |]).
+
+  Set Nested Proofs Allowed.
+  Lemma observeState (state_addr:ptr) q t: 
+    Observe (reference_to "monad::AccountState" state_addr)
+            (state_addr |-> AccountStateR q t).
+  Proof using. Admitted.
+
+  Definition observeStateF r q t := @observe_fwd _ _ _ (observeState r q t).
+  Hint Resolve observeStateF : br_opacity.
+Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+  
+Lemma prf: denoteModule module |-- fix_spec.
+Proof using.
+  verify_spec'.
+  slauto.
+Abort.
+(*
+  Locate RepFor.
+  Print rep.RepFor.C.
+  go.
+  slauto2
+  iAssert (origp |-> structR "monad::AccountState" 1) as "?"%string. admit.
+  admitRef
+  go.
+  
+    go.
+*)    
 End with_Sigma.

@@ -100,6 +100,17 @@
         "shared_mutex": "cpp",
         "stop_token": "cpp",
         "ranges": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "csetjmp": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp",
+        "cinttypes": "cpp",
+        "coroutine": "cpp",
+        "regex": "cpp",
+        "scope": "cpp",
+        "hash_set": "cpp",
+        "latch": "cpp",
+        "spanstream": "cpp",
+        "stdfloat": "cpp"
     }
 }

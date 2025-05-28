@@ -54,7 +54,8 @@ namespace
     std::pair<compact_virtual_chunk_offset_t, compact_virtual_chunk_offset_t>
     deserialize_compaction_offsets(byte_string_view const bytes)
     {
-        MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
+        MONAD_ASSERT_PRINTF(
+            bytes.size() == 2 * sizeof(uint32_t), "bytes %zu", bytes.size());
         compact_virtual_chunk_offset_t fast_offset{
             INVALID_COMPACT_VIRTUAL_OFFSET};
         compact_virtual_chunk_offset_t slow_offset{
@@ -75,7 +76,11 @@ namespace
 virtual_chunk_offset_t
 UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
-    MONAD_ASSERT(offset.id < io->chunk_count());
+    MONAD_ASSERT_PRINTF(
+        offset.id < io->chunk_count(),
+        "offset chunk id %u chunk count %zu",
+        offset.id,
+        io->chunk_count());
     auto const *ci = db_metadata()->at(offset.id);
     // should never invoke a translation for offset in free list
     MONAD_DEBUG_ASSERT(ci->in_fast_list || ci->in_slow_list);
@@ -503,7 +508,7 @@ void UpdateAuxImpl::set_io(
 {
     io = io_;
     auto const chunk_count = io->chunk_count();
-    MONAD_ASSERT(chunk_count >= 3);
+    MONAD_ASSERT_PRINTF(chunk_count >= 3, "chunk count %zu", chunk_count);
     auto const map_size =
         sizeof(detail::db_metadata) +
         chunk_count * sizeof(detail::db_metadata::chunk_info_t);
@@ -564,7 +569,10 @@ void UpdateAuxImpl::set_io(
                               : MAP_SHARED;
     db_metadata_[0].main = start_lifetime_as<detail::db_metadata>(
         ::mmap(nullptr, map_size, prot, mapflags, fd.first, off_t(fdr.second)));
-    MONAD_ASSERT(db_metadata_[0].main != MAP_FAILED);
+    MONAD_ASSERT_PRINTF(
+        db_metadata_[0].main != MAP_FAILED,
+        "mmap failed due to %s",
+        strerror(errno));
     db_metadata_[1].main = start_lifetime_as<detail::db_metadata>(::mmap(
         nullptr,
         map_size,
@@ -572,7 +580,10 @@ void UpdateAuxImpl::set_io(
         mapflags,
         fd.first,
         off_t(fdr.second + cnv_chunk->capacity() / 2)));
-    MONAD_ASSERT(db_metadata_[1].main != MAP_FAILED);
+    MONAD_ASSERT_PRINTF(
+        db_metadata_[1].main != MAP_FAILED,
+        "mmap failed due to %s",
+        strerror(errno));
     /* If on a storage which ignores TRIM, and the user just truncated
     an existing triedb, all the magics will be valid but the pool has
     been reset. Solve this by detecting when a pool has just been truncated
@@ -694,7 +705,10 @@ void UpdateAuxImpl::set_io(
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
                 -1,
                 0);
-            MONAD_ASSERT(reservation[0] != MAP_FAILED);
+            MONAD_ASSERT_PRINTF(
+                reservation[0] != MAP_FAILED,
+                "mmap failed due to %s",
+                strerror(errno));
             reservation[1] = (std::byte *)::mmap(
                 nullptr,
                 db_version_history_storage_bytes,
@@ -702,7 +716,10 @@ void UpdateAuxImpl::set_io(
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
                 -1,
                 0);
-            MONAD_ASSERT(reservation[1] != MAP_FAILED);
+            MONAD_ASSERT_PRINTF(
+                reservation[1] != MAP_FAILED,
+                "mmap failed due to %s",
+                strerror(errno));
             // For each chunk, map the first half into the first copy and the
             // second half into the second copy
             for (size_t n = 0;
@@ -716,22 +733,26 @@ void UpdateAuxImpl::set_io(
                 auto fdr = chunk->read_fd();
                 auto fdw = chunk->write_fd(0);
                 auto &fd = can_write_to_map ? fdw : fdr;
-                MONAD_ASSERT(
+                MONAD_ASSERT_PRINTF(
                     MAP_FAILED != ::mmap(
                                       reservation[0] + n * map_bytes_per_chunk,
                                       map_bytes_per_chunk,
                                       prot,
                                       mapflags | MAP_FIXED,
                                       fd.first,
-                                      off_t(fdr.second)));
-                MONAD_ASSERT(
+                                      off_t(fdr.second)),
+                    "mmap failed due to %s",
+                    strerror(errno));
+                MONAD_ASSERT_PRINTF(
                     MAP_FAILED != ::mmap(
                                       reservation[1] + n * map_bytes_per_chunk,
                                       map_bytes_per_chunk,
                                       prot,
                                       mapflags | MAP_FIXED,
                                       fd.first,
-                                      off_t(fdr.second + map_bytes_per_chunk)));
+                                      off_t(fdr.second + map_bytes_per_chunk)),
+                    "mmap failed due to %s",
+                    strerror(errno));
             }
             db_metadata_[0].root_offsets = {
                 start_lifetime_as<chunk_offset_t>(
@@ -771,17 +792,20 @@ void UpdateAuxImpl::set_io(
             auto chunk =
                 io->storage_pool().activate_chunk(storage_pool::cnv, 1);
             auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk->capacity());
-            MONAD_ASSERT(tofill != nullptr);
+            MONAD_ASSERT_PRINTF(
+                tofill != nullptr, "malloc failed due to %s", strerror(errno));
             auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
             memset(tofill, 0xff, chunk->capacity());
             {
                 auto fdw = chunk->write_fd(chunk->capacity());
-                MONAD_ASSERT(
+                MONAD_ASSERT_PRINTF(
                     -1 != ::pwrite(
                               fdw.first,
                               tofill,
                               chunk->capacity(),
-                              (off_t)fdw.second));
+                              (off_t)fdw.second),
+                    "pwrite failed due to %s",
+                    strerror(errno));
             }
             storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
             db_metadata_[0].main->using_chunks_for_root_offsets = true;
@@ -794,12 +818,14 @@ void UpdateAuxImpl::set_io(
                 auto chunk =
                     io->storage_pool().activate_chunk(storage_pool::cnv, n);
                 auto fdw = chunk->write_fd(chunk->capacity());
-                MONAD_ASSERT(
+                MONAD_ASSERT_PRINTF(
                     -1 != ::pwrite(
                               fdw.first,
                               tofill,
                               chunk->capacity(),
-                              (off_t)fdw.second));
+                              (off_t)fdw.second),
+                    "pwrite failed due to %s",
+                    strerror(errno));
                 storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
                 db_metadata_[0].main->history_length +=
                     chunk->capacity() / 2 / sizeof(chunk_offset_t);
@@ -839,7 +865,10 @@ void UpdateAuxImpl::set_io(
             auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
             MONAD_DEBUG_ASSERT(chunk->zone_id().first == storage_pool::seq);
             MONAD_DEBUG_ASSERT(chunk->zone_id().second == n);
-            MONAD_ASSERT(chunk->size() == 0); // chunks must actually be free
+            MONAD_ASSERT_PRINTF(
+                chunk->size() == 0,
+                "free chunk has %llu bytes used, it is not actually free",
+                chunk->size());
             chunks.push_back(n);
         }
 
@@ -877,7 +906,11 @@ void UpdateAuxImpl::set_io(
                 override_insertion_count(db_metadata_[1].main);
             }
             auto *i = db_metadata_[0].main->at_(id);
-            MONAD_ASSERT(i->index(db_metadata()) == id);
+            MONAD_ASSERT_PRINTF(
+                i->index(db_metadata()) == id,
+                "index of item %u is not %u",
+                i->index(db_metadata()),
+                id);
         };
         // root offset is the front of fast list
         chunk_offset_t const fast_offset(chunks.front(), 0);
@@ -895,7 +928,11 @@ void UpdateAuxImpl::set_io(
         for (uint32_t const i : chunks_after_second) {
             append(chunk_list::free, i);
             auto *i_ = db_metadata_[0].main->at_(i);
-            MONAD_ASSERT(i_->index(db_metadata()) == i);
+            MONAD_ASSERT_PRINTF(
+                i_->index(db_metadata()) == i,
+                "index of item %u is not %u",
+                i_->index(db_metadata()),
+                i);
         }
 
         // Mark as done, init root offset and history versions for the new
@@ -967,7 +1004,9 @@ void UpdateAuxImpl::set_io(
     }
     // If the pool has changed since we configured the metadata, this will
     // fail
-    MONAD_ASSERT(db_metadata()->chunk_info_count == chunk_count);
+    MONAD_ASSERT_PRINTF(
+        db_metadata()->chunk_info_count == chunk_count,
+        "storage pool configuration has changed since creation");
 }
 #if defined(__GNUC__) && !defined(__clang__)
     #pragma GCC diagnostic pop
@@ -1006,7 +1045,11 @@ void UpdateAuxImpl::reset_node_writers()
         -> node_writer_unique_ptr_type {
         auto chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
-        MONAD_ASSERT(chunk->size() >= node_writer_offset.offset);
+        MONAD_ASSERT_PRINTF(
+            chunk->size() >= node_writer_offset.offset,
+            "chunk size %llu node writer offset %u",
+            chunk->size(),
+            node_writer_offset.offset);
         size_t const bytes_to_write = std::min(
             AsyncIO::WRITE_BUFFER_SIZE,
             size_t(chunk->capacity() - node_writer_offset.offset));
@@ -1244,9 +1287,13 @@ void UpdateAuxImpl::move_trie_version_forward(
 {
     MONAD_ASSERT(is_on_disk());
     // only allow moving forward
-    MONAD_ASSERT(
+    MONAD_ASSERT_PRINTF(
         dest > src && dest != INVALID_BLOCK_ID &&
-        dest >= db_history_max_version());
+            dest >= db_history_max_version(),
+        "dest %lu src %lu DB history max version %lu",
+        dest,
+        src,
+        db_history_max_version());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
     auto const offset = get_root_offset_at_version(src);
@@ -1416,12 +1463,20 @@ void UpdateAuxImpl::free_compacted_chunks()
                     idx); // append not prepend
             }
         };
-    MONAD_ASSERT(
+    MONAD_ASSERT_PRINTF(
         chunks_to_remove_before_count_fast_ <=
-        db_metadata()->fast_list_end()->insertion_count());
-    MONAD_ASSERT(
+            db_metadata()->fast_list_end()->insertion_count(),
+        "fast chunks to remove before count %u list end "
+        "insertion count %u",
+        chunks_to_remove_before_count_fast_,
+        (unsigned)db_metadata()->fast_list_end()->insertion_count());
+    MONAD_ASSERT_PRINTF(
         chunks_to_remove_before_count_slow_ <=
-        db_metadata()->slow_list_end()->insertion_count());
+            db_metadata()->slow_list_end()->insertion_count(),
+        "slow chunks to remove before count %u list end "
+        "insertion count %u",
+        chunks_to_remove_before_count_slow_,
+        (unsigned)db_metadata()->slow_list_end()->insertion_count());
     free_chunks_from_ci_till_count(
         db_metadata()->fast_list_begin(), chunks_to_remove_before_count_fast_);
     free_chunks_from_ci_till_count(

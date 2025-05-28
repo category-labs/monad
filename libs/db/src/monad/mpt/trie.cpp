@@ -92,7 +92,6 @@ struct async_write_node_result
 {
     chunk_offset_t offset_written_to;
     unsigned bytes_appended;
-    erased_connected_operation *io_state;
 };
 
 // invoke at the end of each block upsert
@@ -190,7 +189,10 @@ struct load_all_impl_
         template <class ResultType>
         void set_value(erased_connected_operation *io_state, ResultType buffer_)
         {
-            MONAD_ASSERT(buffer_);
+            MONAD_ASSERT_PRINTF(
+                buffer_,
+                "i/o failed with %s",
+                buffer_.assume_error().message().c_str());
             // load node from read buffer
             {
                 auto g(impl->aux.unique_lock());
@@ -314,7 +316,10 @@ struct update_receiver
     template <class ResultType>
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         Node::UniquePtr old = detail::deserialize_node_from_receiver_result(
             std::move(buffer_), buffer_off, io_state);
         // continue recurse down the trie starting from `old`
@@ -377,7 +382,10 @@ struct read_single_child_expire_receiver
     template <class ResultType>
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         auto single_child = detail::deserialize_node_from_receiver_result(
             std::move(buffer_), buffer_off, io_state);
         auto new_node = make_node(
@@ -461,7 +469,10 @@ struct read_single_child_receiver
     template <class ResultType>
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         // load node from read buffer
         auto *parent = tnode->parent;
         MONAD_DEBUG_ASSERT(parent);
@@ -526,7 +537,10 @@ struct compaction_receiver
     template <class ResultType>
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         tnode->update_after_async_read(
             detail::deserialize_node_from_receiver_result(
                 std::move(buffer_), buffer_off, io_state));
@@ -596,7 +610,10 @@ struct expire_receiver
     template <class ResultType>
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         tnode->update_after_async_read(
             detail::deserialize_node_from_receiver_result(
                 std::move(buffer_), buffer_off, io_state));
@@ -855,7 +872,11 @@ void update_value_and_subtrie_(
     else {
         auto const opt_leaf =
             update.value.has_value() ? update.value : old->opt_value();
-        MONAD_ASSERT(update.version >= old->version);
+        MONAD_ASSERT_PRINTF(
+            update.version >= old->version,
+            "update version %lu old version %lu",
+            update.version,
+            old->version);
         dispatch_updates_impl_(
             aux,
             sm,
@@ -912,8 +933,12 @@ void create_new_trie_(
                 sm.get_compute(),
                 sm.cache());
             if (sm.auto_expire()) {
-                MONAD_ASSERT(
+                MONAD_ASSERT_PRINTF(
                     entry.subtrie_min_version >=
+                        aux.curr_upsert_auto_expire_version,
+                    "entry subtrie min version %ld current upsert "
+                    "auto expire version %ld",
+                    entry.subtrie_min_version,
                     aux.curr_upsert_auto_expire_version);
             }
             parent_version = std::max(parent_version, entry.ptr->version);
@@ -1443,7 +1468,12 @@ void fillin_parent_after_expiration(
             min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
             min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
         auto const min_version = calc_min_version(*new_node);
-        MONAD_ASSERT(min_version >= aux.curr_upsert_auto_expire_version);
+        MONAD_ASSERT_PRINTF(
+            min_version >= aux.curr_upsert_auto_expire_version,
+            "min version %ld current upsert auto expire version "
+            "%ld",
+            min_version,
+            aux.curr_upsert_auto_expire_version);
         if (parent->type == tnode_type::update) {
             auto &child = ((UpdateTNode *)parent)->children[index];
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
@@ -1619,16 +1649,41 @@ void try_fillin_parent_with_rewritten_node(
 // Async write
 /////////////////////////////////////////////////////
 
+static chunk_offset_t calculate_next_writer_offset(
+    UpdateAuxImpl &aux, node_writer_unique_ptr_type const &node_writer,
+    file_offset_t bytes_shortly_to_be_written)
+{
+    // Can't use add_to_offset(), because it asserts if we go past the
+    // capacity
+    auto offset_of_next_writer = node_writer->sender().offset();
+    file_offset_t offset = offset_of_next_writer.offset;
+    offset += node_writer->sender().written_buffer_bytes() +
+              bytes_shortly_to_be_written;
+    offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
+    auto const chunk_capacity =
+        aux.io->chunk_capacity(offset_of_next_writer.id);
+    MONAD_ASSERT_PRINTF(
+        offset <= chunk_capacity,
+        "offset %llu greater than chunk capacity %llu",
+        offset,
+        chunk_capacity);
+    if (offset == chunk_capacity) {
+        // Callers needs to go get a new chunk
+        return INVALID_OFFSET;
+    }
+    MONAD_ASSERT_PRINTF(
+        (offset_of_next_writer.offset & (DISK_PAGE_SIZE - 1)) == 0,
+        "offset of next writer %u is not an exact multiple of DISK_PAGE_SIZE",
+        offset_of_next_writer.offset);
+    return offset_of_next_writer;
+}
+
 node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
-    UpdateAuxImpl &aux, node_writer_unique_ptr_type &node_writer)
+    UpdateAuxImpl &aux, node_writer_unique_ptr_type node_writer)
 {
     auto *sender = &node_writer->sender();
     bool const in_fast_list =
         aux.db_metadata()->at(sender->offset().id)->in_fast_list;
-    auto const *ci_ = aux.db_metadata()->free_list_end();
-    MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto idx = ci_->index(aux.db_metadata());
-    chunk_offset_t const offset_of_new_writer{idx, 0};
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned
     auto const remaining_buffer_bytes = sender->remaining_buffer_bytes();
@@ -1636,57 +1691,33 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     MONAD_DEBUG_ASSERT(tozero != nullptr);
     memset(tozero, 0, remaining_buffer_bytes);
 
-    /* If there aren't enough write buffers, this may poll uring until a free
-    write buffer appears. However, that polling may write a node, causing
-    this function to be reentered, and another free chunk allocated and now
-    writes are being directed there instead. Obviously then replacing that new
-    partially filled chunk with this new chunk is something which trips the
-    asserts.
+    // Issue the append immediately
+    MONAD_ASSERT_PRINTF(
+        node_writer->sender().written_buffer_bytes() ==
+            node_writer->sender().buffer().size(),
+        "written buffer bytes %lu does not equal buffer size %lu",
+        node_writer->sender().written_buffer_bytes(),
+        node_writer->sender().buffer().size());
+    node_writer->initiate();
+    // shall be recycled by the i/o receiver
+    node_writer.release();
 
-    Replacing the runloop exposed this bug much more clearly than before, but we
-    had been seeing occasional issues somewhere around here for some time now,
-    it just wasn't obvious the cause. Anyway detect when reentrancy occurs, and
-    if so undo this operation and tell the caller to retry.
-    */
-    static thread_local struct reentrancy_detection_t
-    {
-        int count{0}, max_count{0};
-    } reentrancy_detection;
-
-    int const my_reentrancy_count = reentrancy_detection.count++;
-    MONAD_ASSERT(my_reentrancy_count >= 0);
-    if (my_reentrancy_count == 0) {
-        // We are at the base
-        reentrancy_detection.max_count = 0;
-    }
-    else if (my_reentrancy_count > reentrancy_detection.max_count) {
-        // We are reentering
-        LOG_INFO_CFORMAT(
-            "replace_node_writer_to_start_at_new_chunk reenter "
-            "my_reentrancy_count = "
-            "%d max_count = %d",
-            my_reentrancy_count,
-            reentrancy_detection.max_count);
-        reentrancy_detection.max_count = my_reentrancy_count;
-    }
+    // WARNING: This may recurse if no write buffers remaining!
     auto ret = aux.io->make_connected(
-        write_single_buffer_sender{
-            offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
+        write_single_buffer_sender{{0, 0}, AsyncIO::WRITE_BUFFER_SIZE},
         write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
-    reentrancy_detection.count--;
-    MONAD_ASSERT(reentrancy_detection.count >= 0);
-    // The deepest-most reentrancy must succeed, and all less deep reentrancies
-    // must retry
-    if (my_reentrancy_count != reentrancy_detection.max_count) {
-        // We reentered, please retry
-        LOG_INFO_CFORMAT(
-            "replace_node_writer_to_start_at_new_chunk retry "
-            "my_reentrancy_count = "
-            "%d max_count = %d",
-            my_reentrancy_count,
-            reentrancy_detection.max_count);
-        return {};
-    }
+
+    // Identify the next free chunk
+    auto const *ci_ = aux.db_metadata()->free_list_end();
+    MONAD_ASSERT_PRINTF(ci_ != nullptr, "out of free chunks");
+    auto idx = ci_->index(aux.db_metadata());
+    chunk_offset_t const offset_of_new_writer{idx, 0};
+
+    // Reset where this buffer will write to into that free chunk
+    ret->sender().reset_using_existing_buffer(
+        offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE);
+
+    // Make the free chunk used
     aux.remove(idx);
     aux.append(
         in_fast_list ? UpdateAuxImpl::chunk_list::fast
@@ -1708,19 +1739,22 @@ node_writer_unique_ptr_type replace_node_writer(
     offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
     auto const chunk_capacity =
         aux.io->chunk_capacity(offset_of_next_writer.id);
-    MONAD_ASSERT(offset <= chunk_capacity);
+    MONAD_ASSERT_PRINTF(
+        offset <= chunk_capacity,
+        "offset %llu is greater than chunk capacity %llu",
+        offset,
+        chunk_capacity);
     detail::db_metadata::chunk_info_t const *ci_ = nullptr;
     uint32_t idx;
     if (offset == chunk_capacity) {
         // If after the current write buffer we're hitting chunk capacity, we
         // replace writer to the start of next chunk.
         ci_ = aux.db_metadata()->free_list_end();
-        MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
+        MONAD_ASSERT_PRINTF(ci_ != nullptr, "out of free chunks");
         idx = ci_->index(aux.db_metadata());
         offset_of_next_writer.id = idx & 0xfffffU;
         offset_of_next_writer.offset = 0;
     }
-    // See above about handling potential reentrancy correctly
     auto *const node_writer_ptr = node_writer.get();
     size_t const bytes_to_write = std::min(
         AsyncIO::WRITE_BUFFER_SIZE,
@@ -1748,116 +1782,361 @@ async_write_node_result async_write_node(
     UpdateAuxImpl &aux, node_writer_unique_ptr_type &node_writer,
     Node const &node)
 {
-retry:
-    aux.io->poll_nonblocking_if_not_within_completions(1);
-    auto *sender = &node_writer->sender();
     auto const size = node.get_disk_size();
-    auto const remaining_bytes = sender->remaining_buffer_bytes();
-    async_write_node_result ret{
-        .offset_written_to = INVALID_OFFSET,
-        .bytes_appended = size,
-        .io_state = node_writer.get()};
-    [[likely]] if (size <= remaining_bytes) { // Node can fit into current
-                                              // buffer
-        ret.offset_written_to =
-            sender->offset().add_to_offset(sender->written_buffer_bytes());
-        auto *where_to_serialize = sender->advance_buffer_append(size);
-        MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
-        serialize_node_to_buffer(
-            (unsigned char *)where_to_serialize, size, node, size);
-    }
-    else {
-        auto const chunk_remaining_bytes =
-            aux.io->chunk_capacity(sender->offset().id) -
-            sender->offset().offset - sender->written_buffer_bytes();
-        node_writer_unique_ptr_type new_node_writer{};
-        unsigned offset_in_on_disk_node = 0;
-        if (size > chunk_remaining_bytes) {
-            // Node won't fit in the rest of current chunk, start at a new chunk
-            new_node_writer =
-                replace_node_writer_to_start_at_new_chunk(aux, node_writer);
-            if (!new_node_writer) {
-                goto retry;
+    // Will writing this node require special treatment?
+    [[unlikely]] if (size > AsyncIO::WRITE_BUFFER_SIZE) {
+        std::vector<node_writer_unique_ptr_type> buffers;
+        buffers.reserve(16);
+        // Claim all the possible write buffers
+        do {
+            aux.io->flush();
+            while (!aux.io->write_buffers_empty()) {
+                buffers.emplace_back(aux.io->make_connected(
+                    write_single_buffer_sender{
+                        {0, 0}, AsyncIO::WRITE_BUFFER_SIZE},
+                    write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE}));
             }
-            ret.offset_written_to = new_node_writer->sender().offset();
         }
-        else {
-            // serialize node to current writer's remaining bytes because node
-            // serialization will not cross chunk boundary
+        while (buffers.size() <
+               aux.io->write_buffer_count() -
+                   2 /* two held by fast and slow node writers */);
+        async_write_node_result ret{
+            .offset_written_to = INVALID_OFFSET, .bytes_appended = size};
+        auto *sender = &node_writer->sender();
+        bool const in_fast_list =
+            aux.db_metadata()->at(sender->offset().id)->in_fast_list;
+        // Are these buffers enough to write the whole value?
+        if (sender->remaining_buffer_bytes() +
+                buffers.size() * AsyncIO::WRITE_BUFFER_SIZE >
+            size) {
+            chunk_offset_t offset_of_new_writer{INVALID_OFFSET};
+            unsigned offset_in_on_disk_node = 0;
+            // Fill the end of the current buffer
+            {
+                auto const node_writer_remaining_bytes =
+                    (unsigned)sender->remaining_buffer_bytes();
+                // Fill the end of the existing buffer
+                ret.offset_written_to = sender->offset().add_to_offset(
+                    sender->written_buffer_bytes());
+                auto *where_to_serialize =
+                    sender->advance_buffer_append(node_writer_remaining_bytes);
+                MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+                serialize_node_to_buffer(
+                    (unsigned char *)where_to_serialize,
+                    node_writer_remaining_bytes,
+                    node,
+                    size,
+                    offset_in_on_disk_node);
+                offset_in_on_disk_node += node_writer_remaining_bytes;
+                offset_of_new_writer =
+                    calculate_next_writer_offset(aux, node_writer, 0);
+                // Issue the append immediately
+                MONAD_ASSERT_PRINTF(
+                    node_writer->sender().written_buffer_bytes() ==
+                        node_writer->sender().buffer().size(),
+                    "written buffer bytes %lu does not equal buffer size %lu",
+                    node_writer->sender().written_buffer_bytes(),
+                    node_writer->sender().buffer().size());
+                node_writer->initiate();
+                // shall be recycled by the i/o receiver
+                node_writer.release();
+                sender = nullptr;
+            }
+            // Fill more buffers
+            auto const chunk_capacity =
+                aux.io->chunk_capacity(offset_of_new_writer.id);
+            while (offset_in_on_disk_node <= size) {
+                if (offset_of_new_writer == INVALID_OFFSET) {
+                    // Assign a new chunk
+                    auto const *ci_ = aux.db_metadata()->free_list_end();
+                    MONAD_ASSERT_PRINTF(ci_ != nullptr, "out of free chunks");
+                    auto idx = ci_->index(aux.db_metadata());
+                    aux.remove(idx);
+                    aux.append(
+                        in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                                     : UpdateAuxImpl::chunk_list::slow,
+                        idx);
+                    offset_of_new_writer = chunk_offset_t{idx, 0};
+                }
+                MONAD_DEBUG_ASSERT(!buffers.empty());
+                node_writer = std::move(buffers.back());
+                buffers.pop_back();
+                sender = &node_writer->sender();
+                size_t const bytes_to_write = std::min(
+                    AsyncIO::WRITE_BUFFER_SIZE,
+                    (size_t)(chunk_capacity - offset_of_new_writer.offset));
+                // Set this buffer to write to the given offset no more than the
+                // given maximum bytes
+                sender->reset_using_existing_buffer(
+                    offset_of_new_writer, bytes_to_write);
+                unsigned const node_writer_remaining_bytes = std::min(
+                    (unsigned)bytes_to_write,
+                    (unsigned)(size - offset_in_on_disk_node));
+                MONAD_DEBUG_ASSERT(node_writer_remaining_bytes > 0);
+                auto *where_to_serialize =
+                    sender->advance_buffer_append(node_writer_remaining_bytes);
+                MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+                serialize_node_to_buffer(
+                    (unsigned char *)where_to_serialize,
+                    node_writer_remaining_bytes,
+                    node,
+                    size,
+                    offset_in_on_disk_node);
+                offset_in_on_disk_node += node_writer_remaining_bytes;
+                // If this buffer was not completely filled, we have finished
+                // serialising this node and subsequent writes will continue to
+                // fill this buffer
+                if (sender->remaining_buffer_bytes() > 0) {
+                    MONAD_DEBUG_ASSERT(offset_in_on_disk_node == size);
+                    break;
+                }
+                offset_of_new_writer =
+                    calculate_next_writer_offset(aux, node_writer, 0);
+                // Issue the append immediately
+                MONAD_ASSERT_PRINTF(
+                    node_writer->sender().written_buffer_bytes() ==
+                        node_writer->sender().buffer().size(),
+                    "written buffer bytes %lu does not equal buffer size %lu",
+                    node_writer->sender().written_buffer_bytes(),
+                    node_writer->sender().buffer().size());
+                node_writer->initiate();
+                // shall be recycled by the i/o receiver
+                node_writer.release();
+                sender = nullptr;
+                // Loop round to fill another write buffer
+            }
+            return ret;
+        }
+        // Otherwise we cannot guarantee no possibility of write buffer
+        // interleaving, so take drastic (and thankfully very exceptional)
+        // action by directly doing a blocking synchronous write
+        auto const chunk_capacity = aux.io->chunk_capacity(sender->offset().id);
+        if (size > (size_t)(chunk_capacity - sender->offset().offset)) {
+            // Write out the existing buffer and get a new node writer pointing
+            // into a fresh new chunk
+            buffers.pop_back();
+            node_writer = replace_node_writer_to_start_at_new_chunk(
+                aux, std::move(node_writer));
+            aux.io->flush();
+            sender = &node_writer->sender();
+        }
+        unsigned offset_in_on_disk_node = 0;
+        auto const chunk_ptr = aux.io->storage_pool().chunk(
+            aux.io->storage_pool().seq, sender->offset().id);
+        auto const [wr_fd, raw_chunk_offset] =
+            chunk_ptr->write_fd(sender->written_buffer_bytes());
+        // Write existing buffer with front of node filled into its tail
+        {
+            auto const node_writer_remaining_bytes =
+                (unsigned)sender->remaining_buffer_bytes();
+            // Fill the end of the existing buffer
             ret.offset_written_to =
                 sender->offset().add_to_offset(sender->written_buffer_bytes());
-            auto bytes_to_append = std::min(
-                (unsigned)remaining_bytes, size - offset_in_on_disk_node);
             auto *where_to_serialize =
-                (unsigned char *)node_writer->sender().advance_buffer_append(
-                    bytes_to_append);
+                sender->advance_buffer_append(node_writer_remaining_bytes);
             MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
             serialize_node_to_buffer(
-                where_to_serialize,
-                bytes_to_append,
+                (unsigned char *)where_to_serialize,
+                node_writer_remaining_bytes,
                 node,
                 size,
                 offset_in_on_disk_node);
-            offset_in_on_disk_node += bytes_to_append;
-            new_node_writer = replace_node_writer(aux, node_writer);
-            if (!new_node_writer) {
-                goto retry;
+            auto const raw_write_offset =
+                raw_chunk_offset + sender->offset().offset;
+            struct iovec iov[1] = {
+                {(void *)sender->buffer().data(),
+                 sender->written_buffer_bytes()}};
+            auto const bytes_written =
+                ::pwritev(wr_fd, iov, 1, off_t(raw_write_offset));
+            MONAD_ASSERT_PRINTF(
+                bytes_written == (ssize_t)sender->written_buffer_bytes(),
+                "bytes written %ld should have been %lu",
+                bytes_written,
+                sender->written_buffer_bytes());
+            offset_in_on_disk_node += node_writer_remaining_bytes;
+            chunk_ptr->write_fd(node_writer_remaining_bytes);
+            auto offset_of_new_writer =
+                calculate_next_writer_offset(aux, node_writer, 0);
+            sender->reset_using_existing_buffer(
+                offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE);
+        }
+        // Fill the buffer and synchronously write
+        while (size - offset_in_on_disk_node >= AsyncIO::WRITE_BUFFER_SIZE) {
+            auto const node_writer_remaining_bytes =
+                (unsigned)sender->remaining_buffer_bytes();
+            auto *where_to_serialize =
+                sender->advance_buffer_append(node_writer_remaining_bytes);
+            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            serialize_node_to_buffer(
+                (unsigned char *)where_to_serialize,
+                node_writer_remaining_bytes,
+                node,
+                size,
+                offset_in_on_disk_node);
+            auto const raw_write_offset =
+                raw_chunk_offset + sender->offset().offset;
+            struct iovec iov[1] = {
+                {(void *)sender->buffer().data(),
+                 sender->written_buffer_bytes()}};
+            auto const bytes_written =
+                ::pwritev(wr_fd, iov, 1, off_t(raw_write_offset));
+            MONAD_ASSERT_PRINTF(
+                bytes_written == (ssize_t)sender->written_buffer_bytes(),
+                "bytes written %ld should have been %lu",
+                bytes_written,
+                sender->written_buffer_bytes());
+            offset_in_on_disk_node += node_writer_remaining_bytes;
+            chunk_ptr->write_fd(node_writer_remaining_bytes);
+            auto offset_of_new_writer =
+                calculate_next_writer_offset(aux, node_writer, 0);
+            if (offset_of_new_writer == INVALID_OFFSET) {
+                // We have filled a chunk. We will need a new chunk.
+                auto const *ci_ = aux.db_metadata()->free_list_end();
+                MONAD_ASSERT_PRINTF(ci_ != nullptr, "out of free chunks");
+                auto idx = ci_->index(aux.db_metadata());
+                aux.remove(idx);
+                aux.append(
+                    in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                                 : UpdateAuxImpl::chunk_list::slow,
+                    idx);
+                offset_of_new_writer = chunk_offset_t{idx, 0};
             }
-            MONAD_DEBUG_ASSERT(
-                new_node_writer->sender().offset().id ==
-                node_writer->sender().offset().id);
+            sender->reset_using_existing_buffer(
+                offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE);
         }
-        // initiate current node writer
-        if (node_writer->sender().written_buffer_bytes() !=
-            node_writer->sender().buffer().size()) {
-            LOG_INFO_CFORMAT(
-                "async_write_node %zu != %zu",
-                node_writer->sender().written_buffer_bytes(),
-                node_writer->sender().buffer().size());
+        // Fill the beginning of the buffer with the remainder of the node
+        if (offset_in_on_disk_node < size) {
+            auto *where_to_serialize =
+                sender->advance_buffer_append(size - offset_in_on_disk_node);
+            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            serialize_node_to_buffer(
+                (unsigned char *)where_to_serialize,
+                size - offset_in_on_disk_node,
+                node,
+                size,
+                offset_in_on_disk_node);
         }
-        MONAD_ASSERT(
+#if 0
+        std::cout << "*** Wrote super large node length " << size
+                  << " to offset { " << ret.offset_written_to.id << ", "
+                  << ret.offset_written_to.offset
+                  << " }. Current node writer offset is { "
+                  << node_writer->sender().offset().id << ", "
+                  << node_writer->sender().offset().offset << " } and it has "
+                  << node_writer->sender().written_buffer_bytes()
+                  << " bytes filled." << std::endl;
+#endif
+        return ret;
+    }
+
+    for (;;) {
+        aux.io->poll_nonblocking_if_not_within_completions(1);
+        auto *sender = &node_writer->sender();
+        bool const in_fast_list =
+            aux.db_metadata()->at(sender->offset().id)->in_fast_list;
+        auto const remaining_bytes = sender->remaining_buffer_bytes();
+        async_write_node_result ret{
+            .offset_written_to = INVALID_OFFSET, .bytes_appended = size};
+
+        // Can the node fit into current buffer?
+        [[likely]] if (size <= remaining_bytes) {
+            ret.offset_written_to =
+                sender->offset().add_to_offset(sender->written_buffer_bytes());
+            auto *where_to_serialize = sender->advance_buffer_append(size);
+            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            serialize_node_to_buffer(
+                (unsigned char *)where_to_serialize, size, node, size);
+            return ret;
+        }
+
+        // Would appending this node exceed the end of this chunk?
+        auto const chunk_capacity = aux.io->chunk_capacity(sender->offset().id);
+        auto const chunk_remaining_bytes = chunk_capacity -
+                                           sender->offset().offset -
+                                           sender->written_buffer_bytes();
+        if (size > chunk_remaining_bytes) {
+            // Node won't fit in the rest of current chunk, start at a new chunk
+            node_writer = replace_node_writer_to_start_at_new_chunk(
+                aux, std::move(node_writer));
+            ret.offset_written_to = node_writer->sender().offset();
+            sender = &node_writer->sender();
+            auto *where_to_serialize = sender->advance_buffer_append(size);
+            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            serialize_node_to_buffer(
+                (unsigned char *)where_to_serialize, size, node, size);
+            return ret;
+        }
+
+        // If we reach here, the node we wish to write will exceed the end of
+        // the current buffer. Get the next buffer. WARNING: This may recurse if
+        // no write buffers remaining!
+        auto potential_next_node_writer = aux.io->make_connected(
+            write_single_buffer_sender{{0, 0}, AsyncIO::WRITE_BUFFER_SIZE},
+            write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
+        if (sender != &node_writer->sender() ||
+            remaining_bytes != sender->remaining_buffer_bytes()) {
+            // During recurse, somebody else called async_write_node() and where
+            // we thought we were going to write has changed. Therefore restart
+            // from scratch.
+            continue;
+        }
+        // Identify the next writing location
+        chunk_offset_t offset_of_new_writer =
+            calculate_next_writer_offset(aux, node_writer, remaining_bytes);
+        if (offset_of_new_writer == INVALID_OFFSET) {
+            // Assign a new chunk
+            auto const *ci_ = aux.db_metadata()->free_list_end();
+            MONAD_ASSERT_PRINTF(ci_ != nullptr, "out of free chunks");
+            auto idx = ci_->index(aux.db_metadata());
+            aux.remove(idx);
+            aux.append(
+                in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                             : UpdateAuxImpl::chunk_list::slow,
+                idx);
+            offset_of_new_writer = chunk_offset_t{idx, 0};
+        }
+        // Reset where this buffer will write to into the next writing location
+        size_t const bytes_to_write = std::min(
+            AsyncIO::WRITE_BUFFER_SIZE,
+            (size_t)(chunk_capacity - offset_of_new_writer.offset));
+        potential_next_node_writer->sender().reset_using_existing_buffer(
+            offset_of_new_writer, bytes_to_write);
+        potential_next_node_writer->receiver().reset(bytes_to_write);
+
+        // Serialise the node into the new buffer
+        auto *where_to_serialize_new =
+            potential_next_node_writer->sender().advance_buffer_append(0);
+        MONAD_DEBUG_ASSERT(where_to_serialize_new != nullptr);
+        serialize_node_to_buffer(
+            (unsigned char *)where_to_serialize_new, size, node, size);
+        // Shuffle the front of the written node to the tail of the previous
+        // buffer
+        ret.offset_written_to =
+            sender->offset().add_to_offset(sender->written_buffer_bytes());
+        auto *where_to_serialize_old =
+            sender->advance_buffer_append(remaining_bytes);
+        MONAD_DEBUG_ASSERT(where_to_serialize_old != nullptr);
+        memcpy(where_to_serialize_old, where_to_serialize_new, remaining_bytes);
+        memmove(
+            where_to_serialize_new,
+            where_to_serialize_new + remaining_bytes,
+            size - remaining_bytes);
+        // Issue the append of the old buffer immediately
+        MONAD_ASSERT_PRINTF(
             node_writer->sender().written_buffer_bytes() ==
+                node_writer->sender().buffer().size(),
+            "written buffer bytes %lu does not equal buffer size %lu",
+            node_writer->sender().written_buffer_bytes(),
             node_writer->sender().buffer().size());
         node_writer->initiate();
         // shall be recycled by the i/o receiver
         node_writer.release();
-        node_writer = std::move(new_node_writer);
-        // serialize the rest of the node to buffer
-        while (offset_in_on_disk_node < size) {
-            auto *where_to_serialize =
-                (unsigned char *)node_writer->sender().buffer().data();
-            auto bytes_to_append = std::min(
-                (unsigned)node_writer->sender().remaining_buffer_bytes(),
-                size - offset_in_on_disk_node);
-            serialize_node_to_buffer(
-                where_to_serialize,
-                bytes_to_append,
-                node,
-                size,
-                offset_in_on_disk_node);
-            offset_in_on_disk_node += bytes_to_append;
-            MONAD_ASSERT(offset_in_on_disk_node <= size);
-            MONAD_ASSERT(
-                node_writer->sender().advance_buffer_append(bytes_to_append) !=
-                nullptr);
-            if (offset_in_on_disk_node < size &&
-                node_writer->sender().remaining_buffer_bytes() == 0) {
-                // replace node writer
-                new_node_writer = replace_node_writer(aux, node_writer);
-                if (new_node_writer) {
-                    // initiate current node writer
-                    MONAD_DEBUG_ASSERT(
-                        node_writer->sender().written_buffer_bytes() ==
-                        node_writer->sender().buffer().size());
-                    node_writer->initiate();
-                    // shall be recycled by the i/o receiver
-                    node_writer.release();
-                    node_writer = std::move(new_node_writer);
-                }
-            }
-        }
+
+        // New write buffer is now current
+        node_writer = std::move(potential_next_node_writer);
+        node_writer->sender().advance_buffer_append(size - remaining_bytes);
+        return ret;
     }
-    return ret;
 }
 
 // Return node's physical offset the node is written at, triedb should not
@@ -1931,22 +2210,38 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_ID)) {
         aux.fast_forward_next_version(version);
         aux.append_root_offset(offset_written_to);
-        MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
+        MONAD_ASSERT_PRINTF(
+            aux.db_history_range_lower_bound() == version,
+            "DB history range lower bound %lu version %lu",
+            aux.db_history_range_lower_bound(),
+            version);
     }
     else if (version <= max_version_in_db) {
-        MONAD_ASSERT(
+        MONAD_ASSERT_PRINTF(
             version >=
+                ((max_version_in_db >= aux.version_history_length())
+                     ? max_version_in_db - aux.version_history_length() + 1
+                     : 0),
+            "version %lu available version %lu",
+            version,
             ((max_version_in_db >= aux.version_history_length())
                  ? max_version_in_db - aux.version_history_length() + 1
                  : 0));
         auto const prev_lower_bound = aux.db_history_range_lower_bound();
         aux.update_root_offset(version, offset_written_to);
-        MONAD_ASSERT(
+        MONAD_ASSERT_PRINTF(
             aux.db_history_range_lower_bound() ==
+                std::min(version, prev_lower_bound),
+            "DB history range lower bound %lu version %lu",
+            aux.db_history_range_lower_bound(),
             std::min(version, prev_lower_bound));
     }
     else {
-        MONAD_ASSERT(version == max_version_in_db + 1);
+        MONAD_ASSERT_PRINTF(
+            version == max_version_in_db + 1,
+            "version %lu max version in db %lu",
+            version,
+            max_version_in_db + 1);
         aux.append_root_offset(offset_written_to);
     }
     return offset_written_to;

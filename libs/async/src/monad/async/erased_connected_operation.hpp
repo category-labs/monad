@@ -242,6 +242,12 @@ public:
     {
         return {const_cast<std::byte *>(this->data()), this->size()};
     }
+
+    //! Release the internal buffer
+    detail::write_buffer_ptr release() noexcept
+    {
+        return std::move(buffer_);
+    }
 };
 
 static_assert(sizeof(filled_write_buffer) == 32);

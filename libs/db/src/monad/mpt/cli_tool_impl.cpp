@@ -1281,7 +1281,7 @@ public:
                             leafname.append("seq/");
                         }
                         else {
-                            MONAD_ASSERT(false);
+                            MONAD_ABORT();
                         }
                         leafname.append(std::to_string(chunkid));
                         if (compression_level != 0) {

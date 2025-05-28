@@ -125,6 +125,16 @@ public:
         return rwbuf_.is_read_only();
     }
 
+    size_t read_buffer_count() const noexcept
+    {
+        return rwbuf_.get_read_count();
+    }
+
+    size_t write_buffer_count() const noexcept
+    {
+        return rwbuf_.get_write_count();
+    }
+
     class storage_pool &storage_pool() noexcept
     {
         MONAD_DEBUG_ASSERT(storage_pool_ != nullptr);
@@ -463,6 +473,16 @@ public:
 
     using read_buffer_ptr = detail::read_buffer_ptr;
     using write_buffer_ptr = detail::write_buffer_ptr;
+
+    bool read_buffers_empty() const noexcept
+    {
+        return rd_pool_.empty();
+    }
+
+    bool write_buffers_empty() const noexcept
+    {
+        return wr_pool_.empty();
+    }
 
     read_buffer_ptr get_read_buffer(size_t bytes) noexcept
     {

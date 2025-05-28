@@ -43,7 +43,10 @@ namespace detail
         ResultType buffer_, uint16_t buffer_off,
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state)
     {
-        MONAD_ASSERT(buffer_);
+        MONAD_ASSERT_PRINTF(
+            buffer_,
+            "i/o failed with %s",
+            buffer_.assume_error().message().c_str());
         Node::UniquePtr node;
         if constexpr (std::is_same_v<
                           std::decay_t<ResultType>,

@@ -13,6 +13,11 @@ class BufferPool
 public:
     BufferPool(Buffers const &, bool is_read);
 
+    [[gnu::always_inline]] [[nodiscard]] bool empty() const noexcept
+    {
+        return next_ == nullptr;
+    }
+
     [[gnu::always_inline]] unsigned char *alloc()
     {
         unsigned char *const next = next_;

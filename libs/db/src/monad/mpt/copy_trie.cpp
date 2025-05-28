@@ -285,10 +285,17 @@ Node::UniquePtr copy_trie_to_dest(
             aux.is_on_disk()) { // DO NOT write new version to disk, only
                                 // upsert() should write new version
             write_new_root_node(aux, *root, dest_version);
-            MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
+            MONAD_ASSERT_PRINTF(
+                aux.db_history_max_version() >= dest_version,
+                "destination version %lu DB history max version %lu",
+                dest_version,
+                aux.db_history_max_version());
         }
         if (aux.is_on_disk()) {
-            MONAD_ASSERT(root->value_len == sizeof(uint32_t) * 2);
+            MONAD_ASSERT_PRINTF(
+                root->value_len == sizeof(uint32_t) * 2,
+                "root value length %u",
+                root->value_len);
         }
         return std::move(root);
     };

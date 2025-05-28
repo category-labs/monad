@@ -53,9 +53,8 @@ Node::Node(
     NibblesView const path, int64_t const version)
     : mask(mask)
     , path_nibble_index_end(path.end_nibble_)
-    , value_len(
-          static_cast<decltype(value_len)>(
-              value.transform(&byte_string_view::size).value_or(0)))
+    , value_len(static_cast<decltype(value_len)>(
+          value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_DEBUG_ASSERT(
@@ -65,7 +64,8 @@ Node::Node(
     bitpacked.path_nibble_index_start = path.begin_nibble_;
     bitpacked.has_value = value.has_value();
 
-    MONAD_ASSERT(data_size <= Node::max_data_len);
+    MONAD_ASSERT_PRINTF(
+        data_size <= Node::max_data_len, "data size %zu", data_size);
     bitpacked.data_len = static_cast<uint8_t>(data_size & Node::max_data_len);
 
     if (path.data_size()) {
@@ -572,7 +572,15 @@ void serialize_node_to_buffer(
 {
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     if (offset < Node::disk_size_bytes) { // serialize node disk size
-        MONAD_ASSERT(bytes_to_append <= disk_size - offset);
+        MONAD_ASSERT_PRINTF(
+            disk_size > 0 && disk_size <= Node::max_disk_size,
+            "disk size %u",
+            disk_size);
+        MONAD_ASSERT_PRINTF(
+            bytes_to_append <= disk_size - offset,
+            "bytes to append %u disk size remaining %u",
+            bytes_to_append,
+            disk_size - offset);
         unsigned const written =
             std::min(bytes_to_append, Node::disk_size_bytes - offset);
         memcpy(write_pos, (unsigned char *)&disk_size + offset, written);
@@ -601,7 +609,10 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     auto const disk_size = unaligned_load<uint32_t>(read_pos);
     MONAD_ASSERT_PRINTF(
         disk_size <= max_bytes, "deserialized node disk size is %u", disk_size);
-    MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
+    MONAD_ASSERT_PRINTF(
+        disk_size > 0 && disk_size <= Node::max_disk_size,
+        "disk size %u",
+        disk_size);
     read_pos += Node::disk_size_bytes;
     // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);

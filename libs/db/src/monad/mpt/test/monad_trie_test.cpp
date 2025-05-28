@@ -77,6 +77,20 @@ using concurrent_queue = moodycamel::ConcurrentQueue<T>;
 #define SLICE_LEN 100000
 #define MAX_NUM_KEYS 250000000
 
+/* Notes for future testing:
+
+Forced history len of 10 with 128Gb partition will eventually run out of free
+chunks, but it takes long enough it's useful. The automatic history len causes
+free blocks to run out much sooner with such a small partition.
+
+To get max writes in flight above 2, you need a dm-delay of well more than 10 ms
+per write which was highly unexpected. A 50 ms delay get writes in flight up to
+8-10 (16 configured). A 100 ms delay gets writes in flight up to 16-30 (32
+configured). I am very surprised by this - you would need truly horrible load on
+a NVMe SSD to get write latencies into a few dozen milliseconds (or, more
+likely, thermal throttling, or shitty firmware doing garbage collection).
+*/
+
 using namespace monad::mpt;
 
 static void ctrl_c_handler(int s)
@@ -162,7 +176,11 @@ Node::UniquePtr batch_upsert_commit(
         (double)nkeys / tm_ram,
         tm_ram);
     if (aux.is_on_disk()) {
-        fprintf(stdout, ", max creads %u", aux.io->max_reads_in_flight());
+        fprintf(
+            stdout,
+            ", max creads %u, max writes %u",
+            aux.io->max_reads_in_flight(),
+            aux.io->max_writes_in_flight());
         aux.io->reset_records();
     }
     fprintf(stdout, "\n=====\n");
@@ -294,7 +312,7 @@ int main(int argc, char *argv[])
     int file_size_db = 512; // truncate to 512 gb by default
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
-    uint64_t history_len = 100;
+    std::optional<uint64_t> history_len;
 
     struct runtime_reconfig_t
     {
@@ -354,7 +372,10 @@ int main(int argc, char *argv[])
             runtime_reconfig.path,
             "a file to parse every five seconds to adjust config as test runs");
         cli.add_option(
-               "--history", history_len, "Initialize disk db history length")
+               "--history",
+               history_len,
+               "Initialize disk db history length (default is let the DB "
+               "decide)")
             ->excludes(is_inmemory);
         cli.parse(argc, argv);
 
@@ -459,19 +480,18 @@ int main(int argc, char *argv[])
                     ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing
                     : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
-            // init uring
-            monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
-            monad::io::Ring ring2(
-                16
-                /* max concurrent write buffers in use <= 6 */
+            // init uring like monad production
+            monad::io::Ring ring1({128, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring2(32
+                                  /* max concurrent write buffers in use <= 6 */
             );
 
-            // init buffer
+            // init buffer like monad production
             monad::io::Buffers rwbuf = make_buffers_for_segregated_read_write(
                 ring1,
                 ring2,
-                8192 * 16,
-                16, /* max concurrent write buffers in use <= 6 */
+                8192,
+                32, /* max concurrent write buffers in use <= 6 */
                 MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                 MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
 
@@ -518,8 +538,9 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux =
-                in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
+            auto aux = in_memory ? UpdateAux<>()
+                                 : (history_len ? UpdateAux<>(&io, history_len)
+                                                : UpdateAux<>(&io));
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::UniquePtr root{};

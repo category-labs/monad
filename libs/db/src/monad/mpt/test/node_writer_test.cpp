@@ -171,16 +171,18 @@ TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
         get_writer_chunk_count(aux.node_writer_fast);
     EXPECT_EQ(node_writer_chunk_count_before, 2);
 
-    // node spans buffer 3 buffers
+    // node spans buffer 3 buffers, must write out fully filled buffers ASAP
     auto node = make_node_of_size(chunk_remaining_bytes);
     auto const node_offset = async_write_node_set_spare(aux, *node, true);
     EXPECT_EQ(
         get_writer_chunk_count(aux.node_writer_fast),
-        node_writer_chunk_count_before);
-    EXPECT_EQ(node_offset.id, get_writer_chunk_id(aux.node_writer_fast));
-    EXPECT_EQ(aux.node_writer_fast->sender().remaining_buffer_bytes(), 0);
+        node_writer_chunk_count_before + 1);
+    EXPECT_NE(node_offset.id, get_writer_chunk_id(aux.node_writer_fast));
+    EXPECT_EQ(
+        aux.node_writer_fast->sender().remaining_buffer_bytes(),
+        AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
 
-    // write another node, node writer will switch to next buffer at next chunk
+    // write another node, must only use current empty chunk
     auto const new_node_offset = async_write_node_set_spare(aux, *node, true);
     EXPECT_EQ(new_node_offset.offset, 0);
     auto const node_writer_chunk_count_after =

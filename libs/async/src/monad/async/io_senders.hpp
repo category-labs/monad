@@ -333,6 +333,16 @@ public:
         append_ = const_cast<std::byte *>(buffer_.data());
     }
 
+    void
+    reset_using_existing_buffer(chunk_offset_t offset, size_t bytes_to_write)
+    {
+        auto b = buffer_.release();
+        offset_ = offset;
+        buffer_ = buffer_type(bytes_to_write);
+        buffer_.set_write_buffer(std::move(b));
+        append_ = const_cast<std::byte *>(buffer_.data());
+    }
+
     result<void> operator()(erased_connected_operation *io_state) noexcept
     {
         MONAD_DEBUG_ASSERT(!!buffer_);

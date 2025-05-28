@@ -200,7 +200,7 @@ public:
     virtual void
     upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool, bool) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
@@ -224,18 +224,18 @@ public:
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual size_t prefetch_fiber_blocking() override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual void copy_trie_fiber_blocking(
         uint64_t, NibblesView, uint64_t, NibblesView, bool) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual size_t poll(bool const blocking, size_t const count) override
@@ -269,12 +269,12 @@ public:
 
     virtual void update_finalized_block(uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual void update_verified_block(uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual uint64_t get_latest_finalized_block_id() const override
@@ -355,7 +355,7 @@ public:
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual NodeCursor load_root_for_version(uint64_t) override
@@ -675,7 +675,10 @@ struct OnDiskWithWorkerThreadImpl
                         req->promise = &upsert_promises.back();
                         auto const root_offset =
                             aux.get_root_offset_at_version(req->version);
-                        MONAD_ASSERT(root_offset != INVALID_OFFSET);
+                        MONAD_ASSERT_PRINTF(
+                            root_offset != INVALID_OFFSET,
+                            "Request version %lu not found",
+                            req->version);
                         req->promise->set_value(
                             read_node_blocking(aux, root_offset, req->version));
                     }
@@ -1055,7 +1058,11 @@ public:
 
     virtual void update_verified_block(uint64_t const block_id) override
     {
-        MONAD_ASSERT(block_id <= aux().db_history_max_version());
+        MONAD_ASSERT_PRINTF(
+            block_id <= aux().db_history_max_version(),
+            "block id %lu DB history max version %lu",
+            block_id,
+            aux().db_history_max_version());
         aux().set_latest_verified_version(block_id);
     }
 
@@ -1432,7 +1439,10 @@ namespace detail
         void set_value(
             monad::async::erased_connected_operation *, ResultType buffer_)
         {
-            MONAD_ASSERT(buffer_);
+            MONAD_ASSERT_PRINTF(
+                buffer_,
+                "i/o failed with %s",
+                buffer_.assume_error().message().c_str());
 
             auto &inflights = sender->context.inflight_roots;
             auto it = inflights.find(sender->block_id);

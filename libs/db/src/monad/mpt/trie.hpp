@@ -1,5 +1,10 @@
 #pragma once
 
+// Temporarily turned on to record the stacktrace of those adding node read
+// continuations so we can figure out which are ending lifetime before we call
+// them (which causes a segfault)
+#define MONAD_MPT_INFLIGHTS_RECORD_STACKTRACE 1
+
 #include <monad/async/config.hpp>
 #include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/compute.hpp>
@@ -37,6 +42,10 @@
 
 // temporary
 #include "detail/boost_fiber_workarounds.hpp"
+
+#if MONAD_MPT_INFLIGHTS_RECORD_STACKTRACE
+    #include <execinfo.h>
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -1043,9 +1052,35 @@ using find_result_type = std::pair<T, find_result>;
 using find_cursor_result_type = find_result_type<NodeCursor>;
 using find_owning_cursor_result_type = find_result_type<OwningNodeCursor>;
 
+template <class... Args>
+class inflight_map_resumption_t
+{
+    std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor, Args...)> f_;
+#if MONAD_MPT_INFLIGHTS_RECORD_STACKTRACE
+    void *backtrace_[8];
+#endif
+public:
+    template <class F>
+        requires(std::is_invocable_r_v<
+                 MONAD_ASYNC_NAMESPACE::result<void>, F, NodeCursor, Args...>)
+    /*implicit*/ inflight_map_resumption_t(F &&f)
+        : f_(std::forward<F>(f))
+    {
+#if MONAD_MPT_INFLIGHTS_RECORD_STACKTRACE
+        memset(backtrace_, 0, sizeof(backtrace_));
+        ::backtrace(backtrace_, sizeof(backtrace_) / sizeof(backtrace_[0]));
+#endif
+    }
+
+    MONAD_ASYNC_NAMESPACE::result<void>
+    operator()(NodeCursor cur, Args... args) const
+    {
+        return f_(cur, std::move(args)...);
+    }
+};
+
 using inflight_map_t = unordered_dense_map<
-    chunk_offset_t,
-    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
+    chunk_offset_t, std::vector<inflight_map_resumption_t<>>,
     chunk_offset_t_hasher>;
 
 using inflight_map_owning_t = unordered_dense_map<

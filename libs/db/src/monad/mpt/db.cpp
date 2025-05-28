@@ -3,7 +3,6 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/connected_operation.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/sender_errc.hpp>
@@ -11,6 +10,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
@@ -762,6 +762,7 @@ struct OnDiskWithWorkerThreadImpl
 
     explicit OnDiskWithWorkerThreadImpl(OnDiskDbConfig const &options)
         : worker_thread_([&, options = options] {
+            pthread_setname_np(pthread_self(), "triedb rw");
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);

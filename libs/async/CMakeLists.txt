@@ -23,7 +23,7 @@ add_library(
   "src/monad/async/util.cpp")
 target_include_directories(monad_async PUBLIC "src")
 monad_compile_options(monad_async)
-target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
+target_link_libraries(monad_async PUBLIC monad_core_min Boost::fiber)
 
 # ##############################################################################
 # unit tests
@@ -53,10 +53,12 @@ add_subdirectory("src/monad/async/test")
 # monad async perf test
 add_executable(benchmark_io_test "src/monad/async/test/benchmark_io_test.cpp")
 monad_compile_options(benchmark_io_test)
-target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
+target_link_libraries(benchmark_io_test PUBLIC CLI11::CLI11
                                                monad_async)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  pkg_check_modules(cap IMPORTED_TARGET libcap)
+  pkg_check_modules(cap libcap)
   target_compile_definitions(benchmark_io_test PRIVATE MONAD_HAVE_LIBCAP=1)
-  target_link_libraries(benchmark_io_test PRIVATE PkgConfig::cap)
+  target_link_libraries(benchmark_io_test PRIVATE ${cap_LIBRARIES})
 endif()
+# Make this executable portable for DevOps
+target_link_options(benchmark_io_test PRIVATE -static)

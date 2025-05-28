@@ -68,7 +68,7 @@ endif()
 # ##############################################################################
 
 add_library(
-  monad_core STATIC
+  monad_core_min STATIC
   # config
   "src/monad/config.hpp"
   # core
@@ -89,9 +89,6 @@ add_library(
   "src/monad/core/endian.hpp"
   "src/monad/core/hash.hpp"
   "src/monad/core/hex_literal.hpp"
-  "src/monad/core/keccak.c"
-  "src/monad/core/keccak.h"
-  "src/monad/core/keccak.hpp"
   "src/monad/core/likely.h"
   "src/monad/core/math.hpp"
   "src/monad/core/nibble.h"
@@ -108,16 +105,6 @@ add_library(
   "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
-  # fiber
-  "src/monad/fiber/config.hpp"
-  "src/monad/fiber/priority_algorithm.cpp"
-  "src/monad/fiber/priority_algorithm.hpp"
-  "src/monad/fiber/priority_pool.cpp"
-  "src/monad/fiber/priority_pool.hpp"
-  "src/monad/fiber/priority_properties.hpp"
-  "src/monad/fiber/priority_queue.cpp"
-  "src/monad/fiber/priority_queue.hpp"
-  "src/monad/fiber/priority_task.hpp"
   # io
   "src/monad/io/buffer_pool.cpp"
   "src/monad/io/buffer_pool.hpp"
@@ -128,12 +115,17 @@ add_library(
   # test
   "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
-  "src/monad/util/stopwatch.hpp")
+  "src/monad/util/temp_files.cpp"
+  "src/monad/util/temp_files.h"
+  "src/monad/util/ticks_count.cpp"
+  "src/monad/util/ticks_count.h"
+  "src/monad/util/stopwatch.hpp"
+  )
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files
   target_sources(
-    monad_core
+    monad_core_min
     PRIVATE # core
             "src/monad/core/cgroup.c"
             "src/monad/core/cgroup.h"
@@ -152,21 +144,47 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "src/monad/procfs/statm.h")
 endif()
 
+add_library(
+    monad_core STATIC
+    # core
+    "src/monad/core/keccak.c"
+    "src/monad/core/keccak.h"
+    "src/monad/core/keccak.hpp"
+      # fiber
+    "src/monad/fiber/config.hpp"
+    "src/monad/fiber/priority_algorithm.cpp"
+    "src/monad/fiber/priority_algorithm.hpp"
+    "src/monad/fiber/priority_pool.cpp"
+    "src/monad/fiber/priority_pool.hpp"
+    "src/monad/fiber/priority_properties.hpp"
+    "src/monad/fiber/priority_queue.cpp"
+    "src/monad/fiber/priority_queue.hpp"
+    "src/monad/fiber/priority_task.hpp")
+target_link_libraries(monad_core PUBLIC monad_core_min)
+  
+monad_compile_options(monad_core_min)
+target_include_directories(monad_core_min PUBLIC "src")
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC "src")
 
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
-  target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
+  target_compile_definitions(monad_core_min PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
 endif()
 
-target_compile_definitions(monad_core PRIVATE "BOOST_STACKTRACE_LINK=1")
+target_compile_definitions(monad_core_min PRIVATE "BOOST_STACKTRACE_LINK=1")
 if(TARGET Boost::stacktrace_backtrace)
-  target_compile_definitions(monad_core
+  target_compile_definitions(monad_core_min
                              PRIVATE BOOST_STACKTRACE_USE_BACKTRACE=1)
-  target_link_libraries(monad_core PRIVATE Boost::stacktrace_backtrace)
+  target_link_libraries(monad_core_min PRIVATE Boost::stacktrace_backtrace)
 else()
   message(WARNING "using suboptimal basic backtrace library")
-  target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
+  target_link_libraries(monad_core_min PRIVATE Boost::stacktrace_basic)
+endif()
+
+target_link_libraries(monad_core_min PUBLIC unordered_dense)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_link_libraries(monad_core_min PUBLIC cgroup uring)
 endif()
 
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
@@ -174,10 +192,6 @@ target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
-target_link_libraries(monad_core PUBLIC unordered_dense)
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  target_link_libraries(monad_core PUBLIC cgroup uring)
-endif()
 
 add_library(
   monad_core_disas STATIC

@@ -27,21 +27,21 @@ namespace monad
     }
 
     template <class T>
-    inline const T *start_lifetime_as(const void *p) noexcept
+    inline T const *start_lifetime_as(void const *p) noexcept
     {
-        return reinterpret_cast<const T *>(p);
+        return reinterpret_cast<T const *>(p);
     }
 
     template <class T>
-    inline volatile T *start_lifetime_as(volatile void *p) noexcept
+    inline T volatile *start_lifetime_as(void volatile *p) noexcept
     {
-        return reinterpret_cast<volatile T *>(p);
+        return reinterpret_cast<T volatile *>(p);
     }
 
     template <class T>
-    inline const volatile T *start_lifetime_as(const volatile void *p) noexcept
+    inline T const volatile *start_lifetime_as(void const volatile *p) noexcept
     {
-        return reinterpret_cast<const volatile T *>(p);
+        return reinterpret_cast<T const volatile *>(p);
     }
 
     template <class T>
@@ -51,23 +51,23 @@ namespace monad
     }
 
     template <class T>
-    inline const T *start_lifetime_as_array(const void *p, std::size_t) noexcept
+    inline T const *start_lifetime_as_array(void const *p, std::size_t) noexcept
     {
-        return reinterpret_cast<const T *>(p);
+        return reinterpret_cast<T const *>(p);
     }
 
     template <class T>
-    inline volatile T *
-    start_lifetime_as_array(volatile void *p, std::size_t) noexcept
+    inline T volatile *
+    start_lifetime_as_array(void volatile *p, std::size_t) noexcept
     {
-        return reinterpret_cast<volatile T *>(p);
+        return reinterpret_cast<T volatile *>(p);
     }
 
     template <class T>
-    inline const volatile T *
-    start_lifetime_as_array(const volatile void *p, std::size_t) noexcept
+    inline T const volatile *
+    start_lifetime_as_array(void const volatile *p, std::size_t) noexcept
     {
-        return reinterpret_cast<const volatile T *>(p);
+        return reinterpret_cast<T const volatile *>(p);
     }
 #endif
 }

@@ -1,9 +1,9 @@
-#include "monad/async/detail/scope_polyfill.hpp"
 #include "gtest/gtest.h"
 
-#include <atomic>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <stop_token>
 #include <thread>
@@ -12,7 +12,7 @@
 
 TEST(db_metadata, DISABLED_copy)
 {
-#if MONAD_CONTEXT_HAVE_TSAN
+#if MONAD_HAVE_TSAN
     return; // This test explicitly relies on racy memory copying
 #endif
     monad::mpt::detail::db_metadata *metadata[3];

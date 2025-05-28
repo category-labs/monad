@@ -58,7 +58,7 @@ target_include_directories(monad_trie PUBLIC "src")
 target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
-target_link_libraries(monad_trie PUBLIC monad_async)
+target_link_libraries(monad_trie PUBLIC monad_async monad_core)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
 add_executable(monad_mpt "src/monad/mpt/cli_tool_main.cpp"
                          "src/monad/mpt/cli_tool_impl.cpp")

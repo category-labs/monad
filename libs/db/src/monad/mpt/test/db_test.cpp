@@ -1,7 +1,6 @@
 #include "test_fixtures_base.hpp"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
@@ -9,6 +8,7 @@
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/fiber/priority_pool.hpp>

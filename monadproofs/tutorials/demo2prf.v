@@ -348,7 +348,7 @@ Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
  base |-> NodeR (cQp.mut (q1+q2)) data nextLoc -|- base |-> NodeR (cQp.mut q1) data nextLoc ** base |-> NodeR (cQp.mut q2) data nextLoc.
   Proof using.
     unfold NodeR. iSplit; go.
-
+Abort.
 
     
   Lemma eqv (data:Z) (nextLoc:ptr) (nodebase:ptr) q :
@@ -926,7 +926,6 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     }
   Qed.
 
-  
   (* move this proof to the end? without discussing loopinv, this cannot be explained *)
   Lemma fold_left_prf : denoteModule module |-- fold_left_spec.
   Proof using MODd.
@@ -971,6 +970,7 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
   cpp.spec (Nscoped 
               "parallel_fold_left(unsigned int*, unsigned int, unsigned int(*)(unsigned int,unsigned int), unsigned int)::@0"
               Ndtor)  as lam3destr  inline.
+  
   Lemma pfl_proof: denoteModule module
                    ** (thread_class_specs "parallel_fold_left(unsigned int*, unsigned int, unsigned int(*)(unsigned int,unsigned int), unsigned int)::@0")
                        |-- par_fold_left_spec.
@@ -1028,7 +1028,6 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
     \pre emp
     \post [Vint 6] emp).
 
-  Locate _offset_ptr.
   Example ex1:  _offset_ptr (_global "arr") (o_sub _ "int" 2) = (_global "arr").["int"!2].
   Proof.
     reflexivity.
@@ -1052,7 +1051,6 @@ Definition ConcLListR (q:Qp) (invId: gname) (base:ptr) : mpred :=
 
   Unset Printing Implicit.
   Set Printing FullyQualifiedNames.
-  Check @arrayR.
 
   cpp.spec "ubptr()"  as pec with (
         \pre emp
@@ -1072,10 +1070,13 @@ Ltac slauto2 := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try r
     unfold arrR_def.
     slauto2.
   Abort.
+
+  
   cpp.spec "okptr()"  as okptr with (
         \pre emp
         \post emp
       ).
+  
   Lemma ubprf: denoteModule module |-- okptr.
   Proof using MODd.
     verify_spec'.
@@ -1095,37 +1096,21 @@ Ltac slauto2 := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try r
     simpl.
     slauto2.
   Qed.
-  Search valid_ptr o_sub.
 
-  Lemma ubprf: denoteModule module |-- foo.
-  Proof using.
-    verify_spec'.
-    go.
-    rewrite arrayR_eq.
-    unfold arrayR_def.
-    rewrite arrR_eq.
-    unfold arrR_def.
-    autorewrite with syntactic.
-    normalize_ptrs.
-    go.
-    normalize_ptrs.
-    go.
-    normalize_ptrs.
-    go.
-  Abort.
   
 Example arrayR3Unfold {T} (p:ptr) (n1 n2 n3: T) (R:T->Rep):
   p |-> arrayR uint R [n1;n2;n3]
     -|- ( valid_ptr (p .[ uint ! 3 ])
             ** p |-> R n1
             ** p .[ uint ! 1 ] |-> R n2
-            ** p .[ uint ! 2 ] |-> R n3).
+                    ** p .[ uint ! 2 ] |-> R n3).
+Abort.
 
   Lemma testgcdl_prf: denoteModule module ** parallel_gcdl_spec |-- incd_spec_no_abstraction.
   Proof using.
     verify_spec'.
     go.
-
+  Abort.
 
   Remove Hints UNSAFE_read_prim_cancel: br_opacity.
 

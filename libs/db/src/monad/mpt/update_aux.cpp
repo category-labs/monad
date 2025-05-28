@@ -1186,32 +1186,38 @@ void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 {
-    constexpr double upper_bound = 0.8;
-    constexpr double lower_bound = 0.6;
+    constexpr double upper_bound = 0.75;
+    constexpr double lower_bound = 0.70;
 
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
     if (max_version == INVALID_BLOCK_ID) {
         return;
     }
-    auto const history_length_before =
-        max_version - db_history_min_valid_version() + 1;
+    auto const history_length_before = version_history_length();
+    // Don't adjust history length by more than this per update
+    auto const one_percent_of_history_length_before =
+        std::min(std::max(10UL, history_length_before / 100UL), 10000UL);
     auto const current_disk_usage = disk_usage();
     if (current_disk_usage > upper_bound &&
         history_length_before > MIN_HISTORY_LENGTH) {
-        while (disk_usage() > upper_bound &&
-               version_history_length() > MIN_HISTORY_LENGTH) {
+        for (;;) {
+            if (disk_usage() <= upper_bound) {
+                break;
+            }
+            auto const current_history_length = version_history_length();
+            if (current_history_length <= MIN_HISTORY_LENGTH ||
+                history_length_before - current_history_length >=
+                    one_percent_of_history_length_before) {
+                break;
+            }
             auto const version_to_erase = db_history_min_valid_version();
             MONAD_ASSERT(
                 version_to_erase != INVALID_BLOCK_ID &&
                 version_to_erase < max_version);
             erase_versions_up_to_and_including(version_to_erase);
-            update_history_length_metadata(
-                std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
+            update_history_length_metadata(max_version - version_to_erase);
         }
-        MONAD_ASSERT(
-            disk_usage() <= upper_bound ||
-            version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
             "Adjust db history length down from %lu to %lu",
             history_length_before,
@@ -1220,12 +1226,19 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     // Raise history length limit when disk usage falls low
     else if (auto const offsets = root_offsets();
              current_disk_usage < lower_bound &&
-             version_history_length() < offsets.capacity()) {
-        update_history_length_metadata(offsets.capacity());
+             history_length_before < offsets.capacity() &&
+             history_length_before <
+                 (max_version - db_history_min_valid_version()) * 2) {
+        auto history_length_after =
+            history_length_before + one_percent_of_history_length_before;
+        if (history_length_after > offsets.capacity()) {
+            history_length_after = offsets.capacity();
+        }
+        update_history_length_metadata(history_length_after);
         LOG_INFO_CFORMAT(
             "Adjust db history length up from %lu to %lu",
             history_length_before,
-            version_history_length());
+            history_length_after);
     }
 }
 

@@ -162,7 +162,11 @@ Node::UniquePtr batch_upsert_commit(
         (double)nkeys / tm_ram,
         tm_ram);
     if (aux.is_on_disk()) {
-        fprintf(stdout, ", max creads %u", aux.io->max_reads_in_flight());
+        fprintf(
+            stdout,
+            ", max creads %u, max writes %u",
+            aux.io->max_reads_in_flight(),
+            aux.io->max_writes_in_flight());
         aux.io->reset_records();
     }
     fprintf(stdout, "\n=====\n");
@@ -294,7 +298,7 @@ int main(int argc, char *argv[])
     int file_size_db = 512; // truncate to 512 gb by default
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
-    uint64_t history_len = 100;
+    std::optional<uint64_t> history_len;
 
     struct runtime_reconfig_t
     {
@@ -354,7 +358,10 @@ int main(int argc, char *argv[])
             runtime_reconfig.path,
             "a file to parse every five seconds to adjust config as test runs");
         cli.add_option(
-               "--history", history_len, "Initialize disk db history length")
+               "--history",
+               history_len,
+               "Initialize disk db history length (default is let the DB "
+               "decide)")
             ->excludes(is_inmemory);
         cli.parse(argc, argv);
 
@@ -518,8 +525,9 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux =
-                in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
+            auto aux = in_memory ? UpdateAux<>()
+                                 : (history_len ? UpdateAux<>(&io, history_len)
+                                                : UpdateAux<>(&io));
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::UniquePtr root{};

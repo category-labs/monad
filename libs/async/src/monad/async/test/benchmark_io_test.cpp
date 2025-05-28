@@ -1,10 +1,10 @@
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/io_senders.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/small_prng.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>

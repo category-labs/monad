@@ -1,3 +1,5 @@
+add_subdirectory("triedb-driver")
+
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")
@@ -56,10 +58,12 @@ target_link_libraries(monad_trie_test_statistical_generation_test
                       PUBLIC monad_core)
 
 # stress test
-add_executable(read_only_db_stress_test "read_only_db_stress_test.cpp")
+add_executable(read_only_db_stress_test
+               "read_only_db_stress_test.cpp")
 monad_compile_options(read_only_db_stress_test)
-target_link_libraries(
-  read_only_db_stress_test PUBLIC monad_trie monad_async monad_core
-                                  CLI11::CLI11 quill::quill)
+target_link_libraries(read_only_db_stress_test
+                      PUBLIC monad_trie monad_async monad_core triedb-driver CLI11::CLI11 quill::quill)
+add_test(NAME "${PROJECT_NAME}/read_only_db_stress_test"
+         COMMAND $<TARGET_FILE:read_only_db_stress_test> --unit-test --db foo)
 
 add_subdirectory("geth_freezer_db_analyzer")

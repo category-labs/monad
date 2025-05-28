@@ -12,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <span>
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -119,6 +120,8 @@ class NibblesView
 {
     friend inline std::ostream &
     operator<<(std::ostream &s, NibblesView const &v);
+    friend inline size_t
+    extract_bytes_into(std::span<uint8_t> dest, NibblesView const &v);
 
 private:
     friend class Nibbles;
@@ -338,6 +341,25 @@ inline std::ostream &operator<<(std::ostream &s, NibblesView const &v)
 inline std::ostream &operator<<(std::ostream &s, Nibbles const &v)
 {
     return s << NibblesView(v);
+}
+
+// Returns **bytes** copied into dest, not nibbles!
+inline size_t extract_bytes_into(std::span<uint8_t> dest, NibblesView const &v)
+{
+    if (dest.size() < v.data_size()) {
+        return 0;
+    }
+    if (v.begin_nibble_ == false) {
+        size_t const tocopy = std::min(dest.size(), size_t(v.data_size()));
+        memcpy(dest.data(), v.data_, tocopy);
+        return tocopy;
+    }
+    uint8_t const max_nibbles =
+        std::min(uint8_t(dest.size() * 2), v.nibble_size());
+    for (uint8_t n = 0; n < max_nibbles; n++) {
+        set_nibble(dest.data(), n, v.get(n));
+    }
+    return ((size_t)max_nibbles + 1) / 2;
 }
 
 MONAD_MPT_NAMESPACE_END

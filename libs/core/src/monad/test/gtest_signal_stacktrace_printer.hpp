@@ -18,6 +18,8 @@ namespace monad::test
     struct SignalStackTracePrinterEnvironment final
         : public ::testing::Environment
     {
+        // Synchronous signals only, do NOT trap
+        // asynchronous signals here!
         static constexpr std::pair<int, std::string_view>
             signals_to_backtrace[] = {
                 {SIGABRT, "SIGABRT"},
@@ -26,6 +28,7 @@ namespace monad::test
                 {SIGILL, "SIGILL"},
                 {SIGPIPE, "SIGPIPE"},
                 {SIGSEGV, "SIGSEGV"}};
+
         void SetUp() override
         {
             auto &signal_handlers = this->signal_handlers();
@@ -39,6 +42,7 @@ namespace monad::test
                 signal_handlers[signo.first] = oldsa;
             }
         }
+
         void TearDown() override {}
 
         static std::map<int, struct sigaction> &signal_handlers()
@@ -46,11 +50,13 @@ namespace monad::test
             static std::map<int, struct sigaction> v;
             return v;
         }
+
         static void
         signal_handler(int signo, ::siginfo_t *siginfo, void *context) noexcept
         {
             auto const &signal_handlers =
                 SignalStackTracePrinterEnvironment::signal_handlers();
+
             auto const *old_signal_handler = [&]() -> struct sigaction const *
             {
                 auto it = signal_handlers.find(signo);
@@ -59,6 +65,7 @@ namespace monad::test
                 }
                 return &it->second;
             }
+
             ();
             auto write = [](char const *fmt, ...) {
                 va_list args;
@@ -120,6 +127,7 @@ namespace monad::test
             }
         }
     };
+
     static auto const *RegisterSignalStackTracePrinterEnvironment =
         ::testing::AddGlobalTestEnvironment(
             new SignalStackTracePrinterEnvironment);

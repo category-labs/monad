@@ -1,13 +1,15 @@
 #pragma once
 
-#include <monad/async/util.hpp>
+#include "util.hpp"
 
-#include <monad/async/detail/start_lifetime_as_polyfill.hpp>
+#include <monad/core/start_lifetime_as_polyfill.hpp>
+#include <monad/io/lightweight_binary_logger.h>
 
 #include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <span>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -192,12 +194,14 @@ public:
         uint32_t const chunkid_within_zone_{uint32_t(-1)};
         bool const owns_readfd_{false}, owns_writefd_{false},
             append_only_{false};
+        monad_lbl logger_{nullptr};
 
         constexpr chunk(
             class device &device, int read_fd, int write_fd,
             file_offset_t offset, file_offset_t capacity,
             uint32_t chunkid_within_device, uint32_t chunkid_within_zone,
-            bool owns_readfd, bool owns_writefd, bool append_only)
+            bool owns_readfd, bool owns_writefd, bool append_only,
+            monad_lbl logger)
             : device_(device)
             , read_fd_(read_fd)
             , write_fd_(write_fd)
@@ -208,6 +212,7 @@ public:
             , owns_readfd_(owns_readfd)
             , owns_writefd_(owns_writefd)
             , append_only_(append_only)
+            , logger_(logger)
         {
         }
 
@@ -371,9 +376,126 @@ public:
     using cnv_chunk_ptr = std::shared_ptr<cnv_chunk>;
     using seq_chunk_ptr = std::shared_ptr<seq_chunk>;
 
+    class binary_log_entry
+    {
+    public:
+        const enum type_t : uint8_t { read, write, discard } type;
+
+    protected:
+        explicit constexpr binary_log_entry(type_t t)
+            : type{t}
+        {
+        }
+    };
+
+    static_assert(std::is_trivially_copyable_v<binary_log_entry>);
+
+#pragma pack(push)
+#pragma pack(4)
+
+    union read_log_entry
+    {
+        binary_log_entry erased;
+
+        struct
+        {
+            uint64_t type : 8;
+            uint64_t chunk_id : 20;
+            uint64_t chunk_offset : 28;
+            uint64_t reserved0_ : 8;
+            uint32_t length;
+        };
+
+        constexpr read_log_entry(
+            uint32_t chunk_id_, uint64_t offset_, uint32_t length_)
+        {
+            type = binary_log_entry::read;
+            chunk_id = chunk_id_ & 0xFFFFF;
+            chunk_offset = offset_ & 0xFFFFFFF;
+            length = length_;
+        }
+    };
+
+#pragma pack(pop)
+
+    static_assert(std::is_trivially_copyable_v<read_log_entry>);
+    static_assert(sizeof(read_log_entry) == 12);
+    static_assert(alignof(read_log_entry) == 4);
+
+#pragma pack(push)
+#pragma pack(4)
+
+    union write_log_entry
+    {
+        binary_log_entry erased;
+
+        struct
+        {
+            uint64_t type : 8;
+            uint64_t chunk_id : 20;
+            uint64_t chunk_offset : 28;
+            uint64_t reserved0_ : 8;
+            uint64_t device_offset;
+            uint32_t length;
+        };
+
+        constexpr write_log_entry(
+            uint32_t chunk_id_, uint64_t chunk_offset_, uint64_t device_offset_,
+            uint32_t length_)
+        {
+            type = binary_log_entry::write;
+            chunk_id = chunk_id_ & 0xFFFFF;
+            chunk_offset = chunk_offset_ & 0xFFFFFFF;
+            device_offset = device_offset_;
+            length = length_;
+        }
+    };
+
+#pragma pack(pop)
+
+    static_assert(std::is_trivially_copyable_v<write_log_entry>);
+    static_assert(sizeof(write_log_entry) == 20);
+    static_assert(alignof(write_log_entry) == 4);
+
+#pragma pack(push)
+#pragma pack(4)
+
+    union discard_log_entry
+    {
+        binary_log_entry erased;
+
+        struct
+        {
+            uint64_t type : 8;
+            uint64_t chunk_id : 20;
+            uint64_t chunk_offset : 28;
+            uint64_t reserved0_ : 8;
+            uint64_t device_offset;
+            uint32_t length;
+        };
+
+        constexpr discard_log_entry(
+            uint32_t chunk_id_, uint64_t chunk_offset_, uint64_t device_offset_,
+            uint32_t length_)
+        {
+            type = binary_log_entry::write;
+            chunk_id = chunk_id_ & 0xFFFFF;
+            chunk_offset = chunk_offset_ & 0xFFFFFFF;
+            device_offset = device_offset_;
+            length = length_;
+        }
+    };
+
+#pragma pack(pop)
+
+    static_assert(std::is_trivially_copyable_v<discard_log_entry>);
+    static_assert(sizeof(discard_log_entry) == 20);
+    static_assert(alignof(discard_log_entry) == 4);
+
 private:
     bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_;
     std::vector<device> devices_;
+    monad_lbl logger_{nullptr};
 
     // Lock protects everything below this
     mutable std::mutex lock_;
@@ -402,10 +524,20 @@ private:
 
 public:
     //! \brief Constructs a storage pool from the list of backing storage
+    //! sources with binary logging directed to path `logfile`.
+    explicit storage_pool(
+        std::span<std::filesystem::path const> sources,
+        std::filesystem::path logfile, mode mode = mode::create_if_needed,
+        creation_flags flags = {});
+
+    //! \brief Constructs a storage pool from the list of backing storage
     //! sources
     explicit storage_pool(
         std::span<std::filesystem::path const> sources,
-        mode mode = mode::create_if_needed, creation_flags flags = {});
+        mode mode = mode::create_if_needed, creation_flags flags = {})
+        : storage_pool(sources, {}, mode, flags)
+    {
+    }
 
     //! \brief Constructs a storage pool from a temporary anonymous inode.
     //! Useful for test code.
@@ -436,6 +568,13 @@ public:
     std::span<device const> devices() const noexcept
     {
         return {devices_};
+    }
+
+    //! \brief Returns the lightweight binary logger for this pool, if there is
+    //! one
+    monad_lbl logger() const noexcept
+    {
+        return logger_;
     }
 
     //! \brief Returns the number of chunks for the specified type

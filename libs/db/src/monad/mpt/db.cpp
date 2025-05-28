@@ -3,7 +3,6 @@
 #include <monad/async/concepts.hpp>
 #include <monad/async/config.hpp>
 #include <monad/async/connected_operation.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/sender_errc.hpp>
@@ -11,6 +10,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/result.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/config.hpp>
@@ -104,6 +104,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
         MONAD_ASSERT(!options.dbname_paths.empty());
         return async::storage_pool{
             options.dbname_paths,
+            options.io_logger_path,
             async::storage_pool::mode::open_existing,
             pool_options};
     }()}
@@ -144,6 +145,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
         }
         return async::storage_pool{
             options.dbname_paths,
+            options.io_logger_path,
             options.append ? async::storage_pool::mode::open_existing
                            : async::storage_pool::mode::truncate};
     }()}

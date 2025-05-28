@@ -1,13 +1,14 @@
 
+#include "monad/io/lightweight_binary_logger.h"
 #include <monad/async/storage_pool.hpp>
 
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/hash.hpp>
+#include <monad/core/scope_polyfill.hpp>
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/start_lifetime_as_polyfill.hpp>
 #include <monad/async/util.hpp>
+#include <monad/core/start_lifetime_as_polyfill.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -231,6 +232,14 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
                       static_cast<off_t>(offset_ + bytes),
                       static_cast<off_t>(capacity_ - bytes))) {
             throw std::system_error(errno, std::system_category());
+        }
+        if (logger_ != nullptr) {
+            storage_pool::discard_log_entry entry(
+                chunkid_within_zone_,
+                bytes,
+                offset_ + bytes,
+                (uint32_t)(capacity_ - bytes));
+            to_result(monad_lbl_add(logger_, &entry, sizeof(entry))).value();
         }
         if (append_only_) {
             auto const *metadata = device().metadata_;
@@ -668,8 +677,8 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
 }
 
 storage_pool::storage_pool(
-    std::span<std::filesystem::path const> sources, mode mode,
-    creation_flags flags)
+    std::span<std::filesystem::path const> sources,
+    std::filesystem::path logfile, mode mode, creation_flags flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
     , is_newly_truncated_(mode == mode::truncate)
@@ -717,6 +726,14 @@ storage_pool::storage_pool(
                 << " has unknown file entry type = " << (stat.st_mode & S_IFMT);
             throw std::runtime_error(std::move(str).str());
         }());
+    }
+    if (!logfile.empty()) {
+        to_result(monad_lbl_create(
+                      &logger_,
+                      logfile.c_str(),
+                      monad_lbl_db_write_io_log,
+                      sizeof(monad_lbl_db_write_io_log)))
+            .value();
     }
     fill_chunks_(flags);
 }
@@ -784,6 +801,10 @@ storage_pool::~storage_pool()
             (void)::close(device.cached_readwritefd_);
         }
     }
+    if (logger_ != nullptr) {
+        to_result(monad_lbl_destroy(logger_)).value();
+        logger_ = nullptr;
+    }
     devices_.clear();
 }
 
@@ -839,7 +860,8 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
             id,
             false,
             false,
-            false));
+            false,
+            logger_));
         break;
     case chunk_type::seq: {
         int fds[2] = {
@@ -876,7 +898,8 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
             id,
             false,
             false,
-            true));
+            true,
+            logger_));
         break;
     }
     }

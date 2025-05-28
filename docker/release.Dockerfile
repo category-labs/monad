@@ -79,6 +79,7 @@ RUN VERBOSE=1 cmake \
 RUN --security=insecure CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
 
 FROM base as runner
+COPY --from=build /src/build/libs/core/monad_lbl /usr/local/bin/
 COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
 COPY --from=build /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build /src/build/cmd/monad /usr/local/bin/

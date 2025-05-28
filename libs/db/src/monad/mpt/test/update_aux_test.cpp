@@ -4,10 +4,10 @@
 #include <thread>
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/config.hpp>
 #include <monad/io/ring.hpp>

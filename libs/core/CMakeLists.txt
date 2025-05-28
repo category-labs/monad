@@ -48,6 +48,9 @@ check_if_boost_fiber_needs_ucontext_macro()
 
 find_package(TBB REQUIRED)
 
+pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+
+
 add_subdirectory("third_party/nanobench")
 
 add_subdirectory("third_party/nlohmann_json" SYSTEM)
@@ -75,6 +78,8 @@ add_library(
   "src/monad/core/array.hpp"
   "src/monad/core/assert.c"
   "src/monad/core/assert.h"
+  "src/monad/core/async_signal_handling.hpp"
+  "src/monad/core/async_signal_handling.cpp"
   "src/monad/core/backtrace.cpp"
   "src/monad/core/backtrace.hpp"
   "src/monad/core/basic_formatter.hpp"
@@ -121,6 +126,8 @@ add_library(
   # io
   "src/monad/io/buffer_pool.cpp"
   "src/monad/io/buffer_pool.hpp"
+  "src/monad/io/lightweight_binary_logger.cpp"
+  "src/monad/io/lightweight_binary_logger.h"
   "src/monad/io/config.hpp"
   # rlp
   "src/monad/rlp/config.hpp"
@@ -128,7 +135,12 @@ add_library(
   # test
   "src/monad/test/gtest_signal_stacktrace_printer.hpp"
   # util
-  "src/monad/util/stopwatch.hpp")
+  "src/monad/util/temp_files.cpp"
+  "src/monad/util/temp_files.h"
+  "src/monad/util/ticks_count.cpp"
+  "src/monad/util/ticks_count.h"
+  "src/monad/util/stopwatch.hpp"
+  )
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files
@@ -169,6 +181,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
+target_link_libraries(monad_core PRIVATE PkgConfig::zstd)
 target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
@@ -178,6 +191,11 @@ target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(monad_core PUBLIC cgroup uring)
 endif()
+
+add_executable(monad_lbl "src/monad/io/lightweight_binary_logger_cli_tool_main.cpp"
+                         "src/monad/io/lightweight_binary_logger_cli_tool_impl.cpp")
+monad_compile_options(monad_lbl)
+target_link_libraries(monad_lbl PUBLIC monad_core PkgConfig::zstd CLI11::CLI11)
 
 add_library(
   monad_core_disas STATIC

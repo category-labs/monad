@@ -206,27 +206,21 @@ cpp.spec
 Definition opt_value_or  :=
 specify
   {|
-    info_name :=
-      Ninst
-        (Nscoped
-           (Ninst (Nscoped (Nglobal (Nid "std")) (Nid "optional"))
-              [Atype (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")]))])
-           (Nfunction function_qualifiers.Ncl ("value_or") ["int&&"%cpp_type]))
-        [Atype "int"];
+    info_name := "std::optional<intx::uint<256u>>::value_or<int>(int&&) const &";
     info_type :=
-      tMethod
-        (Ninst (Nscoped (Nglobal (Nid "std")) (Nid "optional"))
-           [Atype (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")]))])
-        QC (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")]))
-        ["int&&"%cpp_type]
+      tMethod "std::optional<intx::uint<256u>>" QC "intx::uint<256u>" ["int&&"%cpp_type]
   |}
-      ( fun this =>
-          \arg{defp} "" (Vptr defp)
-           \prepost{q (n:N)} defp |-> intR (cQp.mut q) n
-      \prepost{q hdr} this |-> libspecs.optionR u256t (u256R q) q (base_fee_per_gas hdr)
-      \post{retp} [Vptr retp] retp |-> u256R 1 (match (base_fee_per_gas hdr) with | Some x => x | None => n end)
-    ).
-
+  (λ this : ptr,
+     \arg{defp : ptr} "" (Vptr defp)
+     \prepost{(q : Qp) (n : N)} defp |-> intR q$m (Z.of_N n)
+     \prepost{(q0 : Qp) (hdr : BlockHeader)}
+       this |-> libspecs.optionR u256t (u256R q0) q0 (base_fee_per_gas hdr)
+     \post{retp : ptr}[Vptr retp]
+              retp
+              |-> u256R 1 match base_fee_per_gas hdr with
+                          | Some x => x
+                          | None => n
+                          end).
 (*
 constexpr const value_type &&value() const && { return static_cast<value_type &&>(_value); }
  *)

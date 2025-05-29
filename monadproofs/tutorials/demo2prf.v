@@ -350,6 +350,7 @@ Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
     unfold NodeR. iSplit; go.
 Abort.
 
+  
     
   Lemma eqv (data:Z) (nextLoc:ptr) (nodebase:ptr) q :
     nodebase |-> NodeR q data nextLoc
@@ -361,15 +362,22 @@ Abort.
   
   (** Structs: LinkedList *)
 
-  Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
+  (* this |-> ListR' q l restR asserts that the items in the Gallina list `l` are laid out starting from the memory location `this`
+    restR is the rep at the memory location at the next ptr of the last node after laying out elements in `l`.
+    So the linked list starting from the memory location `this` can have more elements after `l`.
+   *)
+  Fixpoint ListR' (q : cQp.t) (l : list Z) (restR: Rep) : Rep :=
     match l with
-    | [] => nullR
+    | [] => restR
     | hd :: tl =>
         Exists (tlLoc: ptr),
           NodeR q hd tlLoc
-          ** pureR (tlLoc |-> ListR q tl)
+          ** pureR (tlLoc |-> ListR' q tl restR)
     end.
 
+  (* unlike `ListR'`, this requires the list list to have exactly `l` eleements: here we specialize `restR` (what is at the last `next` ptr after laying out `l`) to `nullR`: this requires that the last next field to have the `Vptr nullptr` *) 
+  Definition ListR (q : cQp.t) (l : list Z) : Rep := ListR' q l nullR.
+  
   Example listRUnfold (q:Qp) (head:ptr): head |-> ListR q [4;5;6] |--
     Exists node5loc node6loc,
        head |-> NodeR q 4 node5loc
@@ -378,7 +386,8 @@ Abort.
        (* ** [| node5loc <> node6loc <> head|] *).
   Proof using. work. unfold NodeR.  go. Qed.
 
-  Example nullReq (p: ptr): p |-> nullR |-- [| p = nullptr |].
+
+ Example nullReq (p: ptr): p |-> nullR |-- [| p = nullptr |].
   Proof. go. Qed.
 
   cpp.spec "reverse(Node*)" as reverse_spec with
@@ -389,6 +398,38 @@ Abort.
   (** why trust [List.rev] *)
   Search List.rev.
   Check rev_app_distr.
+
+Lemma ListRsplit (q1 q2: Qp) (l: list Z) (base:ptr):
+  base |-> ListR (cQp.mut (q1+q2)) l -|- base |-> ListR (cQp.mut q1) l ** base |-> ListR (cQp.mut q2) l.
+Abort.
+
+Lemma ListRsplit (q: Qp) (base:ptr):
+  base |-> ListR (cQp.mut q) [] -|-  [| base = nullptr |].
+Proof using.
+  iSplit; go.
+Qed.
+
+Lemma ListRcons (q: Qp) (h:Z) (tl: list Z) (base:ptr):
+  base |-> ListR (cQp.mut q) (h::tl) -|- Exists (tlStart:ptr),  base |-> ListR' (cQp.mut q) [h] (as_Rep (fun this =>  [|this = tlStart |]))
+                                                                 **  tlStart |-> ListR (cQp.mut q) tl.
+Proof using.
+  simpl.
+  Opaque NodeR.
+  iSplit; ego; eagerUnifyU; go.
+Qed.
+
+Lemma ListRapp (q: Qp) (la lb: list Z) (base:ptr):
+  base |-> ListR (cQp.mut q) (la++lb) -|- Exists (lbStart:ptr),  base |-> ListR' (cQp.mut q) la (as_Rep (fun this =>  [|this = lbStart |]))
+                                                                 **  lbStart |-> ListR (cQp.mut q) lb.
+Proof using.
+  revert base.
+  induction la; simpl; auto.
+  - intros; iSplit; go.
+  - unfold ListR in *. simpl. intros.
+    setoid_rewrite IHla.
+    iSplit; ego.
+Qed.
+
 
   Definition sort (l:list Z) : list Z. Proof. Admitted.
   

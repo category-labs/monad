@@ -64,19 +64,42 @@ Context  {MODd : exb.module ⊧ CU}.
          \post[Vn size] (emp:mpred)
       ).
 
-  (* some implementation-defined field offset after some base_class offsets *)
-  Definition opt_base_offset (bty:type): offset. Proof. Admitted.
-  (* some implementation-defined field offset after some base_class offsets *)
-  Definition opt_engaged_offset (bty:type): offset. Proof. Admitted.
+  (* this is the offset at which the value of the Some type is stored in case this optional is a Some. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
+  Definition opt_somety_offset (somety:type): offset. Proof. Admitted.
+  (* this is the offset at which a bool is stored, indicating whether this is a Some or None. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
+  Definition opt_engaged_offset (somety:type): offset. Proof. Admitted.
 
   
-  Definition optionR {B} (bty:type) (baseRep: B-> Rep) (q:Qp) (o: option B): Rep :=
-    structR (Ninst "std::optional" [Atype bty]) (cQp.mut q) **
+  Definition optionR {SomeTyModel:Type} (somety: bluerock.lang.cpp.syntax.core.type)
+    (someTyRep: SomeTyModel -> Rep) (q:Qp) (o: option SomeTyModel): Rep :=
+    structR (Ninst "std::optional" [Atype somety]) (cQp.mut q) **
     match o with
-    | None => opt_engaged_offset bty |-> boolR (cQp.mut q) false
-    | Some b => opt_base_offset bty |-> baseRep b
-                ** opt_engaged_offset bty |-> boolR (cQp.mut q) true
+    | None => opt_engaged_offset somety |-> boolR (cQp.mut q) false
+    | Some b => opt_somety_offset somety |-> someTyRep b
+                ** opt_engaged_offset somety |-> boolR (cQp.mut q) true
     end.
+
+Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
+  _field "Node::data_" |-> primR "int" q (Vint data)
+  ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+  ** structR "Node" q.
+  
+  Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
+    match l with
+    | [] => nullR
+    | hd :: tl =>
+        Exists (tlLoc: ptr),
+          NodeR q hd tlLoc
+          ** pureR (tlLoc |-> ListR q tl)
+    end.
+
+  (* Rep predicate for `std::optional<int>` *)
+  Definition optionalIntR  (q:cQp.t) (o: option Z) : Rep  :=
+    @optionR Z "int" (fun (z:Z) => primR "int" q (Vint z)) q o.
+
+  (* Rep predicate for `std::optional<List>` *)
+  Definition optionalListR  (q:cQp.t) (o: option (list Z)) : Rep  :=
+    @optionR (list Z) "List" (fun (l: list Z) => ListR q l) q o.
   
   Definition addressR (q: Qp) (a: evm.address): Rep. Proof. Admitted.
   Definition optionAddressR (q:Qp) (oaddr: option evm.address): Rep := optionR "evmc::address" (fun a => addressR q a) q oaddr.
@@ -241,20 +264,25 @@ cpp.spec "std::optional<evmc::address>::operator=(std::optional<evmc::address>&&
        \post[Vbool (isSome o)]
                 emp).
 
-   Definition value ty T :=
-    specify
-    {|
-      info_name :=
-        Nscoped (Ninst "std::optional" [Atype ty])
-          (Nfunction function_qualifiers.Ncl "value" []);
-      info_type :=
-        tMethod (Ninst "std::optional" [Atype ty]) QC "const evmc::address&" []
-    |}
-    (λ this : ptr,
-       \prepost{(R : T → Rep) (t : T) (q : Qp)} this |-> optionR ty R q (Some t)
-       \post[Vptr (this ,, opt_base_offset ty)]
-                emp).
-   
+ Definition value ty T :=
+   specify
+     {|
+       info_name :=
+         Nscoped (Ninst "std::optional" [Atype ty])
+           (Nfunction function_qualifiers.Ncl "value" []);
+       info_type :=
+         tMethod (Ninst "std::optional" [Atype ty]) QC "const evmc::address&" []
+     |}
+     (fun (this : ptr) =>
+         \prepost{(R : T → Rep) (t : T) (q : Qp)} this |-> optionR ty R q (Some t)
+         \post[Vptr (this ,, opt_somety_offset ty)] emp).
+   (*
+   cpp.spec "std::optional<int>::value()" as value_int_spec with
+       (fun (this:ptr) =>
+       \prepost{(z : Z) (q : cQp.t)} this |-> optionalIntR q (Some z)
+       \post[Vptr (this ,, opt_somety_offset "int")] emp).
+                                                             ).
+   *)
   #[global] Instance learnTrRbase2: LearnEq2 optionAddressR:= ltac:(solve_learnable).
   #[global] Instance learnOpt b: LearnEq4 (@optionR b):= ltac:(solve_learnable).
   #[global] Instance : LearnEq2 PromiseR := ltac:(solve_learnable).

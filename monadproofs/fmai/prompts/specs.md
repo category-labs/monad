@@ -532,7 +532,7 @@ Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
 
 
 
-### Abstraction with Rep Predicates for classes
+### Logical Abstraction with Rep Predicates for classes
 
 `NodeR` specs provided no abstraction: it just exposed the 2 C++ fields as 2 Gallina arguments of their corresponding Gallina types. Many `Rep` predicates provide a much more pure/clean/mathematical/high-level logical abstraction of C++ fields. For example, consider linked lists:
 
@@ -595,16 +595,164 @@ The spec essentially says that the c++ implementation should behave like the Gal
 
 When writing `Rep` predicates, carefully think whether some C++-related details can be abstracted away. Avoid `Rep` predicates that just expose all class fields unless the C++ class really provides no abstraction and is just a thin wrapper.
 
-## Spec Examples
-TODO:
 
+
+## Specs/reps of templated classes
+
+The above strategy can be used to write specs and Rep predicates of *concrete* instantiations of templated classes/functions. However, in such cases, it is often better to write more generic spec and Rep predicates (to avoid duplication). As a simplest example, consider `std::optional`. We can write its `Rep` predicate generically as follows:
+
+
+```gallina
+
+
+  (* this is the offset at which the value of the Some type is stored in case this optional is a Some. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
+  Definition opt_somety_offset (somety:type): offset. Proof. Admitted.
+
+(* this is the offset at which a bool is stored, indicating whether this is a Some or None. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
+  Definition opt_engaged_offset (somety:type): offset. Proof. Admitted.
+
+  
+  Definition optionR {SomeTyModel:Type} (somety: bluerock.lang.cpp.syntax.core.type)
+    (someTyRep: SomeTyModel -> Rep) (q:Qp) (o: option SomeTyModel): Rep :=
+    structR (Ninst "std::optional" [Atype somety]) (cQp.mut q) **
+    match o with
+    | None => opt_engaged_offset somety |-> boolR (cQp.mut q) false
+    | Some b => opt_somety_offset somety |-> someTyRep b
+                ** opt_engaged_offset somety |-> boolR (cQp.mut q) true
+    end.
+
+```
+
+`somety:type` is a C++ type and `SomeTyModel` is supposed to be the Gallina model of `somety`.
+The `Rep` being defined will be for `std::optional<somety>`.
+The `Rep` predicate `someTyRep` is a parameter defining how a mathematical/Gallina `SomeTyModel` is laid out in memory as data of c++ type `somety`.
+
+`(Ninst "std::optional" [Atype somety])` of type `bluerock.lang.cpp.syntax.core.name` illustrates that even though we were able to write C++ names of type as string-like literals, names have structure and the notation mechanism parses those into the structure.
+names (`bluerock.lang.cpp.syntax.core.name`) are defined mutually inductively with types, expressions, statements. Below is a heavily elided glimples of the big block of mutually inductive definitions:
+
+```
+Notation name := name'
+
+Inductive name' : Set :=
+    Ninst : name → list temp_arg → name
+  | Nglobal : atomic_name → name
+  | Ndependent : type → name
+  | Nscoped : name → atomic_name → name
+  | Nunsupported : string → name
+  with temp_arg' : Set := ...
+  with type' : Set :=
+    Tparam : ident → type
+  | Tptr : type → type
+  | Tref : type → type
+  | Tnum : int_rank → signed → type
+  | Tchar_ : char_type → type
+  | Tvoid : type
+  | Tarray : type → N → type
+  | Tnamed : name → type
+  | Tenum : name → type
+  | Tfunction : function_type_ type → type
+  | Tbool : type
+  | Tmember_pointer : type → type → type
+  ...
+  with Expr' : Set :=
+    Eparam : ident → Expr
+  | Evar : localname → type → Expr
+  | Eglobal : name → type → Expr
+  | Estring : literal_string.t → type → Expr
+  | Eint : Z → type → Expr
+  | Ebool : bool → Expr
+  | Eunop : UnOp → Expr → type → Expr
+  | Ebinop : BinOp → Expr → Expr → type → Expr
+  | Ederef : Expr → type → Expr
+  ....
+  with Stmt' : Set :=
+    Sseq : list Stmt → Stmt
+  | Sdecl : list VarDecl → Stmt
+  | Sif : option VarDecl → Expr → Stmt → Stmt → Stmt
+  | Sif_consteval : Stmt → Stmt → Stmt
+  | Swhile : option VarDecl → Expr → Stmt → Stmt
+  ...
+  with VarDecl' : Set :=...
+  with BindingDecl' : Set :=...
+  with Cast' : Set :=...
+  .
+```
+
+We can now instantiate `optionR` to define Rep predicates of various instantiations of `std::optional`:
+
+```gallina
+  (* Rep predicate for `std::optional<int>` *)
+  Definition optionalIntR  (q:cQp.t) (o: option Z) : Rep  :=
+    @optionR Z "int" (fun (z:Z) => primR "int" q (Vint z)) q o.
+
+  (* Rep predicate for `std::optional<List>` *)
+  Definition optionalListR  (q:cQp.t) (o: option (list Z)) : Rep  :=
+    @optionR (list Z) "List" (fun (l: list Z) => ListR q l) q o.
+```
+
+
+Now, we can use `cpp.spec` to write specs of methods of instantiations of `std::optional`, e.g.:
+
+```gallina
+   cpp.spec "std::optional<int>::value()" as value_int_spec with
+       (fun (this:ptr) =>
+       \prepost{(z : Z) (q : cQp.t)} this |-> optionalIntR q (Some z)
+       \post[Vptr (this ,, opt_somety_offset "int")] emp).
+```
+The `value()` method returns a reference to the stored integer, thus the spec returns the memory location where the int is stored.
+Unfortunately, `cpp.spec` can only be used to write specs of fully instantiated function/method names. However, as mentioned above, `cpp.spec` is just an elpi helper that figures out the types of methods/functions and then uses the underlying `specify` assertion.
+We can directly write generic specs by using `specify`:
+
+
+```
+   Definition value ty T :=
+    specify
+    {|
+      info_name :=
+        Nscoped (Ninst "std::optional" [Atype ty])
+          (Nfunction function_qualifiers.Ncl "value" []);
+      info_type :=
+        tMethod (Ninst "std::optional" [Atype ty]) QC "const evmc::address&" []
+    |}
+    (λ this : ptr,
+       \prepost{(R : T → Rep) (t : T) (q : Qp)} this |-> optionR ty R q (Some t)
+         \post[Vptr (this ,, opt_somety_offset ty)] emp).
+		 
+  Definition has_value ty T :=
+  specify
+    {|
+      info_name :=
+        Nscoped (Ninst "std::optional" [Atype ty])
+          (Nfunction function_qualifiers.Nc "has_value" []);
+      info_type := tMethod (Ninst "std::optional" [Atype ty]) QC "bool" []
+    |}
+    (λ this : ptr,
+       \prepost{(R : T → Rep) (o : option T) (q : Qp)} this |-> optionR ty R q o
+       \post[Vbool (isSome o)]
+                emp).
+```
+
+The first argument of `specify` is of type `sym_info`. Writing it directly by hand (especially the `info_type` field) can be problematic.
+You can first use `lookupSymbolByFullName` to get the type of a concrete.
+```coqquery
+>> Compute (lookupSymbolByFullName module "std::optional<unsigned long>::has_value() const").
+     = Some
+         {|
+           info_name := "std::optional<unsigned long>::has_value() const"; info_type := tMethod "std::optional<unsigned long>" QC "bool" []
+         |}
+  : option sym_info
+```
+
+## Spec Examples
+TODO
 
 ## finding existing specs in the context
 
 You can use the regular Coq `Search` vernacular to find specs of C++ function of a given fully qualified C++ name exists in the current context. This works because `cpp.spec` declares an instance of the typeclass
 `bluerock.auto.cpp.database.spec.SpecFor.C`.
 More concretely, the above spec (`foo_spec`) declares a typeclass instance of type `bluerock.auto.cpp.database.spec.SpecFor.C "foo()" foo_spec`. 
-Thus, you can issue the following query to find out all the available specs for `foo()`.
+Thus, you can issue the following query to find out all the available specs for `foo()`. 
+The name (here, `foo()`) must be a fully qualified C++ name.
 
 ```coqquery
 Search (bluerock.auto.cpp.database.spec.SpecFor.C "foo()" _).

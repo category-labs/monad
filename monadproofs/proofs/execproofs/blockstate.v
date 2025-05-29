@@ -9,13 +9,69 @@ Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
 
-Opaque libspecs.optionR.
+Print translation_unit.
+Print symbol_table.
+Disable Notation atomic_name'.
+Print bluerock.lang.cpp.syntax.core.name.
+Check specify.
+Print sym_info.
+Search ObjValue okind.
+Print findBodyOfFnNamed2.
+Search NM.t.
 
+(*
+Class RepPredFor (ty : type) (A : Type) := { objR : A }.
+#[global] Hint Mode RepPredFor + - : typeclass_instances.
+*)
+
+
+(*
+Write a Rep predicate for the following C++ class and a spec for the add method.
+Ensure that the Rep predicate only takes 1 Gallina Z as the "mathematical model" argument, not 4 Zs.
+
+```c++
+class uint256 {
+public:
+  using limb_t = unsigned long long;          // assumes 64-bit limbs
+  limb_t data[4];                             // little-endian: data[0] is least-significant
+
+  uint256() : data{0, 0, 0, 0} {}
+
+  void add(const uint256& other);
+};
+```
+
++++ FILES
+../../fmai/prompts/sep.md
+../../fmai/prompts/specs.md
+
+ *)
+
+
+  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "has_value")).
+Print sym_info.
+
+Print obj_name.
+Print obj_name'.
+  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "fix_account_mismatch")).
+
+
+Print ObjValue.
+Print okind.
+Print type_table.
+Print GlobDecl.
+Print Struct.
+Print Member.
+Check info_type.
+Print sym_info.
+Check specify.
+Print okind.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
            (*   hh = @has_own_monpred thread_info _Σ fracR (@cinv_inG _Σ (@cpp_has_cinv thread_info _Σ Sigma)) *)
   Context  {MODd : ext.module ⊧ CU}.
 
+  
   (*
   Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "fix_account_mismatch")).
    *)

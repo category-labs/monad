@@ -664,6 +664,9 @@ Section cp.
   Definition findBodyOfFnNamed2 module filter :=
     List.filter (fun p => let '(nm, body):=p in filter nm) (NM.elements (symbols module)).
 
+  Definition lookupSymbolByFullName module (n: name) : option sym_info :=
+    let el:= NM.find n (symbols module) in
+    (option_map (fun x => {| info_name := n; info_type := fst (tu_find.INFO.okind_of_value x) |}) el).
 
   Definition firstEntryName (l :list (name * ObjValue)) :=
     (List.nth 0 (map fst l) (Nunsupported "impossible")).

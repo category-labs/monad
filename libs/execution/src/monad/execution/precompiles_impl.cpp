@@ -112,7 +112,7 @@ PrecompileResult ecmul_execute(byte_string_view const input)
 
 PrecompileResult identity_execute(byte_string_view const input)
 {
-    auto output = static_cast<uint8_t *>(malloc(input.size()));
+    auto *const output = static_cast<uint8_t *>(malloc(input.size()));
     MONAD_ASSERT(output != nullptr);
     memcpy(output, input.data(), input.size());
     return {EVMC_SUCCESS, output, input.size()};

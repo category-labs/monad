@@ -68,18 +68,20 @@ struct PrecompiledContract
     precompiled_execute_fn *execute_func;
 };
 
-std::array<PrecompiledContract, num_precompiles(EVMC_SHANGHAI) + 1> dispatch{{
-    {}, // precompiles start at address 0x1
-    {ecrecover_gas_cost, ecrecover_execute},
-    {sha256_gas_cost, sha256_execute},
-    {ripemd160_gas_cost, ripemd160_execute},
-    {identity_gas_cost, identity_execute},
-    {expmod_gas_cost, expmod_execute},
-    {ecadd_gas_cost, ecadd_execute},
-    {ecmul_gas_cost, ecmul_execute},
-    {snarkv_gas_cost, snarkv_execute},
-    {blake2bf_gas_cost, blake2bf_execute},
-}};
+inline constexpr std::array<
+    PrecompiledContract, num_precompiles(EVMC_SHANGHAI) + 1>
+    dispatch{{
+        {nullptr, nullptr}, // precompiles start at address 0x1
+        {ecrecover_gas_cost, ecrecover_execute},
+        {sha256_gas_cost, sha256_execute},
+        {ripemd160_gas_cost, ripemd160_execute},
+        {identity_gas_cost, identity_execute},
+        {expmod_gas_cost, expmod_execute},
+        {ecadd_gas_cost, ecadd_execute},
+        {ecmul_gas_cost, ecmul_execute},
+        {snarkv_gas_cost, snarkv_execute},
+        {blake2bf_gas_cost, blake2bf_execute},
+    }};
 
 template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)

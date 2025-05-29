@@ -240,7 +240,8 @@ namespace detail
 inline detail::TraverseSender make_traverse_sender(
     AsyncContext *const context, Node::UniquePtr traverse_root,
     std::unique_ptr<TraverseMachine> machine, uint64_t const block_id,
-    size_t const concurrency_limit = 4096)
+    size_t const concurrency_limit = 4096,
+    size_t const max_instance_per_level = 4096)
 {
     MONAD_ASSERT(context);
     return {
@@ -248,7 +249,8 @@ inline detail::TraverseSender make_traverse_sender(
         std::move(traverse_root),
         std::move(machine),
         block_id,
-        concurrency_limit};
+        concurrency_limit,
+        max_instance_per_level};
 }
 
 inline detail::DbGetSender<byte_string> make_get_sender(

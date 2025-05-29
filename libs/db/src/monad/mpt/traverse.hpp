@@ -42,12 +42,12 @@ namespace detail
 
     void async_parallel_preorder_traverse_init(
         TraverseSender &, async::erased_connected_operation *traverse_state,
-        Node const &);
+        Node::UniquePtr);
 
     void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch);
+        async::erased_connected_operation *traverse_state, Node::UniquePtr node,
+        std::unique_ptr<TraverseMachine> machine, unsigned char const branch);
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
@@ -101,6 +101,13 @@ namespace detail
 
     struct TraverseSender
     {
+        struct PendingNode
+        {
+            Node::UniquePtr node;
+            std::unique_ptr<TraverseMachine> machine;
+            unsigned char branch;
+        };
+
         struct receiver_t
         {
             static constexpr bool lifetime_managed_internally = true;
@@ -150,17 +157,20 @@ namespace detail
                     sender->reads_to_initiate_sidx = 0;
                     sender->reads_to_initiate_eidx = 0;
                     sender->reads_to_initiate_count = 0;
+                    sender->pending_nodes.clear();
+                    sender->num_pending_total = 0;
                 }
                 else { // version is valid after reading the buffer
                     auto next_node_on_disk =
                         deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
                     sender->within_recursion_count++;
+                    sender->initiate_pending_reads();
                     async_parallel_preorder_traverse_impl(
                         *sender,
                         traverse_state,
-                        *next_node_on_disk,
-                        *machine,
+                        std::move(next_node_on_disk),
+                        std::move(machine),
                         branch);
                     sender->within_recursion_count--;
                 }
@@ -170,7 +180,8 @@ namespace detail
                 // which means traverse is still in progress
                 if (sender->within_recursion_count == 0 &&
                     sender->reads_to_initiate_count == 0 &&
-                    sender->outstanding_reads == 0) {
+                    sender->outstanding_reads == 0 &&
+                    sender->num_pending_total == 0) {
                     traverse_state->completed(async::success());
                 }
             }
@@ -188,6 +199,21 @@ namespace detail
         size_t const max_outstanding_reads;
         size_t outstanding_reads{0};
         size_t within_recursion_count{0};
+
+        // Number of allocated traverse instances per level
+        std::vector<size_t> num_allocated_instances;
+
+        // Maximum number of traverse instances to allocate per tree level
+        // Limits the total memory used for traverse instances
+        size_t const max_instance_per_level;
+
+        // Nodes read from disk, delayed processing of children because over
+        // maximum traverse instances at next level, queue per tree level
+        std::vector<boost::container::deque<PendingNode>> pending_nodes;
+
+        // Total number of elements in pending_nodes (sum of all levels)
+        size_t num_pending_total{0};
+
         std::vector<boost::container::deque<receiver_t>> reads_to_initiate{20};
         size_t reads_to_initiate_sidx{0}; // exclusive
         size_t reads_to_initiate_eidx{0}; // inclusive
@@ -197,12 +223,13 @@ namespace detail
         TraverseSender(
             UpdateAuxImpl &aux, Node::UniquePtr traverse_root,
             std::unique_ptr<TraverseMachine> machine, uint64_t const version,
-            size_t const concurrency_limit)
+            size_t const concurrency_limit, size_t const max_instance_per_level)
             : aux(aux)
             , traverse_root(std::move(traverse_root))
             , machine(std::move(machine))
             , version(version)
             , max_outstanding_reads(concurrency_limit)
+            , max_instance_per_level(max_instance_per_level)
         {
         }
 
@@ -211,7 +238,7 @@ namespace detail
         {
             MONAD_ASSERT(traverse_root != nullptr);
             async_parallel_preorder_traverse_init(
-                *this, traverse_state, *traverse_root);
+                *this, traverse_state, std::move(traverse_root));
             return async::success();
         }
 
@@ -222,6 +249,13 @@ namespace detail
         {
             BOOST_OUTCOME_TRY(std::move(res));
             MONAD_ASSERT(within_recursion_count == 0);
+            MONAD_ASSERT(num_pending_total == 0);
+            for (auto &pending : pending_nodes) {
+                MONAD_ASSERT(pending.empty());
+            }
+            for (auto num_pending : num_allocated_instances) {
+                MONAD_ASSERT(num_pending == 0);
+            }
             return async::success(!version_expired_before_complete);
         }
 
@@ -252,46 +286,102 @@ namespace detail
 
     inline void async_parallel_preorder_traverse_init(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node)
+        async::erased_connected_operation *traverse_state, Node::UniquePtr node)
     {
         sender.within_recursion_count++;
+        sender.num_allocated_instances.push_back(1);
         async_parallel_preorder_traverse_impl(
-            sender, traverse_state, node, *sender.machine, INVALID_BRANCH);
+            sender,
+            traverse_state,
+            std::move(node),
+            sender.machine->clone(),
+            INVALID_BRANCH);
         sender.within_recursion_count--;
         MONAD_ASSERT(sender.within_recursion_count == 0);
 
         // complete async traverse if no outstanding ios
         if (sender.reads_to_initiate_count == 0 &&
-            sender.outstanding_reads == 0) {
+            sender.outstanding_reads == 0 && sender.num_pending_total == 0) {
             traverse_state->completed(async::success());
+        }
+    }
+
+    // Upon completion of node processing, which deallocates traverse machine
+    // instance, try to process pending node at the previous level.
+    inline void try_schedule_pending(
+        TraverseSender &sender,
+        async::erased_connected_operation *traverse_state, size_t level)
+    {
+        MONAD_ASSERT(sender.num_allocated_instances.size() > level);
+        MONAD_ASSERT(sender.num_allocated_instances[level] > 0);
+        sender.num_allocated_instances[level]--;
+
+        if (level == 0 || sender.pending_nodes.size() <= level - 1 ||
+            sender.pending_nodes[level - 1].empty()) {
+            return;
+        }
+        if (sender.num_allocated_instances[level] <
+            sender.max_instance_per_level) {
+            auto pending_node =
+                std::move(sender.pending_nodes[level - 1].front());
+            sender.pending_nodes[level - 1].pop_front();
+            sender.num_pending_total--;
+            async_parallel_preorder_traverse_impl(
+                sender,
+                traverse_state,
+                std::move(pending_node.node),
+                std::move(pending_node.machine),
+                pending_node.branch);
         }
     }
 
     inline void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch)
+        async::erased_connected_operation *traverse_state, Node::UniquePtr node,
+        std::unique_ptr<TraverseMachine> machine, unsigned char const branch)
     {
         // How many children are considered left side for depth first preference
         // Two and four was benchmarked as slightly worse than three, so three
         // appears to be the optimum.
         static constexpr unsigned LEFT_SIDE = 3;
-        sender.initiate_pending_reads();
         // Detect if level (which is unsigned) has gone below zero. It never
         // should if this code is correct. The choice of 256 is completely
         // arbitrary and means nothing.
-        MONAD_ASSERT(machine.level < 256);
-        ++machine.level;
-        if (!machine.down(branch, node)) {
-            --machine.level;
+        MONAD_ASSERT(machine->level < 256);
+
+        // Postpone processing of inner node if over the limit of nodes at the
+        // next level
+        if (node->number_of_children() != 0 &&
+            sender.num_allocated_instances.size() > machine->level + 1 &&
+            sender.num_allocated_instances[machine->level + 1] >
+                sender.max_instance_per_level) {
+            sender.pending_nodes.resize(
+                std::max(sender.pending_nodes.size(), machine->level + 1));
+            auto level = machine->level;
+            sender.pending_nodes[level].push_back(
+                TraverseSender::PendingNode{
+                    std::move(node), std::move(machine), branch});
+            sender.num_pending_total++;
+            return;
+        }
+
+        if (!machine->down(branch, *node)) {
+            try_schedule_pending(sender, traverse_state, machine->level);
             return;
         }
         unsigned children_read = 0;
-        for (unsigned i = 0, idx = 0, bit = 1; idx < node.number_of_children();
+        for (unsigned i = 0, idx = 0, bit = 1; idx < node->number_of_children();
              ++i, bit <<= 1) {
-            if (node.mask & bit) {
-                if (machine.should_visit(node, (unsigned char)i)) {
-                    auto const *const next = node.next(idx);
+            if (node->mask & bit) {
+                if (machine->should_visit(*node, (unsigned char)i)) {
+                    auto const *const next = node->next(idx);
+                    // Account for creating traverse instance for the next
+                    // level.
+                    sender.num_allocated_instances.resize(
+                        std::max(
+                            sender.num_allocated_instances.size(),
+                            machine->level + 2));
+                    sender.num_allocated_instances[machine->level + 1]++;
                     if (next == nullptr) {
                         MONAD_ASSERT(sender.aux.is_on_disk());
                         // verify version before read
@@ -304,17 +394,21 @@ namespace detail
                             sender.reads_to_initiate_count = 0;
                             return;
                         }
+
+                        auto child_machine = machine->clone();
+                        child_machine->level++;
                         TraverseSender::receiver_t receiver(
                             &sender,
                             traverse_state,
                             (unsigned char)i,
-                            node.fnext(idx),
-                            machine.clone());
+                            node->fnext(idx),
+                            std::move(child_machine));
+
                         unsigned const this_child_read = children_read++;
                         if (sender.outstanding_reads >=
                             sender.max_outstanding_reads) {
                             // The deepest reads get highest priority
-                            size_t priority = machine.level;
+                            size_t priority = machine->level;
                             // Left side reads get a bit more priority
                             if (this_child_read < LEFT_SIDE) {
                                 priority += LEFT_SIDE - this_child_read;
@@ -343,12 +437,14 @@ namespace detail
                         ++sender.outstanding_reads;
                     }
                     else {
+                        ++machine->level;
                         async_parallel_preorder_traverse_impl(
                             sender,
                             traverse_state,
-                            *next,
-                            machine,
+                            node->move_next(idx),
+                            std::move(machine),
                             (unsigned char)i);
+                        --machine->level;
                         if (sender.version_expired_before_complete) {
                             return;
                         }
@@ -357,7 +453,9 @@ namespace detail
                 ++idx;
             }
         }
+        try_schedule_pending(sender, traverse_state, machine->level);
     }
+
 }
 
 // return value indicates if we have done the full traversal or not
@@ -371,7 +469,8 @@ inline bool preorder_traverse_blocking(
 
 inline bool preorder_traverse_ondisk(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &machine,
-    uint64_t const version, size_t const concurrency_limit = 4096)
+    uint64_t const version, size_t const concurrency_limit = 4096,
+    size_t const max_instance_per_level = 4096)
 {
     MONAD_ASSERT(aux.is_on_disk());
 
@@ -401,7 +500,12 @@ inline bool preorder_traverse_ondisk(
 
     auto *const state = new auto(async::connect(
         detail::TraverseSender(
-            aux, copy_node(&node), machine.clone(), version, concurrency_limit),
+            aux,
+            copy_node(&node),
+            machine.clone(),
+            version,
+            concurrency_limit,
+            max_instance_per_level),
         TraverseReceiver{version_expired_before_traverse_complete}));
     state->initiate();
 

@@ -515,6 +515,28 @@ Conversely, destructor specs typically take the full ownership as precondition a
 
 We have registered `cQp.mut` as a coercion so that we can write just `1` instead of `(cQp.mut 1)` above, but coercions should be avoided when you are trying to debug a compile error.
 
+### base/derived class offsets
+
+`_base` represent the offset of the base class subobject, as illustrated in the example below 
+```gallina
+  Example derivedToBaseOffset: offset := _base  "std::atomic<int>" "std::__atomic_base<int>".
+```
+The first argument is the name of the class of the current object. The second argument is the name of the base class.
+`_derived` is the inverse operation, illustrated by the following example:
+```gallina
+  Example baseToDerivedOffset: offset := _derived  "std::__atomic_base<int>" "std::atomic<int>".
+```
+We have the following equations (`_derived` := `o_derived σ` (notation) and `_base` := `o_base σ` (notation)) formalizing the inverseness:
+
+```
+o_derived_base:
+  ∀ (σ : genv) (p : ptr) (base derived : name), directly_derives σ derived base → p ,, o_derived σ base derived ,, o_base σ derived base = p
+o_base_derived:
+  ∀ (σ : genv) (p : ptr) (base derived : name), directly_derives σ derived base → p ,, o_base σ derived base ,, o_derived σ base derived = p
+```
+
+`_base` can be used to get the offsets of subclass fields when writing `Rep` predicates of derived classes.
+
 ### Fractional ownership of arrays/classes
 For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. 
 A thread owning `mloc |-> primR "int" (cQp.mut q) v` can depend on the value of the location `mloc` being `v`: because the thread has a q (0<q) fraction, 
@@ -687,9 +709,9 @@ We can now instantiate `optionR` to define Rep predicates of various instantiati
 
   (* Rep predicate for `std::optional<List>` *)
   Definition optionalListR  (q:cQp.t) (o: option (list Z)) : Rep  :=
-    @optionR (list Z) "List" (fun (l: list Z) => ListR q l) q o.
+    @optionR (list Z) "Node*" (fun (l: list Z) => ListR q l) q o.
 ```
-
+(C++ type aliases should be unfolded when refering to C++ names in galline: so we write `Node*` not `List`.)
 
 Now, we can use `cpp.spec` to write specs of methods of instantiations of `std::optional`, e.g.:
 

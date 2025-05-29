@@ -547,7 +547,7 @@ Section with_Sigma.
     \pre [| satisfiesAssumptions assumptionsAndUpdates preTxState |]
     \post this |-> BlockState.Rauth preBlockState invId (applyUpdates assumptionsAndUpdates preTxState)).
 
-  Definition bytes32R (q:Qp) (z:Z) : Rep. Proof. Admitted.
+  Definition bytes32R (q:Qp) (z:N) : Rep. Proof. Admitted.
 
   (* spec for speculative phase *)
   cpp.spec "monad::BlockState::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
@@ -557,9 +557,9 @@ Section with_Sigma.
       \arg{incp} "incarnation" (Vptr incp)
       \prepost{q indices} incp |-> IncarnationR q indices
       \arg{keyp} "key" (Vptr keyp)
-      \post{retp:ptr} [Vptr retp] Exists anyvalue:Z, retp |-> bytes32R 1 anyvalue). 
+      \post{retp:ptr} [Vptr retp] Exists anyvalue:N, retp |-> bytes32R 1 anyvalue). 
 
-  Definition lookupStorage (s: StateOfAccounts) (addr: address) (key: Z) (blockTxInd: Indices) : Z. Proof. Admitted.
+  Definition lookupStorage (s: StateOfAccounts) (addr: address) (key: N) (blockTxInd: Indices) : N. Proof. Admitted.
 
   
   (* spec for re-exec phase *)
@@ -571,7 +571,7 @@ Section with_Sigma.
       \arg{incp} "incarnation" (Vptr incp)
       \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
       \arg{keyp} "key" (Vptr keyp)
-      \prepost{key:Z} keyp |-> bytes32R q key
+      \prepost{key:N} keyp |-> bytes32R q key
       \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (lookupStorage preTxState address key blockTxInd)). 
 
 (* TODO: add spec of read_storage *)

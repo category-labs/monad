@@ -386,8 +386,8 @@ Existing Instance UNSAFE_read_prim_cancel.
         \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
       ).
   
-  Lemma wAssert2 {A B:Type}(P: A-> B-> Rep) (p:ptr): forall a b, p|->P a b |-- p|-> P a b. reflexivity. Qed.
-  Lemma wAssert3 {A B C:Type}(P: A-> B-> C-> Rep) (p:ptr): forall a b c, p|->P a b c|-- p|-> P a b c. reflexivity. Qed.
+  Lemma wAssert2 {A B:Type}(P: A-> B-> Rep) (p:ptr): forall a b, p|->P a b |-- p|-> P a b. Proof. reflexivity. Qed.
+  Lemma wAssert3 {A B C:Type}(P: A-> B-> C-> Rep) (p:ptr): forall a b c, p|->P a b c|-- p|-> P a b c. Proof. reflexivity. Qed.
   Import environments.
   Ltac foldRep Rc R :=
     (wapply (wAssert2 Rc)
@@ -626,6 +626,7 @@ Proof using MODd.
   Transparent libspecs.optionR.
   simpl in *.
   go.
+  unfold libspecs.optionR. go.
   (* TODO: switch to NOOPCALLTRACER. this spec is garbage *)
 
   unfold relaxed_constructor_init_state in H.

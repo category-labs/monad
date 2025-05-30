@@ -249,7 +249,7 @@ If no types can be resolved, returns the empty string."
 				  (onelinety (and ty (replace-regexp-in-string "[\n\r]+" " " ty)))
 				  )
                              (when onelinety
-                               (format "Search (%s) (* for hole `%s` *) ." ty name))))
+                               (format "Search (%s) (* for hole `%s` *) ." onelinety name))))
                          names))
            "\n")))
     (if (string-empty-p queries)

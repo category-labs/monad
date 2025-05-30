@@ -278,103 +278,78 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 *)
-(*==================================================================*)
-(* Model for C++ struct Account                                     *)
-(*==================================================================*)
-Record AccountModel := Build_AccountModel {
-  am_balance     : Corelib.Numbers.BinNums.N;
-  am_code_hash   : Corelib.Numbers.BinNums.N;
-  am_nonce       : Z;
-  am_incarnation : monad.proofs.exec_specs.Indices
-}.
+Local Open Scope cpp_name_scope.
+Local Open Scope cpp_type_scope.
 
-(*==================================================================*)
-(* Base‐class rep: C++ AccountSubstate ↔ evm.account_state           *)
-(* (assumed empty footprint)                                       *)
-(*==================================================================*)
-Definition AccountSubstateR (q: cQp.t)
-           (st: monad.EVMOpSem.evm.account_state) : Rep :=
-  emp.
+(** Helpers to extract N/Z from a 256‐bit Keccak word. *)
+Definition w256_to_Z : Stdlib.Vectors.Bvector.Bvector 256 → Corelib.Numbers.BinNums.Z :=
+  monad.EVMOpSem.evm.uint.
 
-(*==================================================================*)
-(* Rep of C++ struct Account ↔ AccountModel                        *)
-(*==================================================================*)
-Definition AccountR (q: cQp.t) (a: AccountModel) : Rep :=
-  _offsetR (_field "::monad::Account::balance")
-           (u256R    q (am_balance a))
-  ** _offsetR (_field "::monad::Account::code_hash")
-           (bytes32R q (am_code_hash a))
-  ** _offsetR (_field "::monad::Account::nonce")
-           (primR "uint64_t"%cpp_type q (Vint (am_nonce a)))
-  ** _offsetR (_field "::monad::Account::incarnation")
-           (IncarnationR q (am_incarnation a))
-  ** structR "monad::Account" q.
+Definition w256_to_N (w : Stdlib.Vectors.Bvector.Bvector 256) : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
 
-(*==================================================================*)
-(* Rep of C++ Map<bytes32_t,bytes32_t> ↔ evm.storage                *)
-(*==================================================================*)
-Definition MapR (q: cQp.t)
-           (m: monad.EVMOpSem.evm.storage) : Rep.
-Admitted. (* TOFIXLATER: instantiate the map‐representation over storage *)
+(** In C++, [Account::incarnation] defaults to {0,0}. *)
+Definition account_inc_indices (m: evm.account_state) : monad.proofs.exec_specs.Indices :=
+  monad.proofs.exec_specs.Build_Indices 0%N 0%N.
 
-(*==================================================================*)
-(* Offsets inside std::optional<T>                                   *)
-(*==================================================================*)
-Definition opt_somety_offset (somety: bluerock.lang.cpp.syntax.core.type)
-  : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset.
-Admitted. (* TOFIXLATER *)
+(** ---------------------------------------------------------------------- *)
+(** We now fill the two remaining admits nearest the root, as [emp]. *)
+Definition StorageR (q: cQp.t) (st: evm.storage) : Rep :=
+  emp. (* TOFIXLATER: actual map layout *)
 
-Definition opt_engaged_offset (somety: bluerock.lang.cpp.syntax.core.type)
-  : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset.
-Admitted. (* TOFIXLATER *)
+Definition ProgramR (q: cQp.t) (p: evm.program) : Rep :=
+  emp. (* TOFIXLATER: actual code container *)
 
-(*==================================================================*)
-(* Rep of std::optional<T> ↔ option T                               *)
-(*==================================================================*)
-Definition optionR {T: Type}
-           (somety: bluerock.lang.cpp.syntax.core.type)
-           (rep: T → Rep) (q: cQp.t) (o: option T) : Rep :=
-  structR (Ninst "std::optional" [Atype somety]) (cQp.mut q)
-  ** (
-    match o with
-    | None =>
-        _offsetR (opt_engaged_offset somety) (boolR q false)
-    | Some x =>
-        _offsetR (opt_engaged_offset somety) (boolR q true)
-        ** _offsetR (opt_somety_offset somety) (rep x)
-    end).
+(** ---------------------------------------------------------------------- *)
+(** Rep for the C++ base class [AccountSubstate], matching 
+    [block.block_account] = [evm.account_state]. *)
+Definition AccountSubstateR (q: cQp.t) (m: evm.account_state) : Rep :=
+  _field "::AccountSubstate::account_address_"%cpp_name
+    |-> addressR q (block.block_account_address m)
+  ** _field "::AccountSubstate::account_storage_"%cpp_name
+    |-> StorageR q (block.block_account_storage m)
+  ** _field "::AccountSubstate::code_"%cpp_name
+    |-> ProgramR q (block.block_account_code m)
+  ** _field "::AccountSubstate::balance_"%cpp_name
+    |-> u256R q (w256_to_N (block.block_account_balance m))
+  ** _field "::AccountSubstate::nonce_"%cpp_name
+    |-> u256R q (w256_to_N (block.block_account_nonce m))
+  ** _field "::AccountSubstate::exists_"%cpp_name
+    |-> boolR q (block.block_account_exists m)
+  ** _field "::AccountSubstate::hascode_"%cpp_name
+    |-> boolR q (block.block_account_hascode m)
+  ** structR "monad::AccountSubstate"%cpp_name q.
 
-(*==================================================================*)
-(* Rep of C++ class monad::AccountState ↔ evm.account_state         *)
-(*==================================================================*)
-Definition AccountStateR (q: cQp.t)
-           (st: monad.EVMOpSem.evm.account_state) : Rep :=
-  Exists (am   : option AccountModel)
-         (sm tsm : monad.EVMOpSem.evm.storage)
-         (vn vb  : bool)
-         (mb     : Corelib.Numbers.BinNums.N),
-    (* 1) inherited substate *)
-    AccountSubstateR q st
-    ** (* 2) optional<Account> account_ *)
-       _offsetR (_field "::monad::AccountState::account_")
-                (optionR
-                   "std::optional<monad::Account>"%cpp_type
-                   (AccountR q) q am)
-    ** (* 3) storage_ *)
-       _offsetR (_field "::monad::AccountState::storage_")
-                (MapR q sm)
-    ** (* 4) transient_storage_ *)
-       _offsetR (_field "::monad::AccountState::transient_storage_")
-                (MapR q tsm)
-    ** (* 5) validate_exact_nonce_ *)
-       _offsetR (_field "::monad::AccountState::validate_exact_nonce_")
-                (boolR q vn)
-    ** (* 6) validate_exact_balance_ *)
-       _offsetR (_field "::monad::AccountState::validate_exact_balance_")
-                (boolR q vb)
-    ** (* 7) min_balance_ *)
-       _offsetR (_field "::monad::AccountState::min_balance_")
-                (u256R q mb).
+(** Rep for the C++ [Account] class, using [block.block_account] as the Gallina model. *)
+Definition AccountR (q: cQp.t) (m: evm.account_state) : Rep :=
+  _field "::Account::balance"%cpp_name
+    |-> u256R q (w256_to_N (block.block_account_balance m))
+  ** _field "::Account::code_hash"%cpp_name
+    |-> bytes32R q 0%N     (* TOFIXLATER: actual code_hash from [m] *)
+  ** _field "::Account::nonce"%cpp_name
+    |-> primR "uint64_t"%cpp_type q (Vint (w256_to_Z (block.block_account_nonce m)))
+  ** _field "::Account::incarnation"%cpp_name
+    |-> IncarnationR q (account_inc_indices m)
+  ** structR "monad::Account"%cpp_name q.
+
+(** Finally, the Rep for the subclass [AccountState]. *)
+Definition AccountStateR (q: cQp.t) (m: evm.account_state) : Rep :=
+  AccountSubstateR q m
+  ** _field "account_"%cpp_name
+       |-> monad.proofs.libspecs.optionR
+            "monad::Account"%cpp_type (AccountR q) q (Some m)
+  ** _field "storage_"%cpp_name
+       |-> StorageR q (block.block_account_storage m)
+  ** _field "transient_storage_"%cpp_name
+       |-> StorageR q (block.block_account_storage m)
+  ** _field "validate_exact_nonce_"%cpp_name
+       |-> boolR q false
+  ** _field "validate_exact_balance_"%cpp_name
+       |-> boolR q false
+  ** _field "min_balance_"%cpp_name
+       |-> u256R q (w256_to_N (block.block_account_balance m))
+  ** structR "monad::AccountState"%cpp_name q.
+
 
 
 

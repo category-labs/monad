@@ -90,6 +90,27 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
     }
 }
 
+// EIP-2935
+inline void set_block_hash_history(BlockState &block_state, Block &block)
+{
+    constexpr auto HISTORY_STORAGE_ADDRESS{
+        0x0000F90827F1C53a10cb7A02335B175320002935_address};
+    constexpr uint256_t HISTORY_SERVE_WINDOW{8191};
+
+    State state{block_state, Incarnation{block.header.number, 0}};
+    if (state.account_exists(HISTORY_STORAGE_ADDRESS)) {
+        uint256_t const block_number{block.header.number};
+        bytes32_t const key{
+            to_bytes(to_big_endian((block_number - 1) % HISTORY_SERVE_WINDOW))};
+
+        state.set_storage(
+            HISTORY_STORAGE_ADDRESS, key, block.header.parent_hash);
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+}
+
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, Block &block, BlockState &block_state,
@@ -97,6 +118,10 @@ Result<std::vector<ExecutionResult>> execute_block(
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
+
+    if constexpr (rev >= EVMC_PRAGUE) {
+        set_block_hash_history(block_state, block);
+    }
 
     if constexpr (rev >= EVMC_CANCUN) {
         set_beacon_root(block_state, block);

@@ -13,6 +13,11 @@ Set Printing FullyQualifiedNames.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 
+Definition lkjalkgjsdljgsdljljsl := 1.
+Locate lkjalkgjsdljgsdljljsl.
+(*
+Constant monad.proofs.execproofs.blockstate.lkjalkgjsdljgsdljljsl
+*)
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
@@ -252,6 +257,9 @@ Unfortunately, there is currently no way to search the Coq context for Rep predi
 So, if a Rep predicate for a class has not been mentioned in this first prompt, you can assume it doesnt exist and you need to define it.
 If you have not been shown the C++ body of the class whose Rep predicate you need, you can just admit it. But to do that you need to chose the type, especially the type of the Gallina (mathematical) model of the type. Choose wisely. When possible, consider multiple options and compare pros and cons.
 
++++ FILES
+../../fmai/prompts/sep.md
+../../fmai/prompts/specs.md
 
 +++ QUERIES
 
@@ -264,70 +272,40 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 *)
-(* ---------------------------------------------------------------------- *)
-(* Admitted helper Rep‐predicates for storage, program, bool, and w256.  *)
-(* ---------------------------------------------------------------------- *)
+Require Import monad.proofs.misc.
+Require Import monad.proofs.libspecs.
+Require Import monad.proofs.evmopsem.
+Import linearity.
+Require Import bluerock.auto.invariants.
+Require Import bluerock.auto.cpp.proof.
 
-Definition storageR
-  (q : cQp.t)
-  (st : monad.EVMOpSem.evm.storage)
-  : bluerock.lang.cpp.logic.rep_defs.Rep.
-Admitted. (* TOFIXLATER: implement Rep for keccak.w256 → keccak.w256 map *)
+Require Import bluerock.auto.cpp.tactics4.
+Require Import monad.asts.block_state_cpp.
+Require Import monad.proofs.exec_specs.
+Disable Notation atomic_name'.
+Set Printing FullyQualifiedNames.
+Require Import Lens.Elpi.Elpi.
+#[local] Open Scope lens_scope.
 
-Definition programR
-  (q  : cQp.t)
-  (pr : monad.EVMOpSem.evm.program)
-  : bluerock.lang.cpp.logic.rep_defs.Rep.
-Admitted. (* TOFIXLATER: implement Rep for evm.program *)
+Section with_Sigma.
+  Context `{Sigma: cpp_logic} {CU: genv}.
+  Context {MODd : ext.module ⊧ CU}.
 
-Definition boolR
-  (q : cQp.t)
-  (b : bool)
-  : bluerock.lang.cpp.logic.rep_defs.Rep.
-Admitted. (* TOFIXLATER: implement Rep for C++ bool fields *)
+  (* reuse existing definitions from monad.proofs.execproofs.blockstate.with_Sigma *)
 
-Definition w256R
-  (q : cQp.t)
-  (w : monad.EVMOpSem.keccak.w256)
-  : bluerock.lang.cpp.logic.rep_defs.Rep.
-Admitted. (* TOFIXLATER: implement Rep for 256‐bit vectors *)
+  Definition storageR (q: cQp.t) (σ: evm.storage) : Rep :=
+    monad.proofs.execproofs.blockstate.with_Sigma.storageR q σ.
 
-(* ---------------------------------------------------------------------- *)
-(* Skeleton for AccountStateR: relates C++ monad::AccountState to the     *)
-(* Coq model evm.account_state = block.block_account                     *)
-(* (the body is admitted for now)                                         *)
-(* ---------------------------------------------------------------------- *)
+  Definition programR (q: cQp.t) (p: evm.program) : Rep :=
+    monad.proofs.execproofs.blockstate.with_Sigma.programR q p.
 
-Definition AccountStateR
-  (q    : cQp.t)
-  (acct : monad.proofs.evmopsem.evm.account_state)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  monad.proofs.libspecs.addressR q
-    (monad.EVMOpSem.block.block_account_address acct)
-  ∗
-  storageR q
-    (monad.EVMOpSem.block.block_account_storage acct)
-  ∗
-  programR q
-    (monad.EVMOpSem.block.block_account_code acct)
-  ∗
-  w256R q
-    (monad.EVMOpSem.block.block_account_balance acct)
-  ∗
-  w256R q
-    (monad.EVMOpSem.block.block_account_nonce acct)
-  ∗
-  boolR q
-    (monad.EVMOpSem.block.block_account_exists acct)
-  ∗
-  boolR q
-    (monad.EVMOpSem.block.block_account_hascode acct).
-* )
+  Definition AccountR (q: cQp.t) (a: monad.EVMOpSem.block.block_account) : Rep :=
+    monad.proofs.execproofs.blockstate.with_Sigma.AccountR q a.
 
+  Definition AccountStateR (q: cQp.t) (st: evm.account_state) : Rep :=
+    monad.proofs.execproofs.blockstate.with_Sigma.AccountStateR q st.
 
-
-
-
+End with_Sigma.
 
 
 

@@ -85,6 +85,47 @@ uint64_t expmod_gas_cost(byte_string_view const input, evmc_revision const rev)
         input.data(), input.size(), static_cast<int>(rev));
 }
 
+uint64_t bls12_g1_add_gas_cost(byte_string_view const, evmc_revision const)
+{
+    return 375;
+}
+
+uint64_t bls12_g1_msm_gas_cost(byte_string_view const, evmc_revision const)
+{
+    // TODO(BSC)
+    return 0;
+}
+
+uint64_t bls12_g2_add_gas_cost(byte_string_view const, evmc_revision const)
+{
+    return 600;
+}
+
+uint64_t bls12_g2_msm_gas_cost(byte_string_view const, evmc_revision const)
+{
+    // TODO(BSC)
+    return 0;
+}
+
+uint64_t
+bls12_pairing_check_gas_cost(byte_string_view const, evmc_revision const)
+{
+    // TODO(BSC)
+    return 0;
+}
+
+uint64_t
+bls12_map_fp_to_g1_gas_cost(byte_string_view const, evmc_revision const)
+{
+    return 5500;
+}
+
+uint64_t
+bls12_map_fp2_to_g2_gas_cost(byte_string_view const, evmc_revision const)
+{
+    return 23800;
+}
+
 PrecompileResult ecrecover_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_ecrec_run>(input);
@@ -131,6 +172,48 @@ PrecompileResult snarkv_execute(byte_string_view const input)
 PrecompileResult blake2bf_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_blake2_f_run>(input);
+}
+
+PrecompileResult bls12_g1_add_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_g1_msm_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_g2_add_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_g2_msm_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_pairing_check_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
+}
+
+PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const)
+{
+    // TODO(BSC)
+    abort();
 }
 
 MONAD_NAMESPACE_END

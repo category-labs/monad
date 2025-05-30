@@ -491,25 +491,31 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
     constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
 
-            // get rid of minus signs, which is a special symbol when used in //
-            // filtering
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
+    for (auto const &test_set :
+         {test_resource::ethereum_tests_dir,
+          test_resource::ethereum_tests_dir / "EIPTests"}) {
+        auto const root = test_set / suite;
+        for (auto const &entry : fs::recursive_directory_iterator{root}) {
+            auto const path = entry.path();
+            if (path.extension() == ".json") {
+                MONAD_ASSERT(entry.is_regular_file());
 
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] { return new BlockchainTest(path, revision); });
+                // get rid of minus signs, which is a special symbol when used
+                // in // filtering
+                auto test =
+                    fmt::format("{}", fs::relative(path, root).string());
+                std::ranges::replace(test, '-', '_');
+
+                testing::RegisterTest(
+                    suite,
+                    test.c_str(),
+                    nullptr,
+                    nullptr,
+                    path.string().c_str(),
+                    0,
+                    [=] { return new BlockchainTest(path, revision); });
+            }
         }
     }
 }

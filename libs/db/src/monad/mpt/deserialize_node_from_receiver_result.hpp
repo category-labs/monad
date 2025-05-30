@@ -50,7 +50,7 @@ namespace detail
                           typename monad::async::read_single_buffer_sender::
                               result_type>) {
             auto &buffer = std::move(buffer_).assume_value().get();
-            MONAD_ASSERT(buffer.size() > 0);
+            MONAD_ASSERT(buffer.size() > buffer_off);
             node = deserialize_node_from_buffer(
                 (unsigned char *)buffer.data() + buffer_off,
                 buffer.size() - buffer_off);
@@ -60,8 +60,11 @@ namespace detail
                                std::decay_t<ResultType>,
                                typename monad::async::
                                    read_multiple_buffer_sender::result_type>) {
+            // Comes from read_long_update_sender which always allocates single
+            // buffer.
+            MONAD_ASSERT(buffer_.assume_value().size() == 1);
             auto &buffer = buffer_.assume_value().front();
-            MONAD_ASSERT(buffer.size() > 0);
+            MONAD_ASSERT(buffer.size() > buffer_off);
             // Did the Receiver forget to set lifetime_managed_internally?
             MONAD_DEBUG_ASSERT(io_state->lifetime_is_managed_internally());
             node = deserialize_node_from_buffer(

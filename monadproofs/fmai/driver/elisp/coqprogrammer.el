@@ -231,39 +231,6 @@ Assumes `Set Short Module Printing.` is in effect."
         (read-only-mode 1)
         (display-buffer (current-buffer))))))
 
-;; DELETE
-(defun coq-prog-search-queries-for-module-params (mod)
-  "Build `Search` queries for every `Parameter` in the module at point.
-
-Assumes `Set Short Module Printing.` is active.
-The function:
-  1. Gets the symbol at point (module name).
-  2. Runs `Print Module <name>.`
-  3. Parses the short output with `coq-prog--parse-short-module-output`.
-  4. For each `Parameter` calls `typeOf` to obtain its type.
-  5. Returns a newline-separated string of `Search <type>.` lines and
-     also shows it in the echo area.
-
-If no parameters (or no types) are found, it returns nil."
-  (interactive)
-    ;; Fetch and parse the module signature
-    (with-current-buffer proof-response-buffer (read-only-mode -1))
-    (let* ((raw   (proof-shell-invisible-cmd-get-result
-                   (format "Print Module %s." mod)))
-           (items (coq-prog--parse-short-module-output raw))
-           (queries
-            (string-join
-             (delq nil
-                   (mapcar (lambda (it)
-                             (when (eq (car it) 'parameter)
-                               (let ((ty (typeOf (concat mod "." (cdr it)))))
-                                 (when ty (format "Search (%s) (* for hole `%s` *) ." ty (cdr it))))))
-                           items))
-             "\n")))
-      (if (string-empty-p queries)
-          ""
-        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries.\n IF YOU NOTICE A RESULT WITH PROMISING NAME, YOU MUST FIRST DO A `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.\n\n\n"  (query-coq queries)))))
-
 
 (defun coq-prog-search-queries-for-axioms (names)
   "Build `Search` queries for each axiom NAME (a list of strings).
@@ -278,16 +245,16 @@ If no types can be resolved, returns the empty string."
           (string-join
            (delq nil
                  (mapcar (lambda (name)
-                           (let ((ty (typeOf name)))
-                             (when ty
+                           (let* ((ty (typeOf name))
+				  (onelinety (and ty (replace-regexp-in-string "[\n\r]+" " " ty)))
+				  )
+                             (when onelinety
                                (format "Search (%s) (* for hole `%s` *) ." ty name))))
                          names))
            "\n")))
     (if (string-empty-p queries)
         ""
-      (concat "\n\nBelow, I ran some queries to help you find out whether "
-              "some of the holes are already implemented somewhere in the "
-              "available libraries.\n\n"
+      (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries.\n IF YOU NOTICE A RESULT WITH PROMISING NAME, YOU MUST FIRST DO A `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.\n\n\n"
               (query-coq queries)))))
 
 

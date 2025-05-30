@@ -490,28 +490,35 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         "Call50000_sha256.json:"
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
-    constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
+    auto register_tests = [&revision](auto const &root, auto const &suite) {
+        for (auto const &entry : fs::recursive_directory_iterator{root}) {
+            auto const path = entry.path();
+            if (path.extension() == ".json") {
+                MONAD_ASSERT(entry.is_regular_file());
 
-            // get rid of minus signs, which is a special symbol when used in //
-            // filtering
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
+                // get rid of minus signs, which is a special symbol when used
+                // in // filtering
+                auto test =
+                    fmt::format("{}", fs::relative(path, root).string());
+                std::ranges::replace(test, '-', '_');
 
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] { return new BlockchainTest(path, revision); });
+                testing::RegisterTest(
+                    suite,
+                    test.c_str(),
+                    nullptr,
+                    nullptr,
+                    path.string().c_str(),
+                    0,
+                    [=] { return new BlockchainTest(path, revision); });
+            }
         }
-    }
+    };
+
+    register_tests(
+        test_resource::ethereum_tests_dir / "BlockchainTests",
+        "BlockchainTests");
+
+    register_tests(test_resource::fixtures_dir, "FixtureTests");
 }
 
 MONAD_TEST_NAMESPACE_END

@@ -33,6 +33,9 @@ namespace test_resource
     // ethereum tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
 
+    // fixtures
+    inline auto const fixtures_dir = test_data_dir / "fixtures";
+
     inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 }
 

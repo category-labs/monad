@@ -479,11 +479,7 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 ;;;; ------------------------------------------------------------
 
 (defun coq-prog--comment-body ()
-  "Return (BODY . END-POS) for the Coq comment around point.
-
-BODY     ⇒ string between (* and *), trimmed of delimiters
-END-POS  ⇒ buffer position *just after* the closing `*)`.
-
+  "Return (BODY . pre-comment-code) for the Coq comment around point.
 If point is not inside a comment, signal an error."
     (coq-find-comment-start)
     (let ((beg (point)))
@@ -494,7 +490,7 @@ If point is not inside a comment, signal an error."
 	(proof-assert-until-point)
 	(wait-for-coq)
         (let ((body (buffer-substring-no-properties (+ beg 2) (- end 2))))
-          body))))
+          (list body (buffer-substring-no-properties (point-min) beg))))))
 
 
 (defun coq-prog--split-sections (raw)
@@ -567,7 +563,7 @@ A newline is inserted right after the comment so GPT code is added
 outside the comment."
   ;; 1. extract body & get end position
   (interactive)
-  (let*      ((body (coq-prog--comment-body))
+  (pcase-let*  ((`(,body, precode) (coq-prog--comment-body))
                (sections (coq-prog--split-sections body))
                (prompt   (nth 0 sections))
                (queries  (nth 1 sections))
@@ -576,7 +572,7 @@ outside the comment."
                (query-blk  (coq-prog--format-query-results queries))
                (files-blk (coq-prog--format-file-blocks
                            files (file-name-directory (buffer-file-name)))))
-    (concat coq-programmer-preamble files-blk "\n\n\n# Current Task\n" prompt query-blk coq-programmer-response-format)
+    (concat coq-programmer-preamble files-blk "\n\n\n# Current Task\n" prompt query-blk "\n\n# Contents of the current file\n\n```coq\n" precode "\n```\n\n" coq-programmer-response-format)
     ))
 
 

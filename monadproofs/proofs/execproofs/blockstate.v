@@ -8,71 +8,16 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
-
-Print translation_unit.
-Print symbol_table.
 Disable Notation atomic_name'.
-Print bluerock.lang.cpp.syntax.core.name.
-Check specify.
-Print sym_info.
-Search ObjValue okind.
-Print findBodyOfFnNamed2.
-Search NM.t.
+Set Printing FullyQualifiedNames.
+Require Import Lens.Elpi.Elpi.
+#[local] Open Scope lens_scope.
 
-(*
-Class RepPredFor (ty : type) (A : Type) := { objR : A }.
-#[global] Hint Mode RepPredFor + - : typeclass_instances.
-*)
-
-
-(*
-Write a Rep predicate for the following C++ class and a spec for the add method.
-Ensure that the Rep predicate only takes 1 Gallina Z as the "mathematical model" argument, not 4 Zs.
-
-```c++
-class uint256 {
-public:
-  using limb_t = unsigned long long;          // assumes 64-bit limbs
-  limb_t data[4];                             // little-endian: data[0] is least-significant
-
-  uint256() : data{0, 0, 0, 0} {}
-
-  void add(const uint256& other);
-};
-```
-
-+++ FILES
-../../fmai/prompts/sep.md
-../../fmai/prompts/specs.md
-
- *)
-
-
-  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "has_value")).
-Print sym_info.
-
-Print obj_name.
-Print obj_name'.
-  Compute (findBodyOfFnNamed2 module (isFunctionNamed2 "fix_account_mismatch")).
-
-
-Print ObjValue.
-Print okind.
-Print type_table.
-Print GlobDecl.
-Print Struct.
-Print Member.
-Check info_type.
-Print sym_info.
-Check specify.
-Print okind.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
-           (*   hh = @has_own_monpred thread_info _Σ fracR (@cinv_inG _Σ (@cpp_has_cinv thread_info _Σ Sigma)) *)
   Context  {MODd : ext.module ⊧ CU}.
 
   
-  Set Printing FullyQualifiedNames.
 (* Define `AccountStateR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the below C++ class `monad::AccountState`.
 (all the c++ code below is in namespace `monad`)
 
@@ -297,7 +242,7 @@ struct Account
 ```
 
 Below are some existing Rep predicates that you can use:
--  IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
+- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
 - bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
 - u256t for `uint256_t` (alias for `intx::uint<256>`)
 - addressR is the Rep predicate for Address (alias for `evmc::address`)
@@ -316,8 +261,77 @@ Print IncarnationR.
 Print addressR.
 Print bytes32R.
 Print u256R.
+Check Zdigits.binary_value.
+Check Zdigits.Z_to_binary.
+*)
+(* ---------------------------------------------------------------------- *)
+(* Admitted helper Rep‐predicates for storage, program, bool, and w256.  *)
+(* ---------------------------------------------------------------------- *)
 
-   *)
+Definition storageR
+  (q : cQp.t)
+  (st : monad.EVMOpSem.evm.storage)
+  : bluerock.lang.cpp.logic.rep_defs.Rep.
+Admitted. (* TOFIXLATER: implement Rep for keccak.w256 → keccak.w256 map *)
+
+Definition programR
+  (q  : cQp.t)
+  (pr : monad.EVMOpSem.evm.program)
+  : bluerock.lang.cpp.logic.rep_defs.Rep.
+Admitted. (* TOFIXLATER: implement Rep for evm.program *)
+
+Definition boolR
+  (q : cQp.t)
+  (b : bool)
+  : bluerock.lang.cpp.logic.rep_defs.Rep.
+Admitted. (* TOFIXLATER: implement Rep for C++ bool fields *)
+
+Definition w256R
+  (q : cQp.t)
+  (w : monad.EVMOpSem.keccak.w256)
+  : bluerock.lang.cpp.logic.rep_defs.Rep.
+Admitted. (* TOFIXLATER: implement Rep for 256‐bit vectors *)
+
+(* ---------------------------------------------------------------------- *)
+(* Skeleton for AccountStateR: relates C++ monad::AccountState to the     *)
+(* Coq model evm.account_state = block.block_account                     *)
+(* (the body is admitted for now)                                         *)
+(* ---------------------------------------------------------------------- *)
+
+Definition AccountStateR
+  (q    : cQp.t)
+  (acct : monad.proofs.evmopsem.evm.account_state)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  monad.proofs.libspecs.addressR q
+    (monad.EVMOpSem.block.block_account_address acct)
+  ∗
+  storageR q
+    (monad.EVMOpSem.block.block_account_storage acct)
+  ∗
+  programR q
+    (monad.EVMOpSem.block.block_account_code acct)
+  ∗
+  w256R q
+    (monad.EVMOpSem.block.block_account_balance acct)
+  ∗
+  w256R q
+    (monad.EVMOpSem.block.block_account_nonce acct)
+  ∗
+  boolR q
+    (monad.EVMOpSem.block.block_account_exists acct)
+  ∗
+  boolR q
+    (monad.EVMOpSem.block.block_account_hascode acct).
+* )
+
+
+
+
+
+
+
+
+
   Definition AccountStateR (q:Qp) (s: evm.account_state) : Rep. Proof. Admitted.
   Print addressR.
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>

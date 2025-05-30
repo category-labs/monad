@@ -13,11 +13,7 @@ Set Printing FullyQualifiedNames.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 
-Definition lkjalkgjsdljgsdljljsl := 1.
-Locate lkjalkgjsdljgsdljljsl.
-(*
-Constant monad.proofs.execproofs.blockstate.lkjalkgjsdljgsdljljsl
-*)
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
@@ -272,42 +268,51 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 *)
-Require Import monad.proofs.misc.
-Require Import monad.proofs.libspecs.
-Require Import monad.proofs.evmopsem.
-Import linearity.
-Require Import bluerock.auto.invariants.
-Require Import bluerock.auto.cpp.proof.
+(** Convert a 256-bit word to N *)
+Definition w256_to_N (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N (monad.EVMOpSem.Zdigits.binary_value 256 w).
 
-Require Import bluerock.auto.cpp.tactics4.
-Require Import monad.asts.block_state_cpp.
-Require Import monad.proofs.exec_specs.
-Disable Notation atomic_name'.
-Set Printing FullyQualifiedNames.
-Require Import Lens.Elpi.Elpi.
-#[local] Open Scope lens_scope.
+(** The 256‐bit zero vector *)
+Definition w256_zero : monad.EVMOpSem.keccak.w256 :=
+  monad.EVMOpSem.Zdigits.Z_to_binary 256 0%Z.
 
-Section with_Sigma.
-  Context `{Sigma: cpp_logic} {CU: genv}.
-  Context {MODd : ext.module ⊧ CU}.
+(** helper for the optional<Account> field,
+    here we give it a trivial rep so that the spec typechecks. *)
+Definition AccountR (q: cQp.t) (_a: monad.proofs.evmopsem.evm.account_state) : Rep :=
+  pureR True.
 
-  (* reuse existing definitions from monad.proofs.execproofs.blockstate.with_Sigma *)
+(** helper for the storage_ map: purely logical footprint *)
+Definition StorageR (q: cQp.t) (_m: monad.EVMOpSem.evm.storage) : Rep :=
+  pureR True.
 
-  Definition storageR (q: cQp.t) (σ: evm.storage) : Rep :=
-    monad.proofs.execproofs.blockstate.with_Sigma.storageR q σ.
+(** helper for the transient_storage_ map: same as StorageR *)
+Definition TransientStorageR (q: cQp.t) (m: monad.EVMOpSem.evm.storage) : Rep :=
+  StorageR q m.
 
-  Definition programR (q: cQp.t) (p: evm.program) : Rep :=
-    monad.proofs.execproofs.blockstate.with_Sigma.programR q p.
+(** helper for the code field: purely logical footprint *)
+Definition ProgramR (q: cQp.t) (_p: monad.EVMOpSem.evm.program) : Rep :=
+  pureR True.
 
-  Definition AccountR (q: cQp.t) (a: monad.EVMOpSem.block.block_account) : Rep :=
-    monad.proofs.execproofs.blockstate.with_Sigma.AccountR q a.
-
-  Definition AccountStateR (q: cQp.t) (st: evm.account_state) : Rep :=
-    monad.proofs.execproofs.blockstate.with_Sigma.AccountStateR q st.
-
-End with_Sigma.
-
-
+(** The AccountState R‐predicate mapping the Coq [evm.account_state] record into
+    the C++ in‐memory layout of monad::AccountState. *)
+Definition AccountStateR (q: cQp.t) (st: monad.proofs.evmopsem.evm.account_state) : Rep :=
+  structR "monad::AccountState" q
+  ** _field "::monad::AccountState::account_"
+       |-> monad.proofs.libspecs.optionR
+            "std::optional<monad::Account>"%cpp_type
+            (AccountR q)
+            q
+            (Some st)
+  ** _field "::monad::AccountState::storage_"
+       |-> StorageR q (monad.EVMOpSem.block.block_account_storage st)
+  ** _field "::monad::AccountState::transient_storage_"
+       |-> TransientStorageR q (monad.EVMOpSem.block.block_account_storage st)
+  ** _field "::monad::AccountState::validate_exact_nonce_"
+       |-> primR "bool"%cpp_type q (Vbool false)
+  ** _field "::monad::AccountState::validate_exact_balance_"
+       |-> primR "bool"%cpp_type q (Vbool false)
+  ** _field "::monad::AccountState::min_balance_"
+       |-> monad.proofs.exec_specs.u256R q (w256_to_N (monad.EVMOpSem.block.block_account_balance st)).
 
 
   Definition AccountStateR (q:Qp) (s: evm.account_state) : Rep. Proof. Admitted.

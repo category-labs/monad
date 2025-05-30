@@ -262,7 +262,7 @@ If no parameters (or no types) are found, it returns nil."
              "\n")))
       (if (string-empty-p queries)
           ""
-        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries. If you notice a result with promising name, you must do a `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.\n\n\n"  (query-coq queries)))))
+        (concat "\n\n Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries.\n IF YOU NOTICE A RESULT WITH PROMISING NAME, YOU MUST FIRST DO A `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.\n\n\n"  (query-coq queries)))))
 
 
 (defun coq-prog-search-queries-for-axioms (names)
@@ -572,7 +572,7 @@ outside the comment."
                (query-blk  (coq-prog--format-query-results queries))
                (files-blk (coq-prog--format-file-blocks
                            files (file-name-directory (buffer-file-name)))))
-    (concat coq-programmer-preamble files-blk "\n\n\n# Current Task\n" prompt query-blk "\n\n# Contents of the current file\n\n```coq\n" precode "\n```\n\n" coq-programmer-response-format)
+    (concat coq-programmer-preamble files-blk "\n\n\n# Current Task\n" prompt query-blk "\n\n# Contents of the current file\n\n```coq\n" precode "\n```\n\n You cannot change the content above. Your response will always be inserted after the above content. Do not repeat the above content in your response.\n\n" coq-programmer-response-format)
     ))
 
 

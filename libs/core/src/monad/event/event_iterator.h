@@ -74,10 +74,10 @@ struct monad_event_iterator
 
 // clang-format on
 
-#define MONAD_EVENT_ITERATOR_INTERNAL
-#include "event_iterator_inline.h"
-#undef MONAD_EVENT_ITERATOR_INTERNAL
-
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#define MONAD_EVENT_ITERATOR_INTERNAL
+#include "event_iterator_inline.h"
+#undef MONAD_EVENT_ITERATOR_INTERNAL

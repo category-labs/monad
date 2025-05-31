@@ -17,16 +17,14 @@
 
 #include <sys/types.h>
 
-#include <monad/core/bit_util.h>
 #include <monad/core/likely.h>
 #include <monad/event/event_ring.h>
+#include <monad/mem/align.h>
 
-// TODO(ken): supposed to come from mem/align.h but the PR hasn't landed yet
-[[gnu::always_inline]] static inline size_t
-monad_round_size_to_align(size_t size, size_t align)
+#ifdef __cplusplus
+extern "C"
 {
-    return bit_round_up(size, stdc_trailing_zeros(align));
-}
+#endif
 
 /*
  * Inline function definitions
@@ -112,3 +110,13 @@ static inline struct monad_event_descriptor *monad_event_recorder_reserve(
 
     return event;
 }
+
+inline void monad_event_recorder_commit(
+    struct monad_event_descriptor *event, uint64_t seqno)
+{
+    __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
+}
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

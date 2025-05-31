@@ -1,18 +1,17 @@
-#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <format>
 #include <latch>
-#include <span>
+#include <print>
 #include <thread>
 #include <tuple>
 #include <vector>
 
 #include <pthread.h>
 #include <sched.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -84,15 +83,15 @@ static void writer_main(
             recorder, payload_size, &seqno, &ring_payload_buf);
         event->event_type = TEST_COUNTER;
         memcpy(ring_payload_buf, local_payload_buf, payload_size);
-        __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
+        monad_event_recorder_commit(event, seqno);
     }
     auto const end_time = std::chrono::system_clock::now();
     auto const elapsed_nanos = static_cast<uint64_t>(
         duration_cast<nanoseconds>(end_time - start_time).count());
-    std::fprintf(
+    std::println(
         stdout,
-        "writer %hhu recording speed: %lu ns/evt of payload size %u "
-        "[%lu iterations in %ld]\n",
+        "writer {} recording speed: {} ns/evt of payload size {} "
+        "[{} iterations in {}]",
         writer_id,
         elapsed_nanos / writer_iterations,
         payload_size,
@@ -193,8 +192,8 @@ TEST_P(EventRecorderBulkTest, )
     auto const [writer_thread_count, payload_size] = GetParam();
     std::latch sync_latch{writer_thread_count + (ENABLE_READER ? 2 : 1)};
     std::vector<std::thread> writer_threads;
-
-    cpu_set_t avail_cpus, thr_cpu;
+    cpu_set_t avail_cpus;
+    cpu_set_t thr_cpu;
 
     ASSERT_EQ(
         0,
@@ -206,7 +205,7 @@ TEST_P(EventRecorderBulkTest, )
     ASSERT_EQ(0, monad_event_ring_init_recorder(&event_ring_, &recorder));
     for (uint8_t t = 0; t < writer_thread_count; ++t) {
         char name[16];
-        snprintf(name, sizeof name, "writer-%hhu", t);
+        *std::format_to(name, "writer-{}", t) = '\0';
         ASSERT_TRUE(alloc_cpu(&avail_cpus, &thr_cpu));
         auto &thread = writer_threads.emplace_back(
             writer_main,

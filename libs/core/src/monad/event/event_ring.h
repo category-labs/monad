@@ -3,8 +3,10 @@
 /**
  * @file
  *
- * Definition of the event ring structures and the functions which create and
- * mmap event rings.
+ * This file contains:
+ *
+ *   1. Definitions of the event ring's shared memory structures
+ *   2. Functions which initialize and mmap event rings
  */
 
 #include <stddef.h>
@@ -122,11 +124,11 @@ char const *monad_event_ring_get_last_error();
  * Event size limits
  */
 
-#define MONAD_EVENT_MIN_DESCRIPTORS_SHIFT (16)
-#define MONAD_EVENT_MAX_DESCRIPTORS_SHIFT (32)
+constexpr uint8_t MONAD_EVENT_MIN_DESCRIPTORS_SHIFT = 16;
+constexpr uint8_t MONAD_EVENT_MAX_DESCRIPTORS_SHIFT = 32;
 
-#define MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT (27)
-#define MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT (40)
+constexpr uint8_t MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT = 27;
+constexpr uint8_t MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT = 40;
 
 #ifdef __cplusplus
 } // extern "C"

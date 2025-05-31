@@ -17,6 +17,11 @@
 
 #include <monad/event/event_ring.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 static inline uint64_t
 monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
 {
@@ -116,3 +121,7 @@ inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
     return iter->read_last_seqno = monad_event_iterator_sync_wait(iter);
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

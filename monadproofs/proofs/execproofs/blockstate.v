@@ -14,6 +14,80 @@ Require Import Lens.Elpi.Elpi.
 Require Import monad.proofs.libspecs.
 
 
+(*
+In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
+Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
+
++++ QUERIES
+Print translation_unit.
+Print name.
+*)
+Definition find_struct
+  (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+  (nm : bluerock.lang.cpp.syntax.core.name)
+  : option bluerock.lang.cpp.syntax.decl.Struct :=
+  match bluerock.lang.cpp.syntax.namemap.internal.NameMap.find
+          (elt := bluerock.lang.cpp.syntax.translation_unit.GlobDecl)
+          nm (bluerock.lang.cpp.syntax.translation_unit.types tu) with
+  | Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) => Some s
+  | _ => None
+  end.
+
+
+Compute (find_struct module "monad::AccountSubstate").
+(*
+
+     = Some
+         {|
+           s_bases := [];
+           s_fields :=
+             [{|
+                mem_name := Nid "destructed_";
+                mem_type := "bool";
+                mem_mutable := false;
+                mem_init := Some (Ebool false);
+                mem_layout := {| li_offset := 0 |}
+              |};
+              {|
+                mem_name := Nid "touched_";
+                mem_type := "bool";
+                mem_mutable := false;
+                mem_init := Some (Ebool false);
+                mem_layout := {| li_offset := 8 |}
+              |};
+              {|
+                mem_name := Nid "accessed_";
+                mem_type := "bool";
+                mem_mutable := false;
+                mem_init := Some (Ebool false);
+                mem_layout := {| li_offset := 16 |}
+              |};
+              {|
+                mem_name := Nid "accessed_storage_";
+                mem_type :=
+                  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>";
+                mem_mutable := false;
+                mem_init :=
+                  Some
+                    (Econstructor
+                       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>::table()"
+                       []
+                       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>");
+                mem_layout := {| li_offset := 64 |}
+              |}];
+           s_virtuals := [];
+           s_overrides := [];
+           s_dtor := "monad::AccountSubstate::~AccountSubstate()";
+           s_trivially_destructible := false;
+           s_delete := None;
+           s_layout := Standard;
+           s_size := 64;
+           s_alignment := 8
+         |}
+     : option Struct
+
+*)
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.

@@ -1,3 +1,15 @@
+include(ExternalProject)
+
+ExternalProject_Add(
+  ExecutionSpecTestFixtures
+  URL "https://github.com/ethereum/execution-spec-tests/releases/download/v4.5.0/fixtures_develop.tar.gz"
+  URL_MD5 "e84165f51cf51a90bc44c542b459e627"
+  PREFIX ${CMAKE_BINARY_DIR}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  LOG_DOWNLOAD ON)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
                                                   monad_execution GTest::gtest)

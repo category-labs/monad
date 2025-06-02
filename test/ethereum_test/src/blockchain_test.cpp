@@ -151,6 +151,35 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     return block_header;
 }
 
+void register_tests(
+    std::filesystem::path const &root,
+    std::optional<evmc_revision> const &revision)
+{
+    namespace fs = std::filesystem;
+    MONAD_ASSERT(fs::exists(root) && fs::is_directory(root));
+
+    for (auto const &entry : fs::recursive_directory_iterator{root}) {
+        auto const path = entry.path();
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(entry.is_regular_file());
+
+            // get rid of minus signs, which is a special symbol when used in //
+            // filtering
+            auto test = fmt::format("{}", fs::relative(path, root).string());
+            std::ranges::replace(test, '-', '_');
+
+            testing::RegisterTest(
+                "BlockchainTests",
+                test.c_str(),
+                nullptr,
+                nullptr,
+                path.string().c_str(),
+                0,
+                [=] { return new test::BlockchainTest(path, revision); });
+        }
+    }
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
@@ -480,8 +509,6 @@ void BlockchainTest::TestBody()
 
 void register_blockchain_tests(std::optional<evmc_revision> const &revision)
 {
-    namespace fs = std::filesystem;
-
     // skip slow tests
     testing::FLAGS_gtest_filter +=
         ":-:BlockchainTests.GeneralStateTests/stTimeConsuming/*:"
@@ -490,28 +517,12 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         "Call50000_sha256.json:"
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
-    constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
-
-            // get rid of minus signs, which is a special symbol when used in //
-            // filtering
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
-
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] { return new BlockchainTest(path, revision); });
-        }
-    }
+    register_tests(
+        test_resource::ethereum_tests_dir / "BlockchainTests", revision);
+    register_tests(
+        test_resource::build_dir /
+            "src/ExecutionSpecTestFixtures/blockchain_tests",
+        revision);
 }
 
 MONAD_TEST_NAMESPACE_END

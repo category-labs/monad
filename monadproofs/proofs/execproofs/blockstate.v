@@ -246,47 +246,48 @@ Print bytes32R.
 Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
-*)
+ *)
 (* ------------------------------------------------------------------ *)
-(* TEMPORARY representation predicate for [keccak.w256].              *)
-(* It ignores the concrete value and just owns the memory region.     *)
-(* TODO: provide a faithful byte-level representation.                 *)
-(* ------------------------------------------------------------------ *)
-Definition w256R (q : cQp.t) (_w : keccak.w256) : Rep :=
-  anyR "uint256_t" q.  (* TOFIXLATER: precise layout *)
+(* Helper predicate for the dense segmented map ---------------------- *)
+Definition MapR `{cpp_logic} (q : cQp.t) (stor : evm.storage) : Rep :=
+  (* For now we only claim raw ownership of the container object.
+     A precise link to [stor] can be added later. *)
+  anyR "ankerl::unordered_dense::segmented_map<evmc::bytes32, evmc::bytes32>" q
+  (* TOFIXLATER: relate [stor] to the contents of the map *) .
 
 (* ------------------------------------------------------------------ *)
-(* Representation predicate for [monad::AccountSubstate].             *)
-(* ------------------------------------------------------------------ *)
-Definition AccountSubstateR
-           (q : cQp.t) (ast : evm.account_state) : Rep :=
-      _field "AccountSubstate::destructed_"       |-> boolR q (negb (block.block_account_exists ast))
-   ** _field "AccountSubstate::touched_"          |-> boolR q false          (* TOFIXLATER *)
-   ** _field "AccountSubstate::accessed_"         |-> boolR q false          (* TOFIXLATER *)
-   ** _field "AccountSubstate::accessed_storage_" |-> anyR
-        "ankerl::unordered_dense::set<bytes32_t>" q                          (* TOFIXLATER *)
-   ** structR "monad::AccountSubstate" q.
+(* Very lightweight predicate for the base class --------------------- *)
+Definition AccountSubstateR `{cpp_logic}
+           (q  : cQp.t)
+           (acc : evm.account_state) : Rep :=
+  (* Precise field-wise ownership can be introduced later. *)
+  structR "monad::AccountSubstate" q.     (* TOFIXLATER *)
 
 (* ------------------------------------------------------------------ *)
-(* Representation predicate for [monad::AccountState].                *)
-(* ------------------------------------------------------------------ *)
-Definition AccountStateR
-           (q : cQp.t) (ast : evm.account_state) : Rep :=
-      (* base-class sub-object *)
-      _base "monad::AccountState" "monad::AccountSubstate"
-        |-> AccountSubstateR q ast
-   (** concrete data members ---------------------------------------- *)
-   ** _field "monad::AccountState::account_"            |-> anyR
-        "std::optional<monad::Account>" q                                (* TOFIXLATER *)
-   ** _field "monad::AccountState::storage_"            |-> anyR
-        "ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t>" q
-   ** _field "monad::AccountState::transient_storage_"  |-> anyR
-        "ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t>" q
-   ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR q false  (* TOFIXLATER *)
-   ** _field "monad::AccountState::validate_exact_balance_" |-> boolR q false  (* TOFIXLATER *)
-   ** _field "monad::AccountState::min_balance_"            |-> w256R q
-        (block.block_account_balance ast)
-   (** identity / padding ------------------------------------------ *)
-   ** structR "monad::AccountState" q.
+(* Main predicate ---------------------------------------------------- *)
+Definition AccountStateR `{cpp_logic}
+           (q   : cQp.t)
+           (acc : evm.account_state) : Rep :=
+       (* optional<Account> account_ --------------------------------- *)
+       _field "monad::AccountState::account_" |-> 
+         anyR "std::optional<monad::Account>" q        (* TOFIXLATER *)
+  ** _field "monad::AccountState::storage_" |-> 
+         MapR q (block.block_account_storage acc)
+  ** _field "monad::AccountState::transient_storage_" |-> 
+         MapR q (block.block_account_storage acc)      (* see task text *)
+  ** _field "monad::AccountState::validate_exact_nonce_" |-> 
+         anyR "bool" q                                (* bool flag *)
+  ** _field "monad::AccountState::validate_exact_balance_" |-> 
+         anyR "bool" q                                (* bool flag *)
+  ** _field "monad::AccountState::min_balance_" |-> 
+         u256R q 0%N                                  (* TOFIXLATER *)
+  (* base-class sub-object ------------------------------------------ *)
+  ** _base "monad::AccountState" "monad::AccountSubstate" |-> 
+         AccountSubstateR q acc
+  (* run-time type identity ----------------------------------------- *)
+  ** structR "monad::AccountState" q.
 
 
+
+
+  

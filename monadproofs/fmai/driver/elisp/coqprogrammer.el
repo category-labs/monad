@@ -339,7 +339,7 @@ It parses the slice with `libxml-parse-html-region` and extracts every
               ((eq proof-shell-last-output-kind 'error)
                (setq coq-programmer--pending-error-region
                      (cons (copy-marker beg) (copy-marker end)))
-               (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output))
+               (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output "\n\n Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n "))
 
               ;; ---------- compiles but has Admitted ----------S
               ((consp new-axioms)
@@ -354,7 +354,7 @@ It parses the slice with `libxml-parse-html-region` and extracts every
                "Success098"))))))
 
        ;; =================================================  Coq query
-       ("coqquery" (concat (query-coq (string-trim body)) "\n\n Remember. If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the TOFIXLATER comment.\n"))
+       ("coqquery" (concat (query-coq (string-trim body)) "\n\n Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n"))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))

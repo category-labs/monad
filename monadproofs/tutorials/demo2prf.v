@@ -395,6 +395,13 @@ Abort.
      \pre{l: list Z} lp |-> ListR 1 l
      \post{r}[Vptr r] r |-> ListR 1 (List.rev l)).
 
+
+  Compute (parser.parse_name_with module "reverse(List)").
+  (*
+  Locate parse_name_with.
+  Check (parser.parse_name_with module ).
+*)
+  
   (** why trust [List.rev] *)
   Search List.rev.
   Check rev_app_distr.

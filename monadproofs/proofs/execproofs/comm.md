@@ -270,1356 +270,450 @@ You can open `pstring_scope` to elide the %pstring part.
 In applications where speed is important and you are given a choice to chose between the 2, you probably want to choose 
 `Corelib.Strings.PrimString.string`.
 
-# Separtion Logic Library for reasoning about C++ programs in Coq
-The current task may involve writing Gallina definitions (e.g. specifications of c++ functions) involving a separation logic formalization in Coq.
-This formalization is just an instantiation of the iris separation logic library, which was first presented in the 2015 POPL paper titled 
-"Iris: Monoids and Invariants as an Orthogonal Basis for Concurrent Reasoning", which I assume you already understand.
-This section gives a brief review of our iris instantiation for reasoning about C++ programs in Coq.
-
-You already know about `Prop`, the type of logical propositions in Coq.
-For example. `True -> False`, `True /\ False`, `forall n:nat, n=n`, `exists n:nat, n=n` 
-are propositions in Coq of type `Prop`.
-
-Assertions in separation logic can also talk about the state of the memory (stack/heap) and assert ownership over memory cells.
-(This can be generalized beyond memory, to state of the world.)
-In Coq, we have defined the type `mpred` of separation logic assertions. 
-Given `a:N`, the separation logic assertion `a_addr |-> primR "int" (cQp.mut 1) (Vint a)`
-asserts that `a_addr` is a memory location which stores a primitive value (`primR`) `Vint a` of the primitive type "int". `a_addr` has type `ptr` (`bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr`), which is type we have axiomatized in Gallina to represent abstract memory locations in C++.
-
-The argument `cQp.mut 1` of type `cQp.t` signifies the ownership fraction and constness.
-For now, always use the `cQp.mut` constructor of type `Qp -> cQp.t`.
-The `1:Qp` in `cQp.mut 1` says that the `a_addr |-> primR "int" (cQp.mut 1) (Vint a)` has complete (fraction 1) ownership of the location. 
-So nobody else can be reading/writing that location concurrently. `Qp` is a type of positive rational numbers in Coq. 
-Unlike in other programming languages, in Coq, the type `Q` (rational numbers), just like the type `Z` (integers), has infinite precision: there are no rounding errors.
-
-Ownership of any positive fraction of a memory location containing a primitive value suffices to read it.
-However, to write to a location containing a primitive value, full (1) fraction is needed.
-This follows most separation logics with fractional permissions/ownerships.
-
-In `(Vint a)`, `Vint` has type  `Z->val`
-`val` is the type of (primitive) values stored at C++ "pointers" (abstract memory locations):
-
-```gallina
-Variant val : Set :=
-    Vint : Corelib.Numbers.BinNums.Z → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-  | Vchar : Corelib.Numbers.BinNums.N → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-  | Vptr : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-  | Vraw : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.raw_byte → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-  | Vundef : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-  | Vmember_ptr : name
-                  → Corelib.Init.Datatypes.option (bluerock.lang.cpp.syntax.core.atomic_name_ type)
-                    → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-
-Arguments bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vint _%_Z_scope
-Arguments bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vchar _%_N_scope
-Arguments bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.Vmember_ptr _%_cpp_name_scope _
-```
-In Coq, `Variant` is just like `Inductive`, except that in `Variant` type declarations, types of constructor arguments cannot refer to the type being defined. Such references happen in "recursive" Inductive types like `list` (the `cons` constructor).
-
-Any proposition of type Prop can also be injected to mpred. If `P:Prop`, then `[| P |]` is of type mpred.
-`[| P |]` says nothing about the state of the world (it is "pure") and just asserts the logical property P.
-mpred has analogues of the logical connectives of Prop.
-For example, if `A:mpred`, `B:mpred`, `A //\\ B` and `A \\// B` are the classical conjunctions and disjunctions.
-For universal quantification in mpred, use `Forall` (instead of `forall` in Prop).
-Similarly, for existential quantification, use `Exists` (instead of `exists` in Prop).
-For example, if A:N->mpred, `Forall a:N, A n` and `Exists a:N, A n` have type `mpred`.
-
-The main new connective in mpred is the separating conjunction, for which we have defined in Coq the notation `**` in our setup.
-if `A:mpred`, `B:mpred`, `A ** B` denotes the separating conjunction of A and B.
-Unlike `A //\\ B`, `A ** B` asserts that the ownership footprint of A and B are disjoint.
-
-Given `A:mpred`, `B:mpred`, `A |-- B` of type `Prop` denotes separation logic entailment.
-It is similar to implication `(A->B)` in classical logic. 
-In addition, it also says that the ownership footprint of B is included in the ownership footprint of A. Here are some examples of valid entailments:
-```gallina
-mloc |-> primR "int" (cQp.mut 1) (Vint 1) |-- Exists a, mloc |-> primR "int" (cQp.mut 1) (Vint a)
-mloc |-> primR "int" (cQp.mut 1) (Vint 1) |-- mloc |-> primR "int" (cQp.mut (1/2)) (Vint 1)
-P ** Q |-- P
-```
-In contrast, `mloc |-> primR "int" (cQp.mut 1) (Vint 1) |-- mloc |-> primR "int" (cQp.mut (1/2)) (Vint 2)`
-does not hold and we can in fact prove
-`(mloc |-> primR "int" (cQp.mut 1) (Vint 1) |-- mloc |-> primR "int" (cQp.mut (1/2)) (Vint 2)) -> False.`
-
-The following is also not provable because the LHS has a smaller fractional ownersip (1/3 instead of 1/2).
-```
-  Lemma insufficientFrac mloc :
-    mloc |-> primR "int" (1/3) (Vint 0) |--
-   mloc  |-> primR "int" (1/2) (Vint 0).
-  Abort. (* not provable *)
-```
-
-`A -|- B`, read as `A` bi-entails `B` is defined as `((A |-- B) /\ (B--A))`.
-
-
-## deeper dive on `|->` (points_to) assertion
-
-```gallina
-  Example as11 (mloc: ptr) (bv:Z) :mpred :=  mloc |-> primR "int" 1 (Vint bv).
-```
-As mentioned before, the LHS of `|->` must be a memory location, of type `ptr`.
-In our C++ semantics the memory location corresponding to a global variable `b` is represented as `_global "b"`:
-
-```gallina
-Example memLoc: ptr := _global "b".
-```
-
-The RHS of `|->` must be a "memory representation", of type `Rep`.
-`Rep`s:
-- defines how some "mathematical" Coq object is laid out in memory
-- specify the amount of ownership
-`primR` axiomatizes the `Rep` for primitive/scalar c++ types: int/char/long/int*/...
-  
-```gallina
-  Example intRep (q:Qp) (x:Z) : Rep := primR "int" q (Vint x).
-```
-The last argument of of `primR` is of type `val` whose `Inductive` (`Variant`) definition was shown above.
-As shown above, there are other constructors of the `val` type, e.g. the `Vptr` constructor that embeds a memory location (`ptr`) into a `val`. 
-For example, we can write a `Rep` as follows:
-
-```gallina
-  Example ptrRep (q:Qp) (mloc: ptr) : Rep := primR "int*" q (Vptr mloc).
-```
-`Rep`s are morally functions of type `ptr -> mpred` and the `|->` can be thought of applying the `Rep` on the RHS of `|->` to the memory location on the left of `|->`. 
-For example, the following assertion (`as12`) asserts that the global variable `b` of type `int*` currently has stored the memory location `mloc` and also asserts full (`1`) ownership of the location `_global "b"` (but no ownership of `mloc`).
-```gallina
-  Example as12 (mloc:ptr) :mpred :=  _global "b" |-> primR "int*" 1 (Vptr mloc).
-```
-
-We can use those primititive `Rep`s and the offset operations (e.g. field offsets, array index offsets) on `ptr` to define `Rep`s for non-scalar types like structs/arrays, as we will see later.
-# Separation Logic Specs of C++ functions
-
-The current task may involve writing separation logic specs of C++ functions.
-This section explains some custom Coq notations we have developed for writing specs of C++ functions in Coq.
-Consider a very simple C++ function foo:
-
-## A simple spec example
-```c++
-using uint = unsigned int;
-
-uint x = 0;
-uint y;
-
-void foo() {
-    y=0;
-    y=x+1;
-}
-```
-
-Here's its spec in Gallina in our framework:
-
-```gallina
-Notation uint := "unsigned int"%cpp_type.
-
-  cpp.spec "foo()" as foo_spec with (
-        \pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv
-      ).
-```
-
-`cpp.spec` is an elpi-wrapper that creates a regular Gallina `Definition` of `foo_spec` and also declares some typeclass instances that our proof automation can use to find specs. In this case, it produces the following definition:
-
-
-```gallina
-Definition foo_spec : mpred :=
-  specify {| info_name := "foo()"; info_type := tFunction "void" [] |}
-        (\pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv).
-```
-
-`cpp.spec` automatically finds out the type of the c++ function and populates the `info_type` record element.
-In `tFunction "void" []`, the first argument is the return type of `foo` and the list is the types of arguments.
-We have cpp2v, a clang-ast-visitor tool that converts c++ ASTs to Gallina, as an element of type `translation_unit`:.
-
-```gallina
-Record translation_unit : Type := {
-  symbols : symbol_table;
-  types : type_table;
-  initializer : InitializerBlock;
-  byte_order  : endian;
-}.
-```
-`cpp.spec` looks for a variable in `Context` of type `translation_unit` and finds the type there.
-`cpp.spec` also detects some common mistakes in specs so we use it instead of writing the `Definition` directly.
-The general syntax of `cpp.spec` is:
-```gallina
-cpp.spec [fully_qualified_cpp_function_name] as [gallina_defn_name] with ([spec]).
-```
-
-`spec` should be of type `WpSpec mpred val val`. `WpSpec` is a compex record type and we do not construct its elements by directly. Instead, we use notations like `\pre` `\post` which construct the appropriate record. 
-Lets look at the spec part of `foo_spec` above, which I have reproduced below.
-```gallina
-  (\pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
-   \pre _global "y" |-> anyR uint (cQp.mut 1)
-   \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv).
-```
-
-The first 2 lines specify 2 preconditions of the function and the last line specifies the postcondition. In general, a spec is just a precondition and postcondition. Multiple assertions can be combined using separation logic's `**` into a single precondition. However, for more readability, we can write different conjuncts in separate lines using the `pre` notation repeatedly in each line.
-
-Let's look at the second line, which is the simpler precondition:
-```gallina
-   \pre _global "y" |-> anyR uint (cQp.mut 1)
-```
-It asserts full ownership of the memory location for the global variable `"y"`.
-But it does not at all constrain the value that is stored at the variable `y`.
-Infact, it allows `y` to be unitialized.
-C++ semantics requires memory locations being read to be initialized but `foo` only writes to `y`. 
-Writing to uninitialized memory locations is fine. Below is a formal characterization of `anyR`:
-
-```gallina
-Lemma anyR_iff : 
-  (_global "y" |-> uninitR uint 1 \\// (Exists xv:Z, _global "y" |-> primR uint 1 xv))
-  -|-  _global "y" |-> anyR uint 1.
-Proof. 
-  rewrite bi.or_alt. go.
-  ren_hyp t bool.
-  destruct t; go. 
-Qed.
-```
-
-Now look at the first precondition in `foo_spec`:
-
-```gallina
-\pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* forall xv .. *)
-```
-`\pre` can be followed curly braces containing variable quantifications. 
-These variables are universally quantified and are in scope even in the subsequent `\pre` and `\post` items.
-In other words, the caller of the function gets to choose any well-typed instantiation of these variables.
-This precondition says that the memory location for the global variable `"x"` has the value `xv`, which is a Gallina variable (not a c++ variable). The type of `xv` is the familiar `Z` (`Corelib.Numbers.BinNums.Z`) from the Coq standard library.
-This precondition also asserts `1/2` ownership over the memory location. 
-Because `foo()` only reads the memory location, any (positive) fraction suffices. 
-Later, we will see a generalized variant of foo_spec.
-Now look at the postcondition:
-```
-   \post _global "y" |-> primR uint (cQp.mut 1) (((xv+1) `mod` (2^32))%N `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv).
-```
-The second conjunct `_global "x" |-> primR uint (cQp.mut (1/2))  xv` is exactly the same as the precondition: `foo()` doesnt change the variable `x` and doesnt store or pass any fraction of the ownership of `x` to another thread, so it returns back the entire ownership of `x`.
-Similarly `foo()` returns back the entire (`1`) ownership of `y`, but changes the value of `y` to `xv+1`, as specified by the first conjunct `_global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x"`.
-
-### variants of the above spec
-
-First, lets formally see that meaning of multiple `\pre`s: they are equivalent to combining them by `**`. For example, the above spec is equivalent to the following which is often considered less readable.
-```gallina
-  cpp.spec "foo()" as foo_spec with (
-        \pre{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv ** _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv
-      ).
-```
-
-We have notations to make specs less verbose. For example, the conjunct `_global "x" |-> primR uint (cQp.mut (1/2))  xv` was both a precondition and a postcondition. We can use `\prepost` to equivalently write such conjuncts only once:
-```gallina
-  cpp.spec "foo()" as foo_spec with (
-        \prepost{xv:Z} _global "x" |-> primR uint (cQp.mut (1/2)) xv (* this is both a precondition and a postcondition *)
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
-      ).
-```
-
-Finally, lets see a stronger spec where the precondition is weakened by generalizing the onwership fraction `(1/2)` to an arbitrary positive rational number (type `Qp`, which is a Gallina type defined by the stdpp library distributed by iris developers (`stdpp.numbers.Qp`)).
-Qp has regular arithmetic operations/notations like +, /, * defined. Use `Qp` as the scope delimiting key to use these notations, 
-e.g. (1/2+1/3)%Qp.
-
-```gallina
-    cpp.spec "foo()" as foo_spec with (
-        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv (* this is both a precondition and a postcondition *)
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
-      ).
-```
-Note that there can be multiple variable quantifications in curly braces but they need to put in parentheses, just as one would do in Gallina after `forall` e.g, `forall (n:nat) (m:nat), 0<=n+m`.
-
-## Specs involving pointer variables
-
-Consider the function `fooptr` below:
-```c++
-int a = 0;
-int *cptr;
-
-void fooptr () {
-    cptr = &a;
-}
-```
-
-`fooptr` has the following spec:
-
-```gallina
-  cpp.spec "fooptr()" as ptrspec with
-      (\pre _global "cptr" |-> anyR "int*" 1
-       \post _global "cptr" |-> primR "int*" 1 (Vptr (_global "a")) 
-      ).
-```
-Both the the precondition an the postcondition assert full (`1`) ownership of the (C++) global variable `cptr` of type `int*`.
-The precondition allows that variable to contain any value or even be uninitialized.
-The postcondition guarantees that `cptr` has the value that is the memory location of the (C++) global variable `a`.
-
-## Specs of functions receiving arguments and returning values
-
-Consider the simple twice function below, which accepts arguments and returns a value.
-```c++
-uint twice (uint x) {return 2*x;}
-```
-
-Here is a very simple but very weak spec, but illustrates how to capture arguments and return values in specs:
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_weak_spec with (
-     \arg "x" (Vint 1)
-     \post [Vint 2] emp
-      ).
-```
-The first line of the core spec (`\arg "x" (Vint 1)`) says that the there is one argument, whose C++ name is `x` and its value is assumed to be `Vint 1` as a precondition.
-The last argument of `\arg` must be of type `val`.
-Similarly, after `\post`, we can specify the returned value of type `val` in square brackets. So, in `\post [Vint 2] emp`, `[Vint 2]` says that the function returns `2`, assuming then precondition are true. the last argument of `\post` must be a separation logic assertion (of type `mpred`) formally representing the postcondition of the function.
-`emp: mpred` denotes empty ownership. It is the left/right identity element of separating conjunction (`**`), just like `True:Prop` is the identity element of regular logical conjunction in classical/intuitionistic logics (`Prop`).
-In fact, `emp:mpred` can be defined as `[| True |]`.
-In this case, the function `twice` is not passed in any external ownership and does not return any ownership: the argument is passed by value and and the result is returned by value. Later, we will see cases where arguments are passed by reference and in such cases, external ownership is passed in as a precondition and returned as a postcondition.
-
-Before that, lets make the spec more general. The only change we need is to generalize over the `1` in `\arg "x" (Vint 1)` to an arbitrary universally quantified number.
-Just like `\pre`, `\arg` can have universally quantified variables in curly braces:
-
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_spec with (
-     \arg{xv:Z} "x" (Vint xv)
-     \post [Vint ((xv*2) `mod` (2^32))] emp
-      ).
-```
-Now the precondition is relaxed to allow passing
-any non-negative integer as an argument.
-Even though the spec, as written, doesnt say that `xv` is non-negative,
-the way we have defined semantics of function calls allows the proof of this spec to assume `(0<=xv<2^32)`. This allows the spec to be less verbose and avoid mentioning the conditions on the `val` (last) argument of `arg` imposed by its type.
-More formally, in a proof that an implementation satisfies a spec, one gets to use implicit assumptions that 
-the values specified as last arguments of `\arg` satisfy `bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop`
-for the C++ type of the argument:
-
-```gallina
-bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop
-     : bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val → bluerock.lang.cpp.syntax.core.type → Prop
-```
-You can issue the query `Search bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.has_type_prop` if you need to more precisely know the implicit assumptions.
-
-Even the `\post` keyword allows variable quantification in curly braces.  Unlike in `\pre`, `\arg`, `\prepost` where the variable quantifications are universal (instantiation chosen by caller and the implementation must consider all well-typed instantiations), the variable quantifications in the curly braces just after `\post` are existential in nature: the implementation of the function gets to choose the instantiation and the callers must consider all well-typed insantiations.
-Existential quantifications in `\post` are useful when we do not want the caller to know the exact returned value or when the returned value is non-deterministic.
-For example, lets weaken the spec above to weaken the postcondition to merely say that the returned value is even and not guarantee anything else: 
-
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
-     \arg{xv:Z} "x" (Vint xv)
-     \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
-      ).
-```
-This spec would make more sense if the function had name `someEvenNumberBasedOn` rather than `twice`. A valid implementation could pick a random number less than half of INT_MAX and multiply it by 2 to compute the returned value. 
-
-
-## Specs of functions passing arguments by reference
-
-`doubleInPlace` is similar to `twice` except the the argument is passed by reference and the result is stored in the same place.
-```c++
-void doubleInPlace (uint & x) {x=2*x;}
-```
-Below is its spec.
-
-```gallina
-  cpp.spec "doubleInPlace(unsigned int &)" as doubleInPlace_spec with (
-     \arg{xloc:ptr} "x" (Vptr xloc)
-     \pre{xv:Z} xloc |-> primR "unsigned int" (cQp.mut 1) (Vint xv)
-     \post xloc |-> primR "unsigned int" (cQp.mut 1) (Vint ((xv*2) `mod` (2^32)))
-      ).
-```
-Unlike in `twice(unsigned int)`, the argument now contains not an integer value but a memory location, say `xloc`.
-In the C++ axiomatization, an argument passed by reference is similar to an argument passed as a pointer.
-The `\pre` line then asserts full (1) ownership of `xloc` and asserts that it contains a primitive integer, say `xv`.
-The postcondition returns all that ownership of `xloc` but asserts the updated (twice) value.
-
-## Specs of functions with composite datatype arguments.
-
-`primR`, the representation of primitive types like int/char/long/.. is axiomatized by our C++ semantics.
-However, the representation of composite types like int[], structs can be constructed using `primR` and an axiomatized offset operation on memory locations (`ptr`):
-
-```gallina
-bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM._offset_ptr: ptr → offset → ptr
-```
-
-`offset` can be constructed in 2 ways: field offsets of structs/classes, array offsets.
-
-`o_sub` is the axiomatised operator to construct array offsets:
-```gallina
-bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_sub : genv → type → Z → offset
-```
-The `genv` is automatically inferred using typeclasses. When writing specs, a `Section` variable of type `genv` is typically always in context. 
-A `genv` represents platform parameters like endianness, word size of the machine. 
-The `type` argument is the C++ type of the array, and the `Z` argument is the array index.
-
-### Array offsets
-Consider the following global variable in a C++ file:
-```c++
-int arr[3];
-```
-
-In Gallina,  `_global "arr"` represents the memory location of that C++ global variable `arr`.
-`_offset_ptr (_global "arr") (o_sub _ "int" 2)` represents the C++ location `arr[2]`.
-We have defined a notation to make gallina array index offsets look somewhat like C++, except that `o_sub` needs the C++ type as well explicitly.
-
-```coq
-  Example notation_example1: (_global "arr").["int"!2] =  _offset_ptr (_global "arr") (o_sub _ "int" 2).
-  Proof.
-    reflexivity.
-  Qed.
-```
-
-
-With that notation, we can write the following assertion that asserts full ownership of the cell `arr[2]` in C++ and also asserts that that cell has the value 99.
-
-```gallina
-Example array_cell_assertion := (_global "arr").["int"!2]  |-> primR "int" 1 (Vint 99).
-```
-
-#### `arrayR`
-While writing specs of functions that return arrays or receive them as arguments, it can be verbose to separately assert ownership of every cell. Thus, we have `arrayR`, a recursive definition (NOT an axiom) which asserts ownership of all cells. Its definition has a few layers so lets just illustrate it with an example:
-
-```galina
-Example arrayR3Unfold {T:Type} (p:ptr) (n1 n2 n3: T) (R:T->Rep):
-  p |-> arrayR uint R [n1;n2;n3]
-    -|- ( valid_ptr (p .[ uint ! 3 ])
-            ** p |-> R n1
-            ** p .[ uint ! 1 ] |-> R n2
-            ** p .[ uint ! 2 ] |-> R n3).
-```
-The last 3 conjuncts just assert the ownership of the first 3 cells, parametrized by `R` which defines how a mathematical item of Gallina type `T` is represented in C++ memory.
-The first conjunct, `valid_ptr (p .[ uint ! 3 ])`, is crucial to show that pointer increments are not undefined behaviour (UB). For example, the following program has UB according to C++ semantics:
-
-```c++
-void ubptr(){
-  int arrl[3];
-  int *p=arrl;
-  p++;// proof generates gallina obligation `valid_ptr arrl[1]`
-  p++;// generates obligation `valid_ptr arrl[2]`
-  p++;// generates obligation `valid_ptr arrl[3]`
-  p++;// generates obligation `valid_ptr arrl[4]`: NOT PROVABLE`
-}
-```
-In C++, it is valid to have a pointer point one past the end of an array, but you must not dereference it.
-It is undefined behavior to increment a pointer past the "one past the end" position, EVEN IF YOU DONT DEREFERENCE THAT POINTER.
-The `arrayR` definition has the `valid_ptr` assertion for just the index last the last one and not for the previous indices because those assertions can be derived. For example, we can derive  `valid_ptr (p .[ uint ! 2 ])` from `valid_ptr (p .[ uint ! 3 ])`. Also, `valid_ptr` assertions are `Persistent`. Persistent separation logic assertions can be freely duplicated (not that `valid_ptr` doesnt mean that the pointer is live, it just prevents UB pointer increments):
-
-```coq
-Lemma valid_ptr_dup (p:ptr) : valid_ptr p |-- valid_ptr p ** valid_ptr p.
-Proof using. go. Qed.
-```
-
-Below is a more concrete example illustrating the use of `arrayR`:
-
-```coq
-  Example arrayR3 (p:ptr) (n1 n2 n3: Z) (q: Qp):
-    p |-> arrayR uint (fun i:Z => primR uint q i) [n1;n2;n3]
-      -|- ( valid_ptr (p .[ uint ! 3 ])
-              ** p |-> primR uint q n1
-              ** p .[ uint ! 1 ] |-> primR uint q n2
-              ** p .[ uint ! 2 ] |-> primR uint q n3).
-  Proof. ... Qed.
-```
-Using `arrayR` we can conveniently specify functions receiving/returning arrays, e.g.:
-
-```c++
-uint gcdl (uint * nums, uint length) {
-    uint result=0;
-    for (uint i=0; i<length; i++) {
-        result=gcd(result, nums[i]);
-    }
-    return result;
-}
-```
-It spec is:
-```gallina
-  cpp.spec "gcdl(unsigned int*, unsigned int)" as gcdl_spec with
-  (   \arg{numsp:ptr} "nums" (Vptr numsp)
-      \prepost{(l: list Z) (q:Qp)}
-             numsp |-> arrayR uint (fun i:Z => primR uint q i) l
-      \arg "length" (Vint (length l))
-      \post [Vint (Stdlib.Lists.List.fold_left Z.gcd l 0)] emp).
-```
-
-
-`Stdlib.Lists.List.fold_left`, `Z.gcd` are all Gallina functions from the standard library, independent of C++:
-
-```gallina
-  Example fold_left_gcd (n1 n2 n3: Z) :
-    Stdlib.Lists.List.fold_left Z.gcd [n1;n2;n3] 0 =  Z.gcd (Z.gcd (Z.gcd 0 n1) n2) n3.
-  Proof. reflexivity. Qed.
-```
-
-Many C++ specs connect C++ code to their pure versions in Gallina, which already have plenty of correctness properties proved in the standard library. Sometimes, new Gallina functions need to be defined to write the spec of C++ functions and in such cases, one needs to worry that the Gallina functions used in the spec themselves dont have bugs. These concerns can be alleviated by proving correctness properties about the new Gallina functions. 
-
-### Struct/Class field offsets
-Similarly, consider the following struct
-
-```c++
-struct Node {
-    Node(Node *next, int data) : next_(next), data_(data) {}
-
-    Node *next_;
-    int data_;
-};
-```
-
-Our semantics axiomatizes the following to refer to the offset of a struct/class field:
-
-```gallina
-bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM._field : bluerock.lang.cpp.syntax.core.name -> bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset
-```
-
-The first argument, bluerock.lang.cpp.syntax.core.name, is supposed to be the name of the field.
-We have custom notations (in scope `%cpp_name`) defined to parse string constants in regular double quotes as bluerock.lang.cpp.syntax.core.name.
-As an example, if `nbase:ptr` is the memory location where a struct object lives, 
-`_offset_ptr nbase (_field "::Node::data_"%cpp_name)` is the memory location where its `::data_` field lives.
-We don't need to explicitly write the `%cpp_name` part as Coq has been told (via the `Arguments` directive) that the argument of `_field` should be parsed in the `%cpp_name` notation scope.
-
-As with arrays, we have convenience notations to make gallina field offsets look somewhat like C++:
-```coq
-  Example notation_example2 (nbase:ptr) :
-    nbase ,, _field "::Node::data_" = _offset_ptr nbase (_field "::Node::data_").
-  Proof using. reflexivity. Qed.
-```
-We have an even more concise notation specialized to `_field` offsets:
-```coq
-  Example notation_example3 (nbase:ptr) :
-    nbase ., "::Node::data_" = _offset_ptr nbase (_field "::Node::data_").
-  Proof using. reflexivity. Qed.
-```
-
-Just we defined `arrayR` to describe ownership of entire arrays in `\pre` and `\post` conditions, we can define `NodeRf`:
-
-```gallina
-Definition NodeRf  (q: cQp.t) (data: Z) (nextLoc: ptr) : ptr -> mpred :=
-  fun (nodebase: ptr) =>
-  nodebase ,, _field "Node::data_" |-> primR "int" q (Vint data)
-  ** nodebase ,, _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
-  ** nodebase |-> structR "Node" q.
-```
-
-
-`structR "Node" q` asserts that the intrinsic identiy of the object is `Node`. This assertion is used in our C++ semantics to rule out unsafe dynamic casts. In general, `structR` also denotes the ownership of the padding in the objects if there is any: `memcpy` needs ownersip of the padding as well. Also, the destructor proof requires returning full ownersips of not just all the fields but also the `structR "Node" 1`.
-Now we can use `NodeRf` in specs of `Node` functions, e.g.
-
-```c++
-void incdata(Node * n){
-  n->data_++;
-}
-```
-
-Its spec is
-
-```gallina
-  cpp.spec "incdata(Node *)"  as incd_spec with (
-     \arg{nbase} "n" (Vptr nbase)
-     \pre{data nextLoc} NodeRf 1 data nextLoc nbase
-     \pre [| data < 2^31 -1 |] (* to prevent overflow. overflow in signed addition is undefined behaviour *)
-     \post NodeRf 1 (1+data) nextLoc nbase
-      ).
-```
-
-However, we can write the above spec in an equivalent but more idiomatic way where we use the `|->` (points_to) notation just as we do for primitive C++ types like `int`.
-First, note that `Rep` is morally equivalent to `ptr -> mpred`, so the return type of `NodeRf` can just be `Rep`.
-Also, we have lifted the separation logic operators like `**`, `-*`, `//\\` to also work on `Rep` in the usual pointwise way.
-Also, we have `_offsetR : offset → Rep → Rep` and `|->` is overloaded to mean `_offsetR` when its left hand side is `offset` instead of `ptr`. 
-`_offsetR` is just a convenience defined to satisfy the following property:
-
-```coq
-Lemma _at_offsetR:
-  ∀ (p : ptr) (o : offset) (r : Rep),
-    (p |-> o |-> r) -|- (p ,, o |-> r).
-```
-
-
-With these tools, `NodeRf` can be dedfined more concisely, but equivalently as follows to return a `Rep` instead of a `ptr->mpred`.
-
-```gallina
-Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
-  _field "Node::data_" |-> primR "int" q (Vint data)
-  ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
-  ** structR "Node" q.
-```
-One advantage is that we can now use NodeR with the standard `|->` (points_to) notation just like we do for primitive types:
-
-```gallina
-  Lemma nodeRequiv (base:ptr) (data:Z) (nextLoc: ptr) (q: cQp.t):
-    NodeRf q data nextLoc base -|- base |-> NodeR q data nextLoc.
-  Proof using. unfold NodeRf, NodeR. iSplit; go. Qed.
-```
-
-
-```gallina
-  cpp.spec "incdata(Node *)"  as incd_spec_idiomatic with (
-     \arg{nbase} "n" (Vptr nbase)
-     \pre{data nextLoc} nbase |-> NodeR (cQp.mut 1) data nextLoc
-     \pre [| data < 2^31 -1 |]
-     \post nbase |-> NodeR (cQp.mut 1) (1+data) nextLoc
-   ).
-```
-Because `incdata` modifies the object, it requires the full ownership as a precondition. Functions that do not modify or destruct the object can just get away with any fraction `q` in the precondition.
-
-Structs and classes can have methods. Method specs are exactly like function specs
-except that when `cpp.spec` determines that the C++ item being specified is a method/constructor/destructor (and not a regular function), it expects the last argument (just after `with`) to be a function taking the `this` memory location as argument. For example, consider the following `incdataM` method:
-
-```c++
-struct Node {
-    Node(Node *next, int data) : next_(next), data_(data) {}
-
-    Node *next_;
-    int data_;
-    void incdataM(){
-      this->data_++;
-    }
-  
-};
-```
-
-Here is a spec of `incdataM`:
-```gallina
-  cpp.spec "Node::incdataM()"  as incdata_method_Spec with (fun (this:ptr) =>
-     \pre{data nextLoc} this |-> NodeR (cQp.mut 1) data nextLoc
-     \pre [| data < 2^31 -1 |]  
-     \post this |-> NodeR (cQp.mut 1) (1+data) nextLoc
-   ).
-```
-
-Similarly, here is the spec of the `Node` constructor:
-
-```coq
-  cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
-     \arg{nextLoc} "n" (Vptr nextLoc)
-     \arg{data} "n" (Vint data)
-     \post this |-> NodeR (cQp.mut 1) data nextLoc
-    ).
-
-```
-Constructors typically return full(1) ownership of the object. This ownership can then be split into multiple pieces, e.g.  to share with different threads.
-Conversely, destructor specs typically take the full ownership as precondition and dont return any ownership of the object in the postcondition:
-
-```gallina
-  cpp.spec "Node::~Node()" as node_destr with (fun (this:ptr) =>
-    \pre{(data:Z) (nextLoc:ptr)} this |-> NodeR (cQp.mut 1) data nextLoc
-    \post emp).
-```
-
-We have registered `cQp.mut` as a coercion so that we can write just `1` instead of `(cQp.mut 1)` above, but coercions should be avoided when you are trying to debug a compile error.
-
-### base/derived class offsets
-
-`_base` represent the offset of the base class subobject, as illustrated in the example below 
-```gallina
-  Example derivedToBaseOffset: offset := _base  "std::atomic<int>" "std::__atomic_base<int>".
-```
-The first argument is the name of the class of the current object. The second argument is the name of the base class.
-`_derived` is the inverse operation, illustrated by the following example:
-```gallina
-  Example baseToDerivedOffset: offset := _derived  "std::__atomic_base<int>" "std::atomic<int>".
-```
-We have the following equations (`_derived` := `o_derived σ` (notation) and `_base` := `o_base σ` (notation)) formalizing the inverseness:
-
-```
-o_derived_base:
-  ∀ (σ : genv) (p : ptr) (base derived : name), directly_derives σ derived base → p ,, o_derived σ base derived ,, o_base σ derived base = p
-o_base_derived:
-  ∀ (σ : genv) (p : ptr) (base derived : name), directly_derives σ derived base → p ,, o_base σ derived base ,, o_derived σ base derived = p
-```
-
-`_base` can be used to get the offsets of subclass fields when writing `Rep` predicates of derived classes.
-
-### Fractional ownership of arrays/classes
-For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. 
-A thread owning `mloc |-> primR "int" (cQp.mut q) v` can depend on the value of the location `mloc` being `v`: because the thread has a q (0<q) fraction, 
-no other thread can have 1 fraction and thus no other thread can write to `mloc`.
-We (not the semantics) get to define `Rep`s of Classes and thus we get to decide whether the `Rep` predicates even takes a fraction (`cQp.t`) argument and 
-the significance of the fraction.
-A thread `base |-> NodeR (cQp.mut q) data nextLoc`, can rely on the Node object to not change and not be destructed: because the functions/methods that change the object (e.g. `incdataM`) require 1 ownership, as does the destructor.
-Given the `base |-> NodeR (cQp.mut q) data nextLoc`
-
-
-```coq
-Lemma nodeRsplit (q1 q2: Qp) data nextLoc (base:ptr):
- base |-> NodeR (cQp.mut (q1+q2)) data nextLoc -|- base |-> NodeR (cQp.mut q1) data nextLoc ** base |-> NodeR (cQp.mut q2) data nextLoc.
-```
-
-
-
-### Logical Abstraction with Rep Predicates for classes
-
-`NodeR` specs provided no abstraction: it just exposed the 2 C++ fields as 2 Gallina arguments of their corresponding Gallina types. Many `Rep` predicates provide a much more pure/clean/mathematical/high-level logical abstraction of C++ fields. For example, consider linked lists:
-
-```c++
-typedef Node * List;
-```
-
-We can define a Gallina `Rep` for `ListR` in a way that makes the users of the spec treat the linked list as just a mathematical/Gallina list of numbers, without having to deal with the complicated ways the list is laid out in memory:
-
-```gallina
-  Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
-    match l with
-    | [] => nullR
-    | hd :: tl =>
-        Exists (tlLoc: ptr),
-          NodeR q hd tlLoc
-          ** pureR (tlLoc |-> ListR q tl)
-    end.
-```
-
-Some example lemmas to illustrate `ListR`:
-```coq
-  Example listRUnfold (q:Qp) (head:ptr): head |-> ListR q [4;5;6] |--
-    Exists node5loc node6loc,
-       head |-> NodeR q 4 node5loc
-       ** node5loc |-> NodeR q 5 node6loc
-       ** node6loc |-> NodeR q 6 nullptr
-       (* ** [| node5loc <> node6loc <> head|] *).
-  Proof using. work. unfold NodeR.  go. Qed.
-
-  Example nullReq (p: ptr): p |-> nullR |-- [| p = nullptr |].
-  Proof. go. Qed.
-```
-
-Now we can write specs of linked list functions, e.g.:
-
-```c++
-List reverse(List l) {
-  List prev = nullptr;
-  List next = nullptr;
-  while (l != nullptr) {
-    next = l->next_;
-    l->next_ = prev;
-    prev = l;
-    l = next;
-  }
-    return prev;
-}
-```
-
-Spec:
-
-```gallina
-  cpp.spec "reverse(Node*)" as reverse_spec with
-    (\arg{lp} "l" (Vptr lp)
-     \pre{l: list Z} lp |-> ListR 1 l
-     \post{r}[Vptr r] r |-> ListR 1 (List.rev l)).
-```
-The spec essentially says that the c++ implementation should behave like the Gallina `List.rev` function for which we have several properties proven in the Coq standard library.
-
-When writing `Rep` predicates, carefully think whether some C++-related details can be abstracted away. Avoid `Rep` predicates that just expose all class fields unless the C++ class really provides no abstraction and is just a thin wrapper.
-
-
-
-## Specs/reps of templated classes
-
-The above strategy can be used to write specs and Rep predicates of *concrete* instantiations of templated classes/functions. However, in such cases, it is often better to write more generic spec and Rep predicates (to avoid duplication). As a simplest example, consider `std::optional`. We can write its `Rep` predicate generically as follows:
-
-
-```gallina
-
-
-  (* this is the offset at which the value of the Some type is stored in case this optional is a Some. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
-  Definition opt_somety_offset (somety:type): offset. Proof. Admitted.
-
-(* this is the offset at which a bool is stored, indicating whether this is a Some or None. this is some implementation-defined offset, typically some base class offset(s) followed by some field offset. *)
-  Definition opt_engaged_offset (somety:type): offset. Proof. Admitted.
-
-  
-  Definition optionR {SomeTyModel:Type} (somety: bluerock.lang.cpp.syntax.core.type)
-    (someTyRep: SomeTyModel -> Rep) (q:Qp) (o: option SomeTyModel): Rep :=
-    structR (Ninst "std::optional" [Atype somety]) (cQp.mut q) **
-    match o with
-    | None => opt_engaged_offset somety |-> boolR (cQp.mut q) false
-    | Some b => opt_somety_offset somety |-> someTyRep b
-                ** opt_engaged_offset somety |-> boolR (cQp.mut q) true
-    end.
-
-```
-
-`somety:type` is a C++ type and `SomeTyModel` is supposed to be the Gallina model of `somety`.
-The `Rep` being defined will be for `std::optional<somety>`.
-The `Rep` predicate `someTyRep` is a parameter defining how a mathematical/Gallina `SomeTyModel` is laid out in memory as data of c++ type `somety`.
-
-`(Ninst "std::optional" [Atype somety])` of type `bluerock.lang.cpp.syntax.core.name` illustrates that even though we were able to write C++ names of type as string-like literals, names have structure and the notation mechanism parses those into the structure.
-names (`bluerock.lang.cpp.syntax.core.name`) are defined mutually inductively with types, expressions, statements. Below is a heavily elided glimples of the big block of mutually inductive definitions:
-
-```
-Notation name := name'
-
-Inductive name' : Set :=
-    Ninst : name → list temp_arg → name
-  | Nglobal : atomic_name → name
-  | Ndependent : type → name
-  | Nscoped : name → atomic_name → name
-  | Nunsupported : string → name
-  with temp_arg' : Set := ...
-  with type' : Set :=
-    Tparam : ident → type
-  | Tptr : type → type
-  | Tref : type → type
-  | Tnum : int_rank → signed → type
-  | Tchar_ : char_type → type
-  | Tvoid : type
-  | Tarray : type → N → type
-  | Tnamed : name → type
-  | Tenum : name → type
-  | Tfunction : function_type_ type → type
-  | Tbool : type
-  | Tmember_pointer : type → type → type
-  ...
-  with Expr' : Set :=
-    Eparam : ident → Expr
-  | Evar : localname → type → Expr
-  | Eglobal : name → type → Expr
-  | Estring : literal_string.t → type → Expr
-  | Eint : Z → type → Expr
-  | Ebool : bool → Expr
-  | Eunop : UnOp → Expr → type → Expr
-  | Ebinop : BinOp → Expr → Expr → type → Expr
-  | Ederef : Expr → type → Expr
-  ....
-  with Stmt' : Set :=
-    Sseq : list Stmt → Stmt
-  | Sdecl : list VarDecl → Stmt
-  | Sif : option VarDecl → Expr → Stmt → Stmt → Stmt
-  | Sif_consteval : Stmt → Stmt → Stmt
-  | Swhile : option VarDecl → Expr → Stmt → Stmt
-  ...
-  with VarDecl' : Set :=...
-  with BindingDecl' : Set :=...
-  with Cast' : Set :=...
-  .
-```
-
-We can now instantiate `optionR` to define Rep predicates of various instantiations of `std::optional`:
-
-```gallina
-  (* Rep predicate for `std::optional<int>` *)
-  Definition optionalIntR  (q:cQp.t) (o: option Z) : Rep  :=
-    @optionR Z "int" (fun (z:Z) => primR "int" q (Vint z)) q o.
-
-  (* Rep predicate for `std::optional<List>` *)
-  Definition optionalListR  (q:cQp.t) (o: option (list Z)) : Rep  :=
-    @optionR (list Z) "Node*" (fun (l: list Z) => ListR q l) q o.
-```
-(C++ type aliases should be unfolded when refering to C++ names in galline: so we write `Node*` not `List`.)
-
-Now, we can use `cpp.spec` to write specs of methods of instantiations of `std::optional`, e.g.:
-
-```gallina
-   cpp.spec "std::optional<int>::value()" as value_int_spec with
-       (fun (this:ptr) =>
-       \prepost{(z : Z) (q : cQp.t)} this |-> optionalIntR q (Some z)
-       \post[Vptr (this ,, opt_somety_offset "int")] emp).
-```
-The `value()` method returns a reference to the stored integer, thus the spec returns the memory location where the int is stored.
-Unfortunately, `cpp.spec` can only be used to write specs of fully instantiated function/method names. However, as mentioned above, `cpp.spec` is just an elpi helper that figures out the types of methods/functions and then uses the underlying `specify` assertion.
-We can directly write generic specs by using `specify`:
-
-
-```
-   Definition value ty T :=
-    specify
-    {|
-      info_name :=
-        Nscoped (Ninst "std::optional" [Atype ty])
-          (Nfunction function_qualifiers.Ncl "value" []);
-      info_type :=
-        tMethod (Ninst "std::optional" [Atype ty]) QC "const evmc::address&" []
-    |}
-    (λ this : ptr,
-       \prepost{(R : T → Rep) (t : T) (q : Qp)} this |-> optionR ty R q (Some t)
-         \post[Vptr (this ,, opt_somety_offset ty)] emp).
-		 
-  Definition has_value ty T :=
-  specify
-    {|
-      info_name :=
-        Nscoped (Ninst "std::optional" [Atype ty])
-          (Nfunction function_qualifiers.Nc "has_value" []);
-      info_type := tMethod (Ninst "std::optional" [Atype ty]) QC "bool" []
-    |}
-    (λ this : ptr,
-       \prepost{(R : T → Rep) (o : option T) (q : Qp)} this |-> optionR ty R q o
-       \post[Vbool (isSome o)]
-                emp).
-```
-
-The first argument of `specify` is of type `sym_info`. Writing it directly by hand (especially the `info_type` field) can be problematic.
-You can first use `lookupSymbolByFullName` to get the type of a concrete.
-```coqquery
->> Compute (lookupSymbolByFullName module "std::optional<unsigned long>::has_value() const").
-     = Some
-         {|
-           info_name := "std::optional<unsigned long>::has_value() const"; info_type := tMethod "std::optional<unsigned long>" QC "bool" []
-         |}
-  : option sym_info
-```
-
-## Spec Examples
-TODO
-
-## finding existing specs in the context
-
-You can use the regular Coq `Search` vernacular to find specs of C++ function of a given fully qualified C++ name exists in the current context. This works because `cpp.spec` declares an instance of the typeclass
-`bluerock.auto.cpp.database.spec.SpecFor.C`.
-More concretely, the above spec (`foo_spec`) declares a typeclass instance of type `bluerock.auto.cpp.database.spec.SpecFor.C "foo()" foo_spec`. 
-Thus, you can issue the following query to find out all the available specs for `foo()`. 
-The name (here, `foo()`) must be a fully qualified C++ name.
-
-```coqquery
-Search (bluerock.auto.cpp.database.spec.SpecFor.C "foo()" _).
-```
-
-## Common mistakes in specs:
-
-### too much ownership
-Let's revisit the `foo` function:
-```c++
-void foo() {
-    y=0;
-    y=x+1;
-}
-```
-Here is a suboptimal spec:
-```gallina
-Notation uint := "unsigned int"%cpp_type.
-
-  cpp.spec "foo()" as foo_spec with (
-        \pre{xv:Z} _global "x" |-> primR uint (cQp.mut 1) xv (* forall xv .. *)
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N ** _global "x" |-> primR uint (cQp.mut (1/2))  xv
-      ).
-```
-The first `\pre` asserts full ownership of `x`, even though the function only reads `x`. So a stronger spec is to weaker the `\pre` to allow any `q` fractional ownership of `x`:
-
-```gallina
-    cpp.spec "foo()" as foo_spec with (
-        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
-      ).
-```
-
-
-### missing or too-weak precondition
-Carefully review the code to see which variables are being read or written. If the function calls other functions, search/review the preconditions in the callee's spec.
-For example, the following spec of `foo` is wrong because its precondition does not assert any ownership of `x` thus the function's proof would get stuck at the point it reads the variable `x`
-
-```gallina
-    cpp.spec "foo()" as foo_spec with (
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
-      ).
-```
-
-The following spec is wrong because the precondition only asserts some `qy` fractional ownership of `y`, which is not sufficient for writing to `y`.
-
-```gallina
-    cpp.spec "foo()" as foo_spec with (
-        \prepost{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
-        \pre{(qy:Qp)} _global "y" |-> anyR uint (cQp.mut qy)
-        \post _global "y" |-> primR uint (cQp.mut qy) ((xv+1) `mod` (2^32))%N
-      ).
-```
-
-
-### missing postcondition
-Ownership is only created at constructor calls and destructed at destructor calls.
-Every resource passed to a function as a part of its precondition must either be returned back (after possible modifications of the value), or destructed, or passed to some other (possibly new) thread (e.g. via signals/semaphores/fork). Functions can also rearrange ownersip: e.g. some ownersip pience can move from being attached to a function argument to some other argument (e.g. for functions that insert the argument into a data structure).
-
-For example, the following spec is wrong because it does not return back the ownerhip of `x`:
-```gallina
-    cpp.spec "foo()" as foo_spec with (
-        \pre{(xv:Z) (q:Qp)} _global "x" |-> primR uint (cQp.mut q) xv
-        \pre _global "y" |-> anyR uint (cQp.mut 1)
-        \post _global "y" |-> primR uint (cQp.mut 1) ((xv+1) `mod` (2^32))%N
-      ).
-```
-
-### quirks of `cpp.spec`:
-
-#### type required for `this`:
-for method/constructor/destructor specs, the `this` argument must have a type annotation, as in the example as below:
-
-```gallina
-  cpp.spec "Node::Node(Node*, int)" as node_constr with (fun (this:ptr) =>
-     \arg{nextLoc} "n" (Vptr nextLoc)
-     \arg{data} "n" (Vint data)
-     \post this |-> NodeR (cQp.mut 1) data nextLoc
-    ).
-```
-
-Replacing `(fun (this:ptr) => ...)` by `(fun this => ...)` will cause issues with parsing the spec notation.
-This parsing is done by custom Elpi code
-
-####  `\post` quirks
-Every spec can have at most one `\post`. multiple conjuncts can be compbined using `**`.
-Also, if you need existentially quantify something in the postcondition, there are 2 ways to do it.
-For example, consider the following spec of `twice`:
-
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
-     \arg{xv:Z} "x" (Vint xv)
-     \post{xvfinal} [Vint xvfinal] [| xvfinal `mod` 2 = 0 |]
-      ).
-```
-Just to illustrate existential quantifications in `\post`, the above spec can be equivalently written as:
-
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_weak_spec2 with (
-     \arg{xv:Z} "x" (Vint xv)
-     \post{(xvfinal xvfinalhalf : Z)} [Vint xvfinal] [| xvfinalhalf * 2 =  xvfinal|]
-      ).
-```
-However, this spec is not idiomatic. The last argument of `\post` is of type `mpred` and and thus supports existential quantification. Thus the existential quantification over `xvfinalhalf` can be moved to the last argument:
-
-```gallina
-  cpp.spec "twice(unsigned int)" as twice_weak_spec3 with (
-     \arg{xv:Z} "x" (Vint xv)
-     \post{(xvfinal : Z)} [Vint xvfinal] (Exists xvfinalhalf, [| xvfinalhalf * 2 =  xvfinal|])
-      ).
-```
-Note the variables existentially quantified in the last argument are NOT in scope in the previous argument (square bracket denoting the return value). Thus, we can NOT move the quanification over `xvfinal`, which is mentioned in the return value, to the last argument to colocate it with the quantification over `xvfinalhalf`.
-Note that the (existential) variable quantifications in the curly brace just after `\post` is scope in the next argument (return value). Typically, in the curly braces after `\post`, we ONLY quantify the variables that are mentioned in the return value. In fact, `cpp.spec` has a quirk that if there is no return value (e.g. the function returns value, in which case, the square bracket is entirely omitted), there must be no curly brace.
 
 
 # Current Task
-Define `AccountStateR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the below C++ class `monad::AccountState`.
-(all the c++ code below is in namespace `monad`)
-
-```c++
-class AccountState final : public AccountSubstate
-{
-public: // TODO
-    template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
-
-    std::optional<Account> account_{};
-    Map<bytes32_t, bytes32_t> storage_{};
-    Map<bytes32_t, bytes32_t> transient_storage_{};
-    bool validate_exact_nonce_{false};
-    bool validate_exact_balance_{false};
-    uint256_t min_balance_{0};
-
-    evmc_storage_status zero_out_key(
-        bytes32_t const &key, bytes32_t const &original_value,
-        bytes32_t const &current_value);
-
-    evmc_storage_status set_current_value(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value, bytes32_t const &current_value);
-
-public:
-    explicit AccountState(std::optional<Account> &&account)
-        : account_{std::move(account)}
-    {
-    }
-
-    explicit AccountState(std::optional<Account> const &account)
-        : account_{account}
-    {
-    }
-
-    AccountState(AccountState &&) = default;
-    AccountState(AccountState const &) = default;
-    AccountState &operator=(AccountState &&) = default;
-    AccountState &operator=(AccountState const &) = default;
-
-    bytes32_t get_transient_storage(bytes32_t const &key) const
-    {
-        auto const it = transient_storage_.find(key);
-        if (MONAD_LIKELY(it != transient_storage_.end())) {
-            return it->second;
-        }
-        return {};
-    }
-
-    evmc_storage_status set_storage(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
-    {
-        bytes32_t current_value = original_value;
-        {
-            auto const it = storage_.find(key);
-            if (it != storage_.end()) {
-                current_value = it->second;
-            }
-        }
-        if (value == bytes32_t{}) {
-            return zero_out_key(key, original_value, current_value);
-        }
-        return set_current_value(key, value, original_value, current_value);
-    }
-
-    void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
-    {
-        transient_storage_[key] = value;
-    }
-
-    [[nodiscard]] bool validate_exact_nonce() const
-    {
-        return validate_exact_nonce_;
-    }
-
-    [[nodiscard]] bool validate_exact_balance() const
-    {
-        return validate_exact_balance_;
-    }
-
-    [[nodiscard]] uint256_t const &min_balance() const
-    {
-        return min_balance_;
-    }
-
-    void set_validate_exact_nonce()
-    {
-        validate_exact_nonce_ = true;
-    }
-
-    void set_validate_exact_balance()
-    {
-        validate_exact_balance_ = true;
-    }
-
-    void set_min_balance(uint256_t const &value)
-    {
-        if (value > min_balance_) {
-            min_balance_ = value;
-        }
-    }
-};
-```
-Defn of the base class:
-
-```c++
-class AccountState final : public AccountSubstate
-{
-public: // TODO
-    template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
-
-    std::optional<Account> account_{};// what does None mean here?
-    Map<bytes32_t, bytes32_t> storage_{};
-    Map<bytes32_t, bytes32_t> transient_storage_{};
-    bool validate_exact_nonce_{false};
-    bool validate_exact_balance_{false};
-    uint256_t min_balance_{0};// can we just use account_.value.balance for this? validate_exact_balance_ will determine whether it is an exact value or a lower bound
-
-    evmc_storage_status zero_out_key(
-        bytes32_t const &key, bytes32_t const &original_value,
-        bytes32_t const &current_value);
-
-    evmc_storage_status set_current_value(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value, bytes32_t const &current_value);
-
-public:
-    explicit AccountState(std::optional<Account> &&account)
-        : account_{std::move(account)}
-    {
-    }
-
-    explicit AccountState(std::optional<Account> const &account)
-        : account_{account}
-    {
-    }
-
-    AccountState(AccountState &&) = default;
-    AccountState(AccountState const &) = default;
-    AccountState &operator=(AccountState &&) = default;
-    AccountState &operator=(AccountState const &) = default;
-
-    bytes32_t get_transient_storage(bytes32_t const &key) const
-    {
-        auto const it = transient_storage_.find(key);
-        if (MONAD_LIKELY(it != transient_storage_.end())) {
-            return it->second;
-        }
-        return {};
-    }
-
-    evmc_storage_status set_storage(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
-    {
-        bytes32_t current_value = original_value;
-        {
-            auto const it = storage_.find(key);
-            if (it != storage_.end()) {
-                current_value = it->second;
-            }
-        }
-        if (value == bytes32_t{}) {
-            return zero_out_key(key, original_value, current_value);
-        }
-        return set_current_value(key, value, original_value, current_value);
-    }
-
-    void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
-    {
-        transient_storage_[key] = value;
-    }
-
-    [[nodiscard]] bool validate_exact_nonce() const
-    {
-        return validate_exact_nonce_;
-    }
-
-    [[nodiscard]] bool validate_exact_balance() const
-    {
-        return validate_exact_balance_;
-    }
-
-    [[nodiscard]] uint256_t const &min_balance() const
-    {
-        return min_balance_;
-    }
-
-    void set_validate_exact_nonce()
-    {
-        validate_exact_nonce_ = true;
-    }
-
-    void set_validate_exact_balance()
-    {
-        validate_exact_balance_ = true;
-    }
-
-    void set_min_balance(uint256_t const &value)
-    {
-        if (value > min_balance_) {
-            min_balance_ = value;
-        }
-    }
-};
-```
-
-Definition of of Account class:
-```c++
-struct Account
-{
-    uint256_t balance{0}; // sigma[a]_b
-    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
-    uint64_t nonce{0}; // sigma[a]_n
-    Incarnation incarnation{0, 0};
-
-    friend bool operator==(Account const &, Account const &) = default;
-};
-```
-
-The C++ equivalents of the Gallina Record evm.account_state are split across
-the above 3 classes. use evm.account_state (block.block_account) as the mathematical model for all
-the 3 classes.
-`block.block_account` comes from a Gallina formalization of EVM semantics by Yoichi from ~2019 and does not have the latest semantics, which the C++ code has. Thus a the transient storage field is missing there. For now, just use the regular storage field as a model for transient storage in C++.
-
-
-
-Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
-- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
-- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
-- u256t for `uint256_t` (alias for `intx::uint<256>`)
-- addressR is the Rep predicate for Address (alias for `evmc::address`)
-
-Many of these Rep predicates are currently admitted. You dont need to define them. But their type will tell you the Gallina models of these typess.
-Unfortunately, there is currently no way to search the Coq context for Rep predicate definitions/axioms for a given C++ type.
-So, if a Rep predicate for a class has not been mentioned in this first prompt, you can assume it doesnt exist and you need to define it.
-If you have not been shown the C++ body of the class whose Rep predicate you need, you can just admit it. But to do that you need to chose the type, especially the type of the Gallina (mathematical) model of the type. Choose wisely. When possible, consider multiple options and compare pros and cons.
-
-IF YOU HAVE BEEN PROVIDED THE C++ BODY OF A CLASS (E.G. ITS FIELDS), YOU CANNOT ADMIT ITS Rep OR PROVIDE A DUMMY IMPLEMENTATION. YOU MUST ENURE THE REP PREDICATE ACCOUNTS FOR OWNERSHIP OF ALL THE FIELDS.
+In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
+Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
 
 ## Results of some relevant queries
->>> Print evm.account_state.
-monad.proofs.evmopsem.evm.account_state = monad.EVMOpSem.block.block_account
-     : Type
+>>> Print translation_unit.
+Record translation_unit : Type := Build_translation_unit
+  { symbols : bluerock.lang.cpp.syntax.translation_unit.symbol_table;
+    types : bluerock.lang.cpp.syntax.translation_unit.type_table;
+    initializer : bluerock.lang.cpp.syntax.translation_unit.InitializerBlock;
+    byte_order : bluerock.prelude.arith.types.endian }.
 
->>> Print block.block_account.
-Record block_account : Type := Build_block_account
-  { block_account_address : monad.EVMOpSem.evm.address;
-    block_account_storage : monad.EVMOpSem.evm.storage;
-    block_account_code : monad.EVMOpSem.evm.program;
-    block_account_balance : monad.EVMOpSem.keccak.w256;
-    block_account_nonce : monad.EVMOpSem.keccak.w256;
-    block_account_exists : Corelib.Init.Datatypes.bool;
-    block_account_hascode : Corelib.Init.Datatypes.bool }.
+translation_unit has primitive projections with eta conversion.
+Arguments bluerock.lang.cpp.syntax.translation_unit.Build_translation_unit symbols types initializer byte_order
+Arguments bluerock.lang.cpp.syntax.translation_unit.symbols t
+Arguments bluerock.lang.cpp.syntax.translation_unit.types t
+Arguments bluerock.lang.cpp.syntax.translation_unit.initializer t
+Arguments bluerock.lang.cpp.syntax.translation_unit.byte_order t
 
-Arguments monad.EVMOpSem.block.Build_block_account block_account_address
-  block_account_storage block_account_code block_account_balance 
-  block_account_nonce (block_account_exists block_account_hascode)%_bool_scope
-Arguments monad.EVMOpSem.block.block_account_address b
-Arguments monad.EVMOpSem.block.block_account_storage b _
-Arguments monad.EVMOpSem.block.block_account_code b
-Arguments monad.EVMOpSem.block.block_account_balance b
-Arguments monad.EVMOpSem.block.block_account_nonce b
-Arguments monad.EVMOpSem.block.block_account_exists b
-Arguments monad.EVMOpSem.block.block_account_hascode b
+>>> Print name.
+Notation bluerock.lang.cpp.syntax.core.name := bluerock.lang.cpp.syntax.core.name'
 
->>> Print IncarnationR.
-*** [ monad.proofs.exec_specs.IncarnationR :
-∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-  {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ},
-  stdpp.numbers.Qp
-  → monad.proofs.exec_specs.Indices → bluerock.lang.cpp.logic.rep_defs.Rep ]
+Inductive name' : Set :=
+    Ninst : bluerock.lang.cpp.syntax.core.name
+            → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.temp_arg → bluerock.lang.cpp.syntax.core.name
+  | Nglobal : bluerock.lang.cpp.syntax.core.atomic_name_ bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.name
+  | Ndependent : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.name
+  | Nscoped : bluerock.lang.cpp.syntax.core.name
+              → bluerock.lang.cpp.syntax.core.atomic_name_ bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.name
+  | Nunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.core.name
+  with temp_arg' : Set :=
+    Atype : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.temp_arg
+  | Avalue : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.temp_arg
+  | Apack : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.temp_arg → bluerock.lang.cpp.syntax.core.temp_arg
+  | Atemplate : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.temp_arg
+  | Aunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.core.temp_arg
+  with type' : Set :=
+    Tparam : bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.core.type
+  | Tresult_param : bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.core.type
+  | Tresult_global : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type
+  | Tresult_unop : bluerock.lang.cpp.syntax.overloadable.RUnOp → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tresult_binop : bluerock.lang.cpp.syntax.overloadable.RBinOp
+                    → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tresult_call : bluerock.lang.cpp.syntax.core.name
+                   → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tresult_member_call : bluerock.lang.cpp.syntax.core.name
+                          → bluerock.lang.cpp.syntax.core.type
+                            → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tresult_parenlist : bluerock.lang.cpp.syntax.core.type
+                        → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tresult_member : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type
+  | Tptr : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tref : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Trv_ref : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tnum : bluerock.lang.cpp.syntax.preliminary.int_rank → bluerock.prelude.arith.types.signed → bluerock.lang.cpp.syntax.core.type
+  | Tchar_ : bluerock.lang.cpp.syntax.preliminary.char_type → bluerock.lang.cpp.syntax.core.type
+  | Tvoid : bluerock.lang.cpp.syntax.core.type
+  | Tarray : bluerock.lang.cpp.syntax.core.type → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.syntax.core.type
+  | Tincomplete_array : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tvariable_array : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type
+  | Tnamed : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type
+  | Tenum : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type
+  | Tfunction : bluerock.lang.cpp.syntax.core.function_type_ bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tbool : bluerock.lang.cpp.syntax.core.type
+  | Tmember_pointer : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tfloat_ : bluerock.lang.cpp.syntax.preliminary.float_type.t → bluerock.lang.cpp.syntax.core.type
+  | Tqualified : bluerock.lang.cpp.syntax.preliminary.type_qualifiers
+                 → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.type
+  | Tnullptr : bluerock.lang.cpp.syntax.core.type
+  | Tarch : Corelib.Init.Datatypes.option bluerock.prelude.arith.types.bitsize
+            → Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.core.type
+  | Tdecltype : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type
+  | Texprtype : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type
+  | Tunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.core.type
+  with Expr' : Set :=
+    Eparam : bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_global : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_unop : bluerock.lang.cpp.syntax.overloadable.RUnOp → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_binop : bluerock.lang.cpp.syntax.overloadable.RBinOp
+                        → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_call : bluerock.lang.cpp.syntax.core.name
+                       → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_member_call : bluerock.lang.cpp.syntax.core.name
+                              → bluerock.lang.cpp.syntax.core.Expr
+                                → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_parenlist : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.type
+                            → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eunresolved_member : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.Expr
+  | Evar : bluerock.lang.cpp.syntax.preliminary.localname → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eenum_const : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.core.Expr
+  | Eglobal : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eglobal_member : bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Echar : Corelib.Numbers.BinNums.N → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Estring : bluerock.lang.cpp.syntax.literal_string.literal_string.t
+              → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eint : Corelib.Numbers.BinNums.Z → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Ebool : Corelib.Init.Datatypes.bool → bluerock.lang.cpp.syntax.core.Expr
+  | Eunop : bluerock.lang.cpp.syntax.preliminary.UnOp
+            → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Ebinop : bluerock.lang.cpp.syntax.preliminary.BinOp
+             → bluerock.lang.cpp.syntax.core.Expr
+               → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Ederef : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eaddrof : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eassign : bluerock.lang.cpp.syntax.core.Expr
+              → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eassign_op : bluerock.lang.cpp.syntax.preliminary.BinOp
+                 → bluerock.lang.cpp.syntax.core.Expr
+                   → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Epreinc : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Epostinc : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Epredec : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Epostdec : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eseqand : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eseqor : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Ecomma : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Ecall : bluerock.lang.cpp.syntax.core.Expr
+            → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eexplicit_cast : bluerock.lang.cpp.syntax.core.cast_style.t
+                     → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Ecast : bluerock.lang.cpp.syntax.core.Cast → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Emember : Corelib.Init.Datatypes.bool
+              → bluerock.lang.cpp.syntax.core.Expr
+                → bluerock.lang.cpp.syntax.core.atomic_name_ bluerock.lang.cpp.syntax.core.type
+                  → Corelib.Init.Datatypes.bool → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Emember_ignore : Corelib.Init.Datatypes.bool
+                     → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Emember_call : Corelib.Init.Datatypes.bool
+                   → bluerock.lang.cpp.syntax.preliminary.MethodRef_ bluerock.lang.cpp.syntax.core.name bluerock.lang.cpp.syntax.core.type
+                       bluerock.lang.cpp.syntax.core.Expr
+                     → bluerock.lang.cpp.syntax.core.Expr
+                       → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eoperator_call : bluerock.lang.cpp.syntax.preliminary.OverloadableOperator
+                     → bluerock.lang.cpp.syntax.preliminary.operator_impl.t bluerock.lang.cpp.syntax.core.name
+                         bluerock.lang.cpp.syntax.core.type
+                       → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Esubscript : bluerock.lang.cpp.syntax.core.Expr
+                 → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Esizeof : bluerock.lang.cpp.syntax.core.type + bluerock.lang.cpp.syntax.core.Expr
+              → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Ealignof : bluerock.lang.cpp.syntax.core.type + bluerock.lang.cpp.syntax.core.Expr
+               → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eoffsetof : bluerock.lang.cpp.syntax.core.type
+                → bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Econstructor : bluerock.lang.cpp.syntax.core.name
+                   → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr
+                     → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Elambda : bluerock.lang.cpp.syntax.core.name
+              → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eimplicit : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Eimplicit_init : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eif : bluerock.lang.cpp.syntax.core.Expr
+          → bluerock.lang.cpp.syntax.core.Expr
+            → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eif2 : Corelib.Numbers.BinNums.N
+           → bluerock.lang.cpp.syntax.core.Expr
+             → bluerock.lang.cpp.syntax.core.Expr
+               → bluerock.lang.cpp.syntax.core.Expr
+                 → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Ethis : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Enull : bluerock.lang.cpp.syntax.core.Expr
+  | Einitlist : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr
+                → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr
+                  → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Einitlist_union : bluerock.lang.cpp.syntax.core.atomic_name_ bluerock.lang.cpp.syntax.core.type
+                      → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr
+                        → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Enew : bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.core.type
+           → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr
+             → bluerock.lang.cpp.syntax.preliminary.new_form
+               → bluerock.lang.cpp.syntax.core.type
+                 → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr
+                   → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Edelete : Corelib.Init.Datatypes.bool
+              → bluerock.lang.cpp.syntax.core.name
+                → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eandclean : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Ematerialize_temp : bluerock.lang.cpp.syntax.core.Expr
+                        → bluerock.lang.cpp.syntax.preliminary.ValCat → bluerock.lang.cpp.syntax.core.Expr
+  | Eatomic : bluerock.lang.cpp.syntax.preliminary.AtomicOp
+              → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.Expr
+                → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Estmt : bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eva_arg : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Epseudo_destructor : Corelib.Init.Datatypes.bool
+                         → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.Expr
+  | Earrayloop_init : Corelib.Numbers.BinNums.N
+                      → bluerock.lang.cpp.syntax.core.Expr
+                        → Corelib.Numbers.BinNums.N
+                          → Corelib.Numbers.BinNums.N
+                            → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Earrayloop_index : Corelib.Numbers.BinNums.N → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eopaque_ref : Corelib.Numbers.BinNums.N → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  | Eunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr
+  with Stmt' : Set :=
+    Sseq : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sdecl : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.stmt.VarDecl → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sif : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.stmt.VarDecl
+          → bluerock.lang.cpp.syntax.core.Expr
+            → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sif_consteval : bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Swhile : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.stmt.VarDecl
+             → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sfor : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.stmt.Stmt
+           → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr
+             → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr
+               → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sdo : bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sswitch : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.stmt.VarDecl
+              → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Scase : bluerock.lang.cpp.syntax.preliminary.SwitchBranch → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sdefault : bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sbreak : bluerock.lang.cpp.syntax.stmt.Stmt
+  | Scontinue : bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sreturn : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sexpr : bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sattr : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.preliminary.ident
+            → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sasm : Corelib.Strings.PrimString.string
+           → Corelib.Init.Datatypes.bool
+             → Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.preliminary.ident * bluerock.lang.cpp.syntax.core.Expr)
+               → Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.preliminary.ident * bluerock.lang.cpp.syntax.core.Expr)
+                 → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Slabeled : bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.stmt.Stmt → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sgoto : bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.stmt.Stmt
+  | Sunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.stmt.Stmt
+  with VarDecl' : Set :=
+    Dvar : bluerock.lang.cpp.syntax.preliminary.localname
+           → bluerock.lang.cpp.syntax.core.type
+             → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.VarDecl
+  | Ddecompose : bluerock.lang.cpp.syntax.core.Expr
+                 → bluerock.lang.cpp.syntax.preliminary.ident
+                   → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.BindingDecl → bluerock.lang.cpp.syntax.stmt.VarDecl
+  | Dinit : Corelib.Init.Datatypes.bool
+            → bluerock.lang.cpp.syntax.core.name
+              → bluerock.lang.cpp.syntax.core.type
+                → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.stmt.VarDecl
+  with BindingDecl' : Set :=
+    Bvar : bluerock.lang.cpp.syntax.preliminary.localname
+           → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.BindingDecl
+  | Bbind : bluerock.lang.cpp.syntax.preliminary.localname
+            → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.core.BindingDecl
+  with Cast' : Set :=
+    Cdependent : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cbitcast : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Clvaluebitcast : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cl2r : bluerock.lang.cpp.syntax.core.Cast
+  | Cl2r_bitcast : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cnoop : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Carray2ptr : bluerock.lang.cpp.syntax.core.Cast
+  | Cfun2ptr : bluerock.lang.cpp.syntax.core.Cast
+  | Cint2ptr : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cptr2int : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cptr2bool : bluerock.lang.cpp.syntax.core.Cast
+  | Cintegral : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cint2bool : bluerock.lang.cpp.syntax.core.Cast
+  | Cfloat2int : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cint2float : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cfloat : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cnull2ptr : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cnull2memberptr : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cbuiltin2fun : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | C2void : bluerock.lang.cpp.syntax.core.Cast
+  | Cctor : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cuser : bluerock.lang.cpp.syntax.core.Cast
+  | Cdynamic : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cderived2base : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.type
+                    → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cbase2derived : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.core.type
+                    → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast
+  | Cunsupported : bluerock.prelude.bytestring_core.BS.Bytestring_notations.bs
+                   → bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.core.Cast.
 
-Arguments monad.proofs.exec_specs.IncarnationR {thread_info _Σ Sigma} q%_Qp_scope i
-
->>> Print addressR.
-*** [ monad.proofs.libspecs.addressR :
-∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-  {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ},
-  stdpp.numbers.Qp
-  → monad.proofs.evmopsem.evm.address → bluerock.lang.cpp.logic.rep_defs.Rep ]
-
-Arguments monad.proofs.libspecs.addressR {thread_info _Σ Sigma} q%_Qp_scope a
-
->>> Print bytes32R.
-*** [ monad.proofs.exec_specs.bytes32R :
-∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-  {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ},
-  stdpp.numbers.Qp → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.logic.rep_defs.Rep ]
-
-Arguments monad.proofs.exec_specs.bytes32R {thread_info _Σ Sigma} q%_Qp_scope z%_N_scope
-
->>> Print u256R.
-*** [ monad.proofs.exec_specs.u256R :
-∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-  {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ},
-  stdpp.numbers.Qp → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.logic.rep_defs.Rep ]
-
-Arguments monad.proofs.exec_specs.u256R {thread_info _Σ Sigma} q%_Qp_scope n%_N_scope
-
->>> Check Zdigits.binary_value.
-monad.EVMOpSem.Zdigits.binary_value
-     : ∀ n : Corelib.Init.Datatypes.nat,
-         Stdlib.Vectors.Bvector.Bvector n → Corelib.Numbers.BinNums.Z
-
->>> Check Zdigits.Z_to_binary.
-monad.EVMOpSem.Zdigits.Z_to_binary
-     : ∀ n : Corelib.Init.Datatypes.nat,
-         Corelib.Numbers.BinNums.Z → Stdlib.Vectors.Bvector.Bvector n
+Arguments bluerock.lang.cpp.syntax.core.Ninst c%_cpp_name_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Nglobal c
+Arguments bluerock.lang.cpp.syntax.core.Ndependent t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Nscoped n%_cpp_name_scope c
+Arguments bluerock.lang.cpp.syntax.core.Nunsupported _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Atype _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Avalue _%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Apack _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Atemplate _%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Aunsupported _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Tparam _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_param _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_global on%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_unop _ _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_binop _ (_ _)%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_call on%_cpp_name_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_member_call on%_cpp_name_scope _%_cpp_type_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_parenlist _%_cpp_type_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Tresult_member _%_cpp_type_scope _%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Tptr t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tref t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Trv_ref t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tnum sz sgn
+Arguments bluerock.lang.cpp.syntax.core.Tarray t%_cpp_type_scope n%_N_scope
+Arguments bluerock.lang.cpp.syntax.core.Tincomplete_array t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tvariable_array t%_cpp_type_scope e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Tnamed gn%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Tenum gn%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Tfunction t
+Arguments bluerock.lang.cpp.syntax.core.Tmember_pointer (gn t)%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tqualified (q t)%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Tarch osz name%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Tdecltype _%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Texprtype _%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Tunsupported _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Eparam _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_global _%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_unop _ e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_binop _ (l r)%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_call on%_cpp_name_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_member_call on%_cpp_name_scope _%_CPP_expr_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_parenlist _ _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunresolved_member _%_CPP_expr_scope _%_cpp_name_scope
+Arguments bluerock.lang.cpp.syntax.core.Evar _%_pstring_scope _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eenum_const gn%_cpp_name_scope _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Eglobal on%_cpp_name_scope _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eglobal_member gn%_cpp_name_scope ty%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Echar c%_N_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Estring s t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eint n%_Z_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Ebool b%_bool_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunop (op e)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Ebinop (op e1 e2)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Ederef e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eaddrof e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Eassign (e1 e2)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eassign_op (op e1 e2)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Epreinc e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Epostinc e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Epredec e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Epostdec e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eseqand (e1 e2)%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Eseqor (e1 e2)%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Ecomma (e1 e2)%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Ecall f%_CPP_expr_scope es%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eexplicit_cast c _%_cpp_type_scope e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Ecast c e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Emember arrow%_bool_scope obj%_CPP_expr_scope f mut%_bool_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Emember_ignore arrow%_bool_scope (obj res)%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Emember_call arrow%_bool_scope method obj%_CPP_expr_scope args%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eoperator_call _ _ _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Esubscript (e1 e2)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Esizeof _ t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Ealignof _ t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eoffsetof gn%_cpp_type_scope _%_pstring_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Econstructor on%_cpp_name_scope args%_list_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Elambda _%_cpp_name_scope captures%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Eimplicit e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Eimplicit_init t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eif (e1 e2 e3)%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eif2 n%_N_scope (common cond thn els)%_CPP_expr_scope _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Ethis t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Einitlist args%_list_scope default t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Einitlist_union _ _ t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Enew new_fn new_args%_list_scope pass_align alloc_ty%_cpp_type_scope array_size init
+Arguments bluerock.lang.cpp.syntax.core.Edelete is_array%_bool_scope del_fn%_cpp_name_scope arg%_CPP_expr_scope deleted_type%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eandclean e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Ematerialize_temp e%_CPP_expr_scope vc
+Arguments bluerock.lang.cpp.syntax.core.Eatomic op%_pstring_scope args%_list_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Estmt _%_CPP_stmt_scope _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eva_arg e%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Epseudo_destructor is_arrow%_bool_scope t%_cpp_type_scope e%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Earrayloop_init oname%_N_scope src%_CPP_expr_scope (level length)%_N_scope 
+  init%_CPP_expr_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Earrayloop_index level%_N_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eopaque_ref name%_N_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Eunsupported s%_pstring_scope t%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Sseq _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Sdecl _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Sif _ _%_CPP_expr_scope (_ _)%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sif_consteval (_ _)%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Swhile _ _%_CPP_expr_scope _%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sfor _ _ _ _%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sdo _%_CPP_stmt_scope _%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Sswitch _ _%_CPP_expr_scope _%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sexpr _%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Sattr _%_list_scope _%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sasm _%_pstring_scope volatile%_bool_scope (inputs outputs clobbers)%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Slabeled _%_pstring_scope _%_CPP_stmt_scope
+Arguments bluerock.lang.cpp.syntax.core.Sgoto _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Sunsupported _%_pstring_scope
+Arguments bluerock.lang.cpp.syntax.core.Dvar name%_pstring_scope _%_cpp_type_scope init
+Arguments bluerock.lang.cpp.syntax.core.Ddecompose _%_CPP_expr_scope anon_var%_pstring_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.core.Dinit thread_safe%_bool_scope name%_cpp_name_scope _%_cpp_type_scope init
+Arguments bluerock.lang.cpp.syntax.core.Bvar name%_pstring_scope _%_cpp_type_scope init%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Bbind name%_pstring_scope _%_cpp_type_scope init%_CPP_expr_scope
+Arguments bluerock.lang.cpp.syntax.core.Cdependent _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cbitcast _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Clvaluebitcast _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cl2r_bitcast _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cnoop _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cint2ptr _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cptr2int _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cintegral _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cfloat2int _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cint2float _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cfloat _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cnull2ptr _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cnull2memberptr _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cbuiltin2fun _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cctor _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cdynamic to%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cderived2base path%_list_scope END%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cbase2derived path%_list_scope END%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.core.Cunsupported _%_bs_scope _%_cpp_type_scope
 
 # Contents of the current file
 
 ```coq
-Require Import monad.proofs.misc.
-Require Import monad.proofs.libspecs.
-Require Import monad.proofs.evmopsem.
-Import linearity.
 Require Import bluerock.auto.invariants.
 Require Import bluerock.auto.cpp.proof.
-
+Require Import monad.proofs.misc.
 Require Import bluerock.auto.cpp.tactics4.
-Require Import monad.asts.block_state_cpp. (* this defines module: translation_unit, the  AST of block_state.cpp (and all its transitive includes). block_state_cpp.v is autogenerated by cpp2v *)
-Require Import monad.proofs.exec_specs.
+Require Import monad.tutorials.demo2.
+Require Import monad.tutorials.demomisc.
+From AAC_tactics Require Import AAC.
+From AAC_tactics Require Import Instances.
+Import Instances.Z.
+Import stdpp.list.
+Import stdpp.decidable.
+Import cQp_compat.
+Open Scope cQp_scope.
+Open Scope Z_scope.
+Import linearity.
+Import Verbose.
+Ltac slauto := misc.slauto1.
+Disable Notation take.
+Disable Notation drop.
+Disable Notation "`div`" (all).
+Disable Notation intR.
+Disable Notation uintR.
+Import linearity.
 Disable Notation atomic_name'.
+Disable Notation atomic_name.
+Open Scope pstring_scope.
 Set Printing FullyQualifiedNames.
-Require Import Lens.Elpi.Elpi.
-#[local] Open Scope lens_scope.
-Require Import monad.proofs.libspecs.
+Require Import monad.asts.block_state_cpp. (* this defines module: translation_unit, the  AST of block_state.cpp (and all its transitive includes). block_state_cpp.v is autogenerated by cpp2v *)
 
 
-Section with_Sigma.
-  Context `{Sigma:cpp_logic} {CU: genv}.
-  Context  {MODd : block_state_cpp.module ⊧ CU}.
-
-  
 
 ```
 
@@ -1659,214 +753,618 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-I need to see which Rep predicates already exist for the two “map”‐based storage fields and for the code‐program field.  In particular I want to find any definition of the form  
+Before defining `find_struct`, we need to know exactly how `struct`‐/`class`‐definitions are recorded in the `translation_unit` (in `symbols` or in `types`).  Let's look up:
 
-  stdpp.numbers.Qp → monad.EVMOpSem.evm.storage → Rep  
-and 
+ 1. What is the definition of the two tables
+    `bluerock.lang.cpp.syntax.translation_unit.symbol_table`
+    and
+    `bluerock.lang.cpp.syntax.translation_unit.type_table`?
+ 2. In which one are `struct` or `class` definitions stored, and under what form?
 
-  stdpp.numbers.Qp → monad.EVMOpSem.evm.program → Rep  
-
-so that I can plug them into the final `AccountStateR`.  I’ll also check that the optional‐Account helper is available as `optionR`.  
+So I will query:
 
 ```coqquery
-Search (stdpp.numbers.Qp -> monad.EVMOpSem.evm.storage -> bluerock.lang.cpp.logic.rep_defs.Rep).
-Search (stdpp.numbers.Qp -> monad.EVMOpSem.evm.program -> bluerock.lang.cpp.logic.rep_defs.Rep).
-Search optionR.
+About bluerock.lang.cpp.syntax.translation_unit.symbol_table.
+About bluerock.lang.cpp.syntax.translation_unit.type_table.
+Search "struct" in bluerock.lang.cpp.syntax.translation_unit.
 ```
 
 ## User 2
 
->>> Search (stdpp.numbers.Qp -> monad.EVMOpSem.evm.storage -> bluerock.lang.cpp.logic.rep_defs.Rep).
-∅ (no results)
+>>> About bluerock.lang.cpp.syntax.translation_unit.symbol_table.
+bluerock.lang.cpp.syntax.translation_unit.symbol_table : Type
 
->>> Search (stdpp.numbers.Qp -> monad.EVMOpSem.evm.program -> bluerock.lang.cpp.logic.rep_defs.Rep).
-∅ (no results)
+bluerock.lang.cpp.syntax.translation_unit.symbol_table is not universe polymorphic
+bluerock.lang.cpp.syntax.translation_unit.symbol_table is transparent
+Expands to: Constant bluerock.lang.cpp.syntax.translation_unit.symbol_table
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 132, characters 11-23
 
->>> Search optionR.
-monad.proofs.libspecs.learnOpt:
-  ∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-    {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ} 
-    {CU : bluerock.lang.cpp.semantics.genv.genv} (b : Type) 
-    (a a' : bluerock.lang.cpp.syntax.core.type) (b0
-                                                 b' : b
-                                                      → bluerock.lang.cpp.logic.rep_defs.Rep) 
-    (c c' : stdpp.numbers.Qp) (d d' : Corelib.Init.Datatypes.option b),
-    bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-      bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-      (monad.proofs.libspecs.optionR a b0 c d)
-      (monad.proofs.libspecs.optionR a' b' c' d') [a = a'; b0 = b'; c = c'; d = d']
+>>> About bluerock.lang.cpp.syntax.translation_unit.type_table.
+bluerock.lang.cpp.syntax.translation_unit.type_table : Type
+
+bluerock.lang.cpp.syntax.translation_unit.type_table is not universe polymorphic
+bluerock.lang.cpp.syntax.translation_unit.type_table is transparent
+Expands to: Constant bluerock.lang.cpp.syntax.translation_unit.type_table
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 34, characters 11-21
+
+>>> Search "struct" in bluerock.lang.cpp.syntax.translation_unit.
+bluerock.lang.cpp.syntax.translation_unit.Odestructor:
+  bluerock.lang.cpp.syntax.decl.Dtor → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+bluerock.lang.cpp.syntax.translation_unit.Gstruct: bluerock.lang.cpp.syntax.decl.Struct → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+bluerock.lang.cpp.syntax.translation_unit.Oconstructor:
+  bluerock.lang.cpp.syntax.decl.Ctor → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+bluerock.lang.cpp.syntax.translation_unit.is_trivially_destructible:
+  bluerock.lang.cpp.syntax.translation_unit.translation_unit → bluerock.lang.cpp.syntax.core.type → Corelib.Init.Datatypes.bool
 
 ## Assistant 2
 
-I expect there to be a `Rep` for the C++ base class (AccountSubstate) which corresponds to the Gallina `block.block_account`. Let me search for a Rep of that type.  
+Before proceeding with the implementation, I need to see
+
+ 1. The definition of `symbol_table` so I know how to look up a name.
+ 2. The definition of `GlobDecl` and in particular the `Gstruct` constructor, plus the `Struct` type.
+
+Thus, I will ask:
 
 ```coqquery
-Search (stdpp.numbers.Qp -> monad.EVMOpSem.block.block_account -> bluerock.lang.cpp.logic.rep_defs.Rep).
+Print bluerock.lang.cpp.syntax.translation_unit.symbol_table.
+About bluerock.lang.cpp.syntax.translation_unit.GlobDecl.
+About bluerock.lang.cpp.syntax.translation_unit.Gstruct.
+About bluerock.lang.cpp.syntax.decl.Struct.
+Search "lookup" in bluerock.lang.cpp.syntax.translation_unit.
 ```
 
 ## User 3
 
->>> Search (stdpp.numbers.Qp -> monad.EVMOpSem.block.block_account -> bluerock.lang.cpp.logic.rep_defs.Rep).
+>>> Print bluerock.lang.cpp.syntax.translation_unit.symbol_table.
+bluerock.lang.cpp.syntax.translation_unit.symbol_table =
+bluerock.lang.cpp.syntax.namemap.NM.t bluerock.lang.cpp.syntax.translation_unit.ObjValue
+     : Type
+
+>>> About bluerock.lang.cpp.syntax.translation_unit.GlobDecl.
+Notation bluerock.lang.cpp.syntax.translation_unit.GlobDecl := bluerock.lang.cpp.syntax.translation_unit.GlobDecl'
+Expands to: Notation bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 29, characters 0-31
+
+bluerock.lang.cpp.syntax.translation_unit.GlobDecl' : Set
+
+bluerock.lang.cpp.syntax.translation_unit.GlobDecl' is not universe polymorphic
+Expands to: Inductive bluerock.lang.cpp.syntax.translation_unit.GlobDecl'
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 21, characters 8-17
+
+>>> About bluerock.lang.cpp.syntax.translation_unit.Gstruct.
+bluerock.lang.cpp.syntax.translation_unit.Gstruct :
+bluerock.lang.cpp.syntax.decl.Struct → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+
+bluerock.lang.cpp.syntax.translation_unit.Gstruct is not universe polymorphic
+Expands to: Constructor bluerock.lang.cpp.syntax.translation_unit.Gstruct
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 24, characters 4-11
+
+>>> About bluerock.lang.cpp.syntax.decl.Struct.
+Notation bluerock.lang.cpp.syntax.decl.Struct := bluerock.lang.cpp.syntax.decl.Struct'
+Expands to: Notation bluerock.lang.cpp.syntax.decl.Struct
+Declared in library bluerock.lang.cpp.syntax.decl, line 132, characters 0-27
+
+bluerock.lang.cpp.syntax.decl.Struct' : Set
+
+bluerock.lang.cpp.syntax.decl.Struct' is not universe polymorphic
+Expands to: Inductive bluerock.lang.cpp.syntax.decl.Struct'
+Declared in library bluerock.lang.cpp.syntax.decl, line 101, characters 7-14
+
+>>> Search "lookup" in bluerock.lang.cpp.syntax.translation_unit.
 ∅ (no results)
 
 ## Assistant 3
 
-I’ll look for existing `Rep` predicates for the base‐class substate, especially something named `storageR` or `programR`, since `AccountSubstate` likely holds storage and code fields.
+I need to see the definitions of `ObjValue`, the full inductive for `GlobDecl'`, and the lookup function in `NM`:
 
 ```coqquery
-Search storageR.
-Search programR.
+About bluerock.lang.cpp.syntax.translation_unit.ObjValue.
+Print bluerock.lang.cpp.syntax.translation_unit.GlobDecl'.
+Print bluerock.lang.cpp.syntax.decl.Struct'.
+Search bluerock.lang.cpp.syntax.namemap "find".
 ```
 
 ## User 4
 
->>> Search storageR.
-Toplevel input, characters 7-15:
-> Search storageR.
->        ^^^^^^^^
-Error: The reference storageR was not found in the current environment.
+>>> About bluerock.lang.cpp.syntax.translation_unit.ObjValue.
+Notation bluerock.lang.cpp.syntax.translation_unit.ObjValue := bluerock.lang.cpp.syntax.translation_unit.ObjValue'
+Expands to: Notation bluerock.lang.cpp.syntax.translation_unit.ObjValue
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 95, characters 0-31
 
->>> Search programR.
-Toplevel input, characters 7-15:
-> Search programR.
->        ^^^^^^^^
-Error: The reference programR was not found in the current environment.
+bluerock.lang.cpp.syntax.translation_unit.ObjValue' : Set
+
+bluerock.lang.cpp.syntax.translation_unit.ObjValue' is not universe polymorphic
+Expands to: Inductive bluerock.lang.cpp.syntax.translation_unit.ObjValue'
+Declared in library bluerock.lang.cpp.syntax.translation_unit, line 89, characters 8-17
+
+>>> Print bluerock.lang.cpp.syntax.translation_unit.GlobDecl'.
+Variant GlobDecl' : Set :=
+    Gtype : bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Gunion : bluerock.lang.cpp.syntax.decl.Union → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Gstruct : bluerock.lang.cpp.syntax.decl.Struct → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Genum : bluerock.lang.cpp.syntax.core.type
+            → Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.preliminary.ident → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Gconstant : bluerock.lang.cpp.syntax.core.type
+                → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.Expr → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Gtypedef : bluerock.lang.cpp.syntax.core.type → bluerock.lang.cpp.syntax.translation_unit.GlobDecl
+  | Gunsupported : Corelib.Strings.PrimString.string → bluerock.lang.cpp.syntax.translation_unit.GlobDecl.
+
+Arguments bluerock.lang.cpp.syntax.translation_unit.Genum _%_cpp_type_scope _%_list_scope
+Arguments bluerock.lang.cpp.syntax.translation_unit.Gconstant _%_cpp_type_scope init
+Arguments bluerock.lang.cpp.syntax.translation_unit.Gtypedef _%_cpp_type_scope
+Arguments bluerock.lang.cpp.syntax.translation_unit.Gunsupported _%_pstring_scope
+
+>>> Print bluerock.lang.cpp.syntax.decl.Struct'.
+Record Struct' : Set := Build_Struct
+  { s_bases : Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.core.name * bluerock.lang.cpp.syntax.decl.LayoutInfo);
+    s_fields : Corelib.Init.Datatypes.list bluerock.lang.cpp.syntax.decl.Member;
+    s_virtuals : Corelib.Init.Datatypes.list
+                   (bluerock.lang.cpp.syntax.core.obj_name * Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.obj_name);
+    s_overrides : Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.core.obj_name * bluerock.lang.cpp.syntax.core.obj_name);
+    s_dtor : bluerock.lang.cpp.syntax.core.obj_name;
+    s_trivially_destructible : Corelib.Init.Datatypes.bool;
+    s_delete : Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.core.obj_name;
+    s_layout : bluerock.lang.cpp.syntax.decl.LayoutType;
+    s_size : Corelib.Numbers.BinNums.N;
+    s_alignment : Corelib.Numbers.BinNums.N }.
+
+Arguments bluerock.lang.cpp.syntax.decl.Build_Struct (s_bases s_fields s_virtuals s_overrides)%_list_scope s_dtor%_cpp_name_scope
+  s_trivially_destructible%_bool_scope s_delete s_layout (s_size s_alignment)%_N_scope
+Arguments bluerock.lang.cpp.syntax.decl.s_bases s
+Arguments bluerock.lang.cpp.syntax.decl.s_fields s
+Arguments bluerock.lang.cpp.syntax.decl.s_virtuals s
+Arguments bluerock.lang.cpp.syntax.decl.s_overrides s
+Arguments bluerock.lang.cpp.syntax.decl.s_dtor s
+Arguments bluerock.lang.cpp.syntax.decl.s_trivially_destructible s
+Arguments bluerock.lang.cpp.syntax.decl.s_delete s
+Arguments bluerock.lang.cpp.syntax.decl.s_layout s
+Arguments bluerock.lang.cpp.syntax.decl.s_size s
+Arguments bluerock.lang.cpp.syntax.decl.s_alignment s
+
+>>> Search bluerock.lang.cpp.syntax.namemap "find".
+Toplevel input, characters 7-39:
+> Search bluerock.lang.cpp.syntax.namemap "find".
+>        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: The reference bluerock.lang.cpp.syntax.namemap was not found in the current environment.
 
 ## Assistant 4
 
-I need to see how the C++ base class `AccountSubstate` maps to the Gallina type `block_account`, to write a Rep predicate for it. Let me search for `AccountSubstate` and the offset of one of its fields in the AST:
+We need to inspect `ObjValue'` and the lookup function in the `namemap` module. Then we can write `find_struct` by looking up `nm` in the `symbols`, matching on `Some (OVglob (Gstruct s))`, and returning `Some s`. 
+
+First, show `ObjValue'` and the `lookup` in `namemap`:
 
 ```coqquery
-SearchPattern "AccountSubstate".
-SearchPattern "block_account_address".
+Print bluerock.lang.cpp.syntax.translation_unit.ObjValue'.
+Locate bluerock.lang.cpp.syntax.namemap.NM.t.
+Search bluerock.lang.cpp.syntax.namemap.
 ```
 
 ## User 5
 
->>> SearchPattern "AccountSubstate".
-Not a valid query.  A query must begin with Search/About/Locate/Check/Print. Do not add Require/Import or other vernacular here.
+>>> Print bluerock.lang.cpp.syntax.translation_unit.ObjValue'.
+Variant ObjValue' : Set :=
+    Ovar : bluerock.lang.cpp.syntax.core.type
+           → bluerock.lang.cpp.syntax.translation_unit.global_init.t → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+  | Ofunction : bluerock.lang.cpp.syntax.decl.Func → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+  | Omethod : bluerock.lang.cpp.syntax.decl.Method → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+  | Oconstructor : bluerock.lang.cpp.syntax.decl.Ctor → bluerock.lang.cpp.syntax.translation_unit.ObjValue
+  | Odestructor : bluerock.lang.cpp.syntax.decl.Dtor → bluerock.lang.cpp.syntax.translation_unit.ObjValue.
 
->>> SearchPattern "block_account_address".
-Not a valid query.  A query must begin with Search/About/Locate/Check/Print. Do not add Require/Import or other vernacular here.
+Arguments bluerock.lang.cpp.syntax.translation_unit.Ovar _%_cpp_type_scope _
+
+>>> Locate bluerock.lang.cpp.syntax.namemap.NM.t.
+Constant bluerock.lang.cpp.syntax.namemap.NM.t (syntactically equal to bluerock.lang.cpp.syntax.namemap.internal.NameMap.t)
+  (alias of bluerock.lang.cpp.syntax.namemap.internal.NameMap.t)
+
+>>> Search bluerock.lang.cpp.syntax.namemap.
+Toplevel input, characters 7-39:
+> Search bluerock.lang.cpp.syntax.namemap.
+>        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: The reference bluerock.lang.cpp.syntax.namemap was not found in the current environment.
 
 ## Assistant 5
 
-I need to inspect the Gallina types for `evm.address`, `evm.storage`, `evm.program`, and `evm.account` to know their structure and choose or write appropriate `Rep` predicates.  
+I need to see the definition of the underlying map and its find function. In particular, the internal `NameMap`:
 
 ```coqquery
-Print monad.EVMOpSem.evm.address.
-Print monad.EVMOpSem.evm.storage.
-Print monad.EVMOpSem.evm.program.
-Print monad.EVMOpSem.evm.account.
+Print bluerock.lang.cpp.syntax.namemap.internal.NameMap.
 ```
 
 ## User 6
 
->>> Print monad.EVMOpSem.evm.address.
-monad.EVMOpSem.evm.address = monad.EVMOpSem.word160.word160
-     : Type
-
->>> Print monad.EVMOpSem.evm.storage.
-monad.EVMOpSem.evm.storage =
-monad.EVMOpSem.keccak.w256 → monad.EVMOpSem.keccak.w256
-     : Type
-
->>> Print monad.EVMOpSem.evm.program.
-Record program : Type := Build_program
-  { program_content : Corelib.Numbers.BinNums.Z
-                      → Corelib.Init.Datatypes.option monad.EVMOpSem.evm.inst;
-    program_length : Corelib.Numbers.BinNums.Z }.
-
-Arguments monad.EVMOpSem.evm.Build_program program_content%_function_scope
-  program_length%_Z_scope
-Arguments monad.EVMOpSem.evm.program_content p _%_Z_scope
-Arguments monad.EVMOpSem.evm.program_length p
-
->>> Print monad.EVMOpSem.evm.account.
-Toplevel input, characters 6-32:
-> Print monad.EVMOpSem.evm.account.
->       ^^^^^^^^^^^^^^^^^^^^^^^^^^
-Error: monad.EVMOpSem.evm.account not a defined object.
+>>> Print bluerock.lang.cpp.syntax.namemap.internal.NameMap.
+Module
+internal.NameMap
+:= Struct
+     Module Compare
+     Module Key
+     Parameter eqL :
+       ∀ a b : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Key.eq a b → a = b.
+     Module E
+     Module Raw
+     Record bst (elt : Type) : Type := Bst
+       { this : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t elt;
+         is_bst : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.bst this }.
+     Definition this :
+       ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.bst elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t elt.
+     Definition is_bst :
+       ∀ (elt : Type) (b : bluerock.lang.cpp.syntax.namemap.internal.NameMap.bst elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.bst b.
+     Definition t : Type → Type.
+     Definition key : Type.
+     Definition empty : ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt.
+     Definition is_empty : ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Corelib.Init.Datatypes.bool.
+     Definition add :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key
+         → elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt.
+     Definition remove :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt.
+     Definition mem :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Corelib.Init.Datatypes.bool.
+     Definition find :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Corelib.Init.Datatypes.option elt.
+     Definition map :
+       ∀ elt elt' : Type,
+         (elt → elt') → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt'.
+     Definition mapi :
+       ∀ elt elt' : Type,
+         (bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → elt → elt')
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt'.
+     Definition map2 :
+       ∀ elt elt' elt'' : Type,
+         (Corelib.Init.Datatypes.option elt → Corelib.Init.Datatypes.option elt' → Corelib.Init.Datatypes.option elt'')
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt' → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt''.
+     Definition elements :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt
+         → Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt).
+     Definition cardinal : ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Corelib.Init.Datatypes.nat.
+     Definition fold :
+       ∀ elt A : Type,
+         (bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → elt → A → A)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → A → A.
+     Definition equal :
+       ∀ elt : Type,
+         (elt → elt → Corelib.Init.Datatypes.bool)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Corelib.Init.Datatypes.bool.
+     Definition MapsTo :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Definition In :
+       ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Definition Empty : ∀ elt : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Definition eq_key :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → Prop.
+     Definition eq_key_elt :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → Prop.
+     Definition lt_key :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt → Prop.
+     Parameter MapsTo_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+           x y
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e m.
+     Parameter mem_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.mem (elt:=elt) x m = Corelib.Init.Datatypes.true.
+     Parameter mem_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.mem (elt:=elt) x m = Corelib.Init.Datatypes.true
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m.
+     Parameter empty_1 :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Empty (elt:=elt) (bluerock.lang.cpp.syntax.namemap.internal.NameMap.empty elt).
+     Parameter is_empty_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Empty (elt:=elt) m
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.is_empty (elt:=elt) m = Corelib.Init.Datatypes.true.
+     Parameter is_empty_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.is_empty (elt:=elt) m = Corelib.Init.Datatypes.true
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Empty (elt:=elt) m.
+     Parameter add_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+           x y
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e (bluerock.lang.cpp.syntax.namemap.internal.NameMap.add x e m).
+     Parameter add_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e e' : elt),
+         ¬ (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+              bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+             x y
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e m
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e (bluerock.lang.cpp.syntax.namemap.internal.NameMap.add x e' m).
+     Parameter add_3 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e e' : elt),
+         ¬ (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+              bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+             x y
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e (bluerock.lang.cpp.syntax.namemap.internal.NameMap.add x e' m)
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e m.
+     Parameter remove_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key),
+         (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+           x y
+         → ¬ bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) y
+               (bluerock.lang.cpp.syntax.namemap.internal.NameMap.remove (elt:=elt) x m).
+     Parameter remove_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         ¬ (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+              bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+             x y
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e m
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e
+               (bluerock.lang.cpp.syntax.namemap.internal.NameMap.remove (elt:=elt) x m).
+     Parameter remove_3 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x
+                                                                                     y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.remove (elt:=elt) x m)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo y e m.
+     Parameter find_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.find (elt:=elt) x m = Corelib.Init.Datatypes.Some e.
+     Parameter find_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.find (elt:=elt) x m = Corelib.Init.Datatypes.Some e
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m.
+     Parameter fold_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (A : Type) (i : A) (f : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key
+                                                                                                            → elt → A → A),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.fold f m i =
+         Stdlib.Lists.List.fold_left (λ (a : A) (p : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key * elt), f p.1 p.2 a)
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m) i.
+     Parameter elements_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m
+         → Stdlib.Sorting.SetoidList.InA (bluerock.lang.cpp.syntax.namemap.internal.NameMap.eq_key_elt (elt:=elt)) (
+             x, e) (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m).
+     Parameter elements_2 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt),
+         Stdlib.Sorting.SetoidList.InA (bluerock.lang.cpp.syntax.namemap.internal.NameMap.eq_key_elt (elt:=elt)) (
+           x, e) (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m.
+     Parameter elements_3 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         Stdlib.Sorting.Sorted.Sorted (bluerock.lang.cpp.syntax.namemap.internal.NameMap.lt_key (elt:=elt))
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m).
+     Parameter elements_3w :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         Stdlib.Sorting.SetoidList.NoDupA (bluerock.lang.cpp.syntax.namemap.internal.NameMap.eq_key (elt:=elt))
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m).
+     Parameter cardinal_1 :
+       ∀ (elt : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.cardinal (elt:=elt) m =
+         stdpp.base.length (bluerock.lang.cpp.syntax.namemap.internal.NameMap.elements (elt:=elt) m).
+     Definition Equal :
+       ∀ elt : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Definition Equiv :
+       ∀ elt : Type,
+         (elt → elt → Prop)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Definition Equivb :
+       ∀ elt : Type,
+         (elt → elt → Corelib.Init.Datatypes.bool)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt → Prop.
+     Parameter Equivb_Equivb :
+       ∀ (elt : Type) (cmp : elt → elt → Corelib.Init.Datatypes.bool) (m m' : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Equivb cmp m m'
+         ↔ bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.Proofs.Equivb cmp m m'.
+     Parameter equal_1 :
+       ∀ (elt : Type) (m m' : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (cmp : elt → elt → Corelib.Init.Datatypes.bool),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Equivb cmp m m'
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.equal cmp m m' = Corelib.Init.Datatypes.true.
+     Parameter equal_2 :
+       ∀ (elt : Type) (m m' : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (cmp : elt → elt → Corelib.Init.Datatypes.bool),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.equal cmp m m' = Corelib.Init.Datatypes.true
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Equivb cmp m m'.
+     Parameter map_1 :
+       ∀ (elt elt' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt) (f : elt → elt'),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x (f e) (bluerock.lang.cpp.syntax.namemap.internal.NameMap.map f m).
+     Parameter map_2 :
+       ∀ (elt elt' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (f : elt → elt'),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt') x (bluerock.lang.cpp.syntax.namemap.internal.NameMap.map f m)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m.
+     Parameter mapi_1 :
+       ∀ (elt elt' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (e : elt) (f : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → elt → elt'),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x e m
+         → ∃ y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+             (λ x0 y0 : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+                bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x0 y0 = Corelib.Init.Datatypes.Eq)
+               y x
+             ∧ bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo x (f y e)
+                 (bluerock.lang.cpp.syntax.namemap.internal.NameMap.mapi f m).
+     Parameter mapi_2 :
+       ∀ (elt elt' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (f : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key → elt → elt'),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt') x (bluerock.lang.cpp.syntax.namemap.internal.NameMap.mapi f m)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m.
+     Parameter map2_1 :
+       ∀ (elt elt' elt'' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (m' : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t
+                                                                                                       elt') (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (f : Corelib.Init.Datatypes.option elt → Corelib.Init.Datatypes.option elt' → Corelib.Init.Datatypes.option elt''),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m
+         ∨ bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt') x m'
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.find (elt:=elt'') x
+             (bluerock.lang.cpp.syntax.namemap.internal.NameMap.map2 f m m') =
+           f (bluerock.lang.cpp.syntax.namemap.internal.NameMap.find (elt:=elt) x m)
+             (bluerock.lang.cpp.syntax.namemap.internal.NameMap.find (elt:=elt') x m').
+     Parameter map2_2 :
+       ∀ (elt elt' elt'' : Type) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t elt) (m' : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t
+                                                                                                       elt') (x : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) 
+         (f : Corelib.Init.Datatypes.option elt → Corelib.Init.Datatypes.option elt' → Corelib.Init.Datatypes.option elt''),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt'') x (bluerock.lang.cpp.syntax.namemap.internal.NameMap.map2 f m m')
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt) x m
+           ∨ bluerock.lang.cpp.syntax.namemap.internal.NameMap.In (elt:=elt') x m'.
+     Definition raw_empty : ∀ A : Type, stdpp.base.Empty (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_insert :
+       ∀ A : Type,
+         stdpp.base.Insert bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_delete :
+       ∀ A : Type,
+         stdpp.base.Delete bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_lookup :
+       ∀ A : Type,
+         stdpp.base.Lookup bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_mapfold :
+       ∀ A : Type,
+         stdpp.fin_maps.MapFold bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_singleton :
+       ∀ A : Type,
+         stdpp.base.SingletonM bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A).
+     Definition raw_map : stdpp.base.FMap bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t.
+     Definition raw_merge : stdpp.base.Merge bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t.
+     Definition raw_omap : stdpp.base.OMap bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t.
+     Definition map_empty : ∀ A : Type, stdpp.base.Empty (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_insert :
+       ∀ A : Type,
+         stdpp.base.Insert bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_delete :
+       ∀ A : Type,
+         stdpp.base.Delete bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_lookup :
+       ∀ A : Type,
+         stdpp.base.Lookup bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_mapfold :
+       ∀ A : Type,
+         stdpp.fin_maps.MapFold bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_singleton :
+       ∀ A : Type,
+         stdpp.base.SingletonM bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_partial_alter :
+       ∀ A : Type,
+         stdpp.base.PartialAlter bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t A
+           (bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A).
+     Definition map_map : stdpp.base.FMap bluerock.lang.cpp.syntax.namemap.internal.NameMap.t.
+     Definition map_merge : stdpp.base.Merge bluerock.lang.cpp.syntax.namemap.internal.NameMap.t.
+     Definition key_lt_dec :
+       stdpp.base.RelDecision
+         (λ x y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x y = Corelib.Init.Datatypes.Lt).
+     Definition key_eq_dec :
+       stdpp.base.RelDecision
+         (λ x y : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t,
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.compare x y = Corelib.Init.Datatypes.Eq).
+     Definition check_canon :
+       ∀ A : Type,
+         Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t
+         → Corelib.Init.Datatypes.option bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t
+           → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A → Corelib.Init.Datatypes.bool.
+     Parameter check_canonP :
+       ∀ (A : Type) (t : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A) (min
+                                                                                     max : Corelib.Init.Datatypes.option
+                                                                                             bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.check_canon min max t
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.bst t
+           ∧ match min with
+             | Corelib.Init.Datatypes.Some bot => bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.gt_tree bot t
+             | Corelib.Init.Datatypes.None => True
+             end
+             ∧ match max with
+               | Corelib.Init.Datatypes.Some top => bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.lt_tree top t
+               | Corelib.Init.Datatypes.None => True
+               end.
+     Parameter check_canon_ok :
+       ∀ (A : Type) (t : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.check_canon Corelib.Init.Datatypes.None Corelib.Init.Datatypes.None t
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.bst t.
+     Definition build :
+       ∀ (A : Type) (t : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A),
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.check_canon Corelib.Init.Datatypes.None Corelib.Init.Datatypes.None t
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A.
+     Definition from_raw_or :
+       ∀ A : Type,
+         bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A
+         → (() → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A) → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A.
+     Definition from_raw :
+       ∀ A : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.Raw.t A → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A.
+     Definition map_canon :
+       ∀ A : Type, bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t A.
+     Parameter map_to_list_elements :
+       ∀ (A : Type) (k : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t) (v : A) (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t
+                                                                                                     A),
+         m !! k = Corelib.Init.Datatypes.Some v
+         → ∃ xs ys : Corelib.Init.Datatypes.list (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t * A),
+             stdpp.fin_maps.map_to_list m = (xs ++ (k, v) :: ys)%list.
+     Definition find_any :
+       ∀ T : Type,
+         (bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t → T → Corelib.Init.Datatypes.bool)
+         → bluerock.lang.cpp.syntax.namemap.internal.NameMap.t T → Corelib.Init.Datatypes.bool.
+     Parameter find_any_ok :
+       ∀ (T : Type) (b : bluerock.lang.cpp.syntax.namemap.internal.NameMap.Compare.t → T → Corelib.Init.Datatypes.bool) 
+         (m : bluerock.lang.cpp.syntax.namemap.internal.NameMap.t T),
+         if bluerock.lang.cpp.syntax.namemap.internal.NameMap.find_any b m
+         then
+          ∃ (k : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) (v : T),
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo k v m ∧ b k v = Corelib.Init.Datatypes.true
+         else
+          ∀ (k : bluerock.lang.cpp.syntax.namemap.internal.NameMap.key) (v : T),
+            bluerock.lang.cpp.syntax.namemap.internal.NameMap.MapsTo k v m → b k v = Corelib.Init.Datatypes.false.
+   End
 
 ## Assistant 6
 
-I need to inspect the definition of `optionR` to see how to apply it to `Account`.  
+Here is a direct definition of `find_struct` by looking up in the (abstract) type‐table and matching on the `Gstruct` case:
 
-```coqquery
-About monad.proofs.libspecs.optionR.
+```gallina
+Definition find_struct
+  (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+  (nm : bluerock.lang.cpp.syntax.core.name)
+  : option bluerock.lang.cpp.syntax.decl.Struct :=
+  match bluerock.lang.cpp.syntax.namemap.internal.NameMap.find
+          (elt := bluerock.lang.cpp.syntax.translation_unit.GlobDecl)
+          nm (bluerock.lang.cpp.syntax.translation_unit.types tu) with
+  | Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) => Some s
+  | _ => None
+  end.
 ```
 
-## User 7
-
->>> About monad.proofs.libspecs.optionR.
-monad.proofs.libspecs.optionR :
-∀ {thread_info : iris.bi.monpred.biIndex} {_Σ : iris.base_logic.lib.iprop.gFunctors} 
-  {Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ},
-  bluerock.lang.cpp.semantics.genv.genv
-  → ∀ {SomeTyModel : Type},
-      bluerock.lang.cpp.syntax.core.type
-      → (SomeTyModel → bluerock.lang.cpp.logic.rep_defs.Rep)
-        → stdpp.numbers.Qp
-          → Corelib.Init.Datatypes.option SomeTyModel
-            → bluerock.lang.cpp.logic.rep_defs.Rep
-
-monad.proofs.libspecs.optionR is not universe polymorphic
-Arguments monad.proofs.libspecs.optionR {thread_info _Σ Sigma CU}
-  {SomeTyModel}%_type_scope somety%_cpp_type_scope someTyRep%_function_scope 
-  q%_Qp_scope o
-monad.proofs.libspecs.optionR is opaque but may be made transparent
-Expands to: Constant monad.proofs.libspecs.optionR
-Declared in library monad.proofs.libspecs, line 73, characters 13-20
-
-## Assistant 7
-
-I need to see the symbol info for the C++ `Account` and `AccountSubstate` to know their `info_type` and field offsets.  
-
-```coqquery
-Compute (lookupSymbolByFullName block_state_cpp.module "monad::Account").
-Compute (lookupSymbolByFullName block_state_cpp.module "monad::AccountSubstate").
-```
-
-## User 8
-
->>> Compute (lookupSymbolByFullName block_state_cpp.module "monad::Account").
-Not a valid query.  A query must begin with Search/About/Locate/Check/Print. Do not add Require/Import or other vernacular here.
-
->>> Compute (lookupSymbolByFullName block_state_cpp.module "monad::AccountSubstate").
-Not a valid query.  A query must begin with Search/About/Locate/Check/Print. Do not add Require/Import or other vernacular here.
-
-## Assistant 8
-
-I’d like to find the AST entry for `AccountSubstate` in the imported `block_state_cpp.module` to see its fields and field‐offsets.  
-
-```coqquery
-Search lookupSymbolByFullName.
-```
-
-## User 9
-
->>> Search lookupSymbolByFullName.
-∅ (no results)
-
-## Assistant 9
-
-I realize I need the existing Rep for the base class `AccountSubstate` before composing.  I’ll search for `AccountSubstateR`:
-
-```coqquery
-Search AccountSubstate.
-```
-
-## User 10
-
->>> Search AccountSubstate.
-Toplevel input, characters 7-22:
-> Search AccountSubstate.
->        ^^^^^^^^^^^^^^^
-Error: The reference AccountSubstate was not found in the current environment.
-
-
-
-## Assistant 10
-
-llm-request-plz-sync: LLM request failed with code 400: Bad Request (additional information: ((error (message . Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://platform.openai.com/docs/guides/reasoning#advice-on-prompting) (type . invalid_request_error) (param) (code . invalid_prompt))))
-Saving file /home/a

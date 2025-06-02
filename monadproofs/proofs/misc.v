@@ -1556,3 +1556,24 @@ Instance SatMod : Saturate Nat.modulo :=
     SatOk := zifyModNat
   |}.
 *)
+
+
+
+(*
+In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
+Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
+
++++ QUERIES
+Print translation_unit.
+Print name.
+*)
+Definition find_struct
+  (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+  (nm : bluerock.lang.cpp.syntax.core.name)
+  : option bluerock.lang.cpp.syntax.decl.Struct :=
+  match bluerock.lang.cpp.syntax.namemap.internal.NameMap.find
+          (elt := bluerock.lang.cpp.syntax.translation_unit.GlobDecl)
+          nm (bluerock.lang.cpp.syntax.translation_unit.types tu) with
+  | Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) => Some s
+  | _ => None
+  end.

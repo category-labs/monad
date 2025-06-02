@@ -354,7 +354,7 @@ It parses the slice with `libxml-parse-html-region` and extracts every
                "Success098"))))))
 
        ;; =================================================  Coq query
-       ("coqquery" (query-coq (string-trim body)))
+       ("coqquery" (concat (query-coq (string-trim body)) "\n\n Remember. If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the TOFIXLATER comment.\n"))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))
@@ -576,8 +576,7 @@ directory as the current `.v` file.  Stops when:
  • `coq-programmer-max-llm-calls` budget is exhausted."
   (interactive)
   (let* ((coq-file (buffer-file-name proof-script-buffer))
-         (comm-file (expand-file-name "comm.md"
-                                      (file-name-directory coq-file)))
+	 (comm-file (concat coq-file ".md"))
          ;; running heading counters, initialised from existing file
          (counts (coq-programmer--initial-counts comm-file))
          (user-count (car counts))

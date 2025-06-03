@@ -112,7 +112,7 @@ struct MonadConsensusBlockHeader
         MonadConsensusBlockHeader const &) = default;
 };
 
-static_assert(sizeof(MonadConsensusBlockHeader) == 1184);
+static_assert(sizeof(MonadConsensusBlockHeader) == 1216);
 static_assert(alignof(MonadConsensusBlockHeader) == 8);
 
 struct MonadConsensusBlockBody
@@ -138,7 +138,7 @@ struct MonadConsensusBlock
         MonadConsensusBlock const &, MonadConsensusBlock const &) = default;
 };
 
-static_assert(sizeof(MonadConsensusBlock) == 1256);
+static_assert(sizeof(MonadConsensusBlock) == 1288);
 static_assert(alignof(MonadConsensusBlock) == 8);
 
 MONAD_NAMESPACE_END

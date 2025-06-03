@@ -148,6 +148,18 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
             write_to.bytes);
     }
 
+    // Prague fork
+    if (genesis_json.contains("requestsHash")) {
+        auto const requests_hash =
+            evmc::from_hex(genesis_json["requestsHash"].get<std::string>());
+        MONAD_ASSERT(requests_hash.has_value());
+        auto &write_to = block_header.requests_hash.emplace(bytes32_t{});
+        std::copy_n(
+            requests_hash.value().begin(),
+            requests_hash.value().length(),
+            write_to.bytes);
+    }
+
     return block_header;
 }
 

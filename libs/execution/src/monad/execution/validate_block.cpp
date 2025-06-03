@@ -82,6 +82,16 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
+    // EIP-7685
+    if constexpr (rev < EVMC_PRAGUE) {
+        if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else if (MONAD_UNLIKELY(!header.requests_hash.has_value())) {
+        return BlockError::MissingField;
+    }
+
     // EIP-4844 and EIP-4788
     if constexpr (rev < EVMC_CANCUN) {
         if (MONAD_UNLIKELY(

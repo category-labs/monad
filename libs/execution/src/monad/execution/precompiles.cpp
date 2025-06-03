@@ -38,6 +38,7 @@ consteval unsigned num_precompiles(evmc_revision const rev)
     case EVMC_SHANGHAI:
     case EVMC_CANCUN: // TODO(kkuehler): change to 10 after
                       // https://github.com/monad-crypto/monad/pull/887
+    case EVMC_PRAGUE: // TODO(bruce): change to 17 after EIP-2537
         return 9;
     default:
         MONAD_ASSERT(false);

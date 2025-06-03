@@ -16,13 +16,12 @@ set(prague_excluded_tests
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip7702_set_code_tx/*"
     "BlockchainTests.prague/eip2537_bls_12_381_precompiles/*"
-    "BlockchainTests.prague/eip2935_historical_block_hashes_from_state/*"
     "BlockchainTests.prague/eip6110_deposits/*"
     "BlockchainTests.prague/eip7002_el_triggerable_withdrawals/*"
     "BlockchainTests.prague/eip7251_consolidations/*"
     "BlockchainTests.prague/eip7623_increase_calldata_cost/*"
+    "BlockchainTests.prague/eip7685_general_purpose_el_requests/*"
 
-    # Beacon contract deposits / withdrawals
-    "BlockchainTests.prague/eip7685_general_purpose_el_requests/multi_type_requests/valid_multi_type_requests.json"
-    "BlockchainTests.prague/eip7685_general_purpose_el_requests/multi_type_requests/valid_multi_type_request_from_same_tx.json"
+    # Long-running tests
+    "BlockchainTests.prague/eip2935_historical_block_hashes_from_state/block_hashes/block_hashes_history.json"
 )

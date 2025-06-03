@@ -696,14 +696,12 @@ If no parameters (or no types) are found, it returns nil."
 
 
 
-;;; defn-of.el --- fetch C++ definition by FQN via clangd  -*- lexical-binding:t -*-
-
+;;; defn-of.el --- fetch C++ definition via clangd, annotated -*- lexical-binding:t -*-
 (require 'cl-lib)
-(require 'lsp-mode)   ;; your hooks already enable this
+(require 'lsp-mode)
 (require 'cc-mode)
 
 (defun defn-of--pick-workspace ()
-  "Return any live C++ buffer that is already under lsp-mode/clangd."
   (or (cl-find-if
        (lambda (buf)
          (with-current-buffer buf
@@ -711,66 +709,49 @@ If no parameters (or no types) are found, it returns nil."
        (buffer-list))
       (user-error "No active C++ LSP buffer (open a dummy.cpp first)")))
 
-(defun defn-of--choose-symbol (syms query)
-  "If SYMS contains more than one candidate, prompt.
-Otherwise return the sole element."
-  (pcase syms
-    ((and (pred null)) (user-error "Symbol not found: %s" query))
-    ((pred (length> 1))
-     (let* ((choices
-             (mapcar (lambda (s)
-                       (let* ((loc (gethash "location" s))
-                              (uri (gethash "uri" loc)))
-                         (cons (format "%s — %s"
-                                       (gethash "name" s)
-                                       (lsp--uri-to-path uri))
-                               s)))
-                     syms)))
-       (cdr (assoc (completing-read "Which definition: " choices nil t)
-                   choices))))
-    (_ (car syms))))
-
 (defun defn-of--choose-symbol (syms _query)
-  "Return the first symbol in SYMS or signal an error if none."
   (or (car syms) (user-error "Symbol not found")))
 
 (defun defn-of--extract (file pos-json)
-  "Open FILE invisibly, go to POS-JSON, and return the whole defun/class text."
-  (let* ((buf  (find-file-noselect file))          ; no window pop-up
-         (line (+ 1 (gethash "line" pos-json)))   ; LSP → Emacs 1-based
+  (let* ((buf  (find-file-noselect file))
+         (line (+ 1 (gethash "line" pos-json))) ;; 1-based for point ops
          (col  (gethash "character" pos-json)))
     (with-current-buffer buf
-      (save-excursion
-        (goto-char (point-min))
-        (forward-line (1- line))
-        (forward-char col)
-        ;; ensure we are inside the construct
-        (c-beginning-of-defun)
-        (let ((beg (point)))
-          (c-end-of-defun)
-          (buffer-substring-no-properties beg (point)))))))
+      (goto-char (point-min))
+      (forward-line (1- line))
+      (forward-char col)
+      (c-beginning-of-defun)
+      (let ((beg (point)))
+        (c-end-of-defun)
+        (cons beg (point))))))          ;; (beg . end)
 
 ;;;###autoload
 (defun defn-of (fqncpp &optional insert-p)
   "Return (or with C-u INSERT-P, insert) the definition of FQNCPP.
-FQNCPP must be a fully-qualified C++ name known to clangd."
+Prepends a comment ‘// FILE:LINE’ to the returned text."
   (interactive "sC++ symbol (FQN): \nP")
-  (let ((cpp-buf  (defn-of--pick-workspace))
-        sym-info file pos text)
+  (let* ((cpp-buf   (defn-of--pick-workspace))
+         sym-info file start-pos line-no text-range
+         defun-text)
+    ;; ── query clangd ──────────────────────────────────────────────────────
     (with-current-buffer cpp-buf
-      ;; Ask clangd for matches across the whole workspace
-      (let* ((params `(:query ,fqncpp))
-             (syms   (lsp-request "workspace/symbol" params)))
-        (setq sym-info (defn-of--choose-symbol syms fqncpp))))
+      (setq sym-info
+            (defn-of--choose-symbol
+             (lsp-request "workspace/symbol" `(:query ,fqncpp))
+             fqncpp)))
     (let* ((loc   (gethash "location" sym-info))
            (uri   (gethash "uri" loc))
-           (range (gethash "range" loc))
-           (start (gethash "start" range)))
-      (setq file (lsp--uri-to-path uri))
-      (setq text (defn-of--extract file start)))
-    (when insert-p
-      (insert text))
-    text))
-
-(provide 'defn-of)
-;;; defn-of.el ends here
+           (range (gethash "range" loc)))
+      (setq file       (lsp--uri-to-path uri))
+      (setq start-pos  (gethash "start" range))
+      (setq line-no    (+ 1 (gethash "line" start-pos)))
+      (setq text-range (defn-of--extract file start-pos)))
+    ;; ── assemble result in a temporary buffer ────────────────────────────
+    (with-temp-buffer
+      (insert (format "// %s:%d\n" file line-no))
+      (insert-buffer-substring
+       (find-file-noselect file)
+       (car text-range) (cdr text-range))
+      (setq defun-text (buffer-string)))
+    (when insert-p (insert defun-text))
+    defun-text))

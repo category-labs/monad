@@ -17,14 +17,21 @@ Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.
 
-  (* at least 1 c++ file in the current project must be open *)
-  inline constexpr bool is_dead(std::optional<Account> const &account)
+
+// /home/abhishek/fv-workspace/monad/libs/execution/src/monad/core/account.hpp:13
+MONAD_NAMESPACE_BEGIN
+
+struct Account
 {
-    return !account.has_value() || is_empty(account.value());
-}
+    uint256_t balance{0}; // sigma[a]_b
+    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
+    uint64_t nonce{0}; // sigma[a]_n
+    Incarnation incarnation{0, 0};
+
+    friend bool operator==(Account const &, Account const &) = default;
+};
 
   
-
   
 (* Define `AccountStateR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the below C++ class `monad::AccountState`.
 (all the c++ code below is in namespace `monad`)

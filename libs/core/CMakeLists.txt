@@ -122,6 +122,8 @@ add_library(
   "src/monad/io/buffer_pool.cpp"
   "src/monad/io/buffer_pool.hpp"
   "src/monad/io/config.hpp"
+  # mem
+  "src/monad/mem/align.h"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"

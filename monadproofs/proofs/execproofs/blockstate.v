@@ -288,6 +288,4 @@ Definition AccountStateR `{cpp_logic}
   ** structR "monad::AccountState" q.
 
 
-
-
   

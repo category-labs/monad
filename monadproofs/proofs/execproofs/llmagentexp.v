@@ -30,21 +30,59 @@ Require Import monad.asts.block_state_cpp. (* this defines module: translation_u
 
 (*
 In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
-Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
+Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct/class whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
+Note that the AST treats classes as structs as well. Ensure that the output also describes the method signatures, not just the fields and base classes
 
 +++ QUERIES
 Print translation_unit.
 Print name.
 *)
+(* enumerate symbol‐table entries in declaration order *)
+Definition symbol_table_to_list
+  (st: bluerock.lang.cpp.syntax.translation_unit.symbol_table)
+  : list (bluerock.lang.cpp.syntax.core.obj_name
+          * bluerock.lang.cpp.syntax.translation_unit.ObjValue) :=
+  (* NM.elements is already available and produces a list of (key * elt) *)
+  bluerock.lang.cpp.syntax.namemap.NM.elements st.
+
+(* pick out a method of class [nm] from one symbol‐table entry *)
+Definition select_method_of_class
+           (nm: bluerock.lang.cpp.syntax.core.name)
+           (entry: bluerock.lang.cpp.syntax.core.obj_name
+                   * bluerock.lang.cpp.syntax.translation_unit.ObjValue)
+  : option (bluerock.lang.cpp.syntax.core.obj_name
+            * bluerock.lang.cpp.syntax.decl.Method) :=
+  let '(n,o) := entry in
+  match o with
+  | bluerock.lang.cpp.syntax.translation_unit.Omethod m =>
+      if bool_decide (bluerock.lang.cpp.syntax.decl.m_class m = nm)
+      then Corelib.Init.Datatypes.Some (n, m)
+      else Corelib.Init.Datatypes.None
+  | _ => Corelib.Init.Datatypes.None
+  end.
+
+(* find the Struct declaration and its methods by fully‐qualified name *)
 Definition find_struct
-  (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit)
-  (nm : bluerock.lang.cpp.syntax.core.name)
-  : option bluerock.lang.cpp.syntax.decl.Struct :=
-  match bluerock.lang.cpp.syntax.namemap.internal.NameMap.find
-          (elt := bluerock.lang.cpp.syntax.translation_unit.GlobDecl)
-          nm (bluerock.lang.cpp.syntax.translation_unit.types tu) with
-  | Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) => Some s
-  | _ => None
+           (tu: bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+           (nm: bluerock.lang.cpp.syntax.core.name)
+  : option ( bluerock.lang.cpp.syntax.decl.Struct
+             * list ( bluerock.lang.cpp.syntax.core.obj_name
+                      * bluerock.lang.cpp.syntax.decl.Method ) ) :=
+  match bluerock.lang.cpp.syntax.translation_unit.types tu !! nm with
+  | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st) =>
+      let syms := bluerock.lang.cpp.syntax.translation_unit.symbols tu in
+      let mds :=
+        List.fold_right
+          (fun entry acc =>
+             match select_method_of_class nm entry with
+             | Corelib.Init.Datatypes.Some md => md :: acc
+             | Corelib.Init.Datatypes.None => acc
+             end)
+          []
+          (symbol_table_to_list syms) in
+      Corelib.Init.Datatypes.Some (st, mds)
+  | _ =>
+      Corelib.Init.Datatypes.None
   end.
 
 
@@ -52,3 +90,5 @@ Definition find_struct
 
 
 
+
+<35;114;34M

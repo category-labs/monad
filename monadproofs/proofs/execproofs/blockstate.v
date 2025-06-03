@@ -17,6 +17,13 @@ Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.
 
+  (* at least 1 c++ file in the current project must be open *)
+  inline constexpr bool is_dead(std::optional<Account> const &account)
+{
+    return !account.has_value() || is_empty(account.value());
+}
+
+  
 
   
 (* Define `AccountStateR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the below C++ class `monad::AccountState`.
@@ -286,6 +293,15 @@ Definition AccountStateR `{cpp_logic}
          AccountSubstateR q acc
   (* run-time type identity ----------------------------------------- *)
   ** structR "monad::AccountState" q.
+Print EVMOpSem.evm.account_state.
 
+Print block.block_account.
+Record account_state : Type := Build_account_state
+  { account_address : EVMOpSem.evm.address;
+    account_storage : evm.storage;
+    account_code : evm.program;
+    account_balance : keccak.w256;
+    account_ongoing_calls : list (evm.variable_ctx * Z * Z);
+    account_killed : bool }.
 
   

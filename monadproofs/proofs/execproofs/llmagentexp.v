@@ -85,10 +85,3 @@ Definition find_struct
       Corelib.Init.Datatypes.None
   end.
 
-
-
-
-
-
-
-<35;114;34M

@@ -5,7 +5,8 @@ bluerock.lang.cpp.syntax.stmt.Stmt is an Inductive type I have defined for C++ s
 `bluerock.lang.cpp.syntax.stmt.Stmt` is defined mutually Inductively with many other types like `Expr`.
 Write a set of mutually recursive pretty-printer functions for all such types.
 These Gallina functions should return `PrimString.string`.
-*)
+ *)
+
 (* we use PrimString.string and its “++” *)
 Local Open Scope pstring_scope.
 

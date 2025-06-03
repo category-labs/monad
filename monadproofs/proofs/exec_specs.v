@@ -8,9 +8,8 @@ Print block.step.
 Print evm.network.
 Import linearity.
 Require Import monad.asts.exb.
-Require Import bluerock.auto.invariants.
-Require Import bluerock.auto.cpp.proof.
-Require Import bluerock.auto.cpp.tactics4.
+Require Export bluerock.auto.cpp.spec.
+
 Require Import monad.proofs.libspecs.
 Import cQp_compat.
 #[local] Open Scope lens_scope.

@@ -694,3 +694,83 @@ If no parameters (or no types) are found, it returns nil."
 ;; make query-coq return an error if there is any error in a query. use this for coq-programmer-first-prompt, but not on GPT-generated queries
 
 
+
+
+;;; defn-of.el --- fetch C++ definition by FQN via clangd  -*- lexical-binding:t -*-
+
+(require 'cl-lib)
+(require 'lsp-mode)   ;; your hooks already enable this
+(require 'cc-mode)
+
+(defun defn-of--pick-workspace ()
+  "Return any live C++ buffer that is already under lsp-mode/clangd."
+  (or (cl-find-if
+       (lambda (buf)
+         (with-current-buffer buf
+           (and (derived-mode-p 'c++-mode) (bound-and-true-p lsp-mode))))
+       (buffer-list))
+      (user-error "No active C++ LSP buffer (open a dummy.cpp first)")))
+
+(defun defn-of--choose-symbol (syms query)
+  "If SYMS contains more than one candidate, prompt.
+Otherwise return the sole element."
+  (pcase syms
+    ((and (pred null)) (user-error "Symbol not found: %s" query))
+    ((pred (length> 1))
+     (let* ((choices
+             (mapcar (lambda (s)
+                       (let* ((loc (gethash "location" s))
+                              (uri (gethash "uri" loc)))
+                         (cons (format "%s — %s"
+                                       (gethash "name" s)
+                                       (lsp--uri-to-path uri))
+                               s)))
+                     syms)))
+       (cdr (assoc (completing-read "Which definition: " choices nil t)
+                   choices))))
+    (_ (car syms))))
+
+(defun defn-of--choose-symbol (syms _query)
+  "Return the first symbol in SYMS or signal an error if none."
+  (or (car syms) (user-error "Symbol not found")))
+
+(defun defn-of--extract (file pos-json)
+  "Open FILE invisibly, go to POS-JSON, and return the whole defun/class text."
+  (let* ((buf  (find-file-noselect file))          ; no window pop-up
+         (line (+ 1 (gethash "line" pos-json)))   ; LSP → Emacs 1-based
+         (col  (gethash "character" pos-json)))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line (1- line))
+        (forward-char col)
+        ;; ensure we are inside the construct
+        (c-beginning-of-defun)
+        (let ((beg (point)))
+          (c-end-of-defun)
+          (buffer-substring-no-properties beg (point)))))))
+
+;;;###autoload
+(defun defn-of (fqncpp &optional insert-p)
+  "Return (or with C-u INSERT-P, insert) the definition of FQNCPP.
+FQNCPP must be a fully-qualified C++ name known to clangd."
+  (interactive "sC++ symbol (FQN): \nP")
+  (let ((cpp-buf  (defn-of--pick-workspace))
+        sym-info file pos text)
+    (with-current-buffer cpp-buf
+      ;; Ask clangd for matches across the whole workspace
+      (let* ((params `(:query ,fqncpp))
+             (syms   (lsp-request "workspace/symbol" params)))
+        (setq sym-info (defn-of--choose-symbol syms fqncpp))))
+    (let* ((loc   (gethash "location" sym-info))
+           (uri   (gethash "uri" loc))
+           (range (gethash "range" loc))
+           (start (gethash "start" range)))
+      (setq file (lsp--uri-to-path uri))
+      (setq text (defn-of--extract file start)))
+    (when insert-p
+      (insert text))
+    text))
+
+(provide 'defn-of)
+;;; defn-of.el ends here

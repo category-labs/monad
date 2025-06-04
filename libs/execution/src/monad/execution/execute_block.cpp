@@ -35,10 +35,10 @@
 #include <utility>
 #include <vector>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // EIP-4895
-constexpr void process_withdrawal(
+void process_withdrawal(
     State &state, std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     if (withdrawals.has_value()) {
@@ -50,8 +50,8 @@ constexpr void process_withdrawal(
     }
 }
 
-inline void
-transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
+void transfer_balance_dao(
+    BlockState &block_state, Incarnation const incarnation)
 {
     State state{block_state, incarnation};
 
@@ -65,15 +65,16 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
     block_state.merge(state);
 }
 
-inline void set_beacon_root(BlockState &block_state, Block &block)
+// EIP-4788
+void set_beacon_root(BlockState &block_state, BlockHeader const &header)
 {
     constexpr auto BEACON_ROOTS_ADDRESS{
         0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
-    State state{block_state, Incarnation{block.header.number, 0}};
+    State state{block_state, Incarnation{header.number, 0}};
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{block.header.timestamp};
+        uint256_t timestamp{header.timestamp};
         bytes32_t k1{
             to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
         bytes32_t k2{to_bytes(to_big_endian(
@@ -81,9 +82,7 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
         state.set_storage(
-            BEACON_ROOTS_ADDRESS,
-            k2,
-            block.header.parent_beacon_block_root.value());
+            BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
 
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
@@ -91,25 +90,28 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
 }
 
 // EIP-2935
-inline void set_block_hash_history(BlockState &block_state, Block &block)
+void set_block_hash_history(BlockState &block_state, BlockHeader const &header)
 {
     constexpr auto HISTORY_STORAGE_ADDRESS{
         0x0000F90827F1C53a10cb7A02335B175320002935_address};
     constexpr uint256_t HISTORY_SERVE_WINDOW{8191};
 
-    State state{block_state, Incarnation{block.header.number, 0}};
+    State state{block_state, Incarnation{header.number, 0}};
     if (state.account_exists(HISTORY_STORAGE_ADDRESS)) {
-        uint256_t const block_number{block.header.number};
+        uint256_t const block_number{header.number};
         bytes32_t const key{
             to_bytes(to_big_endian((block_number - 1) % HISTORY_SERVE_WINDOW))};
 
-        state.set_storage(
-            HISTORY_STORAGE_ADDRESS, key, block.header.parent_hash);
+        state.set_storage(HISTORY_STORAGE_ADDRESS, key, header.parent_hash);
 
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
     }
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
@@ -120,11 +122,11 @@ Result<std::vector<ExecutionResult>> execute_block(
     TRACE_BLOCK_EVENT(StartBlock);
 
     if constexpr (rev >= EVMC_PRAGUE) {
-        set_block_hash_history(block_state, block);
+        set_block_hash_history(block_state, block.header);
     }
 
     if constexpr (rev >= EVMC_CANCUN) {
-        set_beacon_root(block_state, block);
+        set_beacon_root(block_state, block.header);
     }
 
     if constexpr (rev == EVMC_HOMESTEAD) {

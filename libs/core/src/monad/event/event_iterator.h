@@ -38,6 +38,13 @@ enum monad_event_next_result
 static enum monad_event_next_result monad_event_iterator_try_next(
     struct monad_event_iterator *, struct monad_event_descriptor *);
 
+/// Try to copy the descriptor corresponding to a particular sequence number;
+/// returns true only if the descriptor was available and its contents were
+/// copied into descriptor output buffer
+static bool monad_event_iterator_try_copy(
+    struct monad_event_iterator const *, uint64_t seqno,
+    struct monad_event_descriptor *);
+
 /// Obtain a pointer to the event's payload in shared memory in a zero-copy
 /// fashion; to check for expiration, call monad_event_payload_check
 static void const *monad_event_payload_peek(

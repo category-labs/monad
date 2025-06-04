@@ -39,6 +39,7 @@ add_library(
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
   "src/monad/core/block.hpp"
+  "src/monad/core/block.cpp"
   "src/monad/core/bytes.hpp"
   "src/monad/core/monad_block.hpp"
   "src/monad/core/fmt/account_fmt.hpp"

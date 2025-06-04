@@ -204,12 +204,14 @@ Result<evmc::Result> execute_impl2(
 }
 
 template <evmc_revision rev>
-Result<ExecutionResult> execute_impl(
+Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
+    TRACE_TXN_EVENT(StartTxn);
+
     BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
         tx,
         hdr.base_fee_per_gas,
@@ -254,7 +256,6 @@ Result<ExecutionResult> execute_impl(
 
             return ExecutionResult{
                 .receipt = receipt,
-                .sender = sender,
                 .call_frames = std::move(call_tracer).get_frames()};
         }
     }
@@ -290,35 +291,8 @@ Result<ExecutionResult> execute_impl(
 
         return ExecutionResult{
             .receipt = receipt,
-            .sender = sender,
             .call_frames = std::move(call_tracer).get_frames()};
     }
-}
-
-EXPLICIT_EVMC_REVISION(execute_impl);
-
-template <evmc_revision rev>
-Result<ExecutionResult> execute(
-    Chain const &chain, uint64_t const i, Transaction const &tx,
-    std::optional<Address> const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
-{
-    TRACE_TXN_EVENT(StartTxn);
-
-    if (MONAD_UNLIKELY(!sender.has_value())) {
-        return TransactionError::MissingSender;
-    }
-
-    return execute_impl<rev>(
-        chain,
-        i,
-        tx,
-        sender.value(),
-        hdr,
-        block_hash_buffer,
-        block_state,
-        prev);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

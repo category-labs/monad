@@ -92,11 +92,13 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &chain, Block &block, BlockState &block_state,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, Block &block, std::vector<Address> const &senders,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
+
+    MONAD_ASSERT(senders.size() == block.transactions.size());
 
     if constexpr (rev >= EVMC_CANCUN) {
         set_beacon_root(block_state, block);
@@ -109,33 +111,11 @@ Result<std::vector<ExecutionResult>> execute_block(
         }
     }
 
-    std::shared_ptr<std::optional<Address>[]> const senders{
-        new std::optional<Address>[block.transactions.size()]};
-
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
-        new boost::fibers::promise<void>[block.transactions.size()]};
-
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        priority_pool.submit(
-            i,
-            [i = i,
-             senders = senders,
-             promises = promises,
-             &transaction = block.transactions[i]] {
-                senders[i] = recover_sender(transaction);
-                promises[i].set_value();
-            });
-    }
-
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        promises[i].get_future().wait();
-    }
-
     std::shared_ptr<std::optional<Result<ExecutionResult>>[]> const results{
         new std::optional<Result<ExecutionResult>>[block.transactions.size()]};
 
-    promises.reset(
-        new boost::fibers::promise<void>[block.transactions.size() + 1]);
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[block.transactions.size() + 1]};
     promises[0].set_value();
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
@@ -182,7 +162,7 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &[receipt, _, call_frame] : retvals) {
+    for (auto &[receipt, call_frame] : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }
@@ -210,13 +190,15 @@ EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    std::vector<Address> const &senders, BlockState &block_state,
+    BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
         chain,
         block,
+        senders,
         block_state,
         block_hash_buffer,
         priority_pool);

@@ -40,6 +40,10 @@ template <Traits traits>
 uint256_t
 gas_price(Transaction const &, uint256_t const &base_fee_per_gas) noexcept;
 
+uint256_t gas_price(
+    evmc_revision, Transaction const &,
+    uint256_t const &base_fee_per_gas) noexcept;
+
 template <Traits traits>
 uint256_t calculate_txn_award(
     Transaction const &, uint256_t const &base_fee_per_gas,

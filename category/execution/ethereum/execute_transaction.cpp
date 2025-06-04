@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -33,6 +32,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -88,12 +88,15 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header)
+    BlockHeader const &header, uint64_t const i,
+    RevertTransactionFn const &revert_transaction)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , i_{i}
+    , revert_transaction_{revert_transaction}
 {
 }
 
@@ -101,7 +104,7 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     BlockHeader const &header)
-    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header}
+    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header, 0}
 {
 }
 
@@ -284,7 +287,9 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
                   state,
                   msg,
                   chain_.get_max_code_size(header_.number, header_.timestamp))
-            : ::monad::call<traits>(&host, state, msg);
+            : ::monad::call<traits>(&host, state, msg, [this, &state] {
+                  return revert_transaction_(sender_, tx_, i_, state);
+              });
 
     result.gas_refund += auth_refund;
     return result;
@@ -313,10 +318,10 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer)
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header}
-    , i_{i}
+          traits>{chain, tx, sender, authorities, header, i, revert_transaction}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
@@ -328,11 +333,14 @@ ExecuteTransaction<traits>::ExecuteTransaction(
 template <Traits traits>
 Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
-    auto const sender_account = state.recent_account(sender_);
-    auto const &icode = state.get_code(sender_)->intercode();
-    auto const validate_lambda = [this, &state, &sender_account, &icode] {
-        auto result = validate_transaction<traits>(
-            tx_, sender_account, {icode->code(), icode->size()});
+    auto const validate_lambda = [this, &state] {
+        auto result = chain_.validate_transaction(
+            header_.number,
+            header_.timestamp,
+            tx_,
+            sender_,
+            state,
+            header_.base_fee_per_gas.value_or(0));
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require
@@ -353,7 +361,10 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
         chain_.get_max_initcode_size(header_.number, header_.timestamp),
-        chain_.get_create_inside_delegated()};
+        chain_.get_create_inside_delegated(),
+        [this, &state] {
+            return revert_transaction_(sender_, tx_, i_, state);
+        }};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }

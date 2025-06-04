@@ -190,7 +190,8 @@ Result<std::vector<Receipt>> execute_block(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
+    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+    RevertTransactionFn const &revert_transaction)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -246,7 +247,8 @@ Result<std::vector<Receipt>> execute_block(
              &block_state,
              &block_metrics,
              &call_tracer = *call_tracers[i],
-             &txn_exec_finished] {
+             &txn_exec_finished,
+             &revert_transaction = revert_transaction] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
                     if (chain.is_system_sender(sender)) {
@@ -273,7 +275,8 @@ Result<std::vector<Receipt>> execute_block(
                             block_state,
                             block_metrics,
                             promises[i],
-                            call_tracer}();
+                            call_tracer,
+                            revert_transaction}();
                     }
                     promises[i + 1].set_value();
                     record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
@@ -350,7 +353,8 @@ Result<std::vector<Receipt>> execute_block(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
+    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+    RevertTransactionFn const &revert_transaction)
 {
     SWITCH_EVM_CHAIN(
         execute_block,
@@ -362,7 +366,8 @@ Result<std::vector<Receipt>> execute_block(
         block_hash_buffer,
         priority_pool,
         block_metrics,
-        call_tracers);
+        call_tracers,
+        revert_transaction);
     MONAD_ABORT_PRINTF(
         "unhandled evmc revision %u", static_cast<unsigned>(rev));
 }

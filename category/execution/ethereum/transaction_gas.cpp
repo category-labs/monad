@@ -17,9 +17,10 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -172,6 +173,14 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 }
 
 EXPLICIT_EVM_CHAIN(gas_price);
+
+uint256_t gas_price(
+    evmc_revision rev, Transaction const &tx,
+    uint256_t const &base_fee_per_gas) noexcept
+{
+    SWITCH_EVM_CHAIN(gas_price, tx, base_fee_per_gas);
+    MONAD_ABORT("invalid revision");
+}
 
 template <Traits traits>
 uint256_t calculate_txn_award(

@@ -20,10 +20,11 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -243,6 +244,15 @@ Result<void> validate_transaction(
 }
 
 EXPLICIT_EVM_CHAIN(validate_transaction);
+
+Result<void> validate_transaction(
+    evmc_revision const rev, Transaction const &tx,
+    std::optional<Account> const &sender_account,
+    std::span<uint8_t const> const code)
+{
+    SWITCH_EVM_CHAIN(validate_transaction, tx, sender_account, code);
+    MONAD_ABORT("invalid revision");
+}
 
 MONAD_NAMESPACE_END
 

@@ -223,6 +223,7 @@ namespace
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());
 
+        // TODO: properly initialize revert_transaction?
         EvmcHost<traits> host{
             chain,
             call_tracer,
@@ -233,7 +234,7 @@ namespace
             chain.get_max_initcode_size(header.number, header.timestamp),
             chain.get_create_inside_delegated()};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
-            chain, enriched_txn, sender, authorities, header}(state, host);
+            chain, enriched_txn, sender, authorities, header, 0}(state, host);
 
         // compute gas_refund and gas_used
         auto const gas_refund = chain.compute_gas_refund(

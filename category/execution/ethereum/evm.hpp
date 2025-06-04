@@ -22,6 +22,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <functional>
+
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
@@ -38,6 +40,8 @@ evmc::Result
 create(EvmcHost<traits> *, State &, evmc_message const &, size_t max_code_size);
 
 template <Traits traits>
-evmc::Result call(EvmcHost<traits> *, State &, evmc_message const &);
+evmc::Result call(
+    EvmcHost<traits> *, State &, evmc_message const &,
+    std::function<bool()> const &revert_transaction = [] { return false; });
 
 MONAD_NAMESPACE_END

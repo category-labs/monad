@@ -18,9 +18,16 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/monad/chain/monad_revision.h>
 
+#include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
+
+#include <array>
+#include <functional>
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -30,6 +37,20 @@ inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
 
 struct BlockHeader;
 struct Transaction;
+class AccountState;
+class FeeBuffer;
+
+struct MonadChainContext
+{
+    ankerl::unordered_dense::segmented_set<Address> const
+        *grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        *parent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        &senders_and_authorities;
+    std::vector<Address> const &senders;
+    std::vector<std::vector<std::optional<Address>>> const &authorities;
+};
 
 struct MonadChain : Chain
 {
@@ -61,6 +82,21 @@ struct MonadChain : Chain
         uint64_t block_number, uint64_t timestamp) const override;
 
     virtual bool is_system_sender(Address const &) const override;
+
+    virtual Result<void> validate_transaction(
+        uint64_t block_number, uint64_t timestamp, Transaction const &,
+        Address const &sender, State &,
+        uint256_t const &base_fee_per_gas) const override;
+
+    bool revert_transaction(
+        uint64_t block_number, uint64_t timestamp, Address const &sender,
+        Transaction const &, uint256_t const &base_fee_per_gas, uint64_t i,
+        State &, MonadChainContext const &) const;
 };
+
+bool can_sender_dip_into_reserve(
+    Address const &sender, uint64_t i, bytes32_t const &orig_code_hash,
+    MonadChainContext const &);
+uint256_t get_max_reserve(monad_revision, Address const &);
 
 MONAD_NAMESPACE_END

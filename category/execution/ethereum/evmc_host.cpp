@@ -36,7 +36,8 @@ EvmcHostBase::EvmcHostBase(
     Chain const &chain, CallTracerBase &call_tracer,
     evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
     State &state, size_t const max_code_size, size_t const max_initcode_size,
-    bool const create_inside_delegated) noexcept
+    bool const create_inside_delegated,
+    std::function<bool()> const &revert_transaction) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
     , chain_{chain}
@@ -45,6 +46,7 @@ EvmcHostBase::EvmcHostBase(
     , max_code_size_{max_code_size}
     , max_initcode_size_{max_initcode_size}
     , create_inside_delegated_{create_inside_delegated}
+    , revert_transaction_{revert_transaction}
 {
 }
 

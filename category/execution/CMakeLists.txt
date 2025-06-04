@@ -28,8 +28,7 @@ project(monad_execution)
 # ##############################################################################
 
 add_library(
-  monad_execution_ethereum
-  OBJECT
+  monad_execution_ethereum OBJECT
   # ethereum/chain
   "ethereum/chain/chain_config.h"
   "ethereum/chain/chain.cpp"
@@ -179,8 +178,7 @@ add_library(
   "ethereum/types/fmt/incarnation_fmt.hpp")
 
 add_library(
-  monad_execution_native
-  OBJECT
+  monad_execution_native OBJECT
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
@@ -197,6 +195,8 @@ add_library(
   "monad/chain/monad_testnet2.cpp"
   "monad/chain/monad_testnet2.hpp"
   "monad/chain/monad_testnet2_alloc.hpp"
+  "monad/chain/monad_transaction_error.cpp"
+  "monad/chain/monad_transaction_error.hpp"
   # monad/core
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"
@@ -210,6 +210,8 @@ add_library(
   "monad/execute_system_transaction.hpp"
   "monad/monad_precompiles.cpp"
   "monad/monad_precompiles.hpp"
+  "monad/reserve_balance.cpp"
+  "monad/reserve_balance.h"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
   "monad/validate_system_transaction.cpp"

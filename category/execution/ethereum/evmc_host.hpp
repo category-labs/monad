@@ -33,6 +33,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <functional>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -54,12 +55,16 @@ protected:
     size_t const max_code_size_;
     size_t const max_initcode_size_;
     bool const create_inside_delegated_;
+    std::function<bool()> revert_transaction_;
 
 public:
     EvmcHostBase(
         Chain const &, CallTracerBase &, evmc_tx_context const &,
         BlockHashBuffer const &, State &, size_t max_code_size,
-        size_t max_init_code_size, bool create_inside_delegated) noexcept;
+        size_t max_init_code_size, bool create_inside_delegated,
+        std::function<bool()> const &revert_transaction = [] {
+            return false;
+        }) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -100,7 +105,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 88);
+static_assert(sizeof(EvmcHostBase) == 120);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -157,7 +162,7 @@ struct EvmcHost final : public EvmcHostBase
                 return result;
             }
             else {
-                return ::monad::call(this, state_, msg);
+                return ::monad::call(this, state_, msg, revert_transaction_);
             }
         }
         catch (...) {
@@ -208,7 +213,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmChain<EVMC_LATEST_STABLE_REVISION>>) == 88);
+static_assert(sizeof(EvmcHost<EvmChain<EVMC_LATEST_STABLE_REVISION>>) == 120);
 static_assert(alignof(EvmcHost<EvmChain<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
 MONAD_NAMESPACE_END

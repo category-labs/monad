@@ -26,29 +26,39 @@
 
 #include <evmc/evmc.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Block;
 class BlockHashBuffer;
 class BlockState;
+class State;
+struct Block;
 struct Chain;
+
+using RevertTransactionFn = std::function<bool(
+    Address const & /* sender */, Transaction const &, uint64_t /* i */,
+    State &)>;
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &, Block &, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &);
+    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
+    RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                     uint64_t, State &) { return false; });
 
 Result<std::vector<Receipt>> execute_block(
     Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &);
+    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
+    RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                     uint64_t, State &) { return false; });
 
 std::vector<std::optional<Address>>
 recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);

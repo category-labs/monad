@@ -16,13 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/account.hpp>
-#include <category/vm/code.hpp>
-#include <category/vm/evm/chain.hpp>
-
-#include <evmc/evmc.h>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -34,59 +28,27 @@
 #endif
 
 #include <initializer_list>
-#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-enum class TransactionError
+enum class MonadTransactionError
 {
     Success = 0,
-    InsufficientBalance,
-    IntrinsicGasGreaterThanLimit,
-    BadNonce,
-    SenderNotEoa,
-    TypeNotSupported,
-    MaxFeeLessThanBase,
-    PriorityFeeGreaterThanMax,
-    NonceExceedsMax,
-    InitCodeLimitExceeded,
-    GasLimitReached,
-    WrongChainId,
-    MissingSender,
-    GasLimitOverflow,
-    InvalidSignature,
-    InvalidBlobHash,
-    EmptyAuthorizationList,
+    InsufficientBalanceForFee, ///< Account doesn't have enough balance to pay
+                               ///< transaction fees
 };
-
-struct Transaction;
-
-template <Traits traits>
-Result<void> static_validate_transaction(
-    Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
-    std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
-    size_t max_code_size);
-
-template <Traits traits>
-Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account,
-    std::span<uint8_t const>);
-
-Result<void> validate_transaction(
-    evmc_revision, Transaction const &,
-    std::optional<Account> const &sender_account, std::span<uint8_t const>);
 
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 template <>
-struct quick_status_code_from_enum<monad::TransactionError>
-    : quick_status_code_from_enum_defaults<monad::TransactionError>
+struct quick_status_code_from_enum<monad::MonadTransactionError>
+    : quick_status_code_from_enum_defaults<monad::MonadTransactionError>
 {
-    static constexpr auto const domain_name = "Transaction Error";
+    static constexpr auto const domain_name = "Monad Transaction Error";
     static constexpr auto const domain_uuid =
-        "2f22309f9d7d3e03fbb1eb1ff328da12d290";
+        "3f33419a9e8e4f14fcc2fc2ff439eb23e391";
 
     static std::initializer_list<mapping> const &value_mappings();
 };

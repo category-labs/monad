@@ -24,10 +24,10 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -290,8 +290,9 @@ evmc::Result create(
 EXPLICIT_EVM_CHAIN(create);
 
 template <Traits traits>
-evmc::Result
-call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+evmc::Result call(
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
+    std::function<bool()> const &revert_transaction)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -321,6 +322,11 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
         auto const &code = state.read_code(hash);
         result = state.vm().execute<traits>(
             host->get_chain_params(), *host, &msg, hash, code);
+    }
+
+    if (msg.depth == 0 && revert_transaction()) {
+        result.status_code = EVMC_REVERT;
+        result.gas_refund = 0;
     }
 
     post_call(state, result);

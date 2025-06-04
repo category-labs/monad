@@ -25,13 +25,16 @@
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <limits>
 
@@ -206,6 +209,18 @@ bool EthereumMainnet::get_p256_verify_enabled(
 bool EthereumMainnet::is_system_sender(Address const &) const
 {
     return false;
+}
+
+Result<void> EthereumMainnet::validate_transaction(
+    uint64_t const block_number, uint64_t const timestamp,
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const &) const
+{
+    evmc_revision const rev = get_revision(block_number, timestamp);
+    auto const sender_account = state.recent_account(sender);
+    auto const &icode = state.get_code(sender)->intercode();
+    return ::monad::validate_transaction(
+        rev, tx, sender_account, {icode->code(), icode->size()});
 }
 
 MONAD_NAMESPACE_END

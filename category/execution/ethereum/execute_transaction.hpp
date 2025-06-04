@@ -40,6 +40,10 @@ struct EvmcHost;
 class State;
 struct Transaction;
 
+using RevertTransactionFn = std::function<bool(
+    Address const & /* sender */, Transaction const &, uint64_t /* i */,
+    State &)>;
+
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
@@ -53,11 +57,16 @@ protected:
     Address const &sender_;
     std::vector<std::optional<Address>> const &authorities_;
     BlockHeader const &header_;
+    uint64_t i_;
+    RevertTransactionFn revert_transaction_;
 
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        std::vector<std::optional<Address>> const &, BlockHeader const &);
+        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        uint64_t i,
+        RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                         uint64_t, State &) { return false; });
 
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
@@ -73,8 +82,9 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::tx_;
     using ExecuteTransactionNoValidation<traits>::sender_;
     using ExecuteTransactionNoValidation<traits>::header_;
+    using ExecuteTransactionNoValidation<traits>::i_;
+    using ExecuteTransactionNoValidation<traits>::revert_transaction_;
 
-    uint64_t i_;
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
@@ -89,7 +99,9 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::vector<std::optional<Address>> const &, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &);
+        boost::fibers::promise<void> &prev, CallTracerBase &,
+        RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                         uint64_t, State &) { return false; });
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

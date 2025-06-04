@@ -77,8 +77,7 @@ namespace
             .value();
     // clang-format on
     auto const CA1_CODE_HASH = to_bytes(keccak256(CA1_CODE));
-    auto const CA1_CODE_ICODE =
-        vm::make_shared_intercode(CA1_CODE);
+    auto const CA1_CODE_ICODE = vm::make_shared_intercode(CA1_CODE);
 
     // clang-format off
     auto const CA2_CODE = 
@@ -86,8 +85,7 @@ namespace
             .value();
     // clang-format on
     auto const CA2_CODE_HASH = to_bytes(keccak256(CA2_CODE));
-    auto const CA2_CODE_ICODE =
-        vm::make_shared_intercode(CA2_CODE);
+    auto const CA2_CODE_ICODE = vm::make_shared_intercode(CA2_CODE);
 
     constexpr auto key1 =
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
@@ -201,7 +199,7 @@ namespace
         auto const trace_bs =
             read_trace(PRE_STATE_TRACE_NIBBLE, db, block_number, tx_idx);
         std::vector<uint8_t> trace_cbor(trace_bs.begin(), trace_bs.end());
-        return nlohmann::json::from_cbor(trace_cbor);
+        return nlohmann::json::from_msgpack(trace_cbor);
     }
 
     nlohmann::json read_state_deltas_traces(
@@ -210,7 +208,7 @@ namespace
         auto const trace_bs =
             read_trace(STATE_DELTAS_TRACE_NIBBLE, db, block_number, tx_idx);
         std::vector<uint8_t> trace_cbor(trace_bs.begin(), trace_bs.end());
-        return nlohmann::json::from_cbor(trace_cbor);
+        return nlohmann::json::from_msgpack(trace_cbor);
     }
 
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(

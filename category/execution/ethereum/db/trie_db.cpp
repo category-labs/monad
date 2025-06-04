@@ -313,9 +313,9 @@ void TrieDb::commit(
         chunk_and_upsert(call_frame_view, call_frame_updates);
 
         // prestate traces
-        auto const prestate_trace_json = state_to_json(pre_state_traces[i]);
+        auto const &prestate_trace_json = state_to_json(pre_state_traces[i]);
         auto const binary_encoded_prestate_trace =
-            nlohmann::json::to_cbor(prestate_trace_json);
+            nlohmann::json::to_msgpack(prestate_trace_json);
         byte_string_view prestate_trace_view =
             bytes_alloc_.emplace_back(byte_string(
                 binary_encoded_prestate_trace.begin(),
@@ -323,10 +323,10 @@ void TrieDb::commit(
         chunk_and_upsert(prestate_trace_view, pre_state_trace_updates);
 
         // statedeltas traces
-        auto const state_deltas_trace_json =
+        auto const &state_deltas_trace_json =
             state_deltas_to_json(state_deltas_traces[i]);
         auto const binary_encoded_state_deltas_trace =
-            nlohmann::json::to_cbor(state_deltas_trace_json);
+            nlohmann::json::to_msgpack(state_deltas_trace_json);
         byte_string_view state_deltas_trace_view =
             bytes_alloc_.emplace_back(byte_string(
                 binary_encoded_state_deltas_trace.begin(),

@@ -13,7 +13,6 @@
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
-#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

@@ -58,46 +58,62 @@ LANG is down-cased.  BODY has no closing ``` line."
   "Regexp that every valid Coq query must start with.")
 
 (defun query-coq (queries)
-  "Run one or more Coq queries (newline-separated) and return a single string.
+  "Run one or more Coq/utility queries (newline-separated) and return a string.
 
-Rules per line:
-  · If it begins with Search / About / Print / Locate / Check,
-    execute it via Proof General and include the response.
-  · Otherwise, do **not** execute the line; instead include the standard
-    \"not a valid query\" error message for that line.
+Recognised commands:
 
-Every processed line is emitted in the form:
+  • Search / About / Print / Locate / Check   → sent to Coq
+  • CppDefnOf <FQN>                           → fetch C++ definition
+
+Each processed line is emitted as:
 
     >>> <original line>
     <response or error>
 
 Blocks are separated by a blank line."
-  (message "queries: %s"  queries)
-  (let* ((valid-prefixes '("Search" "About" "Print" "Locate" "Check"))
+  (message "queries: %s" queries)
+  (let* ((coq-prefixes '("Search" "About" "Print" "Locate" "Check"))
          (blocks '()))
     (dolist (line (split-string queries "\n"))
       (let* ((q (string-trim line)))
         (unless (string-empty-p q)
-          (let ((prefix (car (split-string q))))
-            (if (member prefix valid-prefixes)
-                ;; ---------- valid query ----------
-                (progn
-                  (with-current-buffer proof-response-buffer (read-only-mode -1))
-                  (let* ((raw (proof-shell-invisible-cmd-get-result q))
-                         (res (string-trim (or raw ""))))
-                    (push (format ">>> %s\n%s"
-                                  q
-                                  (cond
-                                   ((string-empty-p res) "∅ (no results)")
-                                   ((> (length res) max-query-response-strlen)
-                                    "That query returned too many results — please refine it.")
-                                   (t res)))
-                          blocks)))
-              ;; ---------- invalid line ----------
-              (push (format ">>> %s\nNot a valid query.  A query must begin with Search/About/Locate/Check/Print. \
-Do not add Require/Import or other vernacular here." q)
-                    blocks))))))
-    ;; concatenate in original order
+          (let* ((parts   (split-string q))
+                 (prefix  (car parts))
+                 (payload (string-trim (mapconcat #'identity (cdr parts) " "))))
+            (cond
+             ;; ── 1. CppDefnOf ------------------------------------------------
+             ((string-equal prefix "CppDefnOf")
+              (let* ((raw (condition-case err
+                              (defn-of payload)
+                            (error (format "Error: %s"
+                                           (error-message-string err)))))
+                     (res (string-trim (or raw ""))))
+                (push (format ">>> %s\n%s"
+                              q
+                              (cond
+                               ((string-empty-p res) "∅ (no results)")
+                               ((> (length res) max-query-response-strlen)
+                                "That definition is too long — please narrow it.")
+                               (t res)))
+                      blocks)))
+             ;; ── 2. Coq queries ---------------------------------------------
+             ((member prefix coq-prefixes)
+              (with-current-buffer proof-response-buffer (read-only-mode -1))
+              (let* ((raw (proof-shell-invisible-cmd-get-result q))
+                     (res (string-trim (or raw ""))))
+                (push (format ">>> %s\n%s"
+                              q
+                              (cond
+                               ((string-empty-p res) "∅ (no results)")
+                               ((> (length res) max-query-response-strlen)
+                                "That query returned too many results — please refine it.")
+                               (t res)))
+                      blocks)))
+             ;; ── 3. Anything else -------------------------------------------
+             (t
+              (push (format ">>> %s\nNot a valid query.  A query must begin \
+with Search/About/Locate/Check/Print or CppDefnOf." q)
+                    blocks)))))))
     (string-join (nreverse blocks) "\n\n")))
 
 

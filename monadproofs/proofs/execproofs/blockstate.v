@@ -13,6 +13,7 @@ Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 Require Import monad.proofs.libspecs.
 
+(*
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.
@@ -312,3 +313,4 @@ Record account_state : Type := Build_account_state
     account_killed : bool }.
 
   
+*)

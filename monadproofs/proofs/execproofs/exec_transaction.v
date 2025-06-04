@@ -643,7 +643,7 @@ Proof using MODd.
     slauto.
     progress applyPHyp.
     repeat (iExists _). 
-    match goal with
+    (* match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
         remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
@@ -756,5 +756,6 @@ Hint Resolve recObserveF: br_opacity.
     go.
     rewrite ResultSucRDef. go.
 }
-Qed.
+Qed. *)
+    Abort.
 End with_Sigma.

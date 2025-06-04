@@ -914,8 +914,15 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 
     fiber::PriorityPool pool{1, 1};
 
+    auto const recovered_senders =
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        MONAD_ASSERT(recovered_senders[i].has_value());
+        senders[i] = recovered_senders[i].value();
+    }
     auto const results = execute_block<EVMC_SHANGHAI>(
-        EthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
+        EthereumMainnet{}, block.value(), senders, bs, block_hash_buffer, pool);
 
     ASSERT_TRUE(!results.has_error());
 
@@ -1011,8 +1018,20 @@ TYPED_TEST(DBTest, call_frames_refund)
 
     fiber::PriorityPool pool{1, 1};
 
+    auto const recovered_senders =
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        MONAD_ASSERT(recovered_senders[i].has_value());
+        senders[i] = recovered_senders[i].value();
+    }
     auto const results = execute_block<EVMC_SHANGHAI>(
-        ShanghaiEthereumMainnet{}, block.value(), bs, block_hash_buffer, pool);
+        ShanghaiEthereumMainnet{},
+        block.value(),
+        senders,
+        bs,
+        block_hash_buffer,
+        pool);
 
     ASSERT_TRUE(!results.has_error());
 

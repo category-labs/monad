@@ -13,6 +13,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
@@ -92,6 +93,17 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
+        auto const recovered_senders =
+            recover_senders(block.transactions, priority_pool);
+        std::vector<Address> senders(block.transactions.size());
+        for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+            if (recovered_senders[i].has_value()) {
+                senders[i] = recovered_senders[i].value();
+            }
+            else {
+                return TransactionError::MissingSender;
+            }
+        }
         // Ethereum: always execute off of the parent proposal round, commit to
         // `round = block_number`, and finalize immediately after that.
         db.set_block_and_round(
@@ -106,18 +118,17 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 chain,
                 rev,
                 block,
+                senders,
                 block_state,
                 block_hash_buffer,
                 priority_pool));
 
         std::vector<Receipt> receipts(results.size());
         std::vector<std::vector<CallFrame>> call_frames(results.size());
-        std::vector<Address> senders(results.size());
         for (unsigned i = 0; i < results.size(); ++i) {
             auto &result = results[i];
             receipts[i] = std::move(result.receipt);
             call_frames[i] = (std::move(result.call_frames));
-            senders[i] = result.sender;
         }
 
         block_state.log_debug();

@@ -16,6 +16,7 @@
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/wal_reader.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/db.hpp>
@@ -148,20 +149,35 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         is_first_block ? std::nullopt
                        : std::make_optional(consensus_header.parent_round()));
 
+    auto const recovered_senders =
+        recover_senders(block.transactions, priority_pool);
+    std::vector<Address> senders(block.transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        if (recovered_senders[i].has_value()) {
+            senders[i] = recovered_senders[i].value();
+        }
+        else {
+            return TransactionError::MissingSender;
+        }
+    }
     BlockState block_state(db);
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
-            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+            chain,
+            rev,
+            block,
+            senders,
+            block_state,
+            block_hash_buffer,
+            priority_pool));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
-    std::vector<Address> senders(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         auto &result = results[i];
         receipts[i] = std::move(result.receipt);
         call_frames[i] = (std::move(result.call_frames));
-        senders[i] = result.sender;
     }
 
     block_state.log_debug();

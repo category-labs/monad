@@ -143,11 +143,13 @@ std::vector<std::optional<Address>> recover_senders(
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &chain, Block &block, BlockState &block_state,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, Block &block, std::vector<Address> const &senders,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     TRACE_BLOCK_EVENT(StartBlock);
+
+    MONAD_ASSERT(senders.size() == block.transactions.size());
 
     if constexpr (rev >= EVMC_PRAGUE) {
         set_block_hash_history(block_state, block.header);
@@ -163,8 +165,6 @@ Result<std::vector<ExecutionResult>> execute_block(
                 block_state, Incarnation{block.header.number, 0});
         }
     }
-
-    auto const senders = recover_senders(block.transactions, priority_pool);
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[block.transactions.size() + 1]};
@@ -217,7 +217,7 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &[receipt, _, call_frame] : retvals) {
+    for (auto &[receipt, call_frame] : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }
@@ -245,13 +245,15 @@ EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    std::vector<Address> const &senders, BlockState &block_state,
+    BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
         chain,
         block,
+        senders,
         block_state,
         block_hash_buffer,
         priority_pool);

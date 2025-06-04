@@ -35,6 +35,9 @@ add_library(
   "src/monad/chain/monad_testnet.cpp"
   "src/monad/chain/monad_testnet.hpp"
   "src/monad/chain/monad_testnet_alloc.hpp"
+  "src/monad/chain/monad_testnet2.cpp"
+  "src/monad/chain/monad_testnet2.hpp"
+  "src/monad/chain/monad_testnet2_alloc.hpp"
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"

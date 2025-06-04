@@ -8,7 +8,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadTestnet : MonadChain
+struct MonadTestnet2 : MonadChain
 {
     virtual monad_revision get_monad_revision(
         uint64_t block_number, uint64_t timestamp) const override;

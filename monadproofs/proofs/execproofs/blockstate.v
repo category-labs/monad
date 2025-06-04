@@ -13,7 +13,48 @@ Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 Require Import monad.proofs.libspecs.
 
-(*
+
+```coqquery
+Print nat.
+CppDefnOf monad::Account
+Print genv.
+```
+
+  (*
+>>> Print nat.
+Inductive nat : Set :=  O : nat | S : nat → nat.
+
+Arguments S _%_nat_scope
+
+>>> CppDefnOf monad::Account
+// /home/abhishek/fv-workspace/monad/libs/execution/src/monad/core/account.hpp:13
+MONAD_NAMESPACE_BEGIN
+
+struct Account
+{
+    uint256_t balance{0}; // sigma[a]_b
+    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
+    uint64_t nonce{0}; // sigma[a]_n
+    Incarnation incarnation{0, 0};
+
+    friend bool operator==(Account const &, Account const &) = default;
+};
+
+>>> Print genv.
+Record genv : Type := Build_genv
+  { genv_tu : translation_unit;  pointer_size_bitsize : bitsize;  char_signed : signed;  wchar_signed : signed }.
+
+Arguments Build_genv genv_tu pointer_size_bitsize%_N_scope char_signed wchar_signed
+Arguments genv_tu g
+Arguments pointer_size_bitsize g
+Arguments char_signed g
+Arguments wchar_signed g
+
+ Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
+
+*)
+  
+  (*
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.

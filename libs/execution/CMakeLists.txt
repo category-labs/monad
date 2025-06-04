@@ -119,6 +119,8 @@ add_library(
   "src/monad/execution/fmt/event_trace_fmt.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
+  "src/monad/execution/precompiles_bls12.cpp"
+  "src/monad/execution/precompiles_bls12.hpp"
   "src/monad/execution/precompiles_impl.cpp"
   "src/monad/execution/switch_evmc_revision.hpp"
   "src/monad/execution/trace/call_frame.cpp"
@@ -174,6 +176,7 @@ target_link_libraries(
   monad_execution
   PUBLIC monad_core
   PUBLIC monad_trie
+  PRIVATE blst::blst
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli

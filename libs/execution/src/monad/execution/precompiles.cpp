@@ -38,8 +38,9 @@ consteval unsigned num_precompiles(evmc_revision const rev)
     case EVMC_SHANGHAI:
     case EVMC_CANCUN: // TODO(kkuehler): change to 10 after
                       // https://github.com/monad-crypto/monad/pull/887
-    case EVMC_PRAGUE: // TODO(bruce): change to 17 after EIP-2537
         return 9;
+    case EVMC_PRAGUE:
+        return 17;
     default:
         MONAD_ASSERT(false);
     }
@@ -70,7 +71,7 @@ struct PrecompiledContract
 };
 
 inline constexpr std::array<
-    PrecompiledContract, num_precompiles(EVMC_SHANGHAI) + 1>
+    PrecompiledContract, num_precompiles(EVMC_PRAGUE) + 1>
     dispatch{{
         {nullptr, nullptr}, // precompiles start at address 0x1
         {ecrecover_gas_cost, ecrecover_execute},
@@ -82,6 +83,15 @@ inline constexpr std::array<
         {ecmul_gas_cost, ecmul_execute},
         {snarkv_gas_cost, snarkv_execute},
         {blake2bf_gas_cost, blake2bf_execute},
+        {nullptr, nullptr}, // TODO:
+                            // https://github.com/category-labs/monad/pull/968
+        {bls12_g1_add_gas_cost, bls12_g1_add_execute},
+        {bls12_g1_msm_gas_cost, bls12_g1_msm_execute},
+        {bls12_g2_add_gas_cost, bls12_g2_add_execute},
+        {bls12_g2_msm_gas_cost, bls12_g2_msm_execute},
+        {bls12_pairing_check_gas_cost, bls12_pairing_check_execute},
+        {bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute},
+        {bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute},
     }};
 
 template <evmc_revision rev>

@@ -1,11 +1,14 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/execution/precompiles.hpp>
+#include <monad/execution/precompiles_bls12.hpp>
 
+#include <blst.h>
 #include <evmc/evmc.h>
 #include <silkpre/precompile.h>
 
 #include <cstring>
+#include <intx/intx.hpp>
 
 namespace
 {
@@ -85,6 +88,66 @@ uint64_t expmod_gas_cost(byte_string_view const input, evmc_revision const rev)
         input.data(), input.size(), static_cast<int>(rev));
 }
 
+uint64_t bls12_g1_add_gas_cost(byte_string_view, evmc_revision)
+{
+    return 375;
+}
+
+uint64_t
+bls12_g1_msm_gas_cost(byte_string_view const input, evmc_revision)
+{
+    static constexpr auto pair_size = bls12::G1::encoded_size + 32;
+
+    auto const k = input.size() / pair_size;
+
+    if (k == 0) {
+        return 0;
+    }
+
+    return (k * 12'000 * bls12::msm_discount<bls12::G1>(k)) / 1000;
+}
+
+uint64_t bls12_g2_add_gas_cost(byte_string_view, evmc_revision)
+{
+    return 600;
+}
+
+uint64_t
+bls12_g2_msm_gas_cost(byte_string_view const input, evmc_revision)
+{
+    static constexpr auto pair_size = bls12::G2::encoded_size + 32;
+
+    auto const k = input.size() / pair_size;
+
+    if (k == 0) {
+        return 0;
+    }
+
+    return (k * 22'500 * bls12::msm_discount<bls12::G2>(k)) / 1000;
+}
+
+uint64_t
+bls12_pairing_check_gas_cost(byte_string_view const input, evmc_revision)
+{
+    static constexpr auto pair_size =
+        bls12::G1::encoded_size + bls12::G2::encoded_size;
+
+    auto const k = input.size() / pair_size;
+    return 32'600 * k + 37'700;
+}
+
+uint64_t
+bls12_map_fp_to_g1_gas_cost(byte_string_view, evmc_revision)
+{
+    return 5500;
+}
+
+uint64_t
+bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision)
+{
+    return 23800;
+}
+
 PrecompileResult ecrecover_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_ecrec_run>(input);
@@ -131,6 +194,41 @@ PrecompileResult snarkv_execute(byte_string_view const input)
 PrecompileResult blake2bf_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_blake2_f_run>(input);
+}
+
+PrecompileResult bls12_g1_add_execute(byte_string_view const input)
+{
+    return bls12::add<bls12::G1>(input);
+}
+
+PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+{
+    return bls12::msm<bls12::G1>(input);
+}
+
+PrecompileResult bls12_g2_add_execute(byte_string_view const input)
+{
+    return bls12::add<bls12::G2>(input);
+}
+
+PrecompileResult bls12_g2_msm_execute(byte_string_view const input)
+{
+    return bls12::msm<bls12::G2>(input);
+}
+
+PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+{
+    return bls12::pairing_check(input);
+}
+
+PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+{
+    return bls12::map_fp_to_g<bls12::G1>(input);
+}
+
+PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
+{
+    return bls12::map_fp_to_g<bls12::G2>(input);
 }
 
 MONAD_NAMESPACE_END

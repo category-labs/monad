@@ -15,7 +15,6 @@ set(prague_excluded_tests
     
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip7702_set_code_tx/*"
-    "BlockchainTests.prague/eip2537_bls_12_381_precompiles/*"
     "BlockchainTests.prague/eip6110_deposits/*"
     "BlockchainTests.prague/eip7002_el_triggerable_withdrawals/*"
     "BlockchainTests.prague/eip7251_consolidations/*"

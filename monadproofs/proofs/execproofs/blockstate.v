@@ -49,39 +49,48 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
  *)
-(** Projections from the EVM‐side [evm.account_state] **)
+Open Scope Z_scope.
+Open Scope N_scope.
 
-(* Convert the 256‐bit balance into an [N] for the uint256_t field. *)
-Definition balance_to_N (acct: evm.account_state) : N :=
-  Z.to_N (Zdigits.binary_value 256 (block.block_account_balance acct)).
+(* append two sequences of program‐bytes (word8.word8) *)
+Fixpoint append_byte_list (l1 l2: list word8.word8) : list word8.word8 :=
+  match l1 with
+  | []      => l2
+  | x :: xs => x :: append_byte_list xs l2
+  end.
 
-(* Extract the low 64 bits of the 256‐bit nonce. *)
-Definition nonce_to_Z (acct: evm.account_state) : Z :=
-  Z.modulo (Zdigits.binary_value 256 (block.block_account_nonce acct))
-            (2^64)%Z.
+(* collect the first [n] bytes of a program into a list *)
+Fixpoint program_bytesF (p: evm.program) (n: nat) : list word8.word8 :=
+  match n with
+  | O    => []
+  | S n' => append_byte_list (program_bytesF p n')
+                            [evm.program_as_natural_map p n']
+  end.
 
-(* Temporary placeholder: use the keccak256 of [] *)
-Definition code_hash_to_N (acct: evm.account_state) : N :=
-  Z.to_N (Zdigits.binary_value 256 (keccak.keccak [])).
+Definition program_bytes (p: evm.program) : list word8.word8 :=
+  program_bytesF p (Z.to_nat (evm.program_length p)).
 
-(* Placeholder: block/tx indices carried in the C++ Incarnation object. *)
-Definition incarnations_of (acct: evm.account_state) : Indices.
-Admitted. (* TOFIXLATER *)
+(* stub “hash” that always returns zero; replace with real Keccak‐256 later *)
+Definition code_hash (p: evm.program) : keccak.w256 :=
+  Zdigits.Z_to_binary 256 0.  (* TOFIXLATER: real Keccak‐256 of program_bytes p *)
 
-
-(** Rep predicate for [monad::Account] **)
-Definition AccountR (q: cQp.t) (acct: evm.account_state) : Rep :=
-  (* uint256_t    balance; *)
-  _field "::monad::Account::balance"%cpp_name
-    |-> u256R q (balance_to_N acct)
-  ** (* bytes32_t    code_hash; *)
-  _field "::monad::Account::code_hash"%cpp_name
-    |-> bytes32R q (code_hash_to_N acct)
-  ** (* uint64_t     nonce; *)
-  _field "::monad::Account::nonce"%cpp_name
-    |-> primR "uint64_t"%cpp_type q (nonce_to_Z acct)
-  ** (* Incarnation  incarnation; *)
-  _field "::monad::Account::incarnation"%cpp_name
-    |-> IncarnationR q (incarnations_of acct).
+(* Main C++ Account::Rep predicate *)
+Definition AccountR (q: cQp.t) (acc: evm.account_state) (i: Indices) : Rep :=
+  structR "monad::Account" q
+  (** balance : uint256_t (256‐bit) *)
+  ** _field "monad::Account::balance"
+       |-> u256R q
+            (Z.to_N (EVMOpSem.evm.uint (block.block_account_balance acc)))
+  (** code_hash : evmc::bytes32 *)
+  ** _field "monad::Account::code_hash"
+       |-> bytes32R q
+            (Z.to_N (Zdigits.binary_value 256 (code_hash (block.block_account_code acc))))
+  (** nonce : unsigned long *)
+  ** _field "monad::Account::nonce"
+       |-> primR "unsigned long"%cpp_type q
+            (Vint (EVMOpSem.evm.uint (block.block_account_nonce acc)))
+  (** incarnation : monad::Incarnation *)
+  ** _field "monad::Account::incarnation"
+       |-> IncarnationR q i.
 
 

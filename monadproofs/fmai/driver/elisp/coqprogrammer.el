@@ -54,7 +54,7 @@ LANG is down-cased.  BODY has no closing ``` line."
 
 
 (defconst coq-query--allowed-prefix-re
-  "^[[:space:]]*\\(Search\\|About\\|Print\\|Locate\\|Check\\)\\>"
+  "^[[:space:]]*\\(Search\\|About\\|Print\\|Eval\\|Compute\\|Locate\\|Check\\)\\>"
   "Regexp that every valid Coq query must start with.")
 
 (defun query-coq (queries)
@@ -72,7 +72,7 @@ Each processed line is emitted as:
 
 Blocks are separated by a blank line."
   (message "queries: %s" queries)
-  (let* ((coq-prefixes '("Search" "About" "Print" "Locate" "Check"))
+  (let* ((coq-prefixes '("Search" "About" "Print" "Locate" "Check" "Compute" "Eval"))
          (blocks '()))
     (dolist (line (split-string queries "\n"))
       (let* ((q (string-trim line)))
@@ -112,7 +112,7 @@ Blocks are separated by a blank line."
              ;; ── 3. Anything else -------------------------------------------
              (t
               (push (format ">>> %s\nNot a valid query.  A query must begin \
-with Search/About/Locate/Check/Print or CppDefnOf." q)
+with Search/About/Locate/Check/Print/Compute or CppDefnOf." q)
                     blocks)))))))
     (string-join (nreverse blocks) "\n\n")))
 
@@ -768,3 +768,9 @@ Prepends a comment ‘// FILE:LINE’ to the returned text."
       (setq defun-text (buffer-string)))
     (when insert-p (insert defun-text))
     defun-text))
+
+
+
+;; TODO
+;; auto add Set Printing FQN
+;; ensure a c++ file is open in case spec.md is included

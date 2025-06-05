@@ -42,7 +42,7 @@ Definition foo_spec : mpred :=
 
 `cpp.spec` automatically finds out the type of the c++ function and populates the `info_type` record element.
 In `tFunction "void" []`, the first argument is the return type of `foo` and the list is the types of arguments.
-We have cpp2v, a clang-ast-visitor tool that converts c++ ASTs to Gallina, as an element of type `translation_unit`:.
+We have cpp2v, a clang-ast-visitor tool that converts c++ ASTs to Gallina (as a .v file). These .v files define `module` of type `translation_unit`, denoting the AST of the C++ file:
 
 ```gallina
 Record translation_unit : Type := {
@@ -52,7 +52,8 @@ Record translation_unit : Type := {
   byte_order  : endian;
 }.
 ```
-`cpp.spec` looks for a variable in `Context` of type `translation_unit` and finds the type there.
+To write specs of a c++ file, we need to `Require Import` the file produced by cpp2v.
+`cpp.spec` finds the type signatures from the resultant `module:translation_unit` in context.
 `cpp.spec` also detects some common mistakes in specs so we use it instead of writing the `Definition` directly.
 The general syntax of `cpp.spec` is:
 ```gallina
@@ -380,7 +381,7 @@ bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM._field : bluerock.lang.cpp.sy
 ```
 
 The first argument, bluerock.lang.cpp.syntax.core.name, is supposed to be the name of the field.
-We have custom notations (in scope `%cpp_name`) defined to parse string constants in regular double quotes as bluerock.lang.cpp.syntax.core.name.
+We have custom notations (in scope `%cpp_name`) defined to parse string constants in regular double quotes as `bluerock.lang.cpp.syntax.core.name`.
 As an example, if `nbase:ptr` is the memory location where a struct object lives, 
 `_offset_ptr nbase (_field "::Node::data_"%cpp_name)` is the memory location where its `::data_` field lives.
 We don't need to explicitly write the `%cpp_name` part as Coq has been told (via the `Arguments` directive) that the argument of `_field` should be parsed in the `%cpp_name` notation scope.
@@ -757,7 +758,10 @@ We can directly write generic specs by using `specify`:
 The first argument of `specify` is of type `sym_info`. Writing it directly by hand (especially the `info_type` field) can be problematic.
 You can first use `lookupSymbolByFullName` to get the type of a concrete.
 ```coqquery
->> Compute (lookupSymbolByFullName module "std::optional<unsigned long>::has_value() const").
+Compute (lookupSymbolByFullName module "std::optional<unsigned long>::has_value() const").
+```
+response:
+```
      = Some
          {|
            info_name := "std::optional<unsigned long>::has_value() const"; info_type := tMethod "std::optional<unsigned long>" QC "bool" []
@@ -765,6 +769,7 @@ You can first use `lookupSymbolByFullName` to get the type of a concrete.
   : option sym_info
 ```
 
+Here, `module:translation_unit` is the AST in gallina of the C++ file being specified/verified.
 ## Spec Examples
 TODO
 
@@ -779,6 +784,126 @@ The name (here, `foo()`) must be a fully qualified C++ name.
 ```coqquery
 Search (bluerock.auto.cpp.database.spec.SpecFor.C "foo()" _).
 ```
+
+## querying AST of C++ functions/classes
+
+Before writing `Rep` predicates of C++ classes and specs of C++ methods/functions, it is useful to view their definitions.
+You can do that by issuing a coqquery code block response as you do for Coq queries.
+You cannot directly print `module:translation_unit` as the output is huge and likely beyond your context-size limit.
+So, we have defined functions to lookup in it ASTs of specific classes/methods/functions.
+```gallina
+(* lookup the body of a function or a method of nm, which must be a fully qualified C++ name *)
+Definition lookup_function
+           (tu : translation_unit) (nm : name)
+  : option (sum Func Method) :=
+  match symbols tu !! nm with
+  | Some (Ofunction f) => Some (inl f)
+  | Some (Omethod m)   => Some (inr m)
+  | _                  => None
+  end.
+
+
+(* lookup a Struct/Class declaration and its methods by fully‐qualified name *)
+Definition lookup_struct
+           (tu: bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+           (nm: bluerock.lang.cpp.syntax.core.name)
+  : option ( bluerock.lang.cpp.syntax.decl.Struct
+             * list ( bluerock.lang.cpp.syntax.core.obj_name
+                      * bluerock.lang.cpp.syntax.decl.Method ) ) :=
+  match bluerock.lang.cpp.syntax.translation_unit.types tu !! nm with
+  | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st) =>
+      let syms := bluerock.lang.cpp.syntax.translation_unit.symbols tu in
+      let mds :=
+        List.fold_right
+          (fun entry acc =>
+             match select_method_of_class nm entry with
+             | Corelib.Init.Datatypes.Some md => md :: acc
+             | Corelib.Init.Datatypes.None => acc
+             end)
+          []
+          (symbol_table_to_list syms) in
+      Corelib.Init.Datatypes.Some (st, mds)
+  | _ =>
+      Corelib.Init.Datatypes.None
+  end.
+```
+Here is are some example usages:
+
+```coqquery
+Compute (lookup_struct module "monad::BlockState").
+Compute (lookup_function module "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const").
+```
+
+To prevent the response to your queries exceeding your context limit, the bodies of the methods are erased by the following method (`erase_body`) even when they are available in the `translation_unit`. You can use `lookup_function` to query their bodies:
+
+```gallina
+Definition AvailableButErased: option (OrDefault Stmt).
+  exact None.
+Qed. (* Qed instead of Defined makes it opaque so Compute wont unfold it to None *)
+
+Definition erase_body (m:Method) : Method :=
+  match m_body m with
+  | Some (UserDefined _) =>  m &: _m_body .= AvailableButErased
+  | _ => m
+  end.
+```
+
+The names in the AST are normalized by the clang-AST visitor so they are normalized even in the C++ AST in Coq. For example, we wrote the spec of the linked list reverse function as:
+
+```gallina
+  cpp.spec "reverse(Node*)" as reverse_spec with
+    (\arg{lp} "l" (Vptr lp)
+     \pre{l: list Z} lp |-> ListR 1 l
+     \post{r}[Vptr r] r |-> ListR 1 (List.rev l)).
+```
+even though the c++ method definition was
+
+```c++
+List reverse(List l) {...
+```
+
+This is because the AST in Coq has the following C++ type alias unfolded everywhere:
+```c++
+typedef Node * List;
+```
+
+The lookup functions above (e.g. `lookup_struct`) and `cpp.spec` expect names with type aliases unfolded. To help with that, we have the following functions that take a C++ fully qualified name (where type aliases may be folded) as a `PrimString.string` and returns a `core.name` (structured name) or `core.type` where the type aliases of the `translation_unit` are all unfolded everywhere.
+
+
+```gallina
+bluerock.lang.cpp.syntax.name_notation.parser.parse_name_with
+     : bluerock.lang.cpp.syntax.translation_unit.translation_unit
+       → Corelib.Strings.PrimString.string
+         → Corelib.Init.Datatypes.option
+             bluerock.lang.cpp.syntax.core.name
+
+bluerock.lang.cpp.syntax.name_notation.parser.parse_type_with
+     : bluerock.lang.cpp.syntax.translation_unit.translation_unit
+       → Corelib.Strings.PrimString.string
+         → Corelib.Init.Datatypes.option
+             bluerock.lang.cpp.syntax.core.type
+```
+
+For example, 
+`parser.parse_name_with module "reverse(List)"` computes to 
+`Some "reverse(Node*)"%cpp_name`
+
+## source definitions of C++ functions/classes
+As mentioned above, the AST in Coq has type aliases normalized. 
+Also, default arguments of templates are inserted.
+Also, source code comments are missing.
+Together, these may make it hard to understand the code and how to write the specs.
+So, we have implemented the `CppDefnOf cppfqn` query to get you the source code snippet corresponding to the c++ class/function whose c++ fully qualified name is `cppfqn`.
+Here is an example valid response that you can issue:
+
+```coqquery
+Print nat.
+CppDefnOf monad::Account
+Search (genv -> genv).
+```
+
+Even though CppDefnOf is not technically a Coq query and the elisp-loop responding to you actually does not implement the  `CppDefnOf` queries via coqtop and uses clangd-lsp instead, you can issue `CppDefnOf` queries as if it were a Coq query.
+
 
 ## Common mistakes in specs:
 

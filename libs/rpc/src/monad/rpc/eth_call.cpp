@@ -410,12 +410,11 @@ struct monad_eth_call_executor
 {
     using BlockHashCache = LruCache<uint64_t, bytes32_t>;
 
-    static constexpr auto low_pool_timeout_ = std::chrono::seconds{2};
-
     fiber::PriorityPool low_gas_pool_;
     fiber::PriorityPool high_gas_pool_;
 
     unsigned high_pool_queue_limit_{20};
+    std::chrono::seconds low_pool_timeout_{2};
     std::chrono::seconds high_pool_timeout_{30};
 
     // counters
@@ -428,10 +427,11 @@ struct monad_eth_call_executor
 
     monad_eth_call_executor(
         unsigned const num_threads, unsigned const num_fibers,
-        unsigned const node_lru_size, unsigned const high_pool_timeout_sec,
-        std::string const &triedb_path)
+        unsigned const node_lru_size, unsigned const low_pool_timeout_sec,
+        unsigned const high_pool_timeout_sec, std::string const &triedb_path)
         : low_gas_pool_{num_threads, num_fibers, true}
         , high_gas_pool_{1, 2, true}
+        , low_pool_timeout_{low_pool_timeout_sec}
         , high_pool_timeout_{high_pool_timeout_sec}
         , db_{[&] {
             std::vector<std::filesystem::path> paths;
@@ -774,8 +774,8 @@ struct monad_eth_call_executor
 
 monad_eth_call_executor *monad_eth_call_executor_create(
     unsigned const num_threads, unsigned const num_fibers,
-    unsigned const node_lru_size, unsigned const high_pool_timeout_sec,
-    char const *const dbpath)
+    unsigned const node_lru_size, unsigned const low_pool_timeout_sec,
+    unsigned const high_pool_timeout_sec, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
@@ -784,6 +784,7 @@ monad_eth_call_executor *monad_eth_call_executor_create(
         num_threads,
         num_fibers,
         node_lru_size,
+        low_pool_timeout_sec,
         high_pool_timeout_sec,
         triedb_path);
 

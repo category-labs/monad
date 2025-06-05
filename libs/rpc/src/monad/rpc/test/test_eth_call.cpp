@@ -27,6 +27,7 @@ using namespace monad::test;
 namespace
 {
     constexpr unsigned node_lru_size = 10240;
+    constexpr unsigned max_timeout = std::numeric_limits<unsigned>::max();
 
     std::vector<uint8_t> to_vec(byte_string const &bs)
     {
@@ -129,7 +130,12 @@ namespace
             to_vec(rlp::encode_address(std::make_optional(from)));
 
         auto executor = monad_eth_call_executor_create(
-            1, 1, node_lru_size, 30, dbname.string().c_str());
+            1,
+            1,
+            node_lru_size,
+            max_timeout,
+            max_timeout,
+            dbname.string().c_str());
         auto state_override = monad_state_override_create();
 
         struct callback_context ctx;
@@ -213,7 +219,7 @@ TEST_F(EthCallFixture, simple_success_call)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -271,7 +277,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -330,7 +336,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -388,7 +394,7 @@ TEST_F(EthCallFixture, failed_to_read)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -448,7 +454,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -529,7 +535,7 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -601,7 +607,12 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
     Transaction tx{.gas_limit = 100000u, .to = ca, .data = from_hex(tx_data)};
 
     auto executor = monad_eth_call_executor_create(
-        2, 10, node_lru_size, 30, dbname.string().c_str());
+        2,
+        10,
+        node_lru_size,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
 
     std::deque<std::unique_ptr<callback_context>> ctxs;
     std::deque<boost::fibers::future<void>> futures;
@@ -709,7 +720,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         to_vec(rlp::encode_address(std::make_optional(from)));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, 30, dbname.string().c_str());
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;

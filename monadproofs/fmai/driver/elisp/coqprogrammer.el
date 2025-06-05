@@ -423,9 +423,7 @@ Your response MUST either END with the Coq answer in a ```gallina ... ``` code b
 If you do not follow this format, I would not be able to respond to you properly.
 Although I log and publish your responses in entirety, to respond to you, I ONLY LOOK AT THE LAST CODE BLOCK (```gallina or ```coqquery) IN YOUR RESPONSE.
 If that is a ```coqquery block, I will send the queries to coqtop and give you back the responses.
-If that is a ```gallina block, I will insert it into emacs+proof-general+company-coq and ask proof-general to check till the end.
-I will wrap your solution in a `Module` so you should NOT wrap your soln in a module.
-If there are coq errors, I will respond with the errors.
+If that is a ```gallina block, I will insert it into emacs+proof-general+company-coq and ask proof-general to check till the end. If there are coq errors, I will respond with the errors.
 
 An example of a valid response is:
 ```coqquery
@@ -439,10 +437,9 @@ Definition bar : nat := 1+3.
 ```
 
 You can include multiple queries in a ```coqquery block: one in each line.
+DO NOT emit any `Require Import/Export` commands in either types of blocks (coqquery or gallina). All the availble libraries have already been `Require`d, so they are availble, at least with fully qualified names. If needed, you can Import (but not `Require Import`) modules defining notations.
 
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.
-DO NOT emit any `Require Import/Export` commands. All the availble libraries have already been `Require`d, so they are availble, at least with fully qualified names. If needed, you can Import (but not `Require Import`) modules defining notations.
-
 In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST MARK THAT WITH A TOFIXLATER comment, so that you -- not me -- will fix it later.
 
 ")

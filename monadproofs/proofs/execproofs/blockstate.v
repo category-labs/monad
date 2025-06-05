@@ -14,369 +14,14 @@ Require Import Lens.Elpi.Elpi.
 Require Import monad.proofs.libspecs.
 
 
-(*
-In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
-Write a gallina function `lookup_function` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the function/method whose fully qualified name is `nm`. Chose an appropriate type for the placeholder `_`.
-Note that the AST treats classes as structs as well.
-
-+++ QUERIES
-Print translation_unit.
-Print name.
-*)
-Definition lookup_function
-           (tu : translation_unit) (nm : name)
-  : option (sum Func Method) :=
-  match symbols tu !! nm with
-  | Some (Ofunction f) => Some (inl f)
-  | Some (Omethod m)   => Some (inr m)
-  | _                  => None
-  end.
-
-
-
-
-(* lookup a function/method declaration and its methods by fully‐qualified name *)
-Definition symbol_table_to_list
-  (st: bluerock.lang.cpp.syntax.translation_unit.symbol_table)
-  : list (bluerock.lang.cpp.syntax.core.obj_name
-          * bluerock.lang.cpp.syntax.translation_unit.ObjValue) :=
-  (* NM.elements is already available and produces a list of (key * elt) *)
-  bluerock.lang.cpp.syntax.namemap.NM.elements st.
-
-#[only(lens)] derive Method'.
-
-Definition AvailableButErased: option (OrDefault Stmt).
-  exact None.
-Qed.
-
-Definition erase_body (m:Method) : Method :=
-  match m_body m with
-  | Some (UserDefined _) =>  m &: _m_body .= AvailableButErased
-  | _ => m
-  end.
-
-(* pick out a method of class [nm] from one symbol‐table entry *)
-Definition select_method_of_class
-           (nm: bluerock.lang.cpp.syntax.core.name)
-           (entry: bluerock.lang.cpp.syntax.core.obj_name
-                   * bluerock.lang.cpp.syntax.translation_unit.ObjValue)
-  : option (bluerock.lang.cpp.syntax.core.obj_name
-            * bluerock.lang.cpp.syntax.decl.Method) :=
-  let '(n,o) := entry in
-  match o with
-  | bluerock.lang.cpp.syntax.translation_unit.Omethod m =>
-      if bool_decide (bluerock.lang.cpp.syntax.decl.m_class m = nm)
-      then Corelib.Init.Datatypes.Some (n, erase_body m)
-      else Corelib.Init.Datatypes.None
-  | _ => Corelib.Init.Datatypes.None
-  end.
-
-
-(* lookup the Struct declaration and its methods by fully‐qualified name *)
-Definition lookup_struct
-           (tu: bluerock.lang.cpp.syntax.translation_unit.translation_unit)
-           (nm: bluerock.lang.cpp.syntax.core.name)
-  : option ( bluerock.lang.cpp.syntax.decl.Struct
-             * list ( bluerock.lang.cpp.syntax.core.obj_name
-                      * bluerock.lang.cpp.syntax.decl.Method ) ) :=
-  match bluerock.lang.cpp.syntax.translation_unit.types tu !! nm with
-  | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st) =>
-      let syms := bluerock.lang.cpp.syntax.translation_unit.symbols tu in
-      let mds :=
-        List.fold_right
-          (fun entry acc =>
-             match select_method_of_class nm entry with
-             | Corelib.Init.Datatypes.Some md => md :: acc
-             | Corelib.Init.Datatypes.None => acc
-             end)
-          []
-          (symbol_table_to_list syms) in
-      Corelib.Init.Datatypes.Some (st, mds)
-  | _ =>
-      Corelib.Init.Datatypes.None
-  end.
-
-Compute (lookup_struct module "monad::BlockState").
-Compute (lookup_function module "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const").
-
-
-Set Printing FullyQualifiedNames.
-Check parser.parse_name_with.
-Check parser.parse_type_with.
-
-
-bluerock.lang.cpp.syntax.name_notation.parser.parse_name_with
-     : bluerock.lang.cpp.syntax.translation_unit.translation_unit
-       → Corelib.Strings.PrimString.string
-         → Corelib.Init.Datatypes.option
-             bluerock.lang.cpp.syntax.core.name
-
-bluerock.lang.cpp.syntax.name_notation.parser.parse_type_with
-     : bluerock.lang.cpp.syntax.translation_unit.translation_unit
-       → Corelib.Strings.PrimString.string
-         → Corelib.Init.Datatypes.option
-             bluerock.lang.cpp.syntax.core.type
-
-
-```coqquery
-Print nat.
-CppDefnOf monad::Account
-Print genv.
-```
-
-  (*
->>> Print nat.
-Inductive nat : Set :=  O : nat | S : nat → nat.
-
-Arguments S _%_nat_scope
-
->>> CppDefnOf monad::Account
-// /home/abhishek/fv-workspace/monad/libs/execution/src/monad/core/account.hpp:13
-MONAD_NAMESPACE_BEGIN
-
-struct Account
-{
-    uint256_t balance{0}; // sigma[a]_b
-    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
-    uint64_t nonce{0}; // sigma[a]_n
-    Incarnation incarnation{0, 0};
-
-    friend bool operator==(Account const &, Account const &) = default;
-};
-
->>> Print genv.
-Record genv : Type := Build_genv
-  { genv_tu : translation_unit;  pointer_size_bitsize : bitsize;  char_signed : signed;  wchar_signed : signed }.
-
-Arguments Build_genv genv_tu pointer_size_bitsize%_N_scope char_signed wchar_signed
-Arguments genv_tu g
-Arguments pointer_size_bitsize g
-Arguments char_signed g
-Arguments wchar_signed g
-
- Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
-
-*)
-  
-  (*
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : block_state_cpp.module ⊧ CU}.
 
-
-// /home/abhishek/fv-workspace/monad/libs/execution/src/monad/core/account.hpp:13
-MONAD_NAMESPACE_BEGIN
-
-struct Account
-{
-    uint256_t balance{0}; // sigma[a]_b
-    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
-    uint64_t nonce{0}; // sigma[a]_n
-    Incarnation incarnation{0, 0};
-
-    friend bool operator==(Account const &, Account const &) = default;
-};
-
   
   
-(* Define `AccountStateR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the below C++ class `monad::AccountState`.
-(all the c++ code below is in namespace `monad`)
-
-```c++
-class AccountState final : public AccountSubstate
-{
-public: // TODO
-    template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
-
-    std::optional<Account> account_{};
-    Map<bytes32_t, bytes32_t> storage_{};
-    Map<bytes32_t, bytes32_t> transient_storage_{};
-    bool validate_exact_nonce_{false};
-    bool validate_exact_balance_{false};
-    uint256_t min_balance_{0};
-
-    evmc_storage_status zero_out_key(
-        bytes32_t const &key, bytes32_t const &original_value,
-        bytes32_t const &current_value);
-
-    evmc_storage_status set_current_value(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value, bytes32_t const &current_value);
-
-public:
-    explicit AccountState(std::optional<Account> &&account)
-        : account_{std::move(account)}
-    {
-    }
-
-    explicit AccountState(std::optional<Account> const &account)
-        : account_{account}
-    {
-    }
-
-    AccountState(AccountState &&) = default;
-    AccountState(AccountState const &) = default;
-    AccountState &operator=(AccountState &&) = default;
-    AccountState &operator=(AccountState const &) = default;
-
-    bytes32_t get_transient_storage(bytes32_t const &key) const
-    {
-        auto const it = transient_storage_.find(key);
-        if (MONAD_LIKELY(it != transient_storage_.end())) {
-            return it->second;
-        }
-        return {};
-    }
-
-    evmc_storage_status set_storage(
-        bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
-    {
-        bytes32_t current_value = original_value;
-        {
-            auto const it = storage_.find(key);
-            if (it != storage_.end()) {
-                current_value = it->second;
-            }
-        }
-        if (value == bytes32_t{}) {
-            return zero_out_key(key, original_value, current_value);
-        }
-        return set_current_value(key, value, original_value, current_value);
-    }
-
-    void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
-    {
-        transient_storage_[key] = value;
-    }
-
-    [[nodiscard]] bool validate_exact_nonce() const
-    {
-        return validate_exact_nonce_;
-    }
-
-    [[nodiscard]] bool validate_exact_balance() const
-    {
-        return validate_exact_balance_;
-    }
-
-    [[nodiscard]] uint256_t const &min_balance() const
-    {
-        return min_balance_;
-    }
-
-    void set_validate_exact_nonce()
-    {
-        validate_exact_nonce_ = true;
-    }
-
-    void set_validate_exact_balance()
-    {
-        validate_exact_balance_ = true;
-    }
-
-    void set_min_balance(uint256_t const &value)
-    {
-        if (value > min_balance_) {
-            min_balance_ = value;
-        }
-    }
-};
-```
-Defn of the base class:
-
-```c++
-class AccountSubstate
-{
-    template <class Key>
-    using Set = ankerl::unordered_dense::set<Key>;
-
-    bool destructed_{false}; // A_s
-    bool touched_{false}; // A_t
-    bool accessed_{false}; // A_a
-    Set<bytes32_t> accessed_storage_{}; // A_K
-
-public:
-    AccountSubstate() = default;
-    AccountSubstate(AccountSubstate &&) = default;
-    AccountSubstate(AccountSubstate const &) = default;
-    AccountSubstate &operator=(AccountSubstate &&) = default;
-    AccountSubstate &operator=(AccountSubstate const &) = default;
-
-    // A_s
-    bool is_destructed() const
-    {
-        return destructed_;
-    }
-
-    // A_t
-    bool is_touched() const
-    {
-        return touched_;
-    }
-
-    // A_K
-    Set<bytes32_t> const &get_accessed_storage() const
-    {
-        return accessed_storage_;
-    }
-
-    // A_s
-    bool destruct()
-    {
-        bool const inserted = !destructed_;
-        destructed_ = true;
-        return inserted;
-    }
-
-    // A_t
-    void touch()
-    {
-        touched_ = true;
-    }
-
-    // A_a
-    evmc_access_status access()
-    {
-        bool const inserted = !accessed_;
-        accessed_ = true;
-        if (inserted) {
-            return EVMC_ACCESS_COLD;
-        }
-        return EVMC_ACCESS_WARM;
-    }
-
-    // A_K
-    evmc_access_status access_storage(bytes32_t const &key)
-    {
-        bool const inserted = accessed_storage_.emplace(key).second;
-        if (inserted) {
-            return EVMC_ACCESS_COLD;
-        }
-        return EVMC_ACCESS_WARM;
-    }
-};
-```
-
-Definition of of Account class:
-```c++
-struct Account
-{
-    uint256_t balance{0}; // sigma[a]_b
-    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
-    uint64_t nonce{0}; // sigma[a]_n
-    Incarnation incarnation{0, 0};
-
-    friend bool operator==(Account const &, Account const &) = default;
-};
-```
-
-The C++ equivalents of the Gallina Record evm.account_state are split across
-the above 3 classes. use evm.account_state (block.block_account) as the mathematical model for all
-the 3 classes.
-`block.block_account` comes from a Gallina formalization of EVM semantics by Yoichi from ~2019 and does not have the latest semantics, which the C++ code has. Thus a the transient storage field is missing there. For now, just use the regular storage field as a model for transient storage in C++.
-
+  (* Define `AccountR: cQp.t -> evm.account_state -> Rep`, the Rep predicate of the
+thr C++ class `monad::Account`.
 
 
 Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
@@ -385,12 +30,9 @@ Below are some existing Rep predicates that you can use (in addition to the ones
 - u256t for `uint256_t` (alias for `intx::uint<256>`)
 - addressR is the Rep predicate for Address (alias for `evmc::address`)
 
-Many of these Rep predicates are currently admitted. You dont need to define them. But their type will tell you the Gallina models of these typess.
+Many of these Rep predicates are currently admitted. You dont need to define them. But their type will tell you the Gallina models of these types.
 Unfortunately, there is currently no way to search the Coq context for Rep predicate definitions/axioms for a given C++ type.
 So, if a Rep predicate for a class has not been mentioned in this first prompt, you can assume it doesnt exist and you need to define it.
-If you have not been shown the C++ body of the class whose Rep predicate you need, you can just admit it. But to do that you need to chose the type, especially the type of the Gallina (mathematical) model of the type. Choose wisely. When possible, consider multiple options and compare pros and cons.
-
-IF YOU HAVE BEEN PROVIDED THE C++ BODY OF A CLASS (E.G. ITS FIELDS), YOU CANNOT ADMIT ITS Rep OR PROVIDE A DUMMY IMPLEMENTATION. YOU MUST ENURE THE REP PREDICATE ACCOUNTS FOR OWNERSHIP OF ALL THE FIELDS. 
 
 +++ FILES
 ../../fmai/prompts/sep.md
@@ -407,55 +49,39 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
  *)
-(* ------------------------------------------------------------------ *)
-(* Helper predicate for the dense segmented map ---------------------- *)
-Definition MapR `{cpp_logic} (q : cQp.t) (stor : evm.storage) : Rep :=
-  (* For now we only claim raw ownership of the container object.
-     A precise link to [stor] can be added later. *)
-  anyR "ankerl::unordered_dense::segmented_map<evmc::bytes32, evmc::bytes32>" q
-  (* TOFIXLATER: relate [stor] to the contents of the map *) .
+(** Projections from the EVM‐side [evm.account_state] **)
 
-(* ------------------------------------------------------------------ *)
-(* Very lightweight predicate for the base class --------------------- *)
-Definition AccountSubstateR `{cpp_logic}
-           (q  : cQp.t)
-           (acc : evm.account_state) : Rep :=
-  (* Precise field-wise ownership can be introduced later. *)
-  structR "monad::AccountSubstate" q.     (* TOFIXLATER *)
+(* Convert the 256‐bit balance into an [N] for the uint256_t field. *)
+Definition balance_to_N (acct: evm.account_state) : N :=
+  Z.to_N (Zdigits.binary_value 256 (block.block_account_balance acct)).
 
-(* ------------------------------------------------------------------ *)
-(* Main predicate ---------------------------------------------------- *)
-Definition AccountStateR `{cpp_logic}
-           (q   : cQp.t)
-           (acc : evm.account_state) : Rep :=
-       (* optional<Account> account_ --------------------------------- *)
-       _field "monad::AccountState::account_" |-> 
-         anyR "std::optional<monad::Account>" q        (* TOFIXLATER *)
-  ** _field "monad::AccountState::storage_" |-> 
-         MapR q (block.block_account_storage acc)
-  ** _field "monad::AccountState::transient_storage_" |-> 
-         MapR q (block.block_account_storage acc)      (* see task text *)
-  ** _field "monad::AccountState::validate_exact_nonce_" |-> 
-         anyR "bool" q                                (* bool flag *)
-  ** _field "monad::AccountState::validate_exact_balance_" |-> 
-         anyR "bool" q                                (* bool flag *)
-  ** _field "monad::AccountState::min_balance_" |-> 
-         u256R q 0%N                                  (* TOFIXLATER *)
-  (* base-class sub-object ------------------------------------------ *)
-  ** _base "monad::AccountState" "monad::AccountSubstate" |-> 
-         AccountSubstateR q acc
-  (* run-time type identity ----------------------------------------- *)
-  ** structR "monad::AccountState" q.
-Print EVMOpSem.evm.account_state.
+(* Extract the low 64 bits of the 256‐bit nonce. *)
+Definition nonce_to_Z (acct: evm.account_state) : Z :=
+  Z.modulo (Zdigits.binary_value 256 (block.block_account_nonce acct))
+            (2^64)%Z.
 
-Print block.block_account.
-Record account_state : Type := Build_account_state
-  { account_address : EVMOpSem.evm.address;
-    account_storage : evm.storage;
-    account_code : evm.program;
-    account_balance : keccak.w256;
-    account_ongoing_calls : list (evm.variable_ctx * Z * Z);
-    account_killed : bool }.
+(* Temporary placeholder: use the keccak256 of [] *)
+Definition code_hash_to_N (acct: evm.account_state) : N :=
+  Z.to_N (Zdigits.binary_value 256 (keccak.keccak [])).
 
-  
-*)
+(* Placeholder: block/tx indices carried in the C++ Incarnation object. *)
+Definition incarnations_of (acct: evm.account_state) : Indices.
+Admitted. (* TOFIXLATER *)
+
+
+(** Rep predicate for [monad::Account] **)
+Definition AccountR (q: cQp.t) (acct: evm.account_state) : Rep :=
+  (* uint256_t    balance; *)
+  _field "::monad::Account::balance"%cpp_name
+    |-> u256R q (balance_to_N acct)
+  ** (* bytes32_t    code_hash; *)
+  _field "::monad::Account::code_hash"%cpp_name
+    |-> bytes32R q (code_hash_to_N acct)
+  ** (* uint64_t     nonce; *)
+  _field "::monad::Account::nonce"%cpp_name
+    |-> primR "uint64_t"%cpp_type q (nonce_to_Z acct)
+  ** (* Incarnation  incarnation; *)
+  _field "::monad::Account::incarnation"%cpp_name
+    |-> IncarnationR q (incarnations_of acct).
+
+

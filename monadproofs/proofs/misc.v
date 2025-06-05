@@ -1561,19 +1561,86 @@ Instance SatMod : Saturate Nat.modulo :=
 
 (*
 In the current Coq context, I have `block_state_cpp.module:translation_unit` which is a translation of the AST of block_state.cpp (and its includes, recursively) to Coq.
-Write a gallina function `find_struct` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the struct whose fully qualified name is `name`. Chose an appropriate type for the placeholder `_`.
+Write a gallina function `lookup_function` that takes a `translation_unit` and an argumement `nm: name` and returns an `option _` which is a definition of the function/method whose fully qualified name is `nm`. Chose an appropriate type for the placeholder `_`.
+Note that the AST treats classes as structs as well.
 
 +++ QUERIES
 Print translation_unit.
 Print name.
 *)
-Definition find_struct
-  (tu : bluerock.lang.cpp.syntax.translation_unit.translation_unit)
-  (nm : bluerock.lang.cpp.syntax.core.name)
-  : option bluerock.lang.cpp.syntax.decl.Struct :=
-  match bluerock.lang.cpp.syntax.namemap.internal.NameMap.find
-          (elt := bluerock.lang.cpp.syntax.translation_unit.GlobDecl)
-          nm (bluerock.lang.cpp.syntax.translation_unit.types tu) with
-  | Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct s) => Some s
-  | _ => None
+Definition lookup_function
+           (tu : translation_unit) (nm : name)
+  : option (sum Func Method) :=
+  match symbols tu !! nm with
+  | Some (Ofunction f) => Some (inl f)
+  | Some (Omethod m)   => Some (inr m)
+  | _                  => None
+  end.
+
+
+
+
+(* lookup a function/method declaration and its methods by fully‐qualified name *)
+Definition symbol_table_to_list
+  (st: bluerock.lang.cpp.syntax.translation_unit.symbol_table)
+  : list (bluerock.lang.cpp.syntax.core.obj_name
+          * bluerock.lang.cpp.syntax.translation_unit.ObjValue) :=
+  (* NM.elements is already available and produces a list of (key * elt) *)
+  bluerock.lang.cpp.syntax.namemap.NM.elements st.
+
+#[only(lens)] derive Method'.
+
+Definition AvailableButErased: option (OrDefault Stmt).
+  exact None.
+Qed.
+
+#[only(lens)] derive Method'.
+
+Import LensNotations.
+Open Scope lens_scope.
+Definition erase_body (m:Method) : Method :=
+  match m_body m with
+  | Some (UserDefined _) =>  m &: _m_body .= AvailableButErased
+  | _ => m
+  end.
+
+(* pick out a method of class [nm] from one symbol‐table entry *)
+Definition select_method_of_class
+           (nm: bluerock.lang.cpp.syntax.core.name)
+           (entry: bluerock.lang.cpp.syntax.core.obj_name
+                   * bluerock.lang.cpp.syntax.translation_unit.ObjValue)
+  : option (bluerock.lang.cpp.syntax.core.obj_name
+            * bluerock.lang.cpp.syntax.decl.Method) :=
+  let '(n,o) := entry in
+  match o with
+  | bluerock.lang.cpp.syntax.translation_unit.Omethod m =>
+      if bool_decide (bluerock.lang.cpp.syntax.decl.m_class m = nm)
+      then Corelib.Init.Datatypes.Some (n, erase_body m)
+      else Corelib.Init.Datatypes.None
+  | _ => Corelib.Init.Datatypes.None
+  end.
+
+
+(* lookup the Struct declaration and its methods by fully‐qualified name *)
+Definition lookup_struct
+           (tu: bluerock.lang.cpp.syntax.translation_unit.translation_unit)
+           (nm: bluerock.lang.cpp.syntax.core.name)
+  : option ( bluerock.lang.cpp.syntax.decl.Struct
+             * list ( bluerock.lang.cpp.syntax.core.obj_name
+                      * bluerock.lang.cpp.syntax.decl.Method ) ) :=
+  match bluerock.lang.cpp.syntax.translation_unit.types tu !! nm with
+  | Corelib.Init.Datatypes.Some (bluerock.lang.cpp.syntax.translation_unit.Gstruct st) =>
+      let syms := bluerock.lang.cpp.syntax.translation_unit.symbols tu in
+      let mds :=
+        List.fold_right
+          (fun entry acc =>
+             match select_method_of_class nm entry with
+             | Corelib.Init.Datatypes.Some md => md :: acc
+             | Corelib.Init.Datatypes.None => acc
+             end)
+          []
+          (symbol_table_to_list syms) in
+      Corelib.Init.Datatypes.Some (st, mds)
+  | _ =>
+      Corelib.Init.Datatypes.None
   end.

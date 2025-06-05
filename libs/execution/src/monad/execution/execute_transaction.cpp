@@ -154,7 +154,19 @@ Receipt execute_final(
     auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
     state.add_to_balance(sender, gas_cost * gas_refund);
 
-    auto const gas_used = tx.gas_limit - gas_refund;
+    auto gas_used = tx.gas_limit - gas_refund;
+
+    // EIP-7623
+    if constexpr (rev >= EVMC_PRAGUE) {
+        auto const floor_gas = floor_data_gas(tx);
+        if (gas_used < floor_gas) {
+            auto const delta = floor_gas - gas_used;
+            state.subtract_from_balance(sender, gas_cost * delta);
+
+            gas_used = floor_gas;
+        }
+    }
+
     auto const reward =
         calculate_txn_award<rev>(tx, base_fee_per_gas, gas_used);
     state.add_to_balance(beneficiary, reward);

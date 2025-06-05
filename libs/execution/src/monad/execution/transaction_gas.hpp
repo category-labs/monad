@@ -17,6 +17,8 @@ uint64_t g_data(Transaction const &) noexcept;
 template <evmc_revision rev>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+uint64_t floor_data_gas(Transaction const &) noexcept;
+
 template <evmc_revision rev>
 uint256_t
 gas_price(Transaction const &, uint256_t const &base_fee_per_gas) noexcept;

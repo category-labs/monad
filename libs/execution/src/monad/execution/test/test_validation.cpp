@@ -34,6 +34,24 @@ TEST(Validation, validate_enough_gas)
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
 
+TEST(Validation, validate_floor_gas)
+{
+    Transaction const t{
+        .gas_limit = 300'000,
+        .data = evmc::bytes(10000, 0x01),
+    };
+
+    auto const cancun_result =
+        static_validate_transaction<EVMC_CANCUN>(t, 0, 1, MAX_CODE_SIZE_EIP170);
+    EXPECT_NE(
+        cancun_result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
+
+    auto const prague_result =
+        static_validate_transaction<EVMC_PRAGUE>(t, 0, 1, MAX_CODE_SIZE_EIP170);
+    EXPECT_EQ(
+        prague_result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
+}
+
 TEST(Validation, validate_deployed_code)
 {
     static constexpr auto some_non_null_hash{

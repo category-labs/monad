@@ -40,20 +40,27 @@ inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
     return 0u;
 }
 
+std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
+{
+    auto const zeros = static_cast<uint64_t>(std::count_if(
+        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
+            return c == 0x00;
+        }));
+    auto const nonzeros = tx.data.size() - zeros;
+    return {zeros, nonzeros};
+}
+
 // YP, Eqn. 60, first summation
 template <evmc_revision rev>
 uint64_t g_data(Transaction const &tx) noexcept
 {
-    auto const zeros = std::count_if(
-        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
-            return c == 0x00;
-        });
-    auto const nonzeros = tx.data.size() - static_cast<uint64_t>(zeros);
+    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
+
     if constexpr (rev < EVMC_ISTANBUL) {
         // EIP-2028
-        return static_cast<uint64_t>(zeros) * 4u + nonzeros * 68u;
+        return zeros * 4u + nonzeros * 68u;
     }
-    return static_cast<uint64_t>(zeros) * 4u + nonzeros * 16u;
+    return zeros * 4u + nonzeros * 16u;
 }
 
 EXPLICIT_EVMC_REVISION(g_data);
@@ -80,6 +87,12 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
 }
 
 EXPLICIT_EVMC_REVISION(intrinsic_gas);
+
+uint64_t floor_data_gas(Transaction const &tx) noexcept
+{
+    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
+    return 21'000 + (zeros * 10u + nonzeros * 40u);
+}
 
 inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept

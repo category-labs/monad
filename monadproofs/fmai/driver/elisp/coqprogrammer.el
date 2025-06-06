@@ -715,6 +715,15 @@ If no parameters (or no types) are found, it returns nil."
 (require 'lsp-mode)
 (require 'cc-mode)
 
+
+(defun defn-of--sanitize-fqn (raw)
+  "Remove surrounding quotes, periods and whitespace from RAW."
+  (let ((s (string-trim raw)))
+    (setq s (string-trim-left  s "[\"'.]*"))   ; strip left  quotes / dots
+    (setq s (string-trim-right s "[\"'.]*"))   ; strip right quotes / dots
+    s))
+
+
 (defun defn-of--pick-workspace ()
   (or (cl-find-if
        (lambda (buf)
@@ -740,11 +749,12 @@ If no parameters (or no types) are found, it returns nil."
         (cons beg (point))))))          ;; (beg . end)
 
 ;;;###autoload
-(defun defn-of (fqncpp &optional insert-p)
+(defun defn-of (fqncppp &optional insert-p)
   "Return (or with C-u INSERT-P, insert) the definition of FQNCPP.
 Prepends a comment ‘// FILE:LINE’ to the returned text."
   (interactive "sC++ symbol (FQN): \nP")
   (let* ((cpp-buf   (defn-of--pick-workspace))
+	 (fqncpp (defn-of--sanitize-fqn fqncppp))
          sym-info file start-pos line-no text-range
          defun-text)
     ;; ── query clangd ──────────────────────────────────────────────────────

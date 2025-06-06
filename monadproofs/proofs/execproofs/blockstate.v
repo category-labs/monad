@@ -12,10 +12,13 @@ Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 Set Printing FullyQualifiedNames.
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
 
+  
+  
   (**
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
 The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
@@ -64,82 +67,164 @@ Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
  *)
  Set Printing FullyQualifiedNames.
-Open Scope N_scope.
-Open Scope Z_scope.
-Open Scope Qp_scope.
-Open Scope cpp_type_scope.
-Open Scope cpp_name_scope.
+(*----------------------------------------------------------------*)
+(* A local Rep‐level optionR to shadow iris.cmra.OptionR         *)
+(*----------------------------------------------------------------*)
+Definition optionR {T:Type}
+           (somety: bluerock.lang.cpp.syntax.core.type)
+           (r: T -> Rep)
+           (q: stdpp.numbers.Qp)
+           (o: option T)
+         : Rep.
+Admitted. (* TOFIXLATER: implement Rep for std::optional<T> *)
 
-(** We represent each ankerl::unordered_dense::table merely by its structR,
-    deferring any real map‐or set‐contents rep to future work. *)
-Definition StorageSetR (q : cQp.t) (_keys : list Corelib.Numbers.BinNums.N) : Rep :=
-  structR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_name
-    q.
+(*----------------------------------------------------------------*)
+(* Model for the C++ AccountSubstate fields                      *)
+(*----------------------------------------------------------------*)
+Record AccountSubstateModel : Type := MkASM {
+  asm_destructed       : bool;
+  asm_touched          : bool;
+  asm_accessed         : bool;
+  asm_accessed_storage : list monad.EVMOpSem.keccak.w256
+}.
+Arguments MkASM _ _ _ _.
+Arguments asm_destructed _.
+Arguments asm_touched _.
+Arguments asm_accessed _.
+Arguments asm_accessed_storage _.
 
-Definition MapR (q : cQp.t) (_m : list (Corelib.Numbers.BinNums.N * Corelib.Numbers.BinNums.N)) : Rep :=
-  structR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_name
-    q.
+(*----------------------------------------------------------------*)
+(* Admit an extractor from runtime data to our model             *)
+(*----------------------------------------------------------------*)
+Definition AccountSubstateModel_of
+           (oa: option monad.EVMOpSem.block.block_account)
+           (vctx: monad.EVMOpSem.evm.variable_ctx)
+         : AccountSubstateModel.
+Admitted. (* TOFIXLATER: derive destructed_/touched_/accessed_/… from oa/vctx *)
 
-(** Rep predicate for the base class monad::AccountSubstate *)
-Definition AccountSubstateR (q : cQp.t)
-           (destructed touched accessed : bool)
-           (accessed_keys : list Corelib.Numbers.BinNums.N) : Rep :=
-  _field "monad::AccountSubstate::destructed_"      |-> primR "bool" q (Vbool destructed)   **
-  _field "monad::AccountSubstate::touched_"         |-> primR "bool" q (Vbool touched)      **
-  _field "monad::AccountSubstate::accessed_"        |-> primR "bool" q (Vbool accessed)     **
-  _field "monad::AccountSubstate::accessed_storage_"|-> StorageSetR q accessed_keys        **
-  structR "monad::AccountSubstate"%cpp_name q.
+(*----------------------------------------------------------------*)
+(* Admit program→bytes32 hash                                     *)
+(*----------------------------------------------------------------*)
+Definition programHashN
+           (p: monad.EVMOpSem.evm.program)
+         : Corelib.Numbers.BinNums.N.
+Admitted. (* TOFIXLATER: compute keccak256‐hash of the program *)
 
-(** A packed Gallina‐model for monad::Account fields: 
-    (balance,code_hash) × (nonce,incarnation) *)
-Definition AccountSomeModel : Type :=
-  ((Corelib.Numbers.BinNums.N * Corelib.Numbers.BinNums.N)%type
-     * (Corelib.Numbers.BinNums.N * monad.proofs.exec_specs.Indices)%type)%type.
+(*----------------------------------------------------------------*)
+(* Extract the Indices needed for IncarnationR                   *)
+(*----------------------------------------------------------------*)
+Definition Indices_of
+           (orig: monad.EVMOpSem.block.block_account)
+         : monad.proofs.exec_specs.Indices.
+Admitted. (* TOFIXLATER: extract Indices from block_account *)
 
-(** How we lay out that packed model in memory *)
-Definition AccountSomeRep (q : cQp.t) (m : AccountSomeModel) : Rep :=
-  let '(bc, ni) := m in
-  let '(bal, codeh) := bc in
-  let '(nonce, inc) := ni in
-  _field "monad::Account::balance"     |-> u256R    q bal       **
-  _field "monad::Account::code_hash"   |-> bytes32R q codeh     **
-  _field "monad::Account::nonce"       |-> primR "unsigned long" q (Vint (Z.of_N nonce)) **
-  _field "monad::Account::incarnation" |-> IncarnationR q inc    **
-  structR "monad::Account"%cpp_name q.
+(*----------------------------------------------------------------*)
+(* Map‐table representations for the two unordered_dense tables.  *)
+(*----------------------------------------------------------------*)
+Definition Table32to32R
+           (q: stdpp.numbers.Qp)
+           (m: monad.EVMOpSem.evm.storage)
+         : Rep.
+Admitted. (* TOFIXLATER: flesh out the memory layout for table<bytes32,bytes32> *)
 
-(** The full Rep predicate for AccountState *)
-Definition AccountStateR (q : cQp.t)
-           (destructed touched accessed : bool)
-           (accessed_keys : list Corelib.Numbers.BinNums.N)
-           (account_opt : option AccountSomeModel)
-           (storage_map transient_map : list (Corelib.Numbers.BinNums.N * Corelib.Numbers.BinNums.N))
-           (validate_exact_nonce validate_exact_balance : bool)
-           (min_balance : Corelib.Numbers.BinNums.N) : Rep :=
-  (* base‐class subobject *)
-  _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
-    |-> AccountSubstateR q destructed touched accessed accessed_keys          **
-  (* optional embedded Account *)
-  _field "monad::AccountState::account_"  
-    |-> monad.proofs.libspecs.optionR
-          "monad::Account"%cpp_type (AccountSomeRep q) q account_opt        **
-  (* main storage tables *)
-  _field "monad::AccountState::storage_" 
-    |-> MapR q storage_map                                             **
-  _field "monad::AccountState::transient_storage_"
-    |-> MapR q transient_map                                          **
-  (* validation flags *)
-  _field "monad::AccountState::validate_exact_nonce_" 
-    |-> primR "bool" q (Vbool validate_exact_nonce)                   **
-  _field "monad::AccountState::validate_exact_balance_"
-    |-> primR "bool" q (Vbool validate_exact_balance)                 **
-  (* minimum balance field *)
-  _field "monad::AccountState::min_balance_"
-    |-> u256R q min_balance                                           **
-  structR "monad::AccountState"%cpp_name q.
+Definition Table32toVoidR
+           (q: stdpp.numbers.Qp)
+           (ks: list monad.EVMOpSem.keccak.w256)
+         : Rep.
+Admitted. (* TOFIXLATER: flesh out the memory layout for table<bytes32,void> *)
+
+(*----------------------------------------------------------------*)
+(* C++ class monad::AccountSubstate                              *)
+(*----------------------------------------------------------------*)
+Definition AccountSubstateR
+           (q: stdpp.numbers.Qp)
+           (mdl: AccountSubstateModel)
+           (_vctx: monad.EVMOpSem.evm.variable_ctx)
+         : Rep :=
+  bluerock.lang.cpp.logic.rep_defs.as_Rep
+    (fun this =>
+       let rep: Rep :=
+         _field "monad::AccountSubstate::destructed_"%cpp_name
+           |-> boolR (cQp.mut q) (asm_destructed mdl)
+       ** _field "monad::AccountSubstate::touched_"%cpp_name
+           |-> boolR (cQp.mut q) (asm_touched mdl)
+       ** _field "monad::AccountSubstate::accessed_"%cpp_name
+           |-> boolR (cQp.mut q) (asm_accessed mdl)
+       ** _field "monad::AccountSubstate::accessed_storage_"%cpp_name
+           |-> Table32toVoidR q (asm_accessed_storage mdl)
+       ** structR "monad::AccountSubstate"%cpp_name (cQp.mut q)
+       in rep this).
+
+(*----------------------------------------------------------------*)
+(* C++ class monad::Account                                      *)
+(*----------------------------------------------------------------*)
+Definition AccountR
+           (q: stdpp.numbers.Qp)
+           (orig: monad.EVMOpSem.block.block_account)
+           (im: monad.proofs.exec_specs.Indices) 
+         : Rep :=
+  bluerock.lang.cpp.logic.rep_defs.as_Rep
+    (fun this =>
+       (* extract balance *)
+       let bal_z    := Zdigits.binary_value 256 (monad.EVMOpSem.block.block_account_balance orig) in
+       let bal_n    := Z.to_N bal_z in
+       (* extract nonce *)
+       let nonce_z  := Zdigits.binary_value 256 (monad.EVMOpSem.block.block_account_nonce orig) in
+       let nn_nonce := Z.to_N nonce_z in
+       let rep :=
+         _field "monad::Account::balance"%cpp_name
+           |-> u256R q bal_n
+       ** _field "monad::Account::code_hash"%cpp_name
+           |-> bytes32R q (programHashN (monad.EVMOpSem.block.block_account_code orig))
+       ** _field "monad::Account::nonce"%cpp_name
+           |-> primR "unsigned long"%cpp_type (cQp.mut q) nn_nonce
+       ** _field "monad::Account::incarnation"%cpp_name
+           |-> IncarnationR q im
+       ** structR "monad::Account"%cpp_name (cQp.mut q)
+       in rep this).
+
+(*----------------------------------------------------------------*)
+(* C++ class monad::AccountState                                 *)
+(*----------------------------------------------------------------*)
+Definition AccountStateR
+           (q: stdpp.numbers.Qp)
+           (oa: option monad.EVMOpSem.block.block_account)
+           (ax: AssumptionExactness)
+           (vctx: monad.EVMOpSem.evm.variable_ctx)
+         : Rep :=
+  bluerock.lang.cpp.logic.rep_defs.as_Rep
+    (fun this =>
+       let rep :=
+         (_base "monad::AccountState"%cpp_name
+                "monad::AccountSubstate"%cpp_name
+           |-> AccountSubstateR q
+                                (AccountSubstateModel_of oa vctx)
+                                vctx)
+       ** _field "account_"%cpp_name
+           |-> optionR "std::optional<monad::Account>"%cpp_type
+                     (fun b => AccountR q b (Indices_of b))
+                     q
+                     oa
+       ** _field "storage_"%cpp_name
+           |-> Table32to32R q (monad.EVMOpSem.evm.vctx_storage vctx)
+       ** _field "transient_storage_"%cpp_name
+           |-> Table32to32R q (monad.EVMOpSem.evm.vctx_storage_at_call vctx)
+       ** _field "validate_exact_nonce_"%cpp_name
+           |-> boolR (cQp.mut q)
+                      (match ax with _ => (* TOFIXLATER: proj flag *) false end)
+       ** _field "validate_exact_balance_"%cpp_name
+           |-> boolR (cQp.mut q)
+                      (match ax with _ => (* TOFIXLATER: proj flag *) false end)
+       ** _field "min_balance_"%cpp_name
+           |-> u256R q
+                      (match ax with _ => (* TOFIXLATER: proj min_balance *) 0%N end)
+       ** structR "monad::AccountState"%cpp_name (cQp.mut q)
+       in rep this).
 
 
+
+
+  
   Definition AccountStateR (q:Qp) (s: evm.account_state) : Rep. Proof. Admitted.
   Print addressR.
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>

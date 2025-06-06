@@ -1032,5 +1032,5 @@ For example, use `_field "Node::next_"` not `_field "next_"`.
 
 ### use of anyR in Rep predicates
 Rep predicates typically describe a fully constructed object. so `anyR` typically does not belong in a `Rep` predicate, because `anyR` allows the memory location to be uninitialized. If the value of a field is truly an implementation detail, you pass existentially qualified arguments to the Rep predicate of the type of the field.
-If the field's value is NOT an implementation detail for the clients of the class, the field's value should be tied to something in the Gallinal model of the object. Sometimes, you may need to add additional Gallina-model arguments to the Rep predicate. Sometimes, you may need to Gallina model types, although try very hard to reuse existing types for which existing theories exist.
+If the field's value is NOT an implementation detail for the clients of the class, the field's value should be tied to something in the Gallinal model of the object. Sometimes, you may need to add additional Gallina-model arguments to the Rep predicate. Sometimes, you may need to Gallina model types, although try very hard to reuse existing types for which existing theories exist. When it makes sense, model arguments into Records, e.g. arguments that are related to each other.
 

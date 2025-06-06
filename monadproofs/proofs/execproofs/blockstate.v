@@ -35,7 +35,7 @@ The validate_exact_balance_ field denotes whethere the transaction has done some
 `AccountStateR` should take arguments of type cQp.t, block.block_account, AssumptionExactness,  and perhaps also evm.variable_ctx.
 AccountState has a baseclass and includes monad::Account. you will need to define Rep predicates for these as well.
 block.block_account and/or evm.variable_ctx may serve as appropriate model types for those as well. The logical information from block.block_account and/or evm.variable_ctx seems to be split across the fields of those 3 classes.
-TRY VERY VERY HARD TO FIND THE MODELS OF THE C++ FIELDS IN block.block_account and evm.variable_ctx. YOU MUST NOT ADD A SEPARATE MODEL ARGUMENT FOR ANY FIELD WHICH ALREADY HAS A MODEL IN THOSE GALLINA RECORDS.
+TRY VERY VERY HARD TO FIND THE MODELS OF THE C++ FIELDS IN block.block_account and evm.variable_ctx. YOU MUST NOT ADD A SEPARATE MODEL ARGUMENT FOR ANY FIELD WHICH ALREADY HAS A MODEL IN THOSE GALLINA RECORDS. block.block_account has the balance/nonce info to serve as the model for those fields in `monad::Account` class.
 
 Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
 - IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
@@ -66,7 +66,14 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 Print AssumptionExactness.
- *)
+   *)
+
+
+
+
+
+  
+  
  Set Printing FullyQualifiedNames.
 Local Open Scope cpp_name.
 Local Open Scope cpp_type.

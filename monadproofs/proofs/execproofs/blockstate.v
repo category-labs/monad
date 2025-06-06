@@ -65,161 +65,92 @@ Print bytes32R.
 Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
+Print AssumptionExactness.
  *)
  Set Printing FullyQualifiedNames.
-(*----------------------------------------------------------------*)
-(* A local Rep‐level optionR to shadow iris.cmra.OptionR         *)
-(*----------------------------------------------------------------*)
-Definition optionR {T:Type}
-           (somety: bluerock.lang.cpp.syntax.core.type)
-           (r: T -> Rep)
-           (q: stdpp.numbers.Qp)
-           (o: option T)
-         : Rep.
-Admitted. (* TOFIXLATER: implement Rep for std::optional<T> *)
+Local Open Scope cpp_name.
+Local Open Scope cpp_type.
 
-(*----------------------------------------------------------------*)
-(* Model for the C++ AccountSubstate fields                      *)
-(*----------------------------------------------------------------*)
-Record AccountSubstateModel : Type := MkASM {
-  asm_destructed       : bool;
-  asm_touched          : bool;
-  asm_accessed         : bool;
-  asm_accessed_storage : list monad.EVMOpSem.keccak.w256
-}.
-Arguments MkASM _ _ _ _.
-Arguments asm_destructed _.
-Arguments asm_touched _.
-Arguments asm_accessed _.
-Arguments asm_accessed_storage _.
+(** * Rep for monad::Account **)
+Definition AccountR (q: cQp.t)
+  (bal : Corelib.Numbers.BinNums.N)
+  (ch  : Corelib.Numbers.BinNums.N)
+  (no  : Corelib.Numbers.BinNums.Z)
+  (inc : monad.proofs.exec_specs.Indices)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  structR "monad::Account"%cpp_name q
+  ** _field "monad::Account::balance"%cpp_name     |-> monad.proofs.exec_specs.u256R q bal
+  ** _field "monad::Account::code_hash"%cpp_name   |-> monad.proofs.exec_specs.bytes32R q ch
+  ** _field "monad::Account::nonce"%cpp_name       |-> primR "unsigned long"%cpp_type q (Vint no)
+  ** _field "monad::Account::incarnation"%cpp_name |-> monad.proofs.exec_specs.IncarnationR q inc.
 
-(*----------------------------------------------------------------*)
-(* Admit an extractor from runtime data to our model             *)
-(*----------------------------------------------------------------*)
-Definition AccountSubstateModel_of
-           (oa: option monad.EVMOpSem.block.block_account)
-           (vctx: monad.EVMOpSem.evm.variable_ctx)
-         : AccountSubstateModel.
-Admitted. (* TOFIXLATER: derive destructed_/touched_/accessed_/… from oa/vctx *)
+(** * Rep for the storage_ table **)
+Definition StorageTableR (q: cQp.t)
+  (_m: monad.EVMOpSem.evm.storage)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  pureR True.
 
-(*----------------------------------------------------------------*)
-(* Admit program→bytes32 hash                                     *)
-(*----------------------------------------------------------------*)
-Definition programHashN
-           (p: monad.EVMOpSem.evm.program)
-         : Corelib.Numbers.BinNums.N.
-Admitted. (* TOFIXLATER: compute keccak256‐hash of the program *)
+(** * Rep for the transient_storage_ table **)
+Definition TransientStorageR (q: cQp.t)
+  (_m: monad.EVMOpSem.evm.storage)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  pureR True.
 
-(*----------------------------------------------------------------*)
-(* Extract the Indices needed for IncarnationR                   *)
-(*----------------------------------------------------------------*)
-Definition Indices_of
-           (orig: monad.EVMOpSem.block.block_account)
-         : monad.proofs.exec_specs.Indices.
-Admitted. (* TOFIXLATER: extract Indices from block_account *)
+(** * Rep for the accessed_storage_ table **)
+Definition AccessedStorageR (q: cQp.t)
+  (_keys: list Corelib.Numbers.BinNums.N)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  pureR True.
 
-(*----------------------------------------------------------------*)
-(* Map‐table representations for the two unordered_dense tables.  *)
-(*----------------------------------------------------------------*)
-Definition Table32to32R
-           (q: stdpp.numbers.Qp)
-           (m: monad.EVMOpSem.evm.storage)
-         : Rep.
-Admitted. (* TOFIXLATER: flesh out the memory layout for table<bytes32,bytes32> *)
+(** * Rep for monad::AccountSubstate **)
+Definition AccountSubstateR (q: cQp.t)
+  (destructed touched accessed: bool)
+  (acc_keys: list Corelib.Numbers.BinNums.N)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  structR "monad::AccountSubstate"%cpp_name q
+  ** _field "monad::AccountSubstate::destructed_"%cpp_name       |-> boolR q destructed
+  ** _field "monad::AccountSubstate::touched_"%cpp_name          |-> boolR q touched
+  ** _field "monad::AccountSubstate::accessed_"%cpp_name         |-> boolR q accessed
+  ** _field "monad::AccountSubstate::accessed_storage_"%cpp_name |-> AccessedStorageR q acc_keys.
 
-Definition Table32toVoidR
-           (q: stdpp.numbers.Qp)
-           (ks: list monad.EVMOpSem.keccak.w256)
-         : Rep.
-Admitted. (* TOFIXLATER: flesh out the memory layout for table<bytes32,void> *)
+(** * Rep for std::optional<monad::Account> **)
+Definition OptionAccountR (q: cQp.t)
+  (o: option (Corelib.Numbers.BinNums.N
+             * Corelib.Numbers.BinNums.N
+             * Corelib.Numbers.BinNums.Z
+             * monad.proofs.exec_specs.Indices))
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  structR (Ninst "std::optional" [Atype "monad::Account"%cpp_type]) (cQp.mut q)
+  ** match o with
+     | None =>
+        opt_engaged_offset "monad::Account"%cpp_type |-> boolR q false
+     | Some (bal,ch,no,inc) =>
+        opt_somety_offset     "monad::Account"%cpp_type |-> AccountR q bal ch no inc
+        ** opt_engaged_offset "monad::Account"%cpp_type |-> boolR q true
+     end.
 
-(*----------------------------------------------------------------*)
-(* C++ class monad::AccountSubstate                              *)
-(*----------------------------------------------------------------*)
-Definition AccountSubstateR
-           (q: stdpp.numbers.Qp)
-           (mdl: AccountSubstateModel)
-           (_vctx: monad.EVMOpSem.evm.variable_ctx)
-         : Rep :=
-  bluerock.lang.cpp.logic.rep_defs.as_Rep
-    (fun this =>
-       let rep: Rep :=
-         _field "monad::AccountSubstate::destructed_"%cpp_name
-           |-> boolR (cQp.mut q) (asm_destructed mdl)
-       ** _field "monad::AccountSubstate::touched_"%cpp_name
-           |-> boolR (cQp.mut q) (asm_touched mdl)
-       ** _field "monad::AccountSubstate::accessed_"%cpp_name
-           |-> boolR (cQp.mut q) (asm_accessed mdl)
-       ** _field "monad::AccountSubstate::accessed_storage_"%cpp_name
-           |-> Table32toVoidR q (asm_accessed_storage mdl)
-       ** structR "monad::AccountSubstate"%cpp_name (cQp.mut q)
-       in rep this).
-
-(*----------------------------------------------------------------*)
-(* C++ class monad::Account                                      *)
-(*----------------------------------------------------------------*)
-Definition AccountR
-           (q: stdpp.numbers.Qp)
-           (orig: monad.EVMOpSem.block.block_account)
-           (im: monad.proofs.exec_specs.Indices) 
-         : Rep :=
-  bluerock.lang.cpp.logic.rep_defs.as_Rep
-    (fun this =>
-       (* extract balance *)
-       let bal_z    := Zdigits.binary_value 256 (monad.EVMOpSem.block.block_account_balance orig) in
-       let bal_n    := Z.to_N bal_z in
-       (* extract nonce *)
-       let nonce_z  := Zdigits.binary_value 256 (monad.EVMOpSem.block.block_account_nonce orig) in
-       let nn_nonce := Z.to_N nonce_z in
-       let rep :=
-         _field "monad::Account::balance"%cpp_name
-           |-> u256R q bal_n
-       ** _field "monad::Account::code_hash"%cpp_name
-           |-> bytes32R q (programHashN (monad.EVMOpSem.block.block_account_code orig))
-       ** _field "monad::Account::nonce"%cpp_name
-           |-> primR "unsigned long"%cpp_type (cQp.mut q) nn_nonce
-       ** _field "monad::Account::incarnation"%cpp_name
-           |-> IncarnationR q im
-       ** structR "monad::Account"%cpp_name (cQp.mut q)
-       in rep this).
-
-(*----------------------------------------------------------------*)
-(* C++ class monad::AccountState                                 *)
-(*----------------------------------------------------------------*)
-Definition AccountStateR
-           (q: stdpp.numbers.Qp)
-           (oa: option monad.EVMOpSem.block.block_account)
-           (ax: AssumptionExactness)
-           (vctx: monad.EVMOpSem.evm.variable_ctx)
-         : Rep :=
-  bluerock.lang.cpp.logic.rep_defs.as_Rep
-    (fun this =>
-       let rep :=
-         (_base "monad::AccountState"%cpp_name
-                "monad::AccountSubstate"%cpp_name
-           |-> AccountSubstateR q
-                                (AccountSubstateModel_of oa vctx)
-                                vctx)
-       ** _field "account_"%cpp_name
-           |-> optionR "std::optional<monad::Account>"%cpp_type
-                     (fun b => AccountR q b (Indices_of b))
-                     q
-                     oa
-       ** _field "storage_"%cpp_name
-           |-> Table32to32R q (monad.EVMOpSem.evm.vctx_storage vctx)
-       ** _field "transient_storage_"%cpp_name
-           |-> Table32to32R q (monad.EVMOpSem.evm.vctx_storage_at_call vctx)
-       ** _field "validate_exact_nonce_"%cpp_name
-           |-> boolR (cQp.mut q)
-                      (match ax with _ => (* TOFIXLATER: proj flag *) false end)
-       ** _field "validate_exact_balance_"%cpp_name
-           |-> boolR (cQp.mut q)
-                      (match ax with _ => (* TOFIXLATER: proj flag *) false end)
-       ** _field "min_balance_"%cpp_name
-           |-> u256R q
-                      (match ax with _ => (* TOFIXLATER: proj min_balance *) 0%N end)
-       ** structR "monad::AccountState"%cpp_name (cQp.mut q)
-       in rep this).
+(** * Rep for monad::AccountState **)
+Definition AccountStateR (q: cQp.t)
+  (opt_acc: option (Corelib.Numbers.BinNums.N
+                   * Corelib.Numbers.BinNums.N
+                   * Corelib.Numbers.BinNums.Z
+                   * monad.proofs.exec_specs.Indices))
+  (storage_m transient_m: monad.EVMOpSem.evm.storage)
+  (d t a: bool)
+  (acc_keys: list Corelib.Numbers.BinNums.N)
+  (ass: monad.proofs.exec_specs.AssumptionExactness)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  structR "monad::AccountState"%cpp_name q
+  ** _base  "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
+       |-> AccountSubstateR q d t a acc_keys
+  ** _field "monad::AccountState::account_"%cpp_name           |-> OptionAccountR q opt_acc
+  ** _field "monad::AccountState::storage_"%cpp_name           |-> StorageTableR q storage_m
+  ** _field "monad::AccountState::transient_storage_"%cpp_name |-> TransientStorageR q transient_m
+  ** _field "monad::AccountState::validate_exact_nonce_"%cpp_name   |-> boolR q (ass.(nonce_exact))
+  ** _field "monad::AccountState::validate_exact_balance_"%cpp_name |-> boolR q (isSome (ass.(min_balance)))
+  ** _field "monad::AccountState::min_balance_"%cpp_name            |-> 
+       monad.proofs.exec_specs.u256R q
+         (match ass.(min_balance) with Some n => n | None => 0%N end).
 
 
 

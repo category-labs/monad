@@ -537,6 +537,18 @@ o_base_derived:
 ```
 
 `_base` can be used to get the offsets of subclass fields when writing `Rep` predicates of derived classes.
+For example, consider the following dummmy c++ class:
+```c++
+class foo: public bar {
+  int x;
+  }
+```
+Its Rep predicate will look like:
+```gallina
+Definition fooR (q:cQp.t) (bm: BarModel) (xv:Z) :=
+  _base "foo" "bar" |-> barR q bm
+  ** _field "foo::x" |-> primR "int" q (Vint xv).
+```
 
 ### Fractional ownership of arrays/classes
 For `Rep`s of primitive types (e.g. `int`), our semantics already defines the significance of fractions. 

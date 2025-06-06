@@ -49,48 +49,32 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
  *)
-Open Scope Z_scope.
-Open Scope N_scope.
+ Set Printing FullyQualifiedNames.
+(* convert a 256-bit vector to an N by decoding its Z value *)
+Definition binary256_to_N (b: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.N :=
+  Z.to_N (monad.EVMOpSem.Zdigits.binary_value 256%nat b).
 
-(* append two sequences of program‐bytes (word8.word8) *)
-Fixpoint append_byte_list (l1 l2: list word8.word8) : list word8.word8 :=
-  match l1 with
-  | []      => l2
-  | x :: xs => x :: append_byte_list xs l2
-  end.
+(* stub: use the program length as a stand-in for keccak256 hash of the bytecode *)
+Definition program_hash (p : monad.EVMOpSem.evm.program) : Corelib.Numbers.BinNums.N :=
+  Z.to_N (monad.EVMOpSem.evm.program_length p).
 
-(* collect the first [n] bytes of a program into a list *)
-Fixpoint program_bytesF (p: evm.program) (n: nat) : list word8.word8 :=
-  match n with
-  | O    => []
-  | S n' => append_byte_list (program_bytesF p n')
-                            [evm.program_as_natural_map p n']
-  end.
+(* Representation predicate of monad::Account(balance, code_hash, nonce, incarnation) *)
+Definition AccountR (q: cQp.t) (st: evm.account_state)
+           (i: monad.proofs.exec_specs.Indices) : Rep :=
+  _field "Account::balance"
+    |-> u256R q (binary256_to_N (monad.EVMOpSem.block.block_account_balance st))
+  ** _field "Account::code_hash"
+    |-> bytes32R q (program_hash (monad.EVMOpSem.block.block_account_code st))
+  ** _field "Account::nonce"
+    |-> primR "unsigned long" q
+         (Vint
+            (Z.of_N
+               (binary256_to_N (monad.EVMOpSem.block.block_account_nonce st))))
+  ** _field "Account::incarnation"
+    |-> IncarnationR q i
+  ** structR "Account" q.
 
-Definition program_bytes (p: evm.program) : list word8.word8 :=
-  program_bytesF p (Z.to_nat (evm.program_length p)).
+Axiom foo:nat.
 
-(* stub “hash” that always returns zero; replace with real Keccak‐256 later *)
-Definition code_hash (p: evm.program) : keccak.w256 :=
-  Zdigits.Z_to_binary 256 0.  (* TOFIXLATER: real Keccak‐256 of program_bytes p *)
-
-(* Main C++ Account::Rep predicate *)
-Definition AccountR (q: cQp.t) (acc: evm.account_state) (i: Indices) : Rep :=
-  structR "monad::Account" q
-  (** balance : uint256_t (256‐bit) *)
-  ** _field "monad::Account::balance"
-       |-> u256R q
-            (Z.to_N (EVMOpSem.evm.uint (block.block_account_balance acc)))
-  (** code_hash : evmc::bytes32 *)
-  ** _field "monad::Account::code_hash"
-       |-> bytes32R q
-            (Z.to_N (Zdigits.binary_value 256 (code_hash (block.block_account_code acc))))
-  (** nonce : unsigned long *)
-  ** _field "monad::Account::nonce"
-       |-> primR "unsigned long"%cpp_type q
-            (Vint (EVMOpSem.evm.uint (block.block_account_nonce acc)))
-  (** incarnation : monad::Incarnation *)
-  ** _field "monad::Account::incarnation"
-       |-> IncarnationR q i.
-
-
+About program_hash.
+Print monad.proofs.execproofs.blockstate.with_Sigma.program_hash.

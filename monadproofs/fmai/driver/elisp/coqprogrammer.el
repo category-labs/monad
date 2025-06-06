@@ -468,7 +468,7 @@ If point is not inside a comment, signal an error."
       (coq-comment-end)                ; now at char *after* '*)'
       (let ((end (point)))
 	(goto-char end)
-	(insert "\n")
+	(insert "\n Set Printing FullyQualifiedNames.\n")
 	(proof-assert-until-point)
 	(wait-for-coq)
         (let ((body (buffer-substring-no-properties (+ beg 2) (- end 2))))
@@ -602,6 +602,7 @@ directory as the current `.v` file.  Stops when:
     (with-temp-file comm-file)  ; write nothing => clears file
     ;; fresh conversation history for this session
     (setq gpt-4o-conversation nil)
+
 
     ;; helper to log + update counters
     (cl-labels ((log (role msg)

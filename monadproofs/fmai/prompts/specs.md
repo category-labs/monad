@@ -903,6 +903,9 @@ Search (genv -> genv).
 ```
 
 Even though CppDefnOf is not technically a Coq query and the elisp-loop responding to you actually does not implement the  `CppDefnOf` queries via coqtop and uses clangd-lsp instead, you can issue `CppDefnOf` queries as if it were a Coq query.
+Reading the actual source code and comments is very likely to give you some completementary information beyond the AST. Thus you should always issue a `CppDefnOf` together with `Compute (lookup_struct module "...")` or `Compute (lookup_function module "...")`.
+Note that lookup_function needs a full name, e.g. `reverse(Node*)` and not just `reverse`. However, `CppDefnOf` goes to clangd-lsp and can can accept just `reverse`.
+
 
 
 ## Common mistakes in specs:
@@ -1017,4 +1020,17 @@ However, this spec is not idiomatic. The last argument of `\post` is of type `mp
 Note the variables existentially quantified in the last argument are NOT in scope in the previous argument (square bracket denoting the return value). Thus, we can NOT move the quanification over `xvfinal`, which is mentioned in the return value, to the last argument to colocate it with the quantification over `xvfinalhalf`.
 Note that the (existential) variable quantifications in the curly brace just after `\post` is scope in the next argument (return value). Typically, in the curly braces after `\post`, we ONLY quantify the variables that are mentioned in the return value. In fact, `cpp.spec` has a quirk that if there is no return value (e.g. the function returns value, in which case, the square bracket is entirely omitted), there must be no curly brace.
 
+
+## Common mistakes in Rep predicates:
+
+### missing `structR`
+A rep predicate of a class foo should include the `structR foo q` conjunct (in rare cases, `structR foo 1` when the objects of the class are not supposed to be shared at all between threads).
+
+### incomplete field names:
+field names in `_field` whould be fully qualified. In particular, the fully qualified name of the class should be a prefix.
+For example, use `_field "Node::next_"` not `_field "next_"`.
+
+### use of anyR in Rep predicates
+Rep predicates typically describe a fully constructed object. so `anyR` typically does not belong in a `Rep` predicate, because `anyR` allows the memory location to be uninitialized. If the value of a field is truly an implementation detail, you pass existentially qualified arguments to the Rep predicate of the type of the field.
+If the field's value is NOT an implementation detail for the clients of the class, the field's value should be tied to something in the Gallinal model of the object. Sometimes, you may need to add additional Gallina-model arguments to the Rep predicate. Sometimes, you may need to Gallina model types, although try very hard to reuse existing types for which existing theories exist.
 

@@ -64,7 +64,8 @@ struct write_operation_io_receiver
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
         MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
     {
-        MONAD_ASSERT(res);
+        MONAD_ASSERT_PRINTF(
+            res, "i/o failed with %s", res.assume_error().message().c_str());
         MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
         res.assume_value()
             .get()
@@ -310,8 +311,12 @@ protected:
                         // an upsert could begin and complete now
                         // theoretically causing nodes to get freed
                         parent_->parent_->lock_unique_();
-                        MONAD_ASSERT(
+                        MONAD_ASSERT_PRINTF(
                             initial_upsert_call_count_ ==
+                                parent_->parent_->upsert_call_count_,
+                            "initial upsert call count %lu grandparent "
+                            "upsert call count %lu",
+                            initial_upsert_call_count_,
                             parent_->parent_->upsert_call_count_);
                     }
                 }
@@ -358,8 +363,13 @@ protected:
                             // an upsert could begin and complete now
                             // theoretically causing nodes to get freed
                             parent_->parent_->lock_shared_();
-                            MONAD_ASSERT(
+                            MONAD_ASSERT_PRINTF(
                                 initial_upsert_call_count_ ==
+                                    parent_->parent_->upsert_call_count_,
+                                "initial upsert call count %lu "
+                                "grandparent "
+                                "upsert call count %lu",
+                                initial_upsert_call_count_,
                                 parent_->parent_->upsert_call_count_);
                         }
                         parent_ = nullptr;
@@ -446,8 +456,12 @@ public:
                     // an upsert could begin and complete now
                     // theoretically causing nodes to get freed
                     parent_->lock_shared_();
-                    MONAD_ASSERT(
+                    MONAD_ASSERT_PRINTF(
                         initial_upsert_call_count ==
+                            parent_->upsert_call_count_,
+                        "initial upsert call count %lu parent "
+                        "upsert call count %lu",
+                        initial_upsert_call_count,
                         parent_->upsert_call_count_);
                 }
                 // takes ownership
@@ -670,8 +684,17 @@ public:
 
             void rewind_to_version(uint64_t const version)
             {
-                MONAD_ASSERT(version < max_version());
-                MONAD_ASSERT(max_version() - version <= capacity());
+                MONAD_ASSERT_PRINTF(
+                    version < max_version(),
+                    "version %lu max version %zu",
+                    version,
+                    max_version());
+                MONAD_ASSERT_PRINTF(
+                    max_version() - version <= capacity(),
+                    "max version minus version %lu capacity "
+                    "%zu",
+                    max_version() - version,
+                    capacity());
                 for (uint64_t i = version + 1; i <= max_version(); i++) {
                     assign(i, async::INVALID_OFFSET);
                 }

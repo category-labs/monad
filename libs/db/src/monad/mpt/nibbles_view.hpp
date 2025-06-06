@@ -98,7 +98,11 @@ public:
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
-        MONAD_ASSERT(i < nibble_size());
+        MONAD_ASSERT_PRINTF(
+            i < nibble_size(),
+            "nibble requested %u nibble size %u",
+            i,
+            nibble_size());
         return get_nibble(data_.get(), begin_nibble_ + i);
     }
 
@@ -248,7 +252,11 @@ public:
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
-        MONAD_ASSERT(i < nibble_size());
+        MONAD_ASSERT_PRINTF(
+            i < nibble_size(),
+            "nibble requested %u nibble size %u",
+            i,
+            nibble_size());
         return get_nibble(data_, begin_nibble_ + i);
     }
 };

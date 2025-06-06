@@ -148,7 +148,11 @@ struct MerkleComputeBase : Compute
 
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp);
-        MONAD_ASSERT(concat_len <= max_branch_rlp_size);
+        MONAD_ASSERT_PRINTF(
+            concat_len <= max_branch_rlp_size,
+            "length being concatenated %zu maximum %zu",
+            concat_len,
+            max_branch_rlp_size);
         auto const branch_rlp_len = rlp::list_length(concat_len);
         MONAD_DEBUG_ASSERT(branch_rlp_len <= max_branch_rlp_size);
 

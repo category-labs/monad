@@ -73,7 +73,10 @@ namespace
             MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
             ResultType buffer_)
         {
-            MONAD_ASSERT(buffer_);
+            MONAD_ASSERT_PRINTF(
+                buffer_,
+                "i/o failed with %s",
+                buffer_.assume_error().message().c_str());
             auto const offset = parent->fnext(branch_index);
             auto *node = parent->next(branch_index);
             if (node == nullptr) {

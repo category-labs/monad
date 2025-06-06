@@ -26,7 +26,11 @@ unsigned encode_two_pieces(
 
     unsigned char path_arr[max_compact_encode_size];
     auto const first = compact_encode(path_arr, path, has_value);
-    MONAD_ASSERT(first.size() <= max_compact_encode_size);
+    MONAD_ASSERT_PRINTF(
+        first.size() <= max_compact_encode_size,
+        "size being encoded %zu maximum %zu",
+        first.size(),
+        max_compact_encode_size);
     // leaf and hashed node ref requires rlp encoding,
     // rlp encoded but unhashed branch node ref doesn't
     bool const need_encode_second =

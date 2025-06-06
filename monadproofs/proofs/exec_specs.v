@@ -585,6 +585,114 @@ Section with_Sigma.
       \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := false|}.
 
 
+Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.Z :=
+  monad.EVMOpSem.Zdigits.binary_value 256 w.
+
+Definition w256_to_N (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
+
+(* A simplistic layout of the "accessed_storage_" table: *)
+Definition AccessedKeysR (q: stdpp.numbers.Qp)
+           (keys: list Corelib.Numbers.BinNums.N)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  anyR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_type
+    (cQp.mut q).
+
+(* A simplistic layout of the "storage_" and "transient_storage_" tables: *)
+Definition StorageMapR (q: stdpp.numbers.Qp)
+           (m: monad.EVMOpSem.evm.storage)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  anyR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_type
+    (cQp.mut q).
+
+(* Compute a 256‐bit program‐length hash as an N *)
+Definition code_hash_of_program
+           (pr: monad.EVMOpSem.evm.program)
+  : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N
+    (monad.EVMOpSem.evm.program_length pr mod (2 ^ 256)%Z).
+
+
+(* ------------------------------------------------------------------------- *)
+(* 1) Bundle fields of AccountSubstate into a record                         *)
+(* ------------------------------------------------------------------------- *)
+Record AccountSubstateModel : Type := {
+  asm_destructed     : bool;
+  asm_touched        : bool;
+  asm_accessed       : bool;
+  asm_accessed_keys  : list Corelib.Numbers.BinNums.N
+}.
+
+(* ------------------------------------------------------------------------- *)
+(* 2) AccountSubstateR with structR                                          *)
+(* ------------------------------------------------------------------------- *)
+Definition AccountSubstateR
+           (q: stdpp.numbers.Qp)
+           (m: AccountSubstateModel)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  _field "AccountSubstate::destructed_"         |-> boolR (cQp.mut q) m.(asm_destructed)
+  ** _field "AccountSubstate::touched_"          |-> boolR (cQp.mut q) m.(asm_touched)
+  ** _field "AccountSubstate::accessed_"         |-> boolR (cQp.mut q) m.(asm_accessed)
+  ** _field "AccountSubstate::accessed_storage_" |-> AccessedKeysR q m.(asm_accessed_keys)
+  ** structR "monad::AccountSubstate"%cpp_name  (cQp.mut q).
+
+(* ------------------------------------------------------------------------- *)
+(* 3) AccountR with structR                                                   *)
+(* ------------------------------------------------------------------------- *)
+Definition AccountR
+           (q: stdpp.numbers.Qp)
+           (ba: monad.EVMOpSem.block.block_account)
+           (idx: Indices)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  _field "monad::Account::balance"       |-> u256R q (w256_to_N ba.(monad.EVMOpSem.block.block_account_balance))
+  ** _field "monad::Account::code_hash"  |-> bytes32R q (code_hash_of_program ba.(monad.EVMOpSem.block.block_account_code))
+  ** _field "monad::Account::nonce"      |-> primR "unsigned long" (cQp.mut q) (w256_to_Z ba.(monad.EVMOpSem.block.block_account_nonce))
+  ** _field "monad::Account::incarnation"|-> IncarnationR q idx
+  ** structR "monad::Account"%cpp_name    (cQp.mut q).
+
+(* ------------------------------------------------------------------------- *)
+(* 4) AccountStateR: everything now fully defined                             *)
+(* ------------------------------------------------------------------------- *)
+Definition AccountStateR
+           (q: stdpp.numbers.Qp)
+           (orig:         monad.EVMOpSem.block.block_account)
+           (asm:          AssumptionExactness)
+           (idx:          Indices)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  (* base substate *)
+  _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
+    |-> AccountSubstateR q (Build_AccountSubstateModel false false false [])
+  (* account_ via optionR *)
+  ** _field "monad::AccountState::account_"
+       |-> libspecs.optionR
+            "monad::Account"%cpp_type
+            (fun ba' => AccountR q ba' idx)
+            q
+            (if orig.(monad.EVMOpSem.block.block_account_exists)
+             then Some orig else None)
+  (* persistent storage_ *)
+  ** _field "monad::AccountState::storage_"           |-> StorageMapR q (block.block_account_storage orig)
+  (* transient storage_ *)
+  ** (Exists transient_map, _field "monad::AccountState::transient_storage_" |-> StorageMapR q transient_map)
+  (* exact‐nonce flag *)
+  ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR (cQp.mut q) (nonce_exact asm)
+  (* exact‐balance flag *)
+  ** _field "monad::AccountState::validate_exact_balance_" |-> boolR (cQp.mut q)
+                                                                  (Corelib.Init.Datatypes.negb
+                                                                     (bool_decide (stdpp.option.is_Some (min_balance asm))))
+  (* min_balance_ bound *)
+  ** (match min_balance asm with
+      | Corelib.Init.Datatypes.Some n =>
+         _field "monad::AccountState::min_balance_" |-> u256R q n
+      | Corelib.Init.Datatypes.None =>
+         Exists (nb: Corelib.Numbers.BinNums.N),
+           _field "monad::AccountState::min_balance_" |-> u256R q nb
+      end)
+  (* the struct itself *)
+  ** structR "monad::AccountState"%cpp_name (cQp.mut q).
+  
   
   (*
       \pre [| block.block_account_nonce senderAcState = block.tr_nonce t|]

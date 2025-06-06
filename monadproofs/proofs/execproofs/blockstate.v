@@ -18,7 +18,6 @@ Section with_Sigma.
   Context  {MODd : ext.module ⊧ CU}.
 
   
-  
   (**
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
 The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
@@ -48,114 +47,6 @@ Unfortunately, there is currently no way to search the Coq context for Rep predi
 So, if a Rep predicate for a class has not been mentioned in this first prompt, you can assume it doesnt exist and you need to define it.
 You can admit a `MapR` for the storage_ field: but you still need to figure out an appropriate type for MapR. Do not bother to define it generically for the templated Map type: just focus on the concrete instantiation.
 
-Below is the solution you came up with in our last session. I want you to edit a few things:
-1. Add missing structR to all the Rep predicat definitions
-2. Bundle up the model arguments of AccountSubstateR into a Record.
-3. In AccountStateR, in the None case, min_balance can be anything. use Exists.
-
-
-```gallina 
-Definition N_to_Z (n: Corelib.Numbers.BinNums.N)
-  : Corelib.Numbers.BinNums.Z :=
-  Stdlib.ZArith.BinInt.Z.of_N n.
-
-(* Helpers: convert 256-bit vectors to Z or N *)
-Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256)
-  : Corelib.Numbers.BinNums.Z :=
-  monad.EVMOpSem.Zdigits.binary_value 256 w.
-
-Definition w256_to_N (w: monad.EVMOpSem.keccak.w256)
-  : Corelib.Numbers.BinNums.N :=
-  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
-
-(* Dummy placeholder: keys-only for accessed_storage_ *)
-Definition AccessedKeysR (q: stdpp.numbers.Qp)
-           (keys: list Corelib.Numbers.BinNums.N)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  (* TOFIXLATER: refine to layout each accessed key in the C++ table *)
-  anyR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_type
-    (cQp.mut q).
-
-(* Dummy placeholder: persistent/transient storage map *)
-Definition StorageMapR (q: stdpp.numbers.Qp)
-           (m: monad.EVMOpSem.evm.storage)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  (* TOFIXLATER: refine to layout each key→value pair in the C++ map *)
-  anyR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_type
-    (cQp.mut q).
-
-(* Realistic placeholder for code_hash_of_program: length mod 2^256, converted to N *)
-Definition code_hash_of_program
-           (pr: monad.EVMOpSem.evm.program)
-  : Corelib.Numbers.BinNums.N :=
-  Stdlib.ZArith.BinInt.Z.to_N
-    (monad.EVMOpSem.evm.program_length pr mod (2 ^ 256)%Z).
-
-(* Rep predicate for monad::AccountSubstate (base class) *)
-Definition AccountSubstateR (q: stdpp.numbers.Qp)
-           (destructed touched accessed: bool)
-           (accessed_keys: list Corelib.Numbers.BinNums.N)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  _field "AccountSubstate::destructed_"        |-> boolR (cQp.mut q) destructed
-  ** _field "AccountSubstate::touched_"          |-> boolR (cQp.mut q) touched
-  ** _field "AccountSubstate::accessed_"         |-> boolR (cQp.mut q) accessed
-  ** _field "AccountSubstate::accessed_storage_" |-> AccessedKeysR q accessed_keys.
-
-(* Rep predicate for monad::Account using block_account and Indices *)
-Definition AccountR (q: stdpp.numbers.Qp)
-           (ba: monad.EVMOpSem.block.block_account)
-           (idx: monad.proofs.exec_specs.Indices)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  _field "monad::Account::balance"
-        |-> u256R q (w256_to_N (ba.(monad.EVMOpSem.block.block_account_balance)))
-  ** _field "monad::Account::code_hash"
-        |-> bytes32R q (code_hash_of_program ba.(monad.EVMOpSem.block.block_account_code))
-  ** _field "monad::Account::nonce"
-        |-> primR "unsigned long" (cQp.mut q)
-             (w256_to_Z (ba.(monad.EVMOpSem.block.block_account_nonce)))
-  ** _field "monad::Account::incarnation"
-        |-> monad.proofs.exec_specs.IncarnationR q idx.
-
-(* Rep predicate for full monad::AccountState *)
-Definition AccountStateR (q: stdpp.numbers.Qp)
-           (orig:        monad.EVMOpSem.block.block_account)
-           (asm:         monad.proofs.exec_specs.AssumptionExactness)
-           (storage_map:   monad.EVMOpSem.evm.storage)
-           (transient_map: monad.EVMOpSem.evm.storage)
-           (idx:         monad.proofs.exec_specs.Indices)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  (* base substate *)
-  _base "monad::AccountState" "monad::AccountSubstate"
-    |-> AccountSubstateR q
-         false false false (* destructed_, touched_, accessed_ start false *)
-         []               (* accessed_storage_ initially empty *)
-  (* account_ is a std::optional; placeholder anyR *)
-  ** _field "monad::AccountState::account_"
-        |-> anyR "std::optional<monad::Account>"%cpp_type (cQp.mut q) (* TOFIXLATER *)
-  (* persistent storage_ *)
-  ** _field "monad::AccountState::storage_"
-        |-> StorageMapR q storage_map
-  (* transient_storage_ *)
-  ** _field "monad::AccountState::transient_storage_"
-        |-> StorageMapR q transient_map
-  (* exact-nonce flag *)
-  ** _field "monad::AccountState::validate_exact_nonce_"
-        |-> boolR (cQp.mut q) (monad.proofs.exec_specs.nonce_exact asm)
-  (* exact-balance flag *)
-  ** _field "monad::AccountState::validate_exact_balance_"
-        |-> boolR (cQp.mut q)
-             (Corelib.Init.Datatypes.negb
-                (bool_decide (stdpp.option.is_Some (monad.proofs.exec_specs.min_balance asm))))
-  (* min_balance_ bound *)
-  ** _field "monad::AccountState::min_balance_"
-        |-> u256R q
-             (match monad.proofs.exec_specs.min_balance asm with
-              | Corelib.Init.Datatypes.Some n => n
-              | Corelib.Init.Datatypes.None   => 0%_N
-              end).
-```
 
 +++ FILES
 ../../fmai/prompts/sep.md
@@ -181,242 +72,8 @@ Print AssumptionExactness.
 (* Helpers for AccountState rep predicates                                    *)
 (* ------------------------------------------------------------------------- *)
 
-(* Convert an N to Z *)
-Definition N_to_Z (n: Corelib.Numbers.BinNums.N) : Corelib.Numbers.BinNums.Z :=
-  Stdlib.ZArith.BinInt.Z.of_N n.
+#[only(lens)] derive AssumptionExactness.
 
-(* Convert a 256‐bit word to Z or N *)
-Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.Z :=
-  monad.EVMOpSem.Zdigits.binary_value 256 w.
-
-Definition w256_to_N (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.N :=
-  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
-
-(* A simplistic layout of the "accessed_storage_" table: *)
-Definition AccessedKeysR (q: stdpp.numbers.Qp)
-           (keys: list Corelib.Numbers.BinNums.N)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  anyR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_type
-    (cQp.mut q).
-
-(* A simplistic layout of the "storage_" and "transient_storage_" tables: *)
-Definition StorageMapR (q: stdpp.numbers.Qp)
-           (m: monad.EVMOpSem.evm.storage)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  anyR
-    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_type
-    (cQp.mut q).
-
-(* Compute a 256‐bit program‐length hash as an N *)
-Definition code_hash_of_program
-           (pr: monad.EVMOpSem.evm.program)
-  : Corelib.Numbers.BinNums.N :=
-  Stdlib.ZArith.BinInt.Z.to_N
-    (monad.EVMOpSem.evm.program_length pr mod (2 ^ 256)%Z).
-
-(* ------------------------------------------------------------------------- *)
-(* std::optional Rep, using offsets from libspecs                           *)
-(* ------------------------------------------------------------------------- *)
-Definition optionR {SomeTyModel : Type}
-           (somety : bluerock.lang.cpp.syntax.core.type)
-           (someTyRep : SomeTyModel → bluerock.lang.cpp.logic.rep_defs.Rep)
-           (q : stdpp.numbers.Qp)
-           (o : option SomeTyModel)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  structR (Ninst "std::optional" [Atype somety]) (cQp.mut q) **
-  match o with
-  | None   =>
-      monad.proofs.libspecs.opt_engaged_offset somety
-      |-> boolR (cQp.mut q) false
-  | Some b =>
-      monad.proofs.libspecs.opt_somety_offset somety
-      |-> someTyRep b
-      ** monad.proofs.libspecs.opt_engaged_offset somety
-         |-> boolR (cQp.mut q) true
-  end.
-
-(* ------------------------------------------------------------------------- *)
-(* 1) Bundle fields of AccountSubstate into a record                         *)
-(* ------------------------------------------------------------------------- *)
-Record AccountSubstateModel : Type := {
-  asm_destructed     : bool;
-  asm_touched        : bool;
-  asm_accessed       : bool;
-  asm_accessed_keys  : list Corelib.Numbers.BinNums.N
-}.
-
-(* ------------------------------------------------------------------------- *)
-(* 2) AccountSubstateR with structR                                          *)
-(* ------------------------------------------------------------------------- *)
-Definition AccountSubstateR
-           (q: stdpp.numbers.Qp)
-           (m: AccountSubstateModel)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  _field "AccountSubstate::destructed_"         |-> boolR (cQp.mut q) m.(asm_destructed)
-  ** _field "AccountSubstate::touched_"          |-> boolR (cQp.mut q) m.(asm_touched)
-  ** _field "AccountSubstate::accessed_"         |-> boolR (cQp.mut q) m.(asm_accessed)
-  ** _field "AccountSubstate::accessed_storage_" |-> AccessedKeysR q m.(asm_accessed_keys)
-  ** structR "monad::AccountSubstate"%cpp_name  (cQp.mut q).
-
-(* ------------------------------------------------------------------------- *)
-(* 3) AccountR with structR                                                   *)
-(* ------------------------------------------------------------------------- *)
-Definition AccountR
-           (q: stdpp.numbers.Qp)
-           (ba: monad.EVMOpSem.block.block_account)
-           (idx: monad.proofs.exec_specs.Indices)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  _field "monad::Account::balance"       |-> u256R q (w256_to_N ba.(monad.EVMOpSem.block.block_account_balance))
-  ** _field "monad::Account::code_hash"  |-> bytes32R q (code_hash_of_program ba.(monad.EVMOpSem.block.block_account_code))
-  ** _field "monad::Account::nonce"      |-> primR "unsigned long" (cQp.mut q) (w256_to_Z ba.(monad.EVMOpSem.block.block_account_nonce))
-  ** _field "monad::Account::incarnation"|-> monad.proofs.exec_specs.IncarnationR q idx
-  ** structR "monad::Account"%cpp_name    (cQp.mut q).
-
-(* ------------------------------------------------------------------------- *)
-(* 4) AccountStateR: everything now fully defined                             *)
-(* ------------------------------------------------------------------------- *)
-Definition AccountStateR
-           (q: stdpp.numbers.Qp)
-           (orig:         monad.EVMOpSem.block.block_account)
-           (asm:          monad.proofs.exec_specs.AssumptionExactness)
-           (storage_map:   monad.EVMOpSem.evm.storage)
-           (transient_map: monad.EVMOpSem.evm.storage)
-           (idx:          monad.proofs.exec_specs.Indices)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  (* base substate *)
-  _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
-    |-> AccountSubstateR q (Build_AccountSubstateModel false false false [])
-  (* account_ via optionR *)
-  ** _field "monad::AccountState::account_"
-       |-> @optionR
-            monad.EVMOpSem.block.block_account
-            "monad::Account"%cpp_type
-            (fun ba' => AccountR q ba' idx)
-            q
-            (if orig.(monad.EVMOpSem.block.block_account_exists)
-             then Some orig else None)
-  (* persistent storage_ *)
-  ** _field "monad::AccountState::storage_"           |-> StorageMapR q storage_map
-  (* transient storage_ *)
-  ** _field "monad::AccountState::transient_storage_" |-> StorageMapR q transient_map
-  (* exact‐nonce flag *)
-  ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR (cQp.mut q) (monad.proofs.exec_specs.nonce_exact asm)
-  (* exact‐balance flag *)
-  ** _field "monad::AccountState::validate_exact_balance_" |-> boolR (cQp.mut q)
-                                                                  (Corelib.Init.Datatypes.negb
-                                                                     (bool_decide (stdpp.option.is_Some (monad.proofs.exec_specs.min_balance asm))))
-  (* min_balance_ bound *)
-  ** (match monad.proofs.exec_specs.min_balance asm with
-      | Corelib.Init.Datatypes.Some n =>
-         _field "monad::AccountState::min_balance_" |-> u256R q n
-      | Corelib.Init.Datatypes.None =>
-         Exists (nb: Corelib.Numbers.BinNums.N),
-           _field "monad::AccountState::min_balance_" |-> u256R q nb
-      end)
-  (* the struct itself *)
-  ** structR "monad::AccountState"%cpp_name (cQp.mut q).
-
-
-
-
-
-
-
-
-  
-  
- Set Printing FullyQualifiedNames.
-Local Open Scope cpp_name.
-Local Open Scope cpp_type.
-
-(** * Rep for monad::Account **)
-Definition AccountR (q: cQp.t)
-  (bal : Corelib.Numbers.BinNums.N)
-  (ch  : Corelib.Numbers.BinNums.N)
-  (no  : Corelib.Numbers.BinNums.Z)
-  (inc : monad.proofs.exec_specs.Indices)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  structR "monad::Account"%cpp_name q
-  ** _field "monad::Account::balance"%cpp_name     |-> monad.proofs.exec_specs.u256R q bal
-  ** _field "monad::Account::code_hash"%cpp_name   |-> monad.proofs.exec_specs.bytes32R q ch
-  ** _field "monad::Account::nonce"%cpp_name       |-> primR "unsigned long"%cpp_type q (Vint no)
-  ** _field "monad::Account::incarnation"%cpp_name |-> monad.proofs.exec_specs.IncarnationR q inc.
-
-(** * Rep for the storage_ table **)
-Definition StorageTableR (q: cQp.t)
-  (_m: monad.EVMOpSem.evm.storage)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  pureR True.
-
-(** * Rep for the transient_storage_ table **)
-Definition TransientStorageR (q: cQp.t)
-  (_m: monad.EVMOpSem.evm.storage)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  pureR True.
-
-(** * Rep for the accessed_storage_ table **)
-Definition AccessedStorageR (q: cQp.t)
-  (_keys: list Corelib.Numbers.BinNums.N)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  pureR True.
-
-(** * Rep for monad::AccountSubstate **)
-Definition AccountSubstateR (q: cQp.t)
-  (destructed touched accessed: bool)
-  (acc_keys: list Corelib.Numbers.BinNums.N)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  structR "monad::AccountSubstate"%cpp_name q
-  ** _field "monad::AccountSubstate::destructed_"%cpp_name       |-> boolR q destructed
-  ** _field "monad::AccountSubstate::touched_"%cpp_name          |-> boolR q touched
-  ** _field "monad::AccountSubstate::accessed_"%cpp_name         |-> boolR q accessed
-  ** _field "monad::AccountSubstate::accessed_storage_"%cpp_name |-> AccessedStorageR q acc_keys.
-
-(** * Rep for std::optional<monad::Account> **)
-Definition OptionAccountR (q: cQp.t)
-  (o: option (Corelib.Numbers.BinNums.N
-             * Corelib.Numbers.BinNums.N
-             * Corelib.Numbers.BinNums.Z
-             * monad.proofs.exec_specs.Indices))
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  structR (Ninst "std::optional" [Atype "monad::Account"%cpp_type]) (cQp.mut q)
-  ** match o with
-     | None =>
-        opt_engaged_offset "monad::Account"%cpp_type |-> boolR q false
-     | Some (bal,ch,no,inc) =>
-        opt_somety_offset     "monad::Account"%cpp_type |-> AccountR q bal ch no inc
-        ** opt_engaged_offset "monad::Account"%cpp_type |-> boolR q true
-     end.
-
-(** * Rep for monad::AccountState **)
-Definition AccountStateR (q: cQp.t)
-  (opt_acc: option (Corelib.Numbers.BinNums.N
-                   * Corelib.Numbers.BinNums.N
-                   * Corelib.Numbers.BinNums.Z
-                   * monad.proofs.exec_specs.Indices))
-  (storage_m transient_m: monad.EVMOpSem.evm.storage)
-  (d t a: bool)
-  (acc_keys: list Corelib.Numbers.BinNums.N)
-  (ass: monad.proofs.exec_specs.AssumptionExactness)
-  : bluerock.lang.cpp.logic.rep_defs.Rep :=
-  structR "monad::AccountState"%cpp_name q
-  ** _base  "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
-       |-> AccountSubstateR q d t a acc_keys
-  ** _field "monad::AccountState::account_"%cpp_name           |-> OptionAccountR q opt_acc
-  ** _field "monad::AccountState::storage_"%cpp_name           |-> StorageTableR q storage_m
-  ** _field "monad::AccountState::transient_storage_"%cpp_name |-> TransientStorageR q transient_m
-  ** _field "monad::AccountState::validate_exact_nonce_"%cpp_name   |-> boolR q (ass.(nonce_exact))
-  ** _field "monad::AccountState::validate_exact_balance_"%cpp_name |-> boolR q (isSome (ass.(min_balance)))
-  ** _field "monad::AccountState::min_balance_"%cpp_name            |-> 
-       monad.proofs.exec_specs.u256R q
-         (match ass.(min_balance) with Some n => n | None => 0%N end).
-
-
-
-
-  
-  Definition AccountStateR (q:Qp) (s: evm.account_state) : Rep. Proof. Admitted.
-  Print addressR.
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
@@ -425,26 +82,26 @@ Definition AccountStateR (q: cQp.t)
    \arg{addrp: ptr} "address" (Vref addrp)
    \prepost{qa fixee} addrp |-> addressR qa fixee
    \arg{origp: ptr} "original" (Vref origp)
-   \pre{assumedFixeeState} origp |-> AccountStateR 1 assumedFixeeState
+   \pre{assumedFixeeState ae inds} origp |-> AccountStateR 1 assumedFixeeState ae inds
    \arg{actualp: ptr} "actual" (Vref actualp)
-   \pre actualp |-> libspecs.optionR "monad::AccountState" (AccountStateR 1) 1 (actualPreTxState !! fixee)
+   \pre actualp |-> libspecs.optionR "monad::AccountState" (fun acs => AccountStateR 1 acs ae inds) 1 (actualPreTxState !! fixee)
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
       [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **
       if (negb satisfiesAssumptionsb)
-      then statep |-> StateR au ** origp |-> AccountStateR 1 assumedFixeeState
+      then statep |-> StateR au ** origp |-> AccountStateR 1 assumedFixeeState ae inds
       else
         Exists auf exactFixeeAssumption, statep |-> StateR auf
-          ** origp |-> AccountStateR 1 exactFixeeAssumption
+          ** origp |-> AccountStateR 1 exactFixeeAssumption (ae &: _min_balance .= None) inds
           ** [| relaxedValidation auf = false |]
           ** [| applyUpdates auf actualPreTxState = applyUpdates au actualPreTxState |]).
 
   Set Nested Proofs Allowed.
-  Lemma observeState (state_addr:ptr) q t:
+  Lemma observeState (state_addr:ptr) q t ae inds:
     Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> AccountStateR q t).
+            (state_addr |-> AccountStateR q t ae inds).
   Proof using. Admitted.
 
-  Definition observeStateF r q t := @observe_fwd _ _ _ (observeState r q t).
+  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
   Hint Resolve observeStateF : br_opacity.
 Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
 
@@ -452,6 +109,7 @@ Lemma prf: denoteModule module |-- fix_spec.
 Proof using.
   verify_spec'.
   slauto.
+  
 Abort.
 (*
   Locate RepFor.

@@ -67,6 +67,110 @@ Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 Print AssumptionExactness.
    *)
+ Set Printing FullyQualifiedNames.
+(* Convert Coq N to Coq Z *)
+Definition N_to_Z (n: Corelib.Numbers.BinNums.N)
+  : Corelib.Numbers.BinNums.Z :=
+  Stdlib.ZArith.BinInt.Z.of_N n.
+
+(* Helpers: convert 256-bit vectors to Z or N *)
+Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256)
+  : Corelib.Numbers.BinNums.Z :=
+  monad.EVMOpSem.Zdigits.binary_value 256 w.
+
+Definition w256_to_N (w: monad.EVMOpSem.keccak.w256)
+  : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
+
+(* Dummy placeholder: keys-only for accessed_storage_ *)
+Definition AccessedKeysR (q: stdpp.numbers.Qp)
+           (keys: list Corelib.Numbers.BinNums.N)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  (* TOFIXLATER: refine to layout each accessed key in the C++ table *)
+  anyR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_type
+    (cQp.mut q).
+
+(* Dummy placeholder: persistent/transient storage map *)
+Definition StorageMapR (q: stdpp.numbers.Qp)
+           (m: monad.EVMOpSem.evm.storage)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  (* TOFIXLATER: refine to layout each key→value pair in the C++ map *)
+  anyR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_type
+    (cQp.mut q).
+
+(* Realistic placeholder for code_hash_of_program: length mod 2^256, converted to N *)
+Definition code_hash_of_program
+           (pr: monad.EVMOpSem.evm.program)
+  : Corelib.Numbers.BinNums.N :=
+  Stdlib.ZArith.BinInt.Z.to_N
+    (monad.EVMOpSem.evm.program_length pr mod (2 ^ 256)%Z).
+
+(* Rep predicate for monad::AccountSubstate (base class) *)
+Definition AccountSubstateR (q: stdpp.numbers.Qp)
+           (destructed touched accessed: bool)
+           (accessed_keys: list Corelib.Numbers.BinNums.N)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  _field "AccountSubstate::destructed_"        |-> boolR (cQp.mut q) destructed
+  ** _field "AccountSubstate::touched_"          |-> boolR (cQp.mut q) touched
+  ** _field "AccountSubstate::accessed_"         |-> boolR (cQp.mut q) accessed
+  ** _field "AccountSubstate::accessed_storage_" |-> AccessedKeysR q accessed_keys.
+
+(* Rep predicate for monad::Account using block_account and Indices *)
+Definition AccountR (q: stdpp.numbers.Qp)
+           (ba: monad.EVMOpSem.block.block_account)
+           (idx: monad.proofs.exec_specs.Indices)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  _field "monad::Account::balance"
+        |-> u256R q (w256_to_N (ba.(monad.EVMOpSem.block.block_account_balance)))
+  ** _field "monad::Account::code_hash"
+        |-> bytes32R q (code_hash_of_program ba.(monad.EVMOpSem.block.block_account_code))
+  ** _field "monad::Account::nonce"
+        |-> primR "unsigned long" (cQp.mut q)
+             (w256_to_Z (ba.(monad.EVMOpSem.block.block_account_nonce)))
+  ** _field "monad::Account::incarnation"
+        |-> monad.proofs.exec_specs.IncarnationR q idx.
+
+(* Rep predicate for full monad::AccountState *)
+Definition AccountStateR (q: stdpp.numbers.Qp)
+           (orig:        monad.EVMOpSem.block.block_account)
+           (asm:         monad.proofs.exec_specs.AssumptionExactness)
+           (storage_map:   monad.EVMOpSem.evm.storage)
+           (transient_map: monad.EVMOpSem.evm.storage)
+           (idx:         monad.proofs.exec_specs.Indices)
+  : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  (* base substate *)
+  _base "monad::AccountState" "monad::AccountSubstate"
+    |-> AccountSubstateR q
+         false false false (* destructed_, touched_, accessed_ start false *)
+         []               (* accessed_storage_ initially empty *)
+  (* account_ is a std::optional; placeholder anyR *)
+  ** _field "monad::AccountState::account_"
+        |-> anyR "std::optional<monad::Account>"%cpp_type (cQp.mut q) (* TOFIXLATER *)
+  (* persistent storage_ *)
+  ** _field "monad::AccountState::storage_"
+        |-> StorageMapR q storage_map
+  (* transient_storage_ *)
+  ** _field "monad::AccountState::transient_storage_"
+        |-> StorageMapR q transient_map
+  (* exact-nonce flag *)
+  ** _field "monad::AccountState::validate_exact_nonce_"
+        |-> boolR (cQp.mut q) (monad.proofs.exec_specs.nonce_exact asm)
+  (* exact-balance flag *)
+  ** _field "monad::AccountState::validate_exact_balance_"
+        |-> boolR (cQp.mut q)
+             (Corelib.Init.Datatypes.negb
+                (bool_decide (stdpp.option.is_Some (monad.proofs.exec_specs.min_balance asm))))
+  (* min_balance_ bound *)
+  ** _field "monad::AccountState::min_balance_"
+        |-> u256R q
+             (match monad.proofs.exec_specs.min_balance asm with
+              | Corelib.Init.Datatypes.Some n => n
+              | Corelib.Init.Datatypes.None   => 0%_N
+              end).
+
+
 
 
 

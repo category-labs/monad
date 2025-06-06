@@ -30,7 +30,7 @@ uint64_t ecadd_gas_cost(byte_string_view, evmc_revision);
 uint64_t ecmul_gas_cost(byte_string_view, evmc_revision);
 uint64_t snarkv_gas_cost(byte_string_view, evmc_revision);
 uint64_t blake2bf_gas_cost(byte_string_view, evmc_revision);
-// TODO: https://github.com/category-labs/monad/pull/968
+uint64_t point_evaluation_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_g1_add_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_g1_msm_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_g2_add_gas_cost(byte_string_view, evmc_revision);
@@ -66,7 +66,7 @@ PrecompileResult ecadd_execute(byte_string_view);
 PrecompileResult ecmul_execute(byte_string_view);
 PrecompileResult snarkv_execute(byte_string_view);
 PrecompileResult blake2bf_execute(byte_string_view);
-// TODO: https://github.com/category-labs/monad/pull/968
+PrecompileResult point_evaluation_execute(byte_string_view);
 PrecompileResult bls12_g1_add_execute(byte_string_view);
 PrecompileResult bls12_g1_msm_execute(byte_string_view);
 PrecompileResult bls12_g2_add_execute(byte_string_view);

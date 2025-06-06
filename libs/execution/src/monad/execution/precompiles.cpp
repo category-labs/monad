@@ -36,9 +36,9 @@ consteval unsigned num_precompiles(evmc_revision const rev)
     case EVMC_LONDON:
     case EVMC_PARIS:
     case EVMC_SHANGHAI:
-    case EVMC_CANCUN: // TODO(kkuehler): change to 10 after
-                      // https://github.com/monad-crypto/monad/pull/887
         return 9;
+    case EVMC_CANCUN:
+        return 10;
     case EVMC_PRAGUE:
         return 17;
     default:
@@ -83,8 +83,7 @@ inline constexpr std::array<
         {ecmul_gas_cost, ecmul_execute},
         {snarkv_gas_cost, snarkv_execute},
         {blake2bf_gas_cost, blake2bf_execute},
-        {nullptr, nullptr}, // TODO:
-                            // https://github.com/category-labs/monad/pull/968
+        {point_evaluation_gas_cost, point_evaluation_execute},
         {bls12_g1_add_gas_cost, bls12_g1_add_execute},
         {bls12_g1_msm_gas_cost, bls12_g1_msm_execute},
         {bls12_g2_add_gas_cost, bls12_g2_add_execute},

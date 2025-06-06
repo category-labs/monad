@@ -88,6 +88,12 @@ uint64_t expmod_gas_cost(byte_string_view const input, evmc_revision const rev)
         input.data(), input.size(), static_cast<int>(rev));
 }
 
+uint64_t point_evaluation_gas_cost(byte_string_view, evmc_revision)
+{
+    // TODO: https://github.com/category-labs/monad/pull/968
+    return 50'000;
+}
+
 uint64_t bls12_g1_add_gas_cost(byte_string_view, evmc_revision)
 {
     return 375;
@@ -194,6 +200,12 @@ PrecompileResult snarkv_execute(byte_string_view const input)
 PrecompileResult blake2bf_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_blake2_f_run>(input);
+}
+
+PrecompileResult point_evaluation_execute(byte_string_view)
+{
+    // TODO: https://github.com/category-labs/monad/pull/968
+    return PrecompileResult::failure();
 }
 
 PrecompileResult bls12_g1_add_execute(byte_string_view const input)

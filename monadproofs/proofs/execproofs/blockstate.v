@@ -11,7 +11,6 @@ Require Import monad.proofs.exec_specs.
 Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
-Set Printing FullyQualifiedNames.
 
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
@@ -67,7 +66,6 @@ Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 Print AssumptionExactness.
    *)
- Set Printing FullyQualifiedNames.
 (* ------------------------------------------------------------------------- *)
 (* Helpers for AccountState rep predicates                                    *)
 (* ------------------------------------------------------------------------- *)

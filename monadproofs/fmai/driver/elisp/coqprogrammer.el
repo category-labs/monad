@@ -7,6 +7,15 @@
 ;;   "Conversation history for `gpt-4o-chat'.  Each element is a string, 
 ;; alternating USER, ASSISTANT, USER, … in the order they were sent.")
 
+;;; ------------------------------------------------------------------
+;;;  NEW user-tunable knob
+;;; ------------------------------------------------------------------
+(defcustom coq-programmer-feedback-extension 15
+  "How many extra GPT calls to grant each time the user gives feedback
+after a fully successful compile."
+  :type 'integer
+  :group 'coq-programmer)
+
 
 (defun gpt-4o--append (role text)
   "Insert ROLE (\"User\" or \"Assistant\") and TEXT at point, then newline."
@@ -341,41 +350,43 @@ It parses the slice with `libxml-parse-html-region` and extracts every
       ("gallina"
        (let ((inhibit-read-only t)
              (beg (point))
-	     (log-start (with-current-buffer "*coq*"
-			  (point-max)))
-	     )
+             (log-start (with-current-buffer "*coq*" (point-max))))
          (insert body "\n")
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
-	   (let* ((new-axioms (coq-prog--axioms-since log-start))
-		  )
+           (let* ((new-axioms (coq-prog--axioms-since log-start)))
              (cond
               ;; ---------- compile error ----------
               ((eq proof-shell-last-output-kind 'error)
                (setq coq-programmer--pending-error-region
                      (cons (copy-marker beg) (copy-marker end)))
-               (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n" proof-shell-last-output "\n\n Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n "))
+               (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n"
+                       proof-shell-last-output
+                       "\n\nRemember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n "))
 
-              ;; ---------- compiles but has Admitted ----------S
-	      ;; ---------- compiles but still has holes ----------
-	      ((or (consp new-axioms)
-		   (string-match-p "TOFIXLATER" body))
+              ;; ---------- compiles but has Admitted / TOFIXLATER ----------
+              ((or (consp new-axioms)
+                   (string-match-p "TOFIXLATER" body))
                (setq coq-programmer--pending-error-region
                      (cons (copy-marker beg) (copy-marker end)))
-               (setq coq-programmer--last-working-with-holes gpt-text)  ;; NEW
-               (concat coq-programmer--admit-prompt (coq-prog-search-queries-for-axioms new-axioms)))
+               (setq coq-programmer--last-working-with-holes gpt-text)
+               (concat coq-programmer--admit-prompt
+                       (coq-prog-search-queries-for-axioms new-axioms)))
 
               ;; ---------- perfect success ----------
               (t
-               (setq coq-programmer--last-working-with-holes nil)   ;; NEW
-               "Success098"))))))
+               (setq coq-programmer--last-working-with-holes nil)
+               "__SUCCESS__"))))))          ;;  <-- marker for main loop
 
-       ;; =================================================  Coq query
-       ("coqquery" (concat (query-coq (string-trim body)) "\n\n Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n"))
+      ;; =================================================  Coq query
+      ("coqquery"
+       (concat (query-coq (string-trim body))
+               "\n\nRemember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n"))
 
       ;; =================================================  parse failure
       (_ "could not parse your response. please follow the formatting guidelines strictly"))))
+
 
 ;;;###autoload
 (defun gpt-test-handle-coq-output-region (beg end)
@@ -581,72 +592,85 @@ Set to nil for no limit."
    nil file))
 
 
-;;;###autoload
 (defun coq-programmer-loop ()
   "Autonomous GPT-4o ⇄ Coq session.
-Dialogue is written to a persistent `comm.md` in the same
-directory as the current `.v` file.  Stops when:
- • code compiles with no `Admitted.`
- • user hits C-g
- • `coq-programmer-max-llm-calls` budget is exhausted."
+Logs go to <file>.v.md next to the current .v file.
+
+The call-budget starts from `coq-programmer-max-llm-calls` (if numeric)
+and each time the user provides feedback after a successful compile the
+budget is set to CURRENT-CALLS + `coq-programmer-feedback-extension`."
   (interactive)
-  (let* ((coq-file (buffer-file-name proof-script-buffer))
-	 (comm-file (concat coq-file ".md"))
-         ;; running heading counters, initialised from existing file
-         (counts (coq-programmer--initial-counts comm-file))
-         (user-count (car counts))
-         (assist-count (cdr counts))
-         ;; call budget
-         (llm-calls 0))
-    ;; ---- 0. truncate / create comm.md so we start from scratch ----
-    (with-temp-file comm-file)  ; write nothing => clears file
-    ;; fresh conversation history for this session
+  (ensure-cpp-lsp-session)               ;; hard-fail if clangd not ready
+
+  (let* ((coq-file   (buffer-file-name proof-script-buffer))
+         (comm-file  (concat coq-file ".md"))
+         (counts     (coq-programmer--initial-counts comm-file))
+         (user-count    (car counts))
+         (assist-count  (cdr counts))
+         (llm-calls 0)
+         ;; mutable budget we can raise later
+         (max-calls (and (numberp coq-programmer-max-llm-calls)
+                         coq-programmer-max-llm-calls)))
+
+    ;; fresh markdown log
+    (with-temp-file comm-file)
     (setq gpt-4o-conversation nil)
 
+    (cl-labels
+        ((log (role msg)
+              (pcase role
+                ("User"      (setq user-count   (1+ user-count)))
+                ("Assistant" (setq assist-count (1+ assist-count))))
+              (coq-programmer--log-to-file
+               comm-file role
+               (if (string= role "User") user-count assist-count)
+               msg)))
 
-    ;; helper to log + update counters
-    (cl-labels ((log (role msg)
-                     (pcase role
-                       ("User"      (setq user-count   (1+ user-count)))
-                       ("Assistant" (setq assist-count (1+ assist-count))))
-                     (coq-programmer--log-to-file
-                      comm-file role
-                      (if (string= role "User") user-count assist-count)
-                      msg)))
-
-      ;; -------- 1. get first prompt from user -----------
-      (let* ((first (coq-programmer-first-prompt))
+      ;; 1 · initial user prompt ➜ GPT
+      (let* ((first     (coq-programmer-first-prompt))
              (assistant (progn
                           (log "User" first)
                           (setq llm-calls (1+ llm-calls))
                           (gpt-4o--send first))))
         (log "Assistant" assistant)
 
-        ;; -------- 2. main loop -----------
+        ;; 2 · main cycle
         (let ((quit nil))
           (while (not quit)
-            ;; stop if cost limit hit
-	    (when (and coq-programmer-max-llm-calls
-		       (>= llm-calls coq-programmer-max-llm-calls))
-	      ;; If we have a fallback snippet with admits, re-insert it
-	      (with-current-buffer proof-script-buffer
-		(when coq-programmer--last-working-with-holes
-		  (gpt-handle-coq-output coq-programmer--last-working-with-holes)))
-	      (log "System"
-		   (format "LLM call budget (%d) exhausted.  Stopping session."
-			   coq-programmer-max-llm-calls))
-	      (setq quit t))
+            ;; ---- budget guard --------------------------------------
+            (when (and max-calls (>= llm-calls max-calls))
+              (with-current-buffer proof-script-buffer
+                (when coq-programmer--last-working-with-holes
+                  (gpt-handle-coq-output
+                   coq-programmer--last-working-with-holes)))
+              (log "System"
+                   (format "LLM call budget (%d) exhausted.  Stopping session."
+                           max-calls))
+              (setq quit t))
+
             (unless quit
-              (let* ((next
-                      (with-current-buffer proof-script-buffer
-                        (gpt-handle-coq-output assistant))))
+              (let* ((next (with-current-buffer proof-script-buffer
+                             (gpt-handle-coq-output assistant))))
                 (cond
-                 ;; finished
-                 ((or (string-empty-p next)
-                      (string= next "Success098"))
+                 ;; ========== success ⇒ ask for feedback =============
+                 ((string= next "__SUCCESS__")
+                  (let ((fb (coq-programmer--read-feedback)))
+                    (if (string-empty-p fb)
+                        (setq quit t)            ; user done
+                      ;; log + send feedback
+                      (log "User" fb)
+                      (setq llm-calls (1+ llm-calls))
+                      ;; raise budget
+                      (setq max-calls (+ llm-calls
+                                         coq-programmer-feedback-extension))
+                      (setq assistant (gpt-4o--send fb))
+                      (log "Assistant" assistant))))
+
+                 ;; ========== GPT returned nothing ===================
+                 ((string-empty-p next)
                   (setq quit t))
 
-                 ;; keep cycling
+                 ;; ========== normal continue ========================
                  (t
                   (log "User" next)
                   (setq llm-calls (1+ llm-calls))
@@ -785,3 +809,32 @@ Prepends a comment ‘// FILE:LINE’ to the returned text."
 ;; TODO
 ;; auto add Set Printing FQN
 ;; ensure a c++ file is open in case spec.md is included
+
+
+;;; ------------------------------------------------------------------
+;;;  NEW: guard that clangd is running in *some* C++ buffer
+;;; ------------------------------------------------------------------
+(require 'cl-lib)
+
+;;;###autoload
+(defun ensure-cpp-lsp-session ()
+  "Abort unless there is at least one `c++-mode` buffer with `lsp-mode` on.
+Returns that buffer on success."
+  (or (cl-find-if
+       (lambda (buf)
+         (with-current-buffer buf
+           (and (derived-mode-p 'c++-mode)
+                (bound-and-true-p lsp-mode))))
+       (buffer-list))
+      (user-error "No active C++ LSP buffer — open any .cpp file first")))
+
+
+;;; ------------------------------------------------------------------
+;;;  NEW: prompt the human for post-success feedback
+;;; ------------------------------------------------------------------
+;;;###autoload
+(defun coq-programmer--read-feedback ()
+  "Read one line of feedback from the minibuffer (may be empty)."
+  (string-trim
+   (read-from-minibuffer
+    "✅ Compiled with no errors.  Feedback for GPT (RET to finish): ")))

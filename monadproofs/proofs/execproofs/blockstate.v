@@ -102,8 +102,140 @@ Print AssumptionExactness.
   Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
   Hint Resolve observeStateF : br_opacity.
 Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+From Ltac2 Require Import Ltac2 String.
+  Ltac2 newlines () : string := String.concat (string.String.newline ()) [string.String.newline (); string.String.newline ()].
 
-Lemma prf: denoteModule module |-- fix_spec.
+Lemma prf: verify[module] fix_spec.
+  Require Import bluerock.auto.cpp.
+  Locate "verify[".
+  Print cpp_proof.verify_in.
+
+Require Import bluerock.ltac2.extra.extra.
+Require Ltac2.Ltac2.
+
+(** ** <<verify>>
+
+    The <<verify[ tu ] spec>> provides a convenient way to write
+    theorem statements for proofs that automatically computes the
+    dependencies.
+
+    When dependencies might be missing, you can use
+    <<verify?[ tu ] spec>>.
+ *)
+
+  Import Ltac2.Ltac2.
+  Import Ltac2.Printf.
+  
+  Ltac2 missingSpecs tu s := 
+         match cpp_proof.parse_fn_spec s with
+         | (sp_parsed, nm, sp) =>
+             let (missing, deps) := cpp_proof.bundle_deps tu nm sp in
+             printf "%a"
+             (Printf.pp_list_sep (newlines ()) Printf.pp_constr)
+               (Constr.ConstrSet.elements missing)
+         end.
+  Ltac2 Eval (missingSpecs 'module preterm:(fix_spec)).
+
+
+  (*
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name
+
+
+"__builtin_expect"%cpp_name
+
+
+"monad_assertion_failed"%cpp_name
+
+
+"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"%cpp_name
+
+
+"monad::AccountState::min_balance() const"%cpp_name
+
+
+"monad::VersionStack<monad::AccountState>::recent()"%cpp_name
+
+
+"monad::State::relaxed_validation() const"%cpp_name
+
+
+"monad::VersionStack<monad::AccountState>::size() const"%cpp_name
+
+
+"monad::AccountState::validate_exact_balance() const"%cpp_name
+
+
+"monad::AccountState::validate_exact_nonce() const"%cpp_name
+
+
+"monad::is_dead(const std::optional<monad::Account>&)"%cpp_name
+
+
+"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"%cpp_name
+
+
+"monad::Incarnation::Incarnation(const monad::Incarnation&)"%cpp_name
+
+
+"intx::uint<256u>::~uint()"%cpp_name
+
+
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"%cpp_name
+
+
+"std::optional<monad::Account>::operator->()"%cpp_name
+
+
+"std::optional<monad::Account>::operator->() const"%cpp_name
+
+
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"%cpp_name
+
+
+"intx::uint<256u>::operator=(const intx::uint<256u>&)"%cpp_name
+
+
+"intx::uint<256u>::operator+=(const intx::uint<256u>&)"%cpp_name
+
+
+"intx::uint<256u>::operator-=(const intx::uint<256u>&)"%cpp_name
+
+
+"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
+
+
+"intx::operator==(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
+
+
+"intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
+
+
+"intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
+
+
+"intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
+
+
+"evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)"%cpp_name
+
+
+"monad::operator==(monad::Incarnation, monad::Incarnation)"%cpp_name
+
+
+"std::optional<monad::Account>::operator bool() const"%cpp_name
+- : unit = ()
+
+   *)
+  
+
+  (*
+Error: This expression has type Init.constr but an expression was expected of type
+Init.preterm
+*)
+  
+  bluerock.auto.cpp.cpp_proof.
+
+  Lemma prf: denoteModule module |-- fix_spec.
 Proof using.
   verify_spec'.
   slauto.

@@ -1644,3 +1644,23 @@ Definition lookup_struct
   | _ =>
       Corelib.Init.Datatypes.None
   end.
+
+
+
+Require Import bluerock.ltac2.extra.extra.
+Require Ltac2.Ltac2.
+
+Import Ltac2.Ltac2.
+Import Ltac2.Printf.
+
+From Ltac2 Require Import Ltac2 String.
+  Ltac2 newlines () : string := String.concat (string.String.newline ()) [string.String.newline (); string.String.newline ()].
+
+Ltac2 missingSpecs tu s := 
+  match cpp_proof.parse_fn_spec s with
+  | (sp_parsed, nm, sp) =>
+      let (missing, deps) := cpp_proof.bundle_deps tu nm sp in
+      printf "%a"
+        (Printf.pp_list_sep (newlines ()) Printf.pp_constr)
+        (Constr.ConstrSet.elements missing)
+  end.

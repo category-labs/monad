@@ -12,34 +12,35 @@ Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
 
-  
   (**
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
 The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
-We need to write `AccountStateR`, its Rep predicate.
-First, we need to find an appropriate Gallina model for `monad::AccountState`.
-A possibility is to use `monad.EVMOpSem.block.block_account`, which is a type that comes from Yoichi's EVM semantics defined in Coq (via Lem) in 2018. However, this type just represents an account state before the execution of a block.
-The C++ class has more fields, which may be only relevant during the execution transaction.
-Some of them maybe in the `EVMOpSem.evm.variable_ctx` Record in the Gallina EVM semantics.
-This Record is used in the step function of EVM in the semantics in Gallina.
-
+`monad::State` defines the state of the whole blockchain during the (possibly speculative) execution of a transaction.
+The Gallina model type for `model::State` is `AssumptionsAndUpdates`.
+The field C++ `original_` records the accounts that have been read during the execution.
 Monad executes transactions of a block with optimisic concurrency.
-The validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance for the speculative execution to not be invalidated by previous concurrent transactions. Use `AssumptionExactness` as a model of those fields: min_balance only makes sense if validate_exact_balance_ is false.
+In original_ in, monad::AccountState,  the validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance (e.g. CALL) for the speculative execution to not be invalidated by previous concurrent transactions.
+In `monad::State`, relaxed_validation is false if the execution is not speculative and all previous transactions are known to have finished, in which case, the underlying BlockState is guaranted to have the preTx state, and not be lagging bahind.
 
-`AccountStateR` should take arguments of type cQp.t, block.block_account, AssumptionExactness,  and perhaps also evm.variable_ctx.
-AccountState has a baseclass and includes monad::Account. you will need to define Rep predicates for these as well.
-block.block_account and/or evm.variable_ctx may serve as appropriate model types for those as well. The logical information from block.block_account and/or evm.variable_ctx seems to be split across the fields of those 3 classes.
-TRY VERY VERY HARD TO FIND THE MODELS OF THE C++ FIELDS IN block.block_account and evm.variable_ctx. YOU MUST NOT ADD A SEPARATE MODEL ARGUMENT FOR ANY FIELD WHICH ALREADY HAS A MODEL IN THOSE GALLINA RECORDS. block.block_account has the balance/nonce info to serve as the model for those fields in `monad::Account` class.
+You need to redefine StateR, the Rep predicate for `monad::State`
+StateR is already a stub Rep predicate for `monad::State`. It has been defined in another file.
+Redefine it here properly.
+
 
 Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
 - IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
 - bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
 - u256t for `uint256_t` (alias for `intx::uint<256>`)
 - addressR is the Rep predicate for Address (alias for `evmc::address`)
+- AccountR is the Rep predicate for monad::Account
+- AccountSubstateR is the Rep predicate for monad::AccountSubState
+- AccountStateR is the Rep predicate for monad::AccountState
+
 
 Many of these Rep predicates are currently admitted. You dont need to define them. But their type will tell you the Gallina models of these types.
 Unfortunately, there is currently no way to search the Coq context for Rep predicate definitions/axioms for a given C++ type.
@@ -65,12 +66,92 @@ Print u256R.
 Check Zdigits.binary_value.
 Check Zdigits.Z_to_binary.
 Print AssumptionExactness.
+Print AccountStateR.
+Print AccountSubstateR.
+Print AccountR.
+Print StateR.
+Print AssumptionsAndUpdates.
+Search AssumptionsAndUpdates.
    *)
-(* ------------------------------------------------------------------------- *)
-(* Helpers for AccountState rep predicates                                    *)
-(* ------------------------------------------------------------------------- *)
+ Set Printing FullyQualifiedNames.
+(*
+  We now provide concrete definitions for all five sub‐predicates of StateR,
+  eliminating the last admits and without duplicating the Section/Context.
+*)
 
-#[only(lens)] derive AssumptionExactness.
+(** 1. Rep for monad::BlockState **)
+Definition BlockStateR (q: stdpp.numbers.Qp) (_ : monad.proofs.exec_specs.Indices) : Rep :=
+  structR "monad::BlockState" (cQp.mut q).
+
+(** 2. Rep for monad::State::original_ (table<address,AccountState>) **)
+Definition MapOriginalR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                 monad.proofs.evmopsem.evm.address
+                 (monad.proofs.evmopsem.evm.account_state
+                  * monad.proofs.exec_specs.AssumptionExactness))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::AccountState, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::AccountState>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 3. Rep for monad::State::current_ (table<address,VersionStack<AccountState>>) **)
+Definition MapCurrentR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                 monad.proofs.evmopsem.evm.address
+                 (list monad.proofs.evmopsem.evm.account_state))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 4. Rep for monad::State::logs_ (VersionStack<vector<Receipt::Log>>) **)
+Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
+  structR
+    "monad::VersionStack<std::vector<monad::Receipt::Log, std::allocator<monad::Receipt::Log>>>"
+    (cQp.mut q).
+
+(** 5. Rep for monad::State::code_ (table<bytes32,shared_ptr<CodeAnalysis>>) **)
+Definition CodeMapR (q: stdpp.numbers.Qp) : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** The concrete Rep for monad::State, laying out all its fields. **)
+Definition StateR (s: monad.proofs.exec_specs.AssumptionsAndUpdates) : Rep :=
+  (* block_state_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::block_state_"
+    |-> BlockStateR (cQp.mut 1) (monad.proofs.exec_specs.indices s)
+  ** (* incarnation_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::incarnation_"
+    |-> IncarnationR (cQp.mut 1) (monad.proofs.exec_specs.indices s)
+  ** (* original_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::original_"
+    |-> MapOriginalR (cQp.mut 1) (monad.proofs.exec_specs.original s)
+  ** (* current_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::current_"
+    |-> MapCurrentR (cQp.mut 1) (monad.proofs.exec_specs.newStates s)
+  ** (* logs_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::logs_"
+    |-> LogsR (cQp.mut 1)
+  ** (* code_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::code_"
+    |-> CodeMapR (cQp.mut 1)
+  ** (* version_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::version_"
+    |-> primR "unsigned int"%cpp_type (cQp.mut 1) 0%Z
+  ** (* relaxed_validation_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::relaxed_validation_"
+    |-> bluerock.lang.cpp.primitives.boolR (cQp.mut 1)
+                                            (monad.proofs.exec_specs.relaxedValidation s)
+  ** (* struct tag/padding *)
+  structR "monad::State" (cQp.mut 1).
+
+End with_Sigma.
+
+
+
 
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
@@ -101,41 +182,14 @@ Print AssumptionExactness.
 
   Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
   Hint Resolve observeStateF : br_opacity.
+  
 Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
-From Ltac2 Require Import Ltac2 String.
-  Ltac2 newlines () : string := String.concat (string.String.newline ()) [string.String.newline (); string.String.newline ()].
 
 Lemma prf: verify[module] fix_spec.
-  Require Import bluerock.auto.cpp.
-  Locate "verify[".
-  Print cpp_proof.verify_in.
-
-Require Import bluerock.ltac2.extra.extra.
-Require Ltac2.Ltac2.
-
-(** ** <<verify>>
-
-    The <<verify[ tu ] spec>> provides a convenient way to write
-    theorem statements for proofs that automatically computes the
-    dependencies.
-
-    When dependencies might be missing, you can use
-    <<verify?[ tu ] spec>>.
- *)
-
-  Import Ltac2.Ltac2.
-  Import Ltac2.Printf.
-  
-  Ltac2 missingSpecs tu s := 
-         match cpp_proof.parse_fn_spec s with
-         | (sp_parsed, nm, sp) =>
-             let (missing, deps) := cpp_proof.bundle_deps tu nm sp in
-             printf "%a"
-             (Printf.pp_list_sep (newlines ()) Printf.pp_constr)
-               (Constr.ConstrSet.elements missing)
-         end.
+Abort.
   Ltac2 Eval (missingSpecs 'module preterm:(fix_spec)).
 
+  Print StateR.
 
   (*
 "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name
@@ -254,3 +308,8 @@ Abort.
 *)
 End with_Sigma.
 
+
+
+(*
+Class RepFor `{Σ : cpp_logic} {σ : genv} (ty : type) {RepType : Type} (R: RepType) : Prop := {}.
+*)

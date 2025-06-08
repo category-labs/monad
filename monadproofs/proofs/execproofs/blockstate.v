@@ -115,7 +115,93 @@ Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
 (** 5. Rep for monad::State::code_ (table<bytes32,shared_ptr<CodeAnalysis>>) **)
 Definition CodeMapR (q: stdpp.numbers.Qp) : Rep :=
   structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, std::shared_ptr<evmone::baseline::(*
+  We fix two things in StateR:
+   1) block_state_ stores only a reference, so we use primR "monad::BlockState*".
+   2) CodeMapR now takes the Gallina model of the new‐code cache as a parameter.
+*)
+
+(** 1) No need for BlockStateR at top‐level; just inline primR below. *)
+
+(** 2) Rep for monad::State::original_ (table<address,AccountState>) **)
+Definition MapOriginalR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                  monad.proofs.evmopsem.evm.address
+                  (monad.proofs.evmopsem.evm.account_state
+                   * monad.proofs.exec_specs.AssumptionExactness))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::AccountState, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::AccountState>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 3) Rep for monad::State::current_ (table<address,VersionStack<AccountState>>) **)
+Definition MapCurrentR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                  monad.proofs.evmopsem.evm.address
+                  (list monad.proofs.evmopsem.evm.account_state))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 4) Rep for monad::State::logs_ (VersionStack<vector<Receipt::Log>>) **)
+Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
+  structR
+    "monad::VersionStack<std::vector<monad::Receipt::Log, std::allocator<monad::Receipt::Log>>>"
+    (cQp.mut q).
+
+(** 5) Rep for monad::State::code_ (table<bytes32,shared_ptr<CodeAnalysis>>) **)
+Definition CodeMapR
+           (q: stdpp.numbers.Qp)
+           (cm: stdpp.gmap.gmap Corelib.Numbers.BinNums.N (* bytes32 as N *)
+                             (list monad.proofs.evmopsem.evm.keccak.byte)) 
+  : Rep :=
+  structR
     "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** Helper to extract the newly‐deployed code map from the State model **)
+Definition computeCodeMap
+           (s : monad.proofs.exec_specs.AssumptionsAndUpdates)
+  : stdpp.gmap.gmap Corelib.Numbers.BinNums.N (list monad.proofs.evmopsem.evm.keccak.byte) :=
+  ∅.  (* TOFIXLATER: fold over s.newStates and extract code from each created account *)
+
+(** Now lay out StateR.  We *no longer* re‐open the section here. **)
+Definition StateR (s: monad.proofs.exec_specs.AssumptionsAndUpdates) : Rep :=
+  (* block_state_ stores only a pointer (reference) to the real BlockState *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::block_state_"
+    |-> primR "monad::BlockState*" (cQp.mut 1)
+             (Vptr (monad.proofs.exec_specs.blockStatePtr s))
+  ** (* incarnation_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::incarnation_"
+    |-> IncarnationR (cQp.mut 1) (monad.proofs.exec_specs.indices s)
+  ** (* original_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::original_"
+    |-> MapOriginalR (cQp.mut 1) (monad.proofs.exec_specs.original s)
+  ** (* current_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::current_"
+    |-> MapCurrentR (cQp.mut 1) (monad.proofs.exec_specs.newStates s)
+  ** (* logs_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::logs_"
+    |-> LogsR (cQp.mut 1)
+  ** (* code_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::code_"
+    |-> CodeMapR (cQp.mut 1) (computeCodeMap s)
+  ** (* version_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::version_"
+    |-> primR "unsigned int"%cpp_type (cQp.mut 1) 0%Z
+  ** (* relaxed_validation_ *)
+  bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.o_field CU "monad::State::relaxed_validation_"
+    |-> bluerock.lang.cpp.primitives.boolR (cQp.mut 1)
+                                            (monad.proofs.exec_specs.relaxedValidation s)
+  ** (* whole‐object padding/type tag *)
+  structR "monad::State" (cQp.mut 1).
+
+End with_Sigma.
+
+CodeAnalysis>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
     (cQp.mut q).
 
 (** The concrete Rep for monad::State, laying out all its fields. **)

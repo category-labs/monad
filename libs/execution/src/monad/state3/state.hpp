@@ -50,7 +50,7 @@ class State
 
     Map<bytes32_t, std::shared_ptr<CodeAnalysis>> code_{};
 
-    unsigned version_{0};
+    unsigned version_{0};// what does this represent?
 
     bool relaxed_validation_{false};
 

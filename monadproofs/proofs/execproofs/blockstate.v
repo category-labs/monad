@@ -17,63 +17,6 @@ Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
 
-  (**
-Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
-The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
-`monad::State` defines the state of the whole blockchain during the (possibly speculative) execution of a transaction.
-The Gallina model type for `model::State` is `AssumptionsAndUpdates`.
-The field C++ `original_` records the accounts that have been read during the execution.
-Monad executes transactions of a block with optimisic concurrency.
-In original_ in, monad::AccountState,  the validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance (e.g. CALL) for the speculative execution to not be invalidated by previous concurrent transactions.
-In `monad::State`, relaxed_validation is false if the execution is not speculative and all previous transactions are known to have finished, in which case, the underlying BlockState is guaranted to have the preTx state, and not be lagging bahind.
-
-You need to redefine StateR, the Rep predicate for `monad::State`
-StateR is already a stub Rep predicate for `monad::State`. It has been defined in another file.
-Redefine it here properly.
-
-
-Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
-- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
-- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
-- u256t for `uint256_t` (alias for `intx::uint<256>`)
-- addressR is the Rep predicate for Address (alias for `evmc::address`)
-- AccountR is the Rep predicate for monad::Account
-- AccountSubstateR is the Rep predicate for monad::AccountSubState
-- AccountStateR is the Rep predicate for monad::AccountState
-
-
-Many of these Rep predicates are currently admitted. You dont need to define them. But their type will tell you the Gallina models of these types.
-Unfortunately, there is currently no way to search the Coq context for Rep predicate definitions/axioms for a given C++ type.
-So, if a Rep predicate for a class has not been mentioned in this first prompt, you can assume it doesnt exist and you need to define it.
-You can admit a `MapR` for the storage_ field: but you still need to figure out an appropriate type for MapR. Do not bother to define it generically for the templated Map type: just focus on the concrete instantiation.
-
-
-+++ FILES
-../../fmai/prompts/sep.md
-../../fmai/prompts/specs.md
-
-+++ QUERIES
-
-Print evm.account_state.
-Print block.block_account.
-Print evm.variable_ctx
-Print evm.instruction_sem.
-Print block.step.
-Print IncarnationR.
-Print addressR.
-Print bytes32R.
-Print u256R.
-Check Zdigits.binary_value.
-Check Zdigits.Z_to_binary.
-Print AssumptionExactness.
-Print AccountStateR.
-Print AccountSubstateR.
-Print AccountR.
-Print StateR.
-Print AssumptionsAndUpdates.
-Search AssumptionsAndUpdates.
-   *)
-
   #[only(lens)] derive AssumptionExactness. (* TODO: move to decl *)
 
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
@@ -97,21 +40,29 @@ Search AssumptionsAndUpdates.
           ** [| relaxedValidation auf = false |]
           ** [| applyUpdates auf actualPreTxState = applyUpdates au actualPreTxState |]).
 
-  Set Nested Proofs Allowed.
-  Lemma observeState (state_addr:ptr) q t ae inds:
-    Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> AccountStateR q t ae inds).
-  Proof using. Admitted.
 
-  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
-  Hint Resolve observeStateF : br_opacity.
-  
-Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+  (**
 
-Lemma prf: verify[module] fix_spec.
-Abort.
+Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
+The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
+Monad executes transactions of a block with optimisic concurrency.
+`monad::State` defines the state of the whole blockchain during the (possibly speculative) execution of a transaction.
+As transactios commit, they update `monad::BlockState`.
+`monad::State::read_account` reads from `monad::BlockState` which may not have the changes yet from the last few transactions.
 
-  (*
+The Gallina model type for `model::State` is `AssumptionsAndUpdates`.
+The field C++ `original_` records the accounts that have been read during the execution.
+In original_ in, monad::AccountState,  the validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance (e.g. CALL) for the speculative execution to not be invalidated by previous concurrent transactions.
+In `monad::State`, relaxed_validation is false if the execution is not speculative and all previous transactions are known to have finished, in which case, the underlying BlockState is guaranted to have the preTx state, and not be lagging bahind.
+
+I am now proving the spec of monad::State::fix_account_mismatch(...).
+This function is executed at the end of the speculative execution of a transaction, after waiting for the previous transaction to commit.
+This function is called by monad::BlockState::can_merge, which checks whether the speculative assumptions made are valid for the actual pre-tx state, now that the previous transaction has committed. If monad::BlockState::can_merge returns, true monad::BlockState::merge is called to merge the updates in `monad::State` to `monad::BlockState`.
+
+It is executed only if the assumed value of an account is different from the actual value of an account after the previous tx commits. If so, it tries to see if the mismatch is only in balance or nonce and `validate_exact_balance_` is false  indicates that the speculations of the transaction are valid as long as balance >= min_balance.
+
+The function calls many other functions. To do the proof in Coq, I need the spec of those functions. Your task is to write the specs of those functions:
+
 "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name
 
 
@@ -191,6 +142,232 @@ Abort.
 
 
 "std::optional<monad::Account>::operator bool() const"%cpp_name
+
+
+
+To write specs, you need to know the Rep predicates of the class the method belongs to, and the Rep predicates for the types of the arguments.
+Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
+- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
+- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
+- u256t for `uint256_t` (alias for `intx::uint<256>`)
+- addressR is the Rep predicate for Address (alias for `evmc::address`)
+- AccountR is the Rep predicate for monad::Account
+- AccountSubstateR is the Rep predicate for monad::AccountSubState
+- AccountStateR is the Rep predicate for monad::AccountState
+- StateR for monad::AccountState.
+- BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
+
+
++++ FILES
+../../fmai/prompts/sep.md
+../../fmai/prompts/specs.md
+
++++ QUERIES
+
+Print evm.account_state.
+Print block.block_account.
+Print IncarnationR.
+Print addressR.
+Print bytes32R.
+Print u256R.
+Print AssumptionExactness.
+Print AccountStateR.
+Print AccountSubstateR.
+Print AccountR.
+Print StateR.
+Print AssumptionsAndUpdates.
+CppDefnOf monad::BlockState::fix_account_mismatch.
+CppDefnOf monad::BlockState::can_merge.
+Print can_merge.
+CppDefnOf monad::BlockState::merge.
+Print merge.
+   *)
+ Set Printing FullyQualifiedNames.
+(*======== Free function: is_dead ===========================================*)
+cpp.spec "monad::is_dead(const std::optional<monad::Account>&)" as is_dead_spec with (
+  \arg{optp:ptr} "opt" (Vref optp)
+  \pre{(opt_model: option monad.EVMOpSem.block.block_account)
+       (idx: monad.proofs.exec_specs.Indices)}
+    optp |-> monad.proofs.libspecs.optionR
+             "monad::Account"
+             (fun ba' => AccountR 1 ba' idx)
+             1
+             opt_model
+  \post{(b:bool)} [Vbool b]
+    [| b = true <-> opt_model = None |]
+).
+
+(*======== Iterator inequality: operator!=<0b> ==============================*)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,4096ul>::iter_t<0b>&) const"
+  as iter_neq_spec with (fun (this:ptr) =>
+    \pre this |-> (* TOFIXLATER: Rep for segmented_vector::iter_t<0b> *) emp
+    \arg{other} "other" (Vptr other)
+    \pre other |-> (* TOFIXLATER: same Rep *) emp
+    \post{(b:bool)} [Vbool b] emp
+  ).
+
+(*======== detail::table::end() =============================================*)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address,monad::VersionStack<monad::AccountState>,ankerl::unordered_dense::v4_1_0::hash<evmc::address,void>,std::equal_to<evmc::address>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,ankerl::unordered_dense::v4_1_0::bucket_type::standard,1b>::end()"
+  as table_end_spec with (fun (this:ptr) =>
+    \pre this |-> structR
+       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+       1$m
+    \post{(r:ptr)} [Vptr r] emp
+  ).
+
+(*======== AccountState::min_balance() const ================================*)
+cpp.spec "monad::AccountState::min_balance() const" as min_balance_spec with (fun (this:ptr) =>
+  \prepost{(orig:monad.EVMOpSem.block.block_account)
+           (asm:monad.proofs.exec_specs.AssumptionExactness)
+           (idx:monad.proofs.exec_specs.Indices)}
+    this |-> AccountStateR 1 orig asm idx
+  \post{(r:ptr)} [Vptr r] emp
+).
+
+(*======== VersionStack<AccountState>::recent() =============================*)
+cpp.spec "monad::VersionStack<monad::AccountState>::recent()" as vs_recent_spec with (fun (this:ptr) =>
+  \pre this |-> (* TOFIXLATER: Rep for VersionStack<AccountState> *) emp
+  \post{(r:ptr)} [Vptr r] emp
+).
+
+(*======== State::relaxed_validation() const ================================*)
+cpp.spec "monad::State::relaxed_validation() const" as relaxed_validation_spec with (fun (this:ptr) =>
+  \prepost{(au:monad.proofs.exec_specs.AssumptionsAndUpdates)}
+    this |-> monad.proofs.exec_specs.StateR au
+  \post{(b:bool)} [Vbool b] emp
+).
+
+(*======== VersionStack<AccountState>::size() const =========================*)
+cpp.spec "monad::VersionStack<monad::AccountState>::size() const" as vs_size_spec with (fun (this:ptr) =>
+  \pre this |-> (* TOFIXLATER: Rep for VersionStack<AccountState> *) emp
+  \post{(n:Z)} [Vint n] emp
+).
+
+(*======== AccountState::validate_exact_balance() const =====================*)
+cpp.spec "monad::AccountState::validate_exact_balance() const" as validate_exact_balance_spec with (fun (this:ptr) =>
+  \prepost{(orig:monad.EVMOpSem.block.block_account)
+           (asm:monad.proofs.exec_specs.AssumptionExactness)
+           (idx:monad.proofs.exec_specs.Indices)}
+    this |-> AccountStateR 1 orig asm idx
+  \post{(b:bool)} [Vbool b] emp
+).
+
+(*======== AccountState::validate_exact_nonce() const =======================*)
+cpp.spec "monad::AccountState::validate_exact_nonce() const" as validate_exact_nonce_spec with (fun (this:ptr) =>
+  \prepost{(orig:monad.EVMOpSem.block.block_account)
+           (asm:monad.proofs.exec_specs.AssumptionExactness)
+           (idx:monad.proofs.exec_specs.Indices)}
+    this |-> AccountStateR 1 orig asm idx
+  \post{(b:bool)} [Vbool b] emp
+).
+
+(*======== detail::table::find(const address&) ==============================*)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address,monad::VersionStack<monad::AccountState>,ankerl::unordered_dense::v4_1_0::hash<evmc::address,void>,std::equal_to<evmc::address>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,ankerl::unordered_dense::v4_1_0::bucket_type::standard,1b>::find(const evmc::address&)"
+  as table_find_spec with (fun (this:ptr) =>
+    \pre this |-> structR
+       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+       1$m
+    \arg{addrp} "key" (Vptr addrp)
+    \pre{(key_model: monad.proofs.evmopsem.evm.address)}
+      addrp |-> addressR 1 key_model
+    \post{(r:ptr)} [Vptr r] emp
+  ).
+
+(*======== Incarnation copy‐ctor ============================================*)
+cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)" as incarnation_copy_spec with (fun (this:ptr) =>
+  \arg{otherp:ptr} "o" (Vptr otherp)
+  \pre{(idx:monad.proofs.exec_specs.Indices)}
+    otherp |-> IncarnationR 1 idx
+  \post this |-> IncarnationR 1 idx
+).
+
+(*======== intx::uint<256u> destructor =====================================*)
+cpp.spec "intx::uint<256u>::~uint()" as u256_dtor_spec with (fun (this:ptr) =>
+  \pre{(n:Corelib.Numbers.BinNums.N)} this |-> u256R 1 n
+  \post emp
+).
+
+(*======== iterator destructor =============================================*)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,4096ul>::iter_t<0b>::~iter_t()"
+  as iter_dtor_spec with (fun (this:ptr) =>
+    \pre this |-> (* same as iter *) emp
+    \post emp
+  ).
+
+(*======== iterator operator->() const =====================================*)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>,std::allocator<std::pair<evmc::address,monad::VersionStack<monad::AccountState>>>,4096ul>::iter_t<0b>::operator->() const"
+  as iter_op_arrow_spec with (fun (this:ptr) =>
+    \pre this |-> (* iter *) emp
+    \post{(r:ptr)} [Vptr r] emp
+  ).
+
+(*======== intx::uint<256u> operator= ========================================*)
+cpp.spec "intx::uint<256u>::operator=(const intx::uint<256u>&)" as u256_op_eq_spec with (fun (this:ptr) =>
+  \arg{otherp:ptr} "o" (Vptr otherp)
+  \pre{(n m: Corelib.Numbers.BinNums.N)}
+    this |-> u256R 1 n ** otherp |-> u256R 1 m
+  \post this |-> u256R 1 m
+).
+
+(*======== intx::uint<256u> operator+= ======================================*)
+cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_op_add_assign_spec with (fun (this:ptr) =>
+  \arg{otherp:ptr} "o" (Vptr otherp)
+  \pre{(n m: Corelib.Numbers.BinNums.N)}
+    this |-> u256R 1 n ** otherp |-> u256R 1 m
+  \post emp (* TOFIXLATER: this |-> u256R 1 (n+m mod 2^256) *)
+).
+
+(*======== intx::uint<256u> operator-= ======================================*)
+cpp.spec "intx::uint<256u>::operator-=(const intx::uint<256u>&)" as u256_op_sub_assign_spec with (fun (this:ptr) =>
+  \arg{otherp:ptr} "o" (Vptr otherp)
+  \pre{(n m: Corelib.Numbers.BinNums.N)}
+    this |-> u256R 1 n ** otherp |-> u256R 1 m
+  \post this |-> u256R 1 (n-m mod 2^256)
+).
+
+(*======== free intx::operator- on uint<256> =================================*)
+cpp.spec "intx::operator-(const intx::uint<256u>&,const intx::uint<256u>&)" as u256_op_sub_spec with (
+  \arg{a1p} "a" (Vptr a1p)
+  \arg{a2p} "b" (Vptr a2p)
+  \pre{(n1 n2:Corelib.Numbers.BinNums.N)}
+    a1p |-> u256R 1 n1 ** a2p |-> u256R 1 n2
+  \post{(r:ptr)} [Vptr r] r |-> u256R 1 (n1 - n2)
+).
+
+(*======== free comparison operators on uint<256> ==========================*)
+cpp.spec "intx::operator==(const intx::uint<256u>&,const intx::uint<256u>&)" as u256_op_eqval_spec with (
+  \arg{a1p} "a" (Vptr a1p)
+  \arg{a2p} "b" (Vptr a2p)
+  \pre{(n1 n2:Corelib.Numbers.BinNums.N)}
+    a1p |-> u256R 1 n1 ** a2p |-> u256R 1 n2
+  \post{(b:bool)} [Vbool b] [| b = true <-> n1 = n2 |]
+).
+
+
+
+
+  
+  Set Nested Proofs Allowed.
+
+  Lemma observeState (state_addr:ptr) q t ae inds:
+    Observe (reference_to "monad::AccountState" state_addr)
+            (state_addr |-> AccountStateR q t ae inds).
+  Proof using. Admitted.
+
+  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
+  Hint Resolve observeStateF : br_opacity.
+  
+Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+
+Lemma prf: verify[module] fix_spec.
+Abort.
+
+  (*
 - : unit = ()
 
    *)

@@ -355,12 +355,12 @@ It parses the slice with `libxml-parse-html-region` and extracts every
          (let ((end (point)))
            (proof-assert-until-point)
            (wait-for-coq)
+           (setq coq-programmer--pending-error-region
+                 (cons (copy-marker beg) (copy-marker end)))
            (let* ((new-axioms (coq-prog--axioms-since log-start)))
              (cond
               ;; ---------- compile error ----------
               ((eq proof-shell-last-output-kind 'error)
-               (setq coq-programmer--pending-error-region
-                     (cons (copy-marker beg) (copy-marker end)))
                (concat "Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART.\n\n"
                        proof-shell-last-output
                        "\n\nRemember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.\n "))
@@ -368,15 +368,12 @@ It parses the slice with `libxml-parse-html-region` and extracts every
               ;; ---------- compiles but has Admitted / TOFIXLATER ----------
               ((or (consp new-axioms)
                    (string-match-p "TOFIXLATER" body))
-               (setq coq-programmer--pending-error-region
-                     (cons (copy-marker beg) (copy-marker end)))
                (setq coq-programmer--last-working-with-holes gpt-text)
                (concat coq-programmer--admit-prompt
                        (coq-prog-search-queries-for-axioms new-axioms)))
 
               ;; ---------- perfect success ----------
               (t
-               (setq coq-programmer--last-working-with-holes nil)
                "__SUCCESS__"))))))          ;;  <-- marker for main loop
 
       ;; =================================================  Coq query

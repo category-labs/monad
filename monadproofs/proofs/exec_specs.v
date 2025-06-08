@@ -375,9 +375,64 @@ Section with_Sigma.
       indices: Indices
     }.
 
-  (* not supposed to be shared, so no fraction *)
-  Definition StateR (s: AssumptionsAndUpdates): Rep :=
-    structR "monad::State" 1.
+Definition MapOriginalR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                  monad.proofs.evmopsem.evm.address
+                  (monad.proofs.evmopsem.evm.account_state
+                   * AssumptionExactness))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::AccountState, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::AccountState>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 3) Rep for monad::State::current_ (table<address,VersionStack<AccountState>>) **)
+Definition MapCurrentR
+           (q: stdpp.numbers.Qp)
+           (m: stdpp.gmap.gmap
+                  monad.proofs.evmopsem.evm.address
+                  (list monad.proofs.evmopsem.evm.account_state))
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** 4) Rep for monad::State::logs_ (VersionStack<vector<Receipt::Log>>) **)
+Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
+  structR
+    "monad::VersionStack<std::vector<monad::Receipt::Log, std::allocator<monad::Receipt::Log>>>"
+    (cQp.mut q).
+
+(** 5) Rep for monad::State::code_ (table<bytes32,shared_ptr<CodeAnalysis>>) **)
+Definition CodeMapR
+           (q: stdpp.numbers.Qp)
+           (cm: stdpp.gmap.gmap Corelib.Numbers.BinNums.N (* bytes32 as N *)
+                             (list N)) 
+  : Rep :=
+  structR
+    "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
+    (cQp.mut q).
+
+(** Helper to extract the newly‐deployed code map from the State model **)
+Definition computeCodeMap
+           (s : AssumptionsAndUpdates)
+  : stdpp.gmap.gmap Corelib.Numbers.BinNums.N (list N) :=
+  ∅.  (* TOFIXLATER: fold over s.newStates and extract code from each created account *)
+
+  Definition IncarnationR (q:Qp) (i: Indices): Rep. Proof. Admitted.
+
+(** Now lay out StateR.  We *no longer* re‐open the section here. **)
+Definition StateR (s: AssumptionsAndUpdates) : Rep :=
+   _field "monad::State::block_state_" |-> ptrR<"monad::BlockState"> 1$m (blockStatePtr s) ∗
+   _field "monad::State::incarnation_" |-> IncarnationR 1$m%cQp (indices s) ∗
+   _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
+   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s) ∗
+   _field "monad::State::logs_" |-> LogsR 1$m%cQp ∗ (* TOFIX: add a model arg to LogsR *)
+   _field "monad::State::code_" |-> CodeMapR 1$m%cQp (computeCodeMap s) ∗
+   _field "monad::State::version_" |-> uintR 1$m 0 ∗
+   _field "monad::State::relaxed_validation_" |-> boolR 1$m (relaxedValidation s) ∗
+   structR "monad::State" 1$m.  
+  
 
   Definition nullifyBalNonce (e: evm.account_state) : evm.account_state. Proof. Admitted.
   (*    := {[ e with evm.account_balance := 0, evm.account_nonce:=0 ]}. *)
@@ -527,7 +582,6 @@ Section with_Sigma.
              else satisfiesAssumptions assumptionsAndUpdates preTxState /\ postCond preTxState                                                                                    
              |].
 
-  Definition IncarnationR (q:Qp) (i: Indices): Rep. Proof. Admitted.
 
   cpp.spec "monad::BlockState::can_merge(monad::State&) const"
     as can_merge with ( fun (this:ptr) =>

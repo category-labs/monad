@@ -592,43 +592,59 @@ Set to nil for no limit."
    nil file))
 
 
+;;;###autoload
 (defun coq-programmer-loop ()
   "Autonomous GPT-4o ⇄ Coq session.
 
-Logs go to <file>.v.md next to the current .v file.
+A markdown transcript is kept next to the current .v file
+(\"<file>.v.md\").  The GPT call-budget starts from
+`coq-programmer-max-llm-calls` (if numeric) and is reset to
+CURRENT-CALLS + `coq-programmer-feedback-extension` whenever the user
+supplies feedback after a successful compile.
 
-The call-budget starts from `coq-programmer-max-llm-calls` (if numeric)
-and *every time the user supplies feedback after a successful compile*
-the budget is reset to CURRENT-CALLS + `coq-programmer-feedback-extension`."
+Session ends when:
+  • the user presses RET at a feedback prompt
+  • GPT returns an empty string
+  • C-g is pressed inside Emacs."
   (interactive)
-  (ensure-cpp-lsp-session)               ;; fail fast if no clangd session
+  (ensure-cpp-lsp-session)            ; hard-fail if no clangd session
 
   (let* ((coq-file   (buffer-file-name proof-script-buffer))
          (comm-file  (concat coq-file ".md"))
          (counts     (coq-programmer--initial-counts comm-file))
-         (user-count    (car counts))
-         (assist-count  (cdr counts))
+         (user-count     (car counts))
+         (assist-count   (cdr counts))
          (llm-calls 0)
-         ;; mutable budget that we may extend
+         ;; mutable call-budget
          (max-calls (and (numberp coq-programmer-max-llm-calls)
                          coq-programmer-max-llm-calls)))
 
-    ;; start a fresh markdown log
+    ;; start a fresh transcript
     (with-temp-file comm-file)
     (setq gpt-4o-conversation nil)
 
     (cl-labels
-        ;; ------ tiny logger helper ----------------------------------
+        ;; ------------------------------------------------------------
         ((log (role msg)
+              ;; increment counters + write one entry
               (pcase role
                 ("User"      (setq user-count   (1+ user-count)))
                 ("Assistant" (setq assist-count (1+ assist-count))))
               (coq-programmer--log-to-file
                comm-file role
                (if (string= role "User") user-count assist-count)
-               msg)))
+               msg))
 
-      ;; ------ 1 · user's initial prompt to GPT ----------------------
+         (handle-feedback (fb)
+           "Log FB, extend budget, call GPT, log reply — returns GPT reply."
+           (log "User" fb)
+           (setq llm-calls (1+ llm-calls))
+           (setq max-calls (+ llm-calls coq-programmer-feedback-extension))
+           (let ((reply (gpt-4o--send fb)))
+             (log "Assistant" reply)
+             reply)))
+
+      ;; -------- 1 · initial prompt ---------------------------------
       (let* ((first     (coq-programmer-first-prompt))
              (assistant (progn
                           (log "User" first)
@@ -636,63 +652,51 @@ the budget is reset to CURRENT-CALLS + `coq-programmer-feedback-extension`."
                           (gpt-4o--send first))))
         (log "Assistant" assistant)
 
-        ;; ------ 2 · main interaction loop ---------------------------
+        ;; -------- 2 · main loop ------------------------------------
         (let ((quit nil))
           (while (not quit)
-            (let ((skip nil))          ; allows us to restart loop early
+            (let (skip)               ; flag to continue outer while
 
-              ;; ---- budget guard (interactive) ----------------------
+              ;; ---- budget guard (interactive) ---------------------
               (when (and max-calls (>= llm-calls max-calls))
                 (let ((fb (coq-programmer--read-feedback)))
                   (if (string-empty-p fb)
-                      ;; user hit RET  →  optionally re-insert fallback and quit
+                      ;; user finished → optionally reinsert fallback, quit
                       (progn
                         (with-current-buffer proof-script-buffer
                           (when coq-programmer--last-working-with-holes
                             (gpt-handle-coq-output
                              coq-programmer--last-working-with-holes)))
                         (log "System"
-                             (format "LLM call budget (%d) exhausted.  Stopping session."
+                             (format "LLM call budget (%d) exhausted.  Stopping."
                                      max-calls))
-                        (setq quit t)
-                        (setq skip t))
-                    ;; user gave feedback  →  extend budget & continue
-                    (log "User" fb)
-                    (setq llm-calls (1+ llm-calls))
-                    (setq max-calls (+ llm-calls
-                                       coq-programmer-feedback-extension))
-                    (setq assistant (gpt-4o--send fb))
-                    (log "Assistant" assistant)
-                    (setq skip t))))     ; skip rest of loop iteration
+                        (setq quit t))
+                    ;; user provided feedback → extend budget & continue
+                    (setq assistant (handle-feedback fb))
+                    (setq skip t))))
 
-              ;; ---- normal processing if not skipped ---------------
+              ;; skip remainder of this iteration if we already handled feedback
               (unless (or quit skip)
+                ;; ---- normal GPT → Coq round -----------------------
                 (let* ((next (with-current-buffer proof-script-buffer
                                (gpt-handle-coq-output assistant))))
                   (cond
-                   ;; ===== success → ask feedback ====================
+                   ;; ===== success → prompt for feedback =============
                    ((string= next "__SUCCESS__")
                     (let ((fb (coq-programmer--read-feedback)))
                       (if (string-empty-p fb)
                           (setq quit t)
-                        (log "User" fb)
-                        (setq llm-calls (1+ llm-calls))
-                        (setq max-calls (+ llm-calls
-                                           coq-programmer-feedback-extension))
-                        (setq assistant (gpt-4o--send fb))
-                        (log "Assistant" assistant))))
+                        (setq assistant (handle-feedback fb)))))
 
-                   ;; ===== GPT produced nothing → end ================
+                   ;; ===== GPT signalled end =========================
                    ((string-empty-p next)
                     (setq quit t))
 
-                   ;; ===== ordinary continue =========================
+                   ;; ===== ordinary iteration ========================
                    (t
-                    (log "User" next)
-                    (setq llm-calls (1+ llm-calls))
-                    (setq assistant (gpt-4o--send next))
-                    (log "Assistant" assistant)))))))))))
+                    (setq assistant (handle-feedback next)))))))))))))
 
+  
 
 (defun print-coq-programmer-first-prompt ()
   (interactive)

@@ -8,6 +8,7 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
+Require Import monad.proofs.execproofs.exec_transaction.
 Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
@@ -39,7 +40,6 @@ Section with_Sigma.
           ** origp |-> AccountStateR 1 exactFixeeAssumption (ae &: _min_balance .= None) inds
           ** [| relaxedValidation auf = false |]
           ** [| applyUpdates auf actualPreTxState = applyUpdates au actualPreTxState |]).
-
 
   (**
 

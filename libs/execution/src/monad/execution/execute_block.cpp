@@ -113,6 +113,34 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+std::vector<std::optional<Address>> recover_senders(
+    std::vector<Transaction> const &transactions,
+    fiber::PriorityPool &priority_pool)
+{
+    std::vector<std::optional<Address>> senders{transactions.size()};
+
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[transactions.size()]};
+
+    for (unsigned i = 0; i < transactions.size(); ++i) {
+        priority_pool.submit(
+            i,
+            [i = i,
+             promises = promises,
+             &sender = senders[i],
+             &transaction = transactions[i]] {
+                sender = recover_sender(transaction);
+                promises[i].set_value();
+            });
+    }
+
+    for (unsigned i = 0; i < transactions.size(); ++i) {
+        promises[i].get_future().wait();
+    }
+
+    return senders;
+}
+
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, Block &block, BlockState &block_state,
@@ -136,34 +164,14 @@ Result<std::vector<ExecutionResult>> execute_block(
         }
     }
 
-    std::shared_ptr<std::optional<Address>[]> const senders{
-        new std::optional<Address>[block.transactions.size()]};
+    auto const senders = recover_senders(block.transactions, priority_pool);
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
-        new boost::fibers::promise<void>[block.transactions.size()]};
-
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        priority_pool.submit(
-            i,
-            [i = i,
-             senders = senders,
-             promises = promises,
-             &transaction = block.transactions[i]] {
-                senders[i] = recover_sender(transaction);
-                promises[i].set_value();
-            });
-    }
-
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        promises[i].get_future().wait();
-    }
+        new boost::fibers::promise<void>[block.transactions.size() + 1]};
+    promises[0].set_value();
 
     std::shared_ptr<std::optional<Result<ExecutionResult>>[]> const results{
         new std::optional<Result<ExecutionResult>>[block.transactions.size()]};
-
-    promises.reset(
-        new boost::fibers::promise<void>[block.transactions.size() + 1]);
-    promises[0].set_value();
 
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(

@@ -192,28 +192,130 @@ CppDefnOf monad::BlockState::merge.
 Print merge.
    *)
  Set Printing FullyQualifiedNames.
-Require Import monad.proofs.misc.
-Require Import monad.proofs.libspecs.
-Require Import monad.proofs.evmopsem.
-Import linearity.
-Require Import bluerock.auto.invariants.
-Require Import bluerock.auto.cpp.proof.
-Require Import bluerock.auto.cpp.tactics4.
-Require Import monad.asts.block_state_cpp.
-Require Import monad.proofs.exec_specs.
-Require Import monad.proofs.execproofs.exec_transaction.
-Disable Notation atomic_name'.
-Require Import Lens.Elpi.Elpi.
-#[local] Open Scope lens_scope.
+(* Rep predicate for VersionStack<monad::AccountState> *)
+Definition VersionStackR (q: cQp.t) (ls: list monad.EVMOpSem.evm.account_state) : Rep :=
+  bluerock.lang.cpp.logic.heap_pred.aggregate.structR
+    "monad::VersionStack<monad::AccountState>" q.
 
-Section with_Sigma.
-  Context `{Sigma:cpp_logic} {CU: genv}.
-  Context {MODd : ext.module ⊧ CU}.
-  Let TU := ext.module.  (* bring the translation_unit into local scope *)
+(* Model predicates for is_empty and is_dead *)
 
-  #[only(lens)] derive AssumptionExactness. (* TODO: move to decl *)
+Definition is_empty_model (oas: option monad.EVMOpSem.block.block_account) : bool :=
+  match oas with
+  | None => true
+  | Some ba =>
+      let ch := monad.proofs.exec_specs.code_hash_of_program
+                  (monad.EVMOpSem.block.block_account_code ba) in
+      let zn := monad.proofs.exec_specs.w256_to_Z
+                  (monad.EVMOpSem.block.block_account_nonce ba) in
+      let bn := monad.proofs.exec_specs.w256_to_N
+                  (monad.EVMOpSem.block.block_account_balance ba) in
+      (N.eqb ch 0%N)
+      && (Z.eqb zn 0)
+      && (N.eqb bn 0%N)
+  end.
 
-  (* -------------------------------------------------------------------- *)
+Definition is_dead_model (oas: option monad.EVMOpSem.block.block_account) : bool :=
+  negb (bool_decide (option.is_Some oas)) || is_empty_model oas.
+
+(* Basic getter specs for AccountState and State *)
+
+cpp.spec "monad::AccountState::min_balance() const"
+  as accountstate_min_balance_spec
+  with (fun this:ptr =>
+    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
+    \post[Vptr (this ,, _field "monad::AccountState::min_balance_")]
+          this |-> AccountStateR 1 orig_state asm idx).
+
+cpp.spec "monad::AccountState::validate_exact_balance() const"
+  as accountstate_validate_exact_balance_spec
+  with (fun this:ptr =>
+    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
+    \post[Vbool (~~ bool_decide (option.is_Some (min_balance asm)))]
+          this |-> AccountStateR 1 orig_state asm idx).
+
+cpp.spec "monad::AccountState::validate_exact_nonce() const"
+  as accountstate_validate_exact_nonce_spec
+  with (fun this:ptr =>
+    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
+    \post[Vbool (nonce_exact asm)]
+          this |-> AccountStateR 1 orig_state asm idx).
+
+cpp.spec "monad::State::relaxed_validation() const"
+  as state_relaxed_validation_spec
+  with (fun this:ptr =>
+    \pre{au} this |-> StateR au
+    \post[Vbool (relaxedValidation au)]
+          this |-> StateR au).
+
+(* Specs for the free functions is_empty and is_dead *)
+
+cpp.spec "monad::is_empty(const monad::Account&)" as is_empty_spec with (
+  \arg{accountp: ptr} "account" (Vref accountp)
+  \pre{(oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      accountp |-> monad.proofs.libspecs.optionR
+                   "monad::Account"
+                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
+  \post[Vbool (is_empty_model oas)]
+      accountp |-> monad.proofs.libspecs.optionR
+                   "monad::Account"
+                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
+).
+
+cpp.spec "monad::is_dead(const std::optional<monad::Account>&)" as is_dead_spec with (
+  \arg{accountp: ptr} "account" (Vref accountp)
+  \pre{(oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      accountp |-> monad.proofs.libspecs.optionR
+                   "monad::Account"
+                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
+  \post[Vbool (is_dead_model oas)]
+      accountp |-> monad.proofs.libspecs.optionR
+                   "monad::Account"
+                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
+).
+
+(* Spec of VersionStack::size(), a method, so we use fun this:ptr => … *)
+
+cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
+  as versionstack_size_spec
+  with (fun this:ptr =>
+    \pre{(ls: list monad.EVMOpSem.evm.account_state) (q:Qp)}
+        this |-> VersionStackR (cQp.mut q) ls
+    \post[Vint (Z.of_nat (length ls))]
+        this |-> VersionStackR (cQp.mut q) ls
+  ).
+
+(* The rest of the helper methods and operators left as TODO *)
+(* We still need specs for:
+     - VersionStack<…>::recent() / recent() const
+     - various container-iterator operators (end, operator!=, operator->) and find()
+     - intx::uint<256u> operators (operator=, operator+=, operator-=, operator-, operator==, operator<, operator>, operator>=)
+     - evmc::operator!=(bytes32,bytes32)
+     - monad::operator==(Incarnation,Incarnation)
+     - std::optional<…>::operator-> and operator bool()
+   TOFIXLATER *)
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  
+
+  
   (* monad::BlockState::fix_account_mismatch(...)                        *)
   (* -------------------------------------------------------------------- *)
   cpp.spec

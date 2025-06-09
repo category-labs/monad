@@ -564,6 +564,15 @@ Opaque VectorR.
     Definition observeResult r t := @observe_fwd _ _ _ (resultObserve r t).
     Hint Resolve observeResult : br_opacity.
 
+    (*======== free comparison operators on uint<256> ==========================*)
+cpp.spec "intx::operator==(const intx::uint<256u>&,const intx::uint<256u>&)" as u256_op_eqval_spec with (
+  \arg{a1p} "a" (Vptr a1p)
+  \arg{a2p} "b" (Vptr a2p)
+  \pre{(n1 n2:Corelib.Numbers.BinNums.N)}
+    a1p |-> u256R 1 n1 ** a2p |-> u256R 1 n2
+  \post{(b:bool)} [Vbool b] [| b = true <-> n1 = n2 |]
+).
+
 Ltac slautot rw := go; tryif progress(try (ego; eagerUnifyU; go; fail); try (apply False_rect; try contradiction; try congruence; try nia; fail); rw; try (erewrite take_S_r;[| eauto;fail]))
   then slautot rw  else idtac.
 

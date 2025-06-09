@@ -44,154 +44,6 @@ Section with_Sigma.
 
 
 
-  (**
-
-Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
-The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
-Monad executes transactions of a block with optimisic concurrency.
-`monad::State` defines the state of the whole blockchain during the (possibly speculative) execution of a transaction.
-As transactios commit, they update `monad::BlockState`.
-`monad::State::read_account` reads from `monad::BlockState` which may not have the changes yet from the last few transactions.
-
-The Gallina model type for `model::State` is `AssumptionsAndUpdates`.
-The field C++ `original_` records the accounts that have been read during the execution.
-In original_ in, monad::AccountState,  the validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance (e.g. CALL) for the speculative execution to not be invalidated by previous concurrent transactions.
-In `monad::State`, relaxed_validation is false if the execution is not speculative and all previous transactions are known to have finished, in which case, the underlying BlockState is guaranted to have the preTx state, and not be lagging bahind.
-
-I am now proving the spec of monad::State::fix_account_mismatch(...).
-This function is executed at the end of the speculative execution of a transaction, after waiting for the previous transaction to commit.
-This function is called by monad::BlockState::can_merge, which checks whether the speculative assumptions made are valid for the actual pre-tx state, now that the previous transaction has committed. If monad::BlockState::can_merge returns, true monad::BlockState::merge is called to merge the updates in `monad::State` to `monad::BlockState`.
-
-It is executed only if the assumed value of an account is different from the actual value of an account after the previous tx commits. If so, it tries to see if the mismatch is only in balance or nonce and `validate_exact_balance_` is false  indicates that the speculations of the transaction are valid as long as balance >= min_balance.
-
-The function calls many other functions. To do the proof in Coq, I need the spec of those functions. Your task is to write the specs of those functions:
-
-"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name
-
-
-"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"%cpp_name
-
-
-"monad::AccountState::min_balance() const"%cpp_name
-
-
-"monad::VersionStack<monad::AccountState>::recent()"%cpp_name
-
-
-"monad::State::relaxed_validation() const"%cpp_name
-
-
-"monad::VersionStack<monad::AccountState>::size() const"%cpp_name
-
-
-"monad::AccountState::validate_exact_balance() const"%cpp_name
-
-
-"monad::AccountState::validate_exact_nonce() const"%cpp_name
-
-
-"monad::is_dead(const std::optional<monad::Account>&)"%cpp_name
-
-
-"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"%cpp_name
-
-
-"monad::Incarnation::Incarnation(const monad::Incarnation&)"%cpp_name
-
-
-"intx::uint<256u>::~uint()"%cpp_name
-
-
-"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"%cpp_name
-
-
-"std::optional<monad::Account>::operator->()"%cpp_name
-
-
-"std::optional<monad::Account>::operator->() const"%cpp_name
-
-
-"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"%cpp_name
-
-
-"intx::uint<256u>::operator=(const intx::uint<256u>&)"%cpp_name
-
-
-"intx::uint<256u>::operator+=(const intx::uint<256u>&)"%cpp_name
-
-
-"intx::uint<256u>::operator-=(const intx::uint<256u>&)"%cpp_name
-
-
-"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
-
-
-"intx::operator==(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
-
-
-"intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
-
-
-"intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
-
-
-"intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)"%cpp_name
-
-
-"evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)"%cpp_name
-
-
-"monad::operator==(monad::Incarnation, monad::Incarnation)"%cpp_name
-
-
-"std::optional<monad::Account>::operator bool() const"%cpp_name
-
-Do not write all specs at once. Write only a few and fix all errors and then get to the others. Keep a (* TOFIXLATER *) comment somewhere in your answer so that the chatloop comes back to you to give you a chance to fix dummy definitions
-
-
-
-To write specs, you need to know the Rep predicates of the class the method belongs to, and the Rep predicates for the types of the arguments.
-Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
-- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
-- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
-- u256t for `uint256_t` (alias for `intx::uint<256>`)
-- addressR is the Rep predicate for Address (alias for `evmc::address`)
-- AccountR is the Rep predicate for monad::Account
-- AccountSubstateR is the Rep predicate for monad::AccountSubState
-- AccountStateR is the Rep predicate for monad::AccountState
-- StateR for monad::AccountState.
-- BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
-
-
-Unfortunately, there is no way to search for the Rep predicate for a class. Assume
-the above list (in addition to the content in previous sections) is exhaustive.
-
-
-+++ FILES
-../../fmai/prompts/sep.md
-../../fmai/prompts/specs.md
-
-+++ QUERIES
-
-Print evm.account_state.
-Print block.block_account.
-Print IncarnationR.
-Print addressR.
-Print bytes32R.
-Print u256R.
-Print AssumptionExactness.
-Print AccountStateR.
-Print AccountSubstateR.
-Print AccountR.
-Print StateR.
-Print AssumptionsAndUpdates.
-CppDefnOf monad::BlockState::fix_account_mismatch.
-CppDefnOf monad::BlockState::can_merge.
-Print can_merge.
-CppDefnOf monad::BlockState::merge.
-Print merge.
-   *)
- Set Printing FullyQualifiedNames.
 (* Rep predicate for VersionStack<monad::AccountState> *)
 Definition VersionStackR (q: cQp.t) (ls: list monad.EVMOpSem.evm.account_state) : Rep :=
   bluerock.lang.cpp.logic.heap_pred.aggregate.structR
@@ -284,21 +136,153 @@ cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
         this |-> VersionStackR (cQp.mut q) ls
   ).
 
-(* The rest of the helper methods and operators left as TODO *)
-(* We still need specs for:
-     - VersionStack<…>::recent() / recent() const
-     - various container-iterator operators (end, operator!=, operator->) and find()
-     - intx::uint<256u> operators (operator=, operator+=, operator-=, operator-, operator==, operator<, operator>, operator>=)
-     - evmc::operator!=(bytes32,bytes32)
-     - monad::operator==(Incarnation,Incarnation)
-     - std::optional<…>::operator-> and operator bool()
-   TOFIXLATER *)
+
+(* 1. U256 addition assignment: intx::uint<256u>::operator+=(const intx::uint<256u>&) *)
+cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_add_assign_spec with ( fun (this:ptr) =>
+  \arg{yp: ptr} "y" (Vref yp)
+  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+  \post[Vref this]
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv + yv) (2 ^ 256))%N
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+).
+
+(* 2. U256 subtraction assignment: intx::uint<256u>::operator-=(const intx::uint<256u>&) *)
+cpp.spec "intx::uint<256u>::operator-=(const intx::uint<256u>&)" as u256_sub_assign_spec with (fun (this:ptr) =>
+  \arg{yp: ptr} "y" (Vref yp)
+  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+  \post[Vref this]
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv - yv) (2 ^ 256))%N
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+).
+
+(* 3. Bytes32 inequality: evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&) *)
+cpp.spec "evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)" as bytes32_neq_spec with(
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \prepost{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+  \post[Vbool (negb (N.eqb av bv))]
+      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+).
+
+  #[global] Instance dec (i1 i2: Indices): Decision (i1=i2) := ltac:(solve_decision).
+
+(* 4. Incarnation equality: monad::operator==(monad::Incarnation, monad::Incarnation) *)
+cpp.spec "monad::operator==(monad::Incarnation, monad::Incarnation)" as incarnation_eq_spec with (
+  \arg{i1p: ptr} "i1" (Vref i1p)
+  \arg{i2p: ptr} "i2" (Vref i2p)
+  \prepost{(q1 q2: Qp) (idx1 idx2: monad.proofs.exec_specs.Indices)}
+      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
+    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+  \post[Vbool (bool_decide (idx1 = idx2))]
+      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
+    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+).
+
+(* 5. std::optional<Account>::operator bool() const *)
+cpp.spec "std::optional<monad::Account>::operator bool() const" as optional_bool_spec with ( fun (this:ptr) =>
+  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+  \post[Vbool (bool_decide (stdpp.option.is_Some oas))]
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+).
+
+
+  (**
+
+Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
+The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
+Monad executes transactions of a block with optimisic concurrency.
+`monad::State` defines the state of the whole blockchain during the (possibly speculative) execution of a transaction.
+As transactios commit, they update `monad::BlockState`.
+`monad::State::read_account` reads from `monad::BlockState` which may not have the changes yet from the last few transactions.
+
+The Gallina model type for `model::State` is `AssumptionsAndUpdates`.
+The field C++ `original_` records the accounts that have been read during the execution.
+In original_ in, monad::AccountState,  the validate_exact_balance_ field denotes whethere the transaction has done some action (e.g. BALANCE opcode) that requires the pre-tx balance to be an exact value instead of just being >= min_balance (e.g. CALL) for the speculative execution to not be invalidated by previous concurrent transactions.
+In `monad::State`, relaxed_validation is false if the execution is not speculative and all previous transactions are known to have finished, in which case, the underlying BlockState is guaranted to have the preTx state, and not be lagging bahind.
+
+I am now proving the spec of monad::State::fix_account_mismatch(...).
+This function is executed at the end of the speculative execution of a transaction, after waiting for the previous transaction to commit.
+This function is called by monad::BlockState::can_merge, which checks whether the speculative assumptions made are valid for the actual pre-tx state, now that the previous transaction has committed. If monad::BlockState::can_merge returns, true monad::BlockState::merge is called to merge the updates in `monad::State` to `monad::BlockState`.
+
+It is executed only if the assumed value of an account is different from the actual value of an account after the previous tx commits. If so, it tries to see if the mismatch is only in balance or nonce and `validate_exact_balance_` is false  indicates that the speculations of the transaction are valid as long as balance >= min_balance.
+
+The function calls many other functions. To do the proof in Coq, I need the spec of those functions. Your task is to write the specs of those functions:
 
 
 
+"intx::uint<256u>::operator=(const intx::uint<256u>&)"
+
+"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
+
+"intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)"
+
+"intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)"
+
+"intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)"
+
+"monad::VersionStack<monad::AccountState>::recent()"
+
+"std::optional<monad::Account>::operator->()"
+
+"std::optional<monad::Account>::operator->() const"
+
+Do not write all specs at once. Write only a few and fix all errors and then get to the others. Keep a (* TOFIXLATER *) comment somewhere in your answer so that the chatloop comes back to you to give you a chance to fix dummy definitions
 
 
 
+To write specs, you need to know the Rep predicates of the class the method belongs to, and the Rep predicates for the types of the arguments.
+Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
+- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
+- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
+- u256t for `uint256_t` (alias for `intx::uint<256>`)
+- addressR is the Rep predicate for Address (alias for `evmc::address`)
+- AccountR is the Rep predicate for monad::Account
+- AccountSubstateR is the Rep predicate for monad::AccountSubState
+- AccountStateR is the Rep predicate for monad::AccountState
+- StateR for monad::AccountState.
+- BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
+
+
+Unfortunately, there is no way to search for the Rep predicate for a class. Assume
+the above list (in addition to the content in previous sections and in the current file) is exhaustive.
+
+
++++ FILES
+../../fmai/prompts/sep.md
+../../fmai/prompts/specs.md
+
++++ QUERIES
+
+Print evm.account_state.
+Print block.block_account.
+Print IncarnationR.
+Print addressR.
+Print bytes32R.
+Print u256R.
+Print AssumptionExactness.
+Print AccountStateR.
+Print AccountSubstateR.
+Print AccountR.
+Print StateR.
+Print AssumptionsAndUpdates.
+CppDefnOf monad::BlockState::fix_account_mismatch.
+CppDefnOf monad::BlockState::can_merge.
+Print can_merge.
+CppDefnOf monad::BlockState::merge.
+Print merge.
+   *)
 
 
 

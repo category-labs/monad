@@ -593,6 +593,7 @@ Set to nil for no limit."
    nil file))
 
 
+;;;###autoload
 (defun coq-programmer-loop ()
   "Autonomous GPT-4o ⇄ Coq session with interactive budget extension."
   (interactive)
@@ -604,15 +605,14 @@ Set to nil for no limit."
          (user-count     (car counts))
          (assist-count   (cdr counts))
          (llm-calls 0)
-         ;; mutable ceiling
          (max-calls (and (numberp coq-programmer-max-llm-calls)
                          coq-programmer-max-llm-calls)))
 
-    (with-temp-file comm-file)         ; fresh transcript
+    (with-temp-file comm-file)        ; fresh transcript
     (setq gpt-4o-conversation nil)
 
     (cl-labels
-        ;; ---------- small helpers -----------------------------------
+        ;; ------------------------------------------------------------
         ((log (role msg)
               (pcase role
                 ("User"      (setq user-count   (1+ user-count)))
@@ -622,62 +622,67 @@ Set to nil for no limit."
                (if (string= role "User") user-count assist-count)
                msg))
 
-         ;; Send one turn from USER->GPT, don't touch budget
-         (send-to-gpt (txt)
+         (send-turn (txt)
+           "Send TXT to GPT, log both sides, bump llm-calls."
            (log "User" txt)
            (setq llm-calls (1+ llm-calls))
            (let ((ans (gpt-4o--send txt)))
              (log "Assistant" ans)
              ans))
 
-         ;; Same as above *but* extend budget afterwards
          (feedback-turn (txt)
-           (let ((ans (send-to-gpt txt)))
+           "Like `send-turn', then extend budget."
+           (let ((ans (send-turn txt)))
              (setq max-calls (+ llm-calls
                                 coq-programmer-feedback-extension))
              ans)))
 
-      ;; 1 · first prompt
+      ;; 1 · initial prompt
       (let* ((first     (coq-programmer-first-prompt))
-             (assistant (send-to-gpt first)))
+             (assistant (send-turn first)))
 
-        ;; 2 · conversation loop
+        ;; 2 · main loop
         (let ((quit nil))
           (while (not quit)
-            ;; ---- budget check -------------------------------------
-            (when (and max-calls (>= llm-calls max-calls))
-              (let ((fb (coq-programmer--read-feedback)))
-                (if (string-empty-p fb)
-                    (progn
-                      (with-current-buffer proof-script-buffer
-                        (when coq-programmer--last-working-with-holes
-                          (gpt-handle-coq-output
-                           coq-programmer--last-working-with-holes)))
-                      (log "System"
-                           (format "LLM call budget (%d) exhausted.  Stopping."
-                                   max-calls))
-                      (setq quit t))
-                  (setq assistant (feedback-turn fb)))
-                (cl-loop-finish)))     ; restart while-loop immediately
+            (let ((skip nil))   ; flag to emulate “continue”
 
-            ;; ---- normal round ------------------------------------
-            (let ((next (with-current-buffer proof-script-buffer
-                          (gpt-handle-coq-output assistant))))
-              (cond
-               ;; success → ask feedback
-               ((string= next "__SUCCESS__")
+              ;; ---- budget guard -----------------------------------
+              (when (and max-calls (>= llm-calls max-calls))
                 (let ((fb (coq-programmer--read-feedback)))
                   (if (string-empty-p fb)
-                      (setq quit t)
-                    (setq assistant (feedback-turn fb)))))
+                      ;; user quit
+                      (progn
+                        (with-current-buffer proof-script-buffer
+                          (when coq-programmer--last-working-with-holes
+                            (gpt-handle-coq-output
+                             coq-programmer--last-working-with-holes)))
+                        (log "System"
+                             (format "LLM call budget (%d) exhausted.  Stopping."
+                                     max-calls))
+                        (setq quit t))
+                    ;; user gave feedback
+                    (setq assistant (feedback-turn fb))
+                    (setq skip t))))
 
-               ;; GPT ended conversation
-               ((string-empty-p next)
-                (setq quit t))
+              ;; skip rest if we just handled feedback
+              (unless (or quit skip)
+                (let* ((next (with-current-buffer proof-script-buffer
+                               (gpt-handle-coq-output assistant))))
+                  (cond
+                   ;; ===== success → ask feedback ====================
+                   ((string= next "__SUCCESS__")
+                    (let ((fb (coq-programmer--read-feedback)))
+                      (if (string-empty-p fb)
+                          (setq quit t)
+                        (setq assistant (feedback-turn fb)))))
 
-               ;; continue normally
-               (t
-                (setq assistant (send-to-gpt next)))))))))))
+                   ;; ===== GPT ended ================================
+                   ((string-empty-p next)
+                    (setq quit t))
+
+                   ;; ===== ordinary continue ========================
+                   (t
+                    (setq assistant (send-turn next)))))))))))))
 
   
 

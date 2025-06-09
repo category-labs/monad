@@ -5811,3 +5811,74 @@ cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
    TOFIXLATER *)
 ```
 
+## User 31
+
+great. please write the rest of the specs too. you can ignore the iterator-related specs for now. in the specs that you already wrote, I notice some minor issues: use q:cQp.t ownership instead of (cQp.mut 1) for data that is only read: that is a stronger spec. use \prepost if the same conjucnt is both in the precondition and postcondition (this is just a stylistic issue, the spec is equivalent)
+
+## Assistant 31
+
+```gallina
+(* Additional specs beyond the ones already given *)
+
+(* 1. U256 addition assignment: intx::uint<256u>::operator+=(const intx::uint<256u>&) *)
+cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_add_assign_spec with (
+  \arg{yp: ptr} "y" (Vref yp)
+  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+  \post[Vref this]
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv + yv) (2 ^ 256))%N
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+).
+
+(* 2. U256 subtraction assignment: intx::uint<256u>::operator-=(const intx::uint<256u>&) *)
+cpp.spec "intx::uint<256u>::operator-=(const intx::uint<256u>&)" as u256_sub_assign_spec with (
+  \arg{yp: ptr} "y" (Vref yp)
+  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+  \post[Vref this]
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv - yv) (2 ^ 256))%N
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+).
+
+(* 3. Bytes32 inequality: evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&) *)
+cpp.spec "evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)" as bytes32_neq_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \prepost{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+  \post[Vbool (negb (N.eqb av bv))]
+      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+).
+
+(* 4. Incarnation equality: monad::operator==(monad::Incarnation, monad::Incarnation) *)
+cpp.spec "monad::operator==(monad::Incarnation, monad::Incarnation)" as incarnation_eq_spec with (
+  \arg{i1p: ptr} "i1" (Vref i1p)
+  \arg{i2p: ptr} "i2" (Vref i2p)
+  \prepost{(q1 q2: Qp) (idx1 idx2: monad.proofs.exec_specs.Indices)}
+      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
+    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+  \post[Vbool (bool_decide (idx1 = idx2))]
+      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
+    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+).
+
+(* 5. std::optional<Account>::operator bool() const *)
+cpp.spec "std::optional<monad::Account>::operator bool() const" as optional_bool_spec with (
+  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+  \post[Vbool (bool_decide (stdpp.option.is_Some oas))]
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+).
+
+(* NOTE: iterator-related specs (iter_t::operator!=, operator->, end/find) and
+         VersionStack::recent() / recent() const are skipped for now. TOFIXLATER *)
+```
+

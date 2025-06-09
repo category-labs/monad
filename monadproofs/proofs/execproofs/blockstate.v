@@ -403,4 +403,16 @@ End with_Sigma.
 
 (*
 Class RepFor `{Σ : cpp_logic} {σ : genv} (ty : type) {RepType : Type} (R: RepType) : Prop := {}.
+
+
+
+
+## Assistant 6
+
+I need to discover any existing `Rep`‐predicates or spec‐stubs for these C++ iterator and table types. Let me search our exec_specs library for occurrences of “segmented” and “table” which might reveal how we represent those iterator and container types:
+
+```coqquery
+Search segmented in monad.proofs.exec_specs.
+Search table in monad.proofs.exec_specs.
+```
 *)

@@ -445,6 +445,9 @@ Definition bar : nat := 1+3.
 ```
 
 You can include multiple queries in a ```coqquery block: one in each line.
+THIS IS IMPORTANT. EVERY QUERY MUST BE IN EXACTLY ONE LINE.
+The elisp loop talking to you does not do any fancy parsing to split the coqquery code block in to queries: it just treats every line as a separate query.
+
 DO NOT emit any `Require Import/Export` commands in either types of blocks (coqquery or gallina). All the availble libraries have already been `Require`d, so they are availble, at least with fully qualified names. If needed, you can Import (but not `Require Import`) modules defining notations.
 
 Before the final ```gallina or ```coqquery block, explain why: explain your answer or why you need the information from the query AND why that information wasn't available in the queries you have issued so far.

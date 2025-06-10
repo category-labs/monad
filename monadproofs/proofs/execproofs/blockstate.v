@@ -316,7 +316,6 @@ The function calls many other functions. To do the proof in Coq, I need the spec
 
 "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"
 
-"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"
 
 Do not write all specs at once. Write only a few and fix all errors and then get to the others. Keep a (* TOFIXLATER *) comment somewhere in your answer so that the chatloop comes back to you to give you a chance to fix dummy definitions
 
@@ -363,26 +362,9 @@ CppDefnOf monad::BlockState::can_merge.
 Print can_merge.
 CppDefnOf monad::BlockState::merge.
 Print merge.
-   *)
- Set Printing FullyQualifiedNames.
-(* ------------------------------------------------------------------- *)
-(* Iterator methods (manual, not in AST)                              *)
-(* ------------------------------------------------------------------- *)
-Local Definition nm_iter_neq : bluerock.lang.cpp.syntax.core.name :=
-  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name.
-Local Definition nm_iter_dtor : bluerock.lang.cpp.syntax.core.name :=
-  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"%cpp_name.
-Local Definition ct_iter : bluerock.lang.cpp.syntax.core.name :=
-  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"%cpp_name.
-Local Definition arg_iter : bluerock.lang.cpp.syntax.core.type :=
-  "const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&"%cpp_type.
+ *)
 
-(* 13. iterator inequality *)
-Definition iter_neq_spec : mpred :=
-  specify {|
-    info_name := nm_iter_neq;
-    info_type := tMethod ct_iter QC "bool"%cpp_type [arg_iter]
-  |}
+  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const" as iter_neq_spec with
   (fun this: ptr =>
      \arg{otherp: ptr} "other" (Vref otherp)
      \prepost{(i1 i2: Corelib.Numbers.BinNums.N)}
@@ -392,12 +374,8 @@ Definition iter_neq_spec : mpred :=
        this  |-> mapIterR i1
      ** otherp |-> mapIterR i2).
 
-(* 16. iterator destructor *)
-Definition iter_dtor_spec : mpred :=
-  specify {|
-    info_name := nm_iter_dtor;
-    info_type := tMethod ct_iter QM "void"%cpp_type []
-  |}
+  (* 16. iterator destructor *)
+  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()" as iterd with
   (fun this: ptr =>
      \pre{(i: Corelib.Numbers.BinNums.N)} this |-> mapIterR i
      \post emp
@@ -437,21 +415,61 @@ cpp.spec
      ** [| Stdlib.Lists.List.nth_error l idx = Some (addr, st) |]
   ).
 
-
+cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
+  as incarnation_copy_spec with (fun this:ptr =>
+  \arg{otherp:ptr} "other" (Vref otherp)
+  \pre{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
+      otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
+    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR
+                 "monad::Incarnation" (cQp.mut 1)
+  \post[Vref this]
+      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx
+      ** otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx).
  
 
-Lemma prf: verify[module] fix_spec.
+
+(* 9. U256 greater-or-equal: intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&) *)
+cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_minus_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post{ret}[Vptr ret]
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+    ** ret |-> monad.proofs.exec_specs.u256R (cQp.mut qb) ((av -bv) `mod` (2 ^ 256))%N
+).
+
+
+(* TODO : delete: duplicate in exec_Transaction. generalize over 256 *)
+cpp.spec "intx::uint<256u>::~uint()" as uint256dtor with (λ this : ptr, \pre{w} this |-> u256R 1 w
+                        \post    emp).
+#[global] Instance : LearnEq2 u256R := ltac:(solve_learnable).
+
+  Lemma observeState (state_addr:ptr) q t ae inds:
+    Observe (reference_to "monad::AccountState" state_addr)
+            (state_addr |-> AccountStateR q t ae inds).
+  Proof using. Admitted.
+
+  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
+  Hint Resolve observeStateF : br_opacity.
+  
+Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+
+ Lemma prf: verify[module] fix_spec.
   Ltac2 Eval (missingSpecs constr:(module) preterm:(fix_spec)).
-
-
-
-
-"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"
-
+  Proof using.
+    verify_spec'.
+    slauto.
+    unfold AccountStateR.
+    slauto.
+    ego.
+    wp_if.
+    {
+      go.
+    
 Abort.
-
-
-
 
 
 
@@ -759,15 +777,6 @@ cpp.spec "intx::operator==(const intx::uint<256u>&,const intx::uint<256u>&)" as 
   
   Set Nested Proofs Allowed.
 
-  Lemma observeState (state_addr:ptr) q t ae inds:
-    Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> AccountStateR q t ae inds).
-  Proof using. Admitted.
-
-  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
-  Hint Resolve observeStateF : br_opacity.
-  
-Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
 
 Lemma prf: verify[module] fix_spec.
 Abort.

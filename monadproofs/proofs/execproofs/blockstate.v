@@ -198,6 +198,76 @@ cpp.spec "std::optional<monad::Account>::operator bool() const" as optional_bool
 ).
 
 
+
+ (* 6. U256 assignment: intx::uint<256u>::operator=(const intx::uint<256u>&) *)
+cpp.spec "intx::uint<256u>::operator=(const intx::uint<256u>&)" as u256_assign_spec with (fun (this:ptr) =>
+  \arg{yp: ptr} "y" (Vref yp)
+  \pre{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+  \post[Vref this]
+      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) yv
+    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+).
+
+(* 7. U256 less-than: intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&) *)
+cpp.spec "intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_lt_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post[Vbool (av <? bv)%N]
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+).
+
+(* 8. U256 greater-than: intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&) *)
+cpp.spec "intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_gt_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post[Vbool (bv <? av)%N]
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+).
+
+(* 9. U256 greater-or-equal: intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&) *)
+cpp.spec "intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_ge_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post[Vbool (bv <=? av)%N]
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+).
+
+
+(* 8. std::optional<Account>::operator->() non‐const *)
+cpp.spec "std::optional<monad::Account>::operator->()" as optional_arrow_spec with (fun (this:ptr) =>
+  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+  \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
+).
+
+(* 9. std::optional<Account>::operator->() const *)
+cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_const_spec with (fun (this:ptr) =>
+  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
+      this |-> monad.proofs.libspecs.optionR
+                "monad::Account"
+                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+  \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
+).
+
+
+
+
   (**
 
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
@@ -221,22 +291,11 @@ It is executed only if the assumed value of an account is different from the act
 The function calls many other functions. To do the proof in Coq, I need the spec of those functions. Your task is to write the specs of those functions:
 
 
-
-"intx::uint<256u>::operator=(const intx::uint<256u>&)"
-
-"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
-
-"intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)"
-
-"intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)"
-
-"intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)"
-
 "monad::VersionStack<monad::AccountState>::recent()"
 
-"std::optional<monad::Account>::operator->()"
+"monad::Incarnation::Incarnation(const monad::Incarnation&)"
 
-"std::optional<monad::Account>::operator->() const"
+"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
 
 Do not write all specs at once. Write only a few and fix all errors and then get to the others. Keep a (* TOFIXLATER *) comment somewhere in your answer so that the chatloop comes back to you to give you a chance to fix dummy definitions
 
@@ -283,10 +342,58 @@ Print can_merge.
 CppDefnOf monad::BlockState::merge.
 Print merge.
    *)
+ Set Printing FullyQualifiedNames.
+(* ------------------------------------------------------------------- *)
+(* 10. VersionStack<monad::AccountState>::recent()                      *)
+(* ------------------------------------------------------------------- *)
+
+Definition VersionStack_recent_offset : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset :=
+  _field "monad::VersionStack<monad::AccountState>::stack_".
+
+cpp.spec "monad::VersionStack<monad::AccountState>::recent()" as versionstack_recent_spec with (fun this:ptr =>
+  \pre{(ls: list monad.EVMOpSem.evm.account_state) (q:Qp)}
+     this |-> VersionStackR (cQp.mut q) ls
+  \post{ret:ptr} [Vref ret]
+     this |-> VersionStackR (cQp.mut q) ls
+   ** [| ret = this ,, VersionStack_recent_offset |]
+).
+
+(* ------------------------------------------------------------------- *)
+(* 11. Copy‐ctor: Incarnation::Incarnation(const Incarnation&)           *)
+(* ------------------------------------------------------------------- *)
+
+cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)" as incarnation_copy_spec with (fun this:ptr =>
+  \arg{otherp:ptr} "other" (Vref otherp)
+  \pre{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
+      otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
+    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR "monad::Incarnation" (cQp.mut 1)
+  \post[Vref this]
+      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx
+).
+
+(* ------------------------------------------------------------------- *)
+(* 12. Free subtraction: intx::operator-(uint256, uint256) by value      *)
+(* ------------------------------------------------------------------- *)
+
+cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_sub_value_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post{rp: ptr} [Vptr rp]
+      rp |-> monad.proofs.exec_specs.u256R (cQp.mut 1)
+             (N.modulo (av - bv) (2^256))%N
+    ** ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+).
 
 
 
-  
+Lemma prf: verify[module] fix_spec.
+  Ltac2 Eval (missingSpecs constr:(module) preterm:(fix_spec)).
+Abort.
+
 
 
 

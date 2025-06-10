@@ -5362,3 +5362,29 @@ cpp.spec
   ).
 ```
 
+## User 24
+
+great. find() and end() specs look good. why dont you use cpp.spec for the other specs instead of `Definition`?
+
+## Assistant 24
+
+`cpp.spec` works by looking up the function/method name in the generated `module : translation_unit`.  Those two `iter_t<0b>` methods live in a third‐party header that never got translated into your AST, so there is no `info_name` in `module` for them.  Consequently
+
+    cpp.spec "…iter_t<0b>::operator!=…" …
+
+would fail with “found no matching symbols.”  That is exactly why we had to fall back on `specify` (via a bare `Definition`) for the iterator‐methods.  In contrast, `detail::table::end()` and `table::find()` *are* in your `module`, so we can (and do) use `cpp.spec` for those.
+
+## User 25
+
+could not parse your response. please follow the formatting guidelines strictly
+
+## Assistant 25
+
+```gallina
+(* The iterator methods (iter_t<0b>::operator!= and ~iter_t) come from a third‐party header
+   that was never visited by cpp2v, so there is no entry for them in the `module` symbol table.
+   Consequently `cpp.spec "…iter_t<0b>::operator!=…" …` would fail with “found no matching symbols”.
+   Only functions/methods present in the AST (like detail::table::end and ::find) can use `cpp.spec`.
+   For the iterator methods we must fall back on manual `specify` definitions. *)
+```
+

@@ -222,6 +222,17 @@ cpp.spec "intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)" as 
     ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
 ).
 
+cpp.spec "intx::operator==(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_eq_spec with (
+  \arg{ap: ptr} "a" (Vref ap)
+  \arg{bp: ptr} "b" (Vref bp)
+  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+  \post[Vbool (bool_decide (av = bv)%N)]
+      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
+    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+).
+
 (* 8. U256 greater-than: intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&) *)
 cpp.spec "intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_gt_spec with (
   \arg{ap: ptr} "a" (Vref ap)
@@ -268,8 +279,15 @@ cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_c
 
 
 
-  (**
 
+(* Rep predicate for the iterator object *)
+ Definition mapIterR (i: N) : Rep :=
+  structR
+      "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>" 1. (* TODO: add ownership of fields *)
+
+
+
+(**
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
 The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
 Monad executes transactions of a block with optimisic concurrency.
@@ -290,12 +308,15 @@ It is executed only if the assumed value of an account is different from the act
 
 The function calls many other functions. To do the proof in Coq, I need the spec of those functions. Your task is to write the specs of those functions:
 
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"
 
-"monad::VersionStack<monad::AccountState>::recent()"
 
-"monad::Incarnation::Incarnation(const monad::Incarnation&)"
+"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"
 
-"intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
+
+"ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"
+
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"
 
 Do not write all specs at once. Write only a few and fix all errors and then get to the others. Keep a (* TOFIXLATER *) comment somewhere in your answer so that the chatloop comes back to you to give you a chance to fix dummy definitions
 
@@ -313,6 +334,7 @@ Below are some existing Rep predicates that you can use (in addition to the ones
 - StateR for monad::AccountState.
 - BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
 
+Use mapIterR, defined in this file above, as the Rep predicator for the iterator `iter_t`.
 
 Unfortunately, there is no way to search for the Rep predicate for a class. Assume
 the above list (in addition to the content in previous sections and in the current file) is exhaustive.
@@ -344,60 +366,89 @@ Print merge.
    *)
  Set Printing FullyQualifiedNames.
 (* ------------------------------------------------------------------- *)
-(* 10. VersionStack<monad::AccountState>::recent()                      *)
+(* Iterator methods (manual, not in AST)                              *)
+(* ------------------------------------------------------------------- *)
+Local Definition nm_iter_neq : bluerock.lang.cpp.syntax.core.name :=
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const"%cpp_name.
+Local Definition nm_iter_dtor : bluerock.lang.cpp.syntax.core.name :=
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()"%cpp_name.
+Local Definition ct_iter : bluerock.lang.cpp.syntax.core.name :=
+  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"%cpp_name.
+Local Definition arg_iter : bluerock.lang.cpp.syntax.core.type :=
+  "const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&"%cpp_type.
+
+(* 13. iterator inequality *)
+Definition iter_neq_spec : mpred :=
+  specify {|
+    info_name := nm_iter_neq;
+    info_type := tMethod ct_iter QC "bool"%cpp_type [arg_iter]
+  |}
+  (fun this: ptr =>
+     \arg{otherp: ptr} "other" (Vref otherp)
+     \prepost{(i1 i2: Corelib.Numbers.BinNums.N)}
+       this  |-> mapIterR i1
+     ** otherp |-> mapIterR i2
+     \post[Vbool (negb (i1 =? i2)%N)]
+       this  |-> mapIterR i1
+     ** otherp |-> mapIterR i2).
+
+(* 16. iterator destructor *)
+Definition iter_dtor_spec : mpred :=
+  specify {|
+    info_name := nm_iter_dtor;
+    info_type := tMethod ct_iter QM "void"%cpp_type []
+  |}
+  (fun this: ptr =>
+     \pre{(i: Corelib.Numbers.BinNums.N)} this |-> mapIterR i
+     \post emp
+  ).
+
+(* ------------------------------------------------------------------- *)
+(* Specs of State::current_.end() and find() using MapCurrentR        *)
+(* with index‐correctness assertions                                  *)
 (* ------------------------------------------------------------------- *)
 
-Definition VersionStack_recent_offset
-  : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset :=
-  _field "monad::VersionStack<monad::AccountState>::stack_".
+(* end(): index = length l *)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"
+  as current_end_spec
+  with (fun (this: ptr) =>
+    \pre{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (q: Qp)}
+      this |-> monad.proofs.exec_specs.MapCurrentR q l
+    \post{(ret:ptr) (i:nat)}
+      [Vptr ret] this |-> monad.proofs.exec_specs.MapCurrentR q l
+     ** ret |-> mapIterR (Stdlib.NArith.BinNat.N.of_nat i)
+     ** [| i = length l |]
+  ).
 
-cpp.spec "monad::VersionStack<monad::AccountState>::recent()"
-  as versionstack_recent_spec with (fun this:ptr =>
-  \pre{(ls: list monad.EVMOpSem.evm.account_state) (q:Qp)}
-     this |-> VersionStackR (cQp.mut q) ls
-  \post{ret:ptr} [Vref ret]
-     this |-> VersionStackR (cQp.mut q) ls
-   ** [| ret = this ,, VersionStack_recent_offset |]
-).
+(* find(key): index matches position of key in l *)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"
+  as current_find_spec
+  with (fun (this: ptr) =>
+    \arg{keyp: ptr} "key" (Vref keyp)
+    \pre{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (q: Qp) (addr: monad.proofs.evmopsem.evm.address)}
+      this |-> monad.proofs.exec_specs.MapCurrentR q l
+      ** keyp |-> monad.proofs.libspecs.addressR (cQp.mut q) addr
+    \post{(ret:ptr) (idx:nat) (st:list monad.proofs.evmopsem.evm.account_state)}
+      [Vptr ret] this |-> monad.proofs.exec_specs.MapCurrentR q l
+     ** keyp |-> monad.proofs.libspecs.addressR (cQp.mut q) addr
+     ** ret  |-> mapIterR (Stdlib.NArith.BinNat.N.of_nat idx)
+     ** [| Stdlib.Lists.List.nth_error l idx = Some (addr, st) |]
+  ).
 
-(* ------------------------------------------------------------------- *)
-(* 11. Copy‐ctor: Incarnation::Incarnation(const Incarnation&)           *)
-(* ------------------------------------------------------------------- *)
 
-cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
-  as incarnation_copy_spec with (fun this:ptr =>
-  \arg{otherp:ptr} "other" (Vref otherp)
-  \pre{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
-      otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
-    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR
-                 "monad::Incarnation" (cQp.mut 1)
-  \post[Vref this]
-      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx
-    ** otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
-).
-
-(* ------------------------------------------------------------------- *)
-(* 12. Free subtraction: intx::operator-(uint256, uint256) by value      *)
-(* ------------------------------------------------------------------- *)
-
-cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
-  as u256_sub_value_spec with (
-  \arg{ap: ptr} "a" (Vref ap)
-  \arg{bp: ptr} "b" (Vref bp)
-  \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
-  \post{rp: ptr} [Vptr rp]
-      rp |-> monad.proofs.exec_specs.u256R (cQp.mut 1)
-             (N.modulo (av - bv) (2^256))%N
-    ** ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
-).
+ 
 
 Lemma prf: verify[module] fix_spec.
   Ltac2 Eval (missingSpecs constr:(module) preterm:(fix_spec)).
-Abort.
 
+
+
+
+"ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"
+
+Abort.
 
 
 

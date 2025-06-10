@@ -377,10 +377,10 @@ Section with_Sigma.
 
 Definition MapOriginalR
            (q: stdpp.numbers.Qp)
-           (m: stdpp.gmap.gmap
-                  monad.proofs.evmopsem.evm.address
+           (m: list 
+                  (monad.proofs.evmopsem.evm.address *
                   (monad.proofs.evmopsem.evm.account_state
-                   * AssumptionExactness))
+                   * AssumptionExactness)))
   : Rep :=
   structR
     "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::AccountState, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::AccountState>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
@@ -389,9 +389,9 @@ Definition MapOriginalR
 (** 3) Rep for monad::State::current_ (table<address,VersionStack<AccountState>>) **)
 Definition MapCurrentR
            (q: stdpp.numbers.Qp)
-           (m: stdpp.gmap.gmap
-                  monad.proofs.evmopsem.evm.address
-                  (list monad.proofs.evmopsem.evm.account_state))
+           (m: list
+                  (monad.proofs.evmopsem.evm.address*
+                  (list monad.proofs.evmopsem.evm.account_state)))
   : Rep :=
   structR
     "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
@@ -425,8 +425,8 @@ Definition computeCodeMap
 Definition StateR (s: AssumptionsAndUpdates) : Rep :=
    _field "monad::State::block_state_" |-> ptrR<"monad::BlockState"> 1$m (blockStatePtr s) ∗
    _field "monad::State::incarnation_" |-> IncarnationR 1$m%cQp (indices s) ∗
-   _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
-   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s) ∗
+   _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (map_to_list (original s)) ∗
+   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (map_to_list (newStates s)) ∗
    _field "monad::State::logs_" |-> LogsR 1$m%cQp ∗ (* TOFIX: add a model arg to LogsR *)
    _field "monad::State::code_" |-> CodeMapR 1$m%cQp (computeCodeMap s) ∗
    _field "monad::State::version_" |-> uintR 1$m 0 ∗

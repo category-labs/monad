@@ -486,3 +486,34 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
             t.access_list[i].keys);
     }
 }
+
+TEST(Rlp_Transaction, IntTypeMismatchRegression)
+{
+    using intx::operator""_u256;
+    using namespace evmc::literals;
+
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+
+    // Use a 72 bit chain ID!
+    auto const bad_chain_id =
+        std::make_optional<uint256_t>(0xFFFFFFFFFFFFFFFFFF_u256);
+    Transaction const legacy_tx{
+        .sc = {.r = r, .s = s, .chain_id = bad_chain_id},
+        .nonce = 9,
+        .max_fee_per_gas = 20'000'000'000,
+        .gas_limit = 21'000,
+        .value = 0xde0b6b3a7640000_u256,
+        .to = to_addr};
+
+    auto const legacy_rlp_tx = encode_transaction(legacy_tx);
+    byte_string_view encoded_tx_view{legacy_rlp_tx};
+    auto const decoded_tx = decode_transaction(encoded_tx_view);
+
+    ASSERT_FALSE(decoded_tx.has_error());
+    EXPECT_EQ(decoded_tx.value(), legacy_tx);
+}

@@ -347,10 +347,12 @@ Print merge.
 (* 10. VersionStack<monad::AccountState>::recent()                      *)
 (* ------------------------------------------------------------------- *)
 
-Definition VersionStack_recent_offset : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset :=
+Definition VersionStack_recent_offset
+  : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset :=
   _field "monad::VersionStack<monad::AccountState>::stack_".
 
-cpp.spec "monad::VersionStack<monad::AccountState>::recent()" as versionstack_recent_spec with (fun this:ptr =>
+cpp.spec "monad::VersionStack<monad::AccountState>::recent()"
+  as versionstack_recent_spec with (fun this:ptr =>
   \pre{(ls: list monad.EVMOpSem.evm.account_state) (q:Qp)}
      this |-> VersionStackR (cQp.mut q) ls
   \post{ret:ptr} [Vref ret]
@@ -362,20 +364,24 @@ cpp.spec "monad::VersionStack<monad::AccountState>::recent()" as versionstack_re
 (* 11. Copy‐ctor: Incarnation::Incarnation(const Incarnation&)           *)
 (* ------------------------------------------------------------------- *)
 
-cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)" as incarnation_copy_spec with (fun this:ptr =>
+cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
+  as incarnation_copy_spec with (fun this:ptr =>
   \arg{otherp:ptr} "other" (Vref otherp)
   \pre{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
       otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
-    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR "monad::Incarnation" (cQp.mut 1)
+    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR
+                 "monad::Incarnation" (cQp.mut 1)
   \post[Vref this]
       this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx
+    ** otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
 ).
 
 (* ------------------------------------------------------------------- *)
 (* 12. Free subtraction: intx::operator-(uint256, uint256) by value      *)
 (* ------------------------------------------------------------------- *)
 
-cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_sub_value_spec with (
+cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)"
+  as u256_sub_value_spec with (
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
@@ -387,8 +393,6 @@ cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)" as 
     ** ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
     ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
 ).
-
-
 
 Lemma prf: verify[module] fix_spec.
   Ltac2 Eval (missingSpecs constr:(module) preterm:(fix_spec)).

@@ -3,6 +3,7 @@
 #include <monad/core/monad_block.hpp>
 #include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/execution/wal_reader.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
@@ -18,11 +19,11 @@
 
 using namespace monad;
 
-class WalReaderTestFixture : public ::testing::Test
+class WalReaderTestFixture : public test::ResourceOwningFixture
 {
 protected:
-    std::ofstream wal_os;
-    std::filesystem::path ledger_dir;
+    std::filesystem::path ledger_dir{create_temp_dir()};
+    std::ofstream wal_os{ledger_dir / "wal", std::ios::binary};
 
     bytes32_t write_dummy_block(uint64_t const round)
     {
@@ -58,24 +59,6 @@ protected:
         wal_os.write(reinterpret_cast<char const *>(&entry), sizeof(WalEntry));
         wal_os.flush();
         return header_bft_id;
-    }
-
-    void SetUp() override
-    {
-        char fixture_template[] = "monad_block_reader_fixture_XXXXXX";
-        char *temppath = mkdtemp(fixture_template);
-        MONAD_ASSERT(temppath != nullptr);
-        ledger_dir = temppath;
-
-        wal_os.open(ledger_dir / "wal", std::ios::binary);
-
-        MONAD_ASSERT(wal_os);
-    }
-
-    void TearDown() override
-    {
-        wal_os.close();
-        std::filesystem::remove_all(ledger_dir);
     }
 };
 

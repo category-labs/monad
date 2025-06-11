@@ -1,11 +1,11 @@
 #include "gtest/gtest.h"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <array>
 #include <cmath>
@@ -25,6 +25,10 @@
 namespace
 {
     using namespace MONAD_ASYNC_NAMESPACE;
+
+    struct StoragePoolFixture : public monad::test::ResourceOwningFixture
+    {
+    };
 
     inline void print_pool_statistics(storage_pool const &pool)
     {
@@ -257,35 +261,18 @@ namespace
         }
     }
 
-    TEST(StoragePool, device_interleaving)
+    TEST_F(StoragePoolFixture, device_interleaving)
     {
         std::array<std::vector<size_t>, 3> gaps;
         auto do_test = [&](bool enable_interleaving) {
             gaps[0].clear();
             gaps[1].clear();
             gaps[2].clear();
-            auto create_temp_file =
-                [](file_offset_t length) -> std::filesystem::path {
-                std::filesystem::path ret(
-                    working_temporary_directory() /
-                    "monad_storage_pool_test_XXXXXX");
-                int const fd = ::mkstemp((char *)ret.native().data());
-                MONAD_ASSERT(fd != -1);
-                MONAD_ASSERT(
-                    -1 != ::ftruncate(fd, static_cast<off_t>(length + 16384)));
-                ::close(fd);
-                return ret;
-            };
             static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
             std::filesystem::path devs[] = {
-                create_temp_file(22 * BLKSIZE),
-                create_temp_file(12 * BLKSIZE),
-                create_temp_file(7 * BLKSIZE)};
-            auto undevs = monad::make_scope_exit([&]() noexcept {
-                for (auto &p : devs) {
-                    std::filesystem::remove(p);
-                }
-            });
+                create_temp_file(22 * BLKSIZE + 16384),
+                create_temp_file(12 * BLKSIZE + 16384),
+                create_temp_file(7 * BLKSIZE + 16384)};
             storage_pool::creation_flags flags;
             flags.interleave_chunks_evenly = enable_interleaving;
             storage_pool pool(
@@ -375,30 +362,13 @@ namespace
         EXPECT_GE(stats.first, 8);
     }
 
-    TEST(StoragePool, config_hash_differs)
+    TEST_F(StoragePoolFixture, config_hash_differs)
     {
-        auto create_temp_file =
-            [](file_offset_t length) -> std::filesystem::path {
-            std::filesystem::path ret(
-                working_temporary_directory() /
-                "monad_storage_pool_test_XXXXXX");
-            int const fd = ::mkstemp((char *)ret.native().data());
-            MONAD_ASSERT(fd != -1);
-            MONAD_ASSERT(
-                -1 != ::ftruncate(fd, static_cast<off_t>(length + 16384)));
-            ::close(fd);
-            return ret;
-        };
         static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
         std::filesystem::path devs[] = {
-            create_temp_file(20 * BLKSIZE),
-            create_temp_file(10 * BLKSIZE),
-            create_temp_file(5 * BLKSIZE)};
-        auto undevs = monad::make_scope_exit([&]() noexcept {
-            for (auto &p : devs) {
-                std::filesystem::remove(p);
-            }
-        });
+            create_temp_file(20 * BLKSIZE + 16384),
+            create_temp_file(10 * BLKSIZE + 16384),
+            create_temp_file(5 * BLKSIZE + 16384)};
         {
             storage_pool const _{devs};
         }

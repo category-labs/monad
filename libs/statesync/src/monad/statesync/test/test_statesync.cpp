@@ -14,6 +14,7 @@
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
 #include <monad/statesync/statesync_version.h>
+#include <monad/test/resource_owning_fixture.hpp>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -44,25 +45,6 @@ struct monad_statesync_server_network
 namespace
 {
     GenesisState const GENESIS_STATE = EthereumMainnet{}.get_genesis_state();
-
-    std::filesystem::path tmp_dbname()
-    {
-        std::filesystem::path dbname(
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_statesync_test_XXXXXX");
-        int const fd = ::mkstemp((char *)dbname.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(
-            -1 !=
-            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-        ::close(fd);
-        char const *const path = dbname.c_str();
-        OnDiskMachine machine;
-        mpt::Db const db{
-            machine,
-            mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
-        return dbname;
-    }
 
     void statesync_send_request(
         monad_statesync_client *const client, monad_sync_request const rq)
@@ -120,7 +102,7 @@ namespace
         }
     }
 
-    struct StateSyncFixture : public ::testing::Test
+    struct StateSyncFixture : public monad::test::ResourceOwningFixture
     {
         std::filesystem::path cdbname;
         monad_statesync_client client;
@@ -136,9 +118,9 @@ namespace
         monad_statesync_server *server{};
 
         StateSyncFixture()
-            : cdbname{tmp_dbname()}
+            : cdbname{create_temp_db()}
             , cctx{nullptr}
-            , sdbname{tmp_dbname()}
+            , sdbname{create_temp_db()}
             , sdb{machine,
                   OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
             , stdb{sdb}
@@ -147,6 +129,16 @@ namespace
             , ro{io_ctx}
         {
             sctx.ro = &ro;
+        }
+
+        std::filesystem::path create_temp_db()
+        {
+            auto const path = create_temp_file(8ul * 1024 * 1024 * 1024);
+            OnDiskMachine machine;
+            mpt::Db const db{
+                machine,
+                mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+            return path;
         }
 
         void init()
@@ -182,8 +174,6 @@ namespace
         {
             monad_statesync_client_context_destroy(cctx);
             monad_statesync_server_destroy(server);
-            std::filesystem::remove(cdbname);
-            std::filesystem::remove(sdbname);
         }
     };
 }

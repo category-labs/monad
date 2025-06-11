@@ -9,16 +9,19 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 #include <test_resource_data.h>
 
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <stdlib.h>
-#include <unistd.h> // for ftruncate
-
-#include <filesystem>
 
 using namespace monad;
 using namespace monad::test;
+
+struct BlockHashBufferFixture : public ResourceOwningFixture
+{
+};
 
 TEST(BlockHashBuffer, simple_chain)
 {
@@ -169,20 +172,9 @@ TEST(BlockHashBuffer, propose_after_crash)
     }
 }
 
-TEST(BlockHashBufferTest, init_from_db)
+TEST_F(BlockHashBufferFixture, init_from_db)
 {
-    auto const path = [] {
-        std::filesystem::path dbname(
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_block_hash_buffer_test_XXXXXX");
-        int const fd = ::mkstemp((char *)dbname.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(
-            -1 !=
-            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-        ::close(fd);
-        return dbname;
-    }();
+    auto const path = create_temp_file(8ULL * 1024 * 1024 * 1024);
 
     OnDiskMachine machine;
     mpt::Db db{
@@ -206,6 +198,4 @@ TEST(BlockHashBufferTest, init_from_db)
     for (uint64_t i = 0; i < 256; ++i) {
         EXPECT_EQ(expected.get(i), actual.get(i));
     }
-
-    std::filesystem::remove(path);
 }

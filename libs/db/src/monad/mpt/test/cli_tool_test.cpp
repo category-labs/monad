@@ -4,7 +4,6 @@
 #include "../cli_tool_impl.hpp"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/io/buffers.hpp>
@@ -93,29 +92,9 @@ struct cli_tool_fixture
 {
     void run_test()
     {
-        char temppath1[] = "cli_tool_test_XXXXXX";
-        char dbpath2a[] = "cli_tool_test_XXXXXX";
-        char dbpath2b[] = "cli_tool_test_XXXXXX";
-        auto fd = mkstemp(temppath1);
-        if (-1 == fd) {
-            abort();
-        }
-        ::close(fd);
-        fd = mkstemp(dbpath2a);
-        if (-1 == fd) {
-            abort();
-        }
-        ::close(fd);
-        fd = mkstemp(dbpath2b);
-        if (-1 == fd) {
-            abort();
-        }
-        ::close(fd);
-        auto untempfile = monad::make_scope_exit([&]() noexcept {
-            unlink(temppath1);
-            unlink(dbpath2a);
-            unlink(dbpath2b);
-        });
+        std::filesystem::path const temppath1 = this->create_temp_file(0);
+        std::filesystem::path const dbpath2a = this->create_temp_file(0);
+        std::filesystem::path const dbpath2b = this->create_temp_file(0);
         auto const dbpath1 =
             this->state()->pool.devices().front().current_path().string();
         std::cout << "DB path: " << dbpath1 << std::endl;
@@ -124,7 +103,11 @@ struct cli_tool_fixture
             std::stringstream cout;
             std::stringstream cerr;
             std::string_view args[] = {
-                "monad_mpt", "--storage", dbpath1, "--archive", temppath1};
+                "monad_mpt",
+                "--storage",
+                dbpath1,
+                "--archive",
+                temppath1.c_str()};
             int const retcode = std::async(std::launch::async, [&] {
                                     return main_impl(cout, cerr, args);
                                 }).get();
@@ -136,7 +119,7 @@ struct cli_tool_fixture
         std::vector<std::filesystem::path> dbpath2;
         if (Config.interleave_multiple_sources) {
             if (-1 == truncate(
-                          dbpath2a,
+                          dbpath2a.c_str(),
                           (4 + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
@@ -144,26 +127,26 @@ struct cli_tool_fixture
                 abort();
             }
             if (-1 == truncate(
-                          dbpath2b,
+                          dbpath2b.c_str(),
                           (4 + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
                               24576)) {
                 abort();
             }
-            dbpath2.push_back(dbpath2a);
-            dbpath2.push_back(dbpath2b);
+            dbpath2.push_back(dbpath2a.c_str());
+            dbpath2.push_back(dbpath2b.c_str());
         }
         else {
             if (-1 ==
                 truncate(
-                    dbpath2a,
+                    dbpath2a.c_str(),
                     (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
                                                   MONAD_IO_BUFFERS_WRITE_SIZE +
                         24576)) {
                 abort();
             }
-            dbpath2.push_back(dbpath2a);
+            dbpath2.push_back(dbpath2a.c_str());
         }
         {
             std::cout << "restoring from file " << temppath1 << " to";
@@ -179,7 +162,7 @@ struct cli_tool_fixture
                 "23",
                 "--yes",
                 "--restore",
-                temppath1};
+                temppath1.c_str()};
             for (auto &i : dbpath2) {
                 args.push_back("--storage");
                 args.push_back(i.native());
@@ -231,36 +214,17 @@ struct cli_tool_fixture
             /* Also test archiving from a multiple source pool restoring into a
              single source pool, and see if the contents migrate properly.
              */
-            char temppath2[] = "cli_tool_test_XXXXXX";
-            char dbpath3[] = "cli_tool_test_XXXXXX";
-            auto fd = mkstemp(temppath2);
-            if (-1 == fd) {
-                abort();
-            }
-            ::close(fd);
-            fd = mkstemp(dbpath3);
-            if (-1 == fd) {
-                abort();
-            }
-            if (-1 ==
-                ftruncate(
-                    fd,
-                    (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                                  MONAD_IO_BUFFERS_WRITE_SIZE +
-                        24576)) {
-                abort();
-            }
-            ::close(fd);
-            auto untempfile2 = monad::make_scope_exit([&]() noexcept {
-                unlink(temppath2);
-                unlink(dbpath3);
-            });
+            std::filesystem::path const temppath2 = this->create_temp_file(0);
+            std::filesystem::path const dbpath3 = this->create_temp_file(
+                (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                              MONAD_IO_BUFFERS_WRITE_SIZE +
+                24576);
             {
                 std::cout << "archiving to file: " << temppath2 << std::endl;
                 std::stringstream cout;
                 std::stringstream cerr;
                 std::vector<std::string_view> args{
-                    "monad_mpt", "--archive", temppath2};
+                    "monad_mpt", "--archive", temppath2.c_str()};
                 for (auto &i : dbpath2) {
                     args.push_back("--storage");
                     args.push_back(i.native());
@@ -281,12 +245,12 @@ struct cli_tool_fixture
                 std::string_view args[] = {
                     "monad_mpt",
                     "--storage",
-                    dbpath3,
+                    dbpath3.c_str(),
                     "--chunk-capacity",
                     "23",
                     "--yes",
                     "--restore",
-                    temppath2};
+                    temppath2.c_str()};
                 int const retcode = std::async(std::launch::async, [&] {
                                         return main_impl(cout, cerr, args);
                                     }).get();

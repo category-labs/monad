@@ -10,6 +10,7 @@
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/rpc/eth_call.h>
+#include <monad/test/resource_owning_fixture.hpp>
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>
@@ -34,7 +35,7 @@ namespace
         return v;
     }
 
-    struct EthCallFixture : public ::testing::Test
+    struct EthCallFixture : public ResourceOwningFixture
     {
         std::filesystem::path dbname;
         OnDiskMachine machine;
@@ -42,28 +43,11 @@ namespace
         TrieDb tdb;
 
         EthCallFixture()
-            : dbname{[] {
-                std::filesystem::path dbname(
-                    MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                    "monad_eth_call_test1_XXXXXX");
-                int const fd = ::mkstemp((char *)dbname.native().data());
-                MONAD_ASSERT(fd != -1);
-                MONAD_ASSERT(
-                    -1 !=
-                    ::ftruncate(
-                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-                ::close(fd);
-                return dbname;
-            }()}
+            : dbname{create_temp_file(8ULL * 1024 * 1024 * 1024)}
             , db{machine,
                  mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dbname}}}
             , tdb{db}
         {
-        }
-
-        ~EthCallFixture()
-        {
-            std::filesystem::remove(dbname);
         }
     };
 

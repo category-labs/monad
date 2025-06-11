@@ -3,6 +3,7 @@
 #include "test_fixtures_base.hpp"
 
 #include <monad/async/test/test_fixture.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 
 namespace monad::test
 {
@@ -33,10 +34,10 @@ namespace monad::test
         FillDBWithChunksConfig Config,
         monad::mpt::lockable_or_void LockType = void>
     struct FillDBWithChunksGTest
-        : public FillDBWithChunks<Config, LockType, ::testing::Test>
+        : public FillDBWithChunks<Config, LockType, ResourceOwningFixture>
     {
         using FillDBWithChunks<
-            Config, LockType, ::testing::Test>::FillDBWithChunks;
+            Config, LockType, ResourceOwningFixture>::FillDBWithChunks;
     };
 
 }

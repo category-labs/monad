@@ -1,7 +1,6 @@
 #include "test_fixtures_base.hpp"
 
 #include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
 #include <monad/async/erased_connected_operation.hpp>
 #include <monad/async/storage_pool.hpp>
 #include <monad/async/util.hpp>
@@ -22,6 +21,7 @@
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
@@ -92,19 +92,7 @@ namespace
             OnDiskDbConfig{.fixed_history_length = DBTEST_HISTORY_LENGTH}};
     };
 
-    std::filesystem::path create_temp_file(long size_gb)
-    {
-        std::filesystem::path const filename{
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_db_test_XXXXXX"};
-        int const fd = ::mkstemp((char *)filename.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(-1 != ::ftruncate(fd, size_gb * 1024 * 1024 * 1024));
-        ::close(fd);
-        return filename;
-    }
-
-    struct OnDiskDbWithFileFixture : public ::testing::Test
+    struct OnDiskDbWithFileFixture : public ResourceOwningFixture
     {
         std::filesystem::path const dbname;
         StateMachineAlwaysMerkle machine;
@@ -112,7 +100,7 @@ namespace
         Db db;
 
         OnDiskDbWithFileFixture()
-            : dbname{create_temp_file(8)}
+            : dbname{create_temp_file(8ul * 1024 * 1024 * 1024)}
             , machine{StateMachineAlwaysMerkle{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
@@ -121,11 +109,6 @@ namespace
                   .fixed_history_length = DBTEST_HISTORY_LENGTH}}
             , db{machine, config}
         {
-        }
-
-        ~OnDiskDbWithFileFixture()
-        {
-            std::filesystem::remove(dbname);
         }
     };
 
@@ -227,6 +210,10 @@ namespace
              5678  6678
             */
         }
+    };
+
+    struct DbTestFixture : public ResourceOwningFixture
+    {
     };
 
     struct DummyTraverseMachine final : public TraverseMachine
@@ -860,9 +847,9 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
     EXPECT_EQ(res2.value(), k2);
 }
 
-TEST(DbTest, history_length_adjustment_never_under_min)
+TEST_F(DbTestFixture, history_length_adjustment_never_under_min)
 {
-    auto const dbname = create_temp_file(4);
+    auto const dbname = create_temp_file(4ul * 1024 * 1024 * 1024);
     StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig config{
         .compaction = true,
@@ -918,8 +905,6 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     // Db stops adjusting down history length at MIN_HISTORY_LENGTH
     EXPECT_GT(aux_reader.disk_usage(), disk_usage_before);
     EXPECT_EQ(db.get_history_length(), MIN_HISTORY_LENGTH);
-
-    remove(dbname);
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_concurrent)
@@ -1185,11 +1170,9 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
     }
 }
 
-TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
+TEST_F(DbTestFixture, out_of_order_upserts_to_nonexist_earlier_version)
 {
-    auto const dbname = create_temp_file(2); // 2Gb db
-    auto undb = monad::make_scope_exit(
-        [&]() noexcept { std::filesystem::remove(dbname); });
+    auto const dbname = create_temp_file(2ul * 1024 * 1024 * 1024);
     StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig config{
         .compaction = true,
@@ -1246,11 +1229,9 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     }
 }
 
-TEST(DbTest, out_of_order_upserts_with_compaction)
+TEST_F(DbTestFixture, out_of_order_upserts_with_compaction)
 {
-    auto const dbname = create_temp_file(3); // 3Gb db
-    auto undb = monad::make_scope_exit(
-        [&]() noexcept { std::filesystem::remove(dbname); });
+    auto const dbname = create_temp_file(3ul * 1024 * 1024 * 1024);
     StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig config{
         .compaction = true,
@@ -1719,11 +1700,9 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     EXPECT_EQ(bad_read.error(), DbError::key_not_found);
 }
 
-TEST(DbTest, auto_expire_large_set)
+TEST_F(DbTestFixture, auto_expire_large_set)
 {
-    auto const dbname = create_temp_file(8);
-    auto undb = monad::make_scope_exit(
-        [&]() noexcept { std::filesystem::remove(dbname); });
+    auto const dbname = create_temp_file(8ul * 1024 * 1024 * 1024);
     StateMachineAlways<
         EmptyCompute,
         StateMachineConfig{.expire = true, .cache_depth = 3}>
@@ -1783,11 +1762,9 @@ TEST(DbTest, auto_expire_large_set)
     }
 }
 
-TEST(DbTest, auto_expire)
+TEST_F(DbTestFixture, auto_expire)
 {
-    auto const dbname = create_temp_file(8);
-    auto undb = monad::make_scope_exit(
-        [&]() noexcept { std::filesystem::remove(dbname); });
+    auto const dbname = create_temp_file(8ul * 1024 * 1024 * 1024);
     StateMachineAlways<
         EmptyCompute,
         StateMachineConfig{.expire = true, .cache_depth = 3}>

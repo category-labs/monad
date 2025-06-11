@@ -38,8 +38,9 @@ function(add_async_test)
   add_executable(${ADD_TRIE_TEST_TARGET} ${ADD_TRIE_TEST_SOURCES})
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
-    ${ADD_TRIE_TEST_TARGET} PUBLIC monad_async GTest::gtest_main
-                                   ${ADD_TRIE_TEST_LINK_LIBRARIES})
+    ${ADD_TRIE_TEST_TARGET}
+    PUBLIC monad_async monad_unit_test_common GTest::gtest_main
+           ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}
     TEST_PREFIX ${PROJECT_NAME}/ TEST_FILTER ${ADD_TRIE_TEST_TEST_FILTER}

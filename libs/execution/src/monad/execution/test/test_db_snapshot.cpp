@@ -9,41 +9,23 @@
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-namespace
+struct DbBinarySnapshotFixture : public monad::test::ResourceOwningFixture
 {
-    std::filesystem::path tmp_dbname()
-    {
-        std::filesystem::path dbname(
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_db_snapshot_test_XXXXXX");
-        int const fd = ::mkstemp((char *)dbname.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(
-            -1 !=
-            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-        ::close(fd);
-        char const *const path = dbname.c_str();
-        monad::OnDiskMachine machine;
-        monad::mpt::Db const db{
-            machine,
-            monad::mpt::OnDiskDbConfig{
-                .append = false, .dbname_paths = {path}}};
-        return dbname;
-    }
-}
+};
 
-TEST(DbBinarySnapshot, Basic)
+TEST_F(DbBinarySnapshotFixture, Basic)
 {
     using namespace monad;
     using namespace monad::mpt;
 
-    auto const src_db = tmp_dbname();
+    auto const src_db = create_temp_file(8ULL * 1024 * 1024 * 1024);
 
     bytes32_t root;
     Code code_delta;
@@ -91,9 +73,13 @@ TEST(DbBinarySnapshot, Basic)
         root = tdb.state_root();
     }
 
-    auto const dest_db = tmp_dbname();
+    auto const dest_db = create_temp_file(8ULL * 1024 * 1024 * 1024);
+    OnDiskMachine machine;
+    mpt::Db const db{
+        machine,
+        mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dest_db}}};
     {
-        auto const root = std::filesystem::temp_directory_path() / "snapshot";
+        auto const root = create_temp_dir();
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 root.c_str(), 100);
@@ -111,8 +97,6 @@ TEST(DbBinarySnapshot, Basic)
         char const *dbname_paths_new[] = {dest_db.c_str()};
         monad_db_snapshot_load_filesystem(
             dbname_paths_new, 1, static_cast<unsigned>(-1), root.c_str(), 100);
-
-        std::filesystem::remove_all(root);
     }
 
     {
@@ -133,7 +117,4 @@ TEST(DbBinarySnapshot, Basic)
             EXPECT_EQ(from_db->executable_code(), analysis->executable_code());
         }
     }
-
-    std::filesystem::remove(src_db);
-    std::filesystem::remove(dest_db);
 }

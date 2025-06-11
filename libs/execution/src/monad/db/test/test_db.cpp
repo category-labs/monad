@@ -26,6 +26,7 @@
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state2/state_deltas.hpp>
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
@@ -89,7 +90,7 @@ namespace
         }
     };
 
-    struct InMemoryTrieDbFixture : public ::testing::Test
+    struct InMemoryTrieDbFixture : public ResourceOwningFixture
     {
         static constexpr bool on_disk = false;
 
@@ -97,7 +98,7 @@ namespace
         mpt::Db db{machine};
     };
 
-    struct OnDiskTrieDbFixture : public ::testing::Test
+    struct OnDiskTrieDbFixture : public ResourceOwningFixture
     {
         static constexpr bool on_disk = true;
 
@@ -191,6 +192,10 @@ namespace
     }
 }
 
+struct DBTestFixture : public ResourceOwningFixture
+{
+};
+
 template <typename TDB>
 struct DBTest : public TDB
 {
@@ -199,12 +204,9 @@ struct DBTest : public TDB
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
 
-TEST(DBTest, read_only)
+TEST_F(DBTestFixture, read_only)
 {
-    auto const name =
-        std::filesystem::temp_directory_path() /
-        (::testing::UnitTest::GetInstance()->current_test_info()->name() +
-         std::to_string(rand()));
+    auto const name = create_temp_file(8ULL * 1024 * 1024 * 1024);
     {
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
@@ -254,7 +256,6 @@ TEST(DBTest, read_only)
         ro.set_block_and_round(1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
     }
-    std::filesystem::remove(name);
 }
 
 TYPED_TEST(DBTest, read_storage)
@@ -666,9 +667,7 @@ TYPED_TEST(DBTest, to_json)
     // tests
     std::filesystem::path dbname{};
     if (this->on_disk) {
-        dbname = {
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_test_db_to_json"};
+        dbname = this->create_temp_file(8ULL * 1024 * 1024 * 1024);
     }
     auto db = [&] {
         if (this->on_disk) {
@@ -759,8 +758,6 @@ TYPED_TEST(DBTest, to_json)
         mpt::Db ro_db{io_ctx};
         TrieDb ro{ro_db};
         EXPECT_EQ(expected_payload, ro.to_json());
-
-        std::filesystem::remove(dbname);
     }
 }
 

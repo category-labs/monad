@@ -5,6 +5,7 @@
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <monad/test/resource_owning_fixture.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +29,7 @@ namespace
 template <
     size_t storage_pool_chunk_size = 1 << 28,
     size_t storage_pool_num_chunks = 64, bool use_anonoymous_inode = true>
-struct NodeWriterTestBase : public ::testing::Test
+struct NodeWriterTestBase : public monad::test::ResourceOwningFixture
 {
     static constexpr size_t chunk_size = storage_pool_chunk_size;
     static constexpr size_t num_chunks = storage_pool_num_chunks;
@@ -41,25 +42,17 @@ struct NodeWriterTestBase : public ::testing::Test
     UpdateAux<> aux;
 
     NodeWriterTestBase()
-        : pool{[] {
+        : pool{[this] {
             storage_pool::creation_flags flags;
             auto const bitpos = std::countr_zero(storage_pool_chunk_size);
             flags.chunk_capacity = bitpos;
             if constexpr (use_anonoymous_inode) {
                 return storage_pool(use_anonymous_inode_tag{}, flags);
             }
-            char temppath[] = "monad_test_fixture_XXXXXX";
-            int const fd = mkstemp(temppath);
-            if (-1 == fd) {
-                abort();
-            }
-            if (-1 == ftruncate(fd, (3 + num_chunks) * chunk_size + 24576)) {
-                abort();
-            }
-            ::close(fd);
-            std::filesystem::path temppath2(temppath);
+            std::filesystem::path const temppath =
+                create_temp_file((3 + num_chunks) * chunk_size + 24576);
             return MONAD_ASYNC_NAMESPACE::storage_pool(
-                {&temppath2, 1},
+                {&temppath, 1},
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
                 flags);
         }()}
@@ -71,16 +64,6 @@ struct NodeWriterTestBase : public ::testing::Test
         , io{pool, rwbuf}
         , aux{&io}
     {
-    }
-
-    ~NodeWriterTestBase()
-    {
-        for (auto &device : pool.devices()) {
-            auto const path = device.current_path();
-            if (std::filesystem::exists(path)) {
-                std::filesystem::remove(path);
-            }
-        }
     }
 
     void node_writer_append_dummy_bytes(

@@ -483,7 +483,11 @@ void TrieDb::set_block_and_round(
     }
     prefix_ = round_number.has_value() ? proposal_prefix(round_number.value())
                                        : finalized_nibbles;
-    MONAD_ASSERT(db_.find(prefix_, block_number).has_value());
+    MONAD_ASSERT_PRINTF(
+        db_.find(prefix_, block_number).has_value(),
+        "Fail to find block_number %lu, round number %lu on db",
+        block_number,
+        round_number.value_or(INVALID_ROUND_NUM));
     block_number_ = block_number;
     round_number_ = round_number;
 }

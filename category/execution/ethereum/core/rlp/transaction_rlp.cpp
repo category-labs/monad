@@ -58,6 +58,38 @@ byte_string encode_access_list(AccessList const &access_list)
     return encode_list2(result);
 }
 
+byte_string
+encode_authorization_entry_for_signing(AuthorizationEntry const &auth_entry)
+{
+    MONAD_ASSERT(auth_entry.sc.chain_id.has_value());
+
+    byte_string result{};
+    result += encode_unsigned(*auth_entry.sc.chain_id);
+    result += encode_address(auth_entry.address);
+    result += encode_unsigned(auth_entry.nonce);
+
+    auto const prefix = byte_string(1, static_cast<unsigned char>(0x05));
+    return prefix + encode_list2(result);
+}
+
+byte_string encode_authorization_list(AuthorizationList const &auth_list)
+{
+    byte_string result;
+
+    for (auto const &auth_entry : auth_list) {
+        MONAD_ASSERT(auth_entry.sc.chain_id.has_value());
+        result += encode_list2(
+            encode_unsigned(*auth_entry.sc.chain_id),
+            encode_address(auth_entry.address),
+            encode_unsigned(auth_entry.nonce),
+            encode_unsigned(auth_entry.sc.y_parity),
+            encode_unsigned(auth_entry.sc.r),
+            encode_unsigned(auth_entry.sc.s));
+    }
+
+    return encode_list2(result);
+}
+
 byte_string encode_legacy_base(Transaction const &txn)
 {
     byte_string encoding{};
@@ -80,7 +112,8 @@ byte_string encode_eip2718_base(Transaction const &txn)
     encoding += encode_unsigned(txn.nonce);
 
     if (txn.type == TransactionType::eip1559 ||
-        txn.type == TransactionType::eip4844) {
+        txn.type == TransactionType::eip4844 ||
+        txn.type == TransactionType::eip7702) {
         encoding += encode_unsigned(txn.max_priority_fee_per_gas);
     }
 
@@ -98,6 +131,10 @@ byte_string encode_eip2718_base(Transaction const &txn)
             blob_versioned_hashes += encode_bytes32(hash);
         }
         encoding += encode_list2(blob_versioned_hashes);
+    }
+
+    if (txn.type == TransactionType::eip7702) {
+        encoding += encode_authorization_list(txn.authorization_list);
     }
 
     return encoding;
@@ -201,6 +238,47 @@ Result<AccessList> decode_access_list(byte_string_view &enc)
     return access_list;
 }
 
+Result<AuthorizationEntry> decode_authorization_entry(byte_string_view &enc)
+{
+    AuthorizationEntry auth_entry;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    auth_entry.sc.chain_id = uint256_t{};
+    BOOST_OUTCOME_TRY(
+        *auth_entry.sc.chain_id, decode_unsigned<uint256_t>(payload));
+
+    BOOST_OUTCOME_TRY(auth_entry.address, decode_address(payload));
+    BOOST_OUTCOME_TRY(auth_entry.nonce, decode_unsigned<uint64_t>(payload));
+
+    BOOST_OUTCOME_TRY(
+        auth_entry.sc.y_parity, decode_unsigned<uint8_t>(payload));
+    BOOST_OUTCOME_TRY(auth_entry.sc.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(auth_entry.sc.s, decode_unsigned<uint256_t>(payload));
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return auth_entry;
+}
+
+Result<AuthorizationList> decode_authorization_list(byte_string_view &enc)
+{
+    AuthorizationList auth_list;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    auto const list_space = payload.size();
+    auth_list.reserve(list_space / sizeof(AuthorizationEntry));
+
+    while (payload.size() > 0) {
+        BOOST_OUTCOME_TRY(auto auth_entry, decode_authorization_entry(payload));
+        auth_list.emplace_back(std::move(auth_entry));
+    }
+    MONAD_ASSERT(payload.empty());
+
+    return auth_list;
+}
+
 Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
 {
     Transaction txn;
@@ -241,7 +319,8 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
 
     if (txn.type == TransactionType::eip1559 ||
-        txn.type == TransactionType::eip4844) {
+        txn.type == TransactionType::eip4844 ||
+        txn.type == TransactionType::eip7702) {
         BOOST_OUTCOME_TRY(
             txn.max_priority_fee_per_gas, decode_unsigned<uint256_t>(payload));
     }
@@ -264,6 +343,15 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
             BOOST_OUTCOME_TRY(auto const hash, decode_bytes32(hashes_payload));
             txn.blob_versioned_hashes.emplace_back(std::move(hash));
         }
+    }
+
+    if (txn.type == TransactionType::eip7702) {
+        if (!txn.to.has_value()) {
+            return DecodeError::InputTooShort;
+        }
+
+        BOOST_OUTCOME_TRY(
+            txn.authorization_list, decode_authorization_list(payload));
     }
 
     BOOST_OUTCOME_TRY(txn.sc.y_parity, decode_unsigned<uint8_t>(payload));

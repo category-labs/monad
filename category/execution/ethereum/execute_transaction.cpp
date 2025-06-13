@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/delegation.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -92,6 +93,99 @@ ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
 {
 }
 
+// EIP-7702
+template <evmc_revision rev>
+uint64_t
+process_authorizations(State &state, EvmcHost<rev> &host, Transaction const &tx)
+{
+    using namespace intx::literals;
+
+    uint64_t refund = 0u;
+
+    for (auto const &auth_entry : tx.authorization_list) {
+        MONAD_ASSERT(auth_entry.sc.chain_id.has_value());
+
+        // 1. Verify the chain ID is 0 or the ID of the current chain.
+        auto const &chain_id = *auth_entry.sc.chain_id;
+        auto const host_chain_id =
+            intx::be::load<uint256_t>(host.get_tx_context().chain_id);
+
+        if (!(chain_id == 0 || chain_id == host_chain_id)) {
+            continue;
+        }
+
+        // 2. Verify the nonce is less than 2**64 - 1.
+        if (auth_entry.nonce == std::numeric_limits<uint64_t>::max()) {
+            continue;
+        }
+
+        // 3. Let authority = ecrecover(msg, y_parity, r, s).
+        auto const authority = recover_authority(auth_entry);
+        if (!authority.has_value()) {
+            continue;
+        }
+
+        static constexpr auto secp256k1_order =
+            0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+        if (auth_entry.sc.s > secp256k1_order / 2) {
+            continue;
+        }
+
+        // 4. Add authority to accessed_addresses, as defined in EIP-2929.
+        state.access_account(*authority);
+
+        // 5. Verify the code of authority is empty or already delegated.
+        auto const &icode = state.get_code(*authority)->intercode();
+        auto const code = std::span{icode->code(), *icode->code_size()};
+        if (!(code.empty() || vm::evm::is_delegated(code))) {
+            continue;
+        }
+
+        // 6. Verify the nonce of authority is equal to nonce.
+        auto const auth_nonce = state.get_nonce(*authority);
+        if (auth_entry.nonce != auth_nonce) {
+            continue;
+        }
+
+        if (!state.account_exists(*authority)) {
+            // The authority processing step is happening before the transaction
+            // runs, and so we need to create the account such that it cannot be
+            // selfdestructed, even if the delegated code runs a `SELFDESTRUCT`
+            // opcode. This is not documented explicitly in EIP-7702, but is a
+            // consequence of the Cancun selfdestruct rules, and the fact that
+            // authority processing (and therefore this account creation) are
+            // not part of any transaction.
+            state.create_account_no_rollback(*authority);
+        }
+
+        // 7. Add PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST gas to the global
+        // refund counter if authority is not empty.
+        if (!is_empty(*state.recent_account(*authority))) {
+            refund += (25'000u - 12'500u);
+        }
+
+        // 8. Set the code of authority to be 0xef0100 || address. This is a
+        // delegation indicator.
+        if (auth_entry.address) {
+            auto const new_code =
+                byte_string(vm::evm::delegation_indicator_prefix()) +
+                byte_string(
+                    auth_entry.address.bytes, auth_entry.address.bytes + 20);
+            state.set_code(*authority, new_code);
+        }
+        else {
+            // If address is 0x0000000000000000000000000000000000000000, do not
+            // write the delegation indicator. Clear the account’s code
+            state.set_code(*authority, {});
+        }
+
+        // 9. Increase the nonce of authority by one.
+        state.set_nonce(*authority, auth_nonce + 1);
+    }
+
+    return refund;
+}
+
 template <evmc_revision rev>
 evmc_message ExecuteTransactionNoValidation<rev>::to_message() const
 {
@@ -132,6 +226,12 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0));
 
+    // EIP-7702
+    uint64_t auth_refund = 0u;
+    if constexpr (rev >= EVMC_PRAGUE) {
+        auth_refund = process_authorizations(state, host, tx_);
+    }
+
     // EIP-3651
     if constexpr (rev >= EVMC_SHANGHAI) {
         host.access_account(header_.beneficiary);
@@ -148,15 +248,31 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
         state.access_account(*tx_.to);
     }
 
-    auto const msg = to_message();
-    return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-               ? ::monad::create<rev>(
-                     &host,
-                     state,
-                     msg,
-                     chain_.get_max_code_size(
-                         header_.number, header_.timestamp))
-               : ::monad::call<rev>(&host, state, msg);
+    auto msg = to_message();
+
+    // EIP-7702
+    if constexpr (rev >= EVMC_PRAGUE) {
+        if (tx_.to.has_value()) {
+            if (auto const delegate = vm::evm::resolve_delegation(
+                    &host.get_interface(), host.to_context(), *tx_.to)) {
+                msg.code_address = *delegate;
+                msg.flags |= EVMC_DELEGATED;
+                state.access_account(*delegate);
+            }
+        }
+    }
+
+    auto result =
+        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+            ? ::monad::create<rev>(
+                  &host,
+                  state,
+                  msg,
+                  chain_.get_max_code_size(header_.number, header_.timestamp))
+            : ::monad::call<rev>(&host, state, msg);
+
+    result.gas_refund += auth_refund;
+    return result;
 }
 
 template class ExecuteTransactionNoValidation<EVMC_FRONTIER>;
@@ -196,7 +312,7 @@ template <evmc_revision rev>
 Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
-    BOOST_OUTCOME_TRY(validate_transaction(tx_, sender_account));
+    BOOST_OUTCOME_TRY(validate_transaction<rev>(tx_, sender_account));
 
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());

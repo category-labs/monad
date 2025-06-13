@@ -16,42 +16,12 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::runtime
 {
-    inline std::optional<evmc_address> resolve_delegate_address(
-        Context const *ctx, evmc_address const &addr) noexcept
-    {
-        // Copy up to |code_size| bytes of the bytecode. Then test
-        // whether the code begins with the prefix 0xEF0100, if so,
-        // then drop these three bytes and interpret the remainder as
-        // the delegate address.
-        constexpr uint8_t indicator[] = {0xef, 0x01, 0x00};
-        constexpr size_t indicator_size = std::size(indicator);
-        constexpr size_t expected_code_size =
-            indicator_size + sizeof(evmc_address);
-        static_assert(expected_code_size == 23);
-
-        uint8_t code_buffer[expected_code_size];
-        auto const actual_code_size = ctx->host->copy_code(
-            ctx->context, &addr, 0, code_buffer, expected_code_size);
-
-        std::span const code{code_buffer, actual_code_size};
-        if (actual_code_size != expected_code_size ||
-            !std::ranges::equal(code.subspan(0, indicator_size), indicator)) {
-            return std::nullopt;
-        }
-
-        // Copy the delegate address from the code buffer.
-        evmc::address designation;
-        std::ranges::copy(
-            code.subspan(indicator_size, sizeof(evmc_address)),
-            designation.bytes);
-        return designation;
-    }
-
     inline std::uint32_t message_flags(
         std::uint32_t env_flags, bool static_call, bool delegation_indicator)
     {
@@ -106,8 +76,8 @@ namespace monad::vm::runtime
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.
-                if (auto delegate_address =
-                        resolve_delegate_address(ctx, dest_address)) {
+                if (auto delegate_address = evm::resolve_delegation(
+                        ctx->host, ctx->context, dest_address)) {
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
                     ctx->gas_remaining -=

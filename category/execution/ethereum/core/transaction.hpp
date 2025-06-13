@@ -36,6 +36,7 @@ enum class TransactionType : char
     eip2930,
     eip1559,
     eip4844,
+    eip7702,
     LAST,
 };
 
@@ -55,6 +56,26 @@ using AccessList = std::vector<AccessEntry>;
 static_assert(sizeof(AccessList) == 24);
 static_assert(alignof(AccessList) == 8);
 
+struct AuthorizationEntry
+{
+    SignatureAndChain sc{};
+    Address address{};
+    uint64_t nonce{};
+
+    friend bool operator==(
+        AuthorizationEntry const &, AuthorizationEntry const &) = default;
+};
+
+static_assert(sizeof(AuthorizationEntry) == 144);
+static_assert(alignof(AuthorizationEntry) == 8);
+
+std::optional<Address> recover_authority(AuthorizationEntry const &);
+
+using AuthorizationList = std::vector<AuthorizationEntry>;
+
+static_assert(sizeof(AuthorizationList) == 24);
+static_assert(alignof(AuthorizationList) == 8);
+
 struct Transaction
 {
     SignatureAndChain sc{};
@@ -69,11 +90,12 @@ struct Transaction
     uint256_t max_priority_fee_per_gas{};
     uint256_t max_fee_per_blob_gas{};
     std::vector<bytes32_t> blob_versioned_hashes{};
+    AuthorizationList authorization_list{};
 
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
-static_assert(sizeof(Transaction) == 360);
+static_assert(sizeof(Transaction) == 384);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

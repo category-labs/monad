@@ -278,6 +278,7 @@ target_link_libraries(
          monad-vm
          monad-vm-core
          monad-vm-compiler
+         monad-vm-evm
          monad-vm-interpreter
          monad-vm-runtime
          monad-vm-utils)

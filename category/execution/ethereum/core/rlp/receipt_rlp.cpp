@@ -76,7 +76,8 @@ byte_string encode_receipt(Receipt const &receipt)
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930 ||
-        receipt.type == TransactionType::eip4844) {
+        receipt.type == TransactionType::eip4844 ||
+        receipt.type == TransactionType::eip7702) {
         return static_cast<unsigned char>(receipt.type) + receipt_bytes;
     }
     return receipt_bytes;
@@ -176,6 +177,12 @@ Result<Receipt> decode_receipt(byte_string_view &enc)
             break;
         case 0x2:
             receipt.type = TransactionType::eip1559;
+            break;
+        case 0x3:
+            receipt.type = TransactionType::eip4844;
+            break;
+        case 0x4:
+            receipt.type = TransactionType::eip7702;
             break;
         default:
             return DecodeError::InvalidTxnType;

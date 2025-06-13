@@ -126,9 +126,12 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
         }
     }
 
-    MONAD_ASSERT(
-        msg.kind != EVMC_CALL ||
-        Address{msg.recipient} == Address{msg.code_address});
+    if constexpr (rev < EVMC_PRAGUE) {
+        MONAD_ASSERT(
+            msg.kind != EVMC_CALL ||
+            Address{msg.recipient} == Address{msg.code_address});
+    }
+
     if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
         // eip-161
         state.touch(msg.recipient);

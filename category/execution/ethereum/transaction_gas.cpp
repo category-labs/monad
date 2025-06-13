@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/explicit_evmc_revision.hpp>
@@ -64,6 +64,13 @@ inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
     return g;
 }
 
+// EIP-7702
+inline constexpr auto g_authorization(Transaction const &tx) noexcept
+{
+    constexpr uint64_t per_empty_account_cost = 25'000u;
+    return per_empty_account_cost * tx.authorization_list.size();
+}
+
 inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
@@ -111,10 +118,16 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
         return 21'000 + g_data<rev>(tx) + g_txn_create(tx) +
                g_access_and_storage(tx);
     }
-    else {
+    else if constexpr (rev < EVMC_CANCUN) {
         // EIP-3860
         return 21'000 + g_data<rev>(tx) + g_txn_create(tx) +
                g_access_and_storage(tx) + g_extra_cost_init(tx);
+    }
+    else {
+        // EIP-7702
+        return 21'000 + g_data<rev>(tx) + g_txn_create(tx) +
+               g_access_and_storage(tx) + g_extra_cost_init(tx) +
+               g_authorization(tx);
     }
 }
 
@@ -133,7 +146,8 @@ inline constexpr uint256_t priority_fee_per_gas(
     auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
 
     if (tx.type == TransactionType::eip1559 ||
-        tx.type == TransactionType::eip4844) {
+        tx.type == TransactionType::eip4844 ||
+        tx.type == TransactionType::eip7702) {
         return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
     }
     // EIP-1559: "Legacy Ethereum transactions will still work and

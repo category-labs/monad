@@ -18,6 +18,8 @@ add_library(monad-vm-evm OBJECT)
 set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 
 target_sources(monad-vm-evm PRIVATE
+    "delegation.cpp"
+    "delegation.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
 )
@@ -30,5 +32,7 @@ target_link_libraries(monad-vm-evm
     PUBLIC evmc::evmc
     PUBLIC monad-vm::monad-vm-core
 )
+
+monad_compile_options(monad-vm-evm)
 
 add_library(monad-vm::monad-vm-evm ALIAS monad-vm-evm)

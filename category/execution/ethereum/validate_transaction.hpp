@@ -54,6 +54,7 @@ enum class TransactionError
     GasLimitOverflow,
     InvalidSignature,
     InvalidBlobHash,
+    EmptyAuthorizationList,
 };
 
 struct Transaction;
@@ -64,6 +65,7 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     size_t max_code_size);
 
+template <evmc_revision rev>
 Result<void> validate_transaction(
     Transaction const &, std::optional<Account> const &sender_account);
 

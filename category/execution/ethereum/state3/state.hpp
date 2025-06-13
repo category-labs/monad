@@ -551,6 +551,29 @@ public:
         }
     }
 
+    /**
+     * Creates an account that cannot be selfdestructed after Cancun.
+     *
+     * From Cancun onwards, only accounts created in the same transaction can be
+     * selfdestructed. This method creates an account with a .tx incarnation
+     * component that is guaranteed to be different from that of any actual
+     * transaction; it will therefore never be selfdestructed.
+     *
+     * This is currently used to create authority accounts during EIP-7702
+     * authority processing; changes to the state during that step are specified
+     * to take place before any of the actual transactions in a block.
+     */
+    void create_account_no_rollback(Address const &address)
+    {
+        auto &account = current_account(address);
+        MONAD_ASSERT(!account.has_value());
+        account = Account{
+            .incarnation = Incarnation{
+                incarnation_.get_block(),
+                Incarnation::LAST_TX,
+            }};
+    }
+
     ////////////////////////////////////////
 
     std::vector<Receipt::Log> const &logs()

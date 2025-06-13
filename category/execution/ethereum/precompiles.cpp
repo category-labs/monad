@@ -109,6 +109,15 @@ std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
         return std::nullopt;
     }
 
+    if constexpr (rev >= EVMC_PRAGUE) {
+        // EIP-7702 specifies that precompiles don't actually get called when
+        // they're the target of a delegation.
+        auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;
+        if (delegated) {
+            return evmc::Result{evmc_status_code::EVMC_SUCCESS, msg.gas};
+        }
+    }
+
     auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};

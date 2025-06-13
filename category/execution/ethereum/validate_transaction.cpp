@@ -88,11 +88,21 @@ Result<void> static_validate_transaction(
             return TransactionError::TypeNotSupported;
         }
     }
+    else if constexpr (rev < EVMC_PRAGUE) {
+        if (MONAD_UNLIKELY(
+                tx.type != TransactionType::legacy &&
+                tx.type != TransactionType::eip2930 &&
+                tx.type != TransactionType::eip1559 &&
+                tx.type != TransactionType::eip4844)) {
+            return TransactionError::TypeNotSupported;
+        }
+    }
     else if (MONAD_UNLIKELY(
                  tx.type != TransactionType::legacy &&
                  tx.type != TransactionType::eip2930 &&
                  tx.type != TransactionType::eip1559 &&
-                 tx.type != TransactionType::eip4844)) {
+                 tx.type != TransactionType::eip4844 &&
+                 tx.type != TransactionType::eip7702)) {
         return TransactionError::TypeNotSupported;
     }
 
@@ -119,10 +129,17 @@ Result<void> static_validate_transaction(
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
-    // EIP-7623
     if constexpr (rev >= EVMC_PRAGUE) {
+        // EIP-7623
         if (MONAD_UNLIKELY(floor_data_gas(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
+        }
+
+        // EIP-7702
+        if (tx.type == TransactionType::eip7702) {
+            if (MONAD_UNLIKELY(tx.authorization_list.empty())) {
+                return TransactionError::EmptyAuthorizationList;
+            }
         }
     }
 
@@ -170,6 +187,7 @@ Result<void> static_validate_transaction(
 
 EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
+template <evmc_revision rev>
 Result<void> validate_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account)
 {
@@ -192,8 +210,10 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->code_hash != NULL_HASH)) {
-        return TransactionError::SenderNotEoa;
+    if constexpr (rev < EVMC_PRAGUE) {
+        if (MONAD_UNLIKELY(sender_account->code_hash != NULL_HASH)) {
+            return TransactionError::SenderNotEoa;
+        }
     }
 
     // YP (71)
@@ -211,6 +231,8 @@ Result<void> validate_transaction(
 
     return success();
 }
+
+EXPLICIT_EVMC_REVISION(validate_transaction);
 
 MONAD_NAMESPACE_END
 
@@ -244,7 +266,10 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::MissingSender, "missing sender", {}},
         {TransactionError::GasLimitOverflow, "gas limit overflow", {}},
         {TransactionError::InvalidSignature, "invalid signature", {}},
-        {TransactionError::InvalidBlobHash, "invalid blob hash", {}}};
+        {TransactionError::InvalidBlobHash, "invalid blob hash", {}},
+        {TransactionError::EmptyAuthorizationList,
+         "empty authorization list",
+         {}}};
 
     return v;
 }

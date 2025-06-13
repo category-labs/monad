@@ -18,10 +18,17 @@ project(c-kzg-4844)
 
 set(SUBMODULE_DIR ${THIRD_PARTY_DIR}/c-kzg-4844)
 
-add_library(c-kzg-4844 STATIC)
+set(TRUSTED_SETUP_PATH "${SUBMODULE_DIR}/src/trusted_setup.txt")
+configure_file(cmake/trusted_setup.cpp.in trusted_setup.cpp @ONLY)
+
+add_library(c-kzg-4844)
+
+monad_compile_options(c-kzg-4844)
 
 target_sources(c-kzg-4844 PRIVATE
     "${SUBMODULE_DIR}/src/ckzg.c"
+    "${CMAKE_CURRENT_BINARY_DIR}/trusted_setup.cpp"
+    "src/c-kzg-4844/trusted_setup.hpp"
 )
 
 target_link_libraries(c-kzg-4844
@@ -30,8 +37,9 @@ target_link_libraries(c-kzg-4844
 
 target_include_directories(c-kzg-4844
     PUBLIC ${SUBMODULE_DIR}/src
+    PUBLIC src/
 )
 
 target_compile_options(c-kzg-4844 PRIVATE
-    -Wall -Wextra -Werror -Wno-missing-braces -Wno-unused-parameter -Wno-format
+    -Wall -Wextra -Werror -Wno-missing-braces -Wno-unused-parameter -Wno-format -Wno-c23-extensions
 )

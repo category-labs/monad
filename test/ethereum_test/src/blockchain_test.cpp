@@ -334,10 +334,7 @@ fiber::PriorityPool *BlockchainTest::pool_ = nullptr;
 void BlockchainTest::SetUpTestSuite()
 {
     pool_ = new fiber::PriorityPool{1, 1};
-    std::string const trusted_setup_file = test_resource::third_party_dir /
-                                           "c-kzg-4844" / "src" /
-                                           "trusted_setup.txt";
-    ASSERT_TRUE(monad::init_trusted_setup(trusted_setup_file));
+    ASSERT_TRUE(monad::init_trusted_setup());
 }
 
 void BlockchainTest::TearDownTestSuite()

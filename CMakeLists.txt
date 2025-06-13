@@ -178,7 +178,6 @@ target_include_directories(thread_safe_lru
 # ##############################################################################
 
 set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
-set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
 set(VM_DATA_DIR "${PROJECT_SOURCE_DIR}/test/vm/data")
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 

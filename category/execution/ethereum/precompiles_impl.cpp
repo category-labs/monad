@@ -20,16 +20,23 @@
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
 #include <blst.h>
+
+#include <c-kzg-4844/trusted_setup.hpp>
+
 #include <eip4844/eip4844.h>
+
 #include <evmc/evmc.h>
 #include <evmc/hex.hpp>
+
+#include <intx/intx.hpp>
+
 #include <setup/settings.h>
 #include <setup/setup.h>
+
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
 
 #include <cstring>
-#include <intx/intx.hpp>
 
 namespace
 {
@@ -72,11 +79,12 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
-bool init_trusted_setup(std::string const &file)
+bool init_trusted_setup()
 {
     if (!g_trustedSetup.has_value()) {
+        auto const setup = c_kzg_4844::trusted_setup_data();
         KZGSettings settings;
-        FILE *fp = fopen(file.c_str(), "r");
+        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
         if (fp) {
             if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
                 g_trustedSetup.emplace(settings);

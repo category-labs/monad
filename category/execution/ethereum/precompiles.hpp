@@ -26,7 +26,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-bool init_trusted_setup(std::string const &);
+bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
 

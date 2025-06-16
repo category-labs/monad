@@ -605,7 +605,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
   (* spec for speculative phase *)
   cpp.spec "monad::BlockState::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
     as read_storage_spec with (fun (this:ptr) =>
-      \pre{preBlockState g q} this |-> BlockState.Rfrag preBlockState q g
+      \prepost{preBlockState g q} this |-> BlockState.Rfrag preBlockState q g
       \arg{addressp} "address" (Vptr addressp)
       \arg{incp} "incarnation" (Vptr incp)
       \prepost{q indices} incp |-> IncarnationR q indices
@@ -618,7 +618,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
   (* spec for re-exec phase *)
   cpp.spec "monad::BlockState::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
     as read_storage_spec_auth with (fun (this:ptr) =>
-      \pre{preBlockState g preTxState} this |-> BlockState.Rauth preBlockState g preTxState
+      \prepost{preBlockState g preTxState} this |-> BlockState.Rauth preBlockState g preTxState
       \arg{addressp} "address" (Vptr addressp)
       \prepost{q address} addressp |-> addressR q address
       \arg{incp} "incarnation" (Vptr incp)

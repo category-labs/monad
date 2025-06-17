@@ -207,7 +207,12 @@ namespace
         }();
 
         EvmcHost<rev> host{
-            *call_tracer, tx_context, buffer, state, max_code_size};
+            *call_tracer,
+            tx_context,
+            buffer,
+            state,
+            max_code_size,
+            chain.get_create_inside_delegated()};
         auto execution_result = execute_impl_no_validation<rev>(
             state,
             host,

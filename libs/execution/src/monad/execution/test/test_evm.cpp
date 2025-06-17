@@ -69,7 +69,8 @@ TEST(Evm, create_with_insufficient)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
-        MAX_CODE_SIZE_EIP170};
+        MAX_CODE_SIZE_EIP170,
+        true};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -119,7 +120,8 @@ TEST(Evm, eip684_existing_code)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
-        MAX_CODE_SIZE_EIP170};
+        MAX_CODE_SIZE_EIP170,
+        true};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -144,7 +146,8 @@ TEST(Evm, create_nonce_out_of_range)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
-        MAX_CODE_SIZE_EIP170};
+        MAX_CODE_SIZE_EIP170,
+        true};
 
     commit_sequential(
         tdb,
@@ -193,7 +196,8 @@ TEST(Evm, static_precompile_execution)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
-        MAX_CODE_SIZE_EIP170};
+        MAX_CODE_SIZE_EIP170,
+        true};
 
     commit_sequential(
         tdb,
@@ -248,7 +252,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
-        MAX_CODE_SIZE_EIP170};
+        MAX_CODE_SIZE_EIP170,
+        true};
 
     commit_sequential(
         tdb,
@@ -389,6 +394,35 @@ TEST(Evm, deploy_contract_code)
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
     }
+}
+
+TEST(Evm, create_inside_delegated)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    BlockState bs{tdb};
+    State s{bs, Incarnation{0, 0}};
+
+    evmc_message m{
+        .kind = EVMC_CREATE,
+        .flags = EVMC_DELEGATED,
+        .gas = 20'000,
+        .sender = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address,
+    };
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        MAX_CODE_SIZE_EIP170,
+        false};
+    auto const result = h.call(m);
+
+    EXPECT_EQ(result.status_code, EVMC_UNDEFINED_INSTRUCTION);
 }
 
 /*

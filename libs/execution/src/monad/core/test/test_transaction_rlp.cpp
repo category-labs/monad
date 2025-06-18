@@ -346,8 +346,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     static monad::AccessList const a{};
 
     monad::Transaction const t{
-        .sc =
-            {.r = r, .s = s, .chain_id = 137, .odd_y_parity = true}, // Polygon
+        .sc = {.r = r, .s = s, .chain_id = 137, .y_parity = true}, // Polygon
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -425,8 +424,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     static monad::AccessList const a{};
 
     monad::Transaction const t{
-        .sc =
-            {.r = r, .s = s, .chain_id = 137, .odd_y_parity = false}, // Polygon
+        .sc = {.r = r, .s = s, .chain_id = 137, .y_parity = false}, // Polygon
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,

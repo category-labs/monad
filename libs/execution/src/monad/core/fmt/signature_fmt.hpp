@@ -23,12 +23,12 @@ struct fmt::formatter<monad::SignatureAndChain> : public monad::BasicFormatter
             "r={} "
             "s={} "
             "chain_id={} "
-            "odd_y_parity={}"
+            "y_parity={}"
             "}}",
             sc.r,
             sc.s,
             sc.chain_id,
-            sc.odd_y_parity);
+            sc.y_parity);
         return ctx.out();
     }
 };

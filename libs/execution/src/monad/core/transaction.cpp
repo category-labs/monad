@@ -22,6 +22,10 @@ MONAD_NAMESPACE_BEGIN
 
 std::optional<Address> recover_sender(Transaction const &tx)
 {
+    if (tx.sc.y_parity > 1) {
+        return std::nullopt;
+    }
+
     TRACE_TXN_EVENT(StartSenderRecovery);
     byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
     auto const tx_encoding_hash = keccak256(tx_encoding);
@@ -43,7 +47,7 @@ std::optional<Address> recover_sender(Transaction const &tx)
             result.bytes,
             tx_encoding_hash.bytes,
             signature,
-            tx.sc.odd_y_parity,
+            tx.sc.y_parity,
             context.get())) {
         return std::nullopt;
     }

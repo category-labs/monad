@@ -22,31 +22,35 @@ Require Import List.
 Require Import bluerock.auto.cpp.
 Require Import bluerock.auto.cpp.specs.
 Require Import monad.proofs.exec_specs.
+
+Record Proposal :=
+  {
+    roundNumber: N;
+    proposedBlock: Block
+  }.
+
+Inductive ActiveBlock :=
+| finalized (block_number: N)
+| proposalForNextBlock (block_number: N) (round_number:N).
+
+
+Record DbModel : Type :=
+  {
+    finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
+    nextBlockProposals:  list (Proposal * evm.GlobalState);
+    activeBlock: ActiveBlock; (* changed by set_block_and_round. dbAuthR asserts that the block number is  *)
+    cinvGloc: gname;
+  }.
+
+#[only(lens)] derive DbModel.
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
 
   Context  {MODd : exb.module ⊧ CU}.
   Compute (find_struct "monad::Db" module).
 
-  Record Proposal :=
-    {
-      roundNumber: N;
-      proposedBlock: Block
-    }.
-
-  Inductive ActiveBlock :=
-  | finalized (block_number: N)
-  | proposalForNextBlock (block_number: N) (round_number:N).
-    
   
-  Record DbModel : Type :=
-    {
-      finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
-      nextBlockProposals:  list (Proposal * evm.GlobalState);
-      activeBlock: ActiveBlock; (* changed by set_block_and_round. dbAuthR asserts that the block number is  *)
-      cinvGloc: gname;
-    }.
-
   Definition bnumber (b: Block) : N := number (header b).
   Open Scope Z_scope.
   Fixpoint contiguousBlocksStartingFrom (oblockIndex: option Z) (l: list (Block * evm.GlobalState)) : Prop :=
@@ -111,6 +115,13 @@ Section with_Sigma.
       \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
       \arg{keyp} "key" (Vptr keyp)
       \prepost{key:N} keyp |-> bytes32R q key
-      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)). 
-  
-End with_Sigma.    
+      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)).
+
+  cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
+    as finalize_spec_auth with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> dbAuthR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \arg{roundNum:N}   "round_number" (Vint roundNum)
+      \post this |-> dbAuthR q (preDb &: _activeBlock .= finalized blockNum)).
+
+End with_Sigma.

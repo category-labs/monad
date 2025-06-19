@@ -109,4 +109,34 @@ Below is a concise English summary of each method’s arguments, effects, and pr
 | `update_verified_block(uint64_t block)`                        | `block`: verified block           | **Marks** the highest delayed‐execution block applied.                                                      |
 | `update_voted_metadata(uint64_t block, uint64_t rnd)`          | `block`: voted block, `rnd`: voted round | **Stores** only the *highest‐round* QC. On next vote, if `rnd` > existing, overwrite `(block,rnd)`.          |
 
+---
+## 6. Clarifications & Common Points of Confusion
+
+**Q: Why does the StateSync server context cache deletions?**  
+A: The MPT traversal used to stream upserts only visits live (non‐deleted) leaves. To faithfully reproduce on the client that a slot or account was removed, the server must record which keys were zeroed out or accounts deleted during each block’s commit/finalize.  `statesync_server_context` instruments `commit()` and `finalize()` to build a bounded ring buffer of deletions and then iterates over them to emit explicit delete messages alongside the upsert stream.
+
+**Q: Why not record all changed keys/accounts instead of just deletions?**  
+A: Recording every changed key duplicates the work of the MPT traversal, which already streams all existing leaves as upserts. Only removed keys would otherwise vanish silently, so only deletions must be captured explicitly to guide the client’s trie GC.
+
+**Q: How do finalize vs update_verified_block vs update_voted_metadata differ?**  
+- `finalize(block,round)`: copies the proposal prefix snapshot into the immutable finalized prefix and bumps the finalized‐block watermark (no further writes ever touch that block).  
+- `update_verified_block(block)`: marks which deferred‐execution block headers were validated/applied—this watermark may lag finalized blocks if there are no delayed headers.  
+- `update_voted_metadata(block,round)`: logs the highest‐round QC vote the node has cast for a given block (overwriting any previous lower‐round vote), for crash recovery and RPC inspection.
+
+**Q: Why record a vote (update_voted_metadata) on a block before it’s finalized?**  
+A: Voting (producing a QC) is part of the PROPOSE phase, not finalization.  The node records its latest QC immediately after proposing, so that on restart it can recover its locked certificate and preserve consensus safety.
+
+**Q: Does update_voted_metadata keep history of all votes?**  
+A: No. The implementation only stores a single `(block,round)` pair—always the highest‐round seen so far. Older or duplicate rounds are ignored.
+
+**Q: Must the block number passed to update_voted_metadata or update_verified_block match the current activeBlock?**  
+A: Not necessarily.  These two methods record independent consensus metadata: one for QC votes and one for delayed‐execution verification.  They do not modify the active read/write snapshot (that is left to `set_block_and_round` and `finalize`).
+
+**Q: How are `delayed_execution_results` populated?**  
+A: The consensus layer (outside this repo) packs any deferred‐execution headers into `consensus_header.delayed_execution_results`.  MonAD only decodes them and validates them via `validate_delayed_execution_results(...)` against the local trie snapshot; the vector is not modified by the execution layer.
+
+**Q: Does each block’s header contain the root after executing that block or N‑2?**  
+A: Every block N’s header has its own post‑execution state root.  `block_state.commit(…)` writes the header (including `state_root = state_root()`) under version N, and only then can `finalize(N,…)` succeed.  There is no two‐block lag, and you cannot finalize a block you haven’t executed.
+
+---
 *Last updated:* __DATE__

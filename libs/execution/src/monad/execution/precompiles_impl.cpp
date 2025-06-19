@@ -99,8 +99,7 @@ uint64_t bls12_g1_add_gas_cost(byte_string_view, evmc_revision)
     return 375;
 }
 
-uint64_t
-bls12_g1_msm_gas_cost(byte_string_view const input, evmc_revision)
+uint64_t bls12_g1_msm_gas_cost(byte_string_view const input, evmc_revision)
 {
     static constexpr auto pair_size = bls12::G1::encoded_size + 32;
 
@@ -118,8 +117,7 @@ uint64_t bls12_g2_add_gas_cost(byte_string_view, evmc_revision)
     return 600;
 }
 
-uint64_t
-bls12_g2_msm_gas_cost(byte_string_view const input, evmc_revision)
+uint64_t bls12_g2_msm_gas_cost(byte_string_view const input, evmc_revision)
 {
     static constexpr auto pair_size = bls12::G2::encoded_size + 32;
 
@@ -142,14 +140,12 @@ bls12_pairing_check_gas_cost(byte_string_view const input, evmc_revision)
     return 32'600 * k + 37'700;
 }
 
-uint64_t
-bls12_map_fp_to_g1_gas_cost(byte_string_view, evmc_revision)
+uint64_t bls12_map_fp_to_g1_gas_cost(byte_string_view, evmc_revision)
 {
     return 5500;
 }
 
-uint64_t
-bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision)
+uint64_t bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision)
 {
     return 23800;
 }
@@ -181,6 +177,10 @@ PrecompileResult ecmul_execute(byte_string_view const input)
 
 PrecompileResult identity_execute(byte_string_view const input)
 {
+    if (input.empty()) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
     auto *const output = static_cast<uint8_t *>(malloc(input.size()));
     MONAD_ASSERT(output != nullptr);
     memcpy(output, input.data(), input.size());

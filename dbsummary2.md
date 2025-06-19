@@ -77,6 +77,35 @@ struct Db {
 | **DbCache** | `db_cache.hpp/cpp`                | In‑process LRU cache wrapper (RPC + local)   |
 | **StateSync server context** | `statesync_server_context.hpp/cpp` | `monad::Db` wrapper that instruments commit/finalize to capture deletions for StateSync server |
 
+### How TrieDb encodes EVM tables into the raw MPT
+
+`TrieDb` uses a fixed one‑byte “nibble” per EVM table, concatenated onto the proposal/finalized prefix, so that all state, storage, code, receipts, transactions, headers, ommers, etc., live in disjoint subtries.  The nibble constants and prefix definitions live in `util.hpp`:
+
+```cpp
+// libs/execution/src/monad/db/util.hpp:L86-L97
+inline constexpr unsigned char STATE_NIBBLE       = 0;
+inline constexpr unsigned char CODE_NIBBLE        = 1;
+inline constexpr unsigned char RECEIPT_NIBBLE     = 2;
+inline constexpr unsigned char TRANSACTION_NIBBLE = 3;
+inline constexpr unsigned char BLOCKHEADER_NIBBLE = 4;
+inline constexpr unsigned char WITHDRAWAL_NIBBLE  = 5;
+inline constexpr unsigned char OMMER_NIBBLE       = 6;
+inline constexpr unsigned char TX_HASH_NIBBLE     = 7;
+inline constexpr unsigned char BLOCK_HASH_NIBBLE  = 8;
+inline constexpr unsigned char CALL_FRAME_NIBBLE  = 9;
+inline constexpr unsigned char BFT_BLOCK_NIBBLE   = 10;
+```【F:libs/execution/src/monad/db/util.hpp†L86-L97】
+
+```cpp
+// libs/execution/src/monad/db/util.hpp:L114-L117
+inline constexpr unsigned char PROPOSAL_NIBBLE = 0;
+inline constexpr unsigned char FINALIZED_NIBBLE = 1;
+inline mpt::Nibbles const proposal_nibbles  = mpt::concat(PROPOSAL_NIBBLE);
+inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
+```【F:libs/execution/src/monad/db/util.hpp†L114-L117】
+
+On `commit()`, `TrieDb` switches its **prefix** to `proposal_prefix(round)` (using the round number) and then writes every EVM table under that proposal prefix plus its table nibble and key bytes.  Upon `finalize()`, the entire proposal subtrie is copied into the immutable `finalized_nibbles` subtrie so that snapshot remains frozen.
+
 ---
 
 ## 4. Clients & Access Patterns

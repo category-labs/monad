@@ -137,19 +137,6 @@ Section with_Sigma.
       \prepost{q preDb} this |-> dbAuthR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round"        (Vint roundNum)
-      \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum)))).
-
-  cpp.spec "monad::Db::update_verified_block(unsigned long)"
-    as update_verified_block_spec with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> dbAuthR q preDb
-      \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \post this |-> dbAuthR q (preDb &: _verifiedBlock .= Some blockNum)).
-
-  cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
-    as update_voted_metadata_spec with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> dbAuthR q preDb
-      \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \arg{roundNum:N}   "round"        (Vint roundNum)
-      \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum)))).
+      \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
 
 End with_Sigma.

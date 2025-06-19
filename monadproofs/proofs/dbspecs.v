@@ -38,7 +38,9 @@ Record DbModel : Type :=
   {
     finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
     nextBlockProposals:  list (Proposal * evm.GlobalState);
-    activeBlock: ActiveBlock; (* changed by set_block_and_round. dbAuthR asserts that the block number is  *)
+    activeBlock: ActiveBlock;        (* changed by set_block_and_round *)
+    verifiedBlock: option N;         (* latest verified block id, updated by update_verified_block *)
+    votedMetadata: option (N * N);   (* (block_num, round) from latest update_voted_metadata *)
     cinvGloc: gname;
   }.
 
@@ -123,5 +125,31 @@ Section with_Sigma.
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
       \post this |-> dbAuthR q (preDb &: _activeBlock .= finalized blockNum)).
+
+  cpp.spec "monad::Db::update_verified_block(unsigned long)"
+    as update_verified_block_spec with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> dbAuthR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \post this |-> dbAuthR q (preDb &: _verifiedBlock .= Some blockNum)).
+
+  cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
+    as update_voted_metadata_spec with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> dbAuthR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \arg{roundNum:N}   "round"        (Vint roundNum)
+      \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum)))).
+
+  cpp.spec "monad::Db::update_verified_block(unsigned long)"
+    as update_verified_block_spec with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> dbAuthR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \post this |-> dbAuthR q (preDb &: _verifiedBlock .= Some blockNum)).
+
+  cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
+    as update_voted_metadata_spec with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> dbAuthR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \arg{roundNum:N}   "round"        (Vint roundNum)
+      \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum)))).
 
 End with_Sigma.

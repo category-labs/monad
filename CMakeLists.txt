@@ -59,6 +59,21 @@ find_package(CLI11 REQUIRED)
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
+# immer
+set(immer_BUILD_TESTS
+    OFF
+    CACHE BOOL "Build immer tests" FORCE)
+set(immer_BUILD_EXAMPLES
+    OFF
+    CACHE BOOL "Build immer examples" FORCE)
+set(immer_BUILD_DOCS
+    OFF
+    CACHE BOOL "Build immer docs" FORCE)
+set(immer_BUILD_EXTRAS
+    OFF
+    CACHE BOOL "Build immer extras" FORCE)
+add_subdirectory("third_party/immer")
+
 # intx
 add_subdirectory("third_party/intx")
 

@@ -117,6 +117,8 @@ add_library(
   "src/monad/execution/execute_transaction.hpp"
   "src/monad/execution/explicit_evmc_revision.hpp"
   "src/monad/execution/fmt/event_trace_fmt.hpp"
+  "src/monad/execution/fee_buffer.hpp"
+  "src/monad/execution/fee_buffer.cpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
   "src/monad/execution/precompiles_bls12.cpp"
@@ -184,6 +186,7 @@ target_link_libraries(
   PUBLIC evmc
   PUBLIC evmone
   PUBLIC intx::intx
+  PUBLIC immer
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
   PUBLIC silkpre

@@ -30,6 +30,10 @@ else()
   set(MONAD_EVENT_USE_O_TMPFILE_DEFAULT OFF)
 endif()
 
+# This requires more advanced compiler support than the execution daemon does;
+# for now the execution build system won't build it
+option(MONAD_EVENT_BUILD_CLI "Build the monad-event-cli utility" OFF)
+
 option(MONAD_EVENT_USE_LIBHUGETLBFS
   "Disable the default value in the `monad_event_open_hugetlbfs_dir_fd` API function (removes dependency on libhugetlbfs)"
   ${MONAD_EVENT_HUGETLBFS_DEFAULT})
@@ -179,7 +183,11 @@ endif()
 option(MONAD_EVENT_BUILD_EXAMPLES
     "Build the example programs that show how to use the API" ON)
 
-if (MONAD_EVENT_BUILD_EXAMPLES)
+if(MONAD_EVENT_BUILD_CLI)
+  add_subdirectory(tools/event-cli)
+endif()
+
+if(MONAD_EVENT_BUILD_EXAMPLES)
   add_executable(eventwatch "example/eventwatch.c")
   target_compile_options(eventwatch PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_link_libraries(eventwatch PRIVATE monad_event)

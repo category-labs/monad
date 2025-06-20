@@ -24,13 +24,19 @@ project(monad_event LANGUAGES C CXX)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   set(MONAD_EVENT_HUGETLBFS_DEFAULT ON)
+  set(MONAD_EVENT_USE_O_TMPFILE_DEFAULT OFF) # OFF until Ubuntu 26.04 LTS
 else()
   set(MONAD_EVENT_HUGETLBFS_DEFAULT OFF)
+  set(MONAD_EVENT_USE_O_TMPFILE_DEFAULT OFF)
 endif()
 
 option(MONAD_EVENT_USE_LIBHUGETLBFS
-  "Disable the default value in the `monad_event_open_hugetlbfs_dir_fd` API function (removes dependency on libhugetlbfs"
+  "Disable the default value in the `monad_event_open_hugetlbfs_dir_fd` API function (removes dependency on libhugetlbfs)"
   ${MONAD_EVENT_HUGETLBFS_DEFAULT})
+
+option(MONAD_EVENT_USE_O_TMPFILE
+  "Use the O_TMPFILE method of hiding in-progress file writes (requires Linux kernel 6.10+ for unprivileged users)"
+  ${MONAD_EVENT_USE_O_TMPFILE_DEFAULT})
 
 find_package(zstd REQUIRED)
 
@@ -51,6 +57,11 @@ add_library(
   "../core/event/event_ring_util.c"
   "../core/event/test_event_ctypes_metadata.c"
   "../core/mem/virtual_buf.c"
+  "../execution/ethereum/event/blockcap_archive.c"
+  "../execution/ethereum/event/blockcap_builder.c"
+  "../execution/ethereum/event/blockcap_finalize_tracker.c"
+  "../execution/ethereum/event/blockcap_pack_writer.c"
+  "../execution/ethereum/event/blockcap_shared.c"
   "../execution/ethereum/event/exec_event_ctypes_metadata.c")
 
 target_sources(monad_event PUBLIC
@@ -87,6 +98,7 @@ target_sources(monad_event PUBLIC
   "../execution/ethereum/core/eth_ctypes.h"
   "../execution/ethereum/core/fmt/base_ctypes_fmt.hpp"
   "../execution/ethereum/core/fmt/eth_ctypes_fmt.hpp"
+  "../execution/ethereum/event/blockcap.h"
   "../execution/ethereum/event/exec_event_ctypes.h"
   "../execution/ethereum/event/exec_event_ctypes_fmt.hpp"
   "../execution/ethereum/event/exec_iter_help.h"
@@ -102,6 +114,13 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_sources(monad_event PRIVATE "../core/event/event_ring_util_linux.c")
 else()
   target_sources(monad_event PRIVATE "../core/event/event_ring_util_posix.c")
+endif()
+
+if(MONAD_EVENT_USE_O_TMPFILE)
+  target_sources(monad_event PRIVATE "../execution/ethereum/event/blockcap_archive_linux.c")
+  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_USE_O_TMPFILE)
+else()
+  target_sources(monad_event PRIVATE "../execution/ethereum/event/blockcap_archive_posix.c")
 endif()
 
 if(APPLE)

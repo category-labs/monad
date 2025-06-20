@@ -105,6 +105,13 @@ add_library(
   "ethereum/db/util.cpp"
   "ethereum/db/util.hpp"
   # ethereum/event
+  "ethereum/event/blockcap.h"
+  "ethereum/event/blockcap_archive.c"
+  "ethereum/event/blockcap_archive_posix.c"
+  "ethereum/event/blockcap_builder.c"
+  "ethereum/event/blockcap_finalize_tracker.c"
+  "ethereum/event/blockcap_pack_writer.c"
+  "ethereum/event/blockcap_shared.c"
   "ethereum/event/exec_event_ctypes.h"
   "ethereum/event/exec_event_ctypes_metadata.c"
   "ethereum/event/exec_event_recorder.cpp"

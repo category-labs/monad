@@ -81,9 +81,7 @@ namespace
 
     struct ShanghaiEthereumMainnet : EthereumMainnet
     {
-        virtual evmc_revision get_revision(
-            uint64_t /* block_number */,
-            uint64_t /* timestamp */) const override
+        virtual evmc_revision get_revision() const override
         {
             return EVMC_SHANGHAI;
         }

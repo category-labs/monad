@@ -19,10 +19,11 @@ inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
 
 struct EthereumMainnet : Chain
 {
+    using Chain::Chain;
+
     virtual uint256_t get_chain_id() const override;
 
-    virtual evmc_revision
-    get_revision(uint64_t block_number, uint64_t timestamp) const override;
+    virtual evmc_revision get_revision() const override;
 
     virtual Result<void>
     static_validate_header(BlockHeader const &) const override;
@@ -31,11 +32,10 @@ struct EthereumMainnet : Chain
         BlockHeader const &input, BlockHeader const &output) const override;
 
     virtual uint64_t compute_gas_refund(
-        uint64_t block_number, uint64_t timestamp, Transaction const &,
-        uint64_t gas_remaining, uint64_t refund) const override;
+        Transaction const &, uint64_t gas_remaining,
+        uint64_t refund) const override;
 
-    virtual size_t
-    get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+    virtual size_t get_max_code_size() const override;
 
     virtual GenesisState get_genesis_state() const override;
 };

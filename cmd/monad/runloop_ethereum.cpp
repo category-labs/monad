@@ -1,6 +1,7 @@
 #include "runloop_ethereum.hpp"
 
 #include <monad/chain/chain.hpp>
+#include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
@@ -63,7 +64,7 @@ namespace
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
+    std::filesystem::path const &ledger_dir, Db &db,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
@@ -85,11 +86,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             block_db.get(block_num, block),
             "Could not query %lu from blockdb",
             block_num);
-
+        EthereumMainnet const chain{
+            block.header.number, block.header.timestamp};
         BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
-        evmc_revision const rev =
-            chain.get_revision(block.header.number, block.header.timestamp);
+        evmc_revision const rev = chain.get_revision();
 
         BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 

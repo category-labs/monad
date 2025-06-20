@@ -11,7 +11,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Chain;
 struct Db;
 class BlockHashBufferFinalized;
 
@@ -21,8 +20,7 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &, std::filesystem::path const &, Db &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &);
+    std::filesystem::path const &, Db &, BlockHashBufferFinalized &,
+    fiber::PriorityPool &, uint64_t &, uint64_t, sig_atomic_t const volatile &);
 
 MONAD_NAMESPACE_END

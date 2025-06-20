@@ -10,8 +10,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-monad_revision MonadMainnet::get_monad_revision(
-    uint64_t /* block_number */, uint64_t /* timstamp */) const
+monad_revision MonadMainnet::get_monad_revision() const
 {
     return MONAD_TWO;
 }

@@ -87,8 +87,7 @@ namespace
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
 
-        size_t const max_code_size =
-            chain.get_max_code_size(header.number, header.timestamp);
+        size_t const max_code_size = chain.get_max_code_size();
 
         BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
             enriched_txn,
@@ -219,8 +218,6 @@ namespace
 
         // compute gas_refund and gas_used
         auto const gas_refund = chain.compute_gas_refund(
-            header.number,
-            header.timestamp,
             enriched_txn,
             static_cast<uint64_t>(execution_result.gas_left),
             static_cast<uint64_t>(execution_result.gas_refund));
@@ -512,24 +509,32 @@ struct monad_eth_call_executor
              user = user,
              state_overrides = overrides,
              trace = trace] {
-                auto const chain = [chain_config] -> std::unique_ptr<Chain> {
+                auto const chain =
+                    [chain_config,
+                     block_number = block_header.number,
+                     timestamp =
+                         block_header.timestamp] -> std::unique_ptr<Chain> {
                     switch (chain_config) {
                     case CHAIN_CONFIG_ETHEREUM_MAINNET:
-                        return std::make_unique<EthereumMainnet>();
+                        return std::make_unique<EthereumMainnet>(
+                            block_number, timestamp);
                     case CHAIN_CONFIG_MONAD_DEVNET:
-                        return std::make_unique<MonadDevnet>();
+                        return std::make_unique<MonadDevnet>(
+                            block_number, timestamp);
                     case CHAIN_CONFIG_MONAD_TESTNET:
-                        return std::make_unique<MonadTestnet>();
+                        return std::make_unique<MonadTestnet>(
+                            block_number, timestamp);
                     case CHAIN_CONFIG_MONAD_MAINNET:
-                        return std::make_unique<MonadMainnet>();
+                        return std::make_unique<MonadMainnet>(
+                            block_number, timestamp);
                     case CHAIN_CONFIG_MONAD_TESTNET2:
-                        return std::make_unique<MonadTestnet2>();
+                        return std::make_unique<MonadTestnet2>(
+                            block_number, timestamp);
                     }
                     MONAD_ASSERT(false);
                 }();
 
-                evmc_revision const rev = chain->get_revision(
-                    block_header.number, block_header.timestamp);
+                evmc_revision const rev = chain->get_revision();
 
                 auto const block_hash_buffer =
                     create_blockhash_buffer(block_number);

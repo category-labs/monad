@@ -27,42 +27,41 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-evmc_revision EthereumMainnet::get_revision(
-    uint64_t const block_number, uint64_t const timestamp) const
+evmc_revision EthereumMainnet::get_revision() const
 {
     // TODO: update to include Prague once we can replay those blocks
 
-    if (MONAD_LIKELY(timestamp >= 1710338135)) {
+    if (MONAD_LIKELY(timestamp_ >= 1710338135)) {
         return EVMC_CANCUN;
     }
-    else if (timestamp >= 1681338455) {
+    else if (timestamp_ >= 1681338455) {
         return EVMC_SHANGHAI;
     }
-    else if (block_number >= 15537394) {
+    else if (block_number_ >= 15537394) {
         return EVMC_PARIS;
     }
-    else if (block_number >= 12965000) {
+    else if (block_number_ >= 12965000) {
         return EVMC_LONDON;
     }
-    else if (block_number >= 12244000) {
+    else if (block_number_ >= 12244000) {
         return EVMC_BERLIN;
     }
-    else if (block_number >= 9069000) {
+    else if (block_number_ >= 9069000) {
         return EVMC_ISTANBUL;
     }
-    else if (block_number >= 7280000) {
+    else if (block_number_ >= 7280000) {
         return EVMC_PETERSBURG;
     }
-    else if (block_number >= 4370000) {
+    else if (block_number_ >= 4370000) {
         return EVMC_BYZANTIUM;
     }
-    else if (block_number >= 2675000) {
+    else if (block_number_ >= 2675000) {
         return EVMC_SPURIOUS_DRAGON;
     }
-    else if (block_number >= 2463000) {
+    else if (block_number_ >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (block_number >= 1150000) {
+    else if (block_number_ >= 1150000) {
         return EVMC_HOMESTEAD;
     }
     return EVMC_FRONTIER;
@@ -128,18 +127,15 @@ Result<void> EthereumMainnet::validate_output_header(
 }
 
 uint64_t EthereumMainnet::compute_gas_refund(
-    uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, uint64_t const gas_remaining,
     uint64_t const refund) const
 {
-    auto const rev = get_revision(block_number, timestamp);
-    return g_star(rev, tx, gas_remaining, refund);
+    return g_star(get_revision(), tx, gas_remaining, refund);
 }
 
-size_t EthereumMainnet::get_max_code_size(
-    uint64_t const block_number, uint64_t const timestamp) const
+size_t EthereumMainnet::get_max_code_size() const
 {
-    return get_revision(block_number, timestamp) >= EVMC_SPURIOUS_DRAGON
+    return get_revision() >= EVMC_SPURIOUS_DRAGON
                ? MAX_CODE_SIZE_EIP170
                : std::numeric_limits<size_t>::max();
 }

@@ -135,10 +135,9 @@ EXPLICIT_EVMC_REVISION(execute_impl_no_validation);
 
 template <evmc_revision rev>
 Receipt execute_final(
-    Chain const &chain, State &state, BlockHeader const &header,
-    Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas, evmc::Result const &result,
-    Address const &beneficiary)
+    Chain const &chain, State &state, Transaction const &tx,
+    Address const &sender, uint256_t const &base_fee_per_gas,
+    evmc::Result const &result, Address const &beneficiary)
 {
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
@@ -146,8 +145,6 @@ Receipt execute_final(
 
     // refund and priority, Eqn. 73-76
     auto const gas_refund = chain.compute_gas_refund(
-        header.number,
-        header.timestamp,
         tx,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
@@ -197,8 +194,7 @@ Result<evmc::Result> execute_impl2(
     auto const sender_account = state.recent_account(sender);
     BOOST_OUTCOME_TRY(validate_transaction(tx, sender_account));
 
-    size_t const max_code_size =
-        chain.get_max_code_size(hdr.number, hdr.timestamp);
+    size_t const max_code_size = chain.get_max_code_size();
 
     auto const tx_context =
         get_tx_context<rev>(tx, sender, hdr, chain.get_chain_id());
@@ -228,7 +224,7 @@ Result<ExecutionResult> execute(
         tx,
         hdr.base_fee_per_gas,
         chain.get_chain_id(),
-        chain.get_max_code_size(hdr.number, hdr.timestamp)));
+        chain.get_max_code_size()));
 
     {
         TRACE_TXN_EVENT(StartExecution);
@@ -257,7 +253,6 @@ Result<ExecutionResult> execute(
             auto const receipt = execute_final<rev>(
                 chain,
                 state,
-                hdr,
                 tx,
                 sender,
                 hdr.base_fee_per_gas.value_or(0),
@@ -292,7 +287,6 @@ Result<ExecutionResult> execute(
         auto const receipt = execute_final<rev>(
             chain,
             state,
-            hdr,
             tx,
             sender,
             hdr.base_fee_per_gas.value_or(0),

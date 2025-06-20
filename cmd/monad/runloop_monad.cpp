@@ -1,7 +1,11 @@
 #include "runloop_monad.hpp"
 #include "file_io.hpp"
 
-#include <monad/chain/chain.hpp>
+#include <monad/chain/monad_chain.hpp>
+#include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_mainnet.hpp>
+#include <monad/chain/monad_testnet.hpp>
+#include <monad/chain/monad_testnet2.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/blake3.hpp>
@@ -131,16 +135,33 @@ bool validate_delayed_execution_results(
 
 Result<std::pair<bytes32_t, uint64_t>> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
-    fiber::PriorityPool &priority_pool, bool const is_first_block)
+    BlockHashChain &block_hash_chain, monad_chain_config const chain_config,
+    Db &db, fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_round());
 
-    BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+    auto const chain =
+        [chain_config,
+         block_number = block.header.number,
+         timestamp = block.header.timestamp] -> std::unique_ptr<MonadChain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>(block_number, timestamp);
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>(block_number, timestamp);
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>(block_number, timestamp);
+        case CHAIN_CONFIG_MONAD_TESTNET2:
+            return std::make_unique<MonadTestnet2>(block_number, timestamp);
+        default:
+            MONAD_ASSERT(false);
+        }
+    }();
 
-    evmc_revision const rev =
-        chain.get_revision(block.header.number, block.header.timestamp);
+    BOOST_OUTCOME_TRY(chain->static_validate_header(block.header));
+
+    evmc_revision const rev = chain->get_revision();
 
     BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
@@ -164,7 +185,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
-            chain,
+            *chain,
             rev,
             block,
             senders,
@@ -191,7 +212,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         block.withdrawals);
     auto const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain->validate_output_header(block.header, output_header));
 
     auto const block_hash =
         to_bytes(keccak256(rlp::encode_block_header(output_header)));
@@ -204,8 +225,9 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    Chain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    monad_chain_config const chain_config,
+    std::filesystem::path const &ledger_dir, mpt::Db &raw_db, Db &db,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -341,7 +363,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                         .ommers = std::move(consensus_body.ommers),
                         .withdrawals = std::move(consensus_body.withdrawals)},
                     block_hash_chain,
-                    chain,
+                    chain_config,
                     db,
                     priority_pool,
                     block_number == start_block_num));

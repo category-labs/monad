@@ -18,7 +18,7 @@ MONAD_NAMESPACE_BEGIN
 class BlockHashBuffer;
 struct BlockHeader;
 class BlockState;
-struct Chain;
+class Chain;
 struct Receipt;
 class State;
 struct Transaction;

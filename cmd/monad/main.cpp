@@ -231,22 +231,6 @@ int main(int const argc, char const *argv[])
         return mpt::Db{*machine};
     }();
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            return std::make_unique<MonadMainnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET2:
-            return std::make_unique<MonadTestnet2>();
-        }
-        MONAD_ASSERT(false);
-    }();
-
     TrieDb triedb{db}; // init block number to latest finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
@@ -272,7 +256,21 @@ int main(int const argc, char const *argv[])
         else if (!db.root().is_valid()) {
             MONAD_ASSERT(statesync.empty());
             LOG_INFO("loading from genesis");
-            GenesisState const genesis_state = chain->get_genesis_state();
+            GenesisState const genesis_state = [chain_config] {
+                switch (chain_config) {
+                case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                    return EthereumMainnet{}.get_genesis_state();
+                case CHAIN_CONFIG_MONAD_DEVNET:
+                    return MonadDevnet{}.get_genesis_state();
+                case CHAIN_CONFIG_MONAD_TESTNET:
+                    return MonadTestnet{}.get_genesis_state();
+                case CHAIN_CONFIG_MONAD_MAINNET:
+                    return MonadMainnet{}.get_genesis_state();
+                case CHAIN_CONFIG_MONAD_TESTNET2:
+                    return MonadTestnet2{}.get_genesis_state();
+                }
+                MONAD_ASSERT(false);
+            }();
             load_genesis_state(genesis_state, triedb);
         }
         return triedb.get_block_number();
@@ -358,7 +356,6 @@ int main(int const argc, char const *argv[])
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
             return runloop_ethereum(
-                *chain,
                 block_db_path,
                 db_cache,
                 block_hash_buffer,
@@ -371,7 +368,7 @@ int main(int const argc, char const *argv[])
         case CHAIN_CONFIG_MONAD_MAINNET:
         case CHAIN_CONFIG_MONAD_TESTNET2:
             return runloop_monad(
-                *chain,
+                chain_config,
                 block_db_path,
                 db,
                 db_cache,

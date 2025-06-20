@@ -28,3 +28,11 @@ target_include_directories(monad_event PUBLIC "../..")
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
+
+option(MONAD_EVENT_BUILD_EXAMPLE
+    "Build the example program that shows how to use the API" ON)
+
+if (MONAD_EVENT_BUILD_EXAMPLE)
+    add_executable(eventwatch "example/eventwatch.c")
+    target_link_libraries(eventwatch PRIVATE monad_event)
+endif()

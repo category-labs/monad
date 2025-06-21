@@ -194,6 +194,29 @@ db_metadata_[1].main = (detail::db_metadata *)mmap(
 Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are loaded into each process’s own memory (via `mmap` or async read) and pinned locally by `OwningNodeCursor` (`shared_ptr<Node>`).  No per‑chunk pin flags are written back to the shared metadata region—only the ring‑buffer pages are memory‑mapped MAP_SHARED, so processes coordinate only on version metadata.  If a version is evicted by one process, readers holding `OwningNodeCursor`s for that version still keep their nodes alive in their own heap.
 
 **Q: What if after checking version validity in the ring buffer, the reader is descheduled and another process evicts that version before the disk read completes?**  
-A: The MPT I/O path double-checks validity at both ends.  `find_notify_fiber` first calls `aux.version_is_valid_ondisk(version)` before scheduling the async read, and `read_node_blocking` repeats `aux.version_is_valid_ondisk(version)` after the `pread`.  If eviction happens mid-read, the second check fails and the node read returns empty.  This eliminates the race window and guarantees that no stale data ever makes it back to the caller.
+A: The MPT I/O path double-checks validity at both ends.
+```cpp
+// libs/db/src/monad/mpt/find_notify_fiber.cpp:L274-L280
+if (!aux.version_is_valid_ondisk(version)) {
+    promise.set_value({start, find_result::version_no_longer_exist});
+    return;
+}
+```
+That check prevents starting a read for a version already evicted.
+
+```cpp
+// libs/db/src/monad/mpt/read_node_blocking.cpp:L22-L24, L54-L57
+Node::UniquePtr read_node_blocking(aux, node_offset, version) {
+    if (!aux.version_is_valid_ondisk(version)) {
+        return {};
+    }
+    // perform pread(...) into buffer, then:
+    return aux.version_is_valid_ondisk(version)
+               ? deserialize_node_from_buffer(buffer + buffer_off,
+                                             bytes_read - buffer_off)
+               : Node::UniquePtr{};
+}
+```
+If eviction occurs mid-read, the post-read check stops stale buffers from returning.
 ---
 *Last updated:* __DATE__

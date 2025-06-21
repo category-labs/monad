@@ -191,6 +191,6 @@ db_metadata_[1].main = (detail::db_metadata *)mmap(
     nullptr, map_size, prot, MAP_SHARED, fd, offset1);
 ```
 
-Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are read on‑demand and pinned in each process’s heap via `shared_ptr<Node>` in `OwningNodeCursor`.  Node data page reads use the same underlying file but maintain private buffers, so no per‑node pin flags are written to shared memory—only the two metadata pages coordinate readers and writers.
+Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are loaded into each process’s own memory (via `mmap` or async read) and pinned locally by `OwningNodeCursor` (`shared_ptr<Node>`).  No per‑chunk pin flags are written back to the shared metadata region—only the ring‐buffer pages are memory‐mapped MAP_SHARED, so processes coordinate only on version metadata.  If a version is evicted by one process, readers holding `OwningNodeCursor`s for that version still keep their nodes alive in their own heap.
 ---
 *Last updated:* __DATE__

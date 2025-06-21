@@ -168,4 +168,18 @@ A: The consensus layer (outside this repo) packs any deferred‐execution header
 A: Every block N’s header has its own post‑execution state root.  `block_state.commit(…)` writes the header (including `state_root = state_root()`) under version N, and only then can `finalize(N,…)` succeed.  There is no two‐block lag, and you cannot finalize a block you haven’t executed.
 
 ---
+**Q: How do RODb and RWDb coordinate across separate processes?**  
+A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return non‑owning cursors that become invalid when the trie root is reloaded—either by an RWDb upsert, an RODb switch, or an RWDb in another process.
+
+```cpp
+// libs/db/src/monad/mpt/db.hpp:L87-L96
+// The find, get, and get_data API calls return non-owning references.
+// The result lifetime ends when a subsequent operation reloads the trie
+// root. This can happen due to an RWDb upsert, an RODb reading a different
+// version, or an RODb reading the same version that has been updated by an
+// RWDb in another process.
+```
+
+Under the hood, both RODb and RWDb map the same metadata pages via `mmap(file, MAP_SHARED)`.  RWDb uses atomic stores to bump root‑ring offsets (`latest_*` metadata), and RODb sees those updates when it next calls `find` or `traverse`.  Thus **multiple processes** can safely share the on‑disk MPT store with no extra IPC or locks: write metadata is shared via the mmap, and node data is pinned in each process by `OwningNodeCursor`.
+---
 *Last updated:* __DATE__

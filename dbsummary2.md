@@ -191,6 +191,9 @@ db_metadata_[1].main = (detail::db_metadata *)mmap(
     nullptr, map_size, prot, MAP_SHARED, fd, offset1);
 ```
 
-Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are loaded into each process’s own memory (via `mmap` or async read) and pinned locally by `OwningNodeCursor` (`shared_ptr<Node>`).  No per‑chunk pin flags are written back to the shared metadata region—only the ring‐buffer pages are memory‐mapped MAP_SHARED, so processes coordinate only on version metadata.  If a version is evicted by one process, readers holding `OwningNodeCursor`s for that version still keep their nodes alive in their own heap.
+Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are loaded into each process’s own memory (via `mmap` or async read) and pinned locally by `OwningNodeCursor` (`shared_ptr<Node>`).  No per‑chunk pin flags are written back to the shared metadata region—only the ring‑buffer pages are memory‑mapped MAP_SHARED, so processes coordinate only on version metadata.  If a version is evicted by one process, readers holding `OwningNodeCursor`s for that version still keep their nodes alive in their own heap.
+
+**Q: What if after checking version validity in the ring buffer, the reader is descheduled and another process evicts that version before the disk read completes?**  
+A: The MPT I/O path double-checks validity at both ends.  `find_notify_fiber` first calls `aux.version_is_valid_ondisk(version)` before scheduling the async read, and `read_node_blocking` repeats `aux.version_is_valid_ondisk(version)` after the `pread`.  If eviction happens mid-read, the second check fails and the node read returns empty.  This eliminates the race window and guarantees that no stale data ever makes it back to the caller.
 ---
 *Last updated:* __DATE__

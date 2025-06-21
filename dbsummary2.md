@@ -180,6 +180,17 @@ A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return n
 // RWDb in another process.
 ```
 
-Under the hood, both RODb and RWDb map the same metadata pages via `mmap(file, MAP_SHARED)`.  RWDb uses atomic stores to bump root‑ring offsets (`latest_*` metadata), and RODb sees those updates when it next calls `find` or `traverse`.  Thus **multiple processes** can safely share the on‑disk MPT store with no extra IPC or locks: write metadata is shared via the mmap, and node data is pinned in each process by `OwningNodeCursor`.
+Under the hood, both RODb and RWDb multiplex on the same on‑disk metadata region via `mmap(..., MAP_SHARED)`.  The ring‑buffer of root/verified/voted versions is stored in these in‑file metadata pages and updated atomically by RWDb; any process mapping the same file sees the new metadata immediately in memory.
+
+```cpp
+// libs/db/src/monad/mpt/update_aux.cpp:L563-L572
+// Map the two mirror copies of the metadata region via mmap(..., MAP_SHARED)
+db_metadata_[0].main = (detail::db_metadata *)mmap(
+    nullptr, map_size, prot, MAP_SHARED, fd, offset0);
+db_metadata_[1].main = (detail::db_metadata *)mmap(
+    nullptr, map_size, prot, MAP_SHARED, fd, offset1);
+```
+
+Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are read on‑demand and pinned in each process’s heap via `shared_ptr<Node>` in `OwningNodeCursor`.  Node data page reads use the same underlying file but maintain private buffers, so no per‑node pin flags are written to shared memory—only the two metadata pages coordinate readers and writers.
 ---
 *Last updated:* __DATE__

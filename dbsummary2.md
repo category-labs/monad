@@ -193,6 +193,9 @@ db_metadata_[1].main = (detail::db_metadata *)mmap(
 
 Only the metadata pages (versions/ring buffers) are shared cross‑process.  The actual trie node chunks are loaded into each process’s own memory (via `mmap` or async read) and pinned locally by `OwningNodeCursor` (`shared_ptr<Node>`).  No per‑chunk pin flags are written back to the shared metadata region—only the ring‑buffer pages are memory‑mapped MAP_SHARED, so processes coordinate only on version metadata.  If a version is evicted by one process, readers holding `OwningNodeCursor`s for that version still keep their nodes alive in their own heap.
 
+**Q: Doesn’t commit() issue an upsert and reload the trie root—won’t that invalidate existing cursors?**  
+A: That comment in the `mpt::Db` interface applies _only_ if you call `find`/`get` on the _same_ mpt::Db instance that then `upsert`s.  In Monad we never mix reads and writes on one instance.  Instead, the execution runloop uses a separate RWOnDisk instance and RPC/CLI use a read‑only RODb instance.  Since RODb never calls upsert, its cursors stay valid even while the writer evicts old versions.
+
 **Q: What if after checking version validity in the ring buffer, the reader is descheduled and another process evicts that version before the disk read completes?**  
 A: The MPT I/O path double-checks validity at both ends.
 ```cpp

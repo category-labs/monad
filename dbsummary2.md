@@ -218,5 +218,16 @@ Node::UniquePtr read_node_blocking(aux, node_offset, version) {
 }
 ```
 If eviction occurs mid-read, the post-read check stops stale buffers from returning.
+
+**Q: Does JSON‑RPC eth_call only read finalized state?**  
+A: No. The eth_call RPC endpoint accepts both a `block_number` and a `round` argument, then does:
+```cpp
+// libs/rpc/src/monad/rpc/eth_call.cpp:L90-L94
+tdb.set_block_and_round(
+    block_number,
+    round == mpt::INVALID_ROUND_NUM ? std::nullopt
+                                    : std::make_optional(round));
+```
+If you pass a valid `round`, it reads the *proposal* subtrie (in‑flight state); if you pass `INVALID_ROUND_NUM` (or omit the round), it reads the *finalized* subtrie.
 ---
 *Last updated:* __DATE__

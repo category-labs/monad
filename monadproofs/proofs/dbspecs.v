@@ -139,4 +139,9 @@ Section with_Sigma.
       \arg{roundNum:N}   "round"        (Vint roundNum)
       \post this |-> dbAuthR q (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
 
+  Definition stateRoot (b: Block) : N. Proof. Admitted.
+  Definition receiptRoot (b: Block) : N. Proof. Admitted.
+  Definition transactionsRoot (b: Block) : N. Proof. Admitted.
+  Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
+    
 End with_Sigma.

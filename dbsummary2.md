@@ -232,5 +232,45 @@ tdb.set_block_and_round(
                                     : std::make_optional(round));
 ```
 If you pass a valid `round`, it reads the *proposal* subtrie (in‑flight state); if you pass `INVALID_ROUND_NUM` (or omit the round), it reads the *finalized* subtrie.
+
+**Q: Where and when does the execution layer advance the block number (i.e. the MPT version)?**  
+A: In `TrieDb::commit`, at the very start of the method, before assembling any updates.  That bump to `block_number_`/`round_number_` is then used to stamp all ensuing updates, and finally `db_.upsert(..., block_number_, ...)` writes them out:
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L187-L197
+if (db_.is_on_disk() && (consensus_header.round != round_number_ ||
+                         header.number     != block_number_)) {
+    auto const dest_prefix = proposal_prefix(consensus_header.round);
+    if (db_.get_latest_block_id() != INVALID_BLOCK_ID) {
+        db_.copy_trie(
+            block_number_, prefix_, header.number, dest_prefix, false);
+    }
+    round_number_ = consensus_header.round;
+    block_number_ = header.number;
+    prefix_       = dest_prefix;
+}
+```
+【F:libs/execution/src/monad/db/trie_db.cpp†L187-L197】
+
+**Q: What exactly does `finalize()` do?  Does it re‑write all leaf (account/storage) values?**  
+A: No.  `TrieDb::finalize` simply invokes `copy_trie` to clone the proposal subtrie under `proposal_prefix(round)` into the `finalized_nibbles` prefix—then writes only the new root node and updates the finalized‐block watermark:
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L483-L497
+void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
+{
+    if (db_.is_on_disk()) {
+        auto const src_prefix = proposal_prefix(round_number);
+        MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
+        db_.copy_trie(
+            block_number, src_prefix,
+            block_number, finalized_nibbles,
+            true  // block until root is persisted
+        );
+        db_.update_finalized_block(block_number);
+    }
+}
+```
+【F:libs/execution/src/monad/db/trie_db.cpp†L483-L497】
+
+This performs a deep, in‑memory clone of the subtrie but **does not** eagerly re‑encode all leaf nodes.  Only the new root chunk is written to disk; all child chunks remain shared and are lazy‑loaded.
 ---
 *Last updated:* __DATE__

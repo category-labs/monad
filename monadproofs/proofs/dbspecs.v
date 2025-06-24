@@ -85,6 +85,13 @@ Section with_Sigma.
     /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
+
+  Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
+    match head (finalizedBlocks m) with
+    | Some lastFinBlock =>
+        hd dummyEvmState (map snd (finalizedBlocks m))
+    | _  => dummyEvmState (* validModel rules this case out *)
+    end.
   
   Definition stateAfterActiveBlock (m: DbModel) : evm.GlobalState :=
     match activeBlock m with
@@ -98,6 +105,8 @@ Section with_Sigma.
     | proposalForNextBlock _ roundNum =>
         nth (Z.to_nat roundNum) (map snd (nextBlockProposals m)) dummyEvmState
     end.
+  
+  
   (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
   Definition dbAuthR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
 
@@ -148,6 +157,14 @@ Compute (lookup_struct module "monad::Db").
 
 Definition commitFn : name:=
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)".
+Check CodeDeltaR.
+(** Compute the post-commit DbModel from pre-commit model and all commit arguments. *)
+Definition commit_model
+  (preDb: DbModel)
+  (newBlock: Block)
+  (finalState: monad.proofs.evmopsem.StateOfAccounts)
+  (rs: list monad.proofs.evmopsem.TransactionResult)
+  : DbModel := preDb.
 
 (**
 Write the spec of monad::Db::commit. The full name of this function is already defined above as `commitFn`.
@@ -195,16 +212,16 @@ cpp.spec
     \prepost{(q:Qp) (preDb:DbModel)} this |-> dbAuthR q preDb
 
     \arg{deltas_ptr} "#0" (Vptr deltas_ptr)
-    \prepost{(deltas: monad.proofs.evmopsem.StateOfAccounts * monad.proofs.evmopsem.StateOfAccounts)}
-      deltas_ptr |-> StateDeltasR q deltas
+    \prepost{(finalState: monad.proofs.evmopsem.StateOfAccounts)}
+      deltas_ptr |-> StateDeltasR q (stateAfterLastFinalized preDb, finalState)
 
     \arg{code_ptr} "#1" (Vptr code_ptr)
-    \prepost{(code: stdpp.gmap.gmap Corelib.Numbers.BinNums.N (Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N))}
-      code_ptr |-> CodeMapR q code
+    \prepost
+      code_ptr |-> CodeDeltaR q (stateAfterLastFinalized preDb, finalState)
 
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{(hdr: monad.proofs.evmopsem.BlockHeader)}
-      hdr_ptr |-> BheaderR q hdr
+    \prepost{(newBlock: Block)}
+      hdr_ptr |-> BheaderR q (header newBlock)
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
     \prepost{(rs: list monad.proofs.evmopsem.TransactionResult)}
@@ -214,44 +231,42 @@ cpp.spec
           (fun r => monad.proofs.exec_specs.ReceiptR r)
           q rs
 
-    \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
-    \prepost{(cfs: list (list Z))}
+   \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
+   (*       
+    \prepost
       cfs_ptr |->
         monad.proofs.libspecs.VectorR
           "std::vector<monad::CallFrame>"%cpp_type
-          (fun inner =>
-             monad.proofs.libspecs.VectorR
-               "monad::CallFrame"%cpp_type
-               (fun cf => pureR True) (* TOFIXLATER: refine to actual CallFrameR *)
-               q inner)
-          q cfs
-
+          (fun inner => emp)
+          q []
+          *)
     \arg{senders_ptr} "#5" (Vptr senders_ptr)
-    \prepost{(ss: list monad.proofs.evmopsem.evm.address)}
+    \prepost
       senders_ptr |->
         monad.proofs.libspecs.VectorR
           "evmc::address"%cpp_type
           (fun a => addressR q a)
-          q ss
+          q (map sender (transactions newBlock))
 
     \arg{txns_ptr} "#6" (Vptr txns_ptr)
-    \prepost{(ts: list monad.proofs.evmopsem.Transaction)}
+    \prepost
       txns_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::Transaction"%cpp_type
           (fun t => monad.proofs.exec_specs.TransactionR q t)
-          q ts
+          q (transactions newBlock)
 
-    \arg{ommers} "ommers" (Vptr ommers)
-    \prepost{(os: list monad.proofs.evmopsem.BlockHeader)}
-      ommers |->
+    \arg{ommers_ptr} "ommers" (Vptr ommers_ptr)
+    \prepost
+      ommers_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::BlockHeader"%cpp_type
           (fun h => BheaderR q h)
-          q os
+          q (ommers newBlock)
 
     \arg{wds_ptr} "#8" (Vptr wds_ptr)
-    \prepost{(ws: option (list monad.proofs.evmopsem.Withdrawal))}
+    (*      
+    \prepost{(ws: option (list monad.proofs.evmopsem.Withdrawal)))}
       wds_ptr |-> monad.proofs.libspecs.optionR
         "std::vector<monad::Withdrawal>"%cpp_type
         (fun ws => monad.proofs.libspecs.VectorR
@@ -259,8 +274,8 @@ cpp.spec
                      (fun _ => pureR True) (* TOFIXLATER: refine to WithdrawalR *)
                      q ws)
         q ws
-
-    \post (Exists postDb:DbModel, this |-> dbAuthR q postDb)
+     *)   
+    \post this |-> dbAuthR q (commit_model preDb newBlock finalState rs)
   ). 
   
 End with_Sigma.

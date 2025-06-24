@@ -143,5 +143,143 @@ Section with_Sigma.
   Definition receiptRoot (b: Block) : N. Proof. Admitted.
   Definition transactionsRoot (b: Block) : N. Proof. Admitted.
   Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
-    
+
+(**
+Write the spec of monad::Db::commit
+
+To write specs, you need to know the the Rep predicates for the types of the arguments.
+Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
+- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
+- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
+- u256t for `uint256_t` (alias for `intx::uint<256>`)
+- addressR is the Rep predicate for Address (alias for `evmc::address`)
+- AccountR is the Rep predicate for monad::Account
+- AccountSubstateR is the Rep predicate for monad::AccountSubState
+- AccountStateR is the Rep predicate for monad::AccountState
+- StateR for monad::AccountState.
+- BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
+- CodeDeltaR is the Rep predcate of (Code =    oneapi::tbb::concurrent_hash_map<bytes32_t, std::shared_ptr<CodeAnalysis>>)
+- StateDeltasR is the Rep predicate of StateDeltaR.
+- StateDeltaR for StateDelta
+
+Unfortunately, currently there is no query to search for the Rep predicate of a c++ type.
+Unfortunately, CppDefnOf queries are currently not available.
+
++++ FILES
+../fmai/prompts/sep.md
+../fmai/prompts/specs.md
+
++++ QUERIES
+
+Compute (lookup_struct module "monad::Db").
+Print exec_specs.
+ *)
+ Set Printing FullyQualifiedNames.
+Import exec_specs.
+Import bluerock.lang.cpp.logic.rep_defs.
+
+(* ---------------------------------------------------------------------- *)
+(* TOFIXLATER: unique_ptr<> rep for state_deltas & code_map *)
+Parameter uptr_state_deltas_R
+  : Qp
+  → monad.proofs.evmopsem.StateOfAccounts * monad.proofs.evmopsem.StateOfAccounts
+  → Rep.
+Parameter uptr_code_map_R
+  : Qp
+  → stdpp.gmap.gmap Corelib.Numbers.BinNums.N (list Corelib.Numbers.BinNums.N)
+  → Rep.
+(* ---------------------------------------------------------------------- *)
+
+(* A generic vector<T> rep predicate *)
+Parameter vectorR
+  : ∀ {T}, (Qp → T → Rep)
+         → Qp → list T → Rep.
+
+(* TOFIXLATER: admit the pure‐model of CallFrame and its memory predicate *)
+Parameter CallFrameModel : Type.                                                    (* TOFIXLATER *)
+Parameter CallFrameR     : Qp → CallFrameModel → Rep.                               (* TOFIXLATER *)
+
+(* TOFIXLATER: admit WithdrawalR and the C++ vector<Withdrawal> type *)
+Parameter WithdrawalR       : Qp → monad.proofs.evmopsem.Withdrawal → Rep.           (* TOFIXLATER *)
+Parameter withdrawalVecType : bluerock.lang.cpp.syntax.core.type.                    (* TOFIXLATER *)
+
+(* Named wrapper for option<vector<Withdrawal>> *)
+Definition WithdrawalOptionR (po: option (list monad.proofs.evmopsem.Withdrawal)) : Rep :=
+  optionR
+    withdrawalVecType
+    (fun l => vectorR (fun _ w => WithdrawalR w) 1 l)
+    1
+    po.
+
+(* Vector‐of‐Xs for the spec, as named helpers *)
+Parameter ReceiptVecR     : Qp → list monad.proofs.evmopsem.TransactionResult → Rep.  (* TOFIXLATER *)
+Parameter CallFrameVecR   : Qp → list CallFrameModel                       → Rep.  (* TOFIXLATER *)
+Parameter AddressVecR     : Qp → list evm.address                         → Rep.  (* TOFIXLATER *)
+Parameter TransactionVecR : Qp → list monad.proofs.evmopsem.Transaction    → Rep.  (* TOFIXLATER *)
+Parameter BlockHeaderVecR : Qp → list monad.proofs.evmopsem.BlockHeader    → Rep.  (* TOFIXLATER *)
+
+(* Model‐level update of DbModel by commit: to be defined later *)
+Definition commit_model
+  (m    : DbModel)
+  (sd   : monad.proofs.evmopsem.StateOfAccounts * monad.proofs.evmopsem.StateOfAccounts)
+  (cm   : stdpp.gmap.gmap Corelib.Numbers.BinNums.N (list Corelib.Numbers.BinNums.N))
+  (hdr  : monad.proofs.evmopsem.BlockHeader)
+  (rs   : list monad.proofs.evmopsem.TransactionResult)
+  (cfs  : list (list CallFrameModel))
+  (ss   : list evm.address)
+  (txs  : list monad.proofs.evmopsem.Transaction)
+  (obs  : list monad.proofs.evmopsem.BlockHeader)
+  (wo   : option (list monad.proofs.evmopsem.Withdrawal))
+  : DbModel.
+Admitted. (* TOFIXLATER *)
+
+cpp.spec
+  "monad::Db::commit(std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>>>&, std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
+  as commit_spec with (fun (this: ptr) =>
+    \prepost{q preDb}    this |-> dbAuthR q preDb
+
+    (* state_deltas unique_ptr *)
+    \arg{sdptr}     "state_deltas"     (Vptr sdptr)
+    \pre{sdp}       sdptr |-> uptr_state_deltas_R q sdp
+
+    (* code map unique_ptr *)
+    \arg{cmptr}     "code"             (Vptr cmptr)
+    \pre{cmp}       cmptr |-> uptr_code_map_R q cmp
+
+    (* consensus header *)
+    \arg{hdrptr}    "consensus_header" (Vptr hdrptr)
+    \pre{hdr}       hdrptr |-> BheaderR 1 hdr
+
+    (* receipts *)
+    \arg{receiptsp} "receipts"        (Vptr receiptsp)
+    \pre{rs}        receiptsp |-> ReceiptVecR 1 rs
+
+    (* call_frames *)
+    \arg{cfsp}      "call_frames"     (Vptr cfsp)
+    \pre{cfs}       cfsp   |-> CallFrameVecR 1 cfs
+
+    (* senders *)
+    \arg{sendersp}  "senders"         (Vptr sendersp)
+    \pre{ss}        sendersp |-> AddressVecR 1 ss
+
+    (* transactions *)
+    \arg{txsp}      "transactions"    (Vptr txsp)
+    \pre{txs}       txsp   |-> TransactionVecR 1 txs
+
+    (* ommers *)
+    \arg{ommersp}   "ommers"          (Vptr ommersp)
+    \pre{obs}       ommersp |-> BlockHeaderVecR 1 obs
+
+    (* optional withdrawals *)
+    \arg{woptr}     "withdrawals"     (Vptr woptr)
+    \pre{wo}        woptr |-> WithdrawalOptionR wo
+
+    (* return updated dbAuthR *)
+    \post this |-> dbAuthR q (commit_model preDb sdp cmp hdr rs cfs ss txs obs wo)
+  ).
+
+
+
+
+  
 End with_Sigma.

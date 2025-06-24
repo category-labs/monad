@@ -67,7 +67,6 @@ Record AssumptionExactness :=
     nonce_exact: bool;
   }.
 
-
 Record AssumptionsAndUpdates (* StateM *) :=
   {
     relaxedValidation: bool;
@@ -85,7 +84,9 @@ Module OneTbbMap. Section with_Sigma.
            (krep : Qp -> K -> Rep) (* not sure whether this needs to be fractional *)
            (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
            (* CFrational vrep *)
-           (m: list (K*V)) : Rep :=
+           (q: stdpp.numbers.Qp) (* one::tbb::concurrent_map itself is used as a value time (storage delta in StateDelta) so Rauth itself must be fractional. q<1 means can only read. unlike Rfrag, we can depend on the value being m *)
+           (m: list (K*V))
+    : Rep :=
   structR (Ninst "oneapi::tbb::concurrent_hash_map" [Atype tykey; Atype tyval]) (1/2).
 
   (* TODO: generalize over MapOriginalR and MapCurrentR and specialize with AccountStatR, move that up *)
@@ -206,29 +207,51 @@ Section with_Sigma.
     (* the struct itself *)
     ** structR "monad::AccountState"%cpp_name (cQp.mut q).
 
-  Definition accountStorageDelta (before after: evm.storage) : list (N * (N * N)). Proof. Admitted.
+  Definition accountStorageDelta (beforeafter: evm.storage * evm.storage) : list (N * (N * N)). Proof. Admitted.
+
+  Definition pairMap {A B:Type} (f: A -> B) (p : A*A) : B*B := (f (fst p), f (snd p)).
+
+  Definition AccountM : Type := (block.block_account * Indices).
   
-  Definition StateDeltaR (q:Qp) (before aft: (block.block_account * Indices)) : Rep :=
-    _field "monad::StateDelta::account" |-> DeltaR "monad::Account" (fun q p => let '(ac, ind) := p in AccountR q ac ind) q (before,aft)
-    ** _field "monad::StateDelta::storage" |-> OneTbbMap.Rauth
-                                                 "::evmc::bytes32"
-                                                 (Tnamed (Ninst "monad::Delta" [Atype "::evmc::bytes32"]))
-                                                 (fun x:N => x)
-                                                 bytes32R
-                                                 (DeltaR "::evmc::bytes32" bytes32R)
-                                                 (accountStorageDelta
-                                                    (block.block_account_storage (fst before))
-                                                    (block.block_account_storage (fst aft)))
-    ** structR "monad::StateDalta" q.
-
-  Definition StateDeltasR 
-
-
+  Definition StateDeltaR (q:Qp) (beforeaft:  AccountM * AccountM) : Rep :=
+    _field "monad::StateDelta::account" |-> DeltaR "monad::Account" (fun q p => let '(ac, ind) := p in AccountR q ac ind) q beforeaft
+    ** _field "monad::StateDelta::storage"
+      |-> OneTbbMap.Rauth
+           "::evmc::bytes32"
+           (Tnamed (Ninst "monad::Delta" [Atype "::evmc::bytes32"]))
+           (fun x:N => x)
+           bytes32R
+           (DeltaR "::evmc::bytes32" bytes32R)
+           q
+           (accountStorageDelta
+              (pairMap (fun x => (block.block_account_storage (fst x)))  beforeaft))
+    ** structR "monad::StateDelta" q.
 
   
 
+  Definition globalDelta (beforeAfter: evm.GlobalState * evm.GlobalState) : list (evm.address * (AccountM * AccountM)). Proof. Admitted.
   
+  Definition StateDeltasR (q:Qp) (beforeAfter: evm.GlobalState * evm.GlobalState) : Rep :=
+    OneTbbMap.Rauth
+      "evmc::address"
+      "monad::StateDelta"
+      (fun a => Z.to_N (word160.word160ToInteger a))
+      addressR
+      StateDeltaR
+      q
+      (globalDelta beforeAfter).
 
+  Definition CodeDeltaR (q:Qp) (beforeAfter: evm.GlobalState * evm.GlobalState) : Rep. Proof. Admitted.
+    (*
+    OneTbbMap.Rauth
+      "evmc::address"
+      "std::shared_ptr<CodeAnalysis>"
+      (fun a => Z.to_N (word160.word160ToInteger a))
+      addressR
+      StateDeltaR
+      q
+      (globalDelta beforeAfter).
+  *)
 End with_Sigma.
 Module BlockState. Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)

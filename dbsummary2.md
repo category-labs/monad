@@ -272,5 +272,25 @@ void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
 【F:libs/execution/src/monad/db/trie_db.cpp†L483-L497】
 
 This performs a deep, in‑memory clone of the subtrie but **does not** eagerly re‑encode all leaf nodes.  Only the new root chunk is written to disk; all child chunks remain shared and are lazy‑loaded.
+
+**Q: Why does commit take a nested `vector<vector<CallFrame>>`? Is this just debugging? Can RPC read it?**  
+A: The outer `vector` is per‑transaction and the inner `vector<CallFrame>` is the sequence of EVM call‑trace frames for that transaction.  During commit, `TrieDb` RLP‑encodes and stores these frames under the `CALL_FRAME_NIBBLE` subtrie so tools can fetch post‑execution traces:
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L297-L305
+std::span<CallFrame const> frames{call_frames[i]};
+byte_string_view view = bytes_alloc_.emplace_back(rlp::encode_call_frames(frames));
+// chunk and upsert under CALL_FRAME_NIBBLE …
+```
+【F:libs/execution/src/monad/db/trie_db.cpp†L297-L305】
+
+The `encode_call_frames`/`decode_call_frames` helpers live in:
+```cpp
+// libs/execution/src/monad/execution/trace/rlp/call_frame_rlp.hpp:L15-L20
+byte_string encode_call_frames(std::span<CallFrame const>);
+Result<std::vector<CallFrame>> decode_call_frames(byte_string_view &);
+```
+【F:libs/execution/src/monad/execution/trace/rlp/call_frame_rlp.hpp†L15-L20】
+
+This feature drives CLI and debug‑trace tooling (e.g. eventual RPC `debug_traceBlockByNumber`‑style endpoints).  There is no consensus requirement on call frames, and today no built‑in JSON‑RPC method reads them—you’d need to traverse the `CALL_FRAME_NIBBLE` subtree and decode manually.
 ---
 *Last updated:* __DATE__

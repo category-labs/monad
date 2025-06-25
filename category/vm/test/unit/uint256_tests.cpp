@@ -332,6 +332,12 @@ TEST(uint256, constexpr_fallbacks)
                     shrd_constexpr(x, y, shift_8),
                     shrd_intrinsic(x, y, shift_8));
             }
+            for (auto v : inputs) {
+                if (x >= v || v == 0) {
+                    continue;
+                }
+                ASSERT_EQ(div_constexpr(x, y, v), div_intrinsic(x, y, v));
+            }
         }
     }
 }
@@ -398,16 +404,15 @@ TEST(uint256, arithmetic)
                 exp(x, y), uint256_t(::intx::exp(x.to_intx(), y.to_intx())));
 
             if (y != 0) {
-                ASSERT_EQ(x / y, uint256_t(x.to_intx() / y.to_intx()));
-                ASSERT_EQ(x % y, uint256_t(x.to_intx() % y.to_intx()));
+                auto const q = x / y;
+                auto const r = x % y;
+                ASSERT_LT(r, y);
+                ASSERT_EQ(q * y + r, x);
 
-                auto sdivrem_result = sdivrem(x, y);
-                auto sdivrem_result_intx =
-                    ::intx::sdivrem(x.to_intx(), y.to_intx());
-                ASSERT_EQ(
-                    sdivrem_result.quot, uint256_t(sdivrem_result_intx.quot));
-                ASSERT_EQ(
-                    sdivrem_result.rem, uint256_t(sdivrem_result_intx.rem));
+                auto const [sq, sr] = sdivrem(x, y);
+                auto [sqx, srx] = ::intx::sdivrem(x.to_intx(), y.to_intx());
+                ASSERT_EQ(sq, uint256_t{sqx});
+                ASSERT_EQ(sr, uint256_t{srx});
             }
 
             for (auto const &z : test_inputs) {
@@ -425,6 +430,85 @@ TEST(uint256, arithmetic)
             }
         }
         ASSERT_EQ(-x, uint256_t(-(x.to_intx())));
+    }
+}
+
+TEST(uint256, division)
+{
+    // Specific tests: inputs to cover special cases
+    constexpr std::pair<uint256_t, uint256_t> div_inputs[]{
+        {
+            {0x00, 0xffffffffffffffff, 0xff, 0x00},
+            {0xff, 0xffffffffffffffff, 0xff, 0x00},
+        },
+        {
+            {0xff, 0xff, 0xff, 0xff},
+            {0x00, 0xff00000000000000},
+        },
+        {
+            {0xff, 0x00, 0x00, 0x00},
+            {0xff, 0xff, 0x00, 0x00},
+        },
+        {
+            {0xff, 0x00, 0x00, 0x00},
+            {0xff, 0x00, 0x00, 0x00},
+        },
+        {
+            {0xff, 0xff, 0xff, 0xff},
+            {0xff, 0x00, 0x00, 0x00},
+        },
+        {
+            {0xff, 0xff, 0xff, 0x00},
+            {0xff, 0xff, 0x00, 0x00},
+
+        },
+        {
+            {0x00, 0x00, 0x00, 0xff},
+            {0x00, 0xff, 0xff, 0x00},
+
+        },
+        {
+            {0x00, 0x00, 0xff, 0xff},
+            {0x00, 0xff00, 0x00, 0x00},
+
+        },
+        {
+            {0x00, 0x00, 0x00, 0xff},
+            {0xff, 0x00, 0xff, 0x00},
+
+        },
+        {
+            {0x00, 0x00, 0x00, 0xff},
+            {0xff, 0x00, 0xff, 0x00},
+
+        },
+        {
+            {0x0, 0x0, 0x0, 0x1},
+            {0x100, 0x1, 0x1, 0x0},
+
+        },
+        {
+            {0x0, 0x0, 0x1, 0x1},
+            {0x1, 0x1, 0x1, 0x0},
+
+        },
+        {
+            {0x00, 0x00, 0x00, 0xff},
+            {0xff, 0x00, 0x00, 0x00},
+
+        },
+        {
+            {0x00ff, 0x00, 0x00, 0xff},
+            {0xff00, 0x00, 0x00, 0x00},
+        },
+        {
+            {0x0, 0x0, 0x0, std::numeric_limits<uint64_t>::max()},
+            {uint64_t{1} << 63, 1, 1, 0x0},
+        }};
+    for (auto const &[x, y] : div_inputs) {
+        auto const [q, r] = udivrem(x, y);
+        ASSERT_EQ(q * y + r, x);
+        ASSERT_LT(r, y);
     }
 }
 
@@ -462,8 +546,7 @@ TEST(uint256, shifts)
             ASSERT_EQ(shl, uint256_t(x.to_intx() << shift));
 
             auto shr = x >> shift;
-            ASSERT_EQ(shr, uint256_t(x.to_intx() >> shift))
-                << "Shift: " << shift;
+            ASSERT_EQ(shr, uint256_t(x.to_intx() >> shift));
         }
         for (auto const &y : test_inputs) {
             ASSERT_EQ(x << y, uint256_t(x.to_intx() << y.to_intx()));

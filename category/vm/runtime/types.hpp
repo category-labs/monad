@@ -98,7 +98,7 @@ namespace monad::vm::runtime
             memset(data, 0, capacity);
         }
 
-        Memory(Memory &&m)
+        Memory(Memory &&m) noexcept
             : allocator_{m.allocator_}
             , size{m.size}
             , capacity{m.capacity}
@@ -108,7 +108,7 @@ namespace monad::vm::runtime
             m.clear();
         }
 
-        Memory &operator=(Memory &&m)
+        Memory &operator=(Memory &&m) noexcept
         {
             dealloc(data);
 

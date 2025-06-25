@@ -10,7 +10,7 @@ namespace monad::vm::compiler::poly_typed
     struct InferState
     {
         std::unordered_map<byte_offset, block_id> const &jumpdests;
-        std::vector<local_stacks::Block> const &pre_blocks;
+        std::vector<local_stacks::Block> &&pre_blocks;
         VarName next_cont_var_name;
         VarName next_kind_var_name;
         VarName next_literal_var_name;
@@ -20,7 +20,7 @@ namespace monad::vm::compiler::poly_typed
 
         InferState(
             std::unordered_map<byte_offset, block_id> const &jumpdests,
-            std::vector<local_stacks::Block> const &pre_blocks);
+            std::vector<local_stacks::Block> &&pre_blocks);
 
         void reset();
 

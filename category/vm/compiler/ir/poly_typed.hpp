@@ -6,7 +6,7 @@ namespace monad::vm::compiler::poly_typed
 {
     struct PolyTypedIR
     {
-        explicit PolyTypedIR(local_stacks::LocalStacksIR const &&ir);
+        explicit PolyTypedIR(local_stacks::LocalStacksIR &&ir);
 
         void type_check_or_throw();
         bool type_check();

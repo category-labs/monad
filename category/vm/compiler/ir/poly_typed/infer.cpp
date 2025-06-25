@@ -168,7 +168,7 @@ namespace
         InferState &state, ParamVarNameMap &param_map,
         Component const &component, size_t offset,
         local_stacks::Block const &block, std::vector<Kind> &&stack,
-        ContTailKind &&tail, size_t jumpix)
+        ContTailKind tail, size_t jumpix)
     {
         MONAD_VM_DEBUG_ASSERT(stack.size() == block.output.size());
         MONAD_VM_DEBUG_ASSERT(stack.size() >= offset);
@@ -199,13 +199,13 @@ namespace
                 break;
             }
         }
-        return cont_kind(std::move(front), std::move(tail));
+        return cont_kind(std::move(front), tail);
     }
 
     Kind infer_terminator_jumpi(
         InferState &state, ParamVarNameMap &param_map,
         Component const &component, block_id bid, std::vector<Kind> &&stack,
-        ContTailKind &&tail)
+        ContTailKind tail)
     {
         MONAD_VM_DEBUG_ASSERT(stack.size() >= 2);
         unify(state.subst_map, stack[stack.size() - 2], word);
@@ -228,7 +228,7 @@ namespace
                     2,
                     block,
                     std::move(stack),
-                    std::move(tail),
+                    tail,
                     jumpix),
                 .jump_kind = block_output_kind(
                     state,
@@ -237,7 +237,7 @@ namespace
                     2,
                     block,
                     std::move(jump_stack),
-                    std::move(jump_tail),
+                    jump_tail,
                     jumpix),
                 .fallthrough_dest = block.fallthrough_dest,
             });
@@ -247,7 +247,7 @@ namespace
     Kind infer_terminator_jump(
         InferState &state, ParamVarNameMap &param_map,
         Component const &component, block_id bid, std::vector<Kind> &&stack,
-        ContTailKind &&tail)
+        ContTailKind tail)
     {
         MONAD_VM_DEBUG_ASSERT(stack.size() >= 1);
         Kind jumpdest = stack.back();
@@ -267,7 +267,7 @@ namespace
                     1,
                     block,
                     std::move(stack),
-                    std::move(tail),
+                    tail,
                     jumpix),
             });
         return jumpdest;
@@ -276,7 +276,7 @@ namespace
     Kind infer_terminator_fallthrough(
         InferState &state, ParamVarNameMap &param_map,
         Component const &component, block_id bid, std::vector<Kind> &&stack,
-        ContTailKind &&tail)
+        ContTailKind tail)
     {
         auto const &block = state.pre_blocks[bid];
         size_t const jumpix = std::numeric_limits<size_t>::max();
@@ -290,7 +290,7 @@ namespace
                     0,
                     block,
                     std::move(stack),
-                    std::move(tail),
+                    tail,
                     jumpix),
                 block.fallthrough_dest});
         return any; // should never be used
@@ -345,28 +345,13 @@ namespace
         switch (term) {
         case basic_blocks::Terminator::FallThrough:
             return infer_terminator_fallthrough(
-                state,
-                param_map,
-                component,
-                bid,
-                std::move(stack),
-                std::move(tail));
+                state, param_map, component, bid, std::move(stack), tail);
         case basic_blocks::Terminator::JumpI:
             return infer_terminator_jumpi(
-                state,
-                param_map,
-                component,
-                bid,
-                std::move(stack),
-                std::move(tail));
+                state, param_map, component, bid, std::move(stack), tail);
         case basic_blocks::Terminator::Jump:
             return infer_terminator_jump(
-                state,
-                param_map,
-                component,
-                bid,
-                std::move(stack),
-                std::move(tail));
+                state, param_map, component, bid, std::move(stack), tail);
         case basic_blocks::Terminator::Return:
             return infer_terminator_return(state, bid, std::move(stack));
         case basic_blocks::Terminator::Stop:
@@ -729,8 +714,9 @@ namespace
             infer_component(state, c);
         }
         std::vector<Block> blocks;
+        blocks.reserve(state.pre_blocks.size());
         for (block_id i = 0; i < state.pre_blocks.size(); ++i) {
-            auto const &pre_block = state.pre_blocks[i];
+            auto &pre_block = state.pre_blocks[i];
             blocks.push_back(Block{
                 .offset = pre_block.offset,
                 .min_params = pre_block.min_params,
@@ -770,9 +756,9 @@ namespace monad::vm::compiler::poly_typed
 {
     std::vector<Block> infer_types(
         std::unordered_map<byte_offset, block_id> const &jumpdests,
-        std::vector<local_stacks::Block> const &pre_blocks)
+        std::vector<local_stacks::Block> &&pre_blocks)
     {
-        InferState state{jumpdests, pre_blocks};
+        InferState state{jumpdests, std::move(pre_blocks)};
         auto const components = strongly_connected_components(state);
         std::vector<Block> blocks = infer_components(state, components);
         state.reset();

@@ -63,9 +63,9 @@ namespace monad::vm::utils::evm_as::internal
                             if (!inserted) {
                                 error(
                                     pos,
-                                    std::move(std::format(
+                                    std::format(
                                         "Multiply defined label '{}'",
-                                        jumpdest.label)));
+                                        jumpdest.label));
                             }
                         },
                         [](auto const &) {}},
@@ -82,8 +82,8 @@ namespace monad::vm::utils::evm_as::internal
                             if (it == labels.end()) {
                                 error(
                                     pos,
-                                    std::move(std::format(
-                                        "Undefined label '{}'", push.label)));
+                                    std::format(
+                                        "Undefined label '{}'", push.label));
                             }
                         },
                         [](auto const &) {}},
@@ -106,7 +106,7 @@ namespace monad::vm::utils::evm_as::internal
         {
             auto const &info = compiler::opcode_table<Rev>[plain.opcode];
             if (vstack_size < info.min_stack) {
-                error(pos, std::move("Stack underflow"));
+                error(pos, "Stack underflow");
                 return false;
             }
 
@@ -131,12 +131,10 @@ namespace monad::vm::utils::evm_as::internal
         {
             if (invalid.has_name()) {
                 error(
-                    pos,
-                    std::move(
-                        std::format("Invalid instruction '{}'", invalid.name)));
+                    pos, std::format("Invalid instruction '{}'", invalid.name));
             }
             else {
-                error(pos, std::move("Invalid instruction"));
+                error(pos, "Invalid instruction");
             }
             return true;
         }
@@ -150,7 +148,7 @@ namespace monad::vm::utils::evm_as::internal
         bool check_stackoverflow()
         {
             if (vstack_size > 1024) {
-                error(pos, std::move("Stack overflow"));
+                error(pos, "Stack overflow");
                 return false;
             }
             return true;

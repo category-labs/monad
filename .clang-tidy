@@ -40,6 +40,11 @@
                     modernize-use-noexcept,
                     modernize-use-nullptr,
                     modernize-use-transparent-functors,
+                    performance-*,
+                    -performance-avoid-endl,
+                    -performance-enum-size,
+                    -performance-no-int-to-ptr,
+                    -performance-unnecessary-value-param,
                     readability-isolate-declaration,
                     readability-qualified-auto'
   WarningsAsErrors: '*'

@@ -18,7 +18,7 @@ TEST(infer, test_add)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR({ADD}));
 
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
     ASSERT_EQ(blocks.size(), 1);
     ASSERT_TRUE(std::holds_alternative<Stop>(blocks[0].terminator));
     ASSERT_TRUE(alpha_equal(blocks[0].kind, cont_kind({word, word}, 0)));
@@ -28,7 +28,7 @@ TEST(infer, test_param_jump)
 {
     auto ir = local_stacks::LocalStacksIR(
         basic_blocks::BasicBlocksIR({PUSH1, 1, ADD, SWAP1, JUMP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
     ASSERT_EQ(blocks.size(), 1);
     ASSERT_TRUE(std::holds_alternative<Jump>(blocks[0].terminator));
     ASSERT_TRUE(alpha_equal(
@@ -41,7 +41,7 @@ TEST(infer, test_literal_valid_jump)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
         {PUSH1, 8, SWAP1, PUSH1, 1, ADD, SWAP1, JUMP, JUMPDEST, POP, POP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 2);
 
@@ -60,7 +60,7 @@ TEST(infer, test_literal_invalid_jump)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
         {PUSH1, 0, SWAP1, PUSH1, 1, ADD, SWAP1, JUMP, JUMPDEST, POP, POP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 2);
 
@@ -78,7 +78,7 @@ TEST(infer, test_computed_jump)
 {
     auto ir = local_stacks::LocalStacksIR(
         basic_blocks::BasicBlocksIR({PUSH1, 1, ADD, JUMP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 1);
     ASSERT_TRUE(std::holds_alternative<Jump>(blocks[0].terminator));
@@ -91,7 +91,7 @@ TEST(infer, test_return)
 {
     auto ir =
         local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR({POP, RETURN}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
     ASSERT_EQ(blocks.size(), 1);
     ASSERT_TRUE(std::holds_alternative<Return>(blocks[0].terminator));
     ASSERT_TRUE(
@@ -102,7 +102,7 @@ TEST(infer, test_param_jumpi)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
         {PUSH1, 1, ADD, SWAP1, JUMPI, SELFDESTRUCT}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 2);
 
@@ -124,7 +124,7 @@ TEST(infer, test_literal_valid_jumpi)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
         {PUSH1, 4, JUMPI, SELFDESTRUCT, JUMPDEST, POP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 3);
 
@@ -149,7 +149,7 @@ TEST(infer, test_literal_var_output)
         {PUSH1,    255,      PUSH1, 14,    SWAP2, PUSH1, 17,       JUMPI,
          JUMPDEST, PUSH1,    1,     ADD,   SWAP1, JUMP,  JUMPDEST, POP,
          STOP,     JUMPDEST, SWAP1, PUSH1, 8,     JUMP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 4);
 
@@ -190,7 +190,7 @@ TEST(infer, test_sum)
          POP,
          SWAP1,
          JUMP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 4);
 
@@ -289,7 +289,7 @@ TEST(infer, test_fib)
         SWAP1, // (Word,s -> Exit),Word,s -> Exit
         JUMP // Word,s -> Exit
     }));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
 
     ASSERT_EQ(blocks.size(), 5);
 
@@ -347,7 +347,7 @@ TEST(infer, crash_1)
 {
     auto ir = local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
         {JUMPDEST, ADDRESS, JUMPDEST, PUSH0, ADDRESS, JUMP}));
-    std::vector<Block> blocks = infer_types(ir.jumpdests, ir.blocks);
+    std::vector<Block> blocks = infer_types(ir.jumpdests, std::move(ir.blocks));
     ASSERT_EQ(blocks.size(), 2);
     ASSERT_TRUE(alpha_equal(blocks[1].kind, cont_words));
     ASSERT_TRUE(alpha_equal(

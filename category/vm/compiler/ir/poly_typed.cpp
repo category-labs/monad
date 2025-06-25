@@ -441,10 +441,10 @@ namespace
 
 namespace monad::vm::compiler::poly_typed
 {
-    PolyTypedIR::PolyTypedIR(local_stacks::LocalStacksIR const &&ir)
+    PolyTypedIR::PolyTypedIR(local_stacks::LocalStacksIR &&ir)
         : codesize{ir.codesize}
         , jumpdests{std::move(ir.jumpdests)}
-        , blocks{infer_types(jumpdests, ir.blocks)}
+        , blocks{infer_types(jumpdests, std::move(ir.blocks))}
     {
     }
 

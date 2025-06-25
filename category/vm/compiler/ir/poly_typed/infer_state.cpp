@@ -111,9 +111,9 @@ namespace monad::vm::compiler::poly_typed
 {
     InferState::InferState(
         std::unordered_map<byte_offset, block_id> const &j,
-        std::vector<local_stacks::Block> const &b)
+        std::vector<local_stacks::Block> &&b)
         : jumpdests{j}
-        , pre_blocks{b}
+        , pre_blocks{std::move(b)}
         , next_cont_var_name{}
         , next_kind_var_name{}
         , next_literal_var_name{}

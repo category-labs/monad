@@ -169,7 +169,7 @@ namespace monad::vm::utils
             }
 
             // For insert into tbb hash map:
-            HashMapValue(HashMapValue &&x)
+            HashMapValue(HashMapValue &&x) noexcept
                 : prev_{x.prev_}
                 , next_{x.next_}
                 , lru_time_{x.lru_time_.load(std::memory_order_relaxed)}

@@ -63,7 +63,7 @@ namespace monad::vm::utils
             }
         }
 
-        RcPtr(RcPtr &&x)
+        RcPtr(RcPtr &&x) noexcept
             : rc_object{x.rc_object}
         {
             x.rc_object = nullptr;
@@ -79,7 +79,7 @@ namespace monad::vm::utils
             return *this;
         }
 
-        RcPtr &operator=(RcPtr &&x)
+        RcPtr &operator=(RcPtr &&x) noexcept
         {
             release();
             rc_object = x.rc_object;
@@ -104,7 +104,7 @@ namespace monad::vm::utils
             release();
         }
 
-        void swap(RcPtr &x)
+        void swap(RcPtr &x) noexcept
         {
             std::swap(rc_object, x.rc_object);
         }
@@ -160,7 +160,7 @@ namespace std
     template <typename T, typename Deleter>
     void swap(
         monad::vm::utils::RcPtr<T, Deleter> &x,
-        monad::vm::utils::RcPtr<T, Deleter> &y)
+        monad::vm::utils::RcPtr<T, Deleter> &y) noexcept
     {
         x.swap(y);
     }

@@ -1705,7 +1705,7 @@ namespace monad::vm::compiler::native
     Emitter::mov_general_reg_to_mem(GeneralReg reg, asmjit::x86::Mem const &mem)
     {
         x86::Mem temp{mem};
-        for (auto r : general_reg_to_gpq256(reg)) {
+        for (auto const &r : general_reg_to_gpq256(reg)) {
             as_.mov(temp, r);
             temp.addOffset(8);
         }

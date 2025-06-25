@@ -209,7 +209,7 @@ public:
         uint64_t const version) override
     {
         if (!root.is_valid()) {
-            return {NodeCursor{}, find_result::unknown};
+            return {NodeCursor{}, find_result::root_node_is_null_failure};
         }
         // the root we last loaded does not contain the version we want to find
         if (!aux().version_is_valid_ondisk(version)) {
@@ -1120,13 +1120,32 @@ uint64_t RODb::get_earliest_version() const
     return impl_->aux().db_history_min_valid_version();
 }
 
+DbError find_result_to_db_error(find_result const result) noexcept
+{
+    switch (result) {
+    case find_result::key_mismatch_failure:
+    case find_result::branch_not_exist_failure:
+    case find_result::key_ends_earlier_than_node_failure:
+        return DbError::key_not_found;
+    case find_result::root_node_is_null_failure:
+    case find_result::version_no_longer_exist:
+        return DbError::version_no_longer_exist;
+    case find_result::unknown:
+        return DbError::unknown;
+    default:
+        MONAD_ASSERT_PRINTF(
+            false, "Unexpected find result: %d", static_cast<int>(result));
+        return DbError::unknown;
+    }
+}
+
 Result<OwningNodeCursor> RODb::find(
     OwningNodeCursor &node_cursor, NibblesView const key,
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     if (!node_cursor.is_valid()) {
-        return DbError::key_not_found;
+        return DbError::version_no_longer_exist;
     }
     if (key.empty()) {
         return node_cursor;
@@ -1134,7 +1153,7 @@ Result<OwningNodeCursor> RODb::find(
     auto [cursor, result] =
         impl_->find_fiber_blocking(node_cursor, key, block_id);
     if (result != find_result::success) {
-        return DbError::key_not_found;
+        return find_result_to_db_error(result);
     }
     MONAD_DEBUG_ASSERT(cursor.is_valid());
     MONAD_DEBUG_ASSERT(cursor.node->has_value());
@@ -1173,7 +1192,7 @@ Db::find(NodeCursor root, NibblesView const key, uint64_t const block_id) const
     MONAD_ASSERT(impl_);
     auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
     if (result != find_result::success) {
-        return DbError::key_not_found;
+        return find_result_to_db_error(result);
     }
     MONAD_DEBUG_ASSERT(it.node != nullptr);
     MONAD_DEBUG_ASSERT(it.node->has_value());
@@ -1198,7 +1217,10 @@ Result<byte_string_view>
 Db::get(NibblesView const key, uint64_t const block_id) const
 {
     auto res = find(key, block_id);
-    if (!res.has_value() || !res.value().node->has_value()) {
+    if (!res.has_value()) {
+        return DbError(res.error().value());
+    }
+    if (!res.value().node->has_value()) {
         return DbError::key_not_found;
     }
     return res.value().node->value();
@@ -1209,7 +1231,7 @@ Result<byte_string_view> Db::get_data(
 {
     auto res = find(root, key, block_id);
     if (!res.has_value()) {
-        return DbError::key_not_found;
+        return DbError(res.error().value());
     }
     MONAD_DEBUG_ASSERT(res.value().node != nullptr);
     return res.value().node->data();
@@ -1220,7 +1242,7 @@ Db::get_data(NibblesView const key, uint64_t const block_id) const
 {
     auto res = find(key, block_id);
     if (!res.has_value()) {
-        return DbError::key_not_found;
+        return DbError(res.error().value());
     }
     MONAD_DEBUG_ASSERT(res.value().node != nullptr);
     return res.value().node->data();
@@ -1584,7 +1606,7 @@ namespace detail
                                  : get_result.second;
         MONAD_ASSERT(res_msg != find_result::unknown);
         if (res_msg != find_result::success) {
-            return DbError::key_not_found;
+            return find_result_to_db_error(res_msg);
         }
         switch (op_type) {
         case op_t::op_get1:

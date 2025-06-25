@@ -140,8 +140,9 @@ namespace
         std::atomic<size_t> cbs{0}; // callbacks when found
 
         OnDiskDbWithFileAsyncFixture()
-            : io_ctx(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths})
+            : io_ctx(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths})
             , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
@@ -304,11 +305,12 @@ namespace
         std::deque<Update> updates_alloc;
         for (size_t i = offset; i < nkeys + offset; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
-            updates_alloc.push_back(Update{
-                .key = kv,
-                .value = kv,
-                .incarnation = false,
-                .next = UpdateList{}});
+            updates_alloc.push_back(
+                Update{
+                    .key = kv,
+                    .value = kv,
+                    .incarnation = false,
+                    .next = UpdateList{}});
         }
         return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
     }
@@ -322,9 +324,10 @@ namespace
         static constexpr uint64_t num_blocks = 1000;
 
         ROOnDiskWithFileFixture()
-            : ro_db(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths,
-                  .node_lru_size = 100})
+            : ro_db(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths,
+                      .node_lru_size = 100})
             , pool(2, 16)
         {
             init_db_with_data();
@@ -609,7 +612,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
             test_cached_level),
         [&](result_t<monad::byte_string> res) {
             ASSERT_TRUE(res.has_error());
-            EXPECT_EQ(res.error(), DbError::key_not_found);
+            EXPECT_EQ(res.error(), DbError::version_no_longer_exist);
         });
 
     poll_until(1);
@@ -740,7 +743,8 @@ TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
     EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
     EXPECT_EQ(ro_db.get_earliest_version(), INVALID_BLOCK_NUM);
     // RODb get() from any block will fail
-    EXPECT_EQ(ro_db.get({}, 0).assume_error(), DbError::key_not_found);
+    EXPECT_EQ(
+        ro_db.get({}, 0).assume_error(), DbError::version_no_longer_exist);
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
@@ -878,11 +882,12 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     auto const &large_value =
         bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
     for (size_t i = 0; i < nkeys; ++i) {
-        updates_alloc.push_back(Update{
-            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
-            .value = large_value,
-            .incarnation = false,
-            .next = UpdateList{}});
+        updates_alloc.push_back(
+            Update{
+                .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+                .value = large_value,
+                .incarnation = false,
+                .next = UpdateList{}});
     }
 
     // construct a read-only aux
@@ -1716,7 +1721,7 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     write(kv[1].first, kv[1].second, block_id + i);
     auto bad_read = this->db.get(prefix + kv[0].first, block_id);
     ASSERT_TRUE(bad_read.has_error());
-    EXPECT_EQ(bad_read.error(), DbError::key_not_found);
+    EXPECT_EQ(bad_read.error(), DbError::version_no_longer_exist);
 }
 
 TEST(DbTest, auto_expire_large_set)

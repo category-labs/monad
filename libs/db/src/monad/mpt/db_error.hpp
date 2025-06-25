@@ -15,7 +15,8 @@ MONAD_MPT_NAMESPACE_BEGIN
 enum class DbError : uint8_t
 {
     unknown,
-    key_not_found
+    key_not_found,
+    version_no_longer_exist,
 };
 
 MONAD_MPT_NAMESPACE_END
@@ -36,6 +37,9 @@ struct quick_status_code_from_enum<MONAD_MPT_NAMESPACE::DbError>
         static std::initializer_list<mapping> const v = {
             {MONAD_MPT_NAMESPACE::DbError::key_not_found, "key not found", {}},
             {MONAD_MPT_NAMESPACE::DbError::unknown, "unknown", {}},
+            {MONAD_MPT_NAMESPACE::DbError::version_no_longer_exist,
+             "version no longer exists",
+             {}},
         };
         return v;
     }

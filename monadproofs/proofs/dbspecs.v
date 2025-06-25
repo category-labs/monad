@@ -33,7 +33,6 @@ Inductive ActiveBlock :=
 | finalized (block_number: N)
 | proposalForNextBlock (block_number: N) (round_number:N).
 
-
 Record DbModel : Type :=
   {
     finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
@@ -80,9 +79,18 @@ Section with_Sigma.
         end /\ roundNum < lengthZ (nextBlockProposals m)
     end.
 
+  Definition validProposal (proposal: Proposal) (finalizedBlocks: list Block) :=
+    match head finalizedBlocks with
+    | Some lastFinBlock =>
+        (bnumber (proposedBlock proposal) = 1 + bnumber lastFinBlock)%N
+    | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? *)
+    end.
+      
+    
   Definition validModel (m: DbModel) : Prop :=
     contiguousBlocksStartingFrom None (finalizedBlocks m)
-    /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block *)
+    /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (map fst (finalizedBlocks m))
+    /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
 
@@ -159,51 +167,20 @@ Definition commitFn : name:=
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)".
 Check CodeDeltaR.
 (** Compute the post-commit DbModel from pre-commit model and all commit arguments. *)
-Definition commit_model
-  (preDb: DbModel)
-  (newBlock: Block)
-  (finalState: monad.proofs.evmopsem.StateOfAccounts)
-  (rs: list monad.proofs.evmopsem.TransactionResult)
-  : DbModel := preDb.
 
-(**
-Write the spec of monad::Db::commit. The full name of this function is already defined above as `commitFn`.
-Write the spec as `cpp.spec commitFn ...`
-Specs of many other functions of this class are already defined in this file.
 
-To write specs, you need to know the the Rep predicates for the types of the arguments.
-Below are some existing Rep predicates that you can use (in addition to the ones mentioned in the general spec background above):
-- IncarnationR is the existing Rep predicate for the c++ class `monad::Incarnation`.
-- bytes32R for `bytes32_t` (alias for `evmc::bytes32`).
-- u256t for `uint256_t` (alias for `intx::uint<256>`)
-- addressR is the Rep predicate for Address (alias for `evmc::address`)
-- AccountR is the Rep predicate for monad::Account
-- AccountSubstateR is the Rep predicate for monad::AccountSubState
-- AccountStateR is the Rep predicate for monad::AccountState
-- StateR for monad::AccountState.
-- BlockState.Rauth for monad::BlockState in this context when the previous transaction has finished and we have exclusive write access the block state, which is the `this` location in the call to monad::BlockState::fix_account_mismatch and also the block_state_ reference in the monad::State argument.
-- CodeDeltaR is the Rep predcate of (Code =    oneapi::tbb::concurrent_hash_map<bytes32_t, std::shared_ptr<CodeAnalysis>>)
-- StateDeltasR is the Rep predicate of StateDeltaR.
-- StateDeltaR for StateDelta
-
-Unfortunately, currently there is no query to search for the Rep predicate of a c++ type.
-Many Reps are defined in exec_specs and libspecs modules, e.g VectorR, libspecs.optionR for std::optional.
-I have printed those 2 modules.
-Look at the names of Reps and Specs and Print them to see how the Reps are used in specs, e.g, execute_block_simpler, exect
-Unfortunately, CppDefnOf queries are currently not available.
-
-+++ FILES
-../fmai/prompts/sep.md
-../fmai/prompts/specs.md
-
-+++ QUERIES
-
-Compute (lookup_struct module "monad::Db").
-Print exec_specs.
-Print libspecs.
-Print commitFn.
- *)
- Set Printing FullyQualifiedNames.
+(** Compute the post-commit DbModel by prepending the new proposal and its state.
+    Note: we do not record [rs] in the model (no field to hold transaction results). *)
+Definition commit_model2
+  (preDb      : DbModel)
+  (newBlock   : Proposal)
+  (finalState : monad.proofs.evmopsem.StateOfAccounts)
+  (rs         : list monad.proofs.evmopsem.TransactionResult)
+  : DbModel :=
+  preDb
+    &: _nextBlockProposals .=
+      ((Build_Proposal (roundNumber newBlock) (proposedBlock newBlock), finalState)
+         :: nextBlockProposals preDb).
 
 
 cpp.spec
@@ -220,8 +197,9 @@ cpp.spec
       code_ptr |-> CodeDeltaR q (stateAfterLastFinalized preDb, finalState)
 
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{(newBlock: Block)}
-      hdr_ptr |-> BheaderR q (header newBlock)
+    \prepost{(newProposal: Proposal)}
+      hdr_ptr |-> BheaderR q (header (proposedBlock newProposal))
+    \pre [| validProposal newProposal (map fst (finalizedBlocks preDb)) |]
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
     \prepost{(rs: list monad.proofs.evmopsem.TransactionResult)}
@@ -246,7 +224,7 @@ cpp.spec
         monad.proofs.libspecs.VectorR
           "evmc::address"%cpp_type
           (fun a => addressR q a)
-          q (map sender (transactions newBlock))
+          q (map sender (transactions (proposedBlock newProposal)))
 
     \arg{txns_ptr} "#6" (Vptr txns_ptr)
     \prepost
@@ -254,7 +232,7 @@ cpp.spec
         monad.proofs.libspecs.VectorR
           "monad::Transaction"%cpp_type
           (fun t => monad.proofs.exec_specs.TransactionR q t)
-          q (transactions newBlock)
+          q (transactions (proposedBlock newProposal))
 
     \arg{ommers_ptr} "ommers" (Vptr ommers_ptr)
     \prepost
@@ -262,7 +240,7 @@ cpp.spec
         monad.proofs.libspecs.VectorR
           "monad::BlockHeader"%cpp_type
           (fun h => BheaderR q h)
-          q (ommers newBlock)
+          q (ommers (proposedBlock newProposal))
 
     \arg{wds_ptr} "#8" (Vptr wds_ptr)
     (*      
@@ -275,7 +253,24 @@ cpp.spec
                      q ws)
         q ws
      *)   
-    \post this |-> dbAuthR q (commit_model preDb newBlock finalState rs)
+    \post this |-> dbAuthR q (commit_model2 preDb newProposal finalState rs)
   ). 
+(**
+Above in this file, there is a dummy definition commit_model. write commit_model2 which actually fills the body propery. remember, you cannot change the content in this file above.
+use the background provided above about the Db setup in monad in the section "Monad DB: Two‑Layer Architecture & Client Patterns".
+
++++ FILES
+../fmai/prompts/sep.md
+../fmai/prompts/specs.md
+../../dbsummary2.md
++++ QUERIES
+
+Compute (lookup_struct module "monad::Db").
+Print exec_specs.
+Print libspecs.
+ *)
+ Set Printing FullyQualifiedNames.
+
+
   
 End with_Sigma.

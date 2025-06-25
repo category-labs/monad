@@ -182,6 +182,55 @@ namespace monad::vm::runtime
         }
     }
 
+    template <typename Q, typename R = Q>
+    struct div_result
+    {
+        Q quot;
+        R rem;
+
+        // Only used in unit tests
+        friend inline bool
+        operator==(div_result const &lhs, div_result const &rhs) noexcept
+            requires std::equality_comparable<Q> && std::equality_comparable<R>
+        {
+            return lhs.quot == rhs.quot && lhs.rem == rhs.rem;
+        }
+    };
+
+    typedef unsigned __int128 uint128_t;
+    typedef __int128 int128_t;
+
+    [[gnu::always_inline]]
+    constexpr inline div_result<uint64_t>
+    div_constexpr(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
+    {
+        auto u = (static_cast<uint128_t>(u_hi) << 64) | u_lo;
+        auto quot = static_cast<uint64_t>(u / v);
+        auto rem = static_cast<uint64_t>(u % v);
+        return {.quot = quot, .rem = rem};
+    }
+
+    [[gnu::always_inline]]
+    inline div_result<uint64_t>
+    div_intrinsic(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
+    {
+        asm("div %[v]" : "+d"(u_hi), "+a"(u_lo) : [v] "r"(v));
+        return {.quot = u_lo, .rem = u_hi};
+    }
+
+    [[gnu::always_inline]]
+    constexpr inline div_result<uint64_t>
+    div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
+    {
+        MONAD_VM_DEBUG_ASSERT(u_hi < v);
+        if consteval {
+            return div_constexpr(u_hi, u_lo, v);
+        }
+        else {
+            return div_intrinsic(u_hi, u_lo, v);
+        }
+    }
+
     struct uint256_t
     {
         using word_type = uint64_t;
@@ -296,28 +345,27 @@ namespace monad::vm::runtime
             return reinterpret_cast<uint8_t const *>(&words_);
         }
 
-        // NOLINTBEGIN(bugprone-macro-parentheses)
-
-#define INHERIT_INTX_BINOP(return_ty, op_name)                                 \
-    [[gnu::always_inline]] friend inline constexpr return_ty operator op_name( \
-        uint256_t const &x, uint256_t const &y) noexcept                       \
-    {                                                                          \
-        if consteval {                                                         \
-            return return_ty(x.to_intx() op_name y.to_intx());                 \
-        }                                                                      \
-        else {                                                                 \
-            return return_ty(x.as_intx() op_name y.as_intx());                 \
-        }                                                                      \
-    }
-
-        INHERIT_INTX_BINOP(uint256_t, /);
-        INHERIT_INTX_BINOP(uint256_t, %);
-#undef INHERIT_INTX_BINOP
-
-        // NOLINTEND(bugprone-macro-parentheses)
+        [[gnu::always_inline]]
+        inline constexpr std::array<uint64_t, 4> &as_words() noexcept
+        {
+            return words_;
+        }
 
         [[gnu::always_inline]]
-        constexpr friend inline result_with_carry<uint256_t>
+        inline constexpr std::array<uint64_t, 4> const &
+        as_words() const noexcept
+        {
+            return words_;
+        }
+
+        friend inline constexpr uint256_t
+        operator/(uint256_t const &x, uint256_t const &y) noexcept;
+
+        friend inline constexpr uint256_t
+        operator%(uint256_t const &x, uint256_t const &y) noexcept;
+
+        [[gnu::always_inline]]
+        friend inline constexpr result_with_carry<uint256_t>
         subb(uint256_t const &lhs, uint256_t const &rhs) noexcept
         {
             auto [w0, b0] = subb(lhs[0], rhs[0], false);
@@ -328,14 +376,22 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        friend inline constexpr uint256_t
-        operator+(uint256_t const &lhs, uint256_t const &rhs) noexcept
+        friend inline constexpr result_with_carry<uint256_t>
+        addc(uint256_t const &lhs, uint256_t const &rhs) noexcept
         {
             auto [w0, c0] = addc(lhs[0], rhs[0], false);
             auto [w1, c1] = addc(lhs[1], rhs[1], c0);
             auto [w2, c2] = addc(lhs[2], rhs[2], c1);
             auto [w3, c3] = addc(lhs[3], rhs[3], c2);
-            return uint256_t{w0, w1, w2, w3};
+            return {.value = uint256_t{w0, w1, w2, w3}, .carry = c3};
+        }
+
+        [[gnu::always_inline]]
+        friend inline constexpr uint256_t
+        operator+(uint256_t const &lhs, uint256_t const &rhs) noexcept
+
+        {
+            return addc(lhs, rhs).value;
         }
 
         [[gnu::always_inline]]
@@ -642,27 +698,7 @@ namespace monad::vm::runtime
         // String conversion functions
         // These are not optimized and should never be used in
         // performance-critical code.
-        inline std::string to_string(int const base0 = 10) const
-        {
-            MONAD_VM_ASSERT(base0 >= 2 && base0 <= 36);
-
-            auto num = this->to_intx();
-            auto const base = ::intx::uint256{base0};
-
-            std::string buffer{};
-            do {
-                auto const [div, rem] = ::intx::udivrem(num, base);
-                auto const lsw = rem[0];
-                auto const chr = lsw < 10 ? '0' + lsw : 'a' + lsw - 10;
-                buffer.push_back(static_cast<char>(chr));
-                num = div;
-            }
-            while (num);
-            std::ranges::reverse(buffer);
-
-            return buffer;
-        }
-
+        inline std::string to_string(int const base0) const;
         static inline constexpr uint256_t from_string(char const *s);
 
         [[gnu::always_inline]] static inline constexpr uint256_t
@@ -698,10 +734,11 @@ namespace monad::vm::runtime
                static_cast<size_t>(std::popcount(x[3]));
     }
 
+    template <size_t N>
     [[gnu::always_inline]] inline constexpr uint32_t
-    count_significant_words(uint256_t const &x) noexcept
+    count_significant_words(std::array<uint64_t, N> const &x) noexcept
     {
-        for (size_t i = uint256_t::num_words; i > 0; --i) {
+        for (size_t i = N; i > 0; --i) {
             if (x[i - 1] != 0) {
                 return static_cast<uint32_t>(i);
             }
@@ -713,7 +750,7 @@ namespace monad::vm::runtime
     inline constexpr uint32_t
     count_significant_bytes(uint256_t const &x) noexcept
     {
-        auto const significant_words = count_significant_words(x);
+        auto const significant_words = count_significant_words(x.as_words());
         if (significant_words == 0) {
             return 0;
         }
@@ -725,14 +762,268 @@ namespace monad::vm::runtime
         }
     }
 
-    struct div_result
+    [[gnu::always_inline]]
+    constexpr uint64_t
+    long_div(size_t m, uint64_t const *u, uint64_t v, uint64_t *quot)
     {
-        uint256_t quot;
-        uint256_t rem;
-    };
+        MONAD_VM_DEBUG_ASSERT(m);
+        MONAD_VM_DEBUG_ASSERT(v);
+        auto r = div(0, u[m - 1], v);
+        quot[m - 1] = r.quot;
+        for (int i = static_cast<int>(m - 2); i >= 0; i--) {
+            auto ix = static_cast<size_t>(i);
+            r = div(r.rem, u[ix], v);
+            quot[ix] = r.quot;
+        }
+        return r.rem;
+    }
+
+    constexpr void knuth_div(
+        size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
+    {
+        constexpr size_t BASE_SHIFT = 64;
+
+        MONAD_VM_DEBUG_ASSERT(m >= n);
+        MONAD_VM_DEBUG_ASSERT(n > 1);
+        MONAD_VM_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
+
+        for (int i = static_cast<int>(m - n); i >= 0; i--) {
+            auto ix = static_cast<size_t>(i);
+            uint128_t q_hat;
+            // We diverge from the algorithms in Knuth AOCP and Hacker's Delight
+            // as we need to check for potential division overflow before
+            // dividing.
+
+            // u[ix + n] > v[n-1] is never the case:
+            // 1. In the first iteration, u[ix + n] is always the extra
+            // numerator word used to fit the normalization shift and therefore
+            // it is either 0 (if shift = 0) or strictly less than v[n-1]
+            // 2. In subsequent iterations, (u[ix+n .. ix]) is the
+            // remainder of division by (v[n-1 .. 0]), whence u[ix+n] <= v[n-1]
+            MONAD_VM_DEBUG_ASSERT(u[ix + n] <= v[n - 1]);
+            if (MONAD_VM_UNLIKELY(u[ix + n] == v[n - 1])) {
+                q_hat = ~uint64_t{0};
+
+                // In this branch, we have q_hat-1 <= q <= q_hat, therefore only
+                // one adjustment of the quotient is necessary, so we skip the
+                // pre-adjustment phase.
+                //
+                // Suppose q >= q_hat-2, and let term = BASE*u[ix+n] + u[ix+n-1]
+                //   r_hat = term - q_hat*v[n-1]
+                //        >= term - (q-2)*v[n-1]
+                //         = term - q*v[n-1] + 2*v[n-1]
+                //        >= 2 * v[n-1]
+                //        >= BASE
+                // The last inequality follows from v[n-1] > BASE/2 and
+                // term - q*v[n-1] >= 0 follows from u[ix + n] = v[n - 1],
+                // because
+                //   BASE*u[ix+n] + u[ix+n-1] - q*v[n-1]
+                //     = BASE*v[n-1] + u[ix+n-1] - q*v[n-1]
+                //    >= BASE*v[n-1] - q*v[n-1]
+                //    >= BASE*v[n-1] - BASE*v[n-1]
+                //     = 0
+                // However, if r_hat >= BASE, then q_hat <= q. To this end
+                // it suffices to prove
+                //   u[ix+n .. ix] - v[n-1, .., 0] * q_hat >= 0
+                // because q <= q_hat
+                // and u[ix+n .. ix] - v[n-1, .., 0] * q >= 0,
+                //   u[ix+n .. ix] - v[n-1 .. 0]*q_hat
+                //     = (u[ix+n .. ix+n-1] - v[n-1]*q_hat)*B^(n-1)
+                //       + u[ix+n-2 .. ix] - v[n-2 .. 0]*q_hat
+                //     = r_hat*B^(n-1) + u[ix+n-2 .. ix] - v[n-2 .. 0]*q_hat
+                //    >= B^n + u[ix+n-2 .. ix] - v[n-2 .. 0] * q_hat
+                //    >= B^n - v[n-2 .. 0] * q_hat
+                //    >= B^n - B^(n-1) * B
+                //     = 0
+                // Therefore if q >= q_hat-2 we have q <= q_hat which is a
+                // contradiction.
+            }
+            else {
+                auto [q_hat0, r_hat0] = div(u[ix + n], u[ix + n - 1], v[n - 1]);
+                if (q_hat0 == 0) {
+                    continue;
+                }
+
+                q_hat = q_hat0;
+                uint128_t const r_hat = r_hat0;
+
+                if (q_hat * v[n - 2] > (r_hat << BASE_SHIFT) + u[ix + n - 2]) {
+                    q_hat--;
+                }
+            }
+
+            // u[ix+n .. ix] -= q_hat * v[n .. 0]
+            uint128_t t = 0;
+            uint128_t k = 0;
+            for (size_t j = 0; j < n; j++) {
+                uint128_t const prod = q_hat * v[j];
+                t = u[j + ix] - k - (prod & 0xffffffffffffffff);
+                u[j + ix] = static_cast<uint64_t>(t);
+                k = (prod >> 64) -
+                    static_cast<uint128_t>(static_cast<int128_t>(t) >> 64);
+            }
+            t = u[ix + n] - k;
+            u[ix + n] = static_cast<uint64_t>(t);
+
+            // Our estimate for q_hat was one too high
+            // u[ix+n .. ix] += v[n .. 0]
+            // q_hat -= 1
+            if (t >> 127) {
+                q_hat -= 1;
+                uint128_t k = 0;
+                for (size_t j = 0; j < n; j++) {
+                    t = static_cast<uint128_t>(u[ix + j]) + v[j] + k;
+                    u[ix + j] = static_cast<uint64_t>(t);
+                    k = t >> 64;
+                }
+                u[ix + n] += static_cast<uint64_t>(k);
+            }
+            quot[ix] = static_cast<uint64_t>(q_hat);
+        }
+    }
+
+    template <size_t M>
+    using words_t = std::array<uint64_t, M>;
+
+    template <size_t M, size_t N>
+    inline constexpr div_result<words_t<M>, words_t<N>>
+    udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
+    {
+        auto const m = count_significant_words(u);
+        auto const n = count_significant_words(v);
+
+        // Check division by 0
+        MONAD_VM_ASSERT(n);
+        if (m < n) {
+            div_result<words_t<M>, words_t<N>> result;
+            result.quot = {0};
+            if consteval {
+                for (size_t i = 0; i < N; i++) {
+                    result.rem[i] = u[i];
+                }
+            }
+            else {
+                std::memcpy(&result.rem, &u, sizeof(result.rem));
+            }
+            return result;
+        }
+
+        if (m == 1) {
+            // 1 = m >= n > 0 therefore n = 1
+            auto [q0, r0] = div(0, u[0], v[0]);
+            return {.quot = {q0}, .rem = {r0}};
+        }
+
+        div_result<words_t<M>, words_t<N>> result{.quot = {0}, .rem = {0}};
+        if (n == 1) {
+            result.rem[0] = long_div(m, &u[0], v[0], &result.quot[0]);
+            return result;
+        }
+
+        auto const normalize_shift =
+            static_cast<uint8_t>(std::countl_zero(v[n - 1]));
+
+        // Extra word so the normalization shift never overflows u
+        words_t<M + 1> u_norm;
+        u_norm[0] = u[0] << normalize_shift;
+        for (size_t i = 1; i < M; i++) {
+            u_norm[i] = shld(u[i], u[i - 1], normalize_shift);
+        }
+        u_norm[M] = u[M - 1] >> 1 >> (63 - normalize_shift);
+
+        words_t<N> v_norm;
+        v_norm[0] = v[0] << normalize_shift;
+        for (size_t i = 1; i < N; i++) {
+            v_norm[i] = shld(v[i], v[i - 1], normalize_shift);
+        }
+
+        knuth_div(m, &u_norm[0], n, &v_norm[0], &result.quot[0]);
+
+        for (size_t i = 0; i < N - 1; i++) {
+            result.rem[i] = shrd(u_norm[i + 1], u_norm[i], normalize_shift);
+        }
+        result.rem[N - 1] = u_norm[N - 1] >> normalize_shift;
+
+        return result;
+    }
+
+    [[gnu::always_inline]] constexpr inline div_result<uint256_t>
+    udivrem(uint256_t const &u, uint256_t const &v) noexcept
+    {
+        auto r = udivrem(u.as_words(), v.as_words());
+        return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
+    }
+
+    inline constexpr uint256_t addmod(
+        uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
+    {
+        // Fast path when mod >= 2^192 and x, y < 2*mod
+        if (mod[3] && (x[3] <= mod[3]) && (y[3] <= mod[3])) {
+            // x, y < 2 * mod
+            auto const [x_sub, x_borrow] = subb(x, mod);
+            uint256_t const x_norm = x_borrow ? x : x_sub;
+
+            auto const [y_sub, y_borrow] = subb(y, mod);
+            uint256_t const y_norm = y_borrow ? y : y_sub;
+
+            // x_norm, y_norm < mod
+            auto const [xy_sum, xy_carry] = addc(x_norm, y_norm);
+
+            // xy_sum + (xy_carry<<256) < 2 * mod
+            auto const [rem, rem_borrow] = subb(xy_sum, mod);
+            if (xy_carry || !rem_borrow) {
+                // xy_sum + (xy_carry<<256) >= mod
+                return rem;
+            }
+            else {
+                return xy_sum;
+            }
+        }
+        words_t<uint256_t::num_words + 1> sum;
+        uint64_t carry = 0;
+#pragma GCC unroll(4)
+        for (size_t i = 0; i < uint256_t::num_words; i++) {
+            auto const [si, ci] = addc(x[i], y[i], carry);
+            sum[i] = si;
+            carry = ci;
+        }
+        sum[uint256_t::num_words] = carry;
+
+        return uint256_t{udivrem(sum, mod.as_words()).rem};
+    }
 
     [[gnu::always_inline]]
-    inline constexpr div_result
+    inline constexpr uint256_t mulmod(
+        uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
+    {
+        words_t<2 * uint256_t::num_words> prod{0};
+        for (size_t j = 0; j < uint256_t::num_words; j++) {
+            uint64_t carry = 0;
+            for (size_t i = 0; i < uint256_t::num_words; i++) {
+                auto p =
+                    static_cast<uint128_t>(u[i]) * v[j] + carry + prod[i + j];
+                prod[i + j] = static_cast<uint64_t>(p);
+                carry = static_cast<uint64_t>(p >> 64);
+            }
+            prod[j + uint256_t::num_words] = carry;
+        }
+        return uint256_t{udivrem(prod, mod.as_words()).rem};
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t
+    operator/(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        return udivrem(x, y).quot;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t
+    operator%(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        return udivrem(x, y).rem;
+    }
+
+    [[gnu::always_inline]]
+    inline constexpr div_result<uint256_t>
     sdivrem(uint256_t const &x, uint256_t const &y) noexcept
     {
         auto const sign_bit = uint64_t{1} << 63;
@@ -744,13 +1035,7 @@ namespace monad::vm::runtime
 
         auto const quot_neg = x_neg ^ y_neg;
 
-        ::intx::div_result<::intx::uint256, ::intx::uint256> result;
-        if consteval {
-            result = ::intx::udivrem(x_abs.to_intx(), y_abs.to_intx());
-        }
-        else {
-            result = ::intx::udivrem(x_abs.as_intx(), y_abs.as_intx());
-        }
+        auto result = udivrem(x_abs, y_abs);
 
         return {
             uint256_t{quot_neg ? -result.quot : result.quot},
@@ -769,34 +1054,6 @@ namespace monad::vm::runtime
         return (~diff & (x < y)) | (x_neg & ~y_neg);
     }
 
-    [[gnu::always_inline]]
-    inline constexpr uint256_t addmod(
-        uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
-    {
-        if consteval {
-            return uint256_t(
-                ::intx::addmod(x.to_intx(), y.to_intx(), mod.to_intx()));
-        }
-        else {
-            return uint256_t(
-                ::intx::addmod(x.as_intx(), y.as_intx(), mod.as_intx()));
-        }
-    }
-
-    [[gnu::always_inline]]
-    inline constexpr uint256_t mulmod(
-        uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
-    {
-        if consteval {
-            return uint256_t(
-                ::intx::mulmod(x.to_intx(), y.to_intx(), mod.to_intx()));
-        }
-        else {
-            return uint256_t(
-                ::intx::mulmod(x.as_intx(), y.as_intx(), mod.as_intx()));
-        }
-    }
-
     [[gnu::always_inline]] inline constexpr uint256_t
     exp(uint256_t base, uint256_t const &exponent) noexcept
     {
@@ -805,7 +1062,7 @@ namespace monad::vm::runtime
             return result << exponent;
         }
 
-        size_t const sig_words = count_significant_words(exponent);
+        size_t const sig_words = count_significant_words(exponent.as_words());
         for (size_t w = 0; w < sig_words; w++) {
             uint64_t word_exp = exponent[w];
             int32_t significant_bits =
@@ -970,6 +1227,27 @@ namespace monad::vm::runtime
             return static_cast<uint8_t>(chr_lower - 'a' + 10);
         }
         return from_dec(chr);
+    }
+
+    inline std::string uint256_t::to_string(int const base0 = 10) const
+    {
+        MONAD_VM_ASSERT(base0 >= 2 && base0 <= 36);
+
+        auto num = *this;
+        auto const base = uint256_t{base0};
+
+        std::string buffer{};
+        do {
+            auto const [div, rem] = udivrem(num, base);
+            auto const lsw = rem[0];
+            auto const chr = lsw < 10 ? '0' + lsw : 'a' + lsw - 10;
+            buffer.push_back(static_cast<char>(chr));
+            num = div;
+        }
+        while (num);
+        std::ranges::reverse(buffer);
+
+        return buffer;
     }
 
     inline constexpr uint256_t uint256_t::from_string(char const *const str)

@@ -38,8 +38,8 @@ Record DbModel : Type :=
     finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
     nextBlockProposals:  list (Proposal * evm.GlobalState);
     activeBlock: ActiveBlock;        (* changed by set_block_and_round *)
-    verifiedBlock: option N;         (* latest verified block id, updated by update_verified_block *)
     votedMetadata: option (N * N);   (* (block_num, round) from latest update_voted_metadata *)
+    lastFinButNotYetVerified: bool; (* transient state where db.finalize(n+3) has been called but db.verify(n) has not yet been called: will be called soon *)
     cinvGloc: gname;
   }.
 
@@ -79,20 +79,42 @@ Section with_Sigma.
         end /\ roundNum < lengthZ (nextBlockProposals m)
     end.
 
-  Definition validProposal (proposal: Proposal) (finalizedBlocks: list Block) :=
-    match head finalizedBlocks with
+  Definition validProposal (proposal: Proposal) (lastFin: option N) :=
+    match lastFin with
     | Some lastFinBlock =>
-        (bnumber (proposedBlock proposal) = 1 + bnumber lastFinBlock)%N
+        (bnumber (proposedBlock proposal) = 1 + lastFinBlock)%N
     | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? *)
     end.
       
+
+  Open Scope N_scope.
+  Definition lastVerified (lastFinalized: option N) : option N :=
+    match lastFinalized with
+    | Some lastFinBlock  =>
+        if (bool_decide (lastFinBlock < 3))
+        then None
+        else Some (lastFinBlock -3)
+    | None => None
+    end.
     
+  Definition lastFinalizedBlockIndex' (finalizedBlocks: list Block) : option N :=
+    match head finalizedBlocks with
+    | Some lastFinBlock =>
+        Some (bnumber lastFinBlock)
+    | _  => None
+    end.
+  
+  Definition lastFinalizedBlockIndex (m: DbModel) : option N :=
+    lastFinalizedBlockIndex' (map fst (finalizedBlocks m)).
+
   Definition validModel (m: DbModel) : Prop :=
     contiguousBlocksStartingFrom None (finalizedBlocks m)
-    /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (map fst (finalizedBlocks m))
+    /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (lastFinalizedBlockIndex m)
+   /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: are proposals expected in the order of roundnumber ? *)
     /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
+  
 
   Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
     match head (finalizedBlocks m) with
@@ -136,18 +158,26 @@ Section with_Sigma.
       \prepost{key:N} keyp |-> bytes32R q key
       \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)).
 
+  Open Scope N_scope.
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> dbAuthR q preDb
+      \pre [| lastFinButNotYetVerified preDb = false |]
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
+      \pre match lastFinalizedBlockIndex preDb with
+           | Some lastFinIndex => [| blockNum = 1+ lastFinIndex |]
+           | None => True (* TODO *)
+           end
       \post this |-> dbAuthR q (preDb &: _activeBlock .= finalized blockNum)).
 
   cpp.spec "monad::Db::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
       \prepost{q preDb} this |-> dbAuthR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \post this |-> dbAuthR q (preDb &: _verifiedBlock .= Some blockNum)).
+      \pre [| lastFinButNotYetVerified preDb = true |]
+      \pre [| Some blockNum = lastVerified (lastFinalizedBlockIndex preDb) |]
+      \post this |-> dbAuthR q (preDb &: _lastFinButNotYetVerified .= false)).
 
   cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
@@ -199,7 +229,8 @@ cpp.spec
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
     \prepost{(newProposal: Proposal)}
       hdr_ptr |-> BheaderR q (header (proposedBlock newProposal))
-    \pre [| validProposal newProposal (map fst (finalizedBlocks preDb)) |]
+    \pre [| validProposal newProposal (lastFinalizedBlockIndex preDb) |]
+    \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |]
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
     \prepost{(rs: list monad.proofs.evmopsem.TransactionResult)}
@@ -270,7 +301,6 @@ Print exec_specs.
 Print libspecs.
  *)
  Set Printing FullyQualifiedNames.
-
 
   
 End with_Sigma.

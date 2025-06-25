@@ -18,7 +18,6 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -109,8 +108,7 @@ int main(int const argc, char const *argv[])
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
-    std::string exec_ring_config_spec = MONAD_EVENT_DEFAULT_EXEC_RING_PATH;
-    bool no_events = false;
+    std::string exec_event_ring_config_spec;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
@@ -175,8 +173,8 @@ int main(int const argc, char const *argv[])
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(0, 1);
     cli.add_option(
-           "--exec-ring",
-           exec_ring_config_spec,
+           "--exec-event-ring",
+           exec_event_ring_config_spec,
            "execution event ring configuration string")
         ->type_name("<file-name>[:<descriptor-shift>:<buf-shift>]")
         ->check([](std::string const &s) {
@@ -185,7 +183,6 @@ int main(int const argc, char const *argv[])
             }
             return std::string{};
         });
-    cli.add_flag("--no-events", no_events, "disable all event recorders");
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -215,12 +212,15 @@ int main(int const argc, char const *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
     // Initialize the event system
-    if (!no_events) {
-        auto config = try_parse_event_ring_config(exec_ring_config_spec);
+    if (!empty(exec_event_ring_config_spec)) {
+        auto config = try_parse_event_ring_config(exec_event_ring_config_spec);
         MONAD_ASSERT(config, "not validated by CLI11?");
-        // TODO(ken): we don't do anything besides log if this fails to
-        //    initialize, and just continue without events. Should we exit?
-        (void)init_execution_event_recorder(*config);
+        if (init_execution_event_recorder(*config) != 0) {
+            LOG_ERROR(
+                "cannot continue without execution event ring `{}`",
+                exec_event_ring_config_spec);
+            return 1;
+        }
     }
 
 #ifdef ENABLE_EVENT_TRACING

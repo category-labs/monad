@@ -18,6 +18,7 @@ MONAD_NAMESPACE_BEGIN
 struct Block;
 class BlockHashBuffer;
 class BlockState;
+struct Chain;
 struct ExecutionResult;
 
 template <evmc_revision rev>

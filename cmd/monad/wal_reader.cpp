@@ -34,8 +34,10 @@ namespace
     }
 }
 
-WalReader::WalReader(std::filesystem::path const &ledger_dir)
-    : ledger_dir_{ledger_dir}
+WalReader::WalReader(
+    MonadChain const &chain, std::filesystem::path const &ledger_dir)
+    : chain_{chain}
+    , ledger_dir_{ledger_dir}
 {
     cursor_.open(ledger_dir_ / "wal", std::ios::binary);
     MONAD_ASSERT(cursor_);
@@ -57,7 +59,8 @@ std::optional<WalReader::Result> WalReader::next()
             checksum_header == entry.id,
             "Checksum failed for bft header %s",
             header_filename.c_str());
-        auto const header_res = rlp::decode_consensus_block_header(header_view);
+        auto const header_res =
+            rlp::decode_consensus_block_header(chain_, header_view);
         MONAD_ASSERT_PRINTF(
             !header_res.has_error(),
             "Could not rlp decode file %s",

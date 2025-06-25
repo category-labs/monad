@@ -375,7 +375,7 @@ int main(int const argc, char const *argv[])
         case CHAIN_CONFIG_MONAD_MAINNET:
         case CHAIN_CONFIG_MONAD_TESTNET2:
             return runloop_monad(
-                *chain,
+                dynamic_cast<MonadChain const &>(*chain),
                 block_db_path,
                 db,
                 db_cache,

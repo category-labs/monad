@@ -1,5 +1,6 @@
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
@@ -8,8 +9,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-MonadConsensusBlockHeader
-read_header(bytes32_t const &, std::filesystem::path const &);
+byte_string read_file(bytes32_t const &, std::filesystem::path const &);
 
 MonadConsensusBlockBody
 read_body(bytes32_t const &, std::filesystem::path const &);

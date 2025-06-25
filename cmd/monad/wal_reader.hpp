@@ -11,6 +11,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct MonadChain;
+
 enum class WalAction : uint8_t
 {
     PROPOSE = 0,
@@ -31,6 +33,7 @@ static_assert(alignof(WalEntry) == 1);
 
 class WalReader
 {
+    MonadChain const &chain_;
     std::ifstream cursor_;
     std::filesystem::path ledger_dir_;
 
@@ -42,7 +45,7 @@ public:
         MonadConsensusBlockBody body;
     };
 
-    WalReader(std::filesystem::path const &ledger_dir);
+    WalReader(MonadChain const &, std::filesystem::path const &ledger_dir);
 
     std::optional<Result> next();
 

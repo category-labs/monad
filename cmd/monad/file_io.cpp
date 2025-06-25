@@ -12,54 +12,33 @@
 
 MONAD_NAMESPACE_BEGIN
 
-namespace
-{
-    byte_string slurp_file(std::filesystem::path const &path)
-    {
-        MONAD_ASSERT(
-            std::filesystem::exists(path) &&
-            std::filesystem::is_regular_file(path));
-        std::ifstream is(path);
-        byte_string contents{
-            std::istreambuf_iterator<char>(is),
-            std::istreambuf_iterator<char>()};
-        MONAD_ASSERT(is);
-        return contents;
-    }
-
-}
-
-MonadConsensusBlockHeader
-read_header(bytes32_t const &id, std::filesystem::path const &dir)
+byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
 {
     auto const filename = evmc::hex(id);
     auto const path = dir / filename;
-    MONAD_ASSERT(std::filesystem::exists(path));
-    auto const data = slurp_file(path);
+    MONAD_ASSERT(
+        std::filesystem::exists(path) &&
+        std::filesystem::is_regular_file(path));
+    std::ifstream is(path);
+    MONAD_ASSERT(is);
+    byte_string const data{
+        std::istreambuf_iterator<char>(is), std::istreambuf_iterator<char>()};
     auto const checksum = to_bytes(blake3(data));
     MONAD_ASSERT_PRINTF(
         checksum == id, "Checksum failed for bft header: %s", filename.c_str());
-    byte_string_view view{data};
-    auto const res = rlp::decode_consensus_block_header(view);
-    MONAD_ASSERT_PRINTF(
-        !res.has_error(), "Could not rlp decode file: %s", filename.c_str());
-    return res.value();
+    return data;
 }
 
 MonadConsensusBlockBody
 read_body(bytes32_t const &id, std::filesystem::path const &dir)
 {
-    auto const filename = evmc::hex(id);
-    auto const path = dir / filename;
-    MONAD_ASSERT(std::filesystem::exists(path));
-    auto const data = slurp_file(path);
-    auto const checksum = to_bytes(blake3(data));
-    MONAD_ASSERT_PRINTF(
-        checksum == id, "Checksum failed for bft block: %s", filename.c_str());
+    auto const data = read_file(id, dir);
     byte_string_view view{data};
     auto const res = rlp::decode_consensus_block_body(view);
     MONAD_ASSERT_PRINTF(
-        !res.has_error(), "Could not rlp decode file: %s", filename.c_str());
+        !res.has_error(),
+        "Could not rlp decode body: %s",
+        evmc::hex(id).c_str());
     return res.value();
 }
 

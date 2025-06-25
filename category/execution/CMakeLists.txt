@@ -159,6 +159,9 @@ add_library(
   "monad/core/monad_block.hpp"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
+  # monad/execution
+  "monad/validate_monad_block.cpp"
+  "monad/validate_monad_block.hpp"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

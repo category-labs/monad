@@ -2,6 +2,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/hex_literal.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
@@ -113,7 +115,10 @@ TEST(Rlp_Block, MonadConsensusBlock)
     auto encoded_body = to_byte_string_view(body);
 
     // header
-    auto const res = rlp::decode_consensus_block_header(encoded_header);
+    MonadTestnet chain;
+    auto const res =
+        rlp::decode_consensus_block_header<MonadConsensusBlockHeaderV0>(
+            encoded_header);
     EXPECT_FALSE(res.has_error());
     EXPECT_EQ(
         to_byte_string_view(header),
@@ -122,20 +127,23 @@ TEST(Rlp_Block, MonadConsensusBlock)
     auto const &consensus_header = res.value();
     auto const &vote = consensus_header.qc.vote;
 
-    EXPECT_EQ(consensus_header.round, 10);
+    EXPECT_EQ(consensus_header.block_round, 10);
     EXPECT_EQ(consensus_header.epoch, 5);
     EXPECT_EQ(consensus_header.seqno, consensus_header.execution_inputs.number);
-    EXPECT_EQ(
-        vote.id,
-        to_bytes(
-            0x0000000000000000000000000000000000000000000000000000000000000000_hex));
-    EXPECT_EQ(
-        vote.parent_id,
-        to_bytes(
-            0x0000000000000000000000000000000000000000000000000000000000000000_hex));
-    EXPECT_EQ(vote.epoch, 1);
-    EXPECT_EQ(vote.round, 0);
-    EXPECT_EQ(vote.parent_round, 0);
+
+    {
+        EXPECT_EQ(
+            vote.id,
+            to_bytes(
+                0x0000000000000000000000000000000000000000000000000000000000000000_hex));
+        EXPECT_EQ(
+            vote.parent_id,
+            to_bytes(
+                0x0000000000000000000000000000000000000000000000000000000000000000_hex));
+        EXPECT_EQ(vote.epoch, 1);
+        EXPECT_EQ(vote.round, 0);
+        EXPECT_EQ(vote.parent_round, 0);
+    }
 
     BlockHeader execution_header{
         .number = 5,

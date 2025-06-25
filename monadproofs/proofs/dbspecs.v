@@ -83,7 +83,7 @@ Section with_Sigma.
     match lastFin with
     | Some lastFinBlock =>
         (bnumber (proposedBlock proposal) = 1 + lastFinBlock)%N
-    | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? *)
+    | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? I guess when we start the system, there will always be the finalized genesisd block? *)
     end.
       
 
@@ -110,7 +110,7 @@ Section with_Sigma.
   Definition validModel (m: DbModel) : Prop :=
     contiguousBlocksStartingFrom None (finalizedBlocks m)
     /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (lastFinalizedBlockIndex m)
-   /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: are proposals expected in the order of roundnumber ? *)
+   /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: Fix: Maged says there can be multiple proposals for the same round number. TODO: are proposals expected in the order of roundnumber.  ? *)
     /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
@@ -165,6 +165,7 @@ Section with_Sigma.
       \pre [| lastFinButNotYetVerified preDb = false |]
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
+      \pre True (* roundNum should have been commited before *) 
       \pre match lastFinalizedBlockIndex preDb with
            | Some lastFinIndex => [| blockNum = 1+ lastFinIndex |]
            | None => True (* TODO *)
@@ -211,7 +212,15 @@ Definition commit_model2
     &: _nextBlockProposals .=
       ((Build_Proposal (roundNumber newBlock) (proposedBlock newBlock), finalState)
          :: nextBlockProposals preDb).
-
+(*
+# round numbers are disjoint even across 
+lastFinalizes (101, 201)
+commit (102, 202)                
+commit (103, 203)
+commit (103, 203)
+commit (103, 204)
+finalize(102,202)
+*)
 
 cpp.spec
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
@@ -219,7 +228,7 @@ cpp.spec
     \prepost{(q:Qp) (preDb:DbModel)} this |-> dbAuthR q preDb
 
     \arg{deltas_ptr} "#0" (Vptr deltas_ptr)
-    \prepost{(finalState: monad.proofs.evmopsem.StateOfAccounts)}
+    \prepost{(finalState: StateOfAccounts)}
       deltas_ptr |-> StateDeltasR q (stateAfterLastFinalized preDb, finalState)
 
     \arg{code_ptr} "#1" (Vptr code_ptr)
@@ -230,7 +239,7 @@ cpp.spec
     \prepost{(newProposal: Proposal)}
       hdr_ptr |-> BheaderR q (header (proposedBlock newProposal))
     \pre [| validProposal newProposal (lastFinalizedBlockIndex preDb) |]
-    \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |]
+    \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] (* delete *)
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
     \prepost{(rs: list monad.proofs.evmopsem.TransactionResult)}

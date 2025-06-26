@@ -18,13 +18,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <gtest/gtest.h>
-#include <category/core/likely.h>
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/event/test_event_types.h>
+#include <category/core/likely.h>
+#include <gtest/gtest.h>
 
 static uint8_t PERF_ITER_SHIFT = 20;
 
@@ -113,13 +113,13 @@ static void writer_main(
     uint64_t last_seqno = iter.read_last_seqno = 0;
     while (last_seqno < max_writer_iteration) {
         monad_event_descriptor event;
-        monad_event_next_result const nr =
+        monad_event_iter_result const ir =
             monad_event_iterator_try_next(&iter, &event);
-        if (MONAD_UNLIKELY(nr == MONAD_EVENT_NOT_READY)) {
+        if (MONAD_UNLIKELY(ir == MONAD_EVENT_NOT_READY)) {
             __builtin_ia32_pause();
             continue;
         }
-        ASSERT_EQ(MONAD_EVENT_SUCCESS, nr);
+        ASSERT_EQ(MONAD_EVENT_SUCCESS, ir);
         EXPECT_EQ(last_seqno + 1, event.seqno);
         last_seqno = event.seqno;
 

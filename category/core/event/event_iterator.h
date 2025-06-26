@@ -23,7 +23,7 @@ struct monad_event_ring_control;
 
 /// Result of trying to atomically read the next available event and advance
 /// the iterator past it
-enum monad_event_next_result
+enum monad_event_iter_result
 {
     MONAD_EVENT_SUCCESS,         ///< Event read and iterator advanced
     MONAD_EVENT_NOT_READY,       ///< No events are available right now
@@ -35,8 +35,14 @@ enum monad_event_next_result
 /// Copy the next event descriptor and advance the iterator, if the next event
 /// is available; returns MONAD_EVENT_SUCCESS upon success, otherwise returns
 /// a code indicating why the iterator could not be advanced
-static enum monad_event_next_result monad_event_iterator_try_next(
+static enum monad_event_iter_result monad_event_iterator_try_next(
     struct monad_event_iterator *, struct monad_event_descriptor *);
+
+/// Copy the event descriptor at the current iteration point, without advancing
+/// the iterator; returns MONAD_EVENT_SUCCESS upon success, otherwise returns
+/// a code indicating why the descriptor at the iteration point was not ready
+static enum monad_event_iter_result monad_event_iterator_try_copy(
+    struct monad_event_iterator const *, struct monad_event_descriptor *);
 
 /// Reset the iterator to point to the latest event produced; used for gap
 /// recovery

@@ -33,6 +33,7 @@ add_library(
   "ethereum/core/fmt/address_fmt.hpp"
   "ethereum/core/fmt/block_fmt.hpp"
   "ethereum/core/fmt/bytes_fmt.hpp"
+  "ethereum/core/fmt/eth_ctypes_fmt.hpp"
   "ethereum/core/fmt/int_fmt.hpp"
   "ethereum/core/fmt/receipt_fmt.hpp"
   "ethereum/core/fmt/signature_fmt.hpp"
@@ -80,6 +81,7 @@ add_library(
   "ethereum/db/util.hpp"
   # ethereum/event
   "ethereum/event/exec_event_ctypes.h"
+  "ethereum/event/exec_event_ctypes_fmt.hpp"
   "ethereum/event/exec_event_ctypes_metadata.c"
   "ethereum/event/exec_event_recorder.cpp"
   "ethereum/event/exec_event_recorder.hpp"

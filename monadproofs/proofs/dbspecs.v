@@ -1,3 +1,4 @@
+(* TODO: put most Imports in a prelude *)
 Require Import QArith.
 Require Import Lens.Elpi.Elpi.
 Require Import bluerock.lang.cpp.cpp.
@@ -23,23 +24,30 @@ Require Import bluerock.auto.cpp.
 Require Import bluerock.auto.cpp.specs.
 Require Import monad.proofs.exec_specs.
 
+(* models parts of Block and  MonadConsensusBlockHeader that are relevant for DB specs. *)
 Record Proposal :=
   {
     roundNumber: N;
-    proposedBlock: Block
+    proposedBlock: Block;
+    (* delayed_execution_results is not really relevant because we know that last_verified=last_finalized+3 and we enforce this constraint logicall in these specs *)
   }.
 
+(* models the state changed by Db::set_block_and_round *)
 Inductive ActiveBlock :=
+| preGenesis
 | finalized (block_number: N)
 | proposalForNextBlock (block_number: N) (round_number:N).
 
 Record DbModel : Type :=
   {
-    finalizedBlocks: list (Block * evm.GlobalState); (* dbAuthR asserts that the indices of these blocks must be contiguous. head is the latest finalized block. snd component is the state JUST AFTER executing the block *)
+    finalizedBlocks: list (Block * evm.GlobalState); 
     nextBlockProposals:  list (Proposal * evm.GlobalState);
-    activeBlock: ActiveBlock;        (* changed by set_block_and_round *)
-    votedMetadata: option (N * N);   (* (block_num, round) from latest update_voted_metadata *)
-    lastFinButNotYetVerified: bool; (* transient state where db.finalize(n+3) has been called but db.verify(n) has not yet been called: will be called soon *)
+    activeBlock: ActiveBlock;
+    (*^ changed by set_block_and_round *)
+    votedMetadata: option (N * N);
+    (*^ (block_num, round) from latest update_voted_metadata *)
+    lastFinButNotYetVerified: bool;
+    (*^ transient state where db.finalize(n+3) has been called but db.verify(n) has not yet been called: will be called soon *)
     cinvGloc: gname;
   }.
 
@@ -54,12 +62,12 @@ Section with_Sigma.
   
   Definition bnumber (b: Block) : N := number (header b).
   Open Scope Z_scope.
-  Fixpoint contiguousBlocksStartingFrom (oblockIndex: option Z) (l: list (Block * evm.GlobalState)) : Prop :=
+  Fixpoint contiguousBlocksStartingFrom (oblockIndex: option Z) (l: list Block) : Prop :=
     match l with
     | [] => True
     | h::tl => match oblockIndex with
-               | Some blockIndex => Z.to_N blockIndex = bnumber (fst h) /\ contiguousBlocksStartingFrom (Some (blockIndex - 1)) tl
-               | None => contiguousBlocksStartingFrom (Some (bnumber (fst h) - 1)) tl
+               | Some blockIndex => Z.to_N blockIndex = bnumber h /\ contiguousBlocksStartingFrom (Some (blockIndex - 1)) tl
+               | None => contiguousBlocksStartingFrom (Some (bnumber h - 1)) tl
                end
                  
     end.

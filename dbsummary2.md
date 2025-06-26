@@ -171,6 +171,41 @@ A: Every block N’s header has its own post‑execution state root.  `block_s
 A: They must always be diff(s₂ vs s₀).  Before each commit you call `set_block_and_round(finalized_block,nullopt)` to reset the working prefix back to the finalized sub‑trie (state s₀), so `TrieDb::commit`’s guard sees a “new” (block,round) and invokes `copy_trie` to snapshot s₀ again (shallowly, only the root chunk is written).  Then `upsert(state_deltas,version)` applies the entire s₂−s₀ diff and `write_new_root_node(...,version)` simply overwrites that version’s root‐offset in place, yielding exactly s₂ under the proposal prefix and discarding any prior s₁.  
 【F:monad/dbsummary2.md†L237-L241】【F:monad/dbsummary2.md†L253-L274】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L484-L489】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L187-L197】【F:monad/libs/db/src/monad/mpt/trie.cpp†L1935-L1946】
 
+**Q: db.commit(…) takes a `MonadConsensusBlockHeader`. Which fields of it does commit actually use?**  
+A: Internally, `TrieDb::commit` only *inspects* two parts of the header for prefix/version switching:
+  1. `consensus_header.round` → to select `proposal_prefix(round)`;
+  2. `consensus_header.execution_inputs.number` → to bump the MPT version (block number).
+These drive the `if(consensus_header.round!=round_number_||header.number!=block_number_)` guard.【F:monad/libs/execution/src/monad/db/trie_db.cpp†L161-L169】
+
+
+Additionally, commit *persists*:
+  - The full `consensus_header` (RLP‑encoded under `BFT_BLOCK_NIBBLE`) so all its votes/signatures/delayed results are stored.【F:monad/libs/execution/src/monad/db/trie_db.cpp†L365-L370】
+  - The `execution_inputs` block‑header fields (`number`, `timestamp`, etc) are used to build the canonical `BLOCKHEADER_NIBBLE` leaf via `rlp::encode_block_header` (together with computed roots/blooms).【F:monad/libs/execution/src/monad/db/trie_db.cpp†L412-L431】
+
+**Q: In `set_block_and_round`, can the `round_number` argument be `std::nullopt` if the block has been finalized by calling `finalize()`?**  
+A: Yes. Passing `std::nullopt` for `round_number` selects the finalized sub‑trie prefix.  The implementation in `TrieDb` is:
+
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L484-L489
+void TrieDb::set_block_and_round(
+    uint64_t block_number,
+    std::optional<uint64_t> round_number)
+{
+    if (!db_.is_on_disk()) {
+        MONAD_ASSERT(block_number_ == 0);
+        MONAD_ASSERT(round_number_ == std::nullopt);
+        return;
+    }
+    prefix_ = round_number.has_value()
+                ? proposal_prefix(round_number.value())
+                : finalized_nibbles;
+    MONAD_ASSERT(db_.find(prefix_, block_number).has_value());
+    block_number_ = block_number;
+    round_number_ = round_number;
+}
+```
+【F:monad/libs/execution/src/monad/db/trie_db.cpp†L484-L489】
+
 ---
 ## 7. Genesis: Initial State Setup
 
@@ -315,6 +350,8 @@ tdb.set_block_and_round(
                                     : std::make_optional(round));
 ```
 If you pass a valid `round`, it reads the *proposal* subtrie (in‑flight state); if you pass `INVALID_ROUND_NUM` (or omit the round), it reads the *finalized* subtrie.
+
+> **Note:** An eth_call handler typically makes several MPT reads (`read_account`, `read_storage`, etc.) to assemble its result, but all of these operate on the same `TrieRODb` instance **and** the same prefix/version set by the single `set_block_and_round` call above.  Since `TrieRODb` never issues upserts or reloads its root, every sub‑read sees a consistent snapshot—even if a concurrent commit occurs in another process.  
 
 **Q: Where and when does the execution layer advance the block number (i.e. the MPT version)?**  
 A: In `TrieDb::commit`, at the very start of the method, before assembling any updates.  That bump to `block_number_`/`round_number_` is then used to stamp all ensuing updates, and finally `db_.upsert(..., block_number_, ...)` writes them out:

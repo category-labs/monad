@@ -1,7 +1,6 @@
 find_package(
   Boost
-  COMPONENTS fiber
-  REQUIRED)
+  CONFIG REQUIRED COMPONENTS fiber)
 
 add_async_test(TARGET io_test SOURCES "io.cpp")
 

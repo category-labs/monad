@@ -17,8 +17,7 @@ option(MONAD_CORE_FORCE_DEBUG_ASSERT
 include("cmake/find_our_dependency.cmake")
 
 find_package(
-  Boost REQUIRED
-  COMPONENTS context fiber stacktrace_basic
+  Boost CONFIG REQUIRED COMPONENTS context fiber stacktrace_basic
   OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)

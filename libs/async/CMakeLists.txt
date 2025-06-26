@@ -10,8 +10,7 @@ project(monad_async)
 
 find_package(
   Boost 1.83 # 1.83 really is the minimum
-  COMPONENTS fiber
-  REQUIRED)
+  CONFIG REQUIRED COMPONENTS fiber)
 
 # ##############################################################################
 # libs

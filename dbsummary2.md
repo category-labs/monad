@@ -167,6 +167,10 @@ A: The consensus layer (outside this repo) packs any deferred‐execution header
 **Q: Does each block’s header contain the root after executing that block or N‑2?**  
 A: Every block N’s header has its own post‑execution state root.  `block_state.commit(…)` writes the header (including `state_root = state_root()`) under version N, and only then can `finalize(N,…)` succeed.  There is no two‐block lag, and you cannot finalize a block you haven’t executed.
 
+**Q: If you reset to the finalized state and then re‑commit the same (block,round), should the state deltas be computed as s₂ vs s₁ or s₂ vs s₀?**  
+A: They must always be diff(s₂ vs s₀).  Before each commit you call `set_block_and_round(finalized_block,nullopt)` to reset the working prefix back to the finalized sub‑trie (state s₀), so `TrieDb::commit`’s guard sees a “new” (block,round) and invokes `copy_trie` to snapshot s₀ again (shallowly, only the root chunk is written).  Then `upsert(state_deltas,version)` applies the entire s₂−s₀ diff and `write_new_root_node(...,version)` simply overwrites that version’s root‐offset in place, yielding exactly s₂ under the proposal prefix and discarding any prior s₁.  
+【F:monad/dbsummary2.md†L237-L241】【F:monad/dbsummary2.md†L253-L274】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L484-L489】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L187-L197】【F:monad/libs/db/src/monad/mpt/trie.cpp†L1935-L1946】
+
 ---
 **Q: How do RODb and RWDb coordinate across separate processes?**  
 A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return non‑owning cursors that become invalid when the trie root is reloaded—either by an RWDb upsert, an RODb switch, or an RWDb in another process.

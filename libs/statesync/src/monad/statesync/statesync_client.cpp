@@ -91,7 +91,12 @@ void monad_statesync_client_handle_target(
 
     byte_string_view raw{data, size};
     auto const res = rlp::decode_block_header(raw);
-    MONAD_ASSERT(res.has_value());
+    if (!res) {
+        MONAD_ABORT_PRINTF(
+            "FATAL: %s. Input size was %lu",
+            res.assume_error().message().c_str(),
+            size);
+    }
     auto const &tgrt = res.value();
     MONAD_ASSERT(tgrt.number != INVALID_BLOCK_ID);
     MONAD_ASSERT(

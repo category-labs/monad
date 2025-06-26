@@ -5,6 +5,7 @@
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/keccak.h>
+#include <monad/core/scope_polyfill.hpp>
 #include <monad/core/unaligned.hpp>
 #include <monad/mem/allocators.hpp>
 #include <monad/mpt/compute.hpp>

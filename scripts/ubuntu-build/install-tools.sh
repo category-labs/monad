@@ -12,3 +12,8 @@ packages=(
 )
 
 apt install -y "${packages[@]}"
+
+# Need a newer Rust toolchain than Ubuntu has
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. "$HOME/.cargo/env"
+cargo install bindgen-cli

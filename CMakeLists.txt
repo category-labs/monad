@@ -185,6 +185,7 @@ add_subdirectory("libs/db")
 add_subdirectory("libs/execution")
 add_subdirectory("libs/rpc")
 add_subdirectory("libs/statesync")
+add_subdirectory("libs/triedb-driver")
 
 # ##############################################################################
 # cmds

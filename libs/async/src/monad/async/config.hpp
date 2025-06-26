@@ -23,26 +23,6 @@
 #include <monad/core/assert.h>
 #include <monad/core/hash.hpp>
 
-#ifndef MONAD_CONTEXT_HAVE_ASAN
-    #ifndef __clang__
-        #if defined(__SANITIZE_ADDRESS__)
-            #define MONAD_CONTEXT_HAVE_ASAN 1
-        #elif defined(__SANITIZE_THREAD__)
-            #define MONAD_CONTEXT_HAVE_TSAN 1
-        #elif defined(__SANITIZE_UNDEFINED__)
-            #define MONAD_CONTEXT_HAVE_UBSAN 1
-        #endif
-    #else
-        #if __has_feature(address_sanitizer)
-            #define MONAD_CONTEXT_HAVE_ASAN 1
-        #elif __has_feature(thread_sanitizer)
-            #define MONAD_CONTEXT_HAVE_TSAN 1
-        #elif defined(__SANITIZE_UNDEFINED__)
-            #define MONAD_CONTEXT_HAVE_UBSAN 1
-        #endif
-    #endif
-#endif
-
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 //! The same type io_uring uses for offsets into files during i/o

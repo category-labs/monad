@@ -29,6 +29,7 @@ RUN apt update && apt install -y \
   libbenchmark-dev \
   libbrotli-dev \
   libcap-dev \
+  libclang-dev \
   libcli11-dev \
   libgmock-dev \
   libgmp-dev \
@@ -45,10 +46,12 @@ RUN apt update && apt install -y \
 
 FROM base as build
 
-RUN apt update && apt install -y gcc-15 g++-15
-
-RUN apt update && apt install -y cmake ninja-build pkg-config
-RUN apt update && apt install -y python3-pytest
+RUN apt update && apt install -y gcc-15 g++-15 cmake ninja-build pkg-config python3-pytest
+# install cargo
+ARG CARGO_ROOT="/root/.cargo"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+ENV PATH="${CARGO_ROOT}/bin:$PATH"
+RUN cargo install bindgen-cli
 
 RUN apt update && apt-get install -y \
   libboost-fiber1.83-dev \
@@ -64,7 +67,7 @@ ARG GIT_COMMIT_HASH
 RUN test -n "$GIT_COMMIT_HASH"
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
+RUN CC=gcc-15 CXX=g++-15 cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
   -DCMAKE_TOOLCHAIN_FILE:STRING=libs/core/toolchains/temp-strip-release.cmake \
   -DCMAKE_BUILD_TYPE:STRING=Release \

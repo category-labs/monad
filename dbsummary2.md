@@ -172,6 +172,85 @@ A: They must always be diff(s₂ vs s₀).  Before each commit you call `set
 【F:monad/dbsummary2.md†L237-L241】【F:monad/dbsummary2.md†L253-L274】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L484-L489】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L187-L197】【F:monad/libs/db/src/monad/mpt/trie.cpp†L1935-L1946】
 
 ---
+## 7. Genesis: Initial State Setup
+
+The genesis block (block 0) is loaded from a JSON file via `read_genesis(…)` in `genesis.hpp`, which parses both the block header and the initial account allocations, then commits and finalizes block 0:
+
+```cpp
+// libs/execution/src/monad/execution/genesis.hpp:L132-L146
+inline BlockHeader read_genesis(std::filesystem::path const& genesis_file, Db& db) {
+    std::ifstream ifile(genesis_file);
+    auto const genesis_json = nlohmann::json::parse(ifile);
+
+    StateDeltas state_deltas;
+    read_genesis_state(genesis_json, state_deltas);
+
+    MonadConsensusBlockHeader consensus_header{};
+    consensus_header.execution_inputs = read_genesis_blockheader(genesis_json);
+
+    db.commit(state_deltas, Code{}, consensus_header);
+    db.finalize(0, 0);
+    return db.read_eth_header();
+}
+```
+
+Here, `read_genesis_state` populates `state_deltas` with the `alloc` balances:
+
+```cpp
+// libs/execution/src/monad/execution/genesis.hpp:L108-L130
+inline void read_genesis_state(nlohmann::json const& genesis_json, StateDeltas& state_deltas) {
+    for (auto const& info : genesis_json["alloc"].items()) {
+        Address addr{};
+        auto const bs = evmc::from_hex("0x" + info.key());
+        std::copy_n(bs->begin(), bs->length(), addr.bytes);
+
+        Account acct{};
+        acct.balance = intx::from_string<uint256_t>(
+            info.value()["wei_balance"].get<std::string>());
+        acct.nonce = 0;
+
+        state_deltas.emplace(addr, StateDelta{.account={std::nullopt, acct}});
+    }
+}
+```
+【F:monad/libs/execution/src/monad/execution/genesis.hpp†L108-L130】
+
+`TrieDb`’s initial constructor and commit snapshot‑guard automatically handle block 0/round 0:
+
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L83-L89
+TrieDb::TrieDb(mpt::Db& db)
+  : db_{db}
+  , block_number_{db.get_latest_finalized_block_id()==INVALID_BLOCK_ID?0:db.get_latest_finalized_block_id()}
+  , round_number_{std::nullopt}
+  , prefix_{finalized_nibbles}
+{}
+
+// libs/execution/src/monad/db/trie_db.cpp:L161-L169
+if (db_.is_on_disk() &&
+    (consensus_header.round != round_number_ ||
+     header.number             != block_number_))
+{
+    // first commit for (0,0): no copy_trie since no prior state
+    round_number_ = consensus_header.round;
+    block_number_ = header.number;
+    prefix_       = proposal_prefix(round_number_);
+}
+```
+【F:monad/libs/execution/src/monad/db/trie_db.cpp†L83-L89】【F:monad/libs/execution/src/monad/db/trie_db.cpp†L161-L169】
+
+Finally, finalizing block 0 shallow‑copies the proposal sub‑trie into the immutable finalized prefix:
+
+```cpp
+// libs/execution/src/monad/db/trie_db.cpp:L491-L502
+db_.copy_trie(0, proposal_prefix(0), 0, finalized_nibbles, true);
+db_.update_finalized_block(0);
+```
+【F:monad/libs/execution/src/monad/db/trie_db.cpp†L491-L502】
+
+After this sequence, the database’s finalized prefix at version 0 contains the genesis state.
+
+---
 **Q: How do RODb and RWDb coordinate across separate processes?**  
 A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return non‑owning cursors that become invalid when the trie root is reloaded—either by an RWDb upsert, an RODb switch, or an RWDb in another process.
 

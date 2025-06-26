@@ -24,6 +24,7 @@
 
 #include <hugetlbfs.h>
 
+#include <category/core/cleanup.h>
 #include <category/core/format_err.h>
 #include <category/core/srcloc.h>
 #include <category/core/mem/hugetlb_path.h>
@@ -70,7 +71,8 @@ static int walk_path_suffix(
     char *dir_name;
     char *tokctx;
 
-    char *path_components = strdup(path_suffix);
+    char *const path_components [[gnu::cleanup(cleanup_free)]] =
+        strdup(path_suffix);
     if (path_components == nullptr) {
         return FORMAT_ERRC(errno, "strdup of `%s` failed", path_suffix);
     }
@@ -124,11 +126,9 @@ static int walk_path_suffix(
         rc = path_append(
             &namebuf, dir_name, &namebuf_size, /*prepend_sep*/ true);
     }
-    free(path_components);
     return rc;
 
 Error:
-    free(path_components);
     (void)close(*curfd);
     *curfd = -1;
     return rc;

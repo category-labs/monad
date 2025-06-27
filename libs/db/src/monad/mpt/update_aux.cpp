@@ -274,6 +274,22 @@ uint64_t UpdateAuxImpl::get_latest_voted_round() const noexcept
         ->load(std::memory_order_acquire);
 }
 
+uint64_t UpdateAuxImpl::get_latest_proposed_version() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    return start_lifetime_as<std::atomic_uint64_t const>(
+               &db_metadata()->latest_proposed_version)
+        ->load(std::memory_order_acquire);
+}
+
+uint64_t UpdateAuxImpl::get_latest_proposed_round() const noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    return start_lifetime_as<std::atomic_uint64_t const>(
+               &db_metadata()->latest_proposed_round)
+        ->load(std::memory_order_acquire);
+}
+
 void UpdateAuxImpl::set_latest_finalized_version(
     uint64_t const version) noexcept
 {
@@ -309,6 +325,20 @@ void UpdateAuxImpl::set_latest_voted(
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_version)
             ->store(version, std::memory_order_release);
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_round)
+            ->store(round, std::memory_order_release);
+    }
+}
+
+void UpdateAuxImpl::set_latest_proposed(
+    uint64_t const version, uint64_t const round) noexcept
+{
+    MONAD_ASSERT(is_on_disk());
+    for (auto const i : {0, 1}) {
+        auto *const m = db_metadata_[i].main;
+        auto g = m->hold_dirty();
+        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_proposed_version)
+            ->store(version, std::memory_order_release);
+        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_proposed_round)
             ->store(round, std::memory_order_release);
     }
 }
@@ -444,6 +474,7 @@ void UpdateAuxImpl::clear_ondisk_db()
     set_latest_finalized_version(INVALID_BLOCK_ID);
     set_latest_verified_version(INVALID_BLOCK_ID);
     set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
+    set_latest_proposed(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
     set_auto_expire_version_metadata(0);
 
     advance_db_offsets_to(
@@ -475,6 +506,7 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
         set_latest_verified_version(version);
     }
     set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
+    set_latest_proposed(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =
         db_metadata()->at(last_written_offset.id)->in_fast_list;
@@ -921,6 +953,7 @@ void UpdateAuxImpl::set_io(
         set_latest_verified_version(INVALID_BLOCK_ID);
         set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
         set_auto_expire_version_metadata(0);
+        set_latest_proposed(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
 
         for (auto const i : {0, 1}) {
             auto *const m = db_metadata_[i].main;

@@ -96,8 +96,7 @@ public:
         return db_.read_storage(address, incarnation, key);
     }
 
-    virtual vm::SharedIntercode
-    read_code(bytes32_t const &code_hash) override
+    virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         return db_.read_code(code_hash);
     }
@@ -135,6 +134,12 @@ public:
         uint64_t const block_number, uint64_t const round) override
     {
         db_.update_voted_metadata(block_number, round);
+    }
+
+    virtual void update_proposed_metadata(
+        uint64_t const block_number, uint64_t const round) override
+    {
+        db_.update_proposed_metadata(block_number, round);
     }
 
     virtual void commit(

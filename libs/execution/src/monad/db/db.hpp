@@ -42,6 +42,8 @@ struct Db
     virtual void update_verified_block(uint64_t block_number) = 0;
     virtual void
     update_voted_metadata(uint64_t block_number, uint64_t round) = 0;
+    virtual void
+    update_proposed_metadata(uint64_t block_number, uint64_t round) = 0;
 
     virtual void commit(
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,

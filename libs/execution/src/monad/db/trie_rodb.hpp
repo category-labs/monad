@@ -125,6 +125,11 @@ public:
         MONAD_ABORT();
     }
 
+    virtual void update_proposed_metadata(uint64_t, uint64_t) override
+    {
+        MONAD_ABORT();
+    }
+
     virtual BlockHeader read_eth_header() override
     {
         MONAD_ABORT();

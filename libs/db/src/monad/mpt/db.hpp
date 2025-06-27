@@ -115,10 +115,13 @@ public:
     void update_finalized_block(uint64_t block_id);
     void update_verified_block(uint64_t block_id);
     void update_voted_metadata(uint64_t block_id, uint64_t round);
+    void update_proposed_metadata(uint64_t block_id, uint64_t round);
     uint64_t get_latest_finalized_block_id() const;
     uint64_t get_latest_verified_block_id() const;
     uint64_t get_latest_voted_round() const;
     uint64_t get_latest_voted_block_id() const;
+    uint64_t get_latest_proposed_round() const;
+    uint64_t get_latest_proposed_block_id() const;
 
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.

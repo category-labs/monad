@@ -891,16 +891,15 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberUpsertRequest{
-                .promise = &promise,
-                .prev_root = std::move(root_),
-                .sm = machine_,
-                .updates = std::move(updates),
-                .version = version,
-                .enable_compaction = enable_compaction && compaction_,
-                .can_write_to_fast = can_write_to_fast,
-                .write_root = write_root});
+        comms_.enqueue(FiberUpsertRequest{
+            .promise = &promise,
+            .prev_root = std::move(root_),
+            .sm = machine_,
+            .updates = std::move(updates),
+            .version = version,
+            .enable_compaction = enable_compaction && compaction_,
+            .can_write_to_fast = can_write_to_fast,
+            .write_root = write_root});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -935,9 +934,8 @@ public:
         MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberLoadAllFromBlockRequest{
-                .promise = &promise, .root = *root(), .sm = machine_});
+        comms_.enqueue(FiberLoadAllFromBlockRequest{
+            .promise = &promise, .root = *root(), .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -959,13 +957,12 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberTraverseRequest{
-                .promise = &promise,
-                .root = node,
-                .machine = machine,
-                .version = version,
-                .concurrency_limit = concurrency_limit});
+        comms_.enqueue(FiberTraverseRequest{
+            .promise = &promise,
+            .root = node,
+            .machine = machine,
+            .version = version,
+            .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -984,9 +981,8 @@ public:
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
             auto fut = promise.get_future();
-            comms_.enqueue(
-                FiberLoadRootVersionRequest{
-                    .promise = &promise, .version = version});
+            comms_.enqueue(FiberLoadRootVersionRequest{
+                .promise = &promise, .version = version});
             // promise is racily emptied after this point
             if (worker_->sleeping.load(std::memory_order_acquire)) {
                 std::unique_lock const g(lock_);
@@ -1023,16 +1019,15 @@ public:
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberCopyTrieRequest{
-                .promise = &promise,
-                .src_root = src_root,
-                .src = src,
-                .src_version = src_version,
-                .dest_root = std::move(dest_root),
-                .dest = dest,
-                .dest_version = dest_version,
-                .blocked_by_write = blocked_by_write});
+        comms_.enqueue(FiberCopyTrieRequest{
+            .promise = &promise,
+            .src_root = src_root,
+            .src = src,
+            .src_version = src_version,
+            .dest_root = std::move(dest_root),
+            .dest = dest,
+            .dest_version = dest_version,
+            .blocked_by_write = blocked_by_write});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -1309,6 +1304,12 @@ void Db::update_voted_metadata(uint64_t const block_id, uint64_t const round)
     impl_->aux().set_latest_voted(block_id, round);
 }
 
+void Db::update_proposed_metadata(uint64_t const block_id, uint64_t const round)
+{
+    MONAD_ASSERT(impl_);
+    impl_->aux().set_latest_proposed(block_id, round);
+}
+
 uint64_t Db::get_latest_finalized_block_id() const
 {
     MONAD_ASSERT(impl_);
@@ -1331,6 +1332,18 @@ uint64_t Db::get_latest_voted_block_id() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux().get_latest_voted_version();
+}
+
+uint64_t Db::get_latest_proposed_round() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().get_latest_proposed_round();
+}
+
+uint64_t Db::get_latest_proposed_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().get_latest_proposed_version();
 }
 
 uint64_t Db::get_latest_block_id() const

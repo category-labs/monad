@@ -534,6 +534,17 @@ void TrieDb::update_voted_metadata(
     }
 }
 
+void TrieDb::update_proposed_metadata(
+    uint64_t const block_number, uint64_t const round)
+{
+    auto const latest_proposed_round = db_.get_latest_proposed_round();
+    if (MONAD_LIKELY(
+            round >= latest_proposed_round ||
+            latest_proposed_round == INVALID_ROUND_NUM)) {
+        db_.update_proposed_metadata(block_number, round);
+    }
+}
+
 bytes32_t TrieDb::state_root()
 {
     return merkle_root(state_nibbles);

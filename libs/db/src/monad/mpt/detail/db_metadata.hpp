@@ -145,9 +145,11 @@ namespace detail
         uint64_t latest_voted_version;
         uint64_t latest_voted_round;
         int64_t auto_expire_version;
+        uint64_t latest_proposed_version;
+        uint64_t latest_proposed_round;
 
         // padding for adding future atomics without requiring DB reset
-        uint8_t future_variables_unused[4096];
+        uint8_t future_variables_unused[4080];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited

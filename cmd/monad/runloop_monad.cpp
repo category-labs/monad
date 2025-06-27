@@ -131,8 +131,8 @@ bool validate_delayed_execution_results(
 
 Result<std::pair<bytes32_t, uint64_t>> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
-    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block)
+    BlockHashChain &block_hash_chain, Chain const &chain, Db &db, vm::VM &vm,
+    fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_round());
@@ -353,6 +353,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 consensus_header.round,
                 consensus_header.parent_round());
 
+            db.update_proposed_metadata(block_number, consensus_header.round);
             db.update_voted_metadata(
                 consensus_header.seqno - 1, consensus_header.qc.vote.round);
 

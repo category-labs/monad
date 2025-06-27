@@ -61,6 +61,8 @@ public:
     virtual void update_verified_block(uint64_t block_number) override;
     virtual void
     update_voted_metadata(uint64_t block_number, uint64_t round) override;
+    virtual void
+    update_proposed_metadata(uint64_t block_id, uint64_t round) override;
 
     virtual BlockHeader read_eth_header() override;
     virtual bytes32_t state_root() override;

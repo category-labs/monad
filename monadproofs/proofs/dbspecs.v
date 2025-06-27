@@ -34,7 +34,7 @@ Record Proposal :=
 
 (* models the state changed by Db::set_block_and_round *)
 Inductive ActiveBlock :=
-| preGenesis
+(* TODO: add | preGenesis *)
 | finalized (block_number: N)
 | proposalForNextBlock (block_number: N) (round_number:N).
 
@@ -116,7 +116,7 @@ Section with_Sigma.
     lastFinalizedBlockIndex' (map fst (finalizedBlocks m)).
 
   Definition validModel (m: DbModel) : Prop :=
-    contiguousBlocksStartingFrom None (finalizedBlocks m)
+    contiguousBlocksStartingFrom None (map fst (finalizedBlocks m))
     /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (lastFinalizedBlockIndex m)
    /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: Fix: Maged says there can be multiple proposals for the same round number. TODO: are proposals expected in the order of roundnumber.  ? *)
     /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
@@ -233,29 +233,29 @@ finalize(102,202)
 cpp.spec
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
-    \prepost{(q:Qp) (preDb:DbModel)} this |-> dbAuthR q preDb
+    \prepost{(preDb:DbModel)} this |-> dbAuthR 1 preDb
 
-    \arg{deltas_ptr} "#0" (Vptr deltas_ptr)
+    \arg{(deltas_ptr: ptr) (qs: Qp)} "#0" (Vptr deltas_ptr)
     \prepost{(finalState: StateOfAccounts)}
-      deltas_ptr |-> StateDeltasR q (stateAfterLastFinalized preDb, finalState)
+      deltas_ptr |-> StateDeltasR qs (stateAfterLastFinalized preDb, finalState)
 
-    \arg{code_ptr} "#1" (Vptr code_ptr)
+    \arg{(code_ptr:ptr) (qcd: Qp)} "#1" (Vptr code_ptr)
     \prepost
-      code_ptr |-> CodeDeltaR q (stateAfterLastFinalized preDb, finalState)
+      code_ptr |-> CodeDeltaR qcd (stateAfterLastFinalized preDb, finalState)
 
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{(newProposal: Proposal)}
-      hdr_ptr |-> BheaderR q (header (proposedBlock newProposal))
+    \prepost{(newProposal: Proposal) (qpr: Qp)}
+      hdr_ptr |-> BheaderR qpr (header (proposedBlock newProposal))
     \pre [| validProposal newProposal (lastFinalizedBlockIndex preDb) |]
     \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] (* delete *)
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
-    \prepost{(rs: list monad.proofs.evmopsem.TransactionResult)}
+    \prepost{(rs: list monad.proofs.evmopsem.TransactionResult) (qtrs: Qp)}
       receipts_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::Receipt"%cpp_type
           (fun r => monad.proofs.exec_specs.ReceiptR r)
-          q rs
+          qtrs rs
 
    \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
    (*       
@@ -266,29 +266,29 @@ cpp.spec
           (fun inner => emp)
           q []
           *)
-    \arg{senders_ptr} "#5" (Vptr senders_ptr)
+    \arg{(senders_ptr: ptr) (qsn: Qp)} "#5" (Vptr senders_ptr)
     \prepost
       senders_ptr |->
         monad.proofs.libspecs.VectorR
           "evmc::address"%cpp_type
-          (fun a => addressR q a)
-          q (map sender (transactions (proposedBlock newProposal)))
+          (fun a => addressR qsn a)
+          qsn (map sender (transactions (proposedBlock newProposal)))
 
-    \arg{txns_ptr} "#6" (Vptr txns_ptr)
+    \arg{txns_ptr qtxn} "#6" (Vptr txns_ptr)
     \prepost
       txns_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::Transaction"%cpp_type
-          (fun t => monad.proofs.exec_specs.TransactionR q t)
-          q (transactions (proposedBlock newProposal))
+          (fun t => monad.proofs.exec_specs.TransactionR qtxn t)
+          qtxn (transactions (proposedBlock newProposal))
 
-    \arg{ommers_ptr} "ommers" (Vptr ommers_ptr)
+    \arg{ommers_ptr qo} "ommers" (Vptr ommers_ptr)
     \prepost
       ommers_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::BlockHeader"%cpp_type
-          (fun h => BheaderR q h)
-          q (ommers (proposedBlock newProposal))
+          (fun h => BheaderR qo h)
+          qo (ommers (proposedBlock newProposal))
 
     \arg{wds_ptr} "#8" (Vptr wds_ptr)
     (*      
@@ -301,7 +301,7 @@ cpp.spec
                      q ws)
         q ws
      *)   
-    \post this |-> dbAuthR q (commit_model2 preDb newProposal finalState rs)
+    \post this |-> dbAuthR 1 (commit_model2 preDb newProposal finalState rs)
   ). 
 (**
 Above in this file, there is a dummy definition commit_model. write commit_model2 which actually fills the body propery. remember, you cannot change the content in this file above.

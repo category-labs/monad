@@ -452,3 +452,9 @@ Result<std::vector<CallFrame>> decode_call_frames(byte_string_view &);
 This feature drives CLI and debug‑trace tooling (e.g. eventual RPC `debug_traceBlockByNumber`‑style endpoints).  There is no consensus requirement on call frames, and today no built‑in JSON‑RPC method reads them—you’d need to traverse the `CALL_FRAME_NIBBLE` subtree and decode manually.
 ---
 *Last updated:* __DATE__
+
+
+
+## Open questions:
+- leader can equivocate, but if a follower gets a second proposal for the same round, would it forward to execution or do something else, e.g. detect equivvocation and stop participating in that round, or even try to start a new round?
+- if execution can indeed receive multiple proposals for the same round, is there a guarantee that the latest one must be the final one. what if an earlier one is picked to be the final one? all earlier ones become unreachanble by db._find

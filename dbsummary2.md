@@ -1,4 +1,4 @@
-# Monad DB: Two‑Layer Architecture & Client Patterns
+ Monad DB: Two‑Layer Architecture & Client Patterns
 
 This document collects the key takeaways from our recent deep‑dive into the `monad::Db` façade, its underlying MPT engine, its concrete implementations, and how the various sub‑systems (execution, consensus, RPC, StateSync) drive and read it.
 
@@ -351,7 +351,45 @@ tdb.set_block_and_round(
 ```
 If you pass a valid `round`, it reads the *proposal* subtrie (in‑flight state); if you pass `INVALID_ROUND_NUM` (or omit the round), it reads the *finalized* subtrie.
 
-> **Note:** An eth_call handler typically makes several MPT reads (`read_account`, `read_storage`, etc.) to assemble its result, but all of these operate on the same `TrieRODb` instance **and** the same prefix/version set by the single `set_block_and_round` call above.  Since `TrieRODb` never issues upserts or reloads its root, every sub‑read sees a consistent snapshot—even if a concurrent commit occurs in another process.  
+
+## Races betwen eth_call and multiple DB multiple commits to same round number:
+
+RPC atomicity: it seems serving an RPC request may require multiple db reads and it is not clear to me whether all such reads to serve a single request will see the same state if there is a racy recommit for the same block and round number.
+Lets take a concrete example: suppose the handling of an rpc request for block number 100, round number 100 started when block b was commited with post-block state s for block number 100, round 100 when the last finalized block is 99. Suppose that after the rpc handler read account ac1, a new block b' with state s' gets commited for the same block and round numbers (100,100) and then the rpc handler reads ac2 to service the *same* request. It is clear that the read of ac1will read from s.   It is not clear to me  whether the read of ac2 will read from s or s' ?
+
+Answer: the read from ac2 will be from s, not s'.
+At the beginning of eth_call, it does `set_block_and_round` exactly once. this looks up the state root (using db_.find) where s is stored on disk and stores it in prefix_cursor_ (say pre1.). Subsequent commit of b' will ensure that db.find on the round number will return a new prefix (say pre2). calls like TrieRODB::read_storage do NOT do db_.find again to find the root prefix. they keep using the result of the lookup done suring `set_block_and_round`.
+
+Concrete example to illustrate the new prefix creation on the same 
+
+Suppose the state of the Db is where block 99 is finialized.
+Here is a conrete trace involving 2 process (Pexec, Prpc) where actions happen from that state in the following order:
+- Pexec does db.commit() block b with post-block state s for block number 100, round 100.
+- Prpc does trie_rodb.set_block_and_round(100,100). let pre1 be the value of trie_rodb.prefix_cursor_after this call
+- Pexec does db.commit() block b' with post-block state s' for block number 100, round 100.
+- Prpc does trie_rodb.set_block_and_round(100,100). let pre2 be the value of trie_rodb.prefix_cursor_after this call
+is pre1==pre2?
+
+No.
+
+
+## Why multiple commits with same round number:
+
+Consensus sends proposals to execution even *before* there is a QC on the proposal. So, a malicious leader can equivocate and send many distinct proposals in the same round.
+Such bad behaviour would later be detected and the leader will face financial penalities (stake slashing).
+But execution may get multiple blocks before the detection.
+
+An alternative could be that consensus only sends proposals post QC: then execution will not get multiple proposals in the same round: there can be atmost 1 distinct proposal with QC in any round. However, we want to reduce latency.
+
+
+(Each round has a new leader.)
+
+
+
+
+
+
+
 
 **Q: Where and when does the execution layer advance the block number (i.e. the MPT version)?**  
 A: In `TrieDb::commit`, at the very start of the method, before assembling any updates.  That bump to `block_number_`/`round_number_` is then used to stamp all ensuing updates, and finally `db_.upsert(..., block_number_, ...)` writes them out:

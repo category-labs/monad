@@ -24,7 +24,18 @@ Require Import bluerock.auto.cpp.
 Require Import bluerock.auto.cpp.specs.
 Require Import monad.proofs.exec_specs.
 
-(* models parts of Block and  MonadConsensusBlockHeader that are relevant for DB specs. *)
+Record ConsensusBlockHeader :=
+  {
+    roundNum:N;
+  }.
+    
+Record ConensusProposal :=
+  {
+    cheader: ConsensusBlockHeader;
+    proposedBlk: Block;
+  }.
+    
+(* Todo: replace by ConsensusProposal *)
 Record Proposal :=
   {
     roundNumber: N;
@@ -146,7 +157,14 @@ Section with_Sigma.
   
   
   (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
-  Definition dbAuthR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
+  Definition TrieDBR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
+
+  (* Knowledge (no resource ownership) *)
+  Definition FinalizedInRound (roundNumber: N) (b: Block) (postState: evm.GlobalState) : mpred. Proof. Admitted.
+  
+  Definition TrieRoDBR (q:Qp) (ac: option (ActiveBlock * evm.GlobalState)) : Rep. Proof. Admitted.
+
+  Notation dbAuthR := TrieDBR. (* TODO: inline *)
 
   (* when we fill in the definition of dbAuthR, we must ensure the lemmas below are provable *)
   Lemma dbAuthREntails (q:Qp) (m: DbModel) : dbAuthR q m |--  dbAuthR q m ** [| validModel m|].
@@ -166,19 +184,26 @@ Section with_Sigma.
       \prepost{key:N} keyp |-> bytes32R q key
       \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)).
 
+  Definition MaxRoots : N. Proof. Admitted.
+
+  
   Open Scope N_scope.
+  Search compose.
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> dbAuthR q preDb
+      \prepost{q preDb} this |-> TrieDBR q preDb
       \pre [| lastFinButNotYetVerified preDb = false |]
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
-      \pre True (* roundNum should have been commited before *) 
+      \pre [| roundNum ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb) |]
+      \pre [| lengthN (nextBlockProposals preDb) < MaxRoots |]%N
       \pre match lastFinalizedBlockIndex preDb with
            | Some lastFinIndex => [| blockNum = 1+ lastFinIndex |]
-           | None => True (* TODO *)
+           | None => True (* TODO: only allowed when the state was in pre genesis *)
            end
-      \post this |-> dbAuthR q (preDb &: _activeBlock .= finalized blockNum)).
+      \post this |-> TrieDBR q (preDb &: _activeBlock .= finalized blockNum)).
+  (* no finalize in triedb *)
+  
 
   cpp.spec "monad::Db::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
@@ -304,8 +329,8 @@ cpp.spec
     \post this |-> dbAuthR 1 (commit_model2 preDb newProposal finalState rs)
   ). 
 (**
-Above in this file, there is a dummy definition commit_model. write commit_model2 which actually fills the body propery. remember, you cannot change the content in this file above.
-use the background provided above about the Db setup in monad in the section "Monad DB: Two‑Layer Architecture & Client Patterns".
+write the spec of monad::Db::set_block_and_round
+Unfortunately, CppDefnOf is currrently not working so you can only issue Coq queries not clangd queries. 
 
 +++ FILES
 ../fmai/prompts/sep.md

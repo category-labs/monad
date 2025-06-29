@@ -329,12 +329,17 @@ cpp.spec
     \post this |-> dbAuthR 1 (commit_model2 preDb newProposal finalState rs)
   ). 
 (**
-write the spec of monad::Db::set_block_and_round
-Unfortunately, CppDefnOf is currrently not working so you can only issue Coq queries not clangd queries. 
+write the spec of monad::Db::set_block_and_round.
+Unfortunately, CppDefnOf is currrently not working so you can only issue Coq queries not clangd queries.
+
+Start the spec as:
+
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
+
 
 +++ FILES
-../fmai/prompts/sep.md
-../fmai/prompts/specs.md
+../../../fmdeps/fmai/prompts/sep.md
+../../../fmdeps/fmai/prompts/specs.md
 ../../dbsummary2.md
 +++ QUERIES
 
@@ -343,6 +348,52 @@ Print exec_specs.
 Print libspecs.
  *)
  Set Printing FullyQualifiedNames.
+(* ---------- Filled‐in hole: optional std::optional<unsigned long> ---------- *)
+
+(* We use the Rep‐predicate `optionR` from the `libspecs` module. *)
+Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
+  @libspecs.optionR _ _ _ CU
+    N                                        (* SomeTyModel *)
+    ("unsigned long"%cpp_type)               (* C++ type of the payload *)
+    (fun n => primR "unsigned long"%cpp_type  (* how to represent each N *)
+                   q
+                   (Vint (Z.of_N n)))
+    (cQp.mut 1)                              (* fraction of ownership *)
+    o.
+
+(* ---------- Spec of set_block_and_round ---------- *)
+
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as set_block_and_round_spec with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preDb} this |-> dbAuthR q preDb
+
+    (* block_number: unsigned long *)
+    \arg{blockNum:N} "block_number" (Vint blockNum)
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+      (roundLoc |-> optionalULongR (cQp.mut 1) roundOpt)
+
+    \pre [| match roundOpt with
+           | Some rn => rn ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb)
+           | None => blockNum ∈ map (bnumber ∘ fst) (finalizedBlocks preDb) (* what if this has already been garbage collected? return a bool error? *)
+           end |]
+
+    (* On return, activeBlock is updated accordingly *)
+    \post this |-> dbAuthR q
+      (preDb &: _activeBlock .=
+        match roundOpt with
+        | None    => finalized blockNum
+        | Some rn => proposalForNextBlock blockNum rn
+        end
+      )
+  ).
+
+
+ Set Printing FullyQualifiedNames.
+
 
   
 End with_Sigma.

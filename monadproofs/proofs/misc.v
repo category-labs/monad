@@ -1664,3 +1664,18 @@ Ltac2 missingSpecs tu s :=
         (Printf.pp_list_sep (newlines ()) Printf.pp_constr)
         (Constr.ConstrSet.elements missing)
   end.
+
+
+(** caller should ensure that l is nonempty *)
+Definition maxL (l: list N) : N :=
+  match l with
+  | [] => 0
+  | x :: xs => fold_left N.max xs x
+  end.
+
+(** caller should ensure that l is nonempty *)
+Definition minL (l: list N) : N :=
+  match l with
+  | [] => 0
+  | x :: xs => fold_left N.min xs x
+  end.

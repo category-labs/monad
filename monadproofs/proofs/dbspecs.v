@@ -226,9 +226,35 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   end.
   
 
+Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+  let unfin :=
+    List.filter
+      (fun b => match finalizedProposal b with
+                | None => true | _ => false
+                end)
+      (blockIndicesStates d) in
+  match unfin with
+  | [] => None
+  | _  => Some (minL (List.map blockNumber unfin))
+  end.
+
+  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
+       equals [bnum] by applying [f], leave others unchanged.
+  *)
+#[only(lens)] derive DbModel.
+  Definition updateBlockNum
+             (d: DbModel)
+             (bnum: N)
+             (f: BlockIndexState -> BlockIndexState)
+    : DbModel :=
+    d &: _blockIndicesStates .= 
+         List.map (fun b =>
+                     if bool_decide (blockNumber b = bnum)
+                     then f b else b)
+                  (blockIndicesStates d).
+
 (** ignore the next 4 lines: Coq boilerplate *)
 Open Scope Z_scope.
-#[only(lens)] derive DbModel.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
   Context  {MODd : exb.module ⊧ CU}.
@@ -272,11 +298,28 @@ Section with_Sigma.
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
 
-  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
-
-  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
-
-  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
+  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
+       remove from [unfinalizedProposals] the one with [roundNum = r],
+       and set [finalizedProposal] to that [Some p].
+       If [idRoundNumber pid = None] or no match is found, do nothing.
+  *)
+  Definition finalizeProposal
+             (roundNumber: N)
+             (d: BlockIndexState)
+    : BlockIndexState :=
+      let bs := unfinalizedProposals d in
+      let newUnfin :=
+          List.filter
+            (fun p => negb (bool_decide (roundNum (cheader p) = roundNumber)))
+            bs in
+      let finalP :=
+        match lookupProposalByRoundNum d roundNumber with
+        | Some p => Some p
+        | None   => finalizedProposal d
+        end in
+      {| unfinalizedProposals := newUnfin;
+         finalizedProposal     := finalP
+      |}.
   
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
@@ -287,7 +330,7 @@ Section with_Sigma.
       \pre{prp} [| lookupProposal pid preDb = Some prp|]
       \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
       \post
-         this |-> TrieDBR q (updateBlockNum preDb blockNum (finalizeProposal pid))
+         this |-> TrieDBR q (updateBlockNum preDb blockNum (finalizeProposal roundNum))
          ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
                                ).
                                
@@ -396,10 +439,34 @@ Definition commitFullCppName : name:=
 (** Compute the post-commit DbModel by prepending the new proposal and its state.
     Note: we do not record [rs] in the model (no field to hold transaction results). 
  *)
-Definition commit_model
-  (preDb      : DbModel)
-  (newProposal   : ProposalInDb)
-  : DbModel. Proof. Admitted.
+  (** commit_model:
+      If there is already a [BlockIndexState] for this block number,
+      prepend [newProposal] to its [unfinalizedProposals].
+      Otherwise, append a fresh [BlockIndexState] with only [newProposal].
+  *)
+  Definition commit_model
+             (preDb       : DbModel)
+             (newProposal : ProposalInDb)
+    : DbModel :=
+    let bnum := pblockNumber newProposal in
+    match lookupBlockByNumber bnum preDb with
+    | Some _ =>
+        (* merge into existing state *)
+        updateBlockNum preDb bnum (fun bs =>
+          {| unfinalizedProposals := newProposal :: unfinalizedProposals bs;
+             finalizedProposal     := finalizedProposal bs
+          |})
+    | None =>
+        (* append a new BlockIndexState *)
+        {| blockIndicesStates     := blockIndicesStates preDb ++
+                                     [{| unfinalizedProposals := [newProposal];
+                                         finalizedProposal     := None |}];
+           activeProposal         := activeProposal preDb;
+           votedMetadata          := votedMetadata preDb;
+           lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
+           cinvId                 := cinvId preDb
+        |}
+    end.
 
 (* TODO:
 - handle garbage collection
@@ -516,118 +583,10 @@ Unfortunately, CppDefnOf is currrently not working so you can only issue Coq que
 +++ QUERIES
 
  *)
- Set Printing FullyQualifiedNames.
-Module DbModelOps.
-  Import List ListNotations.
-  Open Scope N_scope.
-
-  (** maxL: maximum element of a (nonempty) list of [N], with default 0 on empty *)
-  Definition maxL (l: list N) : N :=
-    match l with
-    | [] => 0
-    | x :: xs => fold_left N.max xs x
-    end.
-
-  (** minL: minimum element of a (nonempty) list of [N], with default 0 on empty *)
-  Definition minL (l: list N) : N :=
-    match l with
-    | [] => 0
-    | x :: xs => fold_left N.min xs x
-    end.
-
-  (** lowestUnfinalizedBlockIndex:
-       among the [blockIndicesStates] of [d], pick those with
-       [finalizedProposal = None] and return the minimum [blockNumber].
-   *)
-  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
-    let unfin :=
-        List.filter
-          (fun b => match finalizedProposal b with
-                    | None => true | _ => false
-                    end)
-          (blockIndicesStates d) in
-    match unfin with
-    | [] => None
-    | _  => Some (minL (List.map blockNumber unfin))
-    end.
-
-  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
-       equals [bnum] by applying [f], leave others unchanged.
-  *)
-  Definition updateBlockNum
-             (d: DbModel)
-             (bnum: N)
-             (f: BlockIndexState -> BlockIndexState)
-    : DbModel :=
-    {| blockIndicesStates :=
-         List.map (fun b =>
-                     if bool_decide (blockNumber b = bnum)
-                     then f b else b)
-                  (blockIndicesStates d);
-       activeProposal         := activeProposal d;
-       votedMetadata          := votedMetadata d;
-       lastVerifiedBlockIndex := lastVerifiedBlockIndex d;
-       cinvId                 := cinvId d
-    |}.
-
-  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
-       remove from [unfinalizedProposals] the one with [roundNum = r],
-       and set [finalizedProposal] to that [Some p].
-       If [idRoundNumber pid = None] or no match is found, do nothing.
-  *)
-  Definition finalizeProposal
-             (pid: ProposalId)
-             (d: BlockIndexState)
-    : BlockIndexState :=
-    match idRoundNumber pid with
-    | None => d
-    | Some r =>
-      let bs := unfinalizedProposals d in
-      let newUnfin :=
-          List.filter
-            (fun p => negb (bool_decide (roundNum (cheader p) = r)))
-            bs in
-      let finalP :=
-        match lookupProposalByRoundNum d r with
-        | Some p => Some p
-        | None   => finalizedProposal d
-        end in
-      {| unfinalizedProposals := newUnfin;
-         finalizedProposal     := finalP
-      |}
-    end.
-
-  (** commit_model:
-      If there is already a [BlockIndexState] for this block number,
-      prepend [newProposal] to its [unfinalizedProposals].
-      Otherwise, append a fresh [BlockIndexState] with only [newProposal].
-  *)
-  Definition commit_model
-             (preDb       : DbModel)
-             (newProposal : ProposalInDb)
-    : DbModel :=
-    let bnum := pblockNumber newProposal in
-    match lookupBlockByNumber bnum preDb with
-    | Some _ =>
-        (* merge into existing state *)
-        updateBlockNum preDb bnum (fun bs =>
-          {| unfinalizedProposals := newProposal :: unfinalizedProposals bs;
-             finalizedProposal     := finalizedProposal bs
-          |})
-    | None =>
-        (* append a new BlockIndexState *)
-        {| blockIndicesStates     := blockIndicesStates preDb ++
-                                     [{| unfinalizedProposals := [newProposal];
-                                         finalizedProposal     := None |}];
-           activeProposal         := activeProposal preDb;
-           votedMetadata          := votedMetadata preDb;
-           lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
-           cinvId                 := cinvId preDb
-        |}
-    end.
-End DbModelOps.
 
 
 
-  
-End with_Sigma.
+
+
+
+

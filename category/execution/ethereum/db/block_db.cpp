@@ -50,18 +50,54 @@ bool BlockDb::get(uint64_t const num, Block &block) const
         return false;
     }
     auto const view = to_byte_string_view(result.value());
-    size_t brotli_size = std::max(result->size() * 100, 1ul << 22); // TODO
-    byte_string brotli_buffer;
-    brotli_buffer.resize(brotli_size);
-    auto const brotli_result = BrotliDecoderDecompress(
-        view.size(), view.data(), &brotli_size, brotli_buffer.data());
-    brotli_buffer.resize(brotli_size);
-    MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
-    byte_string_view view2{brotli_buffer};
 
-    auto const decoded_block = rlp::decode_block(view2);
+    BrotliDecoderState *const state =
+        BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
+    MONAD_ASSERT(state != nullptr);
+
+    constexpr size_t INC_SIZE = 1ul << 20;
+
+    uint8_t const *next_in = view.data();
+    size_t available_in = view.size();
+
+    byte_string out{};
+    size_t available_out = INC_SIZE;
+    out.resize_and_overwrite(
+        available_out, [](auto *, size_t const count) { return count; });
+    size_t total_out = 0;
+
+    while (true) {
+        uint8_t *next_out = out.data() + total_out;
+        auto const result = BrotliDecoderDecompressStream(
+            state,
+            &available_in,
+            &next_in,
+            &available_out,
+            &next_out,
+            &total_out);
+
+        MONAD_ASSERT(
+            (result != BROTLI_DECODER_RESULT_ERROR) &&
+            (result != BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT));
+
+        if (result == BROTLI_DECODER_RESULT_SUCCESS) {
+            break;
+        }
+
+        if (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+            out.resize_and_overwrite(
+                out.size() + INC_SIZE,
+                [](auto *, size_t const count) { return count; });
+            available_out += INC_SIZE;
+        }
+    }
+    out.resize(total_out);
+
+    BrotliDecoderDestroyInstance(state);
+    byte_string_view out_view{out};
+    auto const decoded_block = rlp::decode_block(out_view);
     MONAD_ASSERT(!decoded_block.has_error());
-    MONAD_ASSERT(view2.size() == 0);
+    MONAD_ASSERT(out_view.size() == 0);
     block = decoded_block.value();
     return true;
 }

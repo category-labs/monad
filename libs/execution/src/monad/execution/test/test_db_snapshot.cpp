@@ -54,7 +54,7 @@ TEST(DbBinarySnapshot, Basic)
         for (uint64_t i = 0; i < 100; ++i) {
             load_header(db, BlockHeader{.number = i});
         }
-        db.update_finalized_block(99);
+        db.update_finalized_version(99);
         StateDeltas deltas;
         for (uint64_t i = 0; i < 100'000; ++i) {
             StorageDeltas storage;
@@ -81,12 +81,10 @@ TEST(DbBinarySnapshot, Basic)
             code_delta.emplace(hash, icode);
         }
         TrieDb tdb{db};
-        tdb.commit(
-            deltas,
-            code_delta,
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = 100}));
-        tdb.finalize(100, 100);
+        auto const [consensus_header, block_id] =
+            consensus_header_and_id_from_eth_header(BlockHeader{.number = 100});
+        tdb.commit(deltas, code_delta, block_id, consensus_header);
+        tdb.finalize(100, block_id);
         last_header = tdb.read_eth_header();
         root = tdb.state_root();
     }
@@ -121,10 +119,10 @@ TEST(DbBinarySnapshot, Basic)
         mpt::Db db{io_context};
         TrieDb tdb{db};
         for (uint64_t i = 0; i < 100; ++i) {
-            tdb.set_block_and_round(i);
+            tdb.set_block_and_prefix(i);
             EXPECT_EQ(tdb.read_eth_header(), BlockHeader{.number = i});
         }
-        tdb.set_block_and_round(100);
+        tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
         EXPECT_EQ(tdb.state_root(), root);
         for (auto const &[hash, icode] : code_delta) {

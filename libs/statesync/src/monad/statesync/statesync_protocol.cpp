@@ -152,9 +152,9 @@ void StatesyncProtocolV1::send_request(
 {
     auto const tgrt = ctx->tgrt.number;
     auto const &[progress, old_target] = ctx->progress[prefix];
-    MONAD_ASSERT(progress == INVALID_BLOCK_ID || progress < tgrt);
-    MONAD_ASSERT(old_target == INVALID_BLOCK_ID || old_target <= tgrt);
-    auto const from = progress == INVALID_BLOCK_ID ? 0 : progress + 1;
+    MONAD_ASSERT(progress == INVALID_BLOCK_NUM || progress < tgrt);
+    MONAD_ASSERT(old_target == INVALID_BLOCK_NUM || old_target <= tgrt);
+    auto const from = progress == INVALID_BLOCK_NUM ? 0 : progress + 1;
     ctx->statesync_send_request(
         ctx->sync,
         monad_sync_request{

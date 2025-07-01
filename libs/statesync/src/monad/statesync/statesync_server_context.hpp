@@ -30,7 +30,7 @@ static_assert(alignof(Deletion) == 1);
 struct FinalizedDeletionsEntry
 {
     std::mutex mutex{};
-    uint64_t block_number{mpt::INVALID_BLOCK_ID};
+    uint64_t block_number{mpt::INVALID_BLOCK_NUM};
     size_t idx{0};
     size_t size{0};
 };
@@ -40,8 +40,8 @@ static_assert(alignof(FinalizedDeletionsEntry) == 8);
 
 class FinalizedDeletions
 {
-    uint64_t start_block_number_{mpt::INVALID_BLOCK_ID};
-    uint64_t end_block_number_{mpt::INVALID_BLOCK_ID};
+    uint64_t start_block_number_{mpt::INVALID_BLOCK_NUM};
+    uint64_t end_block_number_{mpt::INVALID_BLOCK_NUM};
     std::array<FinalizedDeletionsEntry, MAX_ENTRIES> entries_{};
     std::array<Deletion, MAX_DELETIONS> deletions_{};
     size_t free_start_{0};
@@ -62,11 +62,11 @@ static_assert(alignof(FinalizedDeletions) == 8);
 struct ProposedDeletions
 {
     uint64_t block_number;
-    uint64_t round;
+    bytes32_t block_id;
     std::vector<Deletion> deletions;
 };
 
-static_assert(sizeof(ProposedDeletions) == 40);
+static_assert(sizeof(ProposedDeletions) == 64);
 static_assert(alignof(ProposedDeletions) == 8);
 
 struct CallFrame;
@@ -103,17 +103,18 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual std::optional<monad::bytes32_t> withdrawals_root() override;
 
-    virtual void set_block_and_round(
+    virtual void set_block_and_prefix(
         uint64_t block_number,
-        std::optional<uint64_t> round_number = std::nullopt) override;
+        monad::bytes32_t const &block_id = monad::bytes32_t{}) override;
     virtual void
-    finalize(uint64_t block_number, uint64_t round_number) override;
+    finalize(uint64_t block_number, monad::bytes32_t const &block_id) override;
     virtual void update_verified_block(uint64_t block_number) override;
-    virtual void
-    update_voted_metadata(uint64_t block_number, uint64_t round) override;
+    virtual void update_voted_metadata(
+        uint64_t block_number, monad::bytes32_t const &block_id) override;
 
     virtual void commit(
         monad::StateDeltas const &state_deltas, monad::Code const &code,
+        monad::bytes32_t const &block_id,
         monad::MonadConsensusBlockHeader const &,
         std::vector<monad::Receipt> const &receipts = {},
         std::vector<std::vector<monad::CallFrame>> const & = {},

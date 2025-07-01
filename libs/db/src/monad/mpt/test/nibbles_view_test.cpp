@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
 #include <monad/core/nibble.h>
 #include <monad/mpt/nibbles_view.hpp>
@@ -48,4 +49,17 @@ TEST(NibblesTest, nibbles_size)
 {
     Nibbles const nibbles{16};
     EXPECT_EQ(nibbles.nibble_size(), 16);
+}
+
+TEST(NibblesTest, substr_also_aligns)
+{
+    Nibbles const path{0x1234567812345678_hex};
+
+    ASSERT_EQ(path.nibble_size(), 16);
+
+    Nibbles const a = path.substr(12);
+    EXPECT_EQ(a.data_size(), 2);
+
+    Nibbles const b = path.substr(1, 4);
+    EXPECT_EQ(b.data_size(), 2);
 }

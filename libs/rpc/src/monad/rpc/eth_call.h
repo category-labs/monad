@@ -73,7 +73,7 @@ void monad_eth_call_executor_submit(
     struct monad_eth_call_executor *, enum monad_chain_config,
     uint8_t const *rlp_txn, size_t rlp_txn_len, uint8_t const *rlp_header,
     size_t rlp_header_len, uint8_t const *rlp_sender, size_t rlp_sender_len,
-    uint64_t block_number, uint64_t block_round,
+    uint64_t block_number, uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     bool trace, bool gas_specified);

@@ -7,6 +7,8 @@
 #include <monad/mpt/db.hpp>
 #include <monad/vm/vm.hpp>
 
+#include <evmc/hex.hpp>
+
 #include <memory>
 #include <optional>
 
@@ -21,27 +23,26 @@ class TrieRODb final : public ::monad::Db
 public:
     TrieRODb(mpt::RODb &db)
         : db_(db)
-        , block_number_(mpt::INVALID_BLOCK_ID)
+        , block_number_(mpt::INVALID_BLOCK_NUM)
         , prefix_cursor_()
     {
     }
 
     ~TrieRODb() = default;
 
-    virtual void set_block_and_round(
+    virtual void set_block_and_prefix(
         uint64_t const block_number,
-        std::optional<uint64_t> const round_number = std::nullopt) override
+        bytes32_t const &block_id = bytes32_t{}) override
     {
-        auto prefix = round_number.has_value()
-                          ? proposal_prefix(round_number.value())
-                          : finalized_nibbles;
+        auto const prefix = block_id == bytes32_t{} ? finalized_nibbles
+                                                    : proposal_prefix(block_id);
         auto res = db_.find(prefix, block_number);
         // TODO: error handling instead of assert
         MONAD_ASSERT_PRINTF(
             res.has_value(),
-            "block %lu, round %lu",
+            "block %lu, block_id %s",
             block_number,
-            round_number.value_or(mpt::INVALID_ROUND_NUM));
+            evmc::hex(to_byte_string_view(block_id.bytes)).c_str());
         prefix_cursor_ = res.value();
         block_number_ = block_number;
     }
@@ -82,8 +83,7 @@ public:
         return to_bytes(storage.value());
     }
 
-    virtual vm::SharedIntercode
-    read_code(bytes32_t const &code_hash) override
+    virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         // TODO read intercode object
         auto code_leaf_res = db_.find(
@@ -99,8 +99,8 @@ public:
     }
 
     virtual void commit(
-        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const & = {},
+        StateDeltas const &, Code const &, bytes32_t const &,
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
@@ -110,7 +110,7 @@ public:
         MONAD_ABORT();
     }
 
-    virtual void finalize(uint64_t, uint64_t) override
+    virtual void finalize(uint64_t, bytes32_t const &) override
     {
         MONAD_ABORT();
     }
@@ -120,7 +120,7 @@ public:
         MONAD_ABORT();
     }
 
-    virtual void update_voted_metadata(uint64_t, uint64_t) override
+    virtual void update_voted_metadata(uint64_t, bytes32_t const &) override
     {
         MONAD_ABORT();
     }

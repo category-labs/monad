@@ -32,16 +32,15 @@ monad_statesync_client_context::monad_statesync_client_context(
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , progress(
           monad_statesync_client_prefixes(),
-          {db.get_latest_block_id(), db.get_latest_block_id()})
+          {db.get_latest_version(), db.get_latest_version()})
     , protocol(monad_statesync_client_prefixes())
-    , tgrt{BlockHeader{.number = mpt::INVALID_BLOCK_ID}}
-    , current{db.get_latest_block_id() == mpt::INVALID_BLOCK_ID ? 0 : db.get_latest_block_id() + 1}
+    , tgrt{BlockHeader{.number = mpt::INVALID_BLOCK_NUM}}
+    , current{db.get_latest_version() == mpt::INVALID_BLOCK_NUM ? 0 : db.get_latest_version() + 1}
     , n_upserts{0}
     , sync{sync}
     , statesync_send_request{statesync_send_request}
 {
-    MONAD_ASSERT(
-        db.get_latest_block_id() == db.get_latest_finalized_block_id());
+    MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
 }
 
 void monad_statesync_client_context::commit()
@@ -125,7 +124,7 @@ void monad_statesync_client_context::commit()
     finalized_updates.push_front(finalized);
 
     db.upsert(std::move(finalized_updates), current, false, false);
-    tdb.set_block_and_round(current);
+    tdb.set_block_and_prefix(current);
     for (auto const &hash : upserted) {
         MONAD_ASSERT(this->upserted.emplace(hash).second);
         MONAD_ASSERT(pending.erase(hash) == 1);

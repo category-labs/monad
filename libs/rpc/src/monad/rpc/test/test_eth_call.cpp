@@ -1,7 +1,9 @@
 #include <monad/chain/chain_config.h>
 #include <monad/core/block.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
@@ -28,6 +30,7 @@ namespace
 {
     constexpr unsigned node_lru_size = 10240;
     constexpr unsigned max_timeout = std::numeric_limits<unsigned>::max();
+    auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
 
     std::vector<uint8_t> to_vec(byte_string const &bs)
     {
@@ -128,6 +131,7 @@ namespace
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
         auto const rlp_sender =
             to_vec(rlp::encode_address(std::make_optional(from)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
 
         auto executor = monad_eth_call_executor_create(
             1,
@@ -151,7 +155,8 @@ namespace
             rlp_sender.data(),
             rlp_sender.size(),
             header.number,
-            mpt::INVALID_ROUND_NUM,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
             state_override,
             complete_callback,
             (void *)&ctx,
@@ -217,6 +222,7 @@ TEST_F(EthCallFixture, simple_success_call)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -234,7 +240,8 @@ TEST_F(EthCallFixture, simple_success_call)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -275,6 +282,7 @@ TEST_F(EthCallFixture, insufficient_balance)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -292,7 +300,8 @@ TEST_F(EthCallFixture, insufficient_balance)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -325,15 +334,16 @@ TEST_F(EthCallFixture, on_proposed_block)
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader header{.number = 256};
 
-    auto const consensus_header =
-        MonadConsensusBlockHeader::from_eth_header(header);
-    tdb.commit({}, {}, consensus_header);
-    tdb.set_block_and_round(header.number, consensus_header.round);
+    auto const [consensus_header, block_id] =
+        consensus_header_and_id_from_eth_header(header);
+    tdb.commit({}, {}, block_id, consensus_header);
+    tdb.set_block_and_prefix(header.number, block_id);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(block_id));
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -351,7 +361,8 @@ TEST_F(EthCallFixture, on_proposed_block)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        consensus_header.round,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -372,7 +383,7 @@ TEST_F(EthCallFixture, failed_to_read)
 {
     // missing 256 previous blocks
     load_header(db, BlockHeader{.number = 1199});
-    tdb.set_block_and_round(1199);
+    tdb.set_block_and_prefix(1199);
     for (uint64_t i = 1200; i < 1256; ++i) {
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }
@@ -392,6 +403,7 @@ TEST_F(EthCallFixture, failed_to_read)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -409,7 +421,8 @@ TEST_F(EthCallFixture, failed_to_read)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -452,6 +465,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -469,7 +483,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -527,6 +542,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -544,7 +560,8 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -650,6 +667,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -667,7 +685,8 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -717,6 +736,7 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -734,7 +754,8 @@ TEST_F(EthCallFixture, from_contract_account)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,
@@ -813,6 +834,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
         auto const rlp_sender =
             to_vec(rlp::encode_address(std::make_optional(ca)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
 
         monad_eth_call_executor_submit(
             executor,
@@ -824,7 +846,8 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             rlp_sender.data(),
             rlp_sender.size(),
             header.number,
-            mpt::INVALID_ROUND_NUM,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
             state_override,
             complete_callback,
             (void *)ctx.get(),
@@ -901,6 +924,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
         to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
         1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
@@ -919,7 +943,8 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         rlp_sender.data(),
         rlp_sender.size(),
         header.number,
-        mpt::INVALID_ROUND_NUM,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
         state_override,
         complete_callback,
         (void *)&ctx,

@@ -210,9 +210,9 @@ void UpdateAuxImpl::fast_forward_next_version(
         auto ro = root_offsets(m == db_metadata_[1].main);
         uint64_t curr_version = ro.max_version();
         MONAD_ASSERT(
-            curr_version == INVALID_BLOCK_ID || new_version > curr_version);
+            curr_version == INVALID_BLOCK_NUM || new_version > curr_version);
 
-        if (curr_version == INVALID_BLOCK_ID ||
+        if (curr_version == INVALID_BLOCK_NUM ||
             new_version - curr_version >= ro.capacity()) {
             ro.reset_all(new_version);
         }
@@ -266,12 +266,10 @@ uint64_t UpdateAuxImpl::get_latest_voted_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-uint64_t UpdateAuxImpl::get_latest_voted_round() const noexcept
+bytes32_t UpdateAuxImpl::get_latest_voted_block_id() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    return start_lifetime_as<std::atomic_uint64_t const>(
-               &db_metadata()->latest_voted_round)
-        ->load(std::memory_order_acquire);
+    return db_metadata()->latest_voted_block_id;
 }
 
 void UpdateAuxImpl::set_latest_finalized_version(
@@ -300,7 +298,7 @@ void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
 }
 
 void UpdateAuxImpl::set_latest_voted(
-    uint64_t const version, uint64_t const round) noexcept
+    uint64_t const version, bytes32_t const &block_id) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     for (auto const i : {0, 1}) {
@@ -308,8 +306,7 @@ void UpdateAuxImpl::set_latest_voted(
         auto g = m->hold_dirty();
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_version)
             ->store(version, std::memory_order_release);
-        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_round)
-            ->store(round, std::memory_order_release);
+        m->latest_voted_block_id = block_id;
     }
 }
 
@@ -337,7 +334,7 @@ void UpdateAuxImpl::set_auto_expire_version_metadata(
 int64_t UpdateAuxImpl::calc_auto_expire_version() noexcept
 {
     MONAD_ASSERT(is_on_disk());
-    if (db_history_max_version() == INVALID_BLOCK_ID) {
+    if (db_history_max_version() == INVALID_BLOCK_NUM) {
         return 0;
     }
     auto const min_valid_version = db_history_min_valid_version();
@@ -441,9 +438,10 @@ void UpdateAuxImpl::clear_ondisk_db()
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
-    set_latest_finalized_version(INVALID_BLOCK_ID);
-    set_latest_verified_version(INVALID_BLOCK_ID);
-    set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
+    set_latest_finalized_version(INVALID_BLOCK_NUM);
+    set_latest_verified_version(INVALID_BLOCK_NUM);
+
+    set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
     set_auto_expire_version_metadata(0);
 
     advance_db_offsets_to(
@@ -467,14 +465,14 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
     if (auto const latest_finalized = get_latest_finalized_version();
-        latest_finalized != INVALID_BLOCK_ID && latest_finalized > version) {
+        latest_finalized != INVALID_BLOCK_NUM && latest_finalized > version) {
         set_latest_finalized_version(version);
     }
     if (auto const latest_verified = get_latest_verified_version();
-        latest_verified != INVALID_BLOCK_ID && latest_verified > version) {
+        latest_verified != INVALID_BLOCK_NUM && latest_verified > version) {
         set_latest_verified_version(version);
     }
-    set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
+    set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =
         db_metadata()->at(last_written_offset.id)->in_fast_list;
@@ -917,9 +915,9 @@ void UpdateAuxImpl::set_io(
             root_offsets(0).reset_all(0);
             root_offsets(1).reset_all(0);
         }
-        set_latest_finalized_version(INVALID_BLOCK_ID);
-        set_latest_verified_version(INVALID_BLOCK_ID);
-        set_latest_voted(INVALID_BLOCK_ID, INVALID_ROUND_NUM);
+        set_latest_finalized_version(INVALID_BLOCK_NUM);
+        set_latest_verified_version(INVALID_BLOCK_NUM);
+        set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
         set_auto_expire_version_metadata(0);
 
         for (auto const i : {0, 1}) {
@@ -1093,7 +1091,7 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     // upserting new version
     auto const max_version = db_history_max_version();
     auto const max_version_post_upsert = std::max(version, max_version);
-    if (max_version != INVALID_BLOCK_ID &&
+    if (max_version != INVALID_BLOCK_NUM &&
         max_version_post_upsert - db_history_min_valid_version() >=
             version_history_length()) { // exceed history length
         // erase min_valid_version, must happen before upsert() because that
@@ -1203,7 +1201,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
-    if (max_version == INVALID_BLOCK_ID) {
+    if (max_version == INVALID_BLOCK_NUM) {
         return;
     }
     auto const history_length_before =
@@ -1215,7 +1213,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
                version_history_length() > MIN_HISTORY_LENGTH) {
             auto const version_to_erase = db_history_min_valid_version();
             MONAD_ASSERT(
-                version_to_erase != INVALID_BLOCK_ID &&
+                version_to_erase != INVALID_BLOCK_NUM &&
                 version_to_erase < max_version);
             erase_versions_up_to_and_including(version_to_erase);
             update_history_length_metadata(
@@ -1257,7 +1255,7 @@ void UpdateAuxImpl::move_trie_version_forward(
     MONAD_ASSERT(is_on_disk());
     // only allow moving forward
     MONAD_ASSERT(
-        dest > src && dest != INVALID_BLOCK_ID &&
+        dest > src && dest != INVALID_BLOCK_NUM &&
         dest >= db_history_max_version());
     auto g(unique_lock());
     auto g2(set_current_upsert_tid());
@@ -1386,8 +1384,8 @@ uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const max_version = db_history_max_version();
-    if (max_version == INVALID_BLOCK_ID) {
-        return INVALID_BLOCK_ID;
+    if (max_version == INVALID_BLOCK_NUM) {
+        return INVALID_BLOCK_NUM;
     }
     else {
         auto const history_range_min =

@@ -3,6 +3,7 @@
 #include <monad/mpt/config.hpp>
 
 #include <monad/core/assert.h>
+#include <monad/core/bytes.hpp>
 #include <monad/mpt/util.hpp>
 
 #include <monad/async/config.hpp>
@@ -80,7 +81,8 @@ namespace detail
                 "root offsets must be a power of 2");
 
             uint64_t version_lower_bound_;
-            uint64_t next_version_; // all bits zero turns into INVALID_BLOCK_ID
+            uint64_t
+                next_version_; // all bits zero turns into INVALID_BLOCK_NUM
 
             union
             {
@@ -143,11 +145,16 @@ namespace detail
         uint64_t latest_finalized_version;
         uint64_t latest_verified_version;
         uint64_t latest_voted_version;
-        uint64_t latest_voted_round;
+        uint64_t unused0; // used to be latest_voted_round;
         int64_t auto_expire_version;
+        bytes32_t latest_voted_block_id; // 32 bytes
+        // TODO: add latest_proposal info, format as follow, remember to
+        // subtract those bytes from `future_variables_unused`
+        // uint64_t latest_proposal_version;
+        // uint8_t latest_proposal_block_id[32];
 
         // padding for adding future atomics without requiring DB reset
-        uint8_t future_variables_unused[4096];
+        uint8_t future_variables_unused[4064];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -531,9 +538,9 @@ namespace detail
         MONAD_ASSERT(intr->is_dirty().load(std::memory_order_acquire) == false);
         auto g1 = intr->hold_dirty();
         auto g2 = dest->hold_dirty();
-        dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_ID
+        dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         auto const old_next_version = intr->root_offsets.next_version_;
-        intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_ID
+        intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         atomic_memcpy((void *)dest, buffer, sizeof(db_metadata));
         atomic_memcpy(
             ((std::byte *)dest) + sizeof(db_metadata),

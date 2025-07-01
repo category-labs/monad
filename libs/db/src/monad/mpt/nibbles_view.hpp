@@ -73,6 +73,16 @@ public:
         return *this;
     }
 
+    unsigned char const *data() const noexcept
+    {
+        return data_.get();
+    }
+
+    bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;
@@ -90,7 +100,10 @@ public:
         return end_nibble_ - static_cast<size_type>(begin_nibble_);
     }
 
-    inline constexpr NibblesView
+    // Returns a left-aligned Nibbles containing a subrange of nibbles starting
+    // at `pos` and up to `count` nibbles (or to the end if count == npos).
+    // The returned Nibbles is always left-aligned (begin_nibble_ == 0).
+    inline constexpr Nibbles
     substr(unsigned const pos, unsigned const count = npos) const;
 
     inline constexpr bool operator==(NibblesView const &other) const;
@@ -267,12 +280,6 @@ inline Nibbles::Nibbles(NibblesView const nibbles)
     }
 }
 
-inline constexpr NibblesView
-Nibbles::substr(unsigned const pos, unsigned const count) const
-{
-    return NibblesView(*this).substr(pos, count);
-}
-
 inline constexpr bool Nibbles::operator==(NibblesView const &other) const
 {
     return NibblesView(*this) == other;
@@ -317,6 +324,14 @@ constexpr Nibbles concat(Args... args)
             }
         }(args),
         ...);
+    return ret;
+}
+
+inline constexpr Nibbles
+Nibbles::substr(unsigned const pos, unsigned const count) const
+{
+    auto const ret = concat(NibblesView(*this).substr(pos, count));
+    MONAD_ASSERT(ret.begin_nibble_ == 0);
     return ret;
 }
 

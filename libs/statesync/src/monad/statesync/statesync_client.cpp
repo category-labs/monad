@@ -52,12 +52,12 @@ size_t monad_statesync_client_prefixes()
 bool monad_statesync_client_has_reached_target(
     monad_statesync_client_context const *const ctx)
 {
-    if (ctx->tgrt.number == INVALID_BLOCK_ID) {
+    if (ctx->tgrt.number == INVALID_BLOCK_NUM) {
         return false;
     }
 
     for (auto const &[n, _] : ctx->progress) {
-        MONAD_ASSERT(n == INVALID_BLOCK_ID || n <= ctx->tgrt.number);
+        MONAD_ASSERT(n == INVALID_BLOCK_NUM || n <= ctx->tgrt.number);
         if (n != ctx->tgrt.number) {
             return false;
         }
@@ -93,9 +93,9 @@ void monad_statesync_client_handle_target(
     auto const res = rlp::decode_block_header(raw);
     MONAD_ASSERT(res.has_value());
     auto const &tgrt = res.value();
-    MONAD_ASSERT(tgrt.number != INVALID_BLOCK_ID);
+    MONAD_ASSERT(tgrt.number != INVALID_BLOCK_NUM);
     MONAD_ASSERT(
-        ctx->tgrt.number == INVALID_BLOCK_ID ||
+        ctx->tgrt.number == INVALID_BLOCK_NUM ||
         tgrt.number >= ctx->tgrt.number);
 
     ctx->tgrt = tgrt;
@@ -103,7 +103,7 @@ void monad_statesync_client_handle_target(
     MONAD_ASSERT(
         tgrt.number, "genesis should be loaded manually without statesync");
 
-    if (tgrt.number == ctx->db.get_latest_block_id()) {
+    if (tgrt.number == ctx->db.get_latest_version()) {
         MONAD_ASSERT(monad_statesync_client_has_reached_target(ctx));
     }
     else {
@@ -127,7 +127,7 @@ void monad_statesync_client_handle_done(
     MONAD_ASSERT(msg.success);
 
     auto &[progress, old_target] = ctx->progress.at(msg.prefix);
-    MONAD_ASSERT(msg.n > progress || progress == INVALID_BLOCK_ID);
+    MONAD_ASSERT(msg.n > progress || progress == INVALID_BLOCK_NUM);
     progress = msg.n;
     old_target = ctx->tgrt.number;
 
@@ -143,7 +143,7 @@ void monad_statesync_client_handle_done(
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
     auto const &tgrt = ctx->tgrt;
-    MONAD_ASSERT(tgrt.number != INVALID_BLOCK_ID);
+    MONAD_ASSERT(tgrt.number != INVALID_BLOCK_NUM);
     MONAD_ASSERT(ctx->deltas.empty());
     if (!ctx->buffered.empty()) {
         // sent storage with no account
@@ -154,9 +154,9 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
         return false;
     }
 
-    if (ctx->db.get_latest_block_id() != tgrt.number) {
+    if (ctx->db.get_latest_version() != tgrt.number) {
         ctx->db.move_trie_version_forward(
-            ctx->db.get_latest_block_id(), tgrt.number);
+            ctx->db.get_latest_version(), tgrt.number);
         bytes32_t expected = tgrt.parent_hash;
         for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
             auto const v = tgrt.number - i - 1;
@@ -187,7 +187,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
             ctx->db.upsert(std::move(finalized_updates), v, false, false);
         }
     }
-    ctx->db.update_finalized_block(tgrt.number);
+    ctx->db.update_finalized_version(tgrt.number);
 
     TrieDb db{ctx->db};
     MONAD_ASSERT(db.get_block_number() == tgrt.number);

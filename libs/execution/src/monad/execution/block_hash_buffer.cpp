@@ -80,52 +80,58 @@ BlockHashChain::BlockHashChain(BlockHashBufferFinalized &buf)
 }
 
 void BlockHashChain::propose(
-    bytes32_t const &hash, uint64_t const round, uint64_t const parent_round)
+    bytes32_t const &hash, uint64_t const block_number,
+    bytes32_t const &block_id, bytes32_t const &parent_id)
 {
-    for (auto it = proposals_.rbegin(); it != proposals_.rend(); ++it) {
-        if (it->round == parent_round) {
+    for (auto it = proposals_.begin(); it != proposals_.end(); ++it) {
+        if (it->block_id == parent_id) {
             proposals_.emplace_back(Proposal{
-                .round = round,
-                .parent_round = parent_round,
+                .block_number = block_number,
+                .block_id = block_id,
+                .parent_id = parent_id,
                 .buf = BlockHashBufferProposal(hash, it->buf)});
             return;
         }
     }
     proposals_.emplace_back(Proposal{
-        .round = round,
-        .parent_round = parent_round,
+        .block_number = block_number,
+        .block_id = block_id,
+        .parent_id = parent_id,
         .buf = BlockHashBufferProposal(hash, buf_)});
 }
 
-void BlockHashChain::finalize(uint64_t const round)
+void BlockHashChain::finalize(bytes32_t const &block_id)
 {
     auto const to_finalize = buf_.n();
 
     auto winner_it = std::find_if(
-        proposals_.rbegin(), proposals_.rend(), [round](Proposal const &p) {
-            return p.round == round;
+        proposals_.begin(), proposals_.end(), [&block_id](Proposal const &p) {
+            return p.block_id == block_id;
         });
-    if (MONAD_LIKELY(winner_it != proposals_.rend())) {
-        MONAD_ASSERT((winner_it->buf.n() - 1) == to_finalize);
-        buf_.set(to_finalize, winner_it->buf.get(to_finalize));
-    }
+    MONAD_ASSERT(winner_it != proposals_.end());
+    MONAD_ASSERT((winner_it->buf.n() - 1) == to_finalize);
+    buf_.set(to_finalize, winner_it->buf.get(to_finalize));
+    uint64_t const block_number = winner_it->block_number;
 
     // cleanup chains
     proposals_.erase(
         std::remove_if(
             proposals_.begin(),
             proposals_.end(),
-            [round](Proposal const &p) { return p.round <= round; }),
+            [block_number](Proposal const &p) {
+                return p.block_number <= block_number;
+            }),
         proposals_.end());
 }
 
-BlockHashBuffer const &BlockHashChain::find_chain(uint64_t const round) const
+BlockHashBuffer const &
+BlockHashChain::find_chain(bytes32_t const &block_id) const
 {
     auto it = std::find_if(
-        proposals_.rbegin(), proposals_.rend(), [round](Proposal const &p) {
-            return p.round == round;
+        proposals_.begin(), proposals_.end(), [&block_id](Proposal const &p) {
+            return p.block_id == block_id;
         });
-    if (MONAD_UNLIKELY(it == proposals_.rend())) {
+    if (MONAD_UNLIKELY(it == proposals_.end())) {
         return buf_;
     }
     return it->buf;

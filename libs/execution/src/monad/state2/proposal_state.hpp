@@ -14,19 +14,22 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     std::unique_ptr<StateDeltas> state_;
-    uint64_t parent_;
+    uint64_t parent_block_;
+    bytes32_t parent_id_;
 
 public:
     ProposalState(
-        std::unique_ptr<StateDeltas> state, uint64_t const parent)
+        std::unique_ptr<StateDeltas> state, uint64_t const parent_block_number,
+        bytes32_t const &parent_id)
         : state_(std::move(state))
-        , parent_(parent)
+        , parent_block_(parent_block_number)
+        , parent_id_(parent_id)
     {
     }
 
-    uint64_t parent() const
+    std::pair<uint64_t, bytes32_t> parent_info() const
     {
-        return parent_;
+        return {parent_block_, parent_id_};
     }
 
     StateDeltas const &state() const
@@ -70,15 +73,29 @@ public:
 
 class Proposals
 {
-    using RoundMap = std::map<uint64_t, std::unique_ptr<ProposalState>>;
+    using Key = std::pair<uint64_t, bytes32_t>; // <block_number, block_id>
+    using Value = std::unique_ptr<ProposalState>;
 
-    static constexpr size_t MAX_ROUND_MAP_SIZE = 100;
+    struct ProposalMapComparator
+    {
+        bool operator()(Key const &a, Key const &b) const
+        {
+            if (a.first != b.first) {
+                return a.first < b.first;
+            }
+            return a.second < b.second;
+        }
+    };
 
-    RoundMap round_map_{};
+    using ProposalMap = std::map<Key, Value, ProposalMapComparator>;
+
+    static constexpr size_t MAX_PROPOSAL_MAP_SIZE = 100;
+
+    ProposalMap proposal_map_{};
     uint64_t block_{0};
-    std::optional<uint64_t> round_{0};
+    bytes32_t block_id_{};
     uint64_t finalized_block_{0};
-    uint64_t finalized_round_{0};
+    bytes32_t finalized_block_id_{};
 
 public:
     bool try_read_account(
@@ -102,47 +119,52 @@ public:
         return try_read(fn, truncated);
     }
 
-    void set_block_and_round(
-        uint64_t const block_number, std::optional<uint64_t> const round)
+    void
+    set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
         block_ = block_number;
-        round_ = round;
+        block_id_ = block_id;
     }
 
     void commit(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const round)
+        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        bytes32_t const &block_id)
     {
-        if (round_map_.size() >= MAX_ROUND_MAP_SIZE) {
-            truncate_round_map();
+        if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
+            truncate_proposal_map();
         }
-        round_map_.insert_or_assign(
-            round,
-            std::unique_ptr<ProposalState>(new ProposalState(
-                std::move(state_deltas),
-                round_ ? round_.value() : finalized_round_)));
-        round_ = round;
+        auto const key = std::make_pair(block_number, block_id);
+        MONAD_ASSERT(
+            proposal_map_
+                .insert(
+                    {key,
+                     std::unique_ptr<ProposalState>(new ProposalState(
+                         std::move(state_deltas), block_, block_id_))})
+                .second == true);
+        block_ = block_number;
+        block_id_ = block_id;
     }
 
     std::unique_ptr<ProposalState>
-    finalize(uint64_t const block_num, uint64_t const round)
+    finalize(uint64_t const block_num, bytes32_t const &block_id)
     {
         finalized_block_ = block_num;
-        finalized_round_ = round;
-        auto const it = round_map_.find(round);
-        if (it == round_map_.end()) {
-            LOG_INFO("Finalizing truncated round {}. Clear LRU caches.", round);
+        finalized_block_id_ = block_id;
+        auto const it = proposal_map_.find(std::make_pair(block_num, block_id));
+        if (it == proposal_map_.end()) {
+            LOG_INFO(
+                "Finalizing truncated proposal of block_id {}. Clear LRU "
+                "caches.",
+                block_id);
             return {};
         }
-        MONAD_ASSERT(it->first == round);
-        auto it2 = round_map_.begin();
-        while (it2 != it) {
-            MONAD_ASSERT(it2->first < round);
-            MONAD_ASSERT(it2->second);
-            it2 = round_map_.erase(it2);
-        }
         std::unique_ptr<ProposalState> ps = std::move(it->second);
-        MONAD_ASSERT(ps);
-        round_map_.erase(it);
+        // Clean up proposals earlier or equal to the finalized block
+        for (auto it2 = proposal_map_.begin();
+             it2->first.first <= finalized_block_ &&
+             it2 != proposal_map_.end();) {
+            it2 = proposal_map_.erase(it2);
+        }
         return ps;
     }
 
@@ -152,17 +174,16 @@ private:
     {
         constexpr int DEPTH_LIMIT = 5;
         int depth = 1;
-        uint64_t round = round_.has_value() ? round_.value() : finalized_round_;
+        bytes32_t block_id = block_id_;
+        uint64_t block_number = block_;
         while (true) {
-            if (round <= finalized_round_) {
-                // TODO: Revisit when rewind is disallowed.
-                if (round < finalized_round_) {
-                    truncated = true;
-                }
+            if (block_id == finalized_block_id_) {
                 break;
             }
-            auto const it = round_map_.find(round);
-            if (it == round_map_.end()) {
+            MONAD_ASSERT(block_number > finalized_block_);
+            auto const it =
+                proposal_map_.find(std::make_pair(block_number, block_id));
+            if (it == proposal_map_.end()) {
                 truncated = true;
                 break;
             }
@@ -175,20 +196,23 @@ private:
                 truncated = true;
                 break;
             }
-            round = ps->parent();
+            std::tie(block_number, block_id) = ps->parent_info();
         }
         return false;
     }
 
-    void truncate_round_map()
+    void truncate_proposal_map()
     {
-        MONAD_ASSERT(round_map_.size() == MAX_ROUND_MAP_SIZE);
-        auto const it = round_map_.begin();
+        MONAD_ASSERT(proposal_map_.size() == MAX_PROPOSAL_MAP_SIZE);
+        // Remove the oldest proposal, the one with the smallest block number.
+        // Note that there could be multiple proposals with the same block
+        // number, here we randomly remove one of them.
+        auto const it = proposal_map_.begin();
         LOG_INFO(
             "Round map size reached limit {}, truncating round {}",
-            MAX_ROUND_MAP_SIZE,
+            MAX_PROPOSAL_MAP_SIZE,
             it->first);
-        round_map_.erase(it);
+        proposal_map_.erase(it);
     }
 };
 

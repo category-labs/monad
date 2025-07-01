@@ -461,6 +461,6 @@ void monad_db_snapshot_loader_destroy(monad_db_snapshot_loader *loader)
         finalized_updates.push_front(finalized);
         loader->db.upsert(std::move(finalized_updates), block, false, false);
     }
-    loader->db.update_finalized_block(loader->block);
+    loader->db.update_finalized_version(loader->block);
     delete loader;
 }

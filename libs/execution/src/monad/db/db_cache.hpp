@@ -96,25 +96,24 @@ public:
         return db_.read_storage(address, incarnation, key);
     }
 
-    virtual vm::SharedIntercode
-    read_code(bytes32_t const &code_hash) override
+    virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         return db_.read_code(code_hash);
     }
 
-    virtual void set_block_and_round(
+    virtual void set_block_and_prefix(
         uint64_t const block_number,
-        std::optional<uint64_t> const round_number = {}) override
+        bytes32_t const &block_id = bytes32_t{}) override
     {
-        proposals_.set_block_and_round(block_number, round_number);
-        db_.set_block_and_round(block_number, round_number);
+        proposals_.set_block_and_prefix(block_number, block_id);
+        db_.set_block_and_prefix(block_number, block_id);
     }
 
     virtual void
-    finalize(uint64_t const block_number, uint64_t const round_number) override
+    finalize(uint64_t const block_number, bytes32_t const &block_id) override
     {
         std::unique_ptr<ProposalState> const ps =
-            proposals_.finalize(block_number, round_number);
+            proposals_.finalize(block_number, block_id);
         if (ps) {
             insert_in_lru_caches(ps->state());
         }
@@ -123,7 +122,7 @@ public:
             accounts_.clear();
             storage_.clear();
         }
-        db_.finalize(block_number, round_number);
+        db_.finalize(block_number, block_id);
     }
 
     virtual void update_verified_block(uint64_t const block_number) override
@@ -132,14 +131,14 @@ public:
     }
 
     virtual void update_voted_metadata(
-        uint64_t const block_number, uint64_t const round) override
+        uint64_t const block_number, bytes32_t const &block_id) override
     {
-        db_.update_voted_metadata(block_number, round);
+        db_.update_voted_metadata(block_number, block_id);
     }
 
     virtual void commit(
-        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const &,
+        StateDeltas const &, Code const &, bytes32_t const &,
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const &,
         std::vector<std::vector<CallFrame>> const &,
         std::vector<Address> const &, std::vector<Transaction> const &,
         std::vector<BlockHeader> const &,
@@ -150,6 +149,7 @@ public:
 
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, Code const &code,
+        bytes32_t const &block_id,
         MonadConsensusBlockHeader const &consensus_header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
@@ -161,6 +161,7 @@ public:
         db_.commit(
             *state_deltas,
             code,
+            block_id,
             consensus_header,
             receipts,
             call_frames,
@@ -168,7 +169,9 @@ public:
             transactions,
             ommers,
             withdrawals);
-        proposals_.commit(std::move(state_deltas), consensus_header.round);
+
+        proposals_.commit(
+            std::move(state_deltas), consensus_header.seqno, block_id);
     }
 
     virtual BlockHeader read_eth_header() override

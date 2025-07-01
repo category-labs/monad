@@ -46,9 +46,8 @@ static uint64_t
 select_rand_version(Db const &db, monad::small_prng &rnd, double bias)
 {
     auto const version_range_start =
-        static_cast<double>(db.get_earliest_block_id());
-    auto const version_range_end =
-        static_cast<double>(db.get_latest_block_id());
+        static_cast<double>(db.get_earliest_version());
+    auto const version_range_end = static_cast<double>(db.get_latest_version());
     double r = rnd();
     r = r / monad::small_prng::max();
     if (r > 0.25) {
@@ -192,11 +191,11 @@ int main(int argc, char *const argv[])
             AsyncIOContext io_ctx{ro_config};
             Db ro_db{io_ctx};
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_version() == INVALID_BLOCK_NUM && !g_done) {
             }
             // now the first version is written to db
-            MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
-            MONAD_ASSERT(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
+            MONAD_ASSERT(ro_db.get_latest_version() != INVALID_BLOCK_NUM);
+            MONAD_ASSERT(ro_db.get_earliest_version() != INVALID_BLOCK_NUM);
 
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
@@ -219,7 +218,7 @@ int main(int argc, char *const argv[])
                         ++nsuccess;
                     }
                     else {
-                        auto const min_version = ro_db.get_earliest_block_id();
+                        auto const min_version = ro_db.get_earliest_version();
                         MONAD_ASSERT(version < min_version);
                         ++nfailed;
                         break;
@@ -244,11 +243,11 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_version() == INVALID_BLOCK_NUM && !g_done) {
             }
             // now the first version is written to db
-            MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
-            MONAD_ASSERT(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
+            MONAD_ASSERT(ro_db.get_latest_version() != INVALID_BLOCK_NUM);
+            MONAD_ASSERT(ro_db.get_earliest_version() != INVALID_BLOCK_NUM);
 
             struct receiver_t
             {
@@ -268,7 +267,7 @@ int main(int argc, char *const argv[])
                         ++(*nsuccess);
                     }
                     else {
-                        auto const min_version = db->get_earliest_block_id();
+                        auto const min_version = db->get_earliest_version();
                         MONAD_ASSERT(version < min_version);
                         ++(*nfailed);
                     }
@@ -332,11 +331,11 @@ int main(int argc, char *const argv[])
             unsigned nsuccess = 0;
             unsigned nfailed = 0;
 
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_version() == INVALID_BLOCK_NUM && !g_done) {
             }
             // now the first version is written to db
-            MONAD_ASSERT(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
-            MONAD_ASSERT(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
+            MONAD_ASSERT(ro_db.get_latest_version() != INVALID_BLOCK_NUM);
+            MONAD_ASSERT(ro_db.get_earliest_version() != INVALID_BLOCK_NUM);
 
             struct VersionValidatorMachine : public TraverseMachine
             {
@@ -412,7 +411,7 @@ int main(int argc, char *const argv[])
                         num_nodes_per_version, g_done);
                     machine.num_nodes = num_nodes_per_version;
                     if (!ro_db.traverse(cursor.value(), machine, version)) {
-                        auto const min_version = ro_db.get_earliest_block_id();
+                        auto const min_version = ro_db.get_earliest_version();
                         MONAD_ASSERT(version < min_version);
                         ++nfailed;
                     }
@@ -421,7 +420,7 @@ int main(int argc, char *const argv[])
                     }
                 }
                 else {
-                    auto const min_version = ro_db.get_earliest_block_id();
+                    auto const min_version = ro_db.get_earliest_version();
                     MONAD_ASSERT(version < min_version);
                     ++nfailed;
                 }
@@ -442,7 +441,7 @@ int main(int argc, char *const argv[])
                     .dbname_paths = dbname_paths};
                 AsyncIOContext io_ctx{ro_config};
                 Db ro_db{io_ctx};
-                auto const version = ro_db.get_earliest_block_id() + 1;
+                auto const version = ro_db.get_earliest_version() + 1;
                 auto const value =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
                 auto const res = ro_db.get(
@@ -476,7 +475,7 @@ int main(int argc, char *const argv[])
                 num_async_reader_threads, num_fibers);
 
             std::atomic<size_t> inflight_requests = 0;
-            while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID && !g_done) {
+            while (ro_db.get_latest_version() == INVALID_BLOCK_NUM && !g_done) {
             }
             // read a random key on latest version
             while (!g_done) {
@@ -484,7 +483,7 @@ int main(int argc, char *const argv[])
                     sleep(1);
                     continue;
                 }
-                auto const version = ro_db.get_latest_block_id();
+                auto const version = ro_db.get_latest_version();
                 inflight_requests++;
                 uint64_t const key_index =
                     (size_t)rand() % num_nodes_per_version;
@@ -503,10 +502,10 @@ int main(int argc, char *const argv[])
                         }
                         else {
                             MONAD_ASSERT_PRINTF(
-                                ro_db->get_earliest_block_id() > version,
+                                ro_db->get_earliest_version() > version,
                                 "db earliest version %lu, find to_key(%lu) at "
                                 "version %lu",
-                                ro_db->get_earliest_block_id(),
+                                ro_db->get_earliest_version(),
                                 key_index,
                                 version);
                         }
@@ -560,8 +559,8 @@ int main(int argc, char *const argv[])
         }
 
         std::cout << "Writer finished. Max version in RWDb is "
-                  << db.get_latest_block_id() << ", min version in RWDb is "
-                  << db.get_earliest_block_id() << "\n\n";
+                  << db.get_latest_version() << ", min version in RWDb is "
+                  << db.get_earliest_version() << "\n\n";
     }
     catch (const CLI::CallForHelp &e) {
         std::cout << cli.help() << std::flush;

@@ -61,8 +61,9 @@ class BlockHashChain
 
     struct Proposal
     {
-        uint64_t round;
-        uint64_t parent_round;
+        uint64_t block_number;
+        bytes32_t block_id;
+        bytes32_t parent_id;
         BlockHashBufferProposal buf;
     };
 
@@ -71,9 +72,11 @@ class BlockHashChain
 public:
     BlockHashChain(BlockHashBufferFinalized &);
 
-    void propose(bytes32_t const &, uint64_t round, uint64_t parent_round);
-    void finalize(uint64_t const round);
-    BlockHashBuffer const &find_chain(uint64_t) const;
+    void propose(
+        bytes32_t const &, uint64_t block_number, bytes32_t const &block_id,
+        bytes32_t const &parent_id);
+    void finalize(bytes32_t const &block_id);
+    BlockHashBuffer const &find_chain(bytes32_t const &block_id) const;
 };
 
 bool init_block_hash_buffer_from_triedb(

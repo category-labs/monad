@@ -26,6 +26,7 @@
 #include <monad/mpt/util.hpp>
 
 #include <CLI/CLI.hpp>
+#include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/core.h>
@@ -144,8 +145,8 @@ struct DbStateMachine
 {
     Db &db;
 
-    uint64_t curr_version{INVALID_BLOCK_ID};
-    std::optional<uint64_t> curr_round{}; // nullopt means finalized
+    uint64_t curr_version{INVALID_BLOCK_NUM};
+    bytes32_t curr_block_id{}; // empty means finalized
     Nibbles curr_section_prefix{};
     unsigned char curr_table_id{INVALID_NIBBLE};
 
@@ -165,7 +166,7 @@ struct DbStateMachine
 
     void set_version(uint64_t const version)
     {
-        MONAD_ASSERT(version != INVALID_BLOCK_ID);
+        MONAD_ASSERT(version != INVALID_BLOCK_NUM);
         if (state != DbState::unset) {
             fmt::println(
                 "Error: already at version {}, use 'back' to move cursor "
@@ -173,11 +174,11 @@ struct DbStateMachine
                 curr_version);
             return;
         }
-        MONAD_ASSERT(curr_version == INVALID_BLOCK_ID);
+        MONAD_ASSERT(curr_version == INVALID_BLOCK_NUM);
         MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
 
-        auto const min_version = db.get_earliest_block_id();
-        auto const max_version = db.get_latest_block_id();
+        auto const min_version = db.get_earliest_version();
+        auto const max_version = db.get_latest_version();
         if (min_version > version || max_version < version) {
             fmt::println(
                 "Error: invalid version {}. Please choose a version in range "
@@ -193,7 +194,7 @@ struct DbStateMachine
 
         fmt::println("Success! Set version to {}\n", curr_version);
         if (list_finalized_and_proposals(version)) {
-            fmt::println("Type \"proposal [round]\" or "
+            fmt::println("Type \"proposal [block_id]\" or "
                          "\"finalized\" to set section");
         }
         else {
@@ -207,17 +208,16 @@ struct DbStateMachine
     // otherwise `false`.
     bool list_finalized_and_proposals(uint64_t const version)
     {
-        if (version == INVALID_BLOCK_ID) {
+        if (version == INVALID_BLOCK_NUM) {
             fmt::println("Error: invalid version to list sections, set to a "
                          "valid version and try again");
             return false;
         }
         auto const finalized_res = db.find(finalized_nibbles, version);
-        auto rounds = get_proposal_rounds(db, version);
-        if (finalized_res.has_error() && rounds.empty()) {
+        auto const block_ids = get_proposal_block_ids(db, version);
+        if (finalized_res.has_error() && block_ids.empty()) {
             return false;
         }
-        std::sort(rounds.begin(), rounds.end());
         fmt::println("List sections of version {}: ", version);
         if (finalized_res.has_value()) {
             fmt::println("    finalized : yes ", version);
@@ -225,11 +225,11 @@ struct DbStateMachine
         else {
             fmt::println("    finalized : no ", version);
         }
-        fmt::println("    proposals : {}\n", rounds);
+        fmt::println("    proposals : {}\n", block_ids);
         return true;
     }
 
-    void set_proposal_or_finalized(std::optional<uint64_t> const round)
+    void set_proposal_or_finalized(bytes32_t const &block_id)
     {
         if (state != DbState::version_number) {
             fmt::println("Error: at wrong part of trie, only allow set section "
@@ -237,19 +237,20 @@ struct DbStateMachine
             return;
         }
         MONAD_ASSERT(curr_section_prefix.nibble_size() == 0);
-        if (round.has_value()) { // set proposal
-            auto const prefix = proposal_prefix(round.value());
+        curr_block_id = block_id;
+        if (block_id != bytes32_t{}) { // set proposal
+            auto const prefix = proposal_prefix(block_id);
             if (db.find(prefix, curr_version).has_value()) {
                 curr_section_prefix = prefix;
-                curr_round = round;
                 state = DbState::proposal_or_finalize;
                 fmt::println(
-                    "Success! Set to proposal {} of version {}",
-                    round.value(),
+                    "Success! Set to proposal block_id {} of version {}",
+                    block_id,
                     curr_version);
             }
             else {
-                fmt::println("Could not locate round {}", round.value());
+                fmt::println(
+                    "Could not locate proposal of block_id {}", block_id);
             }
         }
         else {
@@ -334,10 +335,10 @@ struct DbStateMachine
         switch (state) {
         case DbState::table:
             state = DbState::proposal_or_finalize;
-            if (curr_round.has_value()) {
+            if (curr_block_id != bytes32_t{}) {
                 fmt::println(
-                    "At proposal round {} of version {}",
-                    curr_round.value(),
+                    "At proposal block_id {} of version {}",
+                    curr_block_id,
                     curr_version);
             }
             else {
@@ -348,19 +349,19 @@ struct DbStateMachine
         case DbState::proposal_or_finalize:
             state = DbState::version_number;
             curr_section_prefix = {};
-            curr_round = std::nullopt;
+            curr_block_id = bytes32_t{};
             fmt::println(
-                "At version {}. Type \"proposal [round]\" or "
+                "At version {}. Type \"proposal [block_id]\" or "
                 "\"finalized\" to set section",
                 curr_version);
             break;
         case DbState::version_number:
-            curr_version = INVALID_BLOCK_ID;
+            curr_version = INVALID_BLOCK_NUM;
             state = DbState::unset;
             fmt::println("Version is unset");
             break;
         default:
-            curr_version = INVALID_BLOCK_ID;
+            curr_version = INVALID_BLOCK_NUM;
         }
         curr_table_id = INVALID_NIBBLE;
     }
@@ -375,7 +376,7 @@ void print_help()
     fmt::print(
         "List of commands:\n\n"
         "version [version_number]     -- Set the database version\n"
-        "proposal [round_number] or finalized -- Set the section to query\n"
+        "proposal [block_id] or finalized -- Set the section to query\n"
         "list sections                -- List any proposal or finalized "
         "section in current version\n"
         "table [state/receipt/code]   -- Set the table to query\n"
@@ -403,16 +404,15 @@ void do_version(DbStateMachine &sm, std::string_view const version)
     }
 }
 
-void do_proposal(DbStateMachine &sm, std::string_view const round)
+void do_proposal(DbStateMachine &sm, std::string_view const input)
 {
-    uint64_t r{};
-    auto [_, ec] =
-        std::from_chars(round.data(), round.data() + round.size(), r);
-    if (ec != std::errc()) {
-        fmt::println("Invalid round: please input a number.");
+    bytes32_t const block_id = evmc::literals::parse<bytes32_t>(input);
+    if (block_id == bytes32_t{}) {
+        fmt::println(
+            "Invalid block_id input: please input a 32-byte hex string.");
     }
     else {
-        sm.set_proposal_or_finalized(r);
+        sm.set_proposal_or_finalized(block_id);
     }
 }
 
@@ -710,11 +710,11 @@ int interactive_impl(Db &db)
             }
             else {
                 fmt::println("Wrong format to set proposal, type 'proposal "
-                             "[round number]'");
+                             "[block_id]'");
             }
         }
         else if (tokens[0] == "finalized") {
-            state_machine.set_proposal_or_finalized(std::nullopt);
+            state_machine.set_proposal_or_finalized(bytes32_t{});
         }
         else if (tokens[0] == "table") {
             if (tokens.size() == 2) {
@@ -850,10 +850,10 @@ int main(int argc, char *argv[])
             "db summary: earliest_block_id={} latest_block_id={} "
             "latest_finalized_block_id={} last_verified_block_id={} "
             "history_length={}",
-            ro_db.get_earliest_block_id(),
-            ro_db.get_latest_block_id(),
-            ro_db.get_latest_finalized_block_id(),
-            ro_db.get_latest_verified_block_id(),
+            ro_db.get_earliest_version(),
+            ro_db.get_latest_version(),
+            ro_db.get_latest_finalized_version(),
+            ro_db.get_latest_verified_version(),
             ro_db.get_history_length());
         if (interactive) {
             return interactive_impl(ro_db);
@@ -867,7 +867,7 @@ int main(int argc, char *argv[])
         for (auto const &path : dbname_paths) {
             c_dbname_paths.emplace_back(path.c_str());
         }
-        auto const begin = std::chrono::steady_clock::now();
+        [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
         bool const success = monad_db_dump_snapshot(
             c_dbname_paths.data(),
             c_dbname_paths.size(),
@@ -889,7 +889,7 @@ int main(int argc, char *argv[])
         for (auto const &path : dbname_paths) {
             c_dbname_paths.emplace_back(path.c_str());
         }
-        auto const begin = std::chrono::steady_clock::now();
+        [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
         monad_db_snapshot_load_filesystem(
             c_dbname_paths.data(),
             c_dbname_paths.size(),

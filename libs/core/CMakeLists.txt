@@ -80,6 +80,7 @@ add_library(
   "src/monad/core/bit_util.h"
   "src/monad/core/blake3.hpp"
   "src/monad/core/byte_string.hpp"
+  "src/monad/core/bytes.hpp"
   "src/monad/core/bytes_hash_compare.hpp"
   "src/monad/core/cmemory.hpp"
   "src/monad/core/cleanup.h"
@@ -90,6 +91,7 @@ add_library(
   "src/monad/core/format_err.h"
   "src/monad/core/hash.hpp"
   "src/monad/core/hex_literal.hpp"
+  "src/monad/core/int.hpp"
   "src/monad/core/keccak.c"
   "src/monad/core/keccak.h"
   "src/monad/core/keccak.hpp"
@@ -190,6 +192,7 @@ target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
+target_link_libraries(monad_core PUBLIC intx)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(monad_core PUBLIC cgroup uring)

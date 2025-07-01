@@ -309,8 +309,8 @@ int main(int const argc, char const *argv[])
         "last verified block = {}, state root = {}, time elapsed "
         "= {}",
         init_block_num,
-        db.get_latest_finalized_block_id(),
-        db.get_latest_verified_block_id(),
+        db.get_latest_finalized_version(),
+        db.get_latest_verified_version(),
         triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));

@@ -45,6 +45,7 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -232,7 +233,7 @@ TEST(DBTest, read_only)
         TrieDb ro{ro_db};
         ASSERT_EQ(ro.get_block_number(), 1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
-        ro.set_block_and_round(0);
+        ro.set_block_and_prefix(0);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
 
         Account const acct3{.nonce = 3};
@@ -245,13 +246,13 @@ TEST(DBTest, read_only)
         // Read block 0
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
         // Go forward to block 2
-        ro.set_block_and_round(2);
+        ro.set_block_and_prefix(2);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 3});
         // Go backward to block 1
-        ro.set_block_and_round(1);
+        ro.set_block_and_prefix(1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
         // Setting the same block number is no-op.
-        ro.set_block_and_round(1);
+        ro.set_block_and_prefix(1);
         EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
     }
     std::filesystem::remove(name);
@@ -302,7 +303,7 @@ TYPED_TEST(DBTest, read_code)
         tdb,
         StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_a}}}},
         Code{{A_CODE_HASH, A_ICODE}},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     auto const a_icode = tdb.read_code(A_CODE_HASH);
     EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
@@ -312,64 +313,59 @@ TYPED_TEST(DBTest, read_code)
         tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
         Code{{B_CODE_HASH, B_ICODE}},
-        BlockHeader{});
+        BlockHeader{.number = 1});
 
     auto const b_icode = tdb.read_code(B_CODE_HASH);
     EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
 }
 
-TEST_F(OnDiskTrieDbFixture, get_proposal_rounds)
+TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 {
     TrieDb tdb{db};
     load_header(db, BlockHeader{.number = 8});
-    EXPECT_TRUE(get_proposal_rounds(db, 8).empty());
+    EXPECT_TRUE(get_proposal_block_ids(db, 8).empty());
 
-    tdb.set_block_and_round(8);
-    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 9});
-    EXPECT_EQ(db.get_latest_finalized_block_id(), 9);
+    tdb.set_block_and_prefix(8);
+    auto const round9_block_id =
+        commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 9});
+    EXPECT_EQ(db.get_latest_finalized_version(), 9);
     {
-        auto proposals = get_proposal_rounds(db, 9);
+        auto const proposals = get_proposal_block_ids(db, 9);
         EXPECT_EQ(proposals.size(), 1);
-        EXPECT_EQ(proposals.front(), 9);
+        EXPECT_EQ(proposals.front(), round9_block_id);
     }
 
-    std::vector<uint64_t> rounds;
-    tdb.set_block_and_round(9);
-    tdb.commit(
-        StateDeltas{},
-        Code{},
-        MonadConsensusBlockHeader::from_eth_header(
-            {.number = 10}, rounds.emplace_back(0)));
+    std::set<bytes32_t> block_ids;
+    tdb.set_block_and_prefix(9); // block 9 finalized
+    auto const [header0, block_id0] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 0);
+    block_ids.emplace(block_id0);
+    tdb.commit(StateDeltas{}, Code{}, block_id0, header0);
     {
-        auto proposals = get_proposal_rounds(db, 10);
-        std::sort(proposals.begin(), proposals.end());
-        EXPECT_EQ(proposals, rounds);
+        auto const proposals = get_proposal_block_ids(db, 10);
+        EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
-    tdb.set_block_and_round(9);
-    tdb.commit(
-        StateDeltas{},
-        Code{},
-        MonadConsensusBlockHeader::from_eth_header(
-            {.number = 10}, rounds.emplace_back(1)));
+    tdb.set_block_and_prefix(9);
+    auto const [header1, block_id1] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 1);
+    block_ids.emplace(block_id1);
+    tdb.commit(StateDeltas{}, Code{}, block_id1, header1);
     {
-        auto proposals = get_proposal_rounds(db, 10);
-        std::sort(proposals.begin(), proposals.end());
-        EXPECT_EQ(proposals, rounds);
+        auto const proposals = get_proposal_block_ids(db, 10);
+        EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
 
-    tdb.set_block_and_round(9);
-    tdb.commit(
-        StateDeltas{},
-        Code{},
-        MonadConsensusBlockHeader::from_eth_header(
-            {.number = 10}, rounds.emplace_back(2)));
+    tdb.set_block_and_prefix(9);
+    auto const [header2, block_id2] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 2);
+    block_ids.emplace(block_id2);
+    tdb.commit(StateDeltas{}, Code{}, block_id2, header2);
 
-    tdb.finalize(10, rounds[0]);
-    EXPECT_EQ(db.get_latest_finalized_block_id(), 10);
+    tdb.finalize(10, block_id0);
+    EXPECT_EQ(db.get_latest_finalized_version(), 10);
     {
-        auto proposals = get_proposal_rounds(db, 10);
-        std::sort(proposals.begin(), proposals.end());
-        EXPECT_EQ(proposals, rounds);
+        auto proposals = get_proposal_block_ids(db, 10);
+        EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
 }
 
@@ -387,7 +383,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     acct = tdb.read_account(ADDR_A).value();
     commit_sequential(
@@ -398,7 +394,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
                  .account = {acct, acct},
                  .storage = {{key2, {value2, value1}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 1});
 
     EXPECT_EQ(
         tdb.state_root(),
@@ -433,7 +429,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     commit_sequential(
         tdb,
@@ -444,7 +440,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
                  .storage =
                      {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 1});
 
     EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
@@ -466,7 +462,7 @@ TYPED_TEST(DBTest, storage_deletion)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 0});
 
     acct = tdb.read_account(ADDR_A).value();
     commit_sequential(
@@ -477,7 +473,7 @@ TYPED_TEST(DBTest, storage_deletion)
                  .account = {acct, acct},
                  .storage = {{key1, {value1, bytes32_t{}}}}}}},
         Code{},
-        BlockHeader{});
+        BlockHeader{.number = 1});
 
     EXPECT_EQ(
         tdb.state_root(),
@@ -550,7 +546,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     std::vector<std::vector<CallFrame>> call_frames;
     call_frames.resize(receipts.size());
-    constexpr uint64_t first_block = 0;
+    constexpr uint64_t first_block = 1;
     std::vector<Address> senders = recover_senders(transactions);
     commit_sequential(
         tdb,
@@ -608,7 +604,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
                               unsigned const tx_idx) {
         auto const res = this->db.get(
             concat(FINALIZED_NIBBLE, TX_HASH_NIBBLE, mpt::NibblesView{tx_hash}),
-            this->db.get_latest_block_id());
+            this->db.get_latest_version());
         EXPECT_TRUE(res.has_value());
         EXPECT_EQ(
             res.value(),
@@ -622,7 +618,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_read_and_parse_transaction(first_block);
 
     // A new receipt trie with eip1559 transaction type
-    constexpr uint64_t second_block = 1;
+    constexpr uint64_t second_block = 2;
     receipts.clear();
     receipts.emplace_back(Receipt{
         .status = 1, .gas_used = 34865, .type = TransactionType::eip1559});
@@ -950,16 +946,19 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         call_frames.emplace_back(std::move(result.call_frames));
     }
     auto const &transactions = block.value().transactions;
+    auto const [header, block_id] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 1});
     bs.commit(
-        MonadConsensusBlockHeader::from_eth_header(BlockHeader{.number = 1}),
+        block_id,
+        header,
         receipts,
         call_frames,
         recover_senders(transactions),
         transactions,
         {},
         {});
-    tdb.finalize(1, 1);
-    tdb.set_block_and_round(1);
+    tdb.finalize(1, block_id);
+    tdb.set_block_and_prefix(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);
@@ -1062,16 +1061,19 @@ TYPED_TEST(DBTest, call_frames_refund)
     }
 
     auto const &transactions = block.value().transactions;
+    auto const [header, block_id] =
+        consensus_header_and_id_from_eth_header(block.value().header);
     bs.commit(
-        MonadConsensusBlockHeader::from_eth_header(block.value().header),
+        block_id,
+        header,
         receipts,
         call_frames,
         recover_senders(transactions),
         transactions,
         {},
         std::nullopt);
-    tdb.finalize(1, 1);
-    tdb.set_block_and_round(1);
+    tdb.finalize(1, block_id);
+    tdb.set_block_and_prefix(1);
 
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);

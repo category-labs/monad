@@ -6,6 +6,7 @@
 #include <monad/async/config.hpp>
 #include <monad/async/io.hpp>
 #include <monad/async/storage_pool.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
@@ -59,8 +60,8 @@ public:
     find(OwningNodeCursor &, NibblesView, uint64_t block_id) const;
     Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
-    uint64_t get_latest_block_id() const;
-    uint64_t get_earliest_block_id() const;
+    uint64_t get_latest_version() const;
+    uint64_t get_earliest_version() const;
 };
 
 // RW, ROBlocking, InMemory
@@ -112,13 +113,13 @@ public:
         UpdateList, uint64_t block_id, bool enable_compaction = true,
         bool can_write_to_fast = true, bool write_root = true);
 
-    void update_finalized_block(uint64_t block_id);
-    void update_verified_block(uint64_t block_id);
-    void update_voted_metadata(uint64_t block_id, uint64_t round);
-    uint64_t get_latest_finalized_block_id() const;
-    uint64_t get_latest_verified_block_id() const;
-    uint64_t get_latest_voted_round() const;
-    uint64_t get_latest_voted_block_id() const;
+    void update_finalized_version(uint64_t version);
+    void update_verified_version(uint64_t version);
+    void update_voted_metadata(uint64_t version, bytes32_t const &block_id);
+    uint64_t get_latest_finalized_version() const;
+    uint64_t get_latest_verified_version() const;
+    bytes32_t get_latest_voted_block_id() const;
+    uint64_t get_latest_voted_version() const;
 
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.
@@ -133,8 +134,8 @@ public:
     // Blocking traverse never wait on a fiber future.
     bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
     NodeCursor root() const noexcept;
-    uint64_t get_latest_block_id() const;
-    uint64_t get_earliest_block_id() const;
+    uint64_t get_latest_version() const;
+    uint64_t get_earliest_version() const;
     uint64_t get_history_length() const;
     // This function moves trie from source to destination version in db
     // history. Only the RWDb can call this API for state sync purposes.

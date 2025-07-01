@@ -10,6 +10,7 @@
 #include <monad/async/storage_pool.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/result.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
@@ -89,10 +90,10 @@ struct Db::Impl
         size_t concurrency_limit) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
-    virtual void update_finalized_block(uint64_t) = 0;
-    virtual void update_verified_block(uint64_t) = 0;
-    virtual uint64_t get_latest_finalized_block_id() const = 0;
-    virtual uint64_t get_latest_verified_block_id() const = 0;
+    virtual void update_finalized_version(uint64_t) = 0;
+    virtual void update_verified_version(uint64_t) = 0;
+    virtual uint64_t get_latest_finalized_version() const = 0;
+    virtual uint64_t get_latest_verified_version() const = 0;
 };
 
 AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
@@ -267,22 +268,22 @@ public:
         return root_ ? NodeCursor{*root_} : NodeCursor{};
     }
 
-    virtual void update_finalized_block(uint64_t) override
+    virtual void update_finalized_version(uint64_t) override
     {
         MONAD_ABORT()
     }
 
-    virtual void update_verified_block(uint64_t) override
+    virtual void update_verified_version(uint64_t) override
     {
         MONAD_ABORT()
     }
 
-    virtual uint64_t get_latest_finalized_block_id() const override
+    virtual uint64_t get_latest_finalized_version() const override
     {
         return aux_.get_latest_finalized_version();
     }
 
-    virtual uint64_t get_latest_verified_block_id() const override
+    virtual uint64_t get_latest_verified_version() const override
     {
         return aux_.get_latest_verified_version();
     }
@@ -319,14 +320,8 @@ public:
     }
 
     virtual void copy_trie_fiber_blocking(
-        uint64_t const src_version, NibblesView const src,
-        uint64_t const dest_version, NibblesView const dest,
-        bool const) override
+        uint64_t, NibblesView, uint64_t, NibblesView, bool) override
     {
-        // in memory copy_trie only allows moving trie from src to prefix under
-        // the same version
-        root_ = copy_trie_to_dest(
-            aux_, *root_, src, src_version, {}, dest, dest_version, false);
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
@@ -363,18 +358,18 @@ public:
         return root() ? NodeCursor{*root()} : NodeCursor{};
     }
 
-    virtual void update_verified_block(uint64_t) override {}
+    virtual void update_verified_version(uint64_t) override {}
 
-    virtual void update_finalized_block(uint64_t) override {}
+    virtual void update_finalized_version(uint64_t) override {}
 
-    virtual uint64_t get_latest_finalized_block_id() const override
+    virtual uint64_t get_latest_finalized_version() const override
     {
-        return INVALID_BLOCK_ID;
+        return INVALID_BLOCK_NUM;
     }
 
-    virtual uint64_t get_latest_verified_block_id() const override
+    virtual uint64_t get_latest_verified_version() const override
     {
-        return INVALID_BLOCK_ID;
+        return INVALID_BLOCK_NUM;
     }
 };
 
@@ -477,7 +472,7 @@ struct OnDiskWithWorkerThreadImpl
         {
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();
-                if (latest_block_id == INVALID_BLOCK_ID) {
+                if (latest_block_id == INVALID_BLOCK_NUM) {
                     aux.clear_ondisk_db();
                 }
                 else {
@@ -807,8 +802,8 @@ class Db::RWOnDisk final
     bool const compaction_;
 
     Node::UniquePtr root_; // subtrie is owned by worker thread
-    uint64_t root_version_{INVALID_BLOCK_ID};
-    uint64_t unflushed_version_{INVALID_BLOCK_ID};
+    uint64_t root_version_{INVALID_BLOCK_NUM};
+    uint64_t unflushed_version_{INVALID_BLOCK_NUM};
 
 public:
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
@@ -825,7 +820,7 @@ public:
                        : Node::UniquePtr{};
         }()}
         , root_version_(aux_->db_history_max_version())
-        , unflushed_version_{INVALID_BLOCK_ID}
+        , unflushed_version_{INVALID_BLOCK_NUM}
     {
     }
 
@@ -869,7 +864,7 @@ public:
         bool const enable_compaction, bool const can_write_to_fast,
         bool const write_root) override
     {
-        if (unflushed_version_ != INVALID_BLOCK_ID) {
+        if (unflushed_version_ != INVALID_BLOCK_NUM) {
             if (unflushed_version_ != version) {
                 LOG_WARNING_CFORMAT(
                     "Update version %lu while db hasn't flushed the last "
@@ -880,7 +875,7 @@ public:
                     unflushed_version_);
             }
             if (write_root) {
-                unflushed_version_ = INVALID_BLOCK_ID;
+                unflushed_version_ = INVALID_BLOCK_NUM;
             }
         }
         // reload root to handle out-of-order upserts
@@ -891,16 +886,15 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberUpsertRequest{
-                .promise = &promise,
-                .prev_root = std::move(root_),
-                .sm = machine_,
-                .updates = std::move(updates),
-                .version = version,
-                .enable_compaction = enable_compaction && compaction_,
-                .can_write_to_fast = can_write_to_fast,
-                .write_root = write_root});
+        comms_.enqueue(FiberUpsertRequest{
+            .promise = &promise,
+            .prev_root = std::move(root_),
+            .sm = machine_,
+            .updates = std::move(updates),
+            .version = version,
+            .enable_compaction = enable_compaction && compaction_,
+            .can_write_to_fast = can_write_to_fast,
+            .write_root = write_root});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -935,9 +929,8 @@ public:
         MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberLoadAllFromBlockRequest{
-                .promise = &promise, .root = *root(), .sm = machine_});
+        comms_.enqueue(FiberLoadAllFromBlockRequest{
+            .promise = &promise, .root = *root(), .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -959,13 +952,12 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberTraverseRequest{
-                .promise = &promise,
-                .root = node,
-                .machine = machine,
-                .version = version,
-                .concurrency_limit = concurrency_limit});
+        comms_.enqueue(FiberTraverseRequest{
+            .promise = &promise,
+            .root = node,
+            .machine = machine,
+            .version = version,
+            .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -984,9 +976,8 @@ public:
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
             auto fut = promise.get_future();
-            comms_.enqueue(
-                FiberLoadRootVersionRequest{
-                    .promise = &promise, .version = version});
+            comms_.enqueue(FiberLoadRootVersionRequest{
+                .promise = &promise, .version = version});
             // promise is racily emptied after this point
             if (worker_->sleeping.load(std::memory_order_acquire)) {
                 std::unique_lock const g(lock_);
@@ -1023,16 +1014,15 @@ public:
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberCopyTrieRequest{
-                .promise = &promise,
-                .src_root = src_root,
-                .src = src,
-                .src_version = src_version,
-                .dest_root = std::move(dest_root),
-                .dest = dest,
-                .dest_version = dest_version,
-                .blocked_by_write = blocked_by_write});
+        comms_.enqueue(FiberCopyTrieRequest{
+            .promise = &promise,
+            .src_root = src_root,
+            .src = src,
+            .src_version = src_version,
+            .dest_root = std::move(dest_root),
+            .dest = dest,
+            .dest_version = dest_version,
+            .blocked_by_write = blocked_by_write});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -1042,23 +1032,23 @@ public:
         root_version_ = dest_version;
     }
 
-    virtual void update_finalized_block(uint64_t const block_id) override
+    virtual void update_finalized_version(uint64_t const version) override
     {
-        aux().set_latest_finalized_version(block_id);
+        aux().set_latest_finalized_version(version);
     }
 
-    virtual void update_verified_block(uint64_t const block_id) override
+    virtual void update_verified_version(uint64_t const version) override
     {
-        MONAD_ASSERT(block_id <= aux().db_history_max_version());
-        aux().set_latest_verified_version(block_id);
+        MONAD_ASSERT(version <= aux().db_history_max_version());
+        aux().set_latest_verified_version(version);
     }
 
-    virtual uint64_t get_latest_finalized_block_id() const override
+    virtual uint64_t get_latest_finalized_version() const override
     {
         return aux().get_latest_finalized_version();
     }
 
-    virtual uint64_t get_latest_verified_block_id() const override
+    virtual uint64_t get_latest_verified_version() const override
     {
         return aux().get_latest_verified_version();
     }
@@ -1118,13 +1108,13 @@ RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
 
 RODb::~RODb() = default;
 
-uint64_t RODb::get_latest_block_id() const
+uint64_t RODb::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux().db_history_max_version();
 }
 
-uint64_t RODb::get_earliest_block_id() const
+uint64_t RODb::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux().db_history_min_valid_version();
@@ -1291,74 +1281,75 @@ NodeCursor Db::root() const noexcept
     return impl_->root() ? NodeCursor{*impl_->root()} : NodeCursor{};
 }
 
-void Db::update_finalized_block(uint64_t const block_id)
+void Db::update_finalized_version(uint64_t const version)
 {
     MONAD_ASSERT(impl_);
-    impl_->update_finalized_block(block_id);
+    impl_->update_finalized_version(version);
 }
 
-void Db::update_verified_block(uint64_t const block_id)
+void Db::update_verified_version(uint64_t const version)
 {
     MONAD_ASSERT(impl_);
-    impl_->update_verified_block(block_id);
+    impl_->update_verified_version(version);
 }
 
-void Db::update_voted_metadata(uint64_t const block_id, uint64_t const round)
+void Db::update_voted_metadata(
+    uint64_t const version, bytes32_t const &block_id)
 {
     MONAD_ASSERT(impl_);
-    impl_->aux().set_latest_voted(block_id, round);
+    impl_->aux().set_latest_voted(version, block_id);
 }
 
-uint64_t Db::get_latest_finalized_block_id() const
+uint64_t Db::get_latest_finalized_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->get_latest_finalized_block_id();
+    return impl_->get_latest_finalized_version();
 }
 
-uint64_t Db::get_latest_verified_block_id() const
+uint64_t Db::get_latest_verified_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->get_latest_verified_block_id();
+    return impl_->get_latest_verified_version();
 }
 
-uint64_t Db::get_latest_voted_round() const
+bytes32_t Db::get_latest_voted_block_id() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().get_latest_voted_round();
+    return impl_->aux().get_latest_voted_block_id();
 }
 
-uint64_t Db::get_latest_voted_block_id() const
+uint64_t Db::get_latest_voted_version() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux().get_latest_voted_version();
 }
 
-uint64_t Db::get_latest_block_id() const
+uint64_t Db::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
     if (impl_->aux().is_on_disk()) {
         return impl_->aux().db_history_max_version();
     }
     else {
-        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+        return impl_->root() ? 0 : INVALID_BLOCK_NUM;
     }
 }
 
-uint64_t Db::get_earliest_block_id() const
+uint64_t Db::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
     if (impl_->aux().is_on_disk()) {
         return impl_->aux().db_history_min_valid_version();
     }
     else {
-        return impl_->root() ? 0 : INVALID_BLOCK_ID;
+        return impl_->root() ? 0 : INVALID_BLOCK_NUM;
     }
 }
 
 size_t Db::prefetch()
 {
     MONAD_ASSERT(impl_);
-    if (get_latest_block_id() == INVALID_BLOCK_ID) {
+    if (get_latest_version() == INVALID_BLOCK_NUM) {
         return 0;
     }
     return impl_->prefetch_fiber_blocking();

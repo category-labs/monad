@@ -35,17 +35,17 @@ struct Db
     virtual bytes32_t transactions_root() = 0;
     virtual std::optional<bytes32_t> withdrawals_root() = 0;
 
-    virtual void set_block_and_round(
-        uint64_t block_number,
-        std::optional<uint64_t> round_number = std::nullopt) = 0;
-    virtual void finalize(uint64_t block_number, uint64_t round_number) = 0;
+    // empty block_id represents the finalized block
+    virtual void set_block_and_prefix(
+        uint64_t block_number, bytes32_t const &block_id = bytes32_t{}) = 0;
+    virtual void finalize(uint64_t block_number, bytes32_t const &block_id) = 0;
     virtual void update_verified_block(uint64_t block_number) = 0;
     virtual void
-    update_voted_metadata(uint64_t block_number, uint64_t round) = 0;
+    update_voted_metadata(uint64_t block_number, bytes32_t const &block_id) = 0;
 
     virtual void commit(
-        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const & = {},
+        StateDeltas const &, Code const &, bytes32_t const &block_id,
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
@@ -54,6 +54,7 @@ struct Db
 
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, Code const &code,
+        bytes32_t const &block_id,
         MonadConsensusBlockHeader const &consensus_header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
@@ -65,6 +66,7 @@ struct Db
         commit(
             *state_deltas,
             code,
+            block_id,
             consensus_header,
             receipts,
             call_frames,

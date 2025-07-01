@@ -26,7 +26,8 @@ struct MachineBase : public mpt::StateMachine
     static constexpr uint64_t FINALIZED_PREFIX_LEN =
         TOP_NIBBLE_PREFIX_LEN + TABLE_PREFIX_LEN;
     static constexpr uint64_t PROPOSAL_PREFIX_LEN =
-        TOP_NIBBLE_PREFIX_LEN + sizeof(uint64_t) * 2 /* round number prefix */ +
+        TOP_NIBBLE_PREFIX_LEN +
+        sizeof(bytes32_t) * 2 /* use block_id as proposal prefix */ +
         TABLE_PREFIX_LEN;
 
     enum class TrieType : uint8_t
@@ -145,9 +146,9 @@ void load_from_binary(
 
 void load_header(mpt::Db &, BlockHeader const &);
 
-mpt::Nibbles proposal_prefix(uint64_t);
+mpt::Nibbles proposal_prefix(bytes32_t const &);
 
-std::vector<uint64_t> get_proposal_rounds(mpt::Db &, uint64_t block_number);
+std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
 std::optional<BlockHeader>
 read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);

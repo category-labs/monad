@@ -238,15 +238,18 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     }
 
     block_state.log_debug();
+    auto const [header, block_id] =
+        consensus_header_and_id_from_eth_header(block.header);
     block_state.commit(
-        MonadConsensusBlockHeader::from_eth_header(block.header),
+        block_id,
+        header,
         receipts,
         call_frames,
         senders,
         block.transactions,
         block.ommers,
         block.withdrawals);
-    db.finalize(block.header.number, block.header.number);
+    db.finalize(block.header.number, block_id);
 
     auto output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
@@ -390,15 +393,18 @@ void BlockchainTest::TestBody()
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
+            auto const [consensus_header, block_id] =
+                consensus_header_and_id_from_eth_header(header);
             bs.commit(
-                MonadConsensusBlockHeader::from_eth_header(header),
+                block_id,
+                consensus_header,
                 {} /* receipts */,
                 {} /* call frames */,
                 {} /* senders */,
                 {} /* transactions */,
                 {} /* ommers */,
                 withdrawals);
-            tdb.finalize(0, 0);
+            tdb.finalize(0, block_id);
             ASSERT_EQ(
                 to_bytes(
                     keccak256(rlp::encode_block_header(tdb.read_eth_header()))),
@@ -435,8 +441,8 @@ void BlockchainTest::TestBody()
                 block.value().header.parent_hash);
 
             uint64_t const curr_block_number = block.value().header.number;
-            auto const result =
-                execute_dispatch(rev, block.value(), tdb, vm, block_hash_buffer);
+            auto const result = execute_dispatch(
+                rev, block.value(), tdb, vm, block_hash_buffer);
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));

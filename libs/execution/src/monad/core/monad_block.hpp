@@ -8,6 +8,7 @@
 #include <monad/core/withdrawal.hpp>
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -140,5 +141,10 @@ struct MonadConsensusBlock
 
 static_assert(sizeof(MonadConsensusBlock) == 1288);
 static_assert(alignof(MonadConsensusBlock) == 8);
+
+std::pair<MonadConsensusBlockHeader, bytes32_t>
+consensus_header_and_id_from_eth_header(
+    BlockHeader const &eth_header,
+    std::optional<uint64_t> round_number = std::nullopt);
 
 MONAD_NAMESPACE_END

@@ -78,8 +78,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
+    bytes32_t parent_block_id{};
     while (block_num <= end_block_num && stop == 0) {
         [[maybe_unused]] auto const block_start =
             std::chrono::system_clock::now();
@@ -112,13 +112,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 return TransactionError::MissingSender;
             }
         }
-        // Ethereum: always execute off of the parent proposal round, commit to
-        // `round = block_number`, and finalize immediately after that.
-        db.set_block_and_round(
-            block.header.number - 1,
-            (block.header.number == start_block_num)
-                ? std::nullopt
-                : std::make_optional(block.header.number - 1));
+        // Ethereum: Each block executes on top of its parent proposal, except
+        // for the first block, which executes on the last finalized state. For
+        // every block, commit a proposal of round = block_number and block_id =
+        // blake3(consensus_header), then immediately finalize the proposal.
+        db.set_block_and_prefix(block.header.number - 1, parent_block_id);
         BlockState block_state(db, vm);
         BlockMetrics block_metrics;
         BOOST_OUTCOME_TRY(
@@ -143,8 +141,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         block_state.log_debug();
         auto const commit_begin = std::chrono::steady_clock::now();
+        auto const [consensus_header, block_id] =
+            consensus_header_and_id_from_eth_header(block.header);
         block_state.commit(
-            MonadConsensusBlockHeader::from_eth_header(block.header),
+            block_id,
+            consensus_header,
             receipts,
             call_frames,
             senders,
@@ -158,7 +159,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         BOOST_OUTCOME_TRY(
             chain.validate_output_header(block.header, output_header));
 
-        db.finalize(block.header.number, block.header.number);
+        db.finalize(block.header.number, block_id);
         db.update_verified_block(block.header.number);
 
         auto const h =
@@ -214,6 +215,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             batch_begin = std::chrono::steady_clock::now();
         }
         ++block_num;
+        parent_block_id = block_id;
     }
     if (batch_num_blocks > 0) {
         log_tps(

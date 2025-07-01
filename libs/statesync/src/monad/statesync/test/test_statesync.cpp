@@ -200,19 +200,17 @@ TEST_F(StateSyncFixture, sync_from_latest)
         load_header(db, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
             BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            tdb.set_block_and_round(i - 1);
+            tdb.set_block_and_prefix(i - 1);
             commit_sequential(tdb, {}, {}, hdr);
             parent_hash = to_bytes(
                 keccak256(rlp::encode_block_header(tdb.read_eth_header())));
         }
         load_db(tdb, N);
         // commit some proposal to client db
-        tdb.set_block_and_round(N);
-        tdb.commit(
-            {},
-            {},
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = N + 1}));
+        tdb.set_block_and_prefix(N);
+        auto const [header, block_id] =
+            consensus_header_and_id_from_eth_header({.number = N + 1});
+        tdb.commit({}, {}, block_id, header);
         init();
     }
     handle_target(
@@ -233,7 +231,7 @@ TEST_F(StateSyncFixture, sync_from_empty)
     {
         load_header(sdb, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
-            stdb.set_block_and_round(i - 1);
+            stdb.set_block_and_prefix(i - 1);
             commit_sequential(
                 stdb,
                 {},
@@ -291,11 +289,9 @@ TEST_F(StateSyncFixture, sync_from_some)
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
-        tdb.commit(
-            {},
-            {},
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = 1}, 0));
+        auto const [header, block_id] =
+            consensus_header_and_id_from_eth_header({.number = 1}, 0);
+        tdb.commit({}, {}, block_id, header);
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
@@ -488,83 +484,44 @@ TEST_F(StateSyncFixture, deletion_proposal)
         sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
     // delete ADDR1 on one fork
+    auto const [header_1, block_id_1] =
+        consensus_header_and_id_from_eth_header({.number = 1}, 1);
     {
         constexpr auto ADDR1 =
             0x000d836201318ec6899a67540690382780743280_address;
         auto const acct = stdb.read_account(ADDR1);
         ASSERT_TRUE(acct.has_value());
-        sctx.set_block_and_round(0);
+        sctx.set_block_and_prefix(0);
         sctx.commit(
             StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
             Code{},
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = 1}, 1));
+            block_id_1,
+            header_1);
     }
     // delete ADDR2 on another
+    auto const [header_2, block_id_2] =
+        consensus_header_and_id_from_eth_header({.number = 1}, 2);
     {
         constexpr auto ADDR2 =
             0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
         auto const acct = stdb.read_account(ADDR2);
         ASSERT_TRUE(acct.has_value());
-        sctx.set_block_and_round(0);
+        sctx.set_block_and_prefix(0);
         sctx.commit(
             StateDeltas{{ADDR2, {.account = {acct, std::nullopt}}}},
             Code{},
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = 1}, 2));
+            block_id_2,
+            header_2);
     }
-    sctx.finalize(1, 2);
+    sctx.finalize(1, block_id_2);
 
-    sctx.set_block_and_round(1, 1);
+    sctx.set_block_and_prefix(1, block_id_1);
     auto const bad_header = sctx.read_eth_header();
 
-    sctx.set_block_and_round(1, 2);
+    sctx.set_block_and_prefix(1, block_id_2);
     auto const finalized_header = sctx.read_eth_header();
 
     EXPECT_NE(finalized_header.state_root, bad_header.state_root);
-    handle_target(cctx, finalized_header);
-    run();
-
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
-}
-
-TEST_F(StateSyncFixture, duplicate_deletion_round)
-{
-    {
-        OnDiskMachine machine;
-        mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
-        TrieDb tdb{db};
-        load_genesis_state(GENESIS_STATE, tdb);
-        load_genesis_state(GENESIS_STATE, stdb);
-        init();
-    }
-    auto const root = sdb.load_root_for_version(0);
-    ASSERT_TRUE(root.is_valid());
-    auto const res =
-        sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
-    ASSERT_TRUE(res.has_value() && res.value().is_valid());
-
-    auto propose_deletion_fn = [&](Address const address) -> BlockHeader {
-        auto const acct = stdb.read_account(address);
-        MONAD_ASSERT(acct.has_value());
-        sctx.set_block_and_round(0);
-        sctx.commit(
-            StateDeltas{{address, {.account = {acct, std::nullopt}}}},
-            Code{},
-            MonadConsensusBlockHeader::from_eth_header(
-                BlockHeader{.number = 1}));
-        return sctx.read_eth_header();
-    };
-    constexpr auto ADDR1 = 0x000d836201318ec6899a67540690382780743280_address;
-    constexpr auto ADDR2 = 0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
-    auto const overwritten_header =
-        propose_deletion_fn(ADDR1); // commit block 1, round 1
-    auto const finalized_header =
-        propose_deletion_fn(ADDR2); // overwrite to block 1, round 1
-    EXPECT_NE(overwritten_header.state_root, finalized_header.state_root);
-
-    sctx.finalize(1, 1);
     handle_target(cctx, finalized_header);
     run();
 
@@ -578,7 +535,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
     {
         load_header(sdb, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
-            stdb.set_block_and_round(i - 1);
+            stdb.set_block_and_prefix(i - 1);
             commit_sequential(
                 stdb,
                 {},
@@ -623,7 +580,7 @@ TEST_F(StateSyncFixture, sync_one_account)
     bytes32_t parent_hash{NULL_HASH};
     load_header(sdb, BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
-        stdb.set_block_and_round(i - 1);
+        stdb.set_block_and_prefix(i - 1);
         commit_sequential(
             stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
@@ -655,7 +612,7 @@ TEST_F(StateSyncFixture, sync_empty)
     bytes32_t parent_hash{NULL_HASH};
     load_header(sdb, BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
-        stdb.set_block_and_round(i - 1);
+        stdb.set_block_and_prefix(i - 1);
         commit_sequential(
             stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
@@ -679,11 +636,9 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         TrieDb tdb{db};
         load_header(db, BlockHeader{.number = 0});
         for (uint64_t n = 1; n <= 249; ++n) {
-            tdb.commit(
-                {},
-                {},
-                MonadConsensusBlockHeader::from_eth_header(
-                    BlockHeader{.number = n}));
+            auto const [header, block_id] =
+                consensus_header_and_id_from_eth_header({.number = n});
+            tdb.commit({}, {}, block_id, header);
         }
     }
 
@@ -694,7 +649,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         load_header(sdb, BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
             BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            stdb.set_block_and_round(i - 1);
+            stdb.set_block_and_prefix(i - 1);
             commit_sequential(stdb, {}, {}, hdr);
             parent_hash = to_bytes(
                 keccak256(rlp::encode_block_header(stdb.read_eth_header())));
@@ -801,7 +756,6 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
         Code{},
         hdr);
     EXPECT_EQ(sctx.state_root(), NULL_ROOT);
-    sctx.finalize(102, 102);
     init();
     hdr.state_root = NULL_ROOT;
     handle_target(cctx, hdr);
@@ -924,7 +878,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
     bytes32_t parent_hash{NULL_HASH};
     load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
-        stdb.set_block_and_round(i - 1);
+        stdb.set_block_and_prefix(i - 1);
         commit_sequential(
             stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(
@@ -987,7 +941,6 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
         Code{},
         hdr);
     EXPECT_EQ(sctx.state_root(), hdr.state_root);
-    sctx.finalize(1'000'003, 1'000'003);
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
@@ -1089,7 +1042,7 @@ TEST_F(StateSyncFixture, benchmark)
     bytes32_t parent_hash{NULL_HASH};
     load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
-        stdb.set_block_and_round(i - 1);
+        stdb.set_block_and_prefix(i - 1);
         commit_sequential(
             stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
         parent_hash = to_bytes(

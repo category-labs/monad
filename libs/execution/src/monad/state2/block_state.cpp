@@ -115,8 +115,7 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     {
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
-        MONAD_ASSERT(
-            code_hash == NULL_HASH || result->code_size() != 0);
+        MONAD_ASSERT(code_hash == NULL_HASH || result->code_size() != 0);
         return vm_.try_insert_varcode(code_hash, result);
     }
 }
@@ -199,6 +198,7 @@ void BlockState::merge(State const &state)
 }
 
 void BlockState::commit(
+    bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
@@ -210,6 +210,7 @@ void BlockState::commit(
     db_.commit(
         std::move(state_),
         code_,
+        block_id,
         consensus_header,
         receipts,
         call_frames,

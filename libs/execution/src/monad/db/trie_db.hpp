@@ -33,8 +33,8 @@ class TrieDb final : public ::monad::Db
     std::deque<byte_string> bytes_alloc_;
     std::deque<hash256> hash_alloc_;
     uint64_t block_number_;
-    // read from finalized if it is nullopt
-    std::optional<uint64_t> round_number_;
+    // bytes32_t{} represent finalized
+    bytes32_t proposal_block_id_;
     ::monad::mpt::Nibbles prefix_;
 
 public:
@@ -45,22 +45,22 @@ public:
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
-    virtual void set_block_and_round(
+    virtual void set_block_and_prefix(
         uint64_t block_number,
-        std::optional<uint64_t> round_number = std::nullopt) override;
+        bytes32_t const &block_id = bytes32_t{}) override;
     virtual void commit(
-        StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
-        std::vector<Receipt> const & = {},
+        StateDeltas const &, Code const &, bytes32_t const &block_id,
+        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
     virtual void
-    finalize(uint64_t block_number, uint64_t round_number) override;
+    finalize(uint64_t block_number, bytes32_t const &block_id) override;
     virtual void update_verified_block(uint64_t block_number) override;
-    virtual void
-    update_voted_metadata(uint64_t block_number, uint64_t round) override;
+    virtual void update_voted_metadata(
+        uint64_t block_number, bytes32_t const &block_id) override;
 
     virtual BlockHeader read_eth_header() override;
     virtual bytes32_t state_root() override;

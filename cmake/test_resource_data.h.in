@@ -78,7 +78,7 @@ inline auto const H_CODE =
 inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_ICODE = vm::make_shared_intercode(H_CODE);
 
-inline void commit_sequential(
+inline bytes32_t commit_sequential(
     Db &db, StateDeltas const &deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
     std::vector<std::vector<CallFrame>> const &call_frames = {},
@@ -87,11 +87,12 @@ inline void commit_sequential(
     std::vector<BlockHeader> const &ommers = {},
     std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
 {
-    auto const consensus_header =
-        MonadConsensusBlockHeader::from_eth_header(eth_header);
+    auto const [consensus_header, block_id] =
+        consensus_header_and_id_from_eth_header(eth_header);
     db.commit(
         deltas,
         code,
+        block_id,
         consensus_header,
         receipts,
         call_frames,
@@ -99,8 +100,11 @@ inline void commit_sequential(
         txns,
         ommers,
         withdrawals);
-    db.finalize(eth_header.number, consensus_header.round);
-    db.set_block_and_round(eth_header.number);
+    db.finalize(eth_header.number, block_id);
+    db.set_block_and_prefix(eth_header.number); // set to finalized
+
+    // return the proposal block_id that has been finalized
+    return block_id;
 }
 
 inline void load_db(TrieDb &db, uint64_t const n)

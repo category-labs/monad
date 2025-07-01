@@ -372,7 +372,7 @@ TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
     Db rodb2{io_ctx};
 
     auto verify_read = [&prefix, &starting_block_id](Db &db) {
-        EXPECT_EQ(db.get_latest_block_id(), starting_block_id);
+        EXPECT_EQ(db.get_latest_version(), starting_block_id);
         EXPECT_EQ(
             db.get(prefix + kv[0].first, starting_block_id).value(),
             kv[0].second);
@@ -737,8 +737,8 @@ TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
     Db ro_db{io_ctx};
     // RODb root is invalid
     EXPECT_FALSE(ro_db.root().is_valid());
-    EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), INVALID_BLOCK_ID);
+    EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
+    EXPECT_EQ(ro_db.get_earliest_version(), INVALID_BLOCK_NUM);
     // RODb get() from any block will fail
     EXPECT_EQ(ro_db.get({}, 0).assume_error(), DbError::key_not_found);
 }
@@ -779,12 +779,12 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
         unsigned nsuccess = 0;
         unsigned nfailed = 0;
 
-        while (ro_db.get_latest_block_id() == INVALID_BLOCK_ID &&
+        while (ro_db.get_latest_version() == INVALID_BLOCK_NUM &&
                !done.load(std::memory_order_acquire)) {
         }
         // now the first version is written to db
-        ASSERT_TRUE(ro_db.get_latest_block_id() != INVALID_BLOCK_ID);
-        ASSERT_TRUE(ro_db.get_earliest_block_id() != INVALID_BLOCK_ID);
+        ASSERT_TRUE(ro_db.get_latest_version() != INVALID_BLOCK_NUM);
+        ASSERT_TRUE(ro_db.get_earliest_version() != INVALID_BLOCK_NUM);
         while (!done.load(std::memory_order_acquire)) {
             auto version_bytes = serialize_as_big_endian<6>(read_version);
             auto res = ro_db.get(prefix + version_bytes, read_version);
@@ -793,8 +793,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
                 ++nsuccess;
             }
             else {
-                auto const min_block_id = ro_db.get_earliest_block_id();
-                EXPECT_TRUE(min_block_id != INVALID_BLOCK_ID);
+                auto const min_block_id = ro_db.get_earliest_version();
+                EXPECT_TRUE(min_block_id != INVALID_BLOCK_NUM);
                 EXPECT_GT(min_block_id, read_version);
                 read_version = min_block_id + 100;
                 ++nfailed;
@@ -804,7 +804,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
                   << read_version << ". Did " << nsuccess << " successful and "
                   << nfailed << " failed reads" << std::endl;
         EXPECT_TRUE(nsuccess > 0);
-        EXPECT_LE(read_version, ro_db.get_latest_block_id());
+        EXPECT_LE(read_version, ro_db.get_latest_version());
     };
 
     // construct RWDb
@@ -824,8 +824,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_concurrent)
     reader.join();
 
     std::cout << "Writer finished. Max version in rwdb is "
-              << db.get_latest_block_id() << ", min version in rwdb is "
-              << db.get_earliest_block_id() << std::endl;
+              << db.get_latest_version() << ", min version in rwdb is "
+              << db.get_earliest_version() << std::endl;
 }
 
 TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
@@ -1141,10 +1141,10 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
         Db const db{machine, config};
         // db is init to empty
         EXPECT_FALSE(db.root().is_valid());
-        EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
+        EXPECT_EQ(db.get_latest_version(), INVALID_BLOCK_NUM);
 
         EXPECT_FALSE(ro_db.root().is_valid());
-        EXPECT_EQ(ro_db.get_latest_block_id(), INVALID_BLOCK_ID);
+        EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
     }
 
     { // reopen the same db with append flag turned on
@@ -1152,7 +1152,7 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
         Db db{machine, config};
         // db is still empty
         EXPECT_FALSE(db.root().is_valid());
-        EXPECT_EQ(db.get_latest_block_id(), INVALID_BLOCK_ID);
+        EXPECT_EQ(db.get_latest_version(), INVALID_BLOCK_NUM);
 
         auto u1 = make_update(kv[2].first, kv[2].second);
         auto u2 = make_update(kv[3].first, kv[3].second);
@@ -1176,12 +1176,12 @@ TEST_F(OnDiskDbWithFileFixture, load_correct_root_upon_reopen_nonempty_db)
         config.append = true;
         Db const db{machine, config};
         EXPECT_TRUE(db.root().is_valid());
-        EXPECT_EQ(db.get_latest_block_id(), block_id);
-        EXPECT_EQ(db.get_earliest_block_id(), block_id);
+        EXPECT_EQ(db.get_latest_version(), block_id);
+        EXPECT_EQ(db.get_earliest_version(), block_id);
 
         EXPECT_TRUE(db.root().is_valid());
-        EXPECT_EQ(db.get_latest_block_id(), block_id);
-        EXPECT_EQ(db.get_earliest_block_id(), block_id);
+        EXPECT_EQ(db.get_latest_version(), block_id);
+        EXPECT_EQ(db.get_earliest_version(), block_id);
     }
 }
 
@@ -1212,8 +1212,8 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     constexpr uint64_t start_version = 1000;
 
     db.move_trie_version_forward(0, start_version);
-    EXPECT_EQ(rodb.get_earliest_block_id(), start_version);
-    EXPECT_EQ(rodb.get_latest_block_id(), start_version);
+    EXPECT_EQ(rodb.get_earliest_version(), start_version);
+    EXPECT_EQ(rodb.get_latest_version(), start_version);
     EXPECT_EQ(rodb.get_history_length(), DBTEST_HISTORY_LENGTH);
 
     constexpr uint64_t min_version = 900;
@@ -1221,8 +1221,8 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
         UpdateList ls;
         ls.push_front(updates_alloc.front());
         db.upsert(std::move(ls), v);
-        EXPECT_EQ(rodb.get_earliest_block_id(), v);
-        EXPECT_EQ(rodb.get_latest_block_id(), start_version);
+        EXPECT_EQ(rodb.get_earliest_version(), v);
+        EXPECT_EQ(rodb.get_latest_version(), start_version);
     }
 
     db.load_root_for_version(start_version);
@@ -1233,9 +1233,9 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
         ls.push_front(updates_alloc.front());
         db.upsert(std::move(ls), v);
         EXPECT_EQ(
-            rodb.get_earliest_block_id(),
+            rodb.get_earliest_version(),
             std::max(v - DBTEST_HISTORY_LENGTH + 1, min_version));
-        EXPECT_EQ(rodb.get_latest_block_id(), v);
+        EXPECT_EQ(rodb.get_latest_version(), v);
     }
 
     // lookup
@@ -1816,8 +1816,8 @@ TEST(DbTest, auto_expire)
             << block_id;
     }
 
-    uint64_t latest_block_id = db.get_latest_block_id(),
-             earliest_block_id = db.get_earliest_block_id();
+    uint64_t latest_block_id = db.get_latest_version(),
+             earliest_block_id = db.get_earliest_version();
     for (unsigned i = 0; i <= latest_block_id; ++i) {
         auto const res = db.get(prefix + keys[i], latest_block_id);
         if (i < earliest_block_id) { // keys 0-4 are expired
@@ -1847,8 +1847,8 @@ TEST(DbTest, auto_expire)
             << block_id;
     }
 
-    latest_block_id = db.get_latest_block_id(); // 14
-    earliest_block_id = db.get_earliest_block_id(); // 10
+    latest_block_id = db.get_latest_version(); // 14
+    earliest_block_id = db.get_earliest_version(); // 10
     for (unsigned i = 0; i <= latest_block_id; ++i) {
         auto const res = db.get(prefix + keys[i], latest_block_id);
         if (i < earliest_block_id) { // keys 0-9 are expired
@@ -1861,7 +1861,7 @@ TEST(DbTest, auto_expire)
     }
 }
 
-TYPED_TEST(DbTest, copy_trie_from_to_same_version)
+TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
 {
     // insert random updates under a src prefix
     constexpr unsigned nkeys = 20;
@@ -1888,7 +1888,7 @@ TYPED_TEST(DbTest, copy_trie_from_to_same_version)
         monad::byte_string{this->db.get_data(src_prefix, version).value()};
 
     auto verify_dest_state = [&](Db &db, monad::byte_string const prefix) {
-        EXPECT_EQ(db.get_latest_block_id(), version);
+        EXPECT_EQ(db.get_latest_version(), version);
         auto const data_res = db.get_data(prefix, version);
         EXPECT_TRUE(data_res.has_value()) << NibblesView{prefix};
         EXPECT_EQ(src_prefix_data, data_res.value()) << NibblesView{prefix};
@@ -1901,31 +1901,23 @@ TYPED_TEST(DbTest, copy_trie_from_to_same_version)
     };
     // copy to dest prefix, switch to dest_version
     this->db.copy_trie(version, src_prefix, version, dest_prefix);
-    if (this->db.is_on_disk()) {
-        verify_dest_state(this->db, src_prefix);
-    }
+    verify_dest_state(this->db, src_prefix);
     verify_dest_state(this->db, dest_prefix);
 
     this->db.copy_trie(version, dest_prefix, version, dest_prefix2);
-    if (this->db.is_on_disk()) {
-        verify_dest_state(this->db, src_prefix);
-        verify_dest_state(this->db, dest_prefix);
-    }
+    verify_dest_state(this->db, src_prefix);
+    verify_dest_state(this->db, dest_prefix);
     verify_dest_state(this->db, dest_prefix2);
 
     // copy from src to an existing prefix
-    if (this->db.is_on_disk()) {
-        this->db.copy_trie(version, src_prefix, version, dest_prefix);
-        verify_dest_state(this->db, src_prefix);
-        verify_dest_state(this->db, dest_prefix);
-    }
+    this->db.copy_trie(version, src_prefix, version, dest_prefix);
+    verify_dest_state(this->db, src_prefix);
+    verify_dest_state(this->db, dest_prefix);
 
     // copy from dest2 to longer prefix
     this->db.copy_trie(version, dest_prefix2, version, long_dest_prefix);
-    if (this->db.is_on_disk()) {
-        verify_dest_state(this->db, src_prefix);
-        verify_dest_state(this->db, dest_prefix2);
-    }
+    verify_dest_state(this->db, src_prefix);
+    verify_dest_state(this->db, dest_prefix2);
     verify_dest_state(this->db, long_dest_prefix);
 }
 
@@ -2047,20 +2039,20 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
         upsert_updates_flat_list(
             db, prefix, version, make_update(kv_alloc[0], kv_alloc[0]));
         EXPECT_TRUE(db.find(prefix + kv_alloc[0], version).has_value());
-        EXPECT_EQ(db.get_earliest_block_id(), version_begin);
-        EXPECT_EQ(db.get_latest_block_id(), version);
+        EXPECT_EQ(db.get_earliest_version(), version_begin);
+        EXPECT_EQ(db.get_latest_version(), version);
     }
 
     auto const new_version_begin =
-        db.get_latest_block_id() + root_offsets_ring_capacity + 100;
-    db.move_trie_version_forward(db.get_latest_block_id(), new_version_begin);
+        db.get_latest_version() + root_offsets_ring_capacity + 100;
+    db.move_trie_version_forward(db.get_latest_version(), new_version_begin);
     for (auto version = new_version_begin; version < new_version_begin + 100;
          ++version) {
         upsert_updates_flat_list(
             db, prefix, version, make_update(kv_alloc[0], kv_alloc[0]));
         EXPECT_TRUE(db.find(prefix + kv_alloc[0], version).has_value());
-        EXPECT_EQ(db.get_earliest_block_id(), new_version_begin);
-        EXPECT_EQ(db.get_latest_block_id(), version);
+        EXPECT_EQ(db.get_earliest_version(), new_version_begin);
+        EXPECT_EQ(db.get_latest_version(), version);
     }
 }
 
@@ -2098,8 +2090,8 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
             0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
     }
     block_id = 10;
-    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
-    EXPECT_EQ(ro_db.get_latest_block_id(), block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), 0);
+    EXPECT_EQ(ro_db.get_latest_version(), block_id);
 
     // Upsert again at block 10
     upsert_updates_flat_list(
@@ -2114,8 +2106,8 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
         ro_db.get_data(prefix, block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
-    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
-    EXPECT_EQ(ro_db.get_latest_block_id(), block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), 0);
+    EXPECT_EQ(ro_db.get_latest_version(), block_id);
 
     // Move trie version to a later dest_block_id, which invalidates some
     // but not all history versions
@@ -2123,21 +2115,21 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     db.move_trie_version_forward(block_id, dest_block_id);
 
     // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
-    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
+    EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
     EXPECT_EQ(
-        ro_db.get_earliest_block_id(),
+        ro_db.get_earliest_version(),
         dest_block_id - ro_db.get_history_length() + 1);
 
     // src block 10 should be invalid
     EXPECT_TRUE(ro_db.find(prefix, block_id).has_error());
 
     // block before earliest block id should be invalid
-    for (uint64_t i = 0; i < ro_db.get_earliest_block_id(); ++i) {
+    for (uint64_t i = 0; i < ro_db.get_earliest_version(); ++i) {
         EXPECT_TRUE(ro_db.find(prefix, i).has_error());
     }
 
     // block before `block_id` that being moved from should still work
-    for (auto i = ro_db.get_earliest_block_id(); i < block_id; ++i) {
+    for (auto i = ro_db.get_earliest_version(); i < block_id; ++i) {
         EXPECT_EQ(ro_db.get(prefix + kv[0].first, i).value(), kv[0].second);
         EXPECT_EQ(ro_db.get(prefix + kv[1].first, i).value(), kv[1].second);
         EXPECT_EQ(
@@ -2147,7 +2139,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 
     // More empty upserts to invalidate the version at front
     block_id = dest_block_id + 1;
-    for (auto lower_bound = db.get_earliest_block_id(); lower_bound <= 10;
+    for (auto lower_bound = db.get_earliest_version(); lower_bound <= 10;
          ++lower_bound) {
         upsert_updates_flat_list(db, prefix, block_id);
         ++block_id;
@@ -2156,12 +2148,12 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     EXPECT_EQ(
         ro_db.get_data(prefix, max_block_id).value(),
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), dest_block_id);
-    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), dest_block_id);
+    EXPECT_EQ(ro_db.get_latest_version(), max_block_id);
 
     // Jump way far ahead, which erases all histories
     uint64_t far_dest_block_id = ro_db.get_history_length() * 3;
-    db.move_trie_version_forward(db.get_latest_block_id(), far_dest_block_id);
+    db.move_trie_version_forward(db.get_latest_version(), far_dest_block_id);
 
     EXPECT_EQ(
         db.get(prefix + kv[2].first, far_dest_block_id).value(), kv[2].second);
@@ -2172,8 +2164,8 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
 
     // only history version
-    EXPECT_EQ(ro_db.get_latest_block_id(), far_dest_block_id);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), far_dest_block_id);
+    EXPECT_EQ(ro_db.get_latest_version(), far_dest_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), far_dest_block_id);
 }
 
 TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
@@ -2199,16 +2191,16 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
         EXPECT_TRUE(db.get(prefix + kv[0].first, block_id).has_value());
         EXPECT_TRUE(db.get(prefix + kv[1].first, block_id).has_value());
     }
-    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
+    EXPECT_EQ(ro_db.get_latest_version(), max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), 0);
 
     // Move trie version within history length, which will not invalidate any
     // versions
     uint64_t const dest_block_id = max_block_id + 5;
     db.move_trie_version_forward(max_block_id, dest_block_id);
 
-    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), 0);
+    EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), 0);
     EXPECT_TRUE(ro_db.find({}, max_block_id).has_error());
     EXPECT_TRUE(ro_db.find({}, dest_block_id).has_value());
 }
@@ -2244,8 +2236,8 @@ TEST_F(
     db.move_trie_version_forward(block_id, dest_block_id);
 
     // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
-    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
-    auto const earliest_block_id = ro_db.get_earliest_block_id();
+    EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
+    auto const earliest_block_id = ro_db.get_earliest_version();
     EXPECT_EQ(
         earliest_block_id, dest_block_id - ro_db.get_history_length() + 1);
 
@@ -2259,8 +2251,8 @@ TEST_F(
     new_config.fixed_history_length = 65536;
     new_config.append = true;
     new (&db) Db(machine, new_config);
-    EXPECT_EQ(ro_db.get_latest_block_id(), dest_block_id);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), earliest_block_id);
+    EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), earliest_block_id);
 }
 
 TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
@@ -2278,7 +2270,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     }
 
     EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    EXPECT_EQ(ro_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
+    EXPECT_EQ(ro_db.get_latest_version(), DBTEST_HISTORY_LENGTH - 1);
     auto const res = ro_db.get(prefix + kv[0].first, 0);
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(res.value(), kv[0].second);
@@ -2301,11 +2293,11 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
                 EXPECT_EQ(get_res.value(), kv[0].second);
             }
         } // update has finished
-        EXPECT_EQ(ro_db.get_earliest_block_id(), expected_earliest_block);
+        EXPECT_EQ(ro_db.get_earliest_version(), expected_earliest_block);
         std::cout << "Reader thread finished. Currently reading block "
                   << read_block_id << ". Earliest block number is "
-                  << ro_db.get_earliest_block_id() << std::endl;
-        EXPECT_LE(read_block_id, ro_db.get_earliest_block_id());
+                  << ro_db.get_earliest_version() << std::endl;
+        EXPECT_LE(read_block_id, ro_db.get_earliest_version());
 
         while (ro_db.get(prefix + kv[0].first, read_block_id).has_error()) {
             ++read_block_id;
@@ -2323,18 +2315,18 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
         config.fixed_history_length = *config.fixed_history_length - 1;
         Db new_db{machine, config};
         EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
-        EXPECT_EQ(new_db.get_latest_block_id(), DBTEST_HISTORY_LENGTH - 1);
+        EXPECT_EQ(new_db.get_latest_version(), DBTEST_HISTORY_LENGTH - 1);
     }
 
     EXPECT_EQ(ro_db.get_history_length(), end_history_length);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), expected_earliest_block);
+    EXPECT_EQ(ro_db.get_earliest_version(), expected_earliest_block);
 
     done.store(true, std::memory_order_release);
     reader.join();
     std::cout << "Writer finished. History length is shortened to "
               << db.get_history_length() << ". Max version in rwdb is "
-              << db.get_latest_block_id() << ", min version in rwdb is "
-              << db.get_earliest_block_id() << std::endl;
+              << db.get_latest_version() << ", min version in rwdb is "
+              << db.get_earliest_version() << std::endl;
 }
 
 TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
@@ -2357,7 +2349,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_TRUE(db.get(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(db.get(prefix + kv[1].first, max_block_id).has_value());
     auto const min_block_num_before = max_block_id - DBTEST_HISTORY_LENGTH + 1;
-    EXPECT_EQ(db.get_earliest_block_id(), min_block_num_before);
+    EXPECT_EQ(db.get_earliest_version(), min_block_num_before);
     EXPECT_TRUE(db.get(prefix + kv[1].first, min_block_num_before).has_value());
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
@@ -2366,9 +2358,8 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
     EXPECT_EQ(
-        ro_db.get_earliest_block_id(),
-        max_block_id - DBTEST_HISTORY_LENGTH + 1);
-    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, ro_db.get_earliest_block_id())
+        ro_db.get_earliest_version(), max_block_id - DBTEST_HISTORY_LENGTH + 1);
+    EXPECT_TRUE(ro_db.get(prefix + kv[1].first, ro_db.get_earliest_version())
                     .has_value());
 
     // Reopen rwdb with a shorter history length
@@ -2377,16 +2368,16 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     {
         Db new_rw{machine, config};
         EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
-        EXPECT_EQ(new_rw.get_latest_block_id(), max_block_id);
+        EXPECT_EQ(new_rw.get_latest_version(), max_block_id);
     }
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
-    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_EQ(ro_db.get_latest_version(), max_block_id);
     EXPECT_TRUE(ro_db.get(prefix + kv[1].first, max_block_id).has_value());
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
     auto const min_block_num_after =
         max_block_id - *config.fixed_history_length + 1;
-    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
+    EXPECT_EQ(ro_db.get_earliest_version(), min_block_num_after);
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_after).has_value());
     EXPECT_TRUE(
@@ -2396,10 +2387,10 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     config.fixed_history_length = DBTEST_HISTORY_LENGTH;
     Db new_rw{machine, config};
     EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
-    EXPECT_EQ(new_rw.get_earliest_block_id(), min_block_num_after);
+    EXPECT_EQ(new_rw.get_earliest_version(), min_block_num_after);
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
-    EXPECT_EQ(ro_db.get_latest_block_id(), max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), min_block_num_after);
+    EXPECT_EQ(ro_db.get_latest_version(), max_block_id);
     EXPECT_TRUE(
         ro_db.get(prefix + kv[1].first, min_block_num_before).has_error());
     // Inserts more blocks
@@ -2414,8 +2405,8 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
             make_update(kv[0].first, kv[0].second),
             make_update(kv[1].first, kv[1].second));
     }
-    EXPECT_EQ(ro_db.get_latest_block_id(), new_max_block_id);
-    EXPECT_EQ(ro_db.get_earliest_block_id(), min_block_num_after);
+    EXPECT_EQ(ro_db.get_latest_version(), new_max_block_id);
+    EXPECT_EQ(ro_db.get_earliest_version(), min_block_num_after);
 }
 
 TYPED_TEST(DbTest, scalability)

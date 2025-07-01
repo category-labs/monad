@@ -7,8 +7,10 @@
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
+#include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_rodb.hpp>
@@ -75,7 +77,7 @@ namespace
     template <evmc_revision rev>
     Result<EthCallResult> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
-        uint64_t const block_number, uint64_t const round,
+        uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender, TrieRODb &tdb, vm::VM &vm,
         BlockHashBufferFinalized const buffer,
         monad_state_override const &state_overrides, bool const trace)
@@ -99,10 +101,7 @@ namespace
             chain.get_chain_id(),
             max_code_size));
 
-        tdb.set_block_and_round(
-            block_number,
-            round == mpt::INVALID_ROUND_NUM ? std::nullopt
-                                            : std::make_optional(round));
+        tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
@@ -240,8 +239,8 @@ namespace
     Result<EthCallResult> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        uint64_t const round, Address const &sender, TrieRODb &tdb, vm::VM &vm,
-        BlockHashBufferFinalized const &buffer,
+        bytes32_t const &block_id, Address const &sender, TrieRODb &tdb,
+        vm::VM &vm, BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides, bool const trace)
     {
         SWITCH_EVMC_REVISION(
@@ -250,7 +249,7 @@ namespace
             txn,
             header,
             block_number,
-            round,
+            block_id,
             sender,
             tdb,
             vm,
@@ -512,7 +511,7 @@ struct monad_eth_call_executor
     void execute_eth_call(
         monad_chain_config const chain_config, Transaction const &txn,
         BlockHeader const &block_header, Address const &sender,
-        uint64_t const block_number, uint64_t const block_round,
+        uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
         bool const trace, bool const gas_specified)
@@ -539,7 +538,7 @@ struct monad_eth_call_executor
             block_header,
             sender,
             block_number,
-            block_round,
+            block_id,
             overrides,
             complete,
             user,
@@ -554,7 +553,7 @@ struct monad_eth_call_executor
     void submit_eth_call_to_pool(
         monad_chain_config const chain_config, Transaction const &txn,
         BlockHeader const &block_header, Address const &sender,
-        uint64_t const block_number, uint64_t const block_round,
+        uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
         bool const trace, bool const gas_specified,
@@ -572,7 +571,7 @@ struct monad_eth_call_executor
                  orig_txn = txn,
                  block_header = block_header,
                  block_number = block_number,
-                 block_round = block_round,
+                 block_id = block_id,
                  &db = db_,
                  sender = sender,
                  result = result,
@@ -645,7 +644,7 @@ struct monad_eth_call_executor
                         transaction,
                         block_header,
                         block_number,
-                        block_round,
+                        block_id,
                         sender,
                         tdb,
                         vm_,
@@ -668,7 +667,7 @@ struct monad_eth_call_executor
                             block_header,
                             sender,
                             block_number,
-                            block_round,
+                            block_id,
                             state_overrides,
                             complete,
                             user,
@@ -740,7 +739,7 @@ struct monad_eth_call_executor
     void retry_in_high_pool(
         monad_chain_config const chain_config, Transaction const &orig_txn,
         BlockHeader const &block_header, Address const &sender,
-        uint64_t const block_number, uint64_t const block_round,
+        uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
         bool const trace,
@@ -766,7 +765,7 @@ struct monad_eth_call_executor
             block_header,
             sender,
             block_number,
-            block_round,
+            block_id,
             overrides,
             complete,
             user,
@@ -811,7 +810,8 @@ void monad_eth_call_executor_submit(
     size_t const rlp_txn_len, uint8_t const *const rlp_header,
     size_t const rlp_header_len, uint8_t const *const rlp_sender,
     size_t const rlp_sender_len, uint64_t const block_number,
-    uint64_t const block_round, monad_state_override const *const overrides,
+    uint8_t const *const rlp_block_id, size_t const rlp_block_id_len,
+    monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
     void *const user, bool const trace, bool const gas_specified)
 {
@@ -820,6 +820,7 @@ void monad_eth_call_executor_submit(
     byte_string_view rlp_tx_view({rlp_txn, rlp_txn_len});
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     byte_string_view rlp_sender_view({rlp_sender, rlp_sender_len});
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
 
     auto const tx_result = rlp::decode_transaction(rlp_tx_view);
     MONAD_ASSERT(!tx_result.has_error());
@@ -836,6 +837,11 @@ void monad_eth_call_executor_submit(
     MONAD_ASSERT(rlp_sender_view.empty());
     auto const sender = sender_result.value();
 
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
     MONAD_ASSERT(overrides);
 
     executor->execute_eth_call(
@@ -844,7 +850,7 @@ void monad_eth_call_executor_submit(
         block_header,
         sender,
         block_number,
-        block_round,
+        block_id,
         overrides,
         complete,
         user,

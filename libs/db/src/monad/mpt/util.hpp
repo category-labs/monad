@@ -27,8 +27,7 @@ using MONAD_ASYNC_NAMESPACE::round_up_align;
 
 static constexpr uint8_t INVALID_BRANCH = 255;
 static constexpr uint8_t INVALID_PATH_INDEX = 255;
-static constexpr uint64_t INVALID_BLOCK_ID = uint64_t(-1);
-static constexpr uint64_t INVALID_ROUND_NUM = uint64_t(-1);
+static constexpr uint64_t INVALID_BLOCK_NUM = uint64_t(-1);
 static constexpr uint64_t MIN_HISTORY_LENGTH = 257;
 
 static byte_string const empty_trie_hash = [] {

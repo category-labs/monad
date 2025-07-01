@@ -1,4 +1,5 @@
 #include <monad/core/account.hpp>
+#include <monad/core/blake3.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/monad_block.hpp>
@@ -512,9 +513,11 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
-        this->tdb.finalize(0, 0);
-        this->tdb.set_block_and_round(0);
+        auto const [header, block_id] =
+            consensus_header_and_id_from_eth_header({.number = 1});
+        bs.commit(block_id, header, {}, {}, {}, {}, {}, std::nullopt);
+        this->tdb.finalize(1, block_id);
+        this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(
             this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
     }
@@ -554,9 +557,11 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
-        this->tdb.finalize(0, 0);
-        this->tdb.set_block_and_round(0);
+        auto const [header, block_id] =
+            consensus_header_and_id_from_eth_header({.number = 1});
+        bs.commit(block_id, header, {}, {}, {}, {}, {}, std::nullopt);
+        this->tdb.finalize(1, block_id);
+        this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
         EXPECT_EQ(
@@ -589,9 +594,11 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
-        this->tdb.finalize(0, 0);
-        this->tdb.set_block_and_round(0);
+        auto const [header, block_id] =
+            consensus_header_and_id_from_eth_header({.number = 0});
+        bs.commit(block_id, header, {}, {}, {}, {}, {}, std::nullopt);
+        this->tdb.finalize(0, block_id);
+        this->tdb.set_block_and_prefix(0);
         EXPECT_EQ(
             this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value3);
@@ -1020,7 +1027,8 @@ TYPED_TEST(StateTest, set_code)
     auto const a_icode = s.get_code(a)->intercode();
     EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), code2);
     auto const b_icode = s.get_code(b)->intercode();
-    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), byte_string{});
+    EXPECT_EQ(
+        byte_string_view(b_icode->code(), b_icode->code_size()), byte_string{});
 }
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)
@@ -1146,9 +1154,11 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
-    this->tdb.finalize(0, 0);
-    this->tdb.set_block_and_round(0);
+    auto const [header, block_id] =
+        consensus_header_and_id_from_eth_header({.number = 0});
+    bs.commit(block_id, header, {}, {}, {}, {}, {}, std::nullopt);
+    this->tdb.finalize(0, block_id);
+    this->tdb.set_block_and_prefix(0);
 
     EXPECT_TRUE(this->tdb.read_account(a).has_value());
     EXPECT_EQ(this->tdb.read_account(a).value().balance, 1u);
@@ -1165,7 +1175,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+    bs.commit(NULL_HASH_BLAKE3, {}, {}, {}, {}, {}, {}, std::nullopt);
 
     EXPECT_EQ(
         this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
@@ -1176,7 +1186,9 @@ TYPED_TEST(StateTest, commit_twice)
     load_header(this->db, BlockHeader{.number = 8});
 
     // commit to Block 9 Finalized
-    this->tdb.set_block_and_round(8);
+    this->tdb.set_block_and_prefix(8);
+    auto const [consensus_header_9_9, consensus_block_id_9_9] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 9});
     this->tdb.commit(
         StateDeltas{
             {a,
@@ -1194,11 +1206,12 @@ TYPED_TEST(StateTest, commit_twice)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        MonadConsensusBlockHeader::from_eth_header(BlockHeader{.number = 9}));
-    this->tdb.finalize(9, 9);
+        consensus_block_id_9_9,
+        consensus_header_9_9);
+    this->tdb.finalize(9, consensus_block_id_9_9);
 
     { // Commit to Block 10 Round 5, on top of block 9 finalized
-        this->tdb.set_block_and_round(9);
+        this->tdb.set_block_and_prefix(9);
         BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1210,21 +1223,25 @@ TYPED_TEST(StateTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
+        auto const [consensus_header_10_5, consensus_block_id_10_5] =
+            consensus_header_and_id_from_eth_header({.number = 10}, 5);
         bs.commit(
-            MonadConsensusBlockHeader::from_eth_header({.number = 10}, 5),
+            consensus_block_id_10_5,
+            consensus_header_10_5,
             {},
             {},
             {},
             {},
             {},
             {});
-        this->tdb.finalize(10, 5);
+        this->tdb.finalize(10, consensus_block_id_10_5);
 
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
+
+        this->tdb.set_block_and_prefix(10, consensus_block_id_10_5);
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
-        this->tdb.set_block_and_round(10, 5);
         BlockState bs{this->tdb, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
@@ -1235,27 +1252,34 @@ TYPED_TEST(StateTest, commit_twice)
         cs.destruct_suicides<EVMC_SHANGHAI>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
+        auto const [consensus_header_11_6, consensus_block_id_11_6] =
+            consensus_header_and_id_from_eth_header({.number = 11}, 6);
         bs.commit(
-            MonadConsensusBlockHeader::from_eth_header({.number = 11}, 6),
+            consensus_block_id_11_6,
+            consensus_header_11_6,
             {},
             {},
             {},
             {},
             {},
             {});
-    }
-    EXPECT_EQ(
-        this->tdb.read_storage(c, Incarnation{2, 1}, key1), monad::bytes32_t{});
-    EXPECT_EQ(
-        this->tdb.read_storage(c, Incarnation{2, 1}, key2), monad::bytes32_t{});
+        EXPECT_EQ(
+            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            monad::bytes32_t{});
+        EXPECT_EQ(
+            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+            monad::bytes32_t{});
 
-    // verify finalized state is the same as round 6
-    this->tdb.finalize(11, 6);
-    this->tdb.set_block_and_round(11);
-    EXPECT_EQ(
-        this->tdb.read_storage(c, Incarnation{2, 1}, key1), monad::bytes32_t{});
-    EXPECT_EQ(
-        this->tdb.read_storage(c, Incarnation{2, 1}, key2), monad::bytes32_t{});
+        // verify finalized state is the same as round 6
+        this->tdb.finalize(11, consensus_block_id_11_6);
+        this->tdb.set_block_and_prefix(11);
+        EXPECT_EQ(
+            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            monad::bytes32_t{});
+        EXPECT_EQ(
+            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+            monad::bytes32_t{});
+    }
 }
 
 TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
@@ -1263,7 +1287,9 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     load_header(this->db, BlockHeader{.number = 9});
 
     // commit to block 10, round 5
-    this->tdb.set_block_and_round(9);
+    this->tdb.set_block_and_prefix(9);
+    auto const [header_10_5, block_id_10_5] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 5);
     this->tdb.commit(
         StateDeltas{
             {a,
@@ -1281,15 +1307,17 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
-        MonadConsensusBlockHeader::from_eth_header(
-            BlockHeader{.number = 10}, 5),
+        block_id_10_5,
+        header_10_5,
         {},
         {},
         {},
         {});
+    auto const [header_11_8, block_id_11_8] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 8);
     {
         // set to block 10 round 5
-        this->tdb.set_block_and_round(10, 5);
+        this->tdb.set_block_and_prefix(10, block_id_10_5);
         BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1301,14 +1329,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 8 on top of block 10 round 5
-        bs.commit(
-            MonadConsensusBlockHeader::from_eth_header({.number = 11}, 8),
-            {},
-            {},
-            {},
-            {},
-            {},
-            {});
+        bs.commit(block_id_11_8, header_11_8, {}, {}, {}, {}, {}, {});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 82'000);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
@@ -1317,9 +1338,11 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     }
     auto const state_root_round8 = this->tdb.state_root();
 
+    auto const [header_11_6, block_id_11_6] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 6);
     {
         // set to block 10 round 5
-        this->tdb.set_block_and_round(10, 5);
+        this->tdb.set_block_and_prefix(10, block_id_10_5);
         BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1330,14 +1353,7 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
-        bs.commit(
-            MonadConsensusBlockHeader::from_eth_header({.number = 11}, 6),
-            {},
-            {},
-            {},
-            {},
-            {},
-            {});
+        bs.commit(block_id_11_6, header_11_6, {}, {}, {}, {}, {}, {});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 84'000);
         EXPECT_EQ(
@@ -1347,10 +1363,11 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
     }
 
     auto const state_root_round6 = this->tdb.state_root();
-
+    auto const [header_11_7, block_id_11_7] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 7);
     {
         // set to block 10 round 5
-        this->tdb.set_block_and_round(10, 5);
+        this->tdb.set_block_and_prefix(10, block_id_10_5);
         BlockState bs{this->tdb, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
@@ -1362,29 +1379,22 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
-        bs.commit(
-            MonadConsensusBlockHeader::from_eth_header({.number = 11}, 7),
-            {},
-            {},
-            {},
-            {},
-            {},
-            {});
+        bs.commit(block_id_11_7, header_11_7, {}, {}, {}, {}, {}, {});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 72'000);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value3);
     }
     auto const state_root_round7 = this->tdb.state_root();
-    this->tdb.finalize(11, 7);
-    this->tdb.set_block_and_round(11); // set to block 11 finalized
+    this->tdb.finalize(11, block_id_11_7);
+    this->tdb.set_block_and_prefix(11, block_id_11_7); // set to block 11
     EXPECT_EQ(state_root_round7, this->tdb.state_root());
 
     // check state root of previous rounds
-    this->tdb.set_block_and_round(11, 6);
+    this->tdb.set_block_and_prefix(11, block_id_11_6);
     EXPECT_EQ(state_root_round6, this->tdb.state_root());
 
-    this->tdb.set_block_and_round(11, 8);
+    this->tdb.set_block_and_prefix(11, block_id_11_8);
     EXPECT_EQ(state_root_round8, this->tdb.state_root());
 }
 
@@ -1392,25 +1402,30 @@ TEST_F(OnDiskTrieDbFixture, proposal_basics)
 {
     load_header(this->db, BlockHeader{.number = 9});
     Db &db = this->tdb;
-    db.set_block_and_round(9);
+    db.set_block_and_prefix(9);
+    auto const [header_10_100, block_id_10_100] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 100);
     db.commit(
         StateDeltas{
             {a,
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 30'000}}}}},
         Code{},
-        MonadConsensusBlockHeader::from_eth_header({.number = 10}, 100));
-    db.set_block_and_round(10, 100);
+        block_id_10_100,
+        header_10_100);
+    db.set_block_and_prefix(10, block_id_10_100);
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
 
     DbCache db_cache(db);
-    db_cache.set_block_and_round(10, 100);
+    db_cache.set_block_and_prefix(10, block_id_10_100);
     BlockState bs1(db_cache, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
-    bs1.commit(MonadConsensusBlockHeader::from_eth_header({.number = 11}, 101));
-    db_cache.finalize(11, 101);
+    auto const [header_11_101, block_id_11_101] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 101);
+    bs1.commit(block_id_11_101, header_11_101);
+    db_cache.finalize(11, block_id_11_101);
 
-    db_cache.set_block_and_round(11, 101);
+    db_cache.set_block_and_prefix(11, block_id_11_101);
     BlockState bs2(db_cache, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
@@ -1418,9 +1433,11 @@ TEST_F(OnDiskTrieDbFixture, proposal_basics)
     EXPECT_TRUE(bs2.can_merge(as));
     bs2.merge(as);
     EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
-    bs2.commit(MonadConsensusBlockHeader::from_eth_header({.number = 12}, 102));
+    auto const [header_12_102, block_id_12_102] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 12}, 102);
+    bs2.commit(block_id_12_102, header_12_102);
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
-    db_cache.finalize(12, 102);
+    db_cache.finalize(12, block_id_12_102);
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
 }
 
@@ -1456,12 +1473,12 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
                  {key1, {bytes32_t{}, value1}},
                  {key2, {bytes32_t{}, value2}}}}}}};
     Code code;
-    db_cache.set_block_and_round(9);
+    db_cache.set_block_and_prefix(9);
+    auto const [header_10_100, block_id_10_100] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 100);
     db_cache.commit(
-        std::move(state_deltas),
-        code,
-        MonadConsensusBlockHeader::from_eth_header({.number = 10}, 100));
-    db_cache.finalize(10, 100);
+        std::move(state_deltas), code, block_id_10_100, header_10_100);
+    db_cache.finalize(10, block_id_10_100);
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
     EXPECT_TRUE(db_cache.read_account(c).has_value());
@@ -1474,7 +1491,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
     EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
-    db_cache.set_block_and_round(10, 100);
+    db_cache.set_block_and_prefix(10, block_id_10_100);
     BlockState bs_111(db_cache, this->vm);
     // b11 r111 r100           +40 v2 --
     {
@@ -1485,10 +1502,11 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_111.can_merge(as));
         bs_111.merge(as);
     }
-    bs_111.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 11}, 111));
+    auto const [header_11_111, block_id_11_111] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 111);
+    bs_111.commit(block_id_11_111, header_11_111);
     auto const state_root_round_111 = db_cache.state_root();
-    db_cache.set_block_and_round(11, 111);
+    db_cache.set_block_and_prefix(11, block_id_11_111);
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
     EXPECT_TRUE(db_cache.read_account(c).has_value());
@@ -1501,7 +1519,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
     EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
-    db_cache.set_block_and_round(11, 111);
+    db_cache.set_block_and_prefix(11, block_id_11_111);
     BlockState bs_121(db_cache, this->vm);
     // b12 r121 r111                        +10    v1
     {
@@ -1511,9 +1529,10 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_121.can_merge(as));
         bs_121.merge(as);
     }
-    bs_121.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 12}, 121));
-    db_cache.set_block_and_round(12, 121);
+    auto const [header_12_121, block_id_12_121] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 12}, 121);
+    bs_121.commit(block_id_12_121, header_12_121);
+    db_cache.set_block_and_prefix(12, block_id_12_121);
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
     EXPECT_TRUE(db_cache.read_account(c).has_value());
@@ -1526,7 +1545,7 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
     EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value1);
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
-    db_cache.set_block_and_round(10, 100);
+    db_cache.set_block_and_prefix(10, block_id_10_100);
     BlockState bs_112(db_cache, this->vm);
     // b11 r112 r100    +20        --           --
     {
@@ -1537,11 +1556,12 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_112.can_merge(as));
         bs_112.merge(as);
     }
-    bs_112.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 11}, 112));
+    auto const [header_11_112, block_id_11_112] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 11}, 112);
+    bs_112.commit(block_id_11_112, header_11_112);
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
-    db_cache.set_block_and_round(11, 112);
+    db_cache.set_block_and_prefix(11, block_id_11_112);
     BlockState bs_122(db_cache, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
@@ -1551,11 +1571,12 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_122.can_merge(as));
         bs_122.merge(as);
     }
-    bs_122.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 12}, 122));
+    auto const [header_12_122, block_id_12_122] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 12}, 122);
+    bs_122.commit(block_id_12_122, header_12_122);
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
-    db_cache.set_block_and_round(12, 121);
+    db_cache.set_block_and_prefix(12, block_id_12_121);
     BlockState bs_131(db_cache, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
@@ -1568,12 +1589,13 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_131.can_merge(as));
         bs_131.merge(as);
     }
-    bs_131.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 13}, 131));
+    auto const [header_13_131, block_id_13_131] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 13}, 131);
+    bs_131.commit(block_id_13_131, header_13_131);
     auto const state_root_round_131 = db_cache.state_root();
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
-    db_cache.set_block_and_round(12, 122);
+    db_cache.set_block_and_prefix(12, block_id_12_122);
     BlockState bs_132(db_cache, this->vm);
     // b13 r132 r122                  --        v3
     {
@@ -1583,8 +1605,9 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
         EXPECT_TRUE(bs_132.can_merge(as));
         bs_132.merge(as);
     }
-    bs_132.commit(
-        MonadConsensusBlockHeader::from_eth_header({.number = 13}, 132));
+    auto const [header_13_132, block_id_13_132] =
+        consensus_header_and_id_from_eth_header(BlockHeader{.number = 13}, 132);
+    bs_132.commit(block_id_13_132, header_13_132);
 
     //  b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     //  b11 r111 r100           +40 v2 --
@@ -1592,11 +1615,11 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
     //  b13 r131 r121    +30    +20    v1        v2 --
     //                  a 40   b 80 v2 v1   c 40 v2 --
     //  finalize r111 r121 r131
-    db_cache.finalize(11, 111);
-    db_cache.finalize(12, 121);
-    db_cache.finalize(13, 131);
+    db_cache.finalize(11, block_id_11_111);
+    db_cache.finalize(12, block_id_12_121);
+    db_cache.finalize(13, block_id_13_131);
 
-    db_cache.set_block_and_round(13, 131);
+    db_cache.set_block_and_prefix(13, block_id_13_131);
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
     EXPECT_TRUE(db_cache.read_account(c).has_value());
@@ -1610,21 +1633,11 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 
     // check state root of previous rounds
     auto const data_111 = this->db.get_data(
-        mpt::concat(
-            PROPOSAL_NIBBLE,
-            mpt::NibblesView{
-                mpt::serialize_as_big_endian<sizeof(uint64_t)>(111ull)},
-            STATE_NIBBLE),
-        11);
+        mpt::concat(proposal_prefix(block_id_11_111), STATE_NIBBLE), 11);
     ASSERT_TRUE(data_111.has_value());
     EXPECT_EQ(state_root_round_111, to_bytes(data_111.value()));
     auto const data_131 = this->db.get_data(
-        mpt::concat(
-            PROPOSAL_NIBBLE,
-            mpt::NibblesView{
-                mpt::serialize_as_big_endian<sizeof(uint64_t)>(131ull)},
-            STATE_NIBBLE),
-        13);
+        mpt::concat(proposal_prefix(block_id_13_131), STATE_NIBBLE), 13);
     ASSERT_TRUE(data_131.has_value());
     EXPECT_EQ(state_root_round_131, to_bytes(data_131.value()));
 }
@@ -1637,7 +1650,6 @@ namespace
     {
         static constexpr uint64_t RANDOM_LONG = 10;
         static constexpr uint64_t RANDOM_WIDE = 11;
-        static constexpr uint64_t RANDOM_DUP = 12;
         static constexpr uint64_t RANDOM_PROPOSE = 12;
         static constexpr uint64_t RANDOM_ADD = 20;
         static constexpr uint64_t RANDOM_DEL = 40;
@@ -1649,18 +1661,26 @@ namespace
         Db &db2_;
         vm::VM &vm_;
         uint64_t finalized_block_{0};
-        uint64_t finalized_round_{0};
-        uint64_t highest_round_{0};
-        uint64_t long_{0};
-        uint64_t wide_{0};
-        uint64_t wide_parent_{0};
-        uint64_t dup_{0};
+        uint64_t finalized_proposal_seed_{0};
+        uint64_t highest_proposal_seed_{0};
+        uint64_t long_{0}; // build a long chain of proposals before finalize
+        uint64_t wide_{0}; // different proposals for the same block
+        uint64_t wide_parent_{0}; // parent of the wide proposal
+        // proposal seed -> {block_number, parent_seed}
         std::map<uint64_t, std::pair<uint64_t, std::optional<uint64_t>>>
-            rounds_;
+            proposals_;
+        // block_number -> set of proposals
         std::map<uint64_t, std::set<uint64_t>> blocks_;
 
+        bytes32_t get_dummy_block_id(uint64_t const seed)
+        {
+            return to_bytes(
+                blake3(mpt::serialize_as_big_endian<sizeof(seed)>(seed)));
+        }
+
     public:
-        RandomProposalGenerator(uint64_t const seed, Db &db1, Db &db2, vm::VM &vm)
+        RandomProposalGenerator(
+            uint64_t const seed, Db &db1, Db &db2, vm::VM &vm)
             : rng_(seed)
             , db1_(db1)
             , db2_(db2)
@@ -1673,88 +1693,76 @@ namespace
             for (uint64_t i = 0; i < iterations; ++i) {
                 LOG_INFO("=== Iteration {}", i + 1);
                 std::optional<uint64_t> parent = {};
-                uint64_t round = 0;
+                uint64_t proposal_seed = 0;
                 uint64_t block = 0;
-                // dup
-                if (dup_) {
-                    round = dup_;
-                    auto const it = rounds_.find(round);
-                    MONAD_ASSERT(it != rounds_.end());
-                    block = it->second.first;
-                    parent = it->second.second;
-                    LOG_INFO("_dup_ {} {}", round, parent);
-                    dup_ = 0;
-                }
                 // long
-                else if (long_) {
+                if (long_) {
                     LOG_INFO("_long_ {}", long_);
-                    parent = last_round();
-                    round = last_round() + 1;
-                    block = last_round_block() + 1;
+                    parent = last_proposal_seed();
+                    proposal_seed = last_proposal_seed() + 1;
+                    block = last_proposal_block() + 1;
                     --long_;
                 }
                 // wide
                 else if (wide_) {
                     LOG_INFO("_wide_ {}", wide_, wide_parent_);
                     parent = wide_parent_;
-                    MONAD_ASSERT(rounds_.find(*parent) != rounds_.end());
-                    round = highest_round_ + 1;
-                    block = rounds_[*parent].first + 1;
+                    MONAD_ASSERT(proposals_.find(*parent) != proposals_.end());
+                    proposal_seed = highest_proposal_seed_ + 1;
+                    block = proposals_[*parent].first + 1;
                     --wide_;
                 }
                 // empty
                 else if (blocks_.empty()) {
                     LOG_INFO("_empty_");
-                    round = highest_round_ + 1;
+                    proposal_seed = highest_proposal_seed_ + 1;
                     block = finalized_block_ + 1;
+                    parent = finalized_block_ == 0
+                                 ? std::nullopt
+                                 : std::make_optional(finalized_proposal_seed_);
                 }
                 // random propose
                 else if (random_propose()) {
                     LOG_INFO("_random_propose_");
-                    round = highest_round_ + 1;
-                    Dist dist(0, rounds_.size());
+                    proposal_seed = highest_proposal_seed_ + 1;
+                    Dist dist(0, proposals_.size());
                     uint64_t const order = dist(rng_);
                     if (order == 0) {
                         block = finalized_block_ + 1;
                     }
                     else {
-                        auto it = rounds_.begin();
-                        MONAD_ASSERT(it != rounds_.end());
+                        auto it = proposals_.begin();
+                        MONAD_ASSERT(it != proposals_.end());
                         for (uint64_t i = 1; i < order; ++i) {
                             ++it;
-                            MONAD_ASSERT(it != rounds_.end());
+                            MONAD_ASSERT(it != proposals_.end());
                         }
                         block = it->second.first + 1;
                         parent = it->first;
+                        MONAD_ASSERT(parent);
                     }
                 }
                 // propose
-                if (round) {
-                    LOG_INFO("Propose_ {} {} {}", block, round, parent);
+                if (proposal_seed) {
+                    LOG_INFO("Propose_ {} {} {}", block, proposal_seed, parent);
                     MONAD_ASSERT(block);
-                    auto const it = rounds_.find(round);
-                    if (it != rounds_.end()) {
-                        // dup
-                        MONAD_ASSERT(it->second.first == block);
-                    }
-                    else {
-                        rounds_[round] = {block, parent};
-                        blocks_[block].insert(round);
-                    }
-                    propose(block, round, parent);
-                    highest_round_ =
-                        round > highest_round_ ? round : highest_round_;
+                    auto const it = proposals_.find(proposal_seed);
+                    MONAD_ASSERT(it == proposals_.end()); // assert no duplicate
+                    proposals_[proposal_seed] = {block, parent};
+                    blocks_[block].insert(proposal_seed);
+                    propose(block, proposal_seed, parent);
+                    highest_proposal_seed_ =
+                        proposal_seed > highest_proposal_seed_
+                            ? proposal_seed
+                            : highest_proposal_seed_;
                     // future random
-                    if (long_ == 0 && wide_ == 0 && dup_ == 0) {
+                    if (long_ == 0 && wide_ == 0) {
                         if (random_long()) {
                             long_ = random9();
                         }
                         else if (random_wide()) {
                             wide_ = random9();
-                            wide_parent_ = round;
-                        }
-                        else if (random_dup()) {
-                            dup_ = round;
+                            wide_parent_ = proposal_seed;
                         }
                     }
                 }
@@ -1768,15 +1776,16 @@ namespace
         }
 
     private:
-        uint64_t last_round() const
+        uint64_t last_proposal_seed() const
         {
-            return rounds_.empty() ? highest_round_ : rounds_.rbegin()->first;
+            return proposals_.empty() ? highest_proposal_seed_
+                                      : proposals_.rbegin()->first;
         }
 
-        uint64_t last_round_block() const
+        uint64_t last_proposal_block() const
         {
-            return rounds_.empty() ? finalized_block_
-                                   : rounds_.rbegin()->second.first;
+            return proposals_.empty() ? finalized_block_
+                                      : proposals_.rbegin()->second.first;
         }
 
         bool random_long()
@@ -1787,11 +1796,6 @@ namespace
         bool random_wide()
         {
             return random100() < RANDOM_WIDE;
-        }
-
-        bool random_dup()
-        {
-            return random100() < RANDOM_DUP;
         }
 
         bool random_propose()
@@ -1822,12 +1826,16 @@ namespace
         }
 
         void propose(
-            uint64_t const block, uint64_t const round,
+            uint64_t const block, uint64_t const proposal_seed,
             std::optional<uint64_t> const parent)
         {
             MONAD_ASSERT(block > 0);
-            db1_.set_block_and_round(block - 1, parent);
-            db2_.set_block_and_round(block - 1, parent);
+            db1_.set_block_and_prefix(
+                block - 1,
+                parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
+            db2_.set_block_and_prefix(
+                block - 1,
+                parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
             BlockState bs1(db1_, vm_);
             BlockState bs2(db2_, vm_);
             Incarnation inc{block, 1};
@@ -1885,9 +1893,9 @@ namespace
             bs2.merge(st2);
             MonadConsensusBlockHeader hdr(
                 MonadConsensusBlockHeader::from_eth_header(
-                    {.number = block}, round));
-            bs1.commit(hdr);
-            bs2.commit(hdr);
+                    {.number = block}, proposal_seed));
+            bs1.commit(get_dummy_block_id(proposal_seed), hdr);
+            bs2.commit(get_dummy_block_id(proposal_seed), hdr);
         }
 
         void finalize()
@@ -1896,14 +1904,14 @@ namespace
             MONAD_ASSERT(!blocks_.empty());
             auto const it = blocks_.begin();
             uint64_t block = it->first;
-            // round
-            auto &s1 = it->second; // set of rounds
+            // proposal
+            auto &s1 = it->second; // set of proposals
             for (auto it2 = s1.begin(); it2 != s1.end();) {
-                auto const it3 = rounds_.find(*it2);
-                MONAD_ASSERT(it3 != rounds_.end());
+                auto const it3 = proposals_.find(*it2);
+                MONAD_ASSERT(it3 != proposals_.end());
                 MONAD_ASSERT(it3->second.first == block);
                 auto const p = it3->second.second;
-                if (p.has_value() && *p != finalized_round_) {
+                if (p.has_value() && *p != finalized_proposal_seed_) {
                     it2 = s1.erase(it2);
                 }
                 else {
@@ -1911,8 +1919,8 @@ namespace
                 }
             }
             if (s1.empty()) {
-                LOG_INFO("No_valid_rounds_to_finalize_");
-                rounds_.clear();
+                LOG_INFO("No_valid_proposals_to_finalize_");
+                proposals_.clear();
                 blocks_.clear();
                 return;
             }
@@ -1923,26 +1931,26 @@ namespace
                 ++it2;
             }
             MONAD_ASSERT(it2 != s1.end());
-            uint64_t const round = *it2;
-            MONAD_ASSERT(rounds_.find(round) != rounds_.end());
-            MONAD_ASSERT(rounds_[round].first == block);
-            LOG_INFO("Finalize_ {} {}", block, round);
+            uint64_t const proposal_seed = *it2;
+            MONAD_ASSERT(proposals_.find(proposal_seed) != proposals_.end());
+            MONAD_ASSERT(proposals_[proposal_seed].first == block);
+            LOG_INFO("Finalize_ {} {}", block, proposal_seed);
             // db finalize
-            db1_.finalize(block, round);
-            db2_.finalize(block, round);
+            db1_.finalize(block, get_dummy_block_id(proposal_seed));
+            db2_.finalize(block, get_dummy_block_id(proposal_seed));
             finalized_block_ = block;
-            finalized_round_ = round;
-            // remove block and rounds
+            finalized_proposal_seed_ = proposal_seed;
+            // remove block and proposals
             for (auto const r : s1) {
-                auto it3 = rounds_.find(r);
-                MONAD_ASSERT(it3 != rounds_.end());
-                rounds_.erase(it3);
+                auto it3 = proposals_.find(r);
+                MONAD_ASSERT(it3 != proposals_.end());
+                proposals_.erase(it3);
             }
             blocks_.erase(it);
-            while (!rounds_.empty()) {
-                auto const it3 = rounds_.begin();
-                MONAD_ASSERT(it3->first != round);
-                if (it3->first > round) {
+            while (!proposals_.empty()) {
+                auto const it3 = proposals_.begin();
+                MONAD_ASSERT(it3->first != proposal_seed);
+                if (it3->first > proposal_seed) {
                     break;
                 }
                 if (it3->second.first > block) {
@@ -1953,7 +1961,7 @@ namespace
                     MONAD_ASSERT(it4 != s2.end());
                     s2.erase(it4);
                 }
-                rounds_.erase(it3);
+                proposals_.erase(it3);
             }
         }
 

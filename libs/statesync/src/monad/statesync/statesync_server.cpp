@@ -57,9 +57,9 @@ bool send_deletion(
     monad_statesync_server_context &ctx)
 {
     MONAD_ASSERT(
-        rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_ID);
+        rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_NUM);
 
-    if (rq.old_target == INVALID_BLOCK_ID) {
+    if (rq.old_target == INVALID_BLOCK_NUM) {
         return true;
     }
 

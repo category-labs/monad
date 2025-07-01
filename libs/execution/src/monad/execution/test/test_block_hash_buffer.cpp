@@ -1,4 +1,5 @@
 #include <monad/async/util.hpp>
+#include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/keccak.hpp>
@@ -9,6 +10,7 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
+#include <monad/mpt/util.hpp>
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
@@ -20,6 +22,15 @@
 using namespace monad;
 using namespace monad::test;
 
+namespace
+{
+    bytes32_t dummy_block_id(uint64_t const seed)
+    {
+        return to_bytes(
+            blake3(mpt::serialize_as_big_endian<sizeof(seed)>(seed)));
+    }
+}
+
 TEST(BlockHashBuffer, simple_chain)
 {
     BlockHashBufferFinalized buf;
@@ -27,20 +38,23 @@ TEST(BlockHashBuffer, simple_chain)
 
     BlockHashChain chain(buf);
 
-    uint64_t round = 1;
-    uint64_t parent_round = 0;
-    chain.propose(bytes32_t{1}, round, parent_round);
-    chain.finalize(round);
+    uint64_t seed = 0;
+    auto parent_id = dummy_block_id(seed);
+    auto block_id = dummy_block_id(seed);
+    chain.propose(bytes32_t{1}, 1, block_id, parent_id);
+    chain.finalize(block_id);
 
-    ++round;
-    ++parent_round;
-    chain.propose(bytes32_t{2}, round, parent_round);
-    chain.finalize(round);
+    ++seed;
+    parent_id = block_id;
+    block_id = dummy_block_id(seed);
+    chain.propose(bytes32_t{2}, 2, block_id, parent_id);
+    chain.finalize(block_id);
 
-    ++round;
-    ++parent_round;
-    chain.propose(bytes32_t{3}, round, parent_round);
-    chain.finalize(round);
+    ++seed;
+    parent_id = block_id;
+    block_id = dummy_block_id(seed);
+    chain.propose(bytes32_t{3}, 3, block_id, parent_id);
+    chain.finalize(block_id);
 
     EXPECT_EQ(buf.n(), 4);
     EXPECT_EQ(buf.get(0), bytes32_t{0});
@@ -57,8 +71,8 @@ TEST(BlockHashBuffer, from_seeded_buf)
 
     BlockHashChain chain(buf);
 
-    chain.propose(bytes32_t{3}, 2, 1);
-    chain.finalize(2);
+    chain.propose(bytes32_t{3}, 2, dummy_block_id(2), dummy_block_id(1));
+    chain.finalize(dummy_block_id(2));
 
     EXPECT_EQ(buf.get(0), bytes32_t{1});
     EXPECT_EQ(buf.get(1), bytes32_t{2});
@@ -69,29 +83,31 @@ TEST(BlockHashBuffer, fork)
 {
     BlockHashBufferFinalized buf;
     buf.set(0, bytes32_t{0}); // genesis
+    EXPECT_EQ(buf.n(), 1);
 
     BlockHashChain chain(buf);
 
-    chain.propose(bytes32_t{1}, 1 /* round */, 0 /* parent_round */);
-    chain.finalize(1);
+    chain.propose(bytes32_t{1}, 1, dummy_block_id(1), dummy_block_id(0));
+    chain.finalize(dummy_block_id(1)); // finalize block 1
+    EXPECT_EQ(buf.n(), 2);
 
-    // fork at block 1
-    chain.propose(bytes32_t{2}, 2 /* round */, 1 /* parent_round */);
-    chain.propose(bytes32_t{3}, 3 /* round */, 1 /* parent_round */);
+    // fork at block 2
+    chain.propose(bytes32_t{2}, 2, dummy_block_id(2), dummy_block_id(1));
+    chain.propose(bytes32_t{3}, 2, dummy_block_id(3), dummy_block_id(1));
 
-    // fork continues on block 2
-    chain.propose(bytes32_t{4}, 4 /* round */, 3 /* parent_round */);
-    chain.propose(bytes32_t{5}, 5 /* round */, 2 /* parent_round */);
+    // fork continues on block 3
+    chain.propose(bytes32_t{4}, 3, dummy_block_id(4), dummy_block_id(3));
+    chain.propose(bytes32_t{5}, 3, dummy_block_id(5), dummy_block_id(2));
 
     // check the forks are distinct
-    auto const &fork1 = chain.find_chain(4);
+    auto const &fork1 = chain.find_chain(dummy_block_id(4));
     EXPECT_EQ(fork1.n(), 4);
     EXPECT_EQ(fork1.get(0), bytes32_t{0});
     EXPECT_EQ(fork1.get(1), bytes32_t{1});
     EXPECT_EQ(fork1.get(2), bytes32_t{3});
     EXPECT_EQ(fork1.get(3), bytes32_t{4});
 
-    auto const &fork2 = chain.find_chain(5);
+    auto const &fork2 = chain.find_chain(dummy_block_id(5));
     EXPECT_EQ(fork2.n(), 4);
     EXPECT_EQ(fork2.get(0), bytes32_t{0});
     EXPECT_EQ(fork2.get(1), bytes32_t{1});
@@ -102,8 +118,8 @@ TEST(BlockHashBuffer, fork)
     EXPECT_EQ(buf.n(), 2);
 
     // finalize chain {0, 1, 2, 5}
-    chain.finalize(2);
-    chain.finalize(5);
+    chain.finalize(dummy_block_id(2));
+    chain.finalize(dummy_block_id(5));
 
     // finalized chain should match fork
     EXPECT_EQ(buf.n(), 4);
@@ -113,39 +129,33 @@ TEST(BlockHashBuffer, fork)
     EXPECT_EQ(buf.get(3), bytes32_t{5});
 }
 
-TEST(BlockHashBuffer, double_finalize)
+TEST(BlockHashBuffer, duplicate_proposals)
 {
     BlockHashBufferFinalized buf;
     buf.set(0, bytes32_t{0}); // genesis
 
     BlockHashChain chain(buf);
 
-    chain.propose(bytes32_t{1}, 1 /* round */, 0 /* parent_round */);
-    chain.propose(bytes32_t{1}, 2 /* round */, 1 /* parent_round */);
-    chain.finalize(1);
-    chain.finalize(1);
-    chain.finalize(2);
-}
+    chain.propose(bytes32_t{1}, 1, dummy_block_id(1), dummy_block_id(0));
+    chain.finalize(dummy_block_id(1));
 
-TEST(BlockHashBuffer, keep_latest_duplicate)
-{
-    BlockHashBufferFinalized buf;
-    buf.set(0, bytes32_t{0}); // genesis
+    chain.propose(
+        bytes32_t{2}, 2, dummy_block_id(2), dummy_block_id(1)); // will finalize
+    chain.propose(bytes32_t{3}, 2, dummy_block_id(3), dummy_block_id(1));
+    chain.propose(bytes32_t{4}, 2, dummy_block_id(4), dummy_block_id(1));
 
-    BlockHashChain chain(buf);
-
-    chain.propose(bytes32_t{1}, 1 /* round */, 0 /* parent_round */);
-    chain.finalize(1);
-
-    chain.propose(bytes32_t{2}, 2 /* round */, 1 /* parent_round */);
-    chain.propose(bytes32_t{3}, 3 /* round */, 1 /* parent_round */);
-    chain.propose(bytes32_t{4}, 2 /* round */, 1 /* parent_round */);
-    chain.finalize(2);
+    chain.propose(bytes32_t{5}, 3, dummy_block_id(5), dummy_block_id(1));
+    chain.propose(
+        bytes32_t{6}, 3, dummy_block_id(6), dummy_block_id(2)); // will finalize
+    chain.finalize(dummy_block_id(2));
 
     EXPECT_EQ(buf.n(), 3);
     EXPECT_EQ(buf.get(0), bytes32_t{0});
     EXPECT_EQ(buf.get(1), bytes32_t{1});
-    EXPECT_EQ(buf.get(2), bytes32_t{4});
+    EXPECT_EQ(buf.get(2), bytes32_t{2});
+
+    chain.finalize(dummy_block_id(6));
+    EXPECT_EQ(buf.get(3), bytes32_t{6});
 }
 
 TEST(BlockHashBuffer, propose_after_crash)
@@ -157,11 +167,12 @@ TEST(BlockHashBuffer, propose_after_crash)
     ASSERT_EQ(buf.n(), 100);
 
     BlockHashChain chain(buf);
-    auto const &buf2 = chain.find_chain(99);
+    bytes32_t const nonexist{};
+    auto const &buf2 = chain.find_chain(nonexist);
     EXPECT_EQ(&buf, &buf2);
 
-    chain.propose(bytes32_t{100}, 100 /* round */, 99 /* parent_round */);
-    chain.finalize(100);
+    chain.propose(bytes32_t{100}, 100, dummy_block_id(100), dummy_block_id(99));
+    chain.finalize(dummy_block_id(100));
     EXPECT_EQ(buf.n() - 1, 100);
 
     for (uint64_t i = 0; i < buf.n(); ++i) {

@@ -63,6 +63,19 @@ using namespace monad::mpt;
 
 namespace
 {
+    bytes32_t to_bytes32(Nibbles const &nibbles)
+    {
+        MONAD_ASSERT(nibbles.nibble_size() == sizeof(bytes32_t) * 2);
+        if (nibbles.begin_nibble()) { // not left-aligned
+            Nibbles const compact_nibbles = nibbles.substr(0);
+            MONAD_ASSERT(compact_nibbles.data_size() == sizeof(bytes32_t));
+            return to_bytes(byte_string_view{
+                compact_nibbles.data(), compact_nibbles.data_size()});
+        }
+        MONAD_ASSERT(nibbles.data_size() == sizeof(bytes32_t));
+        return to_bytes(byte_string_view{nibbles.data(), nibbles.data_size()});
+    }
+
     struct BinaryDbLoader
     {
     private:
@@ -114,7 +127,7 @@ namespace
                     finalized_updates.push_front(finalized);
                     db_.upsert(
                         std::move(finalized_updates), block_id_, false, false);
-                    db_.update_finalized_block(block_id_);
+                    db_.update_finalized_version(block_id_);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -767,26 +780,24 @@ void load_header(mpt::Db &db, BlockHeader const &header)
         std::move(ls), n, false /* compaction */, true /* write_to_fast */);
 }
 
-mpt::Nibbles proposal_prefix(uint64_t const round_number)
+mpt::Nibbles proposal_prefix(bytes32_t const &block_id)
 {
-    return mpt::concat(
-        PROPOSAL_NIBBLE,
-        NibblesView{serialize_as_big_endian<sizeof(uint64_t)>(round_number)});
+    return mpt::concat(PROPOSAL_NIBBLE, NibblesView{to_bytes(block_id)});
 }
 
-std::vector<uint64_t>
-get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
+std::vector<bytes32_t>
+get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
 {
-    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1 + sizeof(uint64_t) * 2;
+    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1 + sizeof(bytes32_t) * 2;
 
     class ProposalTraverseMachine final : public TraverseMachine
     {
-        std::vector<uint64_t> &rounds_;
+        std::vector<bytes32_t> &block_ids_;
         Nibbles path_;
 
     public:
-        explicit ProposalTraverseMachine(std::vector<uint64_t> &rounds)
-            : rounds_(rounds)
+        explicit ProposalTraverseMachine(std::vector<bytes32_t> &block_ids)
+            : block_ids_(block_ids)
         {
         }
 
@@ -802,13 +813,19 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
 
             Nibbles const new_path =
                 concat(NibblesView{path_}, branch, node.path_nibble_view());
-            if (new_path.nibble_size() == PROPOSAL_PREFIX_LEN) {
-                MONAD_ASSERT(node.has_value());
+            if (node.has_value() && new_path.nibble_size() > 1) {
+                if (new_path.nibble_size() < PROPOSAL_PREFIX_LEN) {
+                    // Ignore proposals of old format that have a shorter prefix
+                    // length
+                    return false;
+                }
+                MONAD_ASSERT(new_path.nibble_size() == PROPOSAL_PREFIX_LEN);
                 MONAD_ASSERT(new_path.get(0) == PROPOSAL_NIBBLE);
-                rounds_.push_back(
-                    deserialize_from_big_endian<uint64_t>(new_path.substr(1)));
+                auto const block_id_nibbles = new_path.substr(1);
+                block_ids_.push_back(to_bytes32(block_id_nibbles));
                 return false;
             }
+            MONAD_ASSERT(new_path.nibble_size() < PROPOSAL_PREFIX_LEN);
             path_ = new_path;
             return true;
         }
@@ -837,10 +854,10 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
         }
     };
 
-    std::vector<uint64_t> rounds;
-    ProposalTraverseMachine traverse(rounds);
+    std::vector<bytes32_t> block_ids;
+    ProposalTraverseMachine traverse(block_ids);
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
-    return rounds;
+    return block_ids;
 }
 
 std::optional<BlockHeader> read_eth_header(

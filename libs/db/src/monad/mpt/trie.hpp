@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/async/config.hpp>
+#include <monad/core/bytes.hpp>
 #include <monad/lru/static_lru_cache.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
@@ -649,7 +650,7 @@ public:
                     ->load(std::memory_order_acquire);
             }
 
-            // return INVALID_BLOCK_ID indicates that db is empty
+            // return INVALID_BLOCK_NUM indicates that db is empty
             uint64_t max_version() const noexcept
             {
                 auto const wp = next_version_.load(std::memory_order_acquire);
@@ -719,10 +720,10 @@ public:
     void update_history_length_metadata(uint64_t history_len) noexcept;
     void set_latest_finalized_version(uint64_t version) noexcept;
     void set_latest_verified_version(uint64_t version) noexcept;
-    void set_latest_voted(uint64_t version, uint64_t round) noexcept;
+    void set_latest_voted(uint64_t version, bytes32_t const &block_id) noexcept;
     uint64_t get_latest_finalized_version() const noexcept;
     uint64_t get_latest_verified_version() const noexcept;
-    uint64_t get_latest_voted_round() const noexcept;
+    bytes32_t get_latest_voted_block_id() const noexcept;
     uint64_t get_latest_voted_version() const noexcept;
 
     int64_t get_auto_expire_version_metadata() const noexcept;

@@ -1893,7 +1893,7 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         aux.node_writer_slow->sender().offset());
     // update root offset
     auto const max_version_in_db = aux.db_history_max_version();
-    if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_ID)) {
+    if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_NUM)) {
         aux.fast_forward_next_version(version);
         aux.append_root_offset(offset_written_to);
         MONAD_ASSERT(aux.db_history_range_lower_bound() == version);

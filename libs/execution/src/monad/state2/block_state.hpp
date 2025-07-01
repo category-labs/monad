@@ -43,10 +43,9 @@ public:
 
     void merge(State const &);
 
-    // TODO: remove round_number parameter, retrieve it from header instead once
-    // we add the monad fields in BlockHeader
     void commit(
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
+        bytes32_t const &block_id, MonadConsensusBlockHeader const &,
+        std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},

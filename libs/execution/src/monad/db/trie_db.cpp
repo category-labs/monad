@@ -81,8 +81,8 @@ namespace
 
 TrieDb::TrieDb(mpt::Db &db)
     : db_{db}
-    , block_number_{db.get_latest_finalized_block_id() == INVALID_BLOCK_ID ? 0 : db.get_latest_finalized_block_id()}
-    , round_number_{std::nullopt}
+    , block_number_{db.get_latest_finalized_version() == INVALID_BLOCK_NUM ? 0 : db.get_latest_finalized_version()}
+    , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
 {
 }
@@ -147,6 +147,7 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
+    bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
@@ -171,14 +172,15 @@ void TrieDb::commit(
         }
     }();
 
-    if (db_.is_on_disk() && (consensus_header.round != round_number_ ||
-                             header.number != block_number_)) {
-        auto const dest_prefix = proposal_prefix(consensus_header.round);
-        if (db_.get_latest_block_id() != INVALID_BLOCK_ID) {
+    MONAD_ASSERT(block_id != bytes32_t{});
+    if (db_.is_on_disk() && block_id != proposal_block_id_) {
+        auto const dest_prefix = proposal_prefix(block_id);
+        if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
+            MONAD_ASSERT(header.number != block_number_);
             db_.copy_trie(
                 block_number_, prefix_, header.number, dest_prefix, false);
         }
-        round_number_ = consensus_header.round;
+        proposal_block_id_ = block_id;
         block_number_ = header.number;
         prefix_ = dest_prefix;
     }
@@ -459,67 +461,62 @@ void TrieDb::commit(
     hash_alloc_.clear();
 }
 
-void TrieDb::set_block_and_round(
-    uint64_t const block_number, std::optional<uint64_t> const round_number)
+void TrieDb::set_block_and_prefix(
+    uint64_t const block_number, bytes32_t const &block_id)
 {
     // set read state
     if (!db_.is_on_disk()) {
         MONAD_ASSERT(block_number_ == 0);
-        MONAD_ASSERT(round_number_ == std::nullopt);
+        MONAD_ASSERT(proposal_block_id_ == bytes32_t{});
         return;
     }
-    prefix_ = round_number.has_value() ? proposal_prefix(round_number.value())
-                                       : finalized_nibbles;
+    prefix_ =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
     MONAD_ASSERT_PRINTF(
         db_.find(prefix_, block_number).has_value(),
-        "Fail to find block_number %lu, round number %lu on db",
+        "Fail to find block_number %lu, block_id %s",
         block_number,
-        round_number.value_or(INVALID_ROUND_NUM));
+        evmc::hex(to_byte_string_view(block_id.bytes)).c_str());
     block_number_ = block_number;
-    round_number_ = round_number;
+    proposal_block_id_ = block_id;
 }
 
-void TrieDb::finalize(uint64_t const block_number, uint64_t const round_number)
+void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 {
     // no re-finalization
+    auto const latest_finalized = db_.get_latest_finalized_version();
+    MONAD_ASSERT_PRINTF(
+        latest_finalized == INVALID_BLOCK_NUM ||
+            block_number == latest_finalized + 1,
+        "block_number %lu is not the next finalized block after %lu",
+        block_number,
+        latest_finalized);
+    MONAD_ASSERT(block_id != bytes32_t{});
+    auto const src_prefix = proposal_prefix(block_id);
     if (db_.is_on_disk()) {
-#if 0 // TODO: re-enable this when we remove double finalization
-        auto const latest_finalized = db_.get_latest_finalized_block_id();
-        MONAD_ASSERT(
-            latest_finalized == INVALID_BLOCK_ID ||
-            block_number == latest_finalized + 1);
-#endif
-        auto const src_prefix = proposal_prefix(round_number);
         MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
-        db_.copy_trie(
-            block_number, src_prefix, block_number, finalized_nibbles, true);
-        db_.update_finalized_block(block_number);
     }
+    db_.copy_trie(
+        block_number, src_prefix, block_number, finalized_nibbles, true);
+    db_.update_finalized_version(block_number);
 }
 
 void TrieDb::update_verified_block(uint64_t const block_number)
 {
     // no re-verification
-    if (db_.is_on_disk()) {
-#if 0 // TODO: re-enable this when we remove double finalization
-        auto const latest_verified = db_.get_latest_verified_block_id();
-        MONAD_ASSERT(
-            latest_verified == INVALID_BLOCK_ID ||
-            block_number == latest_verified + 1);
-#endif
-        db_.update_verified_block(block_number);
-    }
+    auto const latest_verified = db_.get_latest_verified_version();
+    MONAD_ASSERT_PRINTF(
+        latest_verified == INVALID_BLOCK_NUM || block_number > latest_verified,
+        "block_number %lu must be greater than last_verified %lu",
+        block_number,
+        latest_verified);
+    db_.update_verified_version(block_number);
 }
 
 void TrieDb::update_voted_metadata(
-    uint64_t const block_number, uint64_t const round)
+    uint64_t const block_number, bytes32_t const &block_id)
 {
-    auto const latest_voted_round = db_.get_latest_voted_round();
-    if (MONAD_LIKELY(
-            round > latest_voted_round ||
-            latest_voted_round == INVALID_ROUND_NUM)) {
-        db_.update_voted_metadata(block_number, round);
-    }
+    db_.update_voted_metadata(block_number, block_id);
 }
 
 bytes32_t TrieDb::state_root()

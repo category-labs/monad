@@ -7,6 +7,7 @@
 #include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
+#include <monad/core/fmt/bytes_fmt.hpp>
 #include <monad/core/keccak.hpp>
 #include <monad/core/monad_block.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
@@ -41,7 +42,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 void log_tps(
-    uint64_t const block_num, uint64_t const round_num, uint64_t const ntxs,
+    uint64_t const block_num, bytes32_t const &block_id, uint64_t const ntxs,
     uint64_t const gas, std::chrono::steady_clock::time_point const begin)
 {
     auto const now = std::chrono::steady_clock::now();
@@ -54,10 +55,11 @@ void log_tps(
     uint64_t const gps = gas / elapsed;
 
     LOG_INFO(
-        "Run to block= {:4d}, round= {:4d}, number of transactions {:6d}, "
+        "Run to block= {:4d}, block_id {}, number of "
+        "transactions {:6d}, "
         "tps = {:5d}, gps = {:4d} M, rss = {:6d} MB",
         block_num,
-        round_num,
+        block_id,
         ntxs,
         tps,
         gps,
@@ -70,30 +72,33 @@ void init_block_hash_chain_proposals(
     mpt::Db &db, BlockHashChain &block_hash_chain,
     uint64_t const start_block_num)
 {
-    uint64_t const end_block_num = db.get_latest_block_id();
+    uint64_t const end_block_num = db.get_latest_version();
     for (uint64_t b = start_block_num; b <= end_block_num; ++b) {
-        for (uint64_t const r : get_proposal_rounds(db, b)) {
+        for (bytes32_t const &id : get_proposal_block_ids(db, b)) {
             auto const consensus_header =
-                read_consensus_header(db, b, proposal_prefix(r));
+                read_consensus_header(db, b, proposal_prefix(id));
             MONAD_ASSERT_PRINTF(
                 consensus_header.has_value(),
-                "Could not decode consensus block at (%lu, %lu)",
+                "Could not decode consensus block at %lu block_id %s",
                 b,
-                r);
+                fmt::format("{}", id).c_str());
             auto const encoded_eth_header =
-                db.get(mpt::concat(proposal_prefix(r), BLOCKHEADER_NIBBLE), b);
+                db.get(mpt::concat(proposal_prefix(id), BLOCKHEADER_NIBBLE), b);
             MONAD_ASSERT(encoded_eth_header.has_value());
             block_hash_chain.propose(
                 to_bytes(keccak256(encoded_eth_header.value())),
-                consensus_header.value().round,
-                consensus_header.value().parent_round());
+                b,
+                id,
+                consensus_header.value().parent_id());
         }
     }
 }
 
-bool has_executed(mpt::Db const &db, MonadConsensusBlockHeader const &header)
+bool has_executed(
+    mpt::Db const &db, MonadConsensusBlockHeader const &header,
+    bytes32_t const &block_id)
 {
-    auto const prefix = proposal_prefix(header.round);
+    auto const prefix = proposal_prefix(block_id);
     return header == read_consensus_header(db, header.seqno, prefix);
 }
 
@@ -131,14 +136,15 @@ bool validate_delayed_execution_results(
 }
 
 Result<std::pair<bytes32_t, uint64_t>> propose_block(
+    bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
-    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block)
+    BlockHashChain &block_hash_chain, Chain const &chain, Db &db, vm::VM &vm,
+    fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
     auto const &block_hash_buffer =
-        block_hash_chain.find_chain(consensus_header.parent_round());
+        block_hash_chain.find_chain(consensus_header.parent_id());
 
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
 
@@ -147,10 +153,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
 
     BOOST_OUTCOME_TRY(static_validate_block(rev, block));
 
-    db.set_block_and_round(
+    db.set_block_and_prefix(
         block.header.number - 1,
-        is_first_block ? std::nullopt
-                       : std::make_optional(consensus_header.parent_round()));
+        is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
@@ -192,6 +197,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
+        block_id,
         consensus_header,
         receipts,
         call_frames,
@@ -213,12 +219,12 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - block_begin);
     LOG_INFO(
-        "__exec_block,bl={:8},ro={:8},ts={}"
+        "__exec_block,bl={:8},id={},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
         ",gas={:9},gpse={:4},gps={:3}{}",
         block.header.number,
-        consensus_header.round,
+        block_id,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             block_start.time_since_epoch())
             .count(),
@@ -267,18 +273,24 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;
 
+    struct ToExecute
+    {
+        bytes32_t block_id;
+        MonadConsensusBlockHeader header;
+    };
+
     struct ToFinalize
     {
         uint64_t block;
-        uint64_t round;
+        bytes32_t block_id;
         uint64_t verified_block;
     };
 
-    std::deque<MonadConsensusBlockHeader> to_execute;
+    std::deque<ToExecute> to_execute;
     std::deque<ToFinalize> to_finalize;
 
     MONAD_ASSERT(
-        raw_db.get_latest_finalized_block_id() != mpt::INVALID_BLOCK_ID);
+        raw_db.get_latest_finalized_version() != mpt::INVALID_BLOCK_NUM);
 
     while (finalized_block_num < end_block_num && stop == 0) {
         bytes32_t id;
@@ -287,13 +299,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         to_execute.clear();
 
         uint64_t const last_finalized_by_execution =
-            raw_db.get_latest_finalized_block_id();
+            raw_db.get_latest_finalized_version();
 
         // read from finalized head if we are behind
         id = head_pointer_to_id(finalized_head);
         if (MONAD_LIKELY(id != bytes32_t{})) {
             do {
                 header = read_header(id, header_dir);
+                auto const block_id = id;
                 id = header.parent_id();
 
                 if (MONAD_UNLIKELY(header.seqno > end_block_num)) {
@@ -304,17 +317,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 if (needs_finalize) {
                     uint64_t const verified_block =
                         header.delayed_execution_results.empty()
-                            ? 0
+                            ? mpt::INVALID_BLOCK_NUM
                             : header.delayed_execution_results.back().number;
                     to_finalize.push_front(ToFinalize{
                         .block = header.seqno,
-                        .round = header.round,
+                        .block_id = block_id,
                         .verified_block = verified_block});
                 }
 
-                if (!has_executed(raw_db, header)) {
+                if (!has_executed(raw_db, header, block_id)) {
                     MONAD_ASSERT(needs_finalize);
-                    to_execute.push_front(std::move(header));
+                    to_execute.push_front(ToExecute{
+                        .block_id = block_id, .header = std::move(header)});
                 }
             }
             while (header.seqno - 1 > last_finalized_by_execution);
@@ -326,11 +340,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             if (MONAD_LIKELY(id != bytes32_t{})) {
                 do {
                     header = read_header(id, header_dir);
+                    auto const parent_id = header.parent_id();
                     if (header.seqno <= end_block_num &&
-                        !has_executed(raw_db, header)) {
-                        to_execute.push_front(std::move(header));
+                        !has_executed(raw_db, header, id)) {
+                        to_execute.push_front(ToExecute{
+                            .block_id = id, .header = std::move(header)});
                     }
-                    id = header.parent_id();
+                    id = parent_id;
                 }
                 while (header.seqno - 1 > last_finalized_by_execution);
 
@@ -361,7 +377,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             continue;
         }
 
-        for (auto const &consensus_header : to_execute) {
+        for (auto const &[block_id, consensus_header] : to_execute) {
             auto const block_time_start = std::chrono::steady_clock::now();
 
             uint64_t const block_number =
@@ -371,7 +387,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const ntxns = consensus_body.transactions.size();
 
             auto const &block_hash_buffer =
-                block_hash_chain.find_chain(consensus_header.parent_round());
+                block_hash_chain.find_chain(consensus_header.parent_id());
 
             MONAD_ASSERT(validate_delayed_execution_results(
                 block_hash_buffer, consensus_header.delayed_execution_results));
@@ -379,6 +395,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             BOOST_OUTCOME_TRY(
                 auto const propose_result,
                 propose_block(
+                    block_id,
                     consensus_header,
                     Block{
                         .header = consensus_header.execution_inputs,
@@ -394,28 +411,26 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const &[block_hash, gas_used] = propose_result;
             block_hash_chain.propose(
                 block_hash,
-                consensus_header.round,
-                consensus_header.parent_round());
+                block_number,
+                block_id,
+                consensus_header.parent_id());
 
             db.update_voted_metadata(
-                consensus_header.seqno - 1, consensus_header.qc.vote.round);
+                consensus_header.seqno - 1, consensus_header.parent_id());
 
-            log_tps(
-                block_number,
-                consensus_header.round,
-                ntxns,
-                gas_used,
-                block_time_start);
+            log_tps(block_number, block_id, ntxns, gas_used, block_time_start);
         }
 
-        for (auto const [block, round, verified_block] : to_finalize) {
+        for (auto const &[block, block_id, verified_block] : to_finalize) {
             LOG_INFO(
-                "Processing finalization for block {} at round {}",
+                "Processing finalization for block {} with block_id {}",
                 block,
-                round);
-            db.finalize(block, round);
-            block_hash_chain.finalize(round);
-            db.update_verified_block(verified_block);
+                block_id);
+            db.finalize(block, block_id);
+            block_hash_chain.finalize(block_id);
+            if (verified_block != mpt::INVALID_BLOCK_NUM) {
+                db.update_verified_block(verified_block);
+            }
             finalized_block_num = block;
         }
     }

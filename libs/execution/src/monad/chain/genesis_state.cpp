@@ -1,10 +1,12 @@
 #include <monad/chain/genesis_state.hpp>
 #include <monad/core/address.hpp>
+#include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
 #include <monad/core/monad_block.hpp>
 #include <monad/core/receipt.hpp>
+#include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/trace/call_frame.hpp>
@@ -33,9 +35,12 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
     }
     MonadConsensusBlockHeader header;
     header.execution_inputs = genesis.header;
+    bytes32_t const block_id =
+        to_bytes(blake3(rlp::encode_consensus_block_header(header)));
     db.commit(
         deltas,
         Code{},
+        block_id,
         header,
         std::vector<Receipt>{},
         std::vector<std::vector<CallFrame>>{},
@@ -45,7 +50,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         genesis.header.withdrawals_root == NULL_ROOT
             ? std::make_optional<std::vector<Withdrawal>>()
             : std::nullopt);
-    db.finalize(0, 0);
+    db.finalize(0, block_id);
 }
 
 MONAD_NAMESPACE_END

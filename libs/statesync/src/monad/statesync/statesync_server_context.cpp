@@ -22,21 +22,14 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 void on_commit(
     monad_statesync_server_context &ctx, StateDeltas const &state_deltas,
-    uint64_t const n, uint64_t const round)
+    uint64_t const n, bytes32_t const &block_id)
 {
     auto &proposals = ctx.proposals;
-    auto it = std::find_if(
-        proposals.begin(), proposals.end(), [round](auto const &p) {
-            return p.round == round;
-        });
 
-    if (MONAD_UNLIKELY(it != proposals.end())) {
-        proposals.erase(it);
-    }
     auto &deletions =
         proposals
             .emplace_back(ProposedDeletions{
-                .block_number = n, .round = round, .deletions = {}})
+                .block_number = n, .block_id = block_id, .deletions = {}})
             .deletions;
 
     for (auto const &[addr, delta] : state_deltas) {
@@ -68,13 +61,13 @@ void on_commit(
 
 void on_finalize(
     monad_statesync_server_context &ctx, uint64_t const block_number,
-    uint64_t const round_number)
+    bytes32_t const &block_id)
 {
     auto &proposals = ctx.proposals;
 
     auto const it = std::find_if(
-        proposals.begin(), proposals.end(), [round_number](auto const &p) {
-            return p.round == round_number;
+        proposals.begin(), proposals.end(), [&block_id](auto const &p) {
+            return p.block_id == block_id;
         });
 
     if (MONAD_UNLIKELY(it == proposals.end())) {
@@ -85,13 +78,13 @@ void on_finalize(
 
     ctx.deletions.write(block_number, it->deletions);
 
-    // gc old rounds
+    // gc proposals of older blocks than finalized block
     proposals.erase(
         std::remove_if(
             proposals.begin(),
             proposals.end(),
-            [round_number](ProposedDeletions const &p) {
-                return p.round <= round_number;
+            [block_number](ProposedDeletions const &p) {
+                return p.block_number <= block_number;
             }),
         proposals.end());
 }
@@ -106,7 +99,7 @@ void FinalizedDeletions::set_entry(
 {
     auto &entry = entries_[i];
     std::lock_guard const lock{entry.mutex};
-    MONAD_ASSERT(entry.block_number == INVALID_BLOCK_ID);
+    MONAD_ASSERT(entry.block_number == INVALID_BLOCK_NUM);
     entry.block_number = block_number;
     entry.idx = free_start_;
     entry.size = deletions.size();
@@ -126,7 +119,7 @@ void FinalizedDeletions::set_entry(
 void FinalizedDeletions::clear_entry(uint64_t const i)
 {
     auto &entry = entries_[i];
-    if (entry.block_number == INVALID_BLOCK_ID) {
+    if (entry.block_number == INVALID_BLOCK_NUM) {
         return;
     }
     LOG_INFO(
@@ -141,7 +134,7 @@ void FinalizedDeletions::clear_entry(uint64_t const i)
     MONAD_ASSERT(entry.block_number == start_block_number_);
     ++start_block_number_;
     std::lock_guard const lock{entry.mutex};
-    entry.block_number = INVALID_BLOCK_ID;
+    entry.block_number = INVALID_BLOCK_NUM;
     entry.idx = 0;
     entry.size = 0;
 }
@@ -164,9 +157,9 @@ bool FinalizedDeletions::for_each(
 void FinalizedDeletions::write(
     uint64_t const block_number, std::vector<Deletion> const &deletions)
 {
-    MONAD_ASSERT(block_number != INVALID_BLOCK_ID);
+    MONAD_ASSERT(block_number != INVALID_BLOCK_NUM);
     MONAD_ASSERT(
-        end_block_number_ == INVALID_BLOCK_ID ||
+        end_block_number_ == INVALID_BLOCK_NUM ||
         (end_block_number_ + 1) == block_number);
 
     auto const free_deletions = [this] { return free_end_ - free_start_; };
@@ -181,11 +174,11 @@ void FinalizedDeletions::write(
         for (uint64_t i = 0; i < MAX_ENTRIES; ++i) {
             clear_entry(i);
         }
-        start_block_number_ = INVALID_BLOCK_ID;
+        start_block_number_ = INVALID_BLOCK_NUM;
         MONAD_ASSERT(free_deletions() == MAX_DELETIONS);
     }
     else {
-        if (MONAD_UNLIKELY(start_block_number_ == INVALID_BLOCK_ID)) {
+        if (MONAD_UNLIKELY(start_block_number_ == INVALID_BLOCK_NUM)) {
             start_block_number_ = end_block_number_;
         }
         auto const target_idx = end_block_number_ % MAX_ENTRIES;
@@ -198,7 +191,7 @@ void FinalizedDeletions::write(
     }
     LOG_INFO(
         "deletions buffer range={} free_deletions={}",
-        start_block_number_ == INVALID_BLOCK_ID
+        start_block_number_ == INVALID_BLOCK_NUM
             ? "EMPTY"
             : fmt::format("[{}, {}]", start_block_number_, end_block_number_),
         free_deletions());
@@ -255,17 +248,17 @@ std::optional<bytes32_t> monad_statesync_server_context::withdrawals_root()
     return rw.withdrawals_root();
 }
 
-void monad_statesync_server_context::set_block_and_round(
-    uint64_t const block_number, std::optional<uint64_t> const round_number)
+void monad_statesync_server_context::set_block_and_prefix(
+    uint64_t const block_number, bytes32_t const &block_id)
 {
-    rw.set_block_and_round(block_number, round_number);
+    rw.set_block_and_prefix(block_number, block_id);
 }
 
 void monad_statesync_server_context::finalize(
-    uint64_t const block_number, uint64_t const round_number)
+    uint64_t const block_number, bytes32_t const &block_id)
 {
-    on_finalize(*this, block_number, round_number);
-    rw.finalize(block_number, round_number);
+    on_finalize(*this, block_number, block_id);
+    rw.finalize(block_number, block_id);
 }
 
 void monad_statesync_server_context::update_verified_block(
@@ -275,13 +268,14 @@ void monad_statesync_server_context::update_verified_block(
 }
 
 void monad_statesync_server_context::update_voted_metadata(
-    uint64_t const block_number, uint64_t const round)
+    uint64_t const block_number, bytes32_t const &block_id)
 {
-    rw.update_voted_metadata(block_number, round);
+    rw.update_voted_metadata(block_number, block_id);
 }
 
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
+    bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
@@ -292,10 +286,11 @@ void monad_statesync_server_context::commit(
 {
     auto &header = consensus_header.execution_inputs;
 
-    on_commit(*this, state_deltas, header.number, consensus_header.round);
+    on_commit(*this, state_deltas, header.number, block_id);
     rw.commit(
         state_deltas,
         code,
+        block_id,
         consensus_header,
         receipts,
         call_frames,

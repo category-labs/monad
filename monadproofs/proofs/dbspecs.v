@@ -16,6 +16,7 @@ Import cQp_compat.
 #[local] Open Scope lens_scope.
 
 #[local] Open Scope Z_scope.
+  Open Scope N_scope.
 (*
 Require Import EVMOpSem.evmfull. *)
 Import cancelable_invariants.
@@ -27,86 +28,143 @@ Require Import monad.proofs.exec_specs.
 Record ConsensusBlockHeader :=
   {
     roundNum:N;
+    (* TODO: add more fields *)
   }.
     
-Record ConensusProposal :=
+Notation EvmState := evm.GlobalState.
+
+Record ProposalInDb :=
   {
     cheader: ConsensusBlockHeader;
-    proposedBlk: Block;
+    proposedBlock: Block;
+    postBlockState: EvmState;
   }.
     
-(* Todo: replace by ConsensusProposal *)
+(* Todo: replace by ConsensusProposal
 Record Proposal :=
   {
     roundNumber: N;
     proposedBlock: Block;
     (* delayed_execution_results is not really relevant because we know that last_verified=last_finalized+3 and we enforce this constraint logicall in these specs *)
   }.
+ *)
 
-(* models the state changed by Db::set_block_and_round *)
-Inductive ActiveBlock :=
-(* TODO: add | preGenesis *)
-| finalized (block_number: N)
-| proposalForNextBlock (block_number: N) (round_number:N).
-
+Record BlockIndexState :=
+  {
+    unfinalizedProposals: list ProposalInDb;
+    finalizedProposal : option ProposalInDb
+  }.
+    
+Record ProposalId :=
+  {
+    idBlockNumber : N;
+    idRoundNumber: option N;
+  }.
+    
 Record DbModel : Type :=
   {
-    finalizedBlocks: list (Block * evm.GlobalState); 
-    nextBlockProposals:  list (Proposal * evm.GlobalState);
-    activeBlock: ActiveBlock;
-    (*^ changed by set_block_and_round *)
+    blockIndicesStates: list BlockIndexState;
+    
+    activeProposal: option ProposalId;
+    (*^ changed by set_block_and_round. None means set_block_and_round has never been called on this object yet *)
+    
     votedMetadata: option (N * N);
     (*^ (block_num, round) from latest update_voted_metadata *)
-    lastFinButNotYetVerified: bool;
-    (*^ transient state where db.finalize(n+3) has been called but db.verify(n) has not yet been called: will be called soon *)
-    cinvGloc: gname;
+    
+    lastVerifiedBlockIndex: N;
+    
+    cinvId: gname;
+    (* ^ Coq-specific detail: logical id of the concurrency invariant. there is no C++ analog of this *)
   }.
 
-#[only(lens)] derive DbModel.
+Definition allProposals (b: BlockIndexState) :=
+  match finalizedProposal b with
+  | None => (unfinalizedProposals b)
+  | Some p => p::(unfinalizedProposals b)
+  end.
 
-Section with_Sigma.
-  Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
+Definition pblockNumber (p: ProposalInDb):=  number (header (proposedBlock p)).
 
-  Context  {MODd : exb.module ⊧ CU}.
-  Compute (find_struct "monad::Db" module).
+Definition blockNumber (b: BlockIndexState) : N:=
+  match allProposals b with
+  | h::_ => pblockNumber h
+  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  end.
 
-  
-  Definition bnumber (b: Block) : N := number (header b).
-  Open Scope Z_scope.
-  Fixpoint contiguousBlocksStartingFrom (oblockIndex: option Z) (l: list Block) : Prop :=
-    match l with
-    | [] => True
-    | h::tl => match oblockIndex with
-               | Some blockIndex => Z.to_N blockIndex = bnumber h /\ contiguousBlocksStartingFrom (Some (blockIndex - 1)) tl
-               | None => contiguousBlocksStartingFrom (Some (bnumber h - 1)) tl
-               end
-                 
-    end.
+Definition proposalsHaveSameBlockNumber (b: BlockIndexState) :=
+  forall (p1 p2: ProposalInDb),
+    p1 ∈ (allProposals b)
+    -> p2 ∈ (allProposals b)
+    -> pblockNumber p1 = pblockNumber p2.
 
-  Definition validActiveBlock  (m: DbModel) : Prop :=
-    match activeBlock m with
-    | finalized blockNum =>
-        match head (finalizedBlocks m), last (finalizedBlocks m) with
-        | Some lastFinBlock, Some oldestFinalizedBlockInDb =>
-            (bnumber (fst oldestFinalizedBlockInDb) <= blockNum <= bnumber (fst lastFinBlock))%Z
-        | _ , _ => False (* this case hits when the [(finalizedBlocks m)] is empty *)
-        end
-    | proposalForNextBlock blockNum roundNum =>
-        match head (finalizedBlocks m) with
-        | Some lastFinBlock => (Z.of_N blockNum = 1 + bnumber (fst lastFinBlock))
-        | None => True (* no block has been finalized yet. TODO: should blockNum be 0 in this case? *)
-        end /\ roundNum < lengthZ (nextBlockProposals m)
-    end.
+Definition hasAtLeastOneProposal (b: BlockIndexState) :=
+  exists p: ProposalInDb, p ∈ (allProposals b).
 
-  Definition validProposal (proposal: Proposal) (lastFin: option N) :=
+Notation NoDuplicate := NoDup.
+
+Definition validBlockIndexState  (b: BlockIndexState) :=
+  hasAtLeastOneProposal b
+  /\ proposalsHaveSameBlockNumber b
+  /\ NoDuplicate (map (roundNum ∘ cheader) (allProposals b)).
+
+Definition contiguousBlockNumbers (lb: list BlockIndexState) : Prop :=
+  exists lowestBlockNumber:N,
+    map blockNumber lb = seqN lowestBlockNumber (lengthN lb).
+
+Definition lowestBlockNumber (d: DbModel) : N:=
+  match blockIndicesStates d with
+  | h::_ => blockNumber h
+  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  end.
+
+(* upstream *)
+Definition nthElem {A:Type} (l: list A) (n:N) : option A :=
+  nth_error l (N.to_nat n).
+    
+             
+Definition lookupBlockByNumber (bnum: N) (d: DbModel) : option BlockIndexState :=
+  if bool_decide (bnum <= lowestBlockNumber d /\ 0 < lengthN (blockIndicesStates d))%N
+  then nthElem (blockIndicesStates d) (bnum - lowestBlockNumber d)
+  else None.
+
+Definition lookupProposalByRoundNum (b: BlockIndexState) (rnum: N) : option ProposalInDb :=
+  match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (allProposals b) with
+  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+  | [] => None
+  end.
+    
+Definition lookupProposal (id: ProposalId)  (d: DbModel) : option ProposalInDb :=
+  match lookupBlockByNumber (idBlockNumber id) d with
+  | None => None
+  | Some b =>
+      match idRoundNumber id with
+      | None => finalizedProposal b
+      | Some rnum => lookupProposalByRoundNum b rnum
+      end
+  end.      
+
+Definition lookupActiveProposal (d: DbModel) : option ProposalInDb :=
+  match activeProposal d with
+  | None => None
+  | Some ap => lookupProposal ap d
+  end.
+    
+Definition validActiveProposal  (m: DbModel) : Prop :=
+  match activeProposal m with
+  | None => True
+  | Some pid => isSome (lookupProposal pid m)
+  end.                       
+
+(*
+Definition validProposal (proposal: Proposal) (lastFin: option N) :=
     match lastFin with
     | Some lastFinBlock =>
         (bnumber (proposedBlock proposal) = 1 + lastFinBlock)%N
     | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? I guess when we start the system, there will always be the finalized genesisd block? *)
     end.
-      
+*)    
 
-  Open Scope N_scope.
+(*
   Definition lastVerified (lastFinalized: option N) : option N :=
     match lastFinalized with
     | Some lastFinBlock  =>
@@ -115,7 +173,8 @@ Section with_Sigma.
         else Some (lastFinBlock -3)
     | None => None
     end.
-    
+
+
   Definition lastFinalizedBlockIndex' (finalizedBlocks: list Block) : option N :=
     match head finalizedBlocks with
     | Some lastFinBlock =>
@@ -125,44 +184,49 @@ Section with_Sigma.
   
   Definition lastFinalizedBlockIndex (m: DbModel) : option N :=
     lastFinalizedBlockIndex' (map fst (finalizedBlocks m)).
+ *)
 
-  Definition validModel (m: DbModel) : Prop :=
-    contiguousBlocksStartingFrom None (map fst (finalizedBlocks m))
-    /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (lastFinalizedBlockIndex m)
-   /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: Fix: Maged says there can be multiple proposals for the same round number. TODO: are proposals expected in the order of roundnumber.  ? *)
-    /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
+Definition validModel (m: DbModel) : Prop :=
+  contiguousBlockNumbers (blockIndicesStates m)
+  /\ validActiveProposal m. (* may need to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
   
-
-  Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
-    match head (finalizedBlocks m) with
-    | Some lastFinBlock =>
-        hd dummyEvmState (map snd (finalizedBlocks m))
-    | _  => dummyEvmState (* validModel rules this case out *)
-    end.
+(*
+Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
+match head (finalizedBlocks m) with
+| Some lastFinBlock =>
+hd dummyEvmState (map snd (finalizedBlocks m))
+| _  => dummyEvmState (* validModel rules this case out *)
+end.
+ *)
   
-  Definition stateAfterActiveBlock (m: DbModel) : evm.GlobalState :=
-    match activeBlock m with
-    | finalized blockNum =>
-        match head (finalizedBlocks m) with
-        | Some lastFinBlock =>
-            let offset := bnumber (fst lastFinBlock) - blockNum in
-            nth (Z.to_nat offset) (map snd (finalizedBlocks m)) dummyEvmState
-        | _  => dummyEvmState (* validModel rules this case out *)
-        end
-    | proposalForNextBlock _ roundNum =>
-        nth (Z.to_nat roundNum) (map snd (nextBlockProposals m)) dummyEvmState
-    end.
+Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
+  match lookupActiveProposal m with
+  | None => dummyEvmState
+  | Some p => postBlockState p
+  end.
+  
+
+(** ignore the next 4 lines: Coq boilerplate *)
+Open Scope Z_scope.
+#[only(lens)] derive DbModel.
+Section with_Sigma.
+  Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
+  Context  {MODd : exb.module ⊧ CU}.
   
   
   (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
   Definition TrieDBR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
 
   (* Knowledge (no resource ownership) *)
-  Definition FinalizedInRound (roundNumber: N) (b: Block) (postState: evm.GlobalState) : mpred. Proof. Admitted.
-  
-  Definition TrieRoDBR (q:Qp) (ac: option (ActiveBlock * evm.GlobalState)) : Rep. Proof. Admitted.
+  Definition SelectedProposalForBlockNum (blockNumber: N) (b: ProposalInDb) : mpred. Proof. Admitted.
+
+  (* cannot use if different proposals can be done for the same round number *)
+  Definition ProposedInRoundNum (roundNumber: N) (b: ProposalInDb) : mpred. Proof. Admitted.
+
+  (* all reads will read from activeProposal, which is determined at TrieRODB::set_block_and_round *)
+  Definition TrieRODBR (q:Qp) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
 
   Notation dbAuthR := TrieDBR. (* TODO: inline *)
 
@@ -182,7 +246,7 @@ Section with_Sigma.
       \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
       \arg{keyp} "key" (Vptr keyp)
       \prepost{key:N} keyp |-> bytes32R q key
-      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)).
+      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (lookupStorage (stateAfterActiveProposal preDb) address key blockTxInd)).
 
   Definition MaxRoots : N. Proof. Admitted.
 
@@ -392,7 +456,7 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
   ).
 
 
- Set Printing FullyQualifiedNames.
+Set Printing FullyQualifiedNames.
 
 
   

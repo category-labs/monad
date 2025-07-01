@@ -13,19 +13,19 @@ monad_vm_runtime_load_bounded_le_raw:
 //  rdi, rsi, rcx, rdx,
 //  ymm14, ymm15
 // Callee save registers:
-//  rsp, rbp, rbx, r12, r13, r14, r15,
+//  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ..., ymm13
-// Note it is assumed that rsi <= 32
+// Note it is assumed that rsi <= 32 and may be negative
 .cfi_startproc
-    cmp esi, 16
+    cmp rsi, 16
     jg .g16
-    cmp esi, 8
+    cmp rsi, 8
     jg .g8
-    cmp esi, 4
+    cmp rsi, 4
     jg .g4
-    cmp esi, 2
+    cmp rsi, 2
     jg .g2
-    cmp esi, 1
+    cmp rsi, 1
     jg .g1
     je .e1
     vpxor ymm15, ymm15, ymm15
@@ -116,9 +116,9 @@ monad_vm_runtime_load_bounded_le:
 //  rdi, rsi, rcx, rdx,
 //  ymm0, ymm14, ymm15
 // Callee save registers:
-//  rsp, rbp, rbx, r12, r13, r14, r15,
+//  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm1, ymm2, ..., ymm13
-// Note it is assumed that rsi <= 32
+// Note it is assumed that rsi <= 32 and may be negative
 .cfi_startproc
 call monad_vm_runtime_load_bounded_le_raw
 vmovups ymm0, ymm15

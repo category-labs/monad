@@ -271,8 +271,6 @@ Section with_Sigma.
         1
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
-  Definition MaxRoots : N. Proof. Admitted.
-
 
   Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
 
@@ -485,14 +483,30 @@ cpp.spec
         q ws
      *)   
     \post this |-> dbAuthR 1 (commit_model preDb newProposal)
-  ). 
+                      ).
+End with_Sigma.
 (**
-write the spec of monad::Db::set_block_and_round.
+
+```gallina
+fill in the following admits above in the file:
+
+Definition maxL (l: list N) : N. Proof. Admitted.
+Definition minL (l: list N) : N. Proof. Admitted.
+
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
+
+  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
+
+  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
+
+Definition commit_model
+  (preDb      : DbModel)
+  (newProposal   : ProposalInDb)
+  : DbModel. Proof. Admitted.
+```
+
+Put them in a new module to avoid name clash with the existing admits. I will later copy your definitions up  
 Unfortunately, CppDefnOf is currrently not working so you can only issue Coq queries not clangd queries.
-
-Start the spec as:
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
 
 
 +++ FILES
@@ -501,10 +515,119 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
 ../../dbsummary2.md
 +++ QUERIES
 
-Compute (lookup_struct module "monad::Db").
-Print exec_specs.
-Print libspecs.
  *)
+ Set Printing FullyQualifiedNames.
+Module DbModelOps.
+  Import List ListNotations.
+  Open Scope N_scope.
+
+  (** maxL: maximum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition maxL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.max xs x
+    end.
+
+  (** minL: minimum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition minL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.min xs x
+    end.
+
+  (** lowestUnfinalizedBlockIndex:
+       among the [blockIndicesStates] of [d], pick those with
+       [finalizedProposal = None] and return the minimum [blockNumber].
+   *)
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+    let unfin :=
+        List.filter
+          (fun b => match finalizedProposal b with
+                    | None => true | _ => false
+                    end)
+          (blockIndicesStates d) in
+    match unfin with
+    | [] => None
+    | _  => Some (minL (List.map blockNumber unfin))
+    end.
+
+  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
+       equals [bnum] by applying [f], leave others unchanged.
+  *)
+  Definition updateBlockNum
+             (d: DbModel)
+             (bnum: N)
+             (f: BlockIndexState -> BlockIndexState)
+    : DbModel :=
+    {| blockIndicesStates :=
+         List.map (fun b =>
+                     if bool_decide (blockNumber b = bnum)
+                     then f b else b)
+                  (blockIndicesStates d);
+       activeProposal         := activeProposal d;
+       votedMetadata          := votedMetadata d;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex d;
+       cinvId                 := cinvId d
+    |}.
+
+  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
+       remove from [unfinalizedProposals] the one with [roundNum = r],
+       and set [finalizedProposal] to that [Some p].
+       If [idRoundNumber pid = None] or no match is found, do nothing.
+  *)
+  Definition finalizeProposal
+             (pid: ProposalId)
+             (d: BlockIndexState)
+    : BlockIndexState :=
+    match idRoundNumber pid with
+    | None => d
+    | Some r =>
+      let bs := unfinalizedProposals d in
+      let newUnfin :=
+          List.filter
+            (fun p => negb (bool_decide (roundNum (cheader p) = r)))
+            bs in
+      let finalP :=
+        match lookupProposalByRoundNum d r with
+        | Some p => Some p
+        | None   => finalizedProposal d
+        end in
+      {| unfinalizedProposals := newUnfin;
+         finalizedProposal     := finalP
+      |}
+    end.
+
+  (** commit_model:
+      If there is already a [BlockIndexState] for this block number,
+      prepend [newProposal] to its [unfinalizedProposals].
+      Otherwise, append a fresh [BlockIndexState] with only [newProposal].
+  *)
+  Definition commit_model
+             (preDb       : DbModel)
+             (newProposal : ProposalInDb)
+    : DbModel :=
+    let bnum := pblockNumber newProposal in
+    match lookupBlockByNumber bnum preDb with
+    | Some _ =>
+        (* merge into existing state *)
+        updateBlockNum preDb bnum (fun bs =>
+          {| unfinalizedProposals := newProposal :: unfinalizedProposals bs;
+             finalizedProposal     := finalizedProposal bs
+          |})
+    | None =>
+        (* append a new BlockIndexState *)
+        {| blockIndicesStates     := blockIndicesStates preDb ++
+                                     [{| unfinalizedProposals := [newProposal];
+                                         finalizedProposal     := None |}];
+           activeProposal         := activeProposal preDb;
+           votedMetadata          := votedMetadata preDb;
+           lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
+           cinvId                 := cinvId preDb
+        |}
+    end.
+End DbModelOps.
+
+
 
   
 End with_Sigma.

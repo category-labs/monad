@@ -1897,1522 +1897,27 @@ This feature drives CLI and debug‑trace tooling (e.g. eventual RPC `debug_trac
 
 # Current Task
 *
-write the spec of monad::Db::set_block_and_round.
+
+```gallina
+fill in the following admits above in the file:
+
+Definition maxL (l: list N) : N. Proof. Admitted.
+Definition minL (l: list N) : N. Proof. Admitted.
+
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
+
+  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
+
+  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
+
+Definition commit_model
+  (preDb      : DbModel)
+  (newProposal   : ProposalInDb)
+  : DbModel. Proof. Admitted.
+```
+
+Put them in a new module to avoid name clash with the existing admits. I will later copy your definitions up  
 Unfortunately, CppDefnOf is currrently not working so you can only issue Coq queries not clangd queries.
-
-Start the spec as:
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-
-## Results of some relevant queries
->>> Compute (lookup_struct module "monad::Db").
-= Corelib.Init.Datatypes.Some
-         ({|
-            bluerock.lang.cpp.syntax.decl.s_bases := [];
-            bluerock.lang.cpp.syntax.decl.s_fields := [];
-            bluerock.lang.cpp.syntax.decl.s_virtuals :=
-              [("monad::Db::read_account(const evmc::address&)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::read_code(const evmc::bytes32&)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::read_eth_header()", Corelib.Init.Datatypes.None);
-               ("monad::Db::state_root()", Corelib.Init.Datatypes.None);
-               ("monad::Db::receipts_root()", Corelib.Init.Datatypes.None);
-               ("monad::Db::transactions_root()", Corelib.Init.Datatypes.None);
-               ("monad::Db::withdrawals_root()", Corelib.Init.Datatypes.None);
-               ("monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::finalize(unsigned long, unsigned long)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::update_verified_block(unsigned long)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::update_voted_metadata(unsigned long, unsigned long)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)",
-                Corelib.Init.Datatypes.None);
-               ("monad::Db::commit(std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>>>, std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>>>, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)",
-                Corelib.Init.Datatypes.Some
-                  "monad::Db::commit(std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>>>, std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>>>, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)");
-               ("monad::Db::print_stats()",
-                Corelib.Init.Datatypes.Some "monad::Db::print_stats()")];
-            bluerock.lang.cpp.syntax.decl.s_overrides := [];
-            bluerock.lang.cpp.syntax.decl.s_dtor := "monad::Db::~Db()";
-            bluerock.lang.cpp.syntax.decl.s_trivially_destructible :=
-              Corelib.Init.Datatypes.true;
-            bluerock.lang.cpp.syntax.decl.s_delete :=
-              Corelib.Init.Datatypes.None;
-            bluerock.lang.cpp.syntax.decl.s_layout :=
-              bluerock.lang.cpp.syntax.decl.Unspecified;
-            bluerock.lang.cpp.syntax.decl.s_size := 8;
-            bluerock.lang.cpp.syntax.decl.s_alignment := 8
-          |},
-          [("monad::Db::commit(std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>>>, std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>>>, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("state_deltas"%pstring,
-                  "std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>>>"%cpp_type);
-                 ("code"%pstring,
-                  "std::unique_ptr<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>, std::default_delete<tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>>>"%cpp_type);
-                 ("consensus_header"%pstring,
-                  "const monad::MonadConsensusBlockHeader&"%cpp_type);
-                 ("receipts"%pstring,
-                  "const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&"%cpp_type);
-                 ("call_frames"%pstring,
-                  "const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&"%cpp_type);
-                 ("senders"%pstring,
-                  "const std::vector<evmc::address, std::allocator<evmc::address>>&"%cpp_type);
-                 ("transactions"%pstring,
-                  "const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&"%cpp_type);
-                 ("ommers"%pstring,
-                  "const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&"%cpp_type);
-                 ("withdrawals"%pstring,
-                  "const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                monad.proofs.misc.AvailableButErased
-            |});
-           ("monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring,
-                  "const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&"%cpp_type);
-                 ("#1"%pstring,
-                  "const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&"%cpp_type);
-                 ("#2"%pstring,
-                  "const monad::MonadConsensusBlockHeader&"%cpp_type);
-                 ("#3"%pstring,
-                  "const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&"%cpp_type);
-                 ("#4"%pstring,
-                  "const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&"%cpp_type);
-                 ("#5"%pstring,
-                  "const std::vector<evmc::address, std::allocator<evmc::address>>&"%cpp_type);
-                 ("#6"%pstring,
-                  "const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&"%cpp_type);
-                 ("ommers"%pstring,
-                  "const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&"%cpp_type);
-                 ("#8"%pstring,
-                  "const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::finalize(unsigned long, unsigned long)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("block_number"%pstring, "unsigned long"%cpp_type);
-                 ("round_number"%pstring, "unsigned long"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::print_stats()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return :=
-                "std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                monad.proofs.misc.AvailableButErased
-            |});
-           ("monad::Db::read_account(const evmc::address&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return :=
-                "std::optional<monad::Account>";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring, "const evmc::address&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::read_code(const evmc::bytes32&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return :=
-                "std::shared_ptr<evmone::baseline::CodeAnalysis>";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring, "const evmc::bytes32&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::read_eth_header()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "monad::BlockHeader";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "evmc::bytes32";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring, "const evmc::address&"%cpp_type);
-                 ("#1"%pstring, "monad::Incarnation"%cpp_type);
-                 ("key"%pstring, "const evmc::bytes32&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::receipts_root()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "evmc::bytes32";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("block_number"%pstring, "unsigned long"%cpp_type);
-                 ("round_number"%pstring,
-                  "std::optional<unsigned long>"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::state_root()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "evmc::bytes32";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::transactions_root()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "evmc::bytes32";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::update_verified_block(unsigned long)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("block_number"%pstring, "unsigned long"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::update_voted_metadata(unsigned long, unsigned long)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "void";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("block_number"%pstring, "unsigned long"%cpp_type);
-                 ("round"%pstring, "unsigned long"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::withdrawals_root()",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return :=
-                "std::optional<evmc::bytes32>";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params := [];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.MayThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.None
-            |});
-           ("monad::Db::operator=(const monad::Db&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "monad::Db&";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring, "const monad::Db&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.NoThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.Some
-                  bluerock.lang.cpp.syntax.decl.Defaulted
-            |});
-           ("monad::Db::operator=(monad::Db&&)",
-            {|
-              bluerock.lang.cpp.syntax.decl.m_return := "monad::Db&";
-              bluerock.lang.cpp.syntax.decl.m_class := "monad::Db";
-              bluerock.lang.cpp.syntax.decl.m_this_qual :=
-                bluerock.lang.cpp.syntax.preliminary.QM;
-              bluerock.lang.cpp.syntax.decl.m_params :=
-                [("#0"%pstring, "monad::Db&&"%cpp_type)];
-              bluerock.lang.cpp.syntax.decl.m_cc :=
-                bluerock.lang.cpp.syntax.preliminary.CC_C;
-              bluerock.lang.cpp.syntax.decl.m_arity :=
-                bluerock.lang.cpp.syntax.preliminary.Ar_Definite;
-              bluerock.lang.cpp.syntax.decl.m_exception :=
-                bluerock.lang.cpp.syntax.decl.exception_spec.NoThrow;
-              bluerock.lang.cpp.syntax.decl.m_body :=
-                Corelib.Init.Datatypes.Some
-                  bluerock.lang.cpp.syntax.decl.Defaulted
-            |})])
-     : Corelib.Init.Datatypes.option
-         (bluerock.lang.cpp.syntax.decl.Struct *
-          Corelib.Init.Datatypes.list
-            (bluerock.lang.cpp.syntax.core.obj_name *
-             bluerock.lang.cpp.syntax.decl.Method))
-
->>> Print exec_specs.
-Module
-exec_specs
-:= Struct
-     Definition _block_account_address :
-       monad.EVMOpSem.block.block_account -l> monad.EVMOpSem.evm.address.
-     Definition _block_account_storage :
-       monad.EVMOpSem.block.block_account -l> monad.EVMOpSem.evm.storage.
-     Definition _block_account_code :
-       monad.EVMOpSem.block.block_account -l> monad.EVMOpSem.evm.program.
-     Definition _block_account_balance :
-       monad.EVMOpSem.block.block_account -l> monad.EVMOpSem.keccak.w256.
-     Definition _block_account_nonce :
-       monad.EVMOpSem.block.block_account -l> monad.EVMOpSem.keccak.w256.
-     Definition _block_account_exists :
-       monad.EVMOpSem.block.block_account -l> Corelib.Init.Datatypes.bool.
-     Definition _block_account_hascode :
-       monad.EVMOpSem.block.block_account -l> Corelib.Init.Datatypes.bool.
-     Record AccountSubstateModel : Set := Build_AccountSubstateModel
-       { asm_destructed : Corelib.Init.Datatypes.bool;
-         asm_touched : Corelib.Init.Datatypes.bool;
-         asm_accessed : Corelib.Init.Datatypes.bool;
-         asm_accessed_keys : Corelib.Init.Datatypes.list
-                               Corelib.Numbers.BinNums.N }.
-     Definition asm_destructed :
-       monad.proofs.exec_specs.AccountSubstateModel
-       → Corelib.Init.Datatypes.bool.
-     Definition asm_touched :
-       monad.proofs.exec_specs.AccountSubstateModel
-       → Corelib.Init.Datatypes.bool.
-     Definition asm_accessed :
-       monad.proofs.exec_specs.AccountSubstateModel
-       → Corelib.Init.Datatypes.bool.
-     Definition asm_accessed_keys :
-       monad.proofs.exec_specs.AccountSubstateModel
-       → Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N.
-     Definition w256_to_Z :
-       monad.EVMOpSem.keccak.w256 → Corelib.Numbers.BinNums.Z.
-     Definition w256_to_N :
-       monad.EVMOpSem.keccak.w256 → Corelib.Numbers.BinNums.N.
-     Record Indices : Set := Build_Indices
-       { block_index : Corelib.Numbers.BinNums.N;
-         tx_index : Corelib.Numbers.BinNums.N }.
-     Definition block_index :
-       monad.proofs.exec_specs.Indices → Corelib.Numbers.BinNums.N.
-     Definition tx_index :
-       monad.proofs.exec_specs.Indices → Corelib.Numbers.BinNums.N.
-     Record AssumptionExactness : Set := Build_AssumptionExactness
-       { min_balance : Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N;
-         nonce_exact : Corelib.Init.Datatypes.bool }.
-     Definition min_balance :
-       monad.proofs.exec_specs.AssumptionExactness
-       → Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N.
-     Definition nonce_exact :
-       monad.proofs.exec_specs.AssumptionExactness → Corelib.Init.Datatypes.bool.
-     Record AssumptionsAndUpdates : Type := Build_AssumptionsAndUpdates
-       { relaxedValidation : Corelib.Init.Datatypes.bool;
-         original : stdpp.gmap.gmap monad.proofs.evmopsem.evm.address
-                      (monad.proofs.evmopsem.evm.account_state *
-                       monad.proofs.exec_specs.AssumptionExactness);
-         newStates : stdpp.gmap.gmap monad.proofs.evmopsem.evm.address
-                       (Corelib.Init.Datatypes.list
-                          monad.proofs.evmopsem.evm.account_state);
-         blockStatePtr : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr;
-         indices : monad.proofs.exec_specs.Indices }.
-     Definition relaxedValidation :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → Corelib.Init.Datatypes.bool.
-     Definition original :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → stdpp.gmap.gmap monad.proofs.evmopsem.evm.address
-           (monad.proofs.evmopsem.evm.account_state *
-            monad.proofs.exec_specs.AssumptionExactness).
-     Definition newStates :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → stdpp.gmap.gmap monad.proofs.evmopsem.evm.address
-           (Corelib.Init.Datatypes.list monad.proofs.evmopsem.evm.account_state).
-     Definition blockStatePtr :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr.
-     Definition indices :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → monad.proofs.exec_specs.Indices.
-     Module OneTbbMap
-     Parameter u256R :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition u256t : bluerock.lang.cpp.syntax.core.type.
-     Parameter bytes32R :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter DeltaR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type),
-         bluerock.lang.cpp.syntax.core.type
-         → (stdpp.numbers.Qp → T → bluerock.lang.cpp.logic.rep_defs.Rep)
-           → stdpp.numbers.Qp → T * T → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition AccessedKeysR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition StorageMapR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.EVMOpSem.evm.storage → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition code_hash_of_program :
-       monad.EVMOpSem.evm.program → Corelib.Numbers.BinNums.N.
-     Definition computeCodeMap :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → stdpp.gmap.gmap Corelib.Numbers.BinNums.N
-           (Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N).
-     Parameter IncarnationR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → monad.proofs.exec_specs.Indices
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition AccountSubstateR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.exec_specs.AccountSubstateModel
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition AccountR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.EVMOpSem.block.block_account
-             → monad.proofs.exec_specs.Indices
-               → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition AccountStateR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.EVMOpSem.block.block_account
-             → monad.proofs.exec_specs.AssumptionExactness
-               → monad.proofs.exec_specs.Indices
-                 → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter accountStorageDelta :
-       monad.EVMOpSem.evm.storage * monad.EVMOpSem.evm.storage
-       → Corelib.Init.Datatypes.list
-           (Corelib.Numbers.BinNums.N *
-            (Corelib.Numbers.BinNums.N * Corelib.Numbers.BinNums.N)).
-     Definition pairMap : ∀ A B : Type, (A → B) → A * A → B * B.
-     Definition AccountM : Type.
-     Definition StateDeltaR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.exec_specs.AccountM * monad.proofs.exec_specs.AccountM
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter globalDelta :
-       monad.proofs.evmopsem.StateOfAccounts *
-       monad.proofs.evmopsem.StateOfAccounts
-       → Corelib.Init.Datatypes.list
-           (monad.proofs.evmopsem.evm.address *
-            (monad.proofs.exec_specs.AccountM * monad.proofs.exec_specs.AccountM)).
-     Definition StateDeltasR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.evmopsem.StateOfAccounts *
-             monad.proofs.evmopsem.StateOfAccounts
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter CodeDeltaR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → monad.proofs.evmopsem.StateOfAccounts *
-           monad.proofs.evmopsem.StateOfAccounts
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Module BlockState
-     Parameter ChainR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → monad.proofs.evmopsem.Chain → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter ChainR_split_loopinv :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type) (q : stdpp.numbers.Qp) (b : monad.proofs.evmopsem.Chain) 
-         (l : Corelib.Init.Datatypes.list T) (i : Corelib.Init.Datatypes.nat),
-         i = 0
-         → monad.proofs.exec_specs.ChainR q b
-           ⊣⊢ monad.proofs.exec_specs.ChainR
-                (q /
-                 bluerock.prelude.numbers.N_to_Qp
-                   (1 + bluerock.prelude.list_numbers.lengthN l))
-                b ∗
-           ([∗ list] _ ∈ stdpp.list.drop i l, monad.proofs.exec_specs.ChainR
-                                                (q *
-                                                 /
-                                                 bluerock.prelude.numbers.N_to_Qp
-                                                   (1 +
-                                                   bluerock.prelude.list_numbers.lengthN
-                                                   l))
-                                                b).
-     Definition tx_nonce :
-       monad.EVMOpSem.block.transaction → Corelib.Numbers.BinNums.N.
-     Definition TransactionR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.evmopsem.Transaction
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition learnTrRbase :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (a a' : stdpp.numbers.Qp) (b b' : monad.proofs.evmopsem.Transaction),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.exec_specs.TransactionR a b)
-           (monad.proofs.exec_specs.TransactionR a' b') [
-           a = a'; b = b'].
-     Definition BheaderR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.evmopsem.BlockHeader
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition BlockR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.evmopsem.Block → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter ResultSuccessR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type),
-         (T → bluerock.lang.cpp.logic.rep_defs.Rep)
-         → T → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter ReceiptR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.iris.extra.bi.own.HasOwn
-             bluerock.iris.extra.base_logic.mpred.mpredI iris.algebra.frac.fracR
-           → monad.proofs.evmopsem.TransactionResult
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter EvmcResultR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.iris.extra.bi.own.HasOwn
-             bluerock.iris.extra.base_logic.mpred.mpredI iris.algebra.frac.fracR
-           → monad.proofs.evmopsem.TransactionResult
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition valOfRev :
-       monad.proofs.evmopsem.Revision
-       → bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Record BlockHashBuffer : Set := Build_BlockHashBuffer
-       { fullHistory : Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N;
-         startIndex : Corelib.Numbers.BinNums.N }.
-     Definition fullHistory :
-       monad.proofs.exec_specs.BlockHashBuffer
-       → Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N.
-     Definition startIndex :
-       monad.proofs.exec_specs.BlockHashBuffer → Corelib.Numbers.BinNums.N.
-     Definition lastIndex :
-       monad.proofs.exec_specs.BlockHashBuffer → Corelib.Numbers.BinNums.N.
-     Definition BlockHashBufferR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → monad.proofs.exec_specs.BlockHashBuffer
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter bhb_split_sn :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (T : Type) (q : stdpp.numbers.Qp) (b : monad.proofs.exec_specs.BlockHashBuffer) 
-         (l : Corelib.Init.Datatypes.list T),
-         monad.proofs.exec_specs.BlockHashBufferR q b
-         ⊣⊢ monad.proofs.exec_specs.BlockHashBufferR
-              (q /
-               bluerock.prelude.numbers.N_to_Qp
-                 (1 + bluerock.prelude.list_numbers.lengthN l))
-              b ∗
-         ([∗ list] _ ∈ l, monad.proofs.exec_specs.BlockHashBufferR
-                            (q *
-                             /
-                             bluerock.prelude.numbers.N_to_Qp
-                               (1 + bluerock.prelude.list_numbers.lengthN l))
-                            b).
-     Parameter bhb_splitl_loopinv :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (T : Type) (q : stdpp.numbers.Qp) (b : monad.proofs.exec_specs.BlockHashBuffer) 
-         (l : Corelib.Init.Datatypes.list T) (i : Corelib.Init.Datatypes.nat),
-         i = 0
-         → monad.proofs.exec_specs.BlockHashBufferR q b
-           ⊣⊢ monad.proofs.exec_specs.BlockHashBufferR
-                (q /
-                 bluerock.prelude.numbers.N_to_Qp
-                   (1 + bluerock.prelude.list_numbers.lengthN l))
-                b ∗
-           ([∗ list] _ ∈ stdpp.list.drop i l, monad.proofs.exec_specs.BlockHashBufferR
-                                                (q *
-                                                 /
-                                                 bluerock.prelude.numbers.N_to_Qp
-                                                   (1 +
-                                                   bluerock.prelude.list_numbers.lengthN
-                                                   l))
-                                                b).
-     Parameter header_split_loopinv :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (T : Type) (q : stdpp.numbers.Qp) (b : monad.proofs.evmopsem.BlockHeader) 
-         (l : Corelib.Init.Datatypes.list T) (i : Corelib.Init.Datatypes.nat),
-         i = 0
-         → monad.proofs.exec_specs.BheaderR q b
-           ⊣⊢ monad.proofs.exec_specs.BheaderR
-                (q /
-                 bluerock.prelude.numbers.N_to_Qp
-                   (1 + bluerock.prelude.list_numbers.lengthN l))
-                b ∗
-           ([∗ list] _ ∈ stdpp.list.drop i l, monad.proofs.exec_specs.BheaderR
-                                                (q *
-                                                 /
-                                                 bluerock.prelude.numbers.N_to_Qp
-                                                   (1 +
-                                                   bluerock.prelude.list_numbers.lengthN
-                                                   l))
-                                                b).
-     Definition execute_block_simpler :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.bi.own.HasOwn
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               iris.algebra.frac.fracR
-             → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition exbb_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.bi.own.HasOwn
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               iris.algebra.frac.fracR
-             → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter exbb_spec_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (hh : bluerock.iris.extra.bi.own.HasOwn
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 iris.algebra.frac.fracR),
-         bluerock.auto.cpp.database.spec.SpecFor
-           (bluerock.lang.cpp.syntax.core.Ninst
-              "monad::execute_block(const monad::Chain&, monad::Block&, monad::BlockState&, const monad::BlockHashBuffer&, monad::fiber::PriorityPool&)"
-              [bluerock.lang.cpp.syntax.core.Avalue
-                 (bluerock.lang.cpp.syntax.core.Eint 11 "enum evmc_revision")])
-           monad.proofs.exec_specs.exbb_spec.
-     Definition reset_promises :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter reset_promises_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::reset_promises(unsigned long)"
-           monad.proofs.exec_specs.reset_promises.
-     Definition compute_senders :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter compute_senders_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)"
-           monad.proofs.exec_specs.compute_senders.
-     Definition resultT : bluerock.lang.cpp.syntax.core.type.
-     Parameter ExecutionResultR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         monad.proofs.evmopsem.TransactionResult
-         → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition oResultT : bluerock.lang.cpp.syntax.core.type.
-     Definition exect :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter exect_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           (bluerock.lang.cpp.syntax.core.Ninst
-              "monad::execute_transactions(const monad::Block&, monad::fiber::PriorityPool&, const monad::Chain&, const monad::BlockHashBuffer&, monad::BlockState&)"
-              [bluerock.lang.cpp.syntax.core.Avalue
-                 (bluerock.lang.cpp.syntax.core.Eint 11 "enum evmc_revision")])
-           monad.proofs.exec_specs.exect.
-     Definition recover_sender :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter recover_sender_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::recover_sender(const monad::Transaction&)"
-           monad.proofs.exec_specs.recover_sender.
-     Definition fork_task :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter fork_task_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::fork_task<monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)::@0>(monad::fiber::PriorityPool&, unsigned long, const monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)::@0&)"
-           monad.proofs.exec_specs.fork_task.
-     Definition vector_op_monad :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter vector_op_monad_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "std::vector<monad::Transaction, std::allocator<monad::Transaction>>::operator[](unsigned long) const"
-           monad.proofs.exec_specs.vector_op_monad.
-     Definition execute_transaction_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-               bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition ext1 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter ext1_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           (bluerock.lang.cpp.syntax.core.Ninst
-              "monad::execute(const monad::Chain&, unsigned long, const monad::Transaction&, const std::optional<evmc::address>&, const monad::BlockHeader&, const monad::BlockHashBuffer&, monad::BlockState&, boost::fibers::promise<void>&)"
-              [bluerock.lang.cpp.syntax.core.Avalue
-                 (bluerock.lang.cpp.syntax.core.Eint 11 "enum evmc_revision")])
-           monad.proofs.exec_specs.ext1.
-     Definition destr_res :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type),
-         bluerock.lang.cpp.syntax.core.type
-         → (T → bluerock.lang.cpp.logic.rep_defs.Rep)
-           → ∀ (thread_info0 : iris.bi.monpred.biIndex) 
-               (_Σ0 : iris.base_logic.lib.iprop.gFunctors),
-               bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info0 _Σ0
-               → bluerock.lang.cpp.semantics.genv.genv
-                 → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Definition HLearn_instance_0 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : stdpp.numbers.Qp) (b b' : monad.proofs.evmopsem.Chain),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.exec_specs.ChainR a b)
-           (monad.proofs.exec_specs.ChainR a' b') [a = a'; b = b'].
-     Definition HLearn_instance_1 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : monad.proofs.evmopsem.StateOfAccounts) 
-         (b b' : stdpp.numbers.Qp) (c
-                                    c' : monad.proofs.exec_specs.BlockState.glocs),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.exec_specs.BlockState.Rfrag a b c)
-           (monad.proofs.exec_specs.BlockState.Rfrag a' b' c')
-           [a = a'; b = b'; c = c'].
-     Definition HLearn_instance_2 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (a a' : stdpp.numbers.Qp) (b b' : monad.proofs.evmopsem.BlockHeader),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.exec_specs.BheaderR a b)
-           (monad.proofs.exec_specs.BheaderR a' b') [
-           a = a'; b = b'].
-     Definition rrr :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type) (a a' : T → bluerock.lang.cpp.logic.rep_defs.Rep) 
-         (b b' : T),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.exec_specs.ResultSuccessR a b)
-           (monad.proofs.exec_specs.ResultSuccessR a' b') [
-           a = a'; b = b'].
-     Definition HLearn_instance_3 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : iris.base_logic.lib.iprop.gname) (b
-                                                   b' : bluerock.iris.extra.base_logic.mpred.mpred),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.PromiseConsumerR a b)
-           (monad.proofs.libspecs.PromiseConsumerR a' b') [
-           a = a'; b = b'].
-     Definition get_chain_id :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter get_chain_id_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::get_chain_id(const monad::Chain&)"
-           monad.proofs.exec_specs.get_chain_id.
-     Definition MapOriginalR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → Corelib.Init.Datatypes.list
-               (monad.proofs.evmopsem.evm.address *
-                (monad.proofs.evmopsem.evm.account_state *
-                 monad.proofs.exec_specs.AssumptionExactness))
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition MapCurrentR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → Corelib.Init.Datatypes.list
-               (monad.proofs.evmopsem.evm.address *
-                Corelib.Init.Datatypes.list
-                  monad.proofs.evmopsem.evm.account_state)
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition LogsR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition CodeMapR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → stdpp.gmap.gmap Corelib.Numbers.BinNums.N
-               (Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.N)
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition StateR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → monad.proofs.exec_specs.AssumptionsAndUpdates
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter nullifyBalNonce :
-       monad.proofs.evmopsem.evm.account_state
-       → monad.proofs.evmopsem.evm.account_state.
-     Definition zbvfun :
-       (Corelib.Numbers.BinNums.Z → Corelib.Numbers.BinNums.Z)
-       → monad.EVMOpSem.keccak.w256 → monad.EVMOpSem.keccak.w256.
-     Definition zbvlens :
-       ∀ A : Type,
-         (A -l> monad.EVMOpSem.keccak.w256) → A -l> Corelib.Numbers.BinNums.Z.
-     Definition _balance :
-       monad.proofs.evmopsem.evm.account_state -l> Corelib.Numbers.BinNums.Z.
-     Definition _nonce :
-       monad.proofs.evmopsem.evm.account_state -l> Corelib.Numbers.BinNums.Z.
-     Definition isNone :
-       ∀ T : Type, Corelib.Init.Datatypes.option T → Corelib.Init.Datatypes.bool.
-     Definition min_balanceN :
-       monad.proofs.exec_specs.AssumptionExactness → Corelib.Numbers.BinNums.N.
-     Definition satisfiesAssumptions :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → monad.proofs.evmopsem.StateOfAccounts → Prop.
-     Definition validAU : monad.proofs.exec_specs.AssumptionsAndUpdates → Prop.
-     Definition dummyEx : monad.proofs.exec_specs.AssumptionExactness.
-     Definition postTxActualBalNonce :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → monad.proofs.evmopsem.evm.address
-         → monad.proofs.evmopsem.evm.account_state
-           → monad.proofs.evmopsem.evm.account_state
-             → Corelib.Numbers.BinNums.Z * Corelib.Numbers.BinNums.Z *
-               monad.proofs.exec_specs.AssumptionExactness.
-     Definition LookupTotal_instance_0 :
-       stdpp.base.LookupTotal monad.proofs.evmopsem.evm.address
-         monad.proofs.evmopsem.evm.account_state
-         monad.proofs.evmopsem.StateOfAccounts.
-     Definition applyUpdate :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → monad.proofs.evmopsem.StateOfAccounts
-         → monad.proofs.evmopsem.evm.address *
-           Corelib.Init.Datatypes.list monad.proofs.evmopsem.evm.account_state
-           → monad.proofs.evmopsem.StateOfAccounts.
-     Definition applyUpdates :
-       monad.proofs.exec_specs.AssumptionsAndUpdates
-       → monad.proofs.evmopsem.StateOfAccounts
-         → monad.proofs.evmopsem.StateOfAccounts.
-     Definition execute_impl2_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.bi.own.HasOwn
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               iris.algebra.frac.fracR
-             → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition execute_impl2_specg :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.bi.own.HasOwn
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               iris.algebra.frac.fracR
-             → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition can_merge :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter can_merge_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::BlockState::can_merge(monad::State&) const"
-           monad.proofs.exec_specs.can_merge.
-     Definition merge :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter merge_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::BlockState::merge(const monad::State&)"
-           monad.proofs.exec_specs.merge.
-     Definition read_storage_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter read_storage_spec_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::BlockState::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
-           monad.proofs.exec_specs.read_storage_spec.
-     Parameter lookupStorage :
-       monad.proofs.evmopsem.StateOfAccounts
-       → monad.proofs.evmopsem.evm.address
-         → Corelib.Numbers.BinNums.N
-           → monad.proofs.exec_specs.Indices → Corelib.Numbers.BinNums.N.
-     Definition read_storage_spec_auth :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter read_storage_spec_auth_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::BlockState::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
-           monad.proofs.exec_specs.read_storage_spec_auth.
-     Definition StateConstr :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-             → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-   End
-
->>> Print libspecs.
-Module
-libspecs
-:= Struct
-     Parameter PriorityPool : Type.
-     Parameter PriorityPoolR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → monad.proofs.libspecs.PriorityPool
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter VectorRbase :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.syntax.core.type
-         → stdpp.numbers.Qp
-           → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-             → Corelib.Numbers.BinNums.N → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition VectorR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → ∀ ElemType : Type,
-             bluerock.lang.cpp.syntax.core.type
-             → (ElemType → bluerock.lang.cpp.logic.rep_defs.Rep)
-               → stdpp.numbers.Qp
-                 → Corelib.Init.Datatypes.list ElemType
-                   → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter PromiseR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         iris.base_logic.lib.iprop.gname
-         → bluerock.iris.extra.base_logic.mpred.mpred
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter PromiseProducerR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         iris.base_logic.lib.iprop.gname
-         → bluerock.iris.extra.base_logic.mpred.mpred
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter PromiseConsumerR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         iris.base_logic.lib.iprop.gname
-         → bluerock.iris.extra.base_logic.mpred.mpred
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter PromiseUnusableR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter sharePromise :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (g : iris.base_logic.lib.iprop.gname) (P : bluerock.iris.extra.base_logic.mpred.mpred),
-         monad.proofs.libspecs.PromiseR g P
-         ⊣⊢ monad.proofs.libspecs.PromiseProducerR g P ∗
-         monad.proofs.libspecs.PromiseConsumerR g P.
-     Definition promise_constructor_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-           → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-               bluerock.iris.extra.base_logic.mpred.mpredI
-               bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-               bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition set_value :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter set_value_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "boost::fibers::promise<void>::set_value()"
-           monad.proofs.libspecs.set_value.
-     Definition wait_for_promise :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter wait_for_promise_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "monad::wait_for_promise(boost::fibers::promise<void>&)"
-           monad.proofs.libspecs.wait_for_promise.
-     Definition tvector_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter tvector_spec_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "std::vector<monad::Transaction, std::allocator<monad::Transaction>>::size() const"
-           monad.proofs.libspecs.tvector_spec.
-     Parameter opt_somety_offset :
-       bluerock.lang.cpp.syntax.core.type
-       → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset.
-     Parameter opt_engaged_offset :
-       bluerock.lang.cpp.syntax.core.type
-       → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.offset.
-     Definition optionR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → ∀ SomeTyModel : Type,
-             bluerock.lang.cpp.syntax.core.type
-             → (SomeTyModel → bluerock.lang.cpp.logic.rep_defs.Rep)
-               → stdpp.numbers.Qp
-                 → Corelib.Init.Datatypes.option SomeTyModel
-                   → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition NodeR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.lang.cpp.algebra.cfrac.cQp.t
-           → Corelib.Numbers.BinNums.Z
-             → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-               → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition ListR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.lang.cpp.algebra.cfrac.cQp.t
-           → Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition optionalIntR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.lang.cpp.algebra.cfrac.cQp.t
-           → Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.Z
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition optionalListR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.lang.cpp.algebra.cfrac.cQp.t
-           → Corelib.Init.Datatypes.option
-               (Corelib.Init.Datatypes.list Corelib.Numbers.BinNums.Z)
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter addressR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         stdpp.numbers.Qp
-         → monad.proofs.evmopsem.evm.address
-           → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Definition optionAddressR :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → stdpp.numbers.Qp
-           → Corelib.Init.Datatypes.option monad.proofs.evmopsem.evm.address
-             → bluerock.lang.cpp.logic.rep_defs.Rep.
-     Parameter vectorbase_loopinv :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (T : Type) (ty : bluerock.lang.cpp.syntax.core.type) 
-         (base : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
-         (q : stdpp.numbers.Qp) (l : Corelib.Init.Datatypes.list T) 
-         (i : Corelib.Init.Datatypes.nat),
-         i = 0%nat
-         → monad.proofs.libspecs.VectorRbase ty q base
-             (bluerock.prelude.list_numbers.lengthN l)
-           ⊣⊢ monad.proofs.libspecs.VectorRbase ty
-                (q *
-                 /
-                 bluerock.prelude.numbers.N_to_Qp
-                   (1 + bluerock.prelude.list_numbers.lengthN l))
-                base (bluerock.prelude.list_numbers.lengthN l) ∗
-           ([∗ list] _ ∈ stdpp.list.drop i l, monad.proofs.libspecs.VectorRbase
-                                                ty
-                                                (q *
-                                                 /
-                                                 bluerock.prelude.numbers.N_to_Qp
-                                                   (1 +
-                                                   bluerock.prelude.list_numbers.lengthN
-                                                   l))
-                                                base
-                                                (bluerock.prelude.list_numbers.lengthN
-                                                   l)).
-     Definition fork_task_namei : bluerock.lang.cpp.syntax.core.name.
-     Definition basee3 :
-       bluerock.lang.cpp.syntax.core.name → Corelib.Strings.PrimString.string.
-     Definition all_but_last :
-       ∀ T : Type, Corelib.Init.Datatypes.list T → Corelib.Init.Datatypes.list T.
-     Definition fork_task_nameg :
-       bluerock.lang.cpp.syntax.core.name → bluerock.lang.cpp.syntax.core.name.
-     Parameter fork_task_name_inst :
-       ∃ ty : bluerock.lang.cpp.syntax.core.name,
-         monad.proofs.libspecs.fork_task_nameg ty =
-         monad.proofs.libspecs.fork_task_namei.
-     Definition taskOpName : bluerock.lang.cpp.syntax.core.atomic_name.
-     Definition taskOpSpec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ),
-         bluerock.lang.cpp.semantics.genv.genv
-         → bluerock.lang.cpp.syntax.core.name
-           → bluerock.lang.cpp.logic.rep_defs.Rep
-             → bluerock.iris.extra.base_logic.mpred.mpred
-               → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Definition forkTaskSpec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.syntax.core.name
-             → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                 bluerock.iris.extra.base_logic.mpred.mpredI
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                 bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition fork_taskg :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.syntax.core.name
-             → ∀ (thread_info0 : iris.bi.monpred.biIndex) 
-                 (_Σ0 : iris.base_logic.lib.iprop.gFunctors),
-                 bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info0 _Σ0
-                 → bluerock.lang.cpp.semantics.genv.genv
-                   → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter learnVUnsafe :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (e : Type) (t : bluerock.lang.cpp.syntax.core.type) 
-         (r : e → bluerock.lang.cpp.logic.rep_defs.Rep) 
-         (a a' : stdpp.numbers.Qp) (b b' : Corelib.Init.Datatypes.list e),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.VectorR t r a b)
-           (monad.proofs.libspecs.VectorR t r a' b') [
-           a = a'; b = b'].
-     Definition learnVUnsafe2 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (e : Type) (t : bluerock.lang.cpp.syntax.core.type) 
-         (a a' : e → bluerock.lang.cpp.logic.rep_defs.Rep) 
-         (b b' : stdpp.numbers.Qp) (c c' : Corelib.Init.Datatypes.list e),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.VectorR t a b c)
-           (monad.proofs.libspecs.VectorR t a' b' c') [
-           a = a'; b = b'; c = c'].
-     Definition learnpArrUnsafe :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (e : Type) (t : bluerock.lang.cpp.syntax.core.type) 
-         (a
-          a' : Corelib.Init.Datatypes.nat
-               → e → bluerock.lang.cpp.logic.rep_defs.Rep) 
-         (b b' : Corelib.Init.Datatypes.list e),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.misc.parrayR t a b) (monad.proofs.misc.parrayR t a' b')
-           [a = a'; b = b'].
-     Definition learnVectorRbase :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : bluerock.lang.cpp.syntax.core.type) 
-         (b b' : stdpp.numbers.Qp) (c
-                                    c' : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr) 
-         (d d' : Corelib.Numbers.BinNums.N),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.VectorRbase a b c d)
-           (monad.proofs.libspecs.VectorRbase a' b' c' d')
-           [a = a'; b = b'; c = c'; d = d'].
-     Definition learnPpool :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : stdpp.numbers.Qp) (b b' : monad.proofs.libspecs.PriorityPool),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.PriorityPoolR a b)
-           (monad.proofs.libspecs.PriorityPoolR a' b') [
-           a = a'; b = b'].
-     Definition opt_reconstr_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → Type
-             → bluerock.lang.cpp.syntax.core.type
-               → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-                 → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                     bluerock.iris.extra.base_logic.mpred.mpredI
-                     bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                     bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition opt_reconstr :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → Type
-             → bluerock.lang.cpp.syntax.core.type
-               → ∀ (thread_info0 : iris.bi.monpred.biIndex) 
-                   (_Σ0 : iris.base_logic.lib.iprop.gFunctors),
-                   bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info0 _Σ0
-                   → bluerock.lang.cpp.semantics.genv.genv
-                     → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Definition vector_opg :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.syntax.core.type
-             → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-               → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                   bluerock.iris.extra.base_logic.mpred.mpredI
-                   bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                   bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition opt_move_assign_spec :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → Type
-             → bluerock.lang.cpp.syntax.core.type
-               → bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-                 → bluerock.lang.cpp.specs.wp_spec_compat.WpSpec
-                     bluerock.iris.extra.base_logic.mpred.mpredI
-                     bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val
-                     bluerock.lang.cpp.semantics.values.VALUES_INTF_AXIOM.val.
-     Definition opt_move_assign :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter opt_move_assign_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "std::optional<evmc::address>::operator=(std::optional<evmc::address>&&)"
-           monad.proofs.libspecs.opt_move_assign.
-     Definition destrop :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Parameter destrop_spec_instance :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv),
-         bluerock.auto.cpp.database.spec.SpecFor
-           "std::optional<evmc::address>::~optional()"
-           monad.proofs.libspecs.destrop.
-     Definition has_value :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.syntax.core.type
-             → Type → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Definition value :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors),
-         bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-         → bluerock.lang.cpp.semantics.genv.genv
-           → bluerock.lang.cpp.syntax.core.type
-             → Type → bluerock.iris.extra.base_logic.mpred.mpredI.
-     Definition learnTrRbase2 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (a a' : stdpp.numbers.Qp) (b
-                                    b' : Corelib.Init.Datatypes.option
-                                           monad.proofs.evmopsem.evm.address),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.optionAddressR a b)
-           (monad.proofs.libspecs.optionAddressR a' b') [
-           a = a'; b = b'].
-     Definition learnOpt :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (CU : bluerock.lang.cpp.semantics.genv.genv) 
-         (b : Type) (a a' : bluerock.lang.cpp.syntax.core.type) 
-         (b0 b' : b → bluerock.lang.cpp.logic.rep_defs.Rep) 
-         (c c' : stdpp.numbers.Qp) (d d' : Corelib.Init.Datatypes.option b),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.optionR a b0 c d)
-           (monad.proofs.libspecs.optionR a' b' c' d')
-           [a = a'; b0 = b'; c = c'; d = d'].
-     Definition HLearn_instance_0 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : iris.base_logic.lib.iprop.gname) (b
-                                                   b' : bluerock.iris.extra.base_logic.mpred.mpred),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.PromiseR a b)
-           (monad.proofs.libspecs.PromiseR a' b') [a = a'; b = b'].
-     Definition HLearn_instance_1 :
-       ∀ (thread_info : iris.bi.monpred.biIndex) (_Σ : iris.base_logic.lib.iprop.gFunctors) 
-         (Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ) 
-         (a a' : iris.base_logic.lib.iprop.gname) (b
-                                                   b' : bluerock.iris.extra.base_logic.mpred.mpred),
-         bluerock.auto.core.internal.lib.learn_exist_interface.HLearn
-           bluerock.auto.core.internal.lib.learn_exist_interface.LearnNormal
-           (monad.proofs.libspecs.PromiseProducerR a b)
-           (monad.proofs.libspecs.PromiseProducerR a' b') [
-           a = a'; b = b'].
-   End
 
 # Contents of the current file
 
@@ -3435,6 +1940,7 @@ Import cQp_compat.
 #[local] Open Scope lens_scope.
 
 #[local] Open Scope Z_scope.
+  Open Scope N_scope.
 (*
 Require Import EVMOpSem.evmfull. *)
 Import cancelable_invariants.
@@ -3446,86 +1952,151 @@ Require Import monad.proofs.exec_specs.
 Record ConsensusBlockHeader :=
   {
     roundNum:N;
+    (* TODO: add more fields *)
   }.
     
-Record ConensusProposal :=
+Notation EvmState := evm.GlobalState.
+
+Record ProposalInDb :=
   {
     cheader: ConsensusBlockHeader;
-    proposedBlk: Block;
+    proposedBlock: Block;
+    postBlockState: EvmState;
+    txResults: list TransactionResult;
   }.
     
-(* Todo: replace by ConsensusProposal *)
+(* Todo: replace by ConsensusProposal
 Record Proposal :=
   {
     roundNumber: N;
     proposedBlock: Block;
     (* delayed_execution_results is not really relevant because we know that last_verified=last_finalized+3 and we enforce this constraint logicall in these specs *)
   }.
+ *)
 
-(* models the state changed by Db::set_block_and_round *)
-Inductive ActiveBlock :=
-(* TODO: add | preGenesis *)
-| finalized (block_number: N)
-| proposalForNextBlock (block_number: N) (round_number:N).
-
+Record BlockIndexState :=
+  {
+    unfinalizedProposals: list ProposalInDb;
+    finalizedProposal : option ProposalInDb
+  }.
+    
+Record ProposalId :=
+  {
+    idBlockNumber : N;
+    idRoundNumber: option N;
+  }.
+    
 Record DbModel : Type :=
   {
-    finalizedBlocks: list (Block * evm.GlobalState); 
-    nextBlockProposals:  list (Proposal * evm.GlobalState);
-    activeBlock: ActiveBlock;
-    (*^ changed by set_block_and_round *)
+    blockIndicesStates: list BlockIndexState;
+    
+    activeProposal: option ProposalId;
+    (*^ changed by set_block_and_round. None means set_block_and_round has never been called on this object yet *)
+    
     votedMetadata: option (N * N);
     (*^ (block_num, round) from latest update_voted_metadata *)
-    lastFinButNotYetVerified: bool;
-    (*^ transient state where db.finalize(n+3) has been called but db.verify(n) has not yet been called: will be called soon *)
-    cinvGloc: gname;
+    
+    lastVerifiedBlockIndex: N;
+    
+    cinvId: gname;
+    (* ^ Coq-specific detail: logical id of the concurrency invariant. there is no C++ analog of this *)
   }.
 
-#[only(lens)] derive DbModel.
+Definition allProposals (b: BlockIndexState) :=
+  match finalizedProposal b with
+  | None => (unfinalizedProposals b)
+  | Some p => p::(unfinalizedProposals b)
+  end.
 
-Section with_Sigma.
-  Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
+Definition pblockNumber (p: ProposalInDb):=  number (header (proposedBlock p)).
 
-  Context  {MODd : exb.module ⊧ CU}.
-  Compute (find_struct "monad::Db" module).
+Definition blockNumber (b: BlockIndexState) : N:=
+  match allProposals b with
+  | h::_ => pblockNumber h
+  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  end.
 
-  
-  Definition bnumber (b: Block) : N := number (header b).
-  Open Scope Z_scope.
-  Fixpoint contiguousBlocksStartingFrom (oblockIndex: option Z) (l: list Block) : Prop :=
-    match l with
-    | [] => True
-    | h::tl => match oblockIndex with
-               | Some blockIndex => Z.to_N blockIndex = bnumber h /\ contiguousBlocksStartingFrom (Some (blockIndex - 1)) tl
-               | None => contiguousBlocksStartingFrom (Some (bnumber h - 1)) tl
-               end
-                 
-    end.
+Definition proposalsHaveSameBlockNumber (b: BlockIndexState) :=
+  forall (p1 p2: ProposalInDb),
+    p1 ∈ (allProposals b)
+    -> p2 ∈ (allProposals b)
+    -> pblockNumber p1 = pblockNumber p2.
 
-  Definition validActiveBlock  (m: DbModel) : Prop :=
-    match activeBlock m with
-    | finalized blockNum =>
-        match head (finalizedBlocks m), last (finalizedBlocks m) with
-        | Some lastFinBlock, Some oldestFinalizedBlockInDb =>
-            (bnumber (fst oldestFinalizedBlockInDb) <= blockNum <= bnumber (fst lastFinBlock))%Z
-        | _ , _ => False (* this case hits when the [(finalizedBlocks m)] is empty *)
-        end
-    | proposalForNextBlock blockNum roundNum =>
-        match head (finalizedBlocks m) with
-        | Some lastFinBlock => (Z.of_N blockNum = 1 + bnumber (fst lastFinBlock))
-        | None => True (* no block has been finalized yet. TODO: should blockNum be 0 in this case? *)
-        end /\ roundNum < lengthZ (nextBlockProposals m)
-    end.
+Definition hasAtLeastOneProposal (b: BlockIndexState) :=
+  exists p: ProposalInDb, p ∈ (allProposals b).
 
-  Definition validProposal (proposal: Proposal) (lastFin: option N) :=
+Notation NoDuplicate := NoDup.
+
+Definition validBlockIndexState  (b: BlockIndexState) :=
+  hasAtLeastOneProposal b
+  /\ proposalsHaveSameBlockNumber b
+  /\ NoDuplicate (map (roundNum ∘ cheader) (allProposals b)).
+
+Definition maxL (l: list N) : N. Proof. Admitted.
+Definition minL (l: list N) : N. Proof. Admitted.
+Open Scope N_scope.
+Definition contiguousBlockNumbers (lb: list BlockIndexState) : Prop :=
+  let blockNums := List.map blockNumber lb in
+  let maxBlockNum := maxL blockNums in 
+  let minBlockNum := minL blockNums in
+  forall blockNum:N,  minBlockNum <= blockNum <= maxBlockNum -> exists b, blockNumber b = blockNum /\ b ∈ lb.
+                           
+
+Definition lowestBlockNumber (d: DbModel) : N:=
+  match blockIndicesStates d with
+  | h::_ => blockNumber h
+  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  end.
+
+(* upstream *)
+Definition nthElem {A:Type} (l: list A) (n:N) : option A :=
+  nth_error l (N.to_nat n).
+             
+Definition lookupBlockByNumber (bnum: N) (d: DbModel) : option BlockIndexState :=
+  match List.filter (fun b => bool_decide (blockNumber b= bnum)) (blockIndicesStates d) with
+  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+  | [] => None
+  end.
+
+Definition lookupProposalByRoundNum (b: BlockIndexState) (rnum: N) : option ProposalInDb :=
+  match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (allProposals b) with
+  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+  | [] => None
+  end.
+    
+Definition lookupProposal (id: ProposalId)  (d: DbModel)
+  : option ProposalInDb :=
+  match lookupBlockByNumber (idBlockNumber id) d with
+  | None => None
+  | Some b =>
+      match idRoundNumber id with
+      | None => finalizedProposal b
+      | Some rnum => lookupProposalByRoundNum b rnum
+      end
+  end.      
+
+Definition lookupActiveProposal (d: DbModel) : option ProposalInDb :=
+  match activeProposal d with
+  | None => None
+  | Some ap => lookupProposal ap d
+  end.
+    
+Definition validActiveProposal  (m: DbModel) : Prop :=
+  match activeProposal m with
+  | None => True
+  | Some pid => isSome (lookupProposal pid m)
+  end.                       
+
+(*
+Definition validProposal (proposal: Proposal) (lastFin: option N) :=
     match lastFin with
     | Some lastFinBlock =>
         (bnumber (proposedBlock proposal) = 1 + lastFinBlock)%N
     | None => bnumber (proposedBlock proposal) = 0%N (* TODO: is this correct? I guess when we start the system, there will always be the finalized genesisd block? *)
     end.
-      
+*)    
 
-  Open Scope N_scope.
+(*
   Definition lastVerified (lastFinalized: option N) : option N :=
     match lastFinalized with
     | Some lastFinBlock  =>
@@ -3534,7 +2105,8 @@ Section with_Sigma.
         else Some (lastFinBlock -3)
     | None => None
     end.
-    
+
+
   Definition lastFinalizedBlockIndex' (finalizedBlocks: list Block) : option N :=
     match head finalizedBlocks with
     | Some lastFinBlock =>
@@ -3544,49 +2116,64 @@ Section with_Sigma.
   
   Definition lastFinalizedBlockIndex (m: DbModel) : option N :=
     lastFinalizedBlockIndex' (map fst (finalizedBlocks m)).
+ *)
 
-  Definition validModel (m: DbModel) : Prop :=
-    contiguousBlocksStartingFrom None (map fst (finalizedBlocks m))
-    /\ forall (p:Proposal), p ∈ (map fst (nextBlockProposals m)) -> validProposal p (lastFinalizedBlockIndex m)
-   /\ NoDup (map (roundNumber ∘ fst) (nextBlockProposals m)) (* TODO: Fix: Maged says there can be multiple proposals for the same round number. TODO: are proposals expected in the order of roundnumber.  ? *)
-    /\ validActiveBlock m. (* needs to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
+Definition splitL {A} (n:N) (l: list A) : (list A * (list A)) :=
+  (takeN n l, dropN n l).
+
+Definition validDbModel (m: DbModel) : Prop :=
+  (forall b, b ∈ (blockIndicesStates m) -> validBlockIndexState b)
+  /\ contiguousBlockNumbers (blockIndicesStates m)
+  /\ NoDuplicate (map blockNumber (blockIndicesStates m))
+  /\ validActiveProposal m
+  /\ (exists numFinalized:N, let '(firstn, rest) := splitL numFinalized (blockIndicesStates m) in
+         (forall b, b ∈ firstn -> isSome (finalizedProposal b))
+         /\ (forall b, b ∈ rest -> isNone (finalizedProposal b))
+     ).
+       (* may need to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
   
-
-  Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
-    match head (finalizedBlocks m) with
-    | Some lastFinBlock =>
-        hd dummyEvmState (map snd (finalizedBlocks m))
-    | _  => dummyEvmState (* validModel rules this case out *)
-    end.
+(*
+Definition stateAfterLastFinalized (m: DbModel) : evm.GlobalState :=
+match head (finalizedBlocks m) with
+| Some lastFinBlock =>
+hd dummyEvmState (map snd (finalizedBlocks m))
+| _  => dummyEvmState (* validModel rules this case out *)
+end.
+ *)
   
-  Definition stateAfterActiveBlock (m: DbModel) : evm.GlobalState :=
-    match activeBlock m with
-    | finalized blockNum =>
-        match head (finalizedBlocks m) with
-        | Some lastFinBlock =>
-            let offset := bnumber (fst lastFinBlock) - blockNum in
-            nth (Z.to_nat offset) (map snd (finalizedBlocks m)) dummyEvmState
-        | _  => dummyEvmState (* validModel rules this case out *)
-        end
-    | proposalForNextBlock _ roundNum =>
-        nth (Z.to_nat roundNum) (map snd (nextBlockProposals m)) dummyEvmState
-    end.
+Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
+  match lookupActiveProposal m with
+  | None => dummyEvmState
+  | Some p => postBlockState p
+  end.
+  
+
+(** ignore the next 4 lines: Coq boilerplate *)
+Open Scope Z_scope.
+#[only(lens)] derive DbModel.
+Section with_Sigma.
+  Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
+  Context  {MODd : exb.module ⊧ CU}.
   
   
   (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
   Definition TrieDBR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
 
   (* Knowledge (no resource ownership) *)
-  Definition FinalizedInRound (roundNumber: N) (b: Block) (postState: evm.GlobalState) : mpred. Proof. Admitted.
-  
-  Definition TrieRoDBR (q:Qp) (ac: option (ActiveBlock * evm.GlobalState)) : Rep. Proof. Admitted.
+  Definition SelectedProposalForBlockNum (blockNumber: N) (b: ProposalInDb) : mpred. Proof. Admitted.
+
+  (* cannot use if different proposals can be done for the same round number *)
+  Definition ProposedInRoundNum (roundNumber: N) (b: ProposalInDb) : mpred. Proof. Admitted.
+
+  (* all reads will read from activeProposal, which is determined at TrieRODB::set_block_and_round *)
+  Definition TrieRODBR (q:Qp) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
 
   Notation dbAuthR := TrieDBR. (* TODO: inline *)
 
   (* when we fill in the definition of dbAuthR, we must ensure the lemmas below are provable *)
-  Lemma dbAuthREntails (q:Qp) (m: DbModel) : dbAuthR q m |--  dbAuthR q m ** [| validModel m|].
+  Lemma dbAuthREntails (q:Qp) (m: DbModel) : dbAuthR q m |--  dbAuthR q m ** [| validDbModel m|].
   Proof. Admitted.
                                                      
   (** Raw db ownersip (the part that is remaining after dbAuthR above), shared with RODb instances. can use this to construct trie_rodb. RPC and statesync server(s) use fractions of this ownership to read the on-disk data *)
@@ -3601,26 +2188,33 @@ Section with_Sigma.
       \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
       \arg{keyp} "key" (Vptr keyp)
       \prepost{key:N} keyp |-> bytes32R q key
-      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (exec_specs.lookupStorage (stateAfterActiveBlock preDb) address key blockTxInd)).
+      
+      \pre{activeProposal} [| lookupActiveProposal preDb = Some activeProposal |]
+      \post{retp:ptr} [Vptr retp]
+        retp |-> bytes32R
+        1
+        (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
-  Definition MaxRoots : N. Proof. Admitted.
 
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
+
+  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
+
+  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
   
-  Open Scope N_scope.
-  Search compose.
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
-      \pre [| lastFinButNotYetVerified preDb = false |]
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
-      \pre [| roundNum ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb) |]
-      \pre [| lengthN (nextBlockProposals preDb) < MaxRoots |]%N
-      \pre match lastFinalizedBlockIndex preDb with
-           | Some lastFinIndex => [| blockNum = 1+ lastFinIndex |]
-           | None => True (* TODO: only allowed when the state was in pre genesis *)
-           end
-      \post this |-> TrieDBR q (preDb &: _activeBlock .= finalized blockNum)).
+      \let pid := {| idBlockNumber := blockNum; idRoundNumber:= Some roundNum |}
+      \pre{prp} [| lookupProposal pid preDb = Some prp|]
+      \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
+      \post
+         this |-> TrieDBR q (updateBlockNum preDb blockNum (finalizeProposal pid))
+         ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
+                               ).
+                               
   (* no finalize in triedb *)
   
 
@@ -3628,9 +2222,81 @@ Section with_Sigma.
     as update_verified_block_spec with (fun (this:ptr) =>
       \prepost{q preDb} this |-> dbAuthR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \pre [| lastFinButNotYetVerified preDb = true |]
-      \pre [| Some blockNum = lastVerified (lastFinalizedBlockIndex preDb) |]
-      \post this |-> dbAuthR q (preDb &: _lastFinButNotYetVerified .= false)).
+      \pre [| match lowestUnfinalizedBlockIndex preDb with
+              | Some s =>  blockNum < s
+              | None => False (* if no block has been finalized yet, cannot call this method *)
+              end |]
+      \post this |-> dbAuthR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
+
+Import libspecs.
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as set_block_and_round_spec with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preDb} this |-> dbAuthR q preDb
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+    \pre{prp} [| lookupProposal pid preDb = Some prp|]
+
+    (* On return, activeBlock is updated accordingly *)
+    \post this |-> dbAuthR q (preDb &: _activeProposal .= Some pid)
+  ).
+
+(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as rodb_set_block_and_round_spec1 with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preActive} this |-> TrieRODBR q preActive
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+
+    (* On return, activeBlock is updated accordingly *)
+    \post{ret} [Vbool ret]
+       if ret then Exists proposal,  this |-> TrieRODBR q (Some proposal)
+                                     ** SelectedProposalForBlockNum (idBlockNumber pid) proposal
+      else  this |-> TrieRODBR q None
+  ).
+
+(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as rodb_set_block_and_round_spec2 with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preActive} this |-> TrieRODBR q preActive
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+    \pre{proposal} SelectedProposalForBlockNum (idBlockNumber pid) proposal
+
+    (* On return, activeBlock is updated accordingly *)
+    \post{ret} [Vbool ret]
+       if ret then this |-> TrieRODBR q (Some proposal)
+      else  this |-> TrieRODBR q None
+   ).
 
   cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
@@ -3644,63 +2310,58 @@ Section with_Sigma.
   Definition transactionsRoot (b: Block) : N. Proof. Admitted.
   Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
 
-Compute (lookup_struct module "monad::Db").
 
-Definition commitFn : name:=
+  
+Definition commitFullCppName : name:=
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)".
-Check CodeDeltaR.
 (** Compute the post-commit DbModel from pre-commit model and all commit arguments. *)
 
 
 (** Compute the post-commit DbModel by prepending the new proposal and its state.
-    Note: we do not record [rs] in the model (no field to hold transaction results). *)
-Definition commit_model2
+    Note: we do not record [rs] in the model (no field to hold transaction results). 
+ *)
+Definition commit_model
   (preDb      : DbModel)
-  (newBlock   : Proposal)
-  (finalState : monad.proofs.evmopsem.StateOfAccounts)
-  (rs         : list monad.proofs.evmopsem.TransactionResult)
-  : DbModel :=
-  preDb
-    &: _nextBlockProposals .=
-      ((Build_Proposal (roundNumber newBlock) (proposedBlock newBlock), finalState)
-         :: nextBlockProposals preDb).
-(*
-# round numbers are disjoint even across 
-lastFinalizes (101, 201)
-commit (102, 202)                
-commit (103, 203)
-commit (103, 203)
-commit (103, 204)
-finalize(102,202)
-*)
+  (newProposal   : ProposalInDb)
+  : DbModel. Proof. Admitted.
 
+(* TODO:
+- handle garbage collection
+- handle genesis block creation
+ *)
+Open Scope N_scope.
 cpp.spec
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
     \prepost{(preDb:DbModel)} this |-> dbAuthR 1 preDb
 
     \arg{(deltas_ptr: ptr) (qs: Qp)} "#0" (Vptr deltas_ptr)
-    \prepost{(finalState: StateOfAccounts)}
-      deltas_ptr |-> StateDeltasR qs (stateAfterLastFinalized preDb, finalState)
+    \prepost{(newProposal: ProposalInDb)}
+      deltas_ptr |-> StateDeltasR qs (stateAfterActiveProposal preDb, (postBlockState newProposal))
 
     \arg{(code_ptr:ptr) (qcd: Qp)} "#1" (Vptr code_ptr)
     \prepost
-      code_ptr |-> CodeDeltaR qcd (stateAfterLastFinalized preDb, finalState)
+      code_ptr |-> CodeDeltaR qcd (stateAfterActiveProposal preDb, (postBlockState newProposal))
 
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{(newProposal: Proposal) (qpr: Qp)}
+    \prepost{ (qpr: Qp)}
       hdr_ptr |-> BheaderR qpr (header (proposedBlock newProposal))
-    \pre [| validProposal newProposal (lastFinalizedBlockIndex preDb) |]
-    \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] (* delete *)
+      \pre [| match activeProposal preDb with
+              | Some activeProp =>
+                  pblockNumber newProposal = 1 + idBlockNumber activeProp
+              | None => pblockNumber newProposal = 0
+              end
+              |]
+   (*  \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] can this, depending on whether consensus can really send us 2 blocks for the same round number *)
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
-    \prepost{(rs: list monad.proofs.evmopsem.TransactionResult) (qtrs: Qp)}
+    \prepost{ (qtrs: Qp)}
       receipts_ptr |->
-        monad.proofs.libspecs.VectorR
+        VectorR
           "monad::Receipt"%cpp_type
-          (fun r => monad.proofs.exec_specs.ReceiptR r)
-          qtrs rs
-
+          (fun r => ReceiptR r)
+          qtrs (txResults newProposal)
+          
    \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
    (*       
     \prepost
@@ -3745,8 +2406,9 @@ cpp.spec
                      q ws)
         q ws
      *)   
-    \post this |-> dbAuthR 1 (commit_model2 preDb newProposal finalState rs)
-  ). 
+    \post this |-> dbAuthR 1 (commit_model preDb newProposal)
+                      ).
+End with_Sigma.
 
 ```
 
@@ -3786,498 +2448,380 @@ In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST 
 
 ## Assistant 1
 
-I will use a new admitted `optionalULongR` for the `std::optional<unsigned long>` memory‐representation, and then state the spec in terms of the `DbModel`’s `activeBlock` field. The key preconditions are that, if the optional is `Some rn`, then `rn` indexes an existing proposal, and if it is `None`, then the `block_number` matches the last finalized block. On return, the model’s `activeBlock` is updated accordingly.
-
 ```gallina
-(* TOFIXLATER: memory‐layout for std::optional<unsigned long> *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep. Admitted. (* TOFIXLATER *)
+Module DbModelOps.
+  Import List.
+  Open Scope N_scope.
 
-(* Spec of set_block_and_round *)
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* preserve full db-auth ownership *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
+  (** maxL: maximum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition maxL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.max xs x
+    end.
 
-    (* unsigned long block_number *)
-    \arg{blockNum:N}   "block_number" (Vint blockNum)
+  (** minL: minimum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition minL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.min xs x
+    end.
 
-    (* std::optional<unsigned long> round_number passed by value as an aggregate; treated as in‐memory object pointed to by roundLoc *)
-    \arg{roundLoc}     "round_number" (Vptr roundLoc)
-    \prepost{roundOpt:option N} roundLoc |-> optionalULongR (cQp.mut 1) roundOpt
+  (** lowestUnfinalizedBlockIndex:
+       among the [blockIndicesStates] of [d], pick those with
+       [finalizedProposal = None] and return the minimum [blockNumber].
+   *)
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+    let unfin := filter (fun b => match finalizedProposal b with None => true | _ => false end)
+                        (blockIndicesStates d) in
+    match unfin with
+    | [] => None
+    | _  => Some (minL (map blockNumber unfin))
+    end.
 
-    (* if Some rn, must refer to an existing proposal in preDb *)
-    \pre [| match roundOpt with
-           | Some rn => (Z.to_N rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-    (* if None, blockNum must equal last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
+  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
+       equals [bnum] by applying [f], leave others unchanged.
+  *)
+  Definition updateBlockNum
+             (d: DbModel)
+             (bnum: N)
+             (f: BlockIndexState -> BlockIndexState)
+    : DbModel :=
+    {| blockIndicesStates :=
+         map (fun b =>
+                if bool_decide (blockNumber b = bnum)
+                then f b else b)
+             (blockIndicesStates d);
+       activeProposal        := activeProposal d;
+       votedMetadata         := votedMetadata d;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex d;
+       cinvId                := cinvId d
+    |}.
 
-    (* result: activeBlock updated *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
+  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
+       remove from [unfinalizedProposals] the one with [roundNum = r],
+       and set [finalizedProposal] to that [Some p].
+       If [idRoundNumber pid = None] or no match is found, do nothing.
+  *)
+  Definition finalizeProposal
+             (pid: ProposalId)
+             (d: BlockIndexState)
+    : BlockIndexState :=
+    match idRoundNumber pid with
+    | None => d
+    | Some r =>
+      let bs := unfinalizedProposals d in
+      let newUnfin := filter (fun p =>
+                                negb (bool_decide (roundNum (cheader p) = r)))
+                             bs in
+      let finalP :=
+        match lookupProposalByRoundNum d r with
+        | Some p => Some p
+        | None   => finalizedProposal d
+        end in
+      {| unfinalizedProposals := newUnfin;
+         finalizedProposal     := finalP
+      |}
+    end.
+
+  (** commit_model: prepend a new BlockIndexState (with no finalizedProposal)
+      for the [newProposal] onto the existing [blockIndicesStates]. *)
+  Definition commit_model
+             (preDb      : DbModel)
+             (newProposal: ProposalInDb)
+    : DbModel :=
+    let old := blockIndicesStates preDb in
+    let newB := {| unfinalizedProposals := [newProposal];
+                   finalizedProposal     := None
+                |} in
+    {| blockIndicesStates     := old ++ [newB];
+       activeProposal        := activeProposal preDb;
+       votedMetadata         := votedMetadata preDb;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
+       cinvId                := cinvId preDb
+    |}.
+End DbModelOps.
 ```
 
 ## User 2
 
+Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART. But, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed. 
 
-I inserted your solution into emacs, and asked proof general to check it via coqtop.
-Congratulations! Proof general reported no errors. However, your solution still contains `Admitted.`/TOFIXLATER holes.
-Please pick one or more holes to implement.
-In the call chain/tree from the function that is the main task, which you have already implemented,
-pick hole(s) which are closest to the root.
-If you were asked to implement a function on an Inductive type which is defined mutually inductive with other Inductive types, the task implicitly includes implementing the analogous functions on those types as well, likely as a block of mutually recursive functions. Implementing such holes should be the highest priority.
+Toplevel input, characters 0-306:
+> Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+>     let unfin := filter (fun b => match finalizedProposal b with None => true | _ => false end)
+>                         (blockIndicesStates d) in
+>     match unfin with
+>     | [] => None
+>     | _  => Some (minL (map blockNumber unfin))
+>     end. 
+Error:
+The following term contains unresolved implicit arguments:
+  (λ d : monad.proofs.dbspecs.DbModel,
+     let unfin :=
+       stdpp.base.filter
+         (λ b : monad.proofs.dbspecs.BlockIndexState,
+            match monad.proofs.dbspecs.finalizedProposal b with
+            | Corelib.Init.Datatypes.Some _ => Corelib.Init.Datatypes.false
+            | Corelib.Init.Datatypes.None => Corelib.Init.Datatypes.true
+            end)
+         (monad.proofs.dbspecs.blockIndicesStates d)
+       in
+     match unfin with
+     | [] => Corelib.Init.Datatypes.None
+     | _ :: _ =>
+         Corelib.Init.Datatypes.Some
+           (monad.proofs.dbspecs.DbModelOps.minL
+              (Corelib.Lists.ListDef.map monad.proofs.dbspecs.blockNumber
+                 unfin))
+     end)
+More precisely: 
+- ?H: Cannot infer the implicit parameter H of stdpp.base.filter whose type
+  is
+  "∀ x : monad.proofs.dbspecs.BlockIndexState,
+     stdpp.base.Decision
+       ((λ b : monad.proofs.dbspecs.BlockIndexState,
+           match monad.proofs.dbspecs.finalizedProposal b with
+           | Corelib.Init.Datatypes.Some _ => Corelib.Init.Datatypes.false
+           | Corelib.Init.Datatypes.None => Corelib.Init.Datatypes.true
+           end)
+          x)"
+  (no type class instance found) in
+  environment:
+  d : monad.proofs.dbspecs.DbModel
 
-Once you have chosen the hole(s) to implement, YOU MUST FIRST check whether an implementation of the hole already exists in one of the `Require Import`ed files. To do that, FIRST issue a `Search` query, e.g. `Search ([type of hole]).`. For example, if the type of the hole is `foo -> bar`, issue the query `Search (foo -> bar).`, NOT `Search (_ : foo->bar)`: the latter is equivalent to `Search (_)` which will return everything and will go beyond your context length.
-If `Search (foo -> bar)` doesn't yield a result, consider issuing other queries, e.g. reorder arguments, search by possible names.
-If it does return a result with a promising name, you must do a `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.
 
-Also, double check whether the hole was already implemented in the current conversation and you forgot to include it in the previous message.
-
-If the implementation doesnt exist or you cannot find it using the queries, implement the holes PROPERLY: do NOT just put in dummy implementations to be filled later.
-Put in as much effort into each hole as much as you put in the original problem, but always include FULL solutions to the original problem.
-
-Beware that if you plan to implement a hole by structural recursion on an argument, the argument must have an `Inductive` type. Also if the `Inductive` type is defined mutually with other `Inductive` types, you may need to define your function as a mutually-recursive Fixpoint. If you have already implemented parts of this set of mutually recursive Fixpoints, you may need to put the new and old parts together in the same block of mutually-recursive `Fixpoint`s.
-
-The expected response format remains the same (end with ```gallina or ```coqquery block).
-If you choose a ```gallina block, ENSURE YOU OUTPUT THE ENTIRE SOLUTION TO THE ORIGINAL TASK AND NOT JUST THE IMPLEMENTATION(S) OF THE HOLE(S) YOU CHOSE TO FILL IN. This is important because the non-human, non-LLM programmetic e-lisp loop that is chatting with you does not know to apply partial diffs and merely replaces full old solutions with the new one.
-Also, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed.
-
-In a ```gallina response, IF YOU LEAVE A HOLE OR DUMMY IMPLEMENTATION, YOU MUST MARK THAT WITH A TOFIXLATER comment, so that you -- not me -- will fix it later.
-
-
- Below, I ran some queries to help you find out whether some of the holes are already implemented somewhere in the avaliable libraries.
- IF YOU NOTICE A RESULT WITH PROMISING NAME, YOU MUST FIRST DO A `Print` on that name to ensure that it it self does not have holes, especially if the leaf of the fully qualified name matches an admit you introduced in your solution: the queries are done in a context that already has your solution, so the admits of your solution may show up as results in these queries.
-
-
->>> Search (bluerock.lang.cpp.algebra.cfrac.cQp.t        → Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N          → bluerock.lang.cpp.logic.rep_defs.Rep) (* for hole `optionalULongR` *) .
-monad.proofs.dbspecs.with_Sigma.optionalULongR:
-  bluerock.lang.cpp.algebra.cfrac.cQp.t
-  → Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N
-    → bluerock.lang.cpp.logic.rep_defs.Rep
+Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
+ 
 
 ## Assistant 2
 
+Coq is complaining because I used the `filter` and `map` identifiers from stdpp, not from Coq’s standard `List` library.  In stdpp,  
+```coq
+filter : ∀ {A:Type} (P:A→Prop) `{∀ x, Decision (P x)}, list A → list A
+```  
+so it expects a Prop‐valued predicate and a `Decision` instance, but I gave it a `bool`‐valued test and no `Decision` instance.  The cure is to use Coq’s `List.filter` and `List.map` (which take `A→bool` and `A→B` respectively) rather than stdpp’s.
+
+Below is the full module again, qualifying all uses of `filter`, `map`, and `++` to the Coq `List` module and importing the list notations.  This should typecheck when inserted *after* your existing file.
+
 ```gallina
-(* instantiate the generic optional‐Rep for unsigned long *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @optionR N "unsigned long"%cpp_type
-    (fun n => primR "unsigned long" q (Vint (Z.of_N n)))
-    q o.
+Module DbModelOps.
+  Import List ListNotations.
+  Open Scope N_scope.
+
+  (** maxL: maximum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition maxL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.max xs x
+    end.
+
+  (** minL: minimum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition minL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.min xs x
+    end.
+
+  (** lowestUnfinalizedBlockIndex:
+       among the [blockIndicesStates] of [d], pick those with
+       [finalizedProposal = None] and return the minimum [blockNumber].
+   *)
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+    let unfin :=
+        List.filter
+          (fun b => match finalizedProposal b with
+                    | None => true | _ => false
+                    end)
+          (blockIndicesStates d) in
+    match unfin with
+    | [] => None
+    | _  => Some (minL (List.map blockNumber unfin))
+    end.
+
+  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
+       equals [bnum] by applying [f], leave others unchanged.
+  *)
+  Definition updateBlockNum
+             (d: DbModel)
+             (bnum: N)
+             (f: BlockIndexState -> BlockIndexState)
+    : DbModel :=
+    {| blockIndicesStates :=
+         List.map (fun b =>
+                     if bool_decide (blockNumber b = bnum)
+                     then f b else b)
+                  (blockIndicesStates d);
+       activeProposal         := activeProposal d;
+       votedMetadata          := votedMetadata d;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex d;
+       cinvId                 := cinvId d
+    |}.
+
+  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
+       remove from [unfinalizedProposals] the one with [roundNum = r],
+       and set [finalizedProposal] to that [Some p].
+       If [idRoundNumber pid = None] or no match is found, do nothing.
+  *)
+  Definition finalizeProposal
+             (pid: ProposalId)
+             (d: BlockIndexState)
+    : BlockIndexState :=
+    match idRoundNumber pid with
+    | None => d
+    | Some r =>
+      let bs := unfinalizedProposals d in
+      let newUnfin :=
+          List.filter
+            (fun p => negb (bool_decide (roundNum (cheader p) = r)))
+            bs in
+      let finalP :=
+        match lookupProposalByRoundNum d r with
+        | Some p => Some p
+        | None   => finalizedProposal d
+        end in
+      {| unfinalizedProposals := newUnfin;
+         finalizedProposal     := finalP
+      |}
+    end.
+
+  (** commit_model: prepend a new BlockIndexState (with no finalizedProposal)
+      for the [newProposal] onto the existing [blockIndicesStates]. *)
+  Definition commit_model
+             (preDb       : DbModel)
+             (newProposal : ProposalInDb)
+    : DbModel :=
+    let old := blockIndicesStates preDb in
+    let newB :=
+        {| unfinalizedProposals := [newProposal];
+           finalizedProposal     := None
+        |} in
+    {| blockIndicesStates     := old ++ [newB];
+       activeProposal         := activeProposal preDb;
+       votedMetadata          := votedMetadata preDb;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
+       cinvId                 := cinvId preDb
+    |}.
+End DbModelOps.
 ```
 
 ## User 3
 
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART. But, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed. 
-
-Toplevel input, characters 71-72:
->   @optionR N "unsigned long"%cpp_type
->            ^
-Error:
-In environment
-thread_info : iris.bi.monpred.biIndex
-_Σ : iris.base_logic.lib.iprop.gFunctors
-Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-CU : bluerock.lang.cpp.semantics.genv.genv
-hh :
-  bluerock.iris.extra.bi.own.HasOwn bluerock.iris.extra.base_logic.mpred.mpredI
-    iris.algebra.frac.fracR
-MODd : monad.asts.exb.module ⊧ CU
-q : bluerock.lang.cpp.algebra.cfrac.cQp.t
-o : Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N
-The term "Corelib.Numbers.BinNums.N" has type "Set"
-while it is expected to have type "iris.algebra.cmra.cmra".
-
-
-Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
- 
+commit_model is wrong. you are assuming that there was no BlockIndexState for thhat block number before. there could be one. you need to find it and add to its unfinalizedProposals. adding a new one is correct only if there was none before. remember that validDbModel requires that the block numbers in blockIndicesStates have no duplicates.
 
 ## Assistant 3
 
-Coq complained because `optionR` is defined (in `libspecs`) to take an explicit `genv` argument (the C++ global environment) after the implicit Iris parameters.  We only passed `N` and the C++ type, but not the `genv` (`CU`) that lives in our Section’s context.  The fix is to supply `CU` at runtime, and also explicitly instantiate the `SomeTyModel := N`.  Here is the complete appended solution (to go after the “Contents of the current file” above), with the hole filled in:
+Below is the fixed `Module DbModelOps.` with `commit_model` updated to merge into an existing `BlockIndexState` when one already exists for the block number, or else append a new one.  All uses of `List.filter`/`List.map`/`++` are qualified to avoid the stdpp conflict.  Insert this *after* your existing file; do not repeat or modify anything above.
 
 ```gallina
-(* instantiate the generic optional‐Rep for unsigned long *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @optionR _ _ _ CU   (* supply the Iris params and our genv *)
-    (SomeTyModel := N) ("unsigned long"%cpp_type)
-    (fun n => primR "unsigned long"%cpp_type q (Vint (Z.of_N n)))
-    q o.
-
-(* Spec of set_block_and_round *)
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* preserve full db‐auth ownership *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* unsigned long block_number *)
-    \arg{blockNum:N}   "block_number" (Vint blockNum)
-
-    (* std::optional<unsigned long> round_number passed by value as an aggregate *)
-    \arg{roundLoc}     "round_number" (Vptr roundLoc)
-    \prepost{roundOpt:option N} roundLoc |-> optionalULongR (cQp.mut 1) roundOpt
-
-    (* If Some rn, that rn must index an existing proposal *)
-    \pre [| match roundOpt with
-           | Some rn => (rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-    (* If None, then blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
-
-    (* Update the model’s activeBlock accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-```
-
-## User 4
-
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART. But, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed. 
-
-Toplevel input, characters 141-143:
->     (SomeTyModel := N) ("unsigned long"%cpp_type)
->                  ^^
-Error:
-Syntax error: 'with' or '$!' or '≡{' or '≢ₚ.)' or '≡ₚ.)' or '::.)' or '⊔.)' or '⊓.)' or '⊑.)' or '!!!.)' or '!!.)' or '≫=.)' or '##.)' or '∉.)' or '∈.)' or '*:.)' or '⊎.)' or '⊄.)' or '⊂.)' or '⊈.)' or '⊆.)' or '∖.)' or '∩.)' or '∪.)' or ',.)' or '∘.)' or '→.)' or '↔.)' or '∨.)' or '∧.)' or '≢.)' or '≡.)' or '≠.)' or '=.)' or '++.)' or '+++.)' or ':::.)' or 'as' or 'in' or '∘ₘ.)' or '##ₘ.)' or '⊢.)' or '⊣⊢.)' or '##ₚ.)' or '>>=.)' or '==.)' or '|' or ',' or ')' expected after [term level 200] (in [term]).
-
-
-Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
- 
-
-## Assistant 4
-
-Coq is complaining because you cannot name a function‐application argument with a “`(SomeTyModel := N)`” binding in the middle of an application. Coq only allows named arguments when applying records or constructors, not arbitrary functions. Here, `optionR` is a polymorphic function whose next explicit argument is the `SomeTyModel` type, so you must simply pass `N` positionally at that spot. 
-
-With that fixed, here is the complete appended solution (to go after your file but without modifying any of the existing content above):
-
-```gallina
-(* instantiate the generic optional‐Rep for unsigned long *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @optionR _ _ _ CU N ("unsigned long"%cpp_type)
-    (fun n => primR "unsigned long"%cpp_type q (Vint (Z.of_N n)))
-    q o.
-
-(* Spec of set_block_and_round *)
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* preserve full db‐auth ownership *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* unsigned long block_number *)
-    \arg{blockNum:N}   "block_number" (Vint blockNum)
-
-    (* std::optional<unsigned long> round_number passed by pointer *)
-    \arg{roundLoc}     "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N} roundLoc |-> optionalULongR (cQp.mut 1) roundOpt
-
-    (* If Some rn, that rn must index an existing proposal *)
-    \pre [| match roundOpt with
-           | Some rn => (rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-    (* If None, then blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
-
-    (* Update the model’s activeBlock accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-```
-
-## User 5
-
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART. But, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed. 
-
-Toplevel input, characters 63-74:
->   @optionR _ _ _ CU N ("unsigned long"%cpp_type)
->    ^^^^^^^^^^^
-Error: Illegal application (Non-functional construction): 
-The expression "iris.algebra.cmra.optionR ?A" of type 
-"iris.algebra.cmra.cmra" cannot be applied to the term
- "?y" : "?T"
-
-
-Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
- 
-
-## Assistant 5
-
-Coq is complaining that it picked up `iris.algebra.cmra.optionR` (an Iris‐CMRA construction of type `cmra`) instead of our separation‐logic `optionR : genv → SomeTyModel → … → Rep`.  To fix this, we must fully qualify the name so Coq uses the predicate in `monad.proofs.libspecs`.  Here is the complete appended solution:
-
-```gallina
-(* ---------- Filled‐in hole: optionalULongR ---------- *)
-
-(* We must use the Rep‐predicate optionR from monad.proofs.libspecs, not the Iris‐cmra one. *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @monad.proofs.libspecs.optionR _ _ _ CU        (* Iris params + our genv *)
-    N                                           (* SomeTyModel := N *)
-    ("unsigned long"%cpp_type)                  (* C++ type name *)
-    (fun n => primR "unsigned long"%cpp_type q (Vint (Z.of_N n)))  (* element‐Rep *)
-    q o.
-
-(* ---------- Spec of set_block_and_round ---------- *)
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* Full ownership of the Db model *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* block_number: unsigned long *)
-    \arg{blockNum:N} "block_number" (Vint blockNum)
-
-    (* round_number: std::optional<unsigned long> *)
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N} roundLoc |-> optionalULongR (cQp.mut 1) roundOpt
-
-    (* If Some rn, it must refer to an existing proposal *)
-    \pre [| match roundOpt with
-           | Some rn => (rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-
-    (* If None, blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
-
-    (* On return, activeBlock is updated accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-```
-
-## User 6
-
-use libspecs.optionR instead of optionalUlongR
-
-## Assistant 6
-
-Coq was complaining because I was referring to `optionR` unqualified, and Coq picked up the `iris.algebra.cmra.optionR` of type `cmra`, which is not a function, instead of the separation‐logic `optionR` defined in `monad.proofs.libspecs`. To fix this, I must fully qualify the name as `monad.proofs.libspecs.optionR CU …` so that Coq uses the correct predicate.
-
-Here is the complete appended solution (to go after the existing file content):
-
-```gallina
-(* ------------------------------------------------ *)
-(* Spec of set_block_and_round, inlining libspecs.optionR *)
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* preserve full Db‐auth ownership *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* unsigned long block_number *)
-    \arg{blockNum:N}   "block_number" (Vint blockNum)
-
-    (* std::optional<unsigned long> round_number passed by pointer *)
-    \arg{roundLoc}     "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N}
-      roundLoc |-> monad.proofs.libspecs.optionR
-                    CU                                        (* genv *)
-                    N                                         (* SomeTyModel := N *)
-                    ("unsigned long"%cpp_type)               (* C++ type name *)
-                    (fun n => primR "unsigned long"%cpp_type  (* per‐element Rep *)
-                                  (cQp.mut 1)
-                                  (Vint (Z.of_N n)))
-                    (cQp.mut 1)                               (* optional fraction *)
-                    roundOpt                                  (* the option *)
-
-    (* If Some rn, that rn must index an existing proposal *)
-    \pre [| match roundOpt with
-           | Some rn => (rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-
-    (* If None, blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
-
-    (* On return, activeBlock is updated accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-(* ------------------------------------------------ *)
-```
-
-## User 7
-
-Below is the error I get when I give that to Coq. FIRST, explain why Coq gave that error and how it can be fixed. THEN, fix the error and GIVE ME BACK THE ENTIRE SOLUTION AGAIN, NOT JUST THE FIXED PART. But, keep in mind your complete response will be entered AFTER the content mentioned above in the section 'Contents of the current file'. So do not duplicate the content there. Also, the content above CANNOT be changed. 
-
-
-Toplevel input, characters 551-553:
->                     CU                                        (* genv *)
->                     ^^
-Error:
-In environment
-thread_info : iris.bi.monpred.biIndex
-_Σ : iris.base_logic.lib.iprop.gFunctors
-Sigma : bluerock.lang.cpp.logic.mpred.LC.cpp_logic thread_info _Σ
-CU : bluerock.lang.cpp.semantics.genv.genv
-hh :
-  bluerock.iris.extra.bi.own.HasOwn bluerock.iris.extra.base_logic.mpred.mpredI
-    iris.algebra.frac.fracR
-MODd : monad.asts.exb.module ⊧ CU
-this : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-q : stdpp.numbers.Qp
-preDb : monad.proofs.dbspecs.DbModel
-blockNum : Corelib.Numbers.BinNums.N
-roundLoc : bluerock.lang.cpp.semantics.values.PTRS_INTF_AXIOM.ptr
-roundOpt : Corelib.Init.Datatypes.option Corelib.Numbers.BinNums.N
-The term "CU" has type "bluerock.lang.cpp.semantics.genv.genv"
-while it is expected to have type "bluerock.lang.cpp.syntax.core.type".
-
-
-
-Remember: If your solution has holes or has temporary oversimplifications, YOU MUST MARK THOSE PLACES WITH the (* TOFIXLATER *) comment.
- 
-
-## Assistant 7
-
-Coq was still picking up the Iris‐CMRA `optionR` because I qualified it too deeply. The separation‐logic `optionR` lives in the `libspecs` module (brought in by `Require Import monad.proofs.libspecs`), so we must write `libspecs.optionR` rather than `monad.proofs.libspecs.optionR`. With that correction, the arguments line up:
-
-```gallina
-(* ---------- Filled‐in hole: optional std::optional<unsigned long> ---------- *)
-
-(* We use the Rep‐predicate `optionR` from the `libspecs` module. *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @libspecs.optionR _ _ _ CU
-    N                                        (* SomeTyModel *)
-    ("unsigned long"%cpp_type)               (* C++ type of the payload *)
-    (fun n => primR "unsigned long"%cpp_type  (* how to represent each N *)
-                   q
-                   (Vint (Z.of_N n)))
-    (cQp.mut 1)                              (* fraction of ownership *)
-    o.
-
-(* ---------- Spec of set_block_and_round ---------- *)
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* Full ownership of the Db model *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* block_number: unsigned long *)
-    \arg{blockNum:N} "block_number" (Vint blockNum)
-
-    (* round_number: std::optional<unsigned long> by-pointer *)
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N}
-      (roundLoc |-> optionalULongR (cQp.mut 1) roundOpt)
-
-    (* If Some rn, that rn must index an existing proposal *)
-    \pre [| match roundOpt with
-           | Some rn => (rn < lengthN (nextBlockProposals preDb))%N
-           | None    => True
-           end |]
-
-    (* If None, blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           | Some _  => True
-           end |]
-
-    (* On return, activeBlock is updated accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-```
-
-## User 8
-
-combine the 2 matching on roundOpt into 1. also, round numbers in next block proposals may not be contiguuous. use roundNum ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb) instead
-
-## Assistant 8
-
-I combined the two `match roundOpt` tests into one, and for the `Some rn` case I now require `rn ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb)`.  Here is the complete appended solution:
-
-```gallina
-(* ---------- Filled‐in hole: optional std::optional<unsigned long> ---------- *)
-
-(* We use the Rep‐predicate `optionR` from the `libspecs` module. *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @libspecs.optionR _ _ _ CU
-    N                                        (* SomeTyModel *)
-    ("unsigned long"%cpp_type)               (* C++ type of the payload *)
-    (fun n => primR "unsigned long"%cpp_type  (* how to represent each N *)
-                   q
-                   (Vint (Z.of_N n)))
-    (cQp.mut 1)                              (* fraction of ownership *)
-    o.
-
-(* ---------- Spec of set_block_and_round ---------- *)
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* Full ownership of the Db model *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* block_number: unsigned long *)
-    \arg{blockNum:N} "block_number" (Vint blockNum)
-
-    (* round_number: std::optional<unsigned long> by pointer *)
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N}
-      (roundLoc |-> optionalULongR (cQp.mut 1) roundOpt)
-
-    (* Combined side‐condition on roundOpt: 
-         - If Some rn, rn must be one of the existing proposal rounds
-         - If None, blockNum must equal the last finalized block *)
-    \pre [| match roundOpt with
-           | Some rn => rn ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb)
-           | None    => Some blockNum = lastFinalizedBlockIndex preDb
-           end |]
-
-    (* On return, activeBlock is updated accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
+Module DbModelOps.
+  Import List ListNotations.
+  Open Scope N_scope.
+
+  (** maxL: maximum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition maxL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.max xs x
+    end.
+
+  (** minL: minimum element of a (nonempty) list of [N], with default 0 on empty *)
+  Definition minL (l: list N) : N :=
+    match l with
+    | [] => 0
+    | x :: xs => fold_left N.min xs x
+    end.
+
+  (** lowestUnfinalizedBlockIndex:
+       among the [blockIndicesStates] of [d], pick those with
+       [finalizedProposal = None] and return the minimum [blockNumber].
+   *)
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+    let unfin :=
+        List.filter
+          (fun b => match finalizedProposal b with
+                    | None => true | _ => false
+                    end)
+          (blockIndicesStates d) in
+    match unfin with
+    | [] => None
+    | _  => Some (minL (List.map blockNumber unfin))
+    end.
+
+  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNumber]
+       equals [bnum] by applying [f], leave others unchanged.
+  *)
+  Definition updateBlockNum
+             (d: DbModel)
+             (bnum: N)
+             (f: BlockIndexState -> BlockIndexState)
+    : DbModel :=
+    {| blockIndicesStates :=
+         List.map (fun b =>
+                     if bool_decide (blockNumber b = bnum)
+                     then f b else b)
+                  (blockIndicesStates d);
+       activeProposal         := activeProposal d;
+       votedMetadata          := votedMetadata d;
+       lastVerifiedBlockIndex := lastVerifiedBlockIndex d;
+       cinvId                 := cinvId d
+    |}.
+
+  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
+       remove from [unfinalizedProposals] the one with [roundNum = r],
+       and set [finalizedProposal] to that [Some p].
+       If [idRoundNumber pid = None] or no match is found, do nothing.
+  *)
+  Definition finalizeProposal
+             (pid: ProposalId)
+             (d: BlockIndexState)
+    : BlockIndexState :=
+    match idRoundNumber pid with
+    | None => d
+    | Some r =>
+      let bs := unfinalizedProposals d in
+      let newUnfin :=
+          List.filter
+            (fun p => negb (bool_decide (roundNum (cheader p) = r)))
+            bs in
+      let finalP :=
+        match lookupProposalByRoundNum d r with
+        | Some p => Some p
+        | None   => finalizedProposal d
+        end in
+      {| unfinalizedProposals := newUnfin;
+         finalizedProposal     := finalP
+      |}
+    end.
+
+  (** commit_model:
+      If there is already a [BlockIndexState] for this block number,
+      prepend [newProposal] to its [unfinalizedProposals].
+      Otherwise, append a fresh [BlockIndexState] with only [newProposal].
+  *)
+  Definition commit_model
+             (preDb       : DbModel)
+             (newProposal : ProposalInDb)
+    : DbModel :=
+    let bnum := pblockNumber newProposal in
+    match lookupBlockByNumber bnum preDb with
+    | Some _ =>
+        (* merge into existing state *)
+        updateBlockNum preDb bnum (fun bs =>
+          {| unfinalizedProposals := newProposal :: unfinalizedProposals bs;
+             finalizedProposal     := finalizedProposal bs
+          |})
+    | None =>
+        (* append a new BlockIndexState *)
+        {| blockIndicesStates     := blockIndicesStates preDb ++
+                                     [{| unfinalizedProposals := [newProposal];
+                                         finalizedProposal     := None |}];
+           activeProposal         := activeProposal preDb;
+           votedMetadata          := votedMetadata preDb;
+           lastVerifiedBlockIndex := lastVerifiedBlockIndex preDb;
+           cinvId                 := cinvId preDb
+        |}
+    end.
+End DbModelOps.
 ```
 

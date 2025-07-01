@@ -101,10 +101,10 @@ Record Block :=
     transactions: list Transaction;
     header: BlockHeader;
     ommers: list BlockHeader;
-    withdrawals: list Withdrawal;
+    withdrawals: option (list Withdrawal);
   }.
 
-Definition applyWithdrawals (s: StateOfAccounts) (ws: list Withdrawal): StateOfAccounts.
+Definition applyWithdrawals (s: StateOfAccounts) (ws: option (list Withdrawal)): StateOfAccounts.
 Proof. Admitted.
 
 Definition applyBlockReward (s: StateOfAccounts) (num_omsers: nat): StateOfAccounts.
@@ -120,6 +120,4 @@ Record Chain := {
     chainid: N
   }.
 Inductive Revision := Shanghai | Frontier.
-
-
 

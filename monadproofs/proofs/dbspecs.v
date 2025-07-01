@@ -420,6 +420,7 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
               ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumStates preDb)) 
     end.
 
+  Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
 (* TODO:
 - handle garbage collection
 - handle genesis block creation
@@ -458,14 +459,12 @@ cpp.spec
           qtrs (txResults newProposal)
           
    \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
-   (*       
-    \prepost
+   \prepost{qcf}
       cfs_ptr |->
         monad.proofs.libspecs.VectorR
           "std::vector<monad::CallFrame>"%cpp_type
-          (fun inner => emp)
-          q []
-          *)
+          (fun inner:unit => emp)
+          qcf []
     \arg{(senders_ptr: ptr) (qsn: Qp)} "#5" (Vptr senders_ptr)
     \prepost
       senders_ptr |->
@@ -479,7 +478,7 @@ cpp.spec
       txns_ptr |->
         monad.proofs.libspecs.VectorR
           "monad::Transaction"%cpp_type
-          (fun t => monad.proofs.exec_specs.TransactionR qtxn t)
+          (fun t => TransactionR qtxn t)
           qtxn (transactions (proposedBlock newProposal))
 
     \arg{ommers_ptr qo} "ommers" (Vptr ommers_ptr)
@@ -490,19 +489,18 @@ cpp.spec
           (fun h => BheaderR qo h)
           qo (ommers (proposedBlock newProposal))
 
-    \arg{wds_ptr} "#8" (Vptr wds_ptr)
-    (*      
-    \prepost{(ws: option (list monad.proofs.evmopsem.Withdrawal)))}
-      wds_ptr |-> monad.proofs.libspecs.optionR
+   \arg{wds_ptr} "#8" (Vptr wds_ptr)
+          
+    \prepost{qw: cQp.t}
+      wds_ptr |-> optionR
         "std::vector<monad::Withdrawal>"%cpp_type
         (fun ws => monad.proofs.libspecs.VectorR
                      "monad::Withdrawal"%cpp_type
-                     (fun _ => pureR True) (* TOFIXLATER: refine to WithdrawalR *)
-                     q ws)
-        q ws
-     *)   
-    \post this |-> dbAuthR 1 (commitPostState preDb newProposal)
-                      ).
+                     (WithdrawalR qw)
+                     qw ws)
+        qw
+        (withdrawals (proposedBlock (newProposal)))
+    \post this |-> dbAuthR 1 (commitPostState preDb newProposal)).
 End with_Sigma.
 (**
 
@@ -535,10 +533,3 @@ Unfortunately, CppDefnOf is currrently not working so you can only issue Coq que
 +++ QUERIES
 
  *)
-
-
-
-
-
-
-

@@ -8,5 +8,3 @@
 
 (subdir tutorials
 	(include dune.inc))
-(subdir fmai/driver/ltac2
-	(include dune.inc))

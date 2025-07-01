@@ -102,8 +102,6 @@ Definition validBlockNumStateInDb  (b: BlockNumStateInDb) :=
   /\ proposalsHaveSameBlockNum b
   /\ NoDuplicate (map (roundNum ∘ cheader) (proposals b)).
 
-Definition maxL (l: list N) : N. Proof. Admitted.
-Definition minL (l: list N) : N. Proof. Admitted.
 Open Scope N_scope.
 Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
   let blockNums := List.map blockNum lb in

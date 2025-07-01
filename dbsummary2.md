@@ -304,6 +304,22 @@ After this sequence, the database’s finalized prefix at version 0 contains t
 
 **8. Disk full behavior:**  If writes exhaust disk space, low‑level `async_write_node` I/O errors (e.g. ENOSPC) will cause the commit to fail (exception/assertion). The DB will not silently evict prefixes to free space — you must ensure sufficient storage or configure history length.
 
+8. the withdrawaal arg in TrieDB::commit is optional of a vector. same is the withdrawal field in monad::Block. does anyone act differently between nullopt and empty vector:
+(EIP‑4895)monad/libs/execution/src/monad/execution/validate_block.cpp (/home/abhishek/fv-workspace/monad/libs/execution/src/monad/execution/validate_block.cpp)
+
+    // EIP-4895
+    if constexpr (rev < EVMC_SHANGHAI) {
+        if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else if (MONAD_UNLIKELY(!header.withdrawals_root.has_value())) {
+        return BlockError::MissingField;
+    }
+
+
+
+
 ---
 **Q: How do RODb and RWDb coordinate across separate processes?**  
 A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return non‑owning cursors that become invalid when the trie root is reloaded—either by an RWDb upsert, an RODb switch, or an RWDb in another process.
@@ -477,3 +493,6 @@ This feature drives CLI and debug‑trace tooling (e.g. eventual RPC `debug_trac
 ## Open questions:
 - leader can equivocate, but if a follower gets a second proposal for the same round, would it forward to execution or do something else, e.g. detect equivvocation and stop participating in that round, or even try to start a new round?
 - if execution can indeed receive multiple proposals for the same round, is there a guarantee that the latest one must be the final one. what if an earlier one is picked to be the final one? all earlier ones become unreachanble by db._find
+
+
+

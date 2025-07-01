@@ -224,8 +224,8 @@ namespace monad::vm::compiler::native
         void gas_decrement_check_non_negative(int32_t);
         void spill_caller_save_regs(bool spill_avx);
         void spill_all_caller_save_general_regs();
+        void spill_avx_reg_range(uint8_t start);
         void spill_all_avx_regs();
-        void spill_volatile_avx_regs();
         [[nodiscard]] std::pair<StackElemRef, AvxRegReserv> alloc_avx_reg();
         void insert_avx_reg_without_reserv(StackElem &);
         [[nodiscard]] AvxRegReserv insert_avx_reg(StackElemRef);
@@ -299,6 +299,7 @@ namespace monad::vm::compiler::native
         void basefee();
         void blobbasefee();
 
+        void calldataload();
         void mload();
         void mstore();
         void mstore8();
@@ -387,12 +388,6 @@ namespace monad::vm::compiler::native
         void balance(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::balance<rev>);
-        }
-
-        template <evmc_revision rev>
-        void calldataload(int32_t remaining_base_gas)
-        {
-            call_runtime(remaining_base_gas, true, runtime::calldataload);
         }
 
         template <evmc_revision rev>
@@ -669,6 +664,9 @@ namespace monad::vm::compiler::native
 
         StackElem *revertible_mov_stack_offset_to_general_reg(StackElemRef);
 
+        void bswap_to_ymm(
+            std::variant<asmjit::x86::Ymm, asmjit::x86::Mem> src,
+            asmjit::x86::Ymm dst);
         void mov_mem_be_to_avx_reg(asmjit::x86::Mem, StackElemRef);
         void mov_mem_be_to_general_reg(asmjit::x86::Mem, StackElemRef);
         StackElemRef read_mem_be(asmjit::x86::Mem);
@@ -713,6 +711,12 @@ namespace monad::vm::compiler::native
 
         StackElemRef negate_by_sub(StackElemRef);
         void negate_gpq256(Gpq256 const &);
+
+        template <typename... LiveSet>
+        std::variant<std::monostate, asmjit::x86::Gpq, uint64_t>
+        is_bounded_by_bits(
+            StackElemRef, uint8_t bits, asmjit::Label const &skip_label,
+            std::tuple<LiveSet...> const &);
 
         template <typename... LiveSet>
         std::optional<asmjit::x86::Mem> touch_memory(
@@ -979,6 +983,8 @@ namespace monad::vm::compiler::native
         RoData rodata_;
         std::vector<std::tuple<asmjit::Label, Gpq256, asmjit::Label>>
             byte_out_of_bounds_handlers_;
+        std::vector<std::tuple<asmjit::Label, asmjit::x86::Mem, asmjit::Label>>
+            load_bounded_le_handlers_;
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
     };
 }

@@ -257,6 +257,8 @@ namespace monad::vm::runtime
         offsetof(Context, env) + offsetof(Environment, value);
     constexpr auto context_offset_env_code_size =
         offsetof(Context, env) + offsetof(Environment, code_size);
+    constexpr auto context_offset_env_input_data =
+        offsetof(Context, env) + offsetof(Environment, input_data);
     constexpr auto context_offset_env_input_data_size =
         offsetof(Context, env) + offsetof(Environment, input_data_size);
     constexpr auto context_offset_env_return_data_size =

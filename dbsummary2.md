@@ -286,6 +286,25 @@ db_.update_finalized_block(0);
 After this sequence, the database’s finalized prefix at version 0 contains the genesis state.
 
 ---
+## 8. Q&A Recap
+
+**1. RPC read‐consistency:**  RPC handlers call `TrieRODb::set_block_and_round` exactly once, pinning a single trie root. All subsequent reads (`read_account`, `read_storage`, code, headers, etc.) use that fixed snapshot. Even if another process commits the same block+round concurrently, the pinned RODb root is never reloaded, so reads remain consistent.
+
+**2. Genesis injection:**  `read_genesis(...)` parses the JSON `alloc`, commits block 0 with that diff under proposal prefix 0, then finalizes block 0. `TrieDb::commit`’s guard on (block,round) handles the first proposal without `copy_trie` (no prior state to clone), and `finalize()` shallow‑copies the root into `finalized_nibbles`.
+
+**3. Which header fields does `commit()` use?**  Only `consensus_header.round` (for `proposal_prefix`) and `consensus_header.execution_inputs.number` (for version). The full header is RLP‑encoded under `BFT_BLOCK_NIBBLE`, and execution inputs drive the `BLOCKHEADER_NIBBLE` leaf.
+
+**4. `round = std::nullopt` → finalized prefix:**  Passing `std::nullopt` for round in `set_block_and_round` selects the `finalized_nibbles` sub‑trie so reads see the frozen finalized state.
+
+**5. GC is driven by `commit(...)`:**  The only TrieDb API that triggers garbage‑collection of old versions is `TrieDb::commit`’s first `upsert(..., enable_compaction=true, ...)`. Neither `finalize()` nor any `TrieRODb` call ever invokes GC.
+
+**6. GC order & bounds:**  Eviction always clears the lowest block number first (`db_history_min_valid_version()`). The history can never shrink below `MIN_HISTORY_LENGTH` (257 versions), and its absolute maximum is `version_history_max_possible() = root_offsets().capacity()`, or an explicit `fixed_history_length` configured at DB open.
+
+**7. Unlimited proposals ≠ unlimited history:**  There is exactly one history slot per block height. Multiple commits for the same block+round do not append new slots. GC operates only on block indices, never on individual round prefixes.
+
+**8. Disk full behavior:**  If writes exhaust disk space, low‑level `async_write_node` I/O errors (e.g. ENOSPC) will cause the commit to fail (exception/assertion). The DB will not silently evict prefixes to free space — you must ensure sufficient storage or configure history length.
+
+---
 **Q: How do RODb and RWDb coordinate across separate processes?**  
 A: As noted in the `mpt::Db` interface comment, `find`/`get`/`get_data` return non‑owning cursors that become invalid when the trie root is reloaded—either by an RWDb upsert, an RODb switch, or an RWDb in another process.
 

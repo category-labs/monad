@@ -63,5 +63,4 @@ add_ethereum_test(FORK london)
 add_ethereum_test(FORK merge)
 add_ethereum_test(FORK shanghai)
 add_ethereum_test(FORK cancun)
-# TODO: enable prage tests when the vm has support:
-#add_ethereum_test(FORK prague)
+add_ethereum_test(FORK prague)

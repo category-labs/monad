@@ -38,6 +38,7 @@ Record ProposalInDb :=
     cheader: ConsensusBlockHeader;
     proposedBlock: Block;
     postBlockState: EvmState;
+    txResults: list TransactionResult;
   }.
     
 (* Todo: replace by ConsensusProposal
@@ -107,9 +108,15 @@ Definition validBlockIndexState  (b: BlockIndexState) :=
   /\ proposalsHaveSameBlockNumber b
   /\ NoDuplicate (map (roundNum ∘ cheader) (allProposals b)).
 
+Definition maxL (l: list N) : N. Proof. Admitted.
+Definition minL (l: list N) : N. Proof. Admitted.
+Open Scope N_scope.
 Definition contiguousBlockNumbers (lb: list BlockIndexState) : Prop :=
-  exists lowestBlockNumber:N,
-    map blockNumber lb = seqN lowestBlockNumber (lengthN lb).
+  let blockNums := List.map blockNumber lb in
+  let maxBlockNum := maxL blockNums in 
+  let minBlockNum := minL blockNums in
+  forall blockNum:N,  minBlockNum <= blockNum <= maxBlockNum -> exists b, blockNumber b = blockNum /\ b ∈ lb.
+                           
 
 Definition lowestBlockNumber (d: DbModel) : N:=
   match blockIndicesStates d with
@@ -120,12 +127,12 @@ Definition lowestBlockNumber (d: DbModel) : N:=
 (* upstream *)
 Definition nthElem {A:Type} (l: list A) (n:N) : option A :=
   nth_error l (N.to_nat n).
-    
              
 Definition lookupBlockByNumber (bnum: N) (d: DbModel) : option BlockIndexState :=
-  if bool_decide (bnum <= lowestBlockNumber d /\ 0 < lengthN (blockIndicesStates d))%N
-  then nthElem (blockIndicesStates d) (bnum - lowestBlockNumber d)
-  else None.
+  match List.filter (fun b => bool_decide (blockNumber b= bnum)) (blockIndicesStates d) with
+  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+  | [] => None
+  end.
 
 Definition lookupProposalByRoundNum (b: BlockIndexState) (rnum: N) : option ProposalInDb :=
   match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (allProposals b) with
@@ -133,7 +140,8 @@ Definition lookupProposalByRoundNum (b: BlockIndexState) (rnum: N) : option Prop
   | [] => None
   end.
     
-Definition lookupProposal (id: ProposalId)  (d: DbModel) : option ProposalInDb :=
+Definition lookupProposal (id: ProposalId)  (d: DbModel)
+  : option ProposalInDb :=
   match lookupBlockByNumber (idBlockNumber id) d with
   | None => None
   | Some b =>
@@ -186,9 +194,19 @@ Definition validProposal (proposal: Proposal) (lastFin: option N) :=
     lastFinalizedBlockIndex' (map fst (finalizedBlocks m)).
  *)
 
-Definition validModel (m: DbModel) : Prop :=
-  contiguousBlockNumbers (blockIndicesStates m)
-  /\ validActiveProposal m. (* may need to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
+Definition splitL {A} (n:N) (l: list A) : (list A * (list A)) :=
+  (takeN n l, dropN n l).
+
+Definition validDbModel (m: DbModel) : Prop :=
+  (forall b, b ∈ (blockIndicesStates m) -> validBlockIndexState b)
+  /\ contiguousBlockNumbers (blockIndicesStates m)
+  /\ NoDuplicate (map blockNumber (blockIndicesStates m))
+  /\ validActiveProposal m
+  /\ (exists numFinalized:N, let '(firstn, rest) := splitL numFinalized (blockIndicesStates m) in
+         (forall b, b ∈ firstn -> isSome (finalizedProposal b))
+         /\ (forall b, b ∈ rest -> isNone (finalizedProposal b))
+     ).
+       (* may need to also say that the evm.GlobalState parts are obtained by executiing EVM semantics of a block on the state at the end of the previous block, but maybe that is the client's responsibility? the db can be agnostig to the execution mechanism *)
 
   Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
   
@@ -231,7 +249,7 @@ Section with_Sigma.
   Notation dbAuthR := TrieDBR. (* TODO: inline *)
 
   (* when we fill in the definition of dbAuthR, we must ensure the lemmas below are provable *)
-  Lemma dbAuthREntails (q:Qp) (m: DbModel) : dbAuthR q m |--  dbAuthR q m ** [| validModel m|].
+  Lemma dbAuthREntails (q:Qp) (m: DbModel) : dbAuthR q m |--  dbAuthR q m ** [| validDbModel m|].
   Proof. Admitted.
                                                      
   (** Raw db ownersip (the part that is remaining after dbAuthR above), shared with RODb instances. can use this to construct trie_rodb. RPC and statesync server(s) use fractions of this ownership to read the on-disk data *)
@@ -246,26 +264,35 @@ Section with_Sigma.
       \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
       \arg{keyp} "key" (Vptr keyp)
       \prepost{key:N} keyp |-> bytes32R q key
-      \post{retp:ptr} [Vptr retp]  retp |-> bytes32R 1 (lookupStorage (stateAfterActiveProposal preDb) address key blockTxInd)).
+      
+      \pre{activeProposal} [| lookupActiveProposal preDb = Some activeProposal |]
+      \post{retp:ptr} [Vptr retp]
+        retp |-> bytes32R
+        1
+        (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
   Definition MaxRoots : N. Proof. Admitted.
 
+
+  Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
+
+  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
+
+  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
   
-  Open Scope N_scope.
-  Search compose.
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
-      \pre [| lastFinButNotYetVerified preDb = false |]
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
-      \pre [| roundNum ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb) |]
-      \pre [| lengthN (nextBlockProposals preDb) < MaxRoots |]%N
-      \pre match lastFinalizedBlockIndex preDb with
-           | Some lastFinIndex => [| blockNum = 1+ lastFinIndex |]
-           | None => True (* TODO: only allowed when the state was in pre genesis *)
-           end
-      \post this |-> TrieDBR q (preDb &: _activeBlock .= finalized blockNum)).
+      \let pid := {| idBlockNumber := blockNum; idRoundNumber:= Some roundNum |}
+      \pre{prp} [| lookupProposal pid preDb = Some prp|]
+      \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
+      \post
+         this |-> TrieDBR q (updateBlockNum preDb blockNum (finalizeProposal pid))
+         ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
+                               ).
+                               
   (* no finalize in triedb *)
   
 
@@ -273,9 +300,81 @@ Section with_Sigma.
     as update_verified_block_spec with (fun (this:ptr) =>
       \prepost{q preDb} this |-> dbAuthR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \pre [| lastFinButNotYetVerified preDb = true |]
-      \pre [| Some blockNum = lastVerified (lastFinalizedBlockIndex preDb) |]
-      \post this |-> dbAuthR q (preDb &: _lastFinButNotYetVerified .= false)).
+      \pre [| match lowestUnfinalizedBlockIndex preDb with
+              | Some s =>  blockNum < s
+              | None => False (* if no block has been finalized yet, cannot call this method *)
+              end |]
+      \post this |-> dbAuthR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
+
+Import libspecs.
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as set_block_and_round_spec with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preDb} this |-> dbAuthR q preDb
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+    \pre{prp} [| lookupProposal pid preDb = Some prp|]
+
+    (* On return, activeBlock is updated accordingly *)
+    \post this |-> dbAuthR q (preDb &: _activeProposal .= Some pid)
+  ).
+
+(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as rodb_set_block_and_round_spec1 with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preActive} this |-> TrieRODBR q preActive
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+
+    (* On return, activeBlock is updated accordingly *)
+    \post{ret} [Vbool ret]
+       if ret then Exists proposal,  this |-> TrieRODBR q (Some proposal)
+                                     ** SelectedProposalForBlockNum (idBlockNumber pid) proposal
+      else  this |-> TrieRODBR q None
+  ).
+
+(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
+cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+  as rodb_set_block_and_round_spec2 with (fun (this:ptr) =>
+    (* Full ownership of the Db model *)
+    \prepost{q preActive} this |-> TrieRODBR q preActive
+
+    (* block_number: unsigned long *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNumber pid))
+
+    (* round_number: std::optional<unsigned long> by-pointer *)
+    \arg{roundLoc}   "round_number" (Vptr roundLoc)
+    \prepost{roundOpt: option N}
+       (roundLoc |-> optionR "unsigned long"
+          (fun v:N => primR "unsigned long" q (Vint v)) (cQp.mut q)
+          (idRoundNumber pid))
+
+    \pre{proposal} SelectedProposalForBlockNum (idBlockNumber pid) proposal
+
+    (* On return, activeBlock is updated accordingly *)
+    \post{ret} [Vbool ret]
+       if ret then this |-> TrieRODBR q (Some proposal)
+      else  this |-> TrieRODBR q None
+   ).
 
   cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
@@ -289,63 +388,58 @@ Section with_Sigma.
   Definition transactionsRoot (b: Block) : N. Proof. Admitted.
   Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
 
-Compute (lookup_struct module "monad::Db").
 
-Definition commitFn : name:=
+  
+Definition commitFullCppName : name:=
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)".
-Check CodeDeltaR.
 (** Compute the post-commit DbModel from pre-commit model and all commit arguments. *)
 
 
 (** Compute the post-commit DbModel by prepending the new proposal and its state.
-    Note: we do not record [rs] in the model (no field to hold transaction results). *)
-Definition commit_model2
+    Note: we do not record [rs] in the model (no field to hold transaction results). 
+ *)
+Definition commit_model
   (preDb      : DbModel)
-  (newBlock   : Proposal)
-  (finalState : monad.proofs.evmopsem.StateOfAccounts)
-  (rs         : list monad.proofs.evmopsem.TransactionResult)
-  : DbModel :=
-  preDb
-    &: _nextBlockProposals .=
-      ((Build_Proposal (roundNumber newBlock) (proposedBlock newBlock), finalState)
-         :: nextBlockProposals preDb).
-(*
-# round numbers are disjoint even across 
-lastFinalizes (101, 201)
-commit (102, 202)                
-commit (103, 203)
-commit (103, 203)
-commit (103, 204)
-finalize(102,202)
-*)
+  (newProposal   : ProposalInDb)
+  : DbModel. Proof. Admitted.
 
+(* TODO:
+- handle garbage collection
+- handle genesis block creation
+ *)
+Open Scope N_scope.
 cpp.spec
   "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
     \prepost{(preDb:DbModel)} this |-> dbAuthR 1 preDb
 
     \arg{(deltas_ptr: ptr) (qs: Qp)} "#0" (Vptr deltas_ptr)
-    \prepost{(finalState: StateOfAccounts)}
-      deltas_ptr |-> StateDeltasR qs (stateAfterLastFinalized preDb, finalState)
+    \prepost{(newProposal: ProposalInDb)}
+      deltas_ptr |-> StateDeltasR qs (stateAfterActiveProposal preDb, (postBlockState newProposal))
 
     \arg{(code_ptr:ptr) (qcd: Qp)} "#1" (Vptr code_ptr)
     \prepost
-      code_ptr |-> CodeDeltaR qcd (stateAfterLastFinalized preDb, finalState)
+      code_ptr |-> CodeDeltaR qcd (stateAfterActiveProposal preDb, (postBlockState newProposal))
 
     \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{(newProposal: Proposal) (qpr: Qp)}
+    \prepost{ (qpr: Qp)}
       hdr_ptr |-> BheaderR qpr (header (proposedBlock newProposal))
-    \pre [| validProposal newProposal (lastFinalizedBlockIndex preDb) |]
-    \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] (* delete *)
+      \pre [| match activeProposal preDb with
+              | Some activeProp =>
+                  pblockNumber newProposal = 1 + idBlockNumber activeProp
+              | None => pblockNumber newProposal = 0
+              end
+              |]
+   (*  \pre [| roundNumber newProposal ∉ (map (roundNumber ∘ fst) (nextBlockProposals preDb)) |] can this, depending on whether consensus can really send us 2 blocks for the same round number *)
 
     \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
-    \prepost{(rs: list monad.proofs.evmopsem.TransactionResult) (qtrs: Qp)}
+    \prepost{ (qtrs: Qp)}
       receipts_ptr |->
-        monad.proofs.libspecs.VectorR
+        VectorR
           "monad::Receipt"%cpp_type
-          (fun r => monad.proofs.exec_specs.ReceiptR r)
-          qtrs rs
-
+          (fun r => ReceiptR r)
+          qtrs (txResults newProposal)
+          
    \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
    (*       
     \prepost
@@ -390,7 +484,7 @@ cpp.spec
                      q ws)
         q ws
      *)   
-    \post this |-> dbAuthR 1 (commit_model2 preDb newProposal finalState rs)
+    \post this |-> dbAuthR 1 (commit_model preDb newProposal)
   ). 
 (**
 write the spec of monad::Db::set_block_and_round.
@@ -411,53 +505,6 @@ Compute (lookup_struct module "monad::Db").
 Print exec_specs.
 Print libspecs.
  *)
- Set Printing FullyQualifiedNames.
-(* ---------- Filled‐in hole: optional std::optional<unsigned long> ---------- *)
-
-(* We use the Rep‐predicate `optionR` from the `libspecs` module. *)
-Definition optionalULongR (q: cQp.t) (o: option N) : Rep :=
-  @libspecs.optionR _ _ _ CU
-    N                                        (* SomeTyModel *)
-    ("unsigned long"%cpp_type)               (* C++ type of the payload *)
-    (fun n => primR "unsigned long"%cpp_type  (* how to represent each N *)
-                   q
-                   (Vint (Z.of_N n)))
-    (cQp.mut 1)                              (* fraction of ownership *)
-    o.
-
-(* ---------- Spec of set_block_and_round ---------- *)
-
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
-    (* Full ownership of the Db model *)
-    \prepost{q preDb} this |-> dbAuthR q preDb
-
-    (* block_number: unsigned long *)
-    \arg{blockNum:N} "block_number" (Vint blockNum)
-
-    (* round_number: std::optional<unsigned long> by-pointer *)
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{roundOpt: option N}
-      (roundLoc |-> optionalULongR (cQp.mut 1) roundOpt)
-
-    \pre [| match roundOpt with
-           | Some rn => rn ∈ map (roundNumber ∘ fst) (nextBlockProposals preDb)
-           | None => blockNum ∈ map (bnumber ∘ fst) (finalizedBlocks preDb) (* what if this has already been garbage collected? return a bool error? *)
-           end |]
-
-    (* On return, activeBlock is updated accordingly *)
-    \post this |-> dbAuthR q
-      (preDb &: _activeBlock .=
-        match roundOpt with
-        | None    => finalized blockNum
-        | Some rn => proposalForNextBlock blockNum rn
-        end
-      )
-  ).
-
-
-Set Printing FullyQualifiedNames.
-
 
   
 End with_Sigma.

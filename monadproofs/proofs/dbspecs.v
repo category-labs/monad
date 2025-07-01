@@ -50,7 +50,7 @@ Record Proposal :=
   }.
  *)
 
-Record BlockIndexState :=
+Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
     finalizedRoundNum : option N;
@@ -64,7 +64,7 @@ Record ProposalId :=
     
 Record DbModel : Type :=
   {
-    blockIndicesStates: list BlockIndexState;
+    blockNumStates: list BlockNumStateInDb;
     
     activeProposal: option ProposalId;
     (*^ changed by set_block_and_round. None means set_block_and_round has never been called on this object yet *)
@@ -80,24 +80,24 @@ Record DbModel : Type :=
 
 Definition pblockNum (p: ProposalInDb):=  number (header (proposedBlock p)).
 
-Definition blockNum (b: BlockIndexState) : N:=
+Definition blockNum (b: BlockNumStateInDb) : N:=
   match proposals b with
   | h::_ => pblockNum h
   | [] => 0 (* dummy value. use sites will ensure this case never happens *)
   end.
 
-Definition proposalsHaveSameBlockNum (b: BlockIndexState) :=
+Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
   forall (p1 p2: ProposalInDb),
     p1 ∈ (proposals b)
     -> p2 ∈ (proposals b)
     -> pblockNum p1 = pblockNum p2.
 
-Definition hasAtLeastOneProposal (b: BlockIndexState) :=
+Definition hasAtLeastOneProposal (b: BlockNumStateInDb) :=
   exists p: ProposalInDb, p ∈ (proposals b).
 
 Notation NoDuplicate := NoDup.
 
-Definition validBlockIndexState  (b: BlockIndexState) :=
+Definition validBlockNumStateInDb  (b: BlockNumStateInDb) :=
   hasAtLeastOneProposal b
   /\ proposalsHaveSameBlockNum b
   /\ NoDuplicate (map (roundNum ∘ cheader) (proposals b)).
@@ -105,7 +105,7 @@ Definition validBlockIndexState  (b: BlockIndexState) :=
 Definition maxL (l: list N) : N. Proof. Admitted.
 Definition minL (l: list N) : N. Proof. Admitted.
 Open Scope N_scope.
-Definition contiguousBlockNums (lb: list BlockIndexState) : Prop :=
+Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
   let blockNums := List.map blockNum lb in
   let maxBlockNum := maxL blockNums in 
   let minBlockNum := minL blockNums in
@@ -113,7 +113,7 @@ Definition contiguousBlockNums (lb: list BlockIndexState) : Prop :=
                            
 
 Definition lowestBlockNum (d: DbModel) : N:=
-  match blockIndicesStates d with
+  match blockNumStates d with
   | h::_ => blockNum h
   | [] => 0 (* dummy value. use sites will ensure this case never happens *)
   end.
@@ -122,20 +122,20 @@ Definition lowestBlockNum (d: DbModel) : N:=
 Definition nthElem {A:Type} (l: list A) (n:N) : option A :=
   nth_error l (N.to_nat n).
              
-Definition lookupBlockByNum (bnum: N) (d: DbModel) : option BlockIndexState :=
-  match List.filter (fun b => bool_decide (blockNum b= bnum)) (blockIndicesStates d) with
-  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+Definition lookupBlockByNum (bnum: N) (d: DbModel) : option BlockNumStateInDb :=
+  match List.filter (fun b => bool_decide (blockNum b= bnum)) (blockNumStates d) with
+  | h::tl => Some h (* [validBlockNumStateInDb b] -> tl = [] *)
   | [] => None
   end.
 
-Definition lookupProposalByRoundNum (b: BlockIndexState) (rnum: N) : option ProposalInDb :=
+Definition lookupProposalByRoundNum (b: BlockNumStateInDb) (rnum: N) : option ProposalInDb :=
   match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (proposals b) with
-  | h::tl => Some h (* [validBlockIndexState b] -> tl = [] *)
+  | h::tl => Some h (* [validBlockNumStateInDb b] -> tl = [] *)
   | [] => None
   end.
 
 
-Definition finalizedProposal (b : BlockIndexState): option ProposalInDb :=
+Definition finalizedProposal (b : BlockNumStateInDb): option ProposalInDb :=
   match finalizedRoundNum b with
   | None => None
   | Some rnd => lookupProposalByRoundNum b rnd
@@ -198,11 +198,11 @@ Definition splitL {A} (n:N) (l: list A) : (list A * (list A)) :=
   (takeN n l, dropN n l).
 
 Definition validDbModel (m: DbModel) : Prop :=
-  (forall b, b ∈ (blockIndicesStates m) -> validBlockIndexState b)
-  /\ contiguousBlockNums (blockIndicesStates m)
-  /\ NoDuplicate (map blockNum (blockIndicesStates m))
+  (forall b, b ∈ (blockNumStates m) -> validBlockNumStateInDb b)
+  /\ contiguousBlockNums (blockNumStates m)
+  /\ NoDuplicate (map blockNum (blockNumStates m))
   /\ validActiveProposal m
-  /\ (exists numFinalized:N, let '(firstn, rest) := splitL numFinalized (blockIndicesStates m) in
+  /\ (exists numFinalized:N, let '(firstn, rest) := splitL numFinalized (blockNumStates m) in
          (forall b, b ∈ firstn -> isSome (finalizedProposal b))
          /\ (forall b, b ∈ rest -> isNone (finalizedProposal b))
      ).
@@ -232,29 +232,29 @@ Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
       (fun b => match finalizedProposal b with
                 | None => true | _ => false
                 end)
-      (blockIndicesStates d) in
+      (blockNumStates d) in
   match unfin with
   | [] => None
   | _  => Some (minL (List.map blockNum unfin))
   end.
 
-  (** updateBlockNum: update exactly the [BlockIndexState] whose [blockNum]
+  (** updateBlockNum: update exactly the [BlockNumStateInDb] whose [blockNum]
        equals [bnum] by applying [f], leave others unchanged.
   *)
 #[only(lens)] derive DbModel.
 #[only(lens)] derive ProposalInDb.
-#[only(lens)] derive BlockIndexState.
+#[only(lens)] derive BlockNumStateInDb.
 
   Definition updateBlockNum
              (d: DbModel)
              (bnum: N)
-             (f: BlockIndexState -> BlockIndexState)
+             (f: BlockNumStateInDb -> BlockNumStateInDb)
     : DbModel :=
-    d &: _blockIndicesStates .= 
+    d &: _blockNumStates .= 
          List.map (fun b =>
                      if bool_decide (blockNum b = bnum)
                      then f b else b)
-                  (blockIndicesStates d).
+                  (blockNumStates d).
 
 (** ignore the next 4 lines: Coq boilerplate *)
 Open Scope Z_scope.
@@ -301,16 +301,6 @@ Section with_Sigma.
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
 
-  (** finalizeProposal: for a given [pid] = (blockNum, Some r),
-       remove from [unfinalizedProposals] the one with [roundNum = r],
-       and set [finalizedProposal] to that [Some p].
-       If [idRoundNum pid = None] or no match is found, do nothing.
-  *)
-  Definition finalizeProposal
-             (roundNum: N)
-             (d: BlockIndexState)    : BlockIndexState :=
-    d &: _finalizedRoundNum .= (Some roundNum).
-  
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
@@ -320,12 +310,11 @@ Section with_Sigma.
       \pre{prp} [| lookupProposal pid preDb = Some prp|]
       \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
       \post
-         this |-> TrieDBR q (updateBlockNum preDb blockNum (finalizeProposal roundNum))
+         this |-> TrieDBR q (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
          ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
                                ).
                                
-  (* no finalize in triedb *)
-  
+  (* no finalize in TrieRODB *)
 
   cpp.spec "monad::Db::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
@@ -404,7 +393,7 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
     (* On return, activeBlock is updated accordingly *)
     \post{ret} [Vbool ret]
        if ret then this |-> TrieRODBR q (Some proposal)
-      else  this |-> TrieRODBR q None
+      else  this |-> TrieRODBR q None (* the proposal got garbage collected *)
    ).
 
   cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
@@ -419,22 +408,7 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
   Definition transactionsRoot (b: Block) : N. Proof. Admitted.
   Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
 
-
-  
-Definition commitFullCppName : name:=
-  "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)".
-(** Compute the post-commit DbModel from pre-commit model and all commit arguments. *)
-
-
-(** Compute the post-commit DbModel by prepending the new proposal and its state.
-    Note: we do not record [rs] in the model (no field to hold transaction results). 
- *)
-  (** commit_model:
-      If there is already a [BlockIndexState] for this block number,
-      prepend [newProposal] to its [unfinalizedProposals].
-      Otherwise, append a fresh [BlockIndexState] with only [newProposal].
-  *)
-  Definition commit_model
+  Definition commitPostState
              (preDb       : DbModel)
              (newProposal : ProposalInDb)
     : DbModel :=
@@ -444,8 +418,8 @@ Definition commitFullCppName : name:=
         (* merge into existing state *)
         updateBlockNum preDb bnum (fun bs => bs &: _proposals .= (newProposal::proposals bs))
     | None =>
-        preDb &: _blockIndicesStates .=
-              ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockIndicesStates preDb)) 
+        preDb &: _blockNumStates .=
+              ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumStates preDb)) 
     end.
 
 (* TODO:
@@ -529,7 +503,7 @@ cpp.spec
                      q ws)
         q ws
      *)   
-    \post this |-> dbAuthR 1 (commit_model preDb newProposal)
+    \post this |-> dbAuthR 1 (commitPostState preDb newProposal)
                       ).
 End with_Sigma.
 (**
@@ -542,9 +516,9 @@ Definition minL (l: list N) : N. Proof. Admitted.
 
   Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N. Proof. Admitted.
 
-  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockIndexState -> BlockIndexState): DbModel. Proof. Admitted.
+  Definition updateBlockNum (d: DbModel) (bnum: N) (f: BlockNumStateInDb -> BlockNumStateInDb): DbModel. Proof. Admitted.
 
-  Definition finalizeProposal (pid: ProposalId) (d: BlockIndexState) : BlockIndexState. Proof. Admitted. 
+  Definition finalizeProposal (pid: ProposalId) (d: BlockNumStateInDb) : BlockNumStateInDb. Proof. Admitted. 
 
 Definition commit_model
   (preDb      : DbModel)

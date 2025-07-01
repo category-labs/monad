@@ -1,5 +1,6 @@
 #pragma once
 
+#include <monad/chain/chain_config.h>
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 
@@ -80,6 +81,7 @@ bool init_block_hash_buffer_from_triedb(
     mpt::Db &, uint64_t, BlockHashBufferFinalized &);
 
 bool init_block_hash_buffer_from_blockdb(
-    BlockDb &, uint64_t block_number, BlockHashBufferFinalized &);
+    monad_chain_config const, BlockDb &, uint64_t block_number,
+    BlockHashBufferFinalized &);
 
 MONAD_NAMESPACE_END

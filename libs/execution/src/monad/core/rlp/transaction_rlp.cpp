@@ -271,4 +271,40 @@ Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
     return transactions;
 }
 
+Result<std::vector<Transaction>>
+decode_transaction_list_with_sender(byte_string_view &enc)
+{
+    std::vector<Transaction> transactions;
+    BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
+
+    // TODO: Reserve txn vector size for better perf
+    while (!ls.empty()) {
+        BOOST_OUTCOME_TRY(auto payload1, parse_list_metadata(ls));
+        BOOST_OUTCOME_TRY(auto payload, parse_string_metadata(payload1));
+        if (payload[0] >= 0xc0) {
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(payload));
+            if (!payload.empty()) {
+                BOOST_OUTCOME_TRY(
+                    [[maybe_unused]] auto sender, decode_address(payload));
+            }
+            MONAD_ASSERT(payload.empty());
+            transactions.emplace_back(std::move(tx));
+        }
+        else {
+            BOOST_OUTCOME_TRY(auto str, parse_string_metadata(payload));
+            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
+            if (!payload.empty()) {
+                BOOST_OUTCOME_TRY(
+                    [[maybe_unused]] auto sender,
+                    decode_optional_address(payload));
+            }
+            MONAD_ASSERT(payload.empty());
+            transactions.emplace_back(std::move(tx));
+        }
+    }
+    MONAD_ASSERT(ls.empty());
+
+    return transactions;
+}
+
 MONAD_RLP_NAMESPACE_END

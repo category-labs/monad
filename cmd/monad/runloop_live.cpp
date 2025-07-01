@@ -1,4 +1,4 @@
-#include "runloop_monad.hpp"
+#include "runloop_live.hpp"
 #include "file_io.hpp"
 
 #include <monad/chain/chain.hpp>
@@ -203,7 +203,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-Result<std::pair<uint64_t, uint64_t>> runloop_monad(
+Result<std::pair<uint64_t, uint64_t>> runloop_live(
     Chain const &chain, std::filesystem::path const &ledger_dir,
     mpt::Db &raw_db, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,

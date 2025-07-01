@@ -1,3 +1,4 @@
+#include <monad/chain/chain_config.h>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -13,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -23,7 +25,9 @@ BlockDb::BlockDb(std::filesystem::path const &dir)
 {
 }
 
-bool BlockDb::get(uint64_t const num, Block &block) const
+bool BlockDb::get(
+    monad_chain_config const chain_config, uint64_t const num,
+    Block &block) const
 {
     auto const key = std::to_string(num);
     auto result = db_.get(key.c_str());
@@ -35,20 +39,38 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     if (!result.has_value()) {
         return false;
     }
-    auto const view = to_byte_string_view(result.value());
-    size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
-    byte_string brotli_buffer;
-    brotli_buffer.resize(brotli_size);
-    auto const brotli_result = BrotliDecoderDecompress(
-        view.size(), view.data(), &brotli_size, brotli_buffer.data());
-    brotli_buffer.resize(brotli_size);
-    MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
-    byte_string_view view2{brotli_buffer};
 
-    auto const decoded_block = rlp::decode_block(view2);
-    MONAD_ASSERT(!decoded_block.has_error());
-    MONAD_ASSERT(view2.size() == 0);
-    block = decoded_block.value();
+    if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+        auto const view = to_byte_string_view(result.value());
+        size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
+        byte_string brotli_buffer;
+        brotli_buffer.resize(brotli_size);
+        auto const brotli_result = BrotliDecoderDecompress(
+            view.size(), view.data(), &brotli_size, brotli_buffer.data());
+        brotli_buffer.resize(brotli_size);
+        MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
+        byte_string_view view2{brotli_buffer};
+        auto const decoded_block = rlp::decode_block(view2);
+        MONAD_ASSERT(!decoded_block.has_error());
+        MONAD_ASSERT(view2.empty());
+
+        block = decoded_block.value();
+    }
+    else {
+        // blocks in monad archiver aren't compressed, but have with sender
+        // info
+        auto view = to_byte_string_view(result.value());
+        auto const decoded_block = rlp::decode_block_with_tx_sender(view);
+        MONAD_ASSERT(!decoded_block.has_error());
+        MONAD_ASSERT(view.empty());
+
+        block = decoded_block.value();
+    }
+
+    // Only testnet's archive (initially) was bad
+    if (chain_config == CHAIN_CONFIG_MONAD_TESTNET) {
+        block.withdrawals = {std::make_optional(std::vector<Withdrawal>())};
+    }
     return true;
 }
 

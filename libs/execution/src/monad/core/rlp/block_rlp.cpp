@@ -214,4 +214,26 @@ Result<Block> decode_block(byte_string_view &enc)
     return block;
 }
 
+Result<Block> decode_block_with_tx_sender(byte_string_view &enc)
+{
+    Block block;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
+    BOOST_OUTCOME_TRY(
+        block.transactions, decode_transaction_list_with_sender(payload));
+    BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
+
+    if (payload.size() > 0) {
+        BOOST_OUTCOME_TRY(auto withdrawals, decode_withdrawal_list(payload));
+        block.withdrawals.emplace(std::move(withdrawals));
+    }
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return block;
+}
+
 MONAD_RLP_NAMESPACE_END

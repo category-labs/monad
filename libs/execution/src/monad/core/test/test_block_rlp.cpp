@@ -1,3 +1,4 @@
+#include <monad/chain/chain_config.h>
 #include <monad/core/blake3.hpp>
 #include <monad/core/block.hpp>
 #include <monad/core/byte_string.hpp>
@@ -27,7 +28,7 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    bool const res = block_db.get(46'402, block);
+    bool const res = block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 46'402, block);
     ASSERT_TRUE(res);
 
     // Header
@@ -121,7 +122,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    EXPECT_TRUE(block_db.get(2'730'000, block));
+    EXPECT_TRUE(block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 2'730'000, block));
 
     // Header
     EXPECT_EQ(
@@ -277,7 +278,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    EXPECT_TRUE(block_db.get(2'730'001, block));
+    EXPECT_TRUE(block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 2'730'001, block));
 
     // Header
     EXPECT_EQ(
@@ -460,7 +461,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730002)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    EXPECT_TRUE(block_db.get(2'730'002, block));
+    EXPECT_TRUE(block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 2'730'002, block));
 
     // Header
     EXPECT_EQ(
@@ -524,7 +525,7 @@ TEST(Rlp_Block, DecodeEncodeBlock2730009)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    EXPECT_TRUE(block_db.get(2730009, block));
+    EXPECT_TRUE(block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 2730009, block));
 
     // Header
     EXPECT_EQ(
@@ -573,7 +574,7 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
 {
     Block block;
     BlockDb const block_db(test_resource::correct_block_data_dir);
-    EXPECT_TRUE(block_db.get(14'000'000, block));
+    EXPECT_TRUE(block_db.get(CHAIN_CONFIG_ETHEREUM_MAINNET, 14'000'000, block));
 
     // Header
     EXPECT_EQ(

@@ -14,6 +14,12 @@
 extern "C" __m256i
 monad_vm_runtime_load_bounded_le(uint8_t const *src_buffer, int64_t load_size);
 
+// Note: monad_vm_runtime_load_bounded_le_raw uses non-standard
+// calling convention. See transmute.S. Use the
+// monad_vm_runtime_load_bounded_le function for a version
+// using standard calling convention.
+extern "C" __m256i monad_vm_runtime_load_bounded_le_raw();
+
 namespace monad::vm::runtime
 {
     static_assert(sizeof(evmc_address) == 20);

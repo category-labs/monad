@@ -6,10 +6,14 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
+#include <monad/execution/trace/tracer_config.h>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/rpc/eth_call.h>
+#include <monad/state2/block_state.hpp>
+#include <monad/state3/state.hpp>
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>
@@ -41,6 +45,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
+        vm::VM vm;
 
         EthCallFixture()
             : dbname{[] {
@@ -155,14 +160,14 @@ namespace
             state_override,
             complete_callback,
             (void *)&ctx,
-            true,
+            CALL_TRACER,
             gas_specified);
         f.get();
 
         EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
 
         byte_string const rlp_call_frames(
-            ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+            ctx.result->encoded_trace, ctx.result->encoded_trace_len);
         CallFrame expected{
             .type = CallType::CALL,
             .flags = 0,
@@ -238,12 +243,12 @@ TEST_F(EthCallFixture, simple_success_call)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
-    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
@@ -296,13 +301,13 @@ TEST_F(EthCallFixture, insufficient_balance)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
-    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 0);
 
@@ -355,12 +360,12 @@ TEST_F(EthCallFixture, on_proposed_block)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
@@ -413,7 +418,7 @@ TEST_F(EthCallFixture, failed_to_read)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
@@ -422,7 +427,7 @@ TEST_F(EthCallFixture, failed_to_read)
         std::strcmp(
             ctx.result->message, "failure to initialize block hash buffer") ==
         0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 0);
 
@@ -473,7 +478,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
@@ -493,7 +498,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         ctx.result->output_data,
         ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 68137);
 
@@ -554,13 +559,13 @@ TEST_F(EthCallFixture, from_contract_account)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 32094);
 
@@ -644,7 +649,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             state_override,
             complete_callback,
             (void *)ctx.get(),
-            false,
+            NOOP_TRACER,
             true);
     }
 
@@ -654,7 +659,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
 
         EXPECT_TRUE(ctx->result->status_code == EVMC_SUCCESS);
         EXPECT_EQ(ctx->result->output_data_len, 0);
-        EXPECT_EQ(ctx->result->rlp_call_frames_len, 0);
+        EXPECT_EQ(ctx->result->encoded_trace_len, 0);
         EXPECT_EQ(ctx->result->gas_refund, 0);
         EXPECT_EQ(ctx->result->gas_used, 32094);
 
@@ -664,7 +669,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
     monad_eth_call_executor_destroy(executor);
 }
 
-TEST_F(EthCallFixture, transfer_success_with_trace)
+TEST_F(EthCallFixture, transfer_success_with_call_trace)
 {
     test_transfer_call_with_trace(true);
 }
@@ -674,7 +679,7 @@ TEST_F(EthCallFixture, transfer_success_with_trace_unspecified_gas)
     test_transfer_call_with_trace(false);
 }
 
-TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
+TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
 {
     static constexpr auto precompile_address{
         0x0000000000000000000000000000000000000001_address};
@@ -739,14 +744,14 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         state_override,
         complete_callback,
         (void *)&ctx,
-        true,
+        CALL_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
 
     byte_string const rlp_call_frames(
-        ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+        ctx.result->encoded_trace, ctx.result->encoded_trace_len);
 
     CallFrame expected{
         .type = CallType::CALL,
@@ -770,6 +775,282 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
 
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 22000);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+// Same setup as transfer_success_with_call_trace, include both prestate &
+// statedelta trace checks
+TEST_F(EthCallFixture, transfer_success_with_state_trace)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    BlockHeader header{.number = 256};
+
+    Account const acct_from{
+        .balance = 0x200000,
+        .code_hash = NULL_HASH,
+        .nonce = 0x0,
+    };
+
+    Account const acct_to{};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, acct_from}}},
+            {ADDR_B, StateDelta{.account = {std::nullopt, acct_to}}}},
+        Code{},
+        header);
+
+    BlockState bs{tdb, this->vm};
+    State s{bs, Incarnation{0, 0}};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 500'000u,
+        .value = 0x10000,
+        .to = ADDR_B,
+    };
+    auto const &from = ADDR_A;
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    // PreState
+    {
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            PRESTATE_TRACER,
+            true);
+        f.get();
+
+        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+        PreState expected{};
+        {
+            AccountState as_from{acct_from};
+            expected.emplace(ADDR_A, as_from);
+
+            AccountState as_to{acct_to};
+            expected.emplace(ADDR_B, as_to);
+
+            AccountState as_bene{std::nullopt};
+            expected.emplace(header.beneficiary, as_bene);
+        }
+
+        EXPECT_EQ(
+            state_to_json(expected, s),
+            nlohmann::json::from_cbor(encoded_pre_state_trace));
+    }
+
+    // StateDelta
+    {
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            STATEDIFF_TRACER,
+            true);
+        f.get();
+
+        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_state_delta_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        // monad charges gas_limit
+        auto const expected = StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {Account{.balance = 0x200000, .nonce = 0},
+                      Account{
+                          .balance = 0x200000 - 0x10000 - 500'000u,
+                          .nonce = 1}}}},
+            {ADDR_B,
+             StateDelta{
+                 .account =
+                     {Account{.balance = 0, .nonce = 0},
+                      Account{.balance = 0x10000}}}},
+        };
+
+        EXPECT_EQ(
+            state_deltas_to_json(expected, s),
+            nlohmann::json::from_cbor(encoded_state_delta_trace));
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+// same setup as contract_deployment_success, but with prestate and statediff
+// tracer
+TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from = Address{};
+
+    std::string tx_data =
+        "0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffff"
+        "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
+        "82fd5b8082525050506014600cf3";
+
+    Transaction tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
+    BlockHeader header{.number = 256};
+
+    commit_sequential(tdb, {}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    std::string deployed_code =
+        "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
+        "01600081602082378035828234f58015156039578182fd5b8082525050506014600cf"
+        "3";
+    byte_string deployed_code_bytes = from_hex(deployed_code);
+
+    std::vector<uint8_t> deployed_code_vec = {
+        deployed_code_bytes.data(),
+        deployed_code_bytes.data() + deployed_code_bytes.size()};
+
+    // PreState trace
+    {
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            PRESTATE_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        auto const expected = R"({
+            "0x0000000000000000000000000000000000000000":{"balance":"0x0"},
+            "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{"balance":"0x0"}
+        })";
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_pre_state_trace));
+    }
+
+    // StateDelta Trace
+    {
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            mpt::INVALID_ROUND_NUM,
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            STATEDIFF_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_state_deltas_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        auto const expected = R"({
+            "post":{
+                "0x0000000000000000000000000000000000000000":{
+                    "balance":"0x0",
+                    "nonce":1
+                },
+                "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{
+                    "balance":"0x0",
+                    "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
+                    "nonce":1
+                }
+            },
+            "pre":{
+                "0x0000000000000000000000000000000000000000":{"balance":"0x0"},
+                "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{"balance":"0x0"}
+            }
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_state_deltas_trace));
+    }
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);

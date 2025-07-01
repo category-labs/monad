@@ -514,8 +514,8 @@ public:
         }
 
         auto const code_hash = to_bytes(keccak256(code));
-        code_[code_hash] = vm().try_insert_varcode(
-            code_hash, vm::make_shared_intercode(code));
+        code_[code_hash] =
+            vm().try_insert_varcode(code_hash, vm::make_shared_intercode(code));
         account.value().code_hash = code_hash;
     }
 
@@ -558,6 +558,22 @@ public:
             account = Account{.incarnation = incarnation_};
         }
         account.value().incarnation = incarnation_;
+    }
+
+    ////////////////////////////////////////
+
+    Map<Address, AccountState> get_original_accounts() const
+    {
+        return original_;
+    }
+
+    Map<Address, AccountState> get_current_accounts() const
+    {
+        Map<Address, AccountState> current;
+        for (auto const &[address, stack] : current_) {
+            current.emplace(address, stack.recent());
+        }
+        return current;
     }
 };
 

@@ -1,4 +1,7 @@
 Require Import monad.proofs.prelude.
+Require Export monad.asts.trie_rodb.
+Require Export monad.asts.trie_db.
+Open Scope N_scope.
 
 Record ConsensusBlockHeader :=
   {
@@ -176,10 +179,9 @@ Definition updateBlockNum
     (blockNumsStates d).
 
 (** ignore the next 4 lines: Coq boilerplate *)
-Open Scope Z_scope.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
-  Context  {MODd : exb.module ⊧ CU}.
+  Context  {MODd : trie_db.module ⊧ CU}.
   
   
   (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
@@ -205,7 +207,8 @@ Section with_Sigma.
     TrieDBR (q1+q2) m |--  TrieDBR q1 m ** TrieDBR q2 m.
   Proof. Admitted.
 
-  cpp.spec "monad::Db::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
+
+  cpp.spec "monad::TrieDb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
     as read_storage_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
       \arg{addressp} "address" (Vptr addressp)
@@ -221,7 +224,7 @@ Section with_Sigma.
         1
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
-  cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
+  cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
@@ -236,7 +239,7 @@ Section with_Sigma.
                                
   (* no finalize in TrieRODB *)
 
-  cpp.spec "monad::Db::update_verified_block(unsigned long)"
+  cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
@@ -246,8 +249,8 @@ Section with_Sigma.
               end |]
       \post this |-> TrieDBR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
 
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as set_block_and_round_spec with (fun (this:ptr) =>
+  cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+    as set_block_and_round_spec with (fun (this:ptr) =>
     \prepost{preDb} this |-> TrieDBR 1 preDb
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
@@ -263,9 +266,8 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
     \post this |-> TrieDBR 1 (preDb &: _activeProposal .= Some pid)
   ).
 
-(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as rodb_set_block_and_round_spec1 with (fun (this:ptr) =>
+  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
+    as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
     (* Full ownership of the Db model *)
     \prepost{preActive: option ProposalInDb} this |-> TrieRODBR 1 preActive
 
@@ -284,9 +286,8 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
       else  this |-> TrieRODBR 1 None
   ).
 
-(* cpp.spec "monad::RODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" *)
-cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as rodb_set_block_and_round_spec2 with (fun (this:ptr) =>
+  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+    as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
     \prepost{preActive} this |-> TrieRODBR 1 preActive
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
@@ -304,7 +305,7 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
       else  this |-> TrieRODBR 1 None (* the proposal got garbage collected *)
    ).
 
-  cpp.spec "monad::Db::update_voted_metadata(unsigned long, unsigned long)"
+  cpp.spec "monad::TrieDb::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
       \prepost{preDb} this |-> TrieDBR 1 preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
@@ -340,10 +341,8 @@ cpp.spec "monad::Db::set_block_and_round(unsigned long, std::optional<unsigned l
 - handle garbage collection
 - handle genesis block creation
  *)
-  Open Scope N_scope.
-  Compute (lookup_struct module "monad::Db").
 cpp.spec
-  "monad::Db::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
+  "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
     \prepost{(preDb:DbModel)} this |-> TrieDBR 1 preDb
 
@@ -418,4 +417,3 @@ cpp.spec
         (withdrawals (proposedBlock (newProposal)))
     \post this |-> TrieDBR 1 (commitPostState preDb newProposal)).
 End with_Sigma.
-

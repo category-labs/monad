@@ -367,14 +367,14 @@ Section with_Sigma.
     BheaderR q b -|- BheaderR (q/(N_to_Qp (1+ lengthN l))) b ** 
     ([∗ list] _ ∈ (drop i l),  (BheaderR (q*/(N_to_Qp (1+ lengthN l))) b)).
   Proof using. Admitted.
-
-
   
   Definition execute_block_simpler : WpSpec mpredI val val :=
     \arg{chainp :ptr} "chain" (Vptr chainp)
     \prepost{(qchain:Qp) (chain: Chain)} chainp |-> ChainR qchain chain
     \arg{blockp: ptr} "block" (Vptr blockp)
     \prepost{qb (block: Block)} blockp |-> BlockR qb block
+    \arg{(sendersp: ptr) (qs: Qp)} "senders" (Vptr sendersp)
+    \prepost sendersp |-> VectorR (Tnamed "::evmc::address") (addressR qs) qs (map sender (transactions block))
     \arg{block_statep: ptr} "block_state" (Vptr block_statep)
     \pre{(preBlockState: StateOfAccounts) g qf}
        block_statep |-> BlockState.Rauth preBlockState g preBlockState
@@ -395,11 +395,13 @@ Import bytestring_core.
 Require Import bluerock.auto.cpp.
 Require Import bluerock.auto.cpp.specs.
 
+Eval vm_compute in (firstEntryName (findBodyOfFnNamed2 exb.module (isFunctionNamed2 "execute_block"))).
+
 
 Context  {MODd : exb.module ⊧ CU}.
   cpp.spec (Ninst
-   "monad::execute_block(const monad::Chain&, monad::Block&, monad::BlockState&, const monad::BlockHashBuffer&, monad::fiber::PriorityPool&)"
-   [Avalue (Eint 11 "enum evmc_revision")]) as exbb_spec with (execute_block_simpler).
+              "monad::execute_block(const monad::Chain&, monad::Block&, const std::vector<evmc::address, std::allocator<evmc::address>>&, monad::BlockState&, const monad::BlockHashBuffer&, monad::fiber::PriorityPool&)"
+              [Avalue (Eint 11 "enum evmc_revision")]) as exbb_spec with (execute_block_simpler).
 
 
   
@@ -410,7 +412,8 @@ Context  {MODd : exb.module ⊧ CU}.
        \pre{newPromisedResource}
            _global "monad::promises" |-> parrayR (Tnamed "boost::fibers::promise<void>") (fun i t => PromiseUnusableR) transactions
        \post Exists prIds, _global "monad::promises" |-> parrayR (Tnamed "boost::fibers::promise<void>") (fun i t => PromiseR (prIds i) (newPromisedResource i t)) transactions).
-  
+
+  (* TODO: this is now the spec of recover_senders, almost.
 cpp.spec
   "monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)"
   as compute_senders
@@ -436,14 +439,14 @@ cpp.spec
             (Tnamed "std::optional<evmc::address>")
             (fun t=> optionAddressR 1 (Some (sender t)))
             (transactions block)).
-
+*)
 
 Definition resultT := Tnamed (resultn "monad::ExecutionResult").
 Definition ExecutionResultR (tr: TransactionResult): Rep. Proof. Admitted.
 
 Definition oResultT := (Tnamed (Ninst "std::optional" [Atype resultT])).
 
-cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::PriorityPool&, const monad::Chain&, const monad::BlockHashBuffer&, monad::BlockState &)" [Avalue (Eint 11 "enum evmc_revision")]) as exect with (
+cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::PriorityPool&, const monad::Chain&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const monad::BlockHashBuffer&, monad::BlockState &)" [Avalue (Eint 11 "enum evmc_revision")]) as exect with (
     \arg{blockp: ptr} "block" (Vref blockp)
     \prepost{qb (block: Block)} blockp |-> BlockR qb block
     \pre [| lengthN (transactions block) < 2^64 - 1 |]%N
@@ -451,6 +454,8 @@ cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::
     \prepost{priority_pool: PriorityPool} priority_poolp |-> PriorityPoolR 1 priority_pool
     \arg{chainp :ptr} "chain" (Vref chainp)
     \prepost{(qchain:Qp) (chain: Chain)} chainp |-> ChainR qchain chain
+    \arg{(sendersp: ptr) (qs: Qp)} "senders" (Vptr sendersp)
+    \prepost sendersp |-> VectorR (Tnamed "::evmc::address") (addressR qs) qs (map sender (transactions block))
     \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vref block_hash_bufferp)
     \prepost{buf qbuf} block_hash_bufferp |-> BlockHashBufferR qbuf buf
     \arg{block_statep: ptr} "block_state" (Vref block_statep)
@@ -488,9 +493,10 @@ cpp.spec (Ninst "monad::execute_transactions(const monad::Block&, monad::fiber::
     \prepost{qt (tr: Transaction)} trp |-> TransactionR qt tr
     \post{retp} [Vptr retp] retp |-> optionAddressR 1 (Some (sender tr))).
 
-
+(*
     cpp.spec (fork_task_nameg "monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)::@0") as fork_task with (forkTaskSpec "monad::compute_senders(const monad::Block&, monad::fiber::PriorityPool&)::@0").
-
+ *)
+    
     (* todo: generalize over the template arg *)
 cpp.spec 
   "std::vector<monad::Transaction, std::allocator<monad::Transaction>>::operator[](unsigned long) const" as vector_op_monad with (vector_opg "monad::Transaction").
@@ -508,7 +514,7 @@ cpp.spec
     \arg{txp} "tx" (Vref txp)
     \prepost{qtx t} txp |-> TransactionR qtx t
     \arg{senderp} "sender" (Vref senderp)
-    \prepost{qs} senderp |-> optionAddressR qs (Some (sender t))
+    \prepost{qs} senderp |-> addressR qs (sender t)
     \arg{hdrp: ptr} "hdr" (Vref hdrp)
     \prepost{qh header} hdrp |-> BheaderR qh header
     \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vref block_hash_bufferp)
@@ -522,13 +528,14 @@ cpp.spec
        retp |-> ResultSuccessR ExecutionResultR result
          ** block_statep |->  BlockState.Rauth preBlockState g finalState.
 
-cpp.spec ((Ninst
-             (Nscoped (Nglobal (Nid "monad"))
+  Compute (Nscoped (Nglobal (Nid "monad"))
                 (Nfunction function_qualifiers.N ("execute")
                    [Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Chain")))); "unsigned long"%cpp_type; Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "Transaction"))));
                     Tref (Tconst (Tnamed (Ninst (Nscoped (Nglobal (Nid "std")) (Nid "optional")) [Atype (Tnamed (Nscoped (Nglobal (Nid "evmc")) (Nid "address")))])));
                     Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHeader")))); Tref (Tconst (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockHashBuffer"))));
-                    Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState"))); Tref (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "fibers")) (Nid "promise")) [Atype "void"]))]))
+                    Tref (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "BlockState"))); Tref (Tnamed (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "fibers")) (Nid "promise")) [Atype "void"]))])).
+cpp.spec ((Ninst
+             "monad::execute(const monad::Chain&, unsigned long, const monad::Transaction&, const evmc::address&, const monad::BlockHeader&, const monad::BlockHashBuffer&, monad::BlockState&, boost::fibers::promise<void>&)"
              [Avalue (Eint 11 (Tenum (Nglobal (Nid "evmc_revision"))))])) as ext1 with (execute_transaction_spec).
 
 Definition destr_res {T} ty (tyR: T-> Rep):=

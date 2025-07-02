@@ -1,3 +1,4 @@
+#include <monad/config.hpp>
 #include <monad/core/account.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp> // NOLINT
@@ -13,6 +14,8 @@
 #include <monad/core/result.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
+#include <monad/db/db_snapshot.h>
+#include <monad/db/db_snapshot_filesystem.h>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -60,84 +63,81 @@
 using namespace monad;
 using namespace monad::mpt;
 
-namespace
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+////////////////////////////////////////
+// CLI input parsing helpers
+////////////////////////////////////////
+
+bool is_numeric(std::string_view str)
 {
-    ////////////////////////////////////////
-    // CLI input parsing helpers
-    ////////////////////////////////////////
+    return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
+}
 
-    bool is_numeric(std::string_view str)
-    {
-        return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
-    }
-
-    std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
-    {
-        std::ispanstream iss(input);
-        std::vector<std::string> tokens;
-        std::string token;
-        while (std::getline(iss, token, delim)) {
-            if (!token.empty()) {
-                tokens.emplace_back(std::move(token));
-            }
-        }
-        return tokens;
-    }
-
-    ////////////////////////////////////////
-    // TrieDb Helpers
-    ////////////////////////////////////////
-
-    std::string_view table_as_string(unsigned char table_id)
-    {
-        switch (table_id) {
-        case STATE_NIBBLE:
-            return "state";
-        case CODE_NIBBLE:
-            return "code";
-        case RECEIPT_NIBBLE:
-            return "receipt";
-        default:
-            return "invalid";
+std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
+{
+    std::ispanstream iss(input);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (std::getline(iss, token, delim)) {
+        if (!token.empty()) {
+            tokens.emplace_back(std::move(token));
         }
     }
+    return tokens;
+}
 
-    template <class T>
-        requires std::same_as<T, byte_string_view> ||
-                 std::same_as<T, std::string_view>
-    auto to_triedb_key(T input, bool already_hashed = false)
-    {
-        using res = std::invoke_result_t<hash256 (*)(T), T>;
-        return already_hashed
-                   ? byte_string{input.data(), input.size()}
-                   : byte_string{keccak256(input).bytes, sizeof(res)};
-    }
+////////////////////////////////////////
+// TrieDb Helpers
+////////////////////////////////////////
 
-    void print_account(Account const &acct)
-    {
-        fmt::print("{}\n\n", acct);
+std::string_view table_as_string(unsigned char table_id)
+{
+    switch (table_id) {
+    case STATE_NIBBLE:
+        return "state";
+    case CODE_NIBBLE:
+        return "code";
+    case RECEIPT_NIBBLE:
+        return "receipt";
+    default:
+        return "invalid";
     }
+}
 
-    void print_receipt(Receipt const &receipt)
-    {
-        fmt::print("{}\n\n", receipt);
-    }
+template <class T>
+    requires std::same_as<T, byte_string_view> ||
+             std::same_as<T, std::string_view>
+auto to_triedb_key(T input, bool already_hashed = false)
+{
+    using res = std::invoke_result_t<hash256 (*)(T), T>;
+    return already_hashed ? byte_string{input.data(), input.size()}
+                          : byte_string{keccak256(input).bytes, sizeof(res)};
+}
 
-    void print_storage(bytes32_t key, bytes32_t val)
-    {
-        fmt::print("Storage{{key={},value={}}}\n\n", key, val);
-    }
+void print_account(Account const &acct)
+{
+    fmt::print("{}\n\n", acct);
+}
 
-    void print_code(byte_string_view const code)
-    {
-        fmt::print(
-            "{}\n\n",
-            (code.empty()
-                 ? "EMPTY"
-                 : fmt::format(
-                       "0x{:02x}",
-                       fmt::join(std::as_bytes(std::span(code)), ""))));
-    }
+void print_receipt(Receipt const &receipt)
+{
+    fmt::print("{}\n\n", receipt);
+}
+
+void print_storage(bytes32_t key, bytes32_t val)
+{
+    fmt::print("Storage{{key={},value={}}}\n\n", key, val);
+}
+
+void print_code(byte_string_view const code)
+{
+    fmt::print(
+        "{}\n\n",
+        (code.empty()
+             ? "EMPTY"
+             : fmt::format(
+                   "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""))));
 }
 
 struct DbStateMachine
@@ -365,25 +365,6 @@ struct DbStateMachine
         curr_table_id = INVALID_NIBBLE;
     }
 };
-
-void print_db_version_info(Db &db)
-{
-    auto const min_version = db.get_earliest_block_id();
-    auto const max_version = db.get_latest_block_id();
-    if (min_version != INVALID_BLOCK_ID && max_version != INVALID_BLOCK_ID) {
-        fmt::println(
-            "Database is open with minimum version {} and maximum version {},\n"
-            "latest finalized version {}, latest verified version {}",
-            min_version,
-            max_version,
-            db.get_latest_finalized_block_id(),
-            db.get_latest_verified_block_id());
-    }
-    else {
-        throw std::runtime_error("This is an empty Db that contains no valid "
-                                 "versions, try a different db");
-    }
-}
 
 ////////////////////////////////////////
 // Command actions
@@ -683,10 +664,15 @@ void do_node_stats(DbStateMachine &sm)
 
 int interactive_impl(Db &db)
 {
+    if (!isatty(STDIN_FILENO)) {
+        fmt::println("Not running interactively! Pass -it to run inside a "
+                     "docker container.");
+        return 1;
+    }
+
     DbStateMachine state_machine{db};
     std::string line;
 
-    print_db_version_info(db);
     print_help();
 
     while (true) {
@@ -785,11 +771,17 @@ int interactive_impl(Db &db)
     return 0;
 }
 
+MONAD_ANONYMOUS_NAMESPACE_END
+
 int main(int argc, char *argv[])
 {
     std::vector<std::filesystem::path> dbname_paths;
     std::optional<unsigned> sq_thread_cpu = std::nullopt;
     auto log_level = quill::LogLevel::Info;
+    bool interactive = false;
+    std::optional<std::filesystem::path> dump_binary_snapshot;
+    std::optional<std::filesystem::path> load_binary_snapshot;
+    uint64_t version;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -805,6 +797,25 @@ int main(int argc, char *argv[])
         "disabled SQPOLL mode.");
     cli.add_option("--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
+    auto *const mode_group =
+        cli.add_option_group("mode", "different modes of the cli");
+    mode_group->add_flag(
+        "--it,--interactive", interactive, "set to run in interactive mode");
+    auto *const cli_group =
+        mode_group->add_option_group("cli", "options for non-interactive mode");
+    cli_group->add_option("--version", version)->required();
+    auto *const dump_binary_snapshot_option = cli_group->add_option(
+        "--dump_binary_snapshot",
+        dump_binary_snapshot,
+        "Dump a binary snapshot to directory");
+    cli_group
+        ->add_option(
+            "--load_binary_snapshot",
+            load_binary_snapshot,
+            "Load a binary snapshot to db")
+        ->check(CLI::ExistingDirectory)
+        ->excludes(dump_binary_snapshot_option);
+    mode_group->require_option(0, 1);
     try {
         cli.parse(argc, argv);
     }
@@ -817,7 +828,7 @@ int main(int argc, char *argv[])
 
     auto stdout_handler = quill::stdout_handler();
     stdout_handler->set_pattern(
-        "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
+        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
         "%(message)",
         "%Y-%m-%d %H:%M:%S.%Qns",
         quill::Timezone::GmtTime);
@@ -829,22 +840,67 @@ int main(int argc, char *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
     quill::flush();
 
-    if (!isatty(STDIN_FILENO)) {
-        fmt::println("Not running interactively! Pass -it to run inside a "
-                     "docker container.");
-        return 1;
+    {
+        fmt::println("Opening read only database {}.", dbname_paths);
+        ReadOnlyOnDiskDbConfig const ro_config{
+            .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
+        AsyncIOContext io_ctx{ro_config};
+        Db ro_db{io_ctx};
+        fmt::println(
+            "db summary: earliest_block_id={} latest_block_id={} "
+            "latest_finalized_block_id={} last_verified_block_id={} "
+            "history_length={}",
+            ro_db.get_earliest_block_id(),
+            ro_db.get_latest_block_id(),
+            ro_db.get_latest_finalized_block_id(),
+            ro_db.get_latest_verified_block_id(),
+            ro_db.get_history_length());
+        if (interactive) {
+            return interactive_impl(ro_db);
+        }
     }
-
-    ReadOnlyOnDiskDbConfig const ro_config{
-        .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
-    AsyncIOContext io_ctx{ro_config};
-    Db ro_db{io_ctx};
-
-    fmt::print("Opening read only database ");
-    for (auto const &dbname : dbname_paths) {
-        fmt::print(" {}", dbname);
+    if (dump_binary_snapshot.has_value()) {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                dump_binary_snapshot.value().c_str(), version);
+        std::vector<char const *> c_dbname_paths;
+        for (auto const &path : dbname_paths) {
+            c_dbname_paths.emplace_back(path.c_str());
+        }
+        auto const begin = std::chrono::steady_clock::now();
+        bool const success = monad_db_dump_snapshot(
+            c_dbname_paths.data(),
+            c_dbname_paths.size(),
+            sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
+            version,
+            monad_db_snapshot_write_filesystem,
+            context);
+        LOG_INFO(
+            "snapshot dump success={} version={} directory={} elapsed={}",
+            success,
+            version,
+            dump_binary_snapshot.value(),
+            std::chrono::steady_clock::now() - begin);
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+        return success == false;
     }
-    fmt::println(".");
-
-    return interactive_impl(ro_db);
+    else if (load_binary_snapshot.has_value()) {
+        std::vector<char const *> c_dbname_paths;
+        for (auto const &path : dbname_paths) {
+            c_dbname_paths.emplace_back(path.c_str());
+        }
+        auto const begin = std::chrono::steady_clock::now();
+        monad_db_snapshot_load_filesystem(
+            c_dbname_paths.data(),
+            c_dbname_paths.size(),
+            sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
+            load_binary_snapshot.value().c_str(),
+            version);
+        LOG_INFO(
+            "snapshot version={} load_binary_snapshot={} elapsed={}",
+            version,
+            load_binary_snapshot.value(),
+            std::chrono::steady_clock::now() - begin);
+    }
+    return 0;
 }

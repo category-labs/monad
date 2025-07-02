@@ -35,10 +35,10 @@
 #include <utility>
 #include <vector>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // EIP-4895
-constexpr void process_withdrawal(
+void process_withdrawal(
     State &state, std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     if (withdrawals.has_value()) {
@@ -50,8 +50,8 @@ constexpr void process_withdrawal(
     }
 }
 
-inline void
-transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
+void transfer_balance_dao(
+    BlockState &block_state, Incarnation const incarnation)
 {
     State state{block_state, incarnation};
 
@@ -65,15 +65,16 @@ transfer_balance_dao(BlockState &block_state, Incarnation const incarnation)
     block_state.merge(state);
 }
 
-inline void set_beacon_root(BlockState &block_state, Block &block)
+// EIP-4788
+void set_beacon_root(BlockState &block_state, BlockHeader const &header)
 {
     constexpr auto BEACON_ROOTS_ADDRESS{
         0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
-    State state{block_state, Incarnation{block.header.number, 0}};
+    State state{block_state, Incarnation{header.number, 0}};
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{block.header.timestamp};
+        uint256_t timestamp{header.timestamp};
         bytes32_t k1{
             to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
         bytes32_t k2{to_bytes(to_big_endian(
@@ -81,9 +82,7 @@ inline void set_beacon_root(BlockState &block_state, Block &block)
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
         state.set_storage(
-            BEACON_ROOTS_ADDRESS,
-            k2,
-            block.header.parent_beacon_block_root.value());
+            BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
 
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
@@ -97,7 +96,7 @@ void fork_task(fiber::PriorityPool &priority_pool, uint64_t priority, const Task
 
 #define MAX_TRANSACTIONS 800
 boost::fibers::promise<void> promises[MAX_TRANSACTIONS];
-std::optional<Address> senders[MAX_TRANSACTIONS];
+//std::optional<Address> senders[MAX_TRANSACTIONS];
 std::optional<Result<ExecutionResult>> results[MAX_TRANSACTIONS];// can we drop the optional? it is always a value. however, the default constructor of Result has been deleted. optional works around that.
 
 void reset_promises(uint64_t num_transactions){
@@ -125,7 +124,7 @@ void compute_senders(Block const &block, fiber::PriorityPool &priority_pool){
 
     
 template <evmc_revision rev>
-void execute_transactions(Block const &block, fiber::PriorityPool &priority_pool, Chain const &chain, BlockHashBuffer const &block_hash_buffer, BlockState &block_state){
+void execute_transactions(Block const &block, fiber::PriorityPool &priority_pool, Chain const &chain, std::vector<Address> const &senders, BlockHashBuffer const &block_hash_buffer, BlockState &block_state){
     reset_promises(block.transactions.size()+1);
     promises[0].set_value();
 
@@ -172,7 +171,7 @@ Result<std::vector<ExecutionResult>> finalize_block(Block const &block, BlockSta
     }
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &[receipt, _, call_frame] : retvals) {
+    for (auto &[receipt, call_frame] : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }
@@ -198,7 +197,7 @@ Result<std::vector<ExecutionResult>> finalize_block(Block const &block, BlockSta
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &chain, Block &block, BlockState &block_state,
+    Chain const &chain, Block &block, std::vector<Address> const &senders, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
@@ -215,8 +214,6 @@ Result<std::vector<ExecutionResult>> execute_block(
         }
     }
 
-    compute_senders(block, priority_pool);
-
 
     execute_transactions<rev>(block, priority_pool, chain, block_hash_buffer, block_state);
 
@@ -227,13 +224,15 @@ EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    std::vector<Address> const &senders, BlockState &block_state,
+    BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
         chain,
         block,
+        senders,
         block_state,
         block_hash_buffer,
         priority_pool);

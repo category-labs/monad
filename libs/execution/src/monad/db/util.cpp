@@ -13,6 +13,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>
 #include <monad/core/rlp/int_rlp.hpp>
+#include <monad/core/rlp/monad_block_rlp.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
@@ -643,23 +644,29 @@ byte_string encode_account_db(Address const &address, Account const &account)
     return rlp::encode_list2(encoded_account);
 }
 
-Result<std::pair<Address, Account>> decode_account_db(byte_string_view &enc)
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_account_db_raw(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(auto const address, rlp::decode_address(payload));
-    BOOST_OUTCOME_TRY(auto const acct, decode_account_db_helper(payload));
+    BOOST_OUTCOME_TRY(auto const address, rlp::parse_string_metadata(payload));
+    if (MONAD_UNLIKELY(address.size() != sizeof(Address))) {
+        return rlp::DecodeError::ArrayLengthUnexpected;
+    }
+    return {address, payload};
+}
+
+Result<std::pair<Address, Account>> decode_account_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto res, decode_account_db_raw(enc));
+    Address const address = unaligned_load<Address>(res.first.data());
+    BOOST_OUTCOME_TRY(auto const acct, decode_account_db_helper(res.second));
     return {address, acct};
 }
 
 Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(
-        auto const address_byte_view, rlp::parse_string_metadata(payload));
-    if (MONAD_UNLIKELY(address_byte_view.size() != sizeof(Address))) {
-        return rlp::DecodeError::ArrayLengthUnexpected;
-    }
-    return decode_account_db_helper(payload);
+    BOOST_OUTCOME_TRY(auto res, decode_account_db_raw(enc));
+    return decode_account_db_helper(res.second);
 }
 
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
@@ -670,33 +677,31 @@ byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
     return rlp::encode_list2(encoded_storage);
 }
 
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_storage_db_raw(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(byte_string_view const slot, rlp::decode_string(payload));
+    BOOST_OUTCOME_TRY(byte_string_view const val, rlp::decode_string(payload));
+    return {slot, val};
+}
 
-    std::pair<bytes32_t, bytes32_t> storage;
-    BOOST_OUTCOME_TRY(storage.first, rlp::decode_bytes32_compact(payload));
-    BOOST_OUTCOME_TRY(storage.second, rlp::decode_bytes32_compact(payload));
-
-    if (MONAD_UNLIKELY(!payload.empty())) {
+Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
+    if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }
-
-    return storage;
+    return {to_bytes(res.first), to_bytes(res.second)};
 }
 
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-
-    BOOST_OUTCOME_TRY(rlp::decode_bytes32_compact(payload));
-    BOOST_OUTCOME_TRY(auto const output, rlp::decode_string(payload));
-
-    if (MONAD_UNLIKELY(!payload.empty())) {
+    BOOST_OUTCOME_TRY(auto const res, decode_storage_db_raw(enc));
+    if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }
-
-    return output;
+    return res.second;
 };
 
 void write_to_file(
@@ -836,6 +841,42 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
     ProposalTraverseMachine traverse(rounds);
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
     return rounds;
+}
+
+std::optional<BlockHeader> read_eth_header(
+    mpt::Db const &db, uint64_t const block, mpt::NibblesView prefix)
+{
+    auto const query_res =
+        db.get(mpt::concat(prefix, BLOCKHEADER_NIBBLE), block);
+    if (MONAD_UNLIKELY(!query_res.has_value())) {
+        return std::nullopt;
+    }
+    byte_string_view view{query_res.value()};
+    auto const decoded = rlp::decode_block_header(view);
+    MONAD_ASSERT(decoded.has_value());
+    return decoded.value();
+}
+
+std::optional<byte_string> query_consensus_header(
+    mpt::Db const &db, uint64_t const block, mpt::NibblesView const prefix)
+{
+    auto const query_res = db.get(mpt::concat(prefix, BFT_BLOCK_NIBBLE), block);
+    if (MONAD_UNLIKELY(!query_res.has_value())) {
+        return std::nullopt;
+    }
+    return byte_string{query_res.value()};
+}
+
+std::optional<MonadConsensusBlockHeader> read_consensus_header(
+    mpt::Db const &db, uint64_t const block, mpt::NibblesView const prefix)
+{
+    return query_consensus_header(db, block, prefix)
+        .transform([](byte_string const &data) {
+            byte_string_view view{data};
+            auto const decoded = rlp::decode_consensus_block_header(view);
+            MONAD_ASSERT(decoded.has_value());
+            return decoded.value();
+        });
 }
 
 MONAD_NAMESPACE_END

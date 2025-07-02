@@ -59,24 +59,21 @@ namespace detail
             --traverse.level;
             return true;
         }
-        for (unsigned char i = 0; i < 16; ++i) {
-            if (node.mask & (1u << i)) {
-                if (traverse.should_visit(node, (unsigned char)i)) {
-                    auto const idx = node.to_child_index(i);
-                    auto const *const next = node.next(idx);
-                    if (next) {
-                        preorder_traverse_blocking_impl(
-                            aux, i, *next, traverse, version);
-                        continue;
-                    }
-                    MONAD_ASSERT(aux.is_on_disk());
-                    Node::UniquePtr next_node_ondisk =
-                        read_node_blocking(aux, node.fnext(idx), version);
-                    if (!next_node_ondisk ||
-                        !preorder_traverse_blocking_impl(
-                            aux, i, *next_node_ondisk, traverse, version)) {
-                        return false;
-                    }
+        for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
+            if (traverse.should_visit(node, branch)) {
+                auto const *const next = node.next(idx);
+                if (next) {
+                    preorder_traverse_blocking_impl(
+                        aux, branch, *next, traverse, version);
+                    continue;
+                }
+                MONAD_ASSERT(aux.is_on_disk());
+                Node::UniquePtr next_node_ondisk =
+                    read_node_blocking(aux, node.fnext(idx), version);
+                if (!next_node_ondisk ||
+                    !preorder_traverse_blocking_impl(
+                        aux, branch, *next_node_ondisk, traverse, version)) {
+                    return false;
                 }
             }
         }
@@ -287,74 +284,63 @@ namespace detail
             return;
         }
         unsigned children_read = 0;
-        for (unsigned i = 0, idx = 0, bit = 1; idx < node.number_of_children();
-             ++i, bit <<= 1) {
-            if (node.mask & bit) {
-                if (machine.should_visit(node, (unsigned char)i)) {
-                    auto const *const next = node.next(idx);
-                    if (next == nullptr) {
-                        MONAD_ASSERT(sender.aux.is_on_disk());
-                        // verify version before read
-                        if (!sender.aux.version_is_valid_ondisk(
-                                sender.version)) {
-                            sender.version_expired_before_complete = true;
-                            sender.reads_to_initiate.clear();
-                            sender.reads_to_initiate_sidx = 0;
-                            sender.reads_to_initiate_eidx = 0;
-                            sender.reads_to_initiate_count = 0;
-                            return;
+        for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
+            if (machine.should_visit(node, branch)) {
+                auto const *const next = node.next(idx);
+                if (next == nullptr) {
+                    MONAD_ASSERT(sender.aux.is_on_disk());
+                    // verify version before read
+                    if (!sender.aux.version_is_valid_ondisk(sender.version)) {
+                        sender.version_expired_before_complete = true;
+                        sender.reads_to_initiate.clear();
+                        sender.reads_to_initiate_sidx = 0;
+                        sender.reads_to_initiate_eidx = 0;
+                        sender.reads_to_initiate_count = 0;
+                        return;
+                    }
+                    TraverseSender::receiver_t receiver(
+                        &sender,
+                        traverse_state,
+                        branch,
+                        node.fnext(idx),
+                        machine.clone());
+                    unsigned const this_child_read = children_read++;
+                    if (sender.outstanding_reads >=
+                        sender.max_outstanding_reads) {
+                        // The deepest reads get highest priority
+                        size_t priority = machine.level;
+                        // Left side reads get a bit more priority
+                        if (this_child_read < LEFT_SIDE) {
+                            priority += LEFT_SIDE - this_child_read;
                         }
-                        TraverseSender::receiver_t receiver(
-                            &sender,
-                            traverse_state,
-                            (unsigned char)i,
-                            node.fnext(idx),
-                            machine.clone());
-                        unsigned const this_child_read = children_read++;
-                        if (sender.outstanding_reads >=
-                            sender.max_outstanding_reads) {
-                            // The deepest reads get highest priority
-                            size_t priority = machine.level;
-                            // Left side reads get a bit more priority
-                            if (this_child_read < LEFT_SIDE) {
-                                priority += LEFT_SIDE - this_child_read;
-                            }
-                            MONAD_DEBUG_ASSERT(priority > 0);
-                            if (priority >= sender.reads_to_initiate.size()) {
-                                sender.reads_to_initiate.resize(priority + 1);
-                            }
-                            if (priority > sender.reads_to_initiate_eidx) {
-                                if (sender.reads_to_initiate_eidx == 0) {
-                                    sender.reads_to_initiate_sidx =
-                                        priority - 1;
-                                }
-                                sender.reads_to_initiate_eidx = priority;
-                            }
-                            if (priority <= sender.reads_to_initiate_sidx) {
+                        MONAD_DEBUG_ASSERT(priority > 0);
+                        if (priority >= sender.reads_to_initiate.size()) {
+                            sender.reads_to_initiate.resize(priority + 1);
+                        }
+                        if (priority > sender.reads_to_initiate_eidx) {
+                            if (sender.reads_to_initiate_eidx == 0) {
                                 sender.reads_to_initiate_sidx = priority - 1;
                             }
-                            sender.reads_to_initiate[priority].emplace_back(
-                                std::move(receiver));
-                            ++sender.reads_to_initiate_count;
-                            ++idx;
-                            continue;
+                            sender.reads_to_initiate_eidx = priority;
                         }
-                        async_read(sender.aux, std::move(receiver));
-                        ++sender.outstanding_reads;
+                        if (priority <= sender.reads_to_initiate_sidx) {
+                            sender.reads_to_initiate_sidx = priority - 1;
+                        }
+                        sender.reads_to_initiate[priority].emplace_back(
+                            std::move(receiver));
+                        ++sender.reads_to_initiate_count;
+                        continue;
                     }
-                    else {
-                        async_parallel_preorder_traverse_impl(
-                            sender,
-                            traverse_state,
-                            *next,
-                            machine,
-                            (unsigned char)i);
-                        if (sender.version_expired_before_complete) {
-                            return;
-                        }
+                    async_read(sender.aux, std::move(receiver));
+                    ++sender.outstanding_reads;
+                }
+                else {
+                    async_parallel_preorder_traverse_impl(
+                        sender, traverse_state, *next, machine, branch);
+                    if (sender.version_expired_before_complete) {
+                        return;
                     }
                 }
-                ++idx;
             }
         }
     }

@@ -94,6 +94,13 @@ Result<void> static_validate_transaction(
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
+    // EIP-7623
+    if constexpr (rev >= EVMC_PRAGUE) {
+        if (MONAD_UNLIKELY(floor_data_gas(tx) > tx.gas_limit)) {
+            return TransactionError::IntrinsicGasGreaterThanLimit;
+        }
+    }
+
     // EIP-2681
     if (MONAD_UNLIKELY(tx.nonce >= std::numeric_limits<uint64_t>::max())) {
         return TransactionError::NonceExceedsMax;

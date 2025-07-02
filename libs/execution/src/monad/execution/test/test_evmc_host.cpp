@@ -117,7 +117,8 @@ TEST(EvmcHost, emit_log)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -149,7 +150,8 @@ TEST(EvmcHost, access_precompile)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;

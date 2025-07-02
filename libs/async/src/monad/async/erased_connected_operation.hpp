@@ -18,8 +18,6 @@ class AsyncIO;
 namespace detail
 {
     struct AsyncIO_per_thread_state_t;
-    template <class QueueOptions>
-    class AsyncReadIoWorkerPoolImpl;
 
     class read_buffer_deleter
     {
@@ -256,8 +254,6 @@ work with connection operation states with a type you are unaware of.
 class erased_connected_operation
 {
 public:
-    template <class QueueOptions>
-    friend class detail::AsyncReadIoWorkerPoolImpl;
     friend struct detail::AsyncIO_per_thread_state_t;
 
     enum class initiation_result

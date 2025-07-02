@@ -3,6 +3,7 @@
 #include <from_json.hpp>
 
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/block.hpp>
@@ -19,9 +20,9 @@
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
 #include <monad/execution/validate_block.hpp>
+#include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/rlp/encode2.hpp>
@@ -55,49 +56,177 @@
 #include <string>
 #include <vector>
 
-MONAD_TEST_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-namespace
+struct EthereumMainnetRev : EthereumMainnet
 {
-    struct EthereumMainnetRev : EthereumMainnet
+    evmc_revision const rev;
+
+    EthereumMainnetRev(evmc_revision const rev)
+        : rev{rev}
     {
-        evmc_revision const rev;
+    }
 
-        EthereumMainnetRev(evmc_revision const rev)
-            : rev{rev}
-        {
-        }
+    virtual evmc_revision get_revision(
+        uint64_t /* block_number */, uint64_t /* timestamp */) const override
+    {
+        return rev;
+    }
+};
 
-        virtual evmc_revision get_revision(
-            uint64_t /* block_number */,
-            uint64_t /* timestamp */) const override
-        {
-            return rev;
-        }
-    };
+BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
+{
+    BlockHeader block_header{};
+
+    block_header.difficulty = intx::from_string<uint256_t>(
+        genesis_json["difficulty"].get<std::string>());
+
+    auto const extra_data =
+        evmc::from_hex(genesis_json["extraData"].get<std::string>());
+    MONAD_ASSERT(extra_data.has_value());
+    block_header.extra_data = extra_data.value();
+
+    block_header.gas_limit =
+        std::stoull(genesis_json["gasLimit"].get<std::string>(), nullptr, 0);
+
+    auto const mix_hash_byte_string =
+        evmc::from_hex(genesis_json["mixHash"].get<std::string>());
+    MONAD_ASSERT(mix_hash_byte_string.has_value());
+    std::copy_n(
+        mix_hash_byte_string.value().begin(),
+        mix_hash_byte_string.value().length(),
+        block_header.prev_randao.bytes);
+
+    uint64_t const nonce{
+        std::stoull(genesis_json["nonce"].get<std::string>(), nullptr, 0)};
+    intx::be::unsafe::store<uint64_t>(block_header.nonce.data(), nonce);
+
+    auto const parent_hash_byte_string =
+        evmc::from_hex(genesis_json["parentHash"].get<std::string>());
+    MONAD_ASSERT(parent_hash_byte_string.has_value());
+    std::copy_n(
+        parent_hash_byte_string.value().begin(),
+        parent_hash_byte_string.value().length(),
+        block_header.parent_hash.bytes);
+
+    block_header.timestamp =
+        std::stoull(genesis_json["timestamp"].get<std::string>(), nullptr, 0);
+
+    if (genesis_json.contains("coinbase")) {
+        auto const coinbase =
+            evmc::from_hex(genesis_json["coinbase"].get<std::string>());
+        MONAD_ASSERT(coinbase.has_value());
+        std::copy_n(
+            coinbase.value().begin(),
+            coinbase.value().length(),
+            block_header.beneficiary.bytes);
+    }
+
+    // London fork
+    if (genesis_json.contains("baseFeePerGas")) {
+        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
+            genesis_json["baseFeePerGas"].get<std::string>());
+    }
+
+    // Shanghai fork
+    if (genesis_json.contains("blobGasUsed")) {
+        block_header.blob_gas_used = std::stoull(
+            genesis_json["blobGasUsed"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("excessBlobGas")) {
+        block_header.excess_blob_gas = std::stoull(
+            genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
+    }
+    if (genesis_json.contains("parentBeaconBlockRoot")) {
+        auto const parent_beacon_block_root = evmc::from_hex(
+            genesis_json["parentBeaconBlockRoot"].get<std::string>());
+        MONAD_ASSERT(parent_beacon_block_root.has_value());
+        auto &write_to =
+            block_header.parent_beacon_block_root.emplace(bytes32_t{});
+        std::copy_n(
+            parent_beacon_block_root.value().begin(),
+            parent_beacon_block_root.value().length(),
+            write_to.bytes);
+    }
+
+    // Prague fork
+    if (genesis_json.contains("requestsHash")) {
+        auto const requests_hash =
+            evmc::from_hex(genesis_json["requestsHash"].get<std::string>());
+        MONAD_ASSERT(requests_hash.has_value());
+        auto &write_to = block_header.requests_hash.emplace(bytes32_t{});
+        std::copy_n(
+            requests_hash.value().begin(),
+            requests_hash.value().length(),
+            write_to.bytes);
+    }
+
+    return block_header;
 }
+
+void register_tests(
+    std::filesystem::path const &root,
+    std::optional<evmc_revision> const &revision)
+{
+    namespace fs = std::filesystem;
+    MONAD_ASSERT(fs::exists(root) && fs::is_directory(root));
+
+    for (auto const &entry : fs::recursive_directory_iterator{root}) {
+        auto const path = entry.path();
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(entry.is_regular_file());
+
+            // get rid of minus signs, which is a special symbol when used in //
+            // filtering
+            auto test = fmt::format("{}", fs::relative(path, root).string());
+            std::ranges::replace(test, '-', '_');
+
+            testing::RegisterTest(
+                "BlockchainTests",
+                test.c_str(),
+                nullptr,
+                nullptr,
+                path.string().c_str(),
+                0,
+                [=] { return new test::BlockchainTest(path, revision); });
+        }
+    }
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_TEST_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> BlockchainTest::execute(
-    Block &block, test::db_t &db, BlockHashBuffer const &block_hash_buffer)
+    Block &block, test::db_t &db, vm::VM &vm,
+    BlockHashBuffer const &block_hash_buffer)
 {
     using namespace monad::test;
 
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
-    BlockState block_state(db);
+    BlockState block_state(db, vm);
     EthereumMainnetRev const chain{rev};
+    auto const recovered_senders = recover_senders(block.transactions, *pool_);
+    std::vector<Address> senders(block.transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        if (recovered_senders[i].has_value()) {
+            senders[i] = recovered_senders[i].value();
+        }
+        else {
+            return TransactionError::MissingSender;
+        }
+    }
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<rev>(
-            chain, block, block_state, block_hash_buffer, *pool_));
+            chain, block, senders, block_state, block_hash_buffer, *pool_));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
-    std::vector<Address> senders(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {
         receipts[i] = std::move(results[i].receipt);
         call_frames[i] = std::move(results[i].call_frames);
-        senders[i] = results[i].sender;
     }
 
     block_state.log_debug();
@@ -119,11 +248,11 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 }
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
-    evmc_revision const rev, Block &block, test::db_t &db,
+    evmc_revision const rev, Block &block, test::db_t &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(execute, block, db, block_hash_buffer);
+    SWITCH_EVMC_REVISION(execute, block, db, vm, block_hash_buffer);
     MONAD_ASSERT(false);
 }
 
@@ -214,6 +343,7 @@ void BlockchainTest::TestBody()
         InMemoryMachine machine;
         mpt::Db db{machine};
         db_t tdb{db};
+        vm::VM vm;
         {
             auto const genesisJson = j_contents.at("genesisBlockHeader");
             auto header = read_genesis_blockheader(genesisJson);
@@ -248,7 +378,7 @@ void BlockchainTest::TestBody()
                 withdrawals.emplace(std::vector<Withdrawal>{});
             }
 
-            BlockState bs{tdb};
+            BlockState bs{tdb, vm};
             State state{bs, Incarnation{0, 0}};
             load_state_from_json(j_contents.at("pre"), state);
             bs.merge(state);
@@ -298,7 +428,7 @@ void BlockchainTest::TestBody()
 
             uint64_t const curr_block_number = block.value().header.number;
             auto const result =
-                execute_dispatch(rev, block.value(), tdb, block_hash_buffer);
+                execute_dispatch(rev, block.value(), tdb, vm, block_hash_buffer);
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));
@@ -402,8 +532,6 @@ void BlockchainTest::TestBody()
 
 void register_blockchain_tests(std::optional<evmc_revision> const &revision)
 {
-    namespace fs = std::filesystem;
-
     // skip slow tests
     testing::FLAGS_gtest_filter +=
         ":-:BlockchainTests.GeneralStateTests/stTimeConsuming/*:"
@@ -412,28 +540,12 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         "Call50000_sha256.json:"
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
-    constexpr auto suite = "BlockchainTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
-
-            // get rid of minus signs, which is a special symbol when used in //
-            // filtering
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
-
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] { return new BlockchainTest(path, revision); });
-        }
-    }
+    register_tests(
+        test_resource::ethereum_tests_dir / "BlockchainTests", revision);
+    register_tests(
+        test_resource::build_dir /
+            "src/ExecutionSpecTestFixtures/blockchain_tests",
+        revision);
 }
 
 MONAD_TEST_NAMESPACE_END

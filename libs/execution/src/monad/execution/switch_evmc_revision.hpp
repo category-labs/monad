@@ -4,6 +4,8 @@
 
 #define SWITCH_EVMC_REVISION(f, ...)                                           \
     switch (rev) {                                                             \
+    case EVMC_PRAGUE:                                                          \
+        return f<EVMC_PRAGUE>(__VA_ARGS__);                                    \
     case EVMC_CANCUN:                                                          \
         return f<EVMC_CANCUN>(__VA_ARGS__);                                    \
     case EVMC_SHANGHAI:                                                        \

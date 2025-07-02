@@ -175,7 +175,7 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets(Node &prev_root, uint64_t version);
+    void advance_compact_offsets();
 
     void free_compacted_chunks();
 
@@ -660,9 +660,10 @@ public:
             {
                 version_lower_bound_.store(0, std::memory_order_release);
                 next_version_.store(0, std::memory_order_release);
-                for (size_t i = 0; i < capacity(); ++i) {
-                    push(INVALID_OFFSET);
-                }
+                memset(
+                    (void *)root_offsets_chunks_.data(),
+                    0xff,
+                    root_offsets_chunks_.size() * sizeof(chunk_offset_t));
                 version_lower_bound_.store(version, std::memory_order_release);
                 next_version_.store(version, std::memory_order_release);
             }
@@ -1048,11 +1049,10 @@ using inflight_map_t = unordered_dense_map<
     chunk_offset_t_hasher>;
 
 using inflight_map_owning_t = unordered_dense_map<
-    chunk_offset_t,
-    std::pair< // pair: (max version of all requests, vector of continuations)
-        uint64_t, std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
-                      OwningNodeCursor &)>>>,
-    chunk_offset_t_hasher>;
+    virtual_chunk_offset_t,
+    std::vector<
+        std::function<MONAD_ASYNC_NAMESPACE::result<void>(OwningNodeCursor &)>>,
+    virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread
 // to work on
@@ -1068,7 +1068,8 @@ static_assert(alignof(fiber_find_request_t) == 8);
 static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 
 using NodeCache = static_lru_cache<
-    chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
+    virtual_chunk_offset_t, std::shared_ptr<Node>,
+    virtual_chunk_offset_t_hasher>;
 
 //! \warning this is not threadsafe, should only be called from triedb thread
 // during execution, DO NOT invoke it directly from a transaction fiber, as is

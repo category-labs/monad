@@ -72,18 +72,27 @@ namespace
 // #define MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS 1
 #define MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS 1
 
+// Returns a virtual offset on successful translation; returns
+// INVALID_VIRTUAL_OFFSET if the input offset is invalid or the offset refers to
+// a chunk in the free list.
 virtual_chunk_offset_t
 UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
+    if (offset == INVALID_OFFSET) {
+        return INVALID_VIRTUAL_OFFSET;
+    }
     MONAD_ASSERT(offset.id < io->chunk_count());
-    auto const *ci = db_metadata()->at(offset.id);
-    // should never invoke a translation for offset in free list
-    MONAD_DEBUG_ASSERT(ci->in_fast_list || ci->in_slow_list);
-    return {
-        uint32_t(ci->insertion_count()),
-        offset.offset,
-        ci->in_fast_list,
-        offset.spare & virtual_chunk_offset_t::max_spare};
+    auto const chunk_info = db_metadata()->atomic_load_chunk_info(
+        offset.id, std::memory_order_acquire);
+    if (chunk_info.in_fast_list || chunk_info.in_slow_list) {
+        return virtual_chunk_offset_t{
+            uint32_t(chunk_info.insertion_count()),
+            offset.offset,
+            chunk_info.in_fast_list,
+            0};
+    }
+    // return invalid virtual offset when translate an offset from free list
+    return INVALID_VIRTUAL_OFFSET;
 }
 
 std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
@@ -200,8 +209,10 @@ void UpdateAuxImpl::fast_forward_next_version(
         auto g = m->hold_dirty();
         auto ro = root_offsets(m == db_metadata_[1].main);
         uint64_t curr_version = ro.max_version();
+        MONAD_ASSERT(
+            curr_version == INVALID_BLOCK_ID || new_version > curr_version);
 
-        if (new_version >= curr_version &&
+        if (curr_version == INVALID_BLOCK_ID ||
             new_version - curr_version >= ro.capacity()) {
             ro.reset_all(new_version);
         }
@@ -356,8 +367,10 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     if (last_root_offset != INVALID_OFFSET) {
         auto const virtual_last_root_offset =
             physical_to_virtual(last_root_offset);
+        MONAD_DEBUG_ASSERT(virtual_last_root_offset != INVALID_VIRTUAL_OFFSET);
         if (db_metadata()->at(last_root_offset.id)->in_fast_list) {
             auto const virtual_fast_offset = physical_to_virtual(fast_offset);
+            MONAD_DEBUG_ASSERT(virtual_fast_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_fast_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
@@ -372,6 +385,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         }
         else if (db_metadata()->at(last_root_offset.id)->in_slow_list) {
             auto const virtual_slow_offset = physical_to_virtual(slow_offset);
+            MONAD_DEBUG_ASSERT(virtual_slow_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_slow_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
@@ -1058,18 +1072,20 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
 
+    if (prev_root) {
+        // previous compaction offset
+        std::tie(compact_offset_fast, compact_offset_slow) =
+            deserialize_compaction_offsets(prev_root->value());
+    }
     if (compaction) {
         if (enable_dynamic_history_length_) {
             // WARNING: this step may remove historical versions and free disk
             // chunks
             adjust_history_length_based_on_disk_usage();
         }
-        if (prev_root) {
-            advance_compact_offsets(*prev_root, version);
-        }
-        else { // no compaction if trie upsert on an empty trie
-            compact_offset_fast = MIN_COMPACT_VIRTUAL_OFFSET;
-            compact_offset_slow = MIN_COMPACT_VIRTUAL_OFFSET;
+        if (!version_is_valid_ondisk(version)) {
+            // only advance compaction progress for non existent version
+            advance_compact_offsets();
         }
     }
 
@@ -1092,10 +1108,8 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
-        version_is_valid_ondisk(version)
-            ? byte_string{prev_root->value()}
-            : serialize((uint32_t)compact_offset_fast) +
-                  serialize((uint32_t)compact_offset_slow);
+        serialize((uint32_t)compact_offset_fast) +
+        serialize((uint32_t)compact_offset_slow);
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
@@ -1122,10 +1136,12 @@ Node::UniquePtr UpdateAuxImpl::do_update(
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
     LOG_INFO_CFORMAT(
-        "Finish upserting version %lu. Time elapsed: %ld us. Disk usage: %.4f. "
-        "Chunks: %u fast, %u slow, %u free. Writer offsets: fast={%u,%u}, "
-        "slow={%u,%u}.",
+        "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
+        "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
+        "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
+        "slow=%u",
         version,
+        db_history_min_valid_version(),
         duration.count(),
         disk_usage(),
         num_chunks(chunk_list::fast),
@@ -1134,7 +1150,9 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         curr_fast_writer_offset.count,
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
-        curr_slow_writer_offset.offset);
+        curr_slow_writer_offset.offset,
+        (uint32_t)compact_offset_fast,
+        (uint32_t)compact_offset_slow);
     if (duration > std::chrono::microseconds(500'000)) {
         LOG_WARNING_CFORMAT(
             "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",
@@ -1147,17 +1165,25 @@ Node::UniquePtr UpdateAuxImpl::do_update(
 void UpdateAuxImpl::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
-    Node::UniquePtr root_to_erase = read_node_blocking(
+    Node::UniquePtr min_valid_root = read_node_blocking(
         *this,
         get_root_offset_at_version(min_valid_version),
         min_valid_version);
     auto const [min_offset_fast, min_offset_slow] =
-        deserialize_compaction_offsets(root_to_erase->value());
+        deserialize_compaction_offsets(min_valid_root->value());
     MONAD_ASSERT(
         min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     chunks_to_remove_before_count_fast_ = min_offset_fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offset_slow.get_count();
+    LOG_INFO_CFORMAT(
+        "Min valid version %lu compaction offset fast=%u, slow=%u. Remove "
+        "chunks before count fast=%u, slow=%u",
+        min_valid_version,
+        (uint32_t)min_offset_fast,
+        (uint32_t)min_offset_slow,
+        chunks_to_remove_before_count_fast_,
+        chunks_to_remove_before_count_slow_);
     MONAD_ASSERT(
         db_metadata()->root_offsets.version_lower_bound_ >= min_valid_version);
     free_compacted_chunks();
@@ -1165,6 +1191,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
 
 void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 {
+    LOG_INFO_CFORMAT("Erase versions up to and including %lu", version);
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
 }
@@ -1259,8 +1286,7 @@ void UpdateAuxImpl::update_disk_growth_data()
     last_block_end_offset_slow_ = curr_slow_writer_offset;
 }
 
-void UpdateAuxImpl::advance_compact_offsets(
-    Node &prev_root, uint64_t const version)
+void UpdateAuxImpl::advance_compact_offsets()
 {
     /* Note on ring based compaction:
     Fast list compaction is steady pace based on disk growth over recent blocks,
@@ -1284,11 +1310,6 @@ void UpdateAuxImpl::advance_compact_offsets(
     */
     MONAD_ASSERT(is_on_disk());
 
-    std::tie(compact_offset_fast, compact_offset_slow) =
-        deserialize_compaction_offsets(prev_root.value());
-    if (version_is_valid_ondisk(version)) {
-        return;
-    }
     constexpr auto fast_usage_limit_start_compaction = 0.1;
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();

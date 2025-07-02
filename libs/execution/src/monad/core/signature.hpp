@@ -11,7 +11,7 @@ struct SignatureAndChain
     uint256_t r{};
     uint256_t s{};
     std::optional<uint256_t> chain_id{};
-    bool odd_y_parity{};
+    uint8_t y_parity{};
 
     void from_v(uint256_t const &);
 

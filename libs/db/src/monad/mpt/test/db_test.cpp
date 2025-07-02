@@ -2017,6 +2017,53 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
     }
 }
 
+TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
+{
+    auto const prefix = 0x0012_hex;
+    std::deque<monad::byte_string> kv_alloc;
+    for (size_t i = 0; i < 10; ++i) {
+        kv_alloc.emplace_back(keccak_int_to_string(i));
+    }
+
+    uint64_t root_offsets_ring_capacity = [&] {
+        monad::async::storage_pool::creation_flags pool_options;
+        pool_options.open_read_only = true;
+        monad::async::storage_pool pool_ro(
+            config.dbname_paths,
+            monad::async::storage_pool::mode::open_existing,
+            pool_options);
+        monad::io::Ring ring;
+        monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
+            ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        monad::async::AsyncIO testio(pool_ro, robuf);
+        monad::mpt::UpdateAux<> aux_reader{&testio};
+        return aux_reader.root_offsets().capacity();
+    }();
+    std::cout << root_offsets_ring_capacity << std::endl;
+
+    auto const version_begin = root_offsets_ring_capacity * 2;
+    for (auto version = version_begin; version < version_begin + 100;
+         ++version) {
+        upsert_updates_flat_list(
+            db, prefix, version, make_update(kv_alloc[0], kv_alloc[0]));
+        EXPECT_TRUE(db.find(prefix + kv_alloc[0], version).has_value());
+        EXPECT_EQ(db.get_earliest_block_id(), version_begin);
+        EXPECT_EQ(db.get_latest_block_id(), version);
+    }
+
+    auto const new_version_begin =
+        db.get_latest_block_id() + root_offsets_ring_capacity + 100;
+    db.move_trie_version_forward(db.get_latest_block_id(), new_version_begin);
+    for (auto version = new_version_begin; version < new_version_begin + 100;
+         ++version) {
+        upsert_updates_flat_list(
+            db, prefix, version, make_update(kv_alloc[0], kv_alloc[0]));
+        EXPECT_TRUE(db.find(prefix + kv_alloc[0], version).has_value());
+        EXPECT_EQ(db.get_earliest_block_id(), new_version_begin);
+        EXPECT_EQ(db.get_latest_block_id(), version);
+    }
+}
+
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
     EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);

@@ -1,4 +1,6 @@
 #include <monad/async/util.hpp>
+#include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/genesis_state.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
 #include <monad/core/byte_string.hpp>
@@ -7,7 +9,6 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_server.h>
@@ -42,7 +43,7 @@ struct monad_statesync_server_network
 
 namespace
 {
-    auto const genesis = test_resource::ethereum_genesis_dir / "mainnet.json";
+    GenesisState const GENESIS_STATE = EthereumMainnet{}.get_genesis_state();
 
     std::filesystem::path tmp_dbname()
     {
@@ -154,7 +155,6 @@ namespace
             cctx = monad_statesync_client_context_create(
                 &str,
                 1,
-                genesis.c_str(),
                 static_cast<unsigned>(get_nprocs() - 1),
                 &client,
                 &statesync_send_request);
@@ -186,18 +186,6 @@ namespace
             std::filesystem::remove(sdbname);
         }
     };
-}
-
-TEST_F(StateSyncFixture, genesis)
-{
-    init();
-    handle_target(
-        cctx,
-        BlockHeader{
-            .state_root =
-                0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544_bytes32});
-    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
 TEST_F(StateSyncFixture, sync_from_latest)
@@ -274,12 +262,18 @@ TEST_F(StateSyncFixture, sync_from_empty)
     TrieDb ctdb{cdb};
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
     EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
-    EXPECT_EQ(ctdb.read_code(A_CODE_HASH)->executable_code(), A_CODE);
-    EXPECT_EQ(ctdb.read_code(B_CODE_HASH)->executable_code(), B_CODE);
-    EXPECT_EQ(ctdb.read_code(C_CODE_HASH)->executable_code(), C_CODE);
-    EXPECT_EQ(ctdb.read_code(D_CODE_HASH)->executable_code(), D_CODE);
-    EXPECT_EQ(ctdb.read_code(E_CODE_HASH)->executable_code(), E_CODE);
-    EXPECT_EQ(ctdb.read_code(H_CODE_HASH)->executable_code(), H_CODE);
+    auto const a_icode = ctdb.read_code(A_CODE_HASH);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
+    auto const b_icode = ctdb.read_code(B_CODE_HASH);
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
+    auto const c_icode = ctdb.read_code(C_CODE_HASH);
+    EXPECT_EQ(byte_string_view(c_icode->code(), c_icode->code_size()), C_CODE);
+    auto const d_icode = ctdb.read_code(D_CODE_HASH);
+    EXPECT_EQ(byte_string_view(d_icode->code(), d_icode->code_size()), D_CODE);
+    auto const e_icode = ctdb.read_code(E_CODE_HASH);
+    EXPECT_EQ(byte_string_view(e_icode->code(), e_icode->code_size()), E_CODE);
+    auto const h_icode = ctdb.read_code(H_CODE_HASH);
+    EXPECT_EQ(byte_string_view(h_icode->code(), h_icode->code_size()), H_CODE);
 
     auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
     ASSERT_TRUE(raw.has_value());
@@ -295,15 +289,14 @@ TEST_F(StateSyncFixture, sync_from_some)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
+        load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
         tdb.commit(
             {},
             {},
             MonadConsensusBlockHeader::from_eth_header(
                 BlockHeader{.number = 1}, 0));
-
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);
@@ -368,8 +361,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                 "ffffffffffffffffffffff0160005500")
                 .value();
         auto const code_hash = to_bytes(keccak256(code));
-        auto const code_analysis =
-            std::make_shared<CodeAnalysis>(analyze(code));
+        auto const icode = vm::make_shared_intercode(code);
         commit_sequential(
             sctx,
             StateDeltas{
@@ -387,7 +379,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
 
             },
-            Code{{code_hash, code_analysis}},
+            Code{{code_hash, icode}},
             hdr3);
         EXPECT_EQ(stdb.read_eth_header(), hdr3);
     }
@@ -486,8 +478,8 @@ TEST_F(StateSyncFixture, deletion_proposal)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);
@@ -543,8 +535,8 @@ TEST_F(StateSyncFixture, duplicate_deletion_round)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        read_genesis(genesis, tdb);
-        read_genesis(genesis, stdb);
+        load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
     auto const root = sdb.load_root_for_version(0);
@@ -622,7 +614,7 @@ TEST_F(StateSyncFixture, ignore_unused_code)
         machine,
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
-    EXPECT_TRUE(ctdb.read_code(code_hash)->executable_code().empty());
+    EXPECT_EQ(ctdb.read_code(code_hash)->code_size(), 0);
 }
 
 TEST_F(StateSyncFixture, sync_one_account)
@@ -1018,7 +1010,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
                        "ffffffffffffffffffffff0160005500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
-    auto const code_analysis = std::make_shared<CodeAnalysis>(analyze(code));
+    auto const icode = vm::make_shared_intercode(code);
 
     Account const a{
         .balance = 1337,
@@ -1040,7 +1032,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
 
         },
-        Code{{code_hash, code_analysis}},
+        Code{{code_hash, icode}},
         hdr);
     EXPECT_EQ(sctx.state_root(), hdr.state_root);
     handle_target(cctx, hdr);

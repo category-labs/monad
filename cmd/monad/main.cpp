@@ -3,8 +3,11 @@
 
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/chain/genesis_state.hpp>
 #include <monad/chain/monad_devnet.hpp>
+#include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
+#include <monad/chain/monad_testnet2.hpp>
 #include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/basic_formatter.hpp>
@@ -16,7 +19,6 @@
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -25,6 +27,7 @@
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>
 #include <monad/statesync/statesync_server_network.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -107,7 +110,6 @@ int main(int const argc, char const *argv[])
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
-    fs::path genesis;
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
@@ -116,7 +118,9 @@ int main(int const argc, char const *argv[])
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
-         {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET}};
+         {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
+         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
+         {"monad_testnet2", CHAIN_CONFIG_MONAD_TESTNET2}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -150,8 +154,6 @@ int main(int const argc, char const *argv[])
         "directory to dump state to at the end of run");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
-    group->add_option("--genesis", genesis, "genesis file")
-        ->check(CLI::ExistingFile);
     group
         ->add_option(
             "--snapshot", snapshot, "snapshot file path to load db from")
@@ -167,7 +169,7 @@ int main(int const argc, char const *argv[])
         });
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
-    group->require_option(1);
+    group->require_option(0, 1);
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -185,7 +187,7 @@ int main(int const argc, char const *argv[])
 
     auto stdout_handler = quill::stdout_handler();
     stdout_handler->set_pattern(
-        "%(ascii_time) [%(thread)] %(filename):%(lineno) LOG_%(level_name)\t"
+        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
         "%(message)",
         "%Y-%m-%d %H:%M:%S.%Qns",
         quill::Timezone::GmtTime);
@@ -230,6 +232,22 @@ int main(int const argc, char const *argv[])
         return mpt::Db{*machine};
     }();
 
+    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return std::make_unique<EthereumMainnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>();
+        case CHAIN_CONFIG_MONAD_TESTNET2:
+            return std::make_unique<MonadTestnet2>();
+        }
+        MONAD_ASSERT(false);
+    }();
+
     TrieDb triedb{db}; // init block number to latest finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
@@ -254,9 +272,9 @@ int main(int const argc, char const *argv[])
         }
         else if (!db.root().is_valid()) {
             MONAD_ASSERT(statesync.empty());
-            LOG_INFO("loading from genesis {}", genesis);
-            TrieDb tdb{db};
-            read_genesis(genesis, tdb);
+            LOG_INFO("loading from genesis");
+            GenesisState const genesis_state = chain->get_genesis_state();
+            load_genesis_state(genesis_state, triedb);
         }
         return triedb.get_block_number();
     }();
@@ -310,18 +328,6 @@ int main(int const argc, char const *argv[])
 
     auto const start_time = std::chrono::steady_clock::now();
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        }
-        MONAD_ASSERT(false);
-    }();
-
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;
 
@@ -348,6 +354,7 @@ int main(int const argc, char const *argv[])
             ? std::numeric_limits<uint64_t>::max()
             : block_num + nblocks - 1;
 
+    vm::VM vm;
     DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {
@@ -356,6 +363,7 @@ int main(int const argc, char const *argv[])
                 *chain,
                 block_db_path,
                 db_cache,
+                vm,
                 block_hash_buffer,
                 priority_pool,
                 block_num,
@@ -363,11 +371,14 @@ int main(int const argc, char const *argv[])
                 stop);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
+        case CHAIN_CONFIG_MONAD_MAINNET:
+        case CHAIN_CONFIG_MONAD_TESTNET2:
             return runloop_monad(
                 *chain,
                 block_db_path,
                 db,
                 db_cache,
+                vm,
                 block_hash_buffer,
                 priority_pool,
                 block_num,

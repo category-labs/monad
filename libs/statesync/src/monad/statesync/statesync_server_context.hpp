@@ -90,7 +90,7 @@ struct monad_statesync_server_context final : public monad::Db
         monad::Address const &addr, monad::Incarnation,
         monad::bytes32_t const &key) override;
 
-    virtual std::shared_ptr<monad::CodeAnalysis>
+    virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;
 
     virtual monad::BlockHeader read_eth_header() override;

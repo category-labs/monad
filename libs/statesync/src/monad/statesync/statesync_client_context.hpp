@@ -44,15 +44,13 @@ struct monad_statesync_client_context
     Map<monad::bytes32_t, monad::byte_string> code;
     Map<monad::Address, std::optional<StateDelta>> deltas;
     uint64_t n_upserts;
-    std::filesystem::path genesis;
     monad_statesync_client *sync;
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request);
 
     monad_statesync_client_context(
         std::vector<std::filesystem::path> dbname_paths,
-        std::filesystem::path genesis, std::optional<unsigned> sq_thread_cpu,
-        monad_statesync_client *,
+        std::optional<unsigned> sq_thread_cpu, monad_statesync_client *,
         void (*statesync_send_request)(
             struct monad_statesync_client *, struct monad_sync_request));
 

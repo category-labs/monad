@@ -63,16 +63,29 @@ set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
 # intx
-add_subdirectory(third_party/intx)
+add_subdirectory("third_party/intx")
 
 # compiler
 set(MONAD_COMPILER_STANDALONE OFF)
 set(MONAD_COMPILER_TESTING OFF)
 add_subdirectory("third_party/compiler")
+# TODO
+target_compile_options(evmone PRIVATE "-Wno-attributes")
+target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")
 
 # komihash
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
+
+# quill
+add_subdirectory("third_party/quill")
+# TODO
+target_compile_options(
+  quill
+  PUBLIC
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-Wno-stringop-overflow>)
+target_compile_options(
+  quill PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-tautological-compare>)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
@@ -172,9 +185,9 @@ endfunction()
 add_subdirectory("libs/async")
 add_subdirectory("libs/core")
 add_subdirectory("libs/db")
+add_subdirectory("libs/event")
 add_subdirectory("libs/execution")
 add_subdirectory("libs/rpc")
-add_subdirectory("libs/runloop")
 add_subdirectory("libs/statesync")
 
 # ##############################################################################

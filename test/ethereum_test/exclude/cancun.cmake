@@ -2,10 +2,13 @@ set(cancun_excluded_tests
     # Proto danksharking (unimplemented)
     "BlockchainTests.GeneralStateTests/Cancun/stEIP4844_blobtransactions/*"
     "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/*"
+    "BlockchainTests.cancun/eip4844_blobs/*"
     # new precompile (unimplemented)
     "BlockchainTests.GeneralStateTests/Pyspecs/shanghai/eip4895_withdrawals/withdrawing_to_precompiles.json"
+    "BlockchainTests.shanghai/eip4895_withdrawals/withdrawals/withdrawing_to_precompiles.json"
     # test includes new tx type (unimplemented)
     "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4788_beacon_root/tx_to_beacon_root_contract.json"
+    "BlockchainTests.cancun/eip4788_beacon_root/beacon_root_contract/tx_to_beacon_root_contract.json"
     # MCOPY (unimplemented)
     "BlockchainTests.GeneralStateTests/Cancun/stEIP5656-MCOPY/*"
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/incorrectWithdrawalsRoot.json"
@@ -66,4 +69,5 @@ set(cancun_excluded_tests
     "BlockchainTests.GeneralStateTests/stSelfBalance/diffPlaces.json"
     "BlockchainTests.GeneralStateTests/stSpecialTest/failed_tx_xcf416c53_Paris.json"
     "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json"
-)
+    "BlockchainTests.frontier/precompiles/precompiles/precompiles.json"
+    "BlockchainTests.frontier/scenarios/scenarios/scenarios.json")

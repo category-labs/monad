@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/chain/chain.hpp>
+#include <monad/chain/genesis_state.hpp>
 #include <monad/config.hpp>
 #include <monad/core/bytes.hpp>
 #include <monad/core/int.hpp>
@@ -35,6 +36,8 @@ struct EthereumMainnet : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual GenesisState get_genesis_state() const override;
 };
 
 MONAD_NAMESPACE_END

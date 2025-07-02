@@ -27,7 +27,7 @@ using db_t = TrieDb;
 
 TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 {
-    using intx::operator"" _u256;
+    using intx::operator""_u256;
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -37,7 +37,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
-    BlockState bs{tdb};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
 
     {
         State state{bs, Incarnation{0, 0}};
@@ -63,7 +64,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
-    auto const result = execute_impl<EVMC_SHANGHAI>(
+    auto const result = execute<EVMC_SHANGHAI>(
         EthereumMainnet{}, 0, tx, from, header, block_hash_buffer, bs, prev);
 
     ASSERT_TRUE(!result.has_error());

@@ -154,7 +154,19 @@ Receipt execute_final(
     auto const gas_cost = gas_price<rev>(tx, base_fee_per_gas);
     state.add_to_balance(sender, gas_cost * gas_refund);
 
-    auto const gas_used = tx.gas_limit - gas_refund;
+    auto gas_used = tx.gas_limit - gas_refund;
+
+    // EIP-7623
+    if constexpr (rev >= EVMC_PRAGUE) {
+        auto const floor_gas = floor_data_gas(tx);
+        if (gas_used < floor_gas) {
+            auto const delta = floor_gas - gas_used;
+            state.subtract_from_balance(sender, gas_cost * delta);
+
+            gas_used = floor_gas;
+        }
+    }
+
     auto const reward =
         calculate_txn_award<rev>(tx, base_fee_per_gas, gas_used);
     state.add_to_balance(beneficiary, reward);
@@ -236,12 +248,14 @@ inline uint256_t min_balance(Transaction const &tx) {
 }
 
 template <evmc_revision rev>
-Result<ExecutionResult> execute_impl(
+Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     boost::fibers::promise<void> &prev)
 {
+    TRACE_TXN_EVENT(StartTxn);
+
     BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
         tx,
         hdr.base_fee_per_gas,
@@ -281,14 +295,12 @@ Result<ExecutionResult> execute_impl(
                 hdr.base_fee_per_gas.value_or(0),
                 value(result),//TODO uninline
                 hdr.beneficiary);
-            //call_tracer.on_receipt(receipt);
+            // call_tracer.on_finish(receipt.gas_used);
             block_state.merge(state);
 
-            //auto const frames = call_tracer.get_frames();
             return ExecutionResult{
                 .receipt = receipt,
-                .sender = sender,
-                .call_frames = {}}; //{frames.begin(), frames.end()}};
+                .call_frames = {}}; //std::move(call_tracer).get_frames()};
         }
     }
     {
@@ -318,41 +330,13 @@ Result<ExecutionResult> execute_impl(
             hdr.base_fee_per_gas.value_or(0),
             value(result),
             hdr.beneficiary);
-        //call_tracer.on_receipt(receipt);
+        // call_tracer.on_finish(receipt.gas_used);
         block_state.merge(state);
 
-        //auto const frames = call_tracer.get_frames();
         return ExecutionResult{
             .receipt = receipt,
-            .sender = sender,
-            .call_frames = {}}; //{frames.begin(), frames.end()}};
+            .call_frames = {}}; //std::move(call_tracer).get_frames()};
     }
-}
-
-EXPLICIT_EVMC_REVISION(execute_impl);
-
-template <evmc_revision rev>
-Result<ExecutionResult> execute(
-    Chain const &chain, uint64_t const i, Transaction const &tx,
-    std::optional<Address> const &sender, BlockHeader const &hdr,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
-{
-    TRACE_TXN_EVENT(StartTxn);
-
-    if (MONAD_UNLIKELY(!sender.has_value())) {
-        return TransactionError::MissingSender;
-    }
-
-    return execute_impl<rev>(
-        chain,
-        i,
-        tx,
-        sender.value(),
-        hdr,
-        block_hash_buffer,
-        block_state,
-        prev);
 }
 
 EXPLICIT_EVMC_REVISION(execute);

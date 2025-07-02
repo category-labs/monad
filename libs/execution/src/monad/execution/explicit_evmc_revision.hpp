@@ -15,4 +15,5 @@
     template decltype(f<EVMC_LONDON>) f<EVMC_LONDON>;                          \
     template decltype(f<EVMC_PARIS>) f<EVMC_PARIS>;                            \
     template decltype(f<EVMC_SHANGHAI>) f<EVMC_SHANGHAI>;                      \
-    template decltype(f<EVMC_CANCUN>) f<EVMC_CANCUN>;
+    template decltype(f<EVMC_CANCUN>) f<EVMC_CANCUN>;                          \
+    template decltype(f<EVMC_PRAGUE>) f<EVMC_PRAGUE>;

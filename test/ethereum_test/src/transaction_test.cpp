@@ -3,6 +3,7 @@
 #include <transaction_test.hpp>
 
 #include <monad/chain/ethereum_mainnet.hpp>
+#include <monad/config.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/rlp/transaction_rlp.hpp>
@@ -31,6 +32,39 @@
 #include <fstream>
 #include <optional>
 #include <string>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+void register_tests(
+    std::filesystem::path const &root,
+    std::optional<evmc_revision> const &revision)
+{
+    namespace fs = std::filesystem;
+    MONAD_ASSERT(fs::exists(root) && fs::is_directory(root));
+
+    for (auto const &entry : fs::recursive_directory_iterator{root}) {
+        auto const path = entry.path();
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(entry.is_regular_file());
+
+            auto test = fmt::format("{}", fs::relative(path, root).string());
+            std::ranges::replace(test, '-', '_');
+
+            testing::RegisterTest(
+                "TransactionTests",
+                test.c_str(),
+                nullptr,
+                nullptr,
+                path.string().c_str(),
+                0,
+                [=] -> testing::Test * {
+                    return new test::TransactionTest(path, revision);
+                });
+        }
+    }
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -125,31 +159,12 @@ void TransactionTest::TestBody()
 
 void register_transaction_tests(std::optional<evmc_revision> const &revision)
 {
-    namespace fs = std::filesystem;
-
-    constexpr auto suite = "TransactionTests";
-    auto const root = test_resource::ethereum_tests_dir / suite;
-
-    for (auto const &entry : fs::recursive_directory_iterator{root}) {
-        auto const path = entry.path();
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(entry.is_regular_file());
-
-            auto test = fmt::format("{}", fs::relative(path, root).string());
-            std::ranges::replace(test, '-', '_');
-
-            testing::RegisterTest(
-                suite,
-                test.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] -> testing::Test * {
-                    return new TransactionTest(path, revision);
-                });
-        }
-    }
+    register_tests(
+        test_resource::ethereum_tests_dir / "TransactionTests", revision);
+    register_tests(
+        test_resource::build_dir /
+            "src/ExecutionSpecTestFixtures/transaction_tests",
+        revision);
 }
 
 MONAD_TEST_NAMESPACE_END

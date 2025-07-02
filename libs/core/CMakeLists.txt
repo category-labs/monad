@@ -17,8 +17,7 @@ option(MONAD_CORE_FORCE_DEBUG_ASSERT
 include("cmake/find_our_dependency.cmake")
 
 find_package(
-  Boost REQUIRED
-  COMPONENTS context fiber stacktrace_basic
+  Boost CONFIG REQUIRED COMPONENTS context fiber stacktrace_basic
   OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)
@@ -54,8 +53,6 @@ add_subdirectory("third_party/nlohmann_json" SYSTEM)
 
 add_subdirectory("third_party/unordered_dense")
 
-add_subdirectory("third_party/quill" SYSTEM)
-
 add_library(openssl_sha3 OBJECT)
 target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
@@ -89,6 +86,8 @@ add_library(
   "src/monad/core/cleanup.c"
   "src/monad/core/cpu_relax.h"
   "src/monad/core/endian.hpp"
+  "src/monad/core/format_err.c"
+  "src/monad/core/format_err.h"
   "src/monad/core/hash.hpp"
   "src/monad/core/hex_literal.hpp"
   "src/monad/core/keccak.c"
@@ -102,6 +101,7 @@ add_library(
   "src/monad/core/size_of.hpp"
   "src/monad/core/small_prng.hpp"
   "src/monad/core/spinlock.h"
+  "src/monad/core/srcloc.h"
   "src/monad/core/tl_tid.c"
   "src/monad/core/tl_tid.h"
   "src/monad/core/unaligned.hpp"
@@ -110,6 +110,18 @@ add_library(
   "src/monad/lru/static_lru_cache.hpp"
   "src/monad/mem/batch_mem_pool.hpp"
   "src/monad/synchronization/spin_lock.hpp"
+  # event
+  "src/monad/event/event_iterator.h"
+  "src/monad/event/event_iterator_inline.h"
+  "src/monad/event/event_metadata.h"
+  "src/monad/event/event_recorder.h"
+  "src/monad/event/event_recorder_inline.h"
+  "src/monad/event/event_ring.c"
+  "src/monad/event/event_ring.h"
+  "src/monad/event/event_ring_util.c"
+  "src/monad/event/event_ring_util.h"
+  "src/monad/event/test_event_types.h"
+  "src/monad/event/test_event_metadata.c"
   # fiber
   "src/monad/fiber/config.hpp"
   "src/monad/fiber/priority_algorithm.cpp"
@@ -124,6 +136,8 @@ add_library(
   "src/monad/io/buffer_pool.cpp"
   "src/monad/io/buffer_pool.hpp"
   "src/monad/io/config.hpp"
+  # mem
+  "src/monad/mem/align.h"
   # rlp
   "src/monad/rlp/config.hpp"
   "src/monad/rlp/encode.hpp"
@@ -177,7 +191,6 @@ target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC unordered_dense)
-
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(monad_core PUBLIC cgroup uring)
 endif()

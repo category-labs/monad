@@ -58,6 +58,9 @@ public:
     Result<OwningNodeCursor>
     find(OwningNodeCursor &, NibblesView, uint64_t block_id) const;
     Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+
+    uint64_t get_latest_block_id() const;
+    uint64_t get_earliest_block_id() const;
 };
 
 // RW, ROBlocking, InMemory

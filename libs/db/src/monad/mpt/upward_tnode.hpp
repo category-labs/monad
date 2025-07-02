@@ -8,6 +8,7 @@
 #include <monad/mpt/util.hpp>
 
 #include <optional>
+#include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -70,7 +71,7 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
     Node::UniquePtr old{};
-    allocators::owning_span<ChildData> children{};
+    std::vector<ChildData> children{};
     Nibbles path{};
     std::optional<byte_string_view> opt_leaf_data{std::nullopt};
     int64_t version{0};
@@ -86,7 +87,7 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
               static_cast<uint8_t>(std::popcount(orig_mask)), branch, orig_mask)
         , orig_mask(orig_mask)
         , old(std::move(old))
-        , children(allocators::owning_span<ChildData>{npending})
+        , children(npending)
         , path(path)
         , opt_leaf_data(opt_leaf_data)
         , version(version)
@@ -132,17 +133,18 @@ inline tnode_unique_ptr make_tnode(
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
     Node::UniquePtr old = {})
 {
-    return UpdateTNode::make(UpdateTNode{
-        orig_mask,
-        parent,
-        branch,
-        path,
-        version,
-        opt_leaf_data,
-        std::move(old)});
+    return UpdateTNode::make(
+        UpdateTNode{
+            orig_mask,
+            parent,
+            branch,
+            path,
+            version,
+            opt_leaf_data,
+            std::move(old)});
 }
 
-static_assert(sizeof(UpdateTNode) == 88);
+static_assert(sizeof(UpdateTNode) == 96);
 static_assert(alignof(UpdateTNode) == 8);
 
 struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>

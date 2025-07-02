@@ -68,6 +68,11 @@ byte_string encode_block_header(BlockHeader const &block_header)
             encode_bytes32(block_header.parent_beacon_block_root.value());
     }
 
+    if (block_header.requests_hash.has_value()) {
+        encoded_block_header +=
+            encode_bytes32(block_header.requests_hash.value());
+    }
+
     return encode_list2(encoded_block_header);
 }
 
@@ -140,7 +145,7 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
 
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(
-            block_header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
+            block_header.base_fee_per_gas, decode_unsigned<uint256_t>(payload));
         if (payload.size() > 0) {
             BOOST_OUTCOME_TRY(
                 block_header.withdrawals_root, decode_bytes32(payload));
@@ -154,6 +159,11 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
                 BOOST_OUTCOME_TRY(
                     block_header.parent_beacon_block_root,
                     decode_bytes32(payload));
+
+                if (payload.size() > 0) {
+                    BOOST_OUTCOME_TRY(
+                        block_header.requests_hash, decode_bytes32(payload));
+                }
             }
         }
     }

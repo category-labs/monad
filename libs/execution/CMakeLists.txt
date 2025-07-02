@@ -14,20 +14,30 @@ project(monad_execution)
 
 add_library(
   monad_execution STATIC
-  "src/monad/config.hpp"
   # chain
   "src/monad/chain/chain_config.h"
   "src/monad/chain/chain.cpp"
   "src/monad/chain/chain.hpp"
   "src/monad/chain/ethereum_mainnet.cpp"
   "src/monad/chain/ethereum_mainnet.hpp"
+  "src/monad/chain/ethereum_mainnet_alloc.hpp"
+  "src/monad/chain/genesis_state.hpp"
+  "src/monad/chain/genesis_state.cpp"
   "src/monad/chain/monad_chain.cpp"
   "src/monad/chain/monad_chain.hpp"
   "src/monad/chain/monad_devnet.cpp"
   "src/monad/chain/monad_devnet.hpp"
+  "src/monad/chain/monad_devnet_alloc.hpp"
+  "src/monad/chain/monad_mainnet.cpp"
+  "src/monad/chain/monad_mainnet.hpp"
+  "src/monad/chain/monad_mainnet_alloc.hpp"
   "src/monad/chain/monad_revision.h"
   "src/monad/chain/monad_testnet.cpp"
   "src/monad/chain/monad_testnet.hpp"
+  "src/monad/chain/monad_testnet_alloc.hpp"
+  "src/monad/chain/monad_testnet2.cpp"
+  "src/monad/chain/monad_testnet2.hpp"
+  "src/monad/chain/monad_testnet2_alloc.hpp"
   # core
   "src/monad/core/account.hpp"
   "src/monad/core/address.hpp"
@@ -75,6 +85,10 @@ add_library(
   "src/monad/db/block_db.hpp"
   "src/monad/db/db.hpp"
   "src/monad/db/db_cache.hpp"
+  "src/monad/db/db_snapshot.cpp"
+  "src/monad/db/db_snapshot.h"
+  "src/monad/db/db_snapshot_filesystem.cpp"
+  "src/monad/db/db_snapshot_filesystem.h"
   "src/monad/db/file_db.cpp"
   "src/monad/db/file_db.hpp"
   "src/monad/db/trie_db.cpp"
@@ -100,9 +114,11 @@ add_library(
   "src/monad/execution/execute_transaction.hpp"
   "src/monad/execution/explicit_evmc_revision.hpp"
   "src/monad/execution/fmt/event_trace_fmt.hpp"
-  "src/monad/execution/genesis.hpp"
   "src/monad/execution/precompiles.cpp"
   "src/monad/execution/precompiles.hpp"
+  "src/monad/execution/precompiles_bls12.cpp"
+  "src/monad/execution/precompiles_bls12.hpp"
+  "src/monad/execution/precompiles_impl.cpp"
   "src/monad/execution/switch_evmc_revision.hpp"
   "src/monad/execution/trace/call_frame.cpp"
   "src/monad/execution/trace/call_frame.hpp"
@@ -155,9 +171,10 @@ target_include_directories(
 
 target_link_libraries(
   monad_execution
-  PUBLIC monad-compiler-vm
+  PUBLIC monad-vm
   PUBLIC monad_core
   PUBLIC monad_trie
+  PRIVATE blst::blst
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PRIVATE PkgConfig::brotli

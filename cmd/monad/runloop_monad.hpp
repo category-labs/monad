@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -26,7 +27,7 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    Chain const &, std::filesystem::path const &, mpt::Db &, Db &,
+    Chain const &, std::filesystem::path const &, mpt::Db &, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &);
 

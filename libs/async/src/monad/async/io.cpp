@@ -439,33 +439,6 @@ void AsyncIO::submit_request_(
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
 }
 
-void AsyncIO::submit_request_(timed_invocation_state *state, void *uring_data)
-{
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    poll_uring_while_submission_queue_full_();
-    struct io_uring_sqe *sqe =
-        io_uring_get_sqe(const_cast<io_uring *>(&uring_.get_ring()));
-    MONAD_ASSERT(sqe);
-
-    if (state->ts.tv_sec != 0 || state->ts.tv_nsec != 0) {
-        unsigned flags = 0;
-        if (state->timespec_is_absolute) {
-            flags |= IORING_TIMEOUT_ABS;
-        }
-        if (state->timespec_is_utc_clock) {
-            flags |= IORING_TIMEOUT_REALTIME;
-        }
-        io_uring_prep_timeout(sqe, &state->ts, unsigned(-1), flags);
-    }
-    else {
-        io_uring_prep_nop(sqe);
-    }
-
-    io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASYNC_IO_URING_RETRYABLE(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
-}
-
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
     auto *ring = const_cast<io_uring *>(&uring_.get_ring());
@@ -799,26 +772,6 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
         0);
     if (copied == -1) {
         throw std::system_error(std::error_code(errno, std::system_category()));
-    }
-}
-
-void AsyncIO::submit_threadsafe_invocation_request(
-    erased_connected_operation *uring_data)
-{
-    // WARNING: This function is usually called from foreign kernel threads!
-    records_.inflight_ts.fetch_add(1, std::memory_order_acq_rel);
-    // All writes to uring_data must be flushed before doing this
-    std::atomic_thread_fence(std::memory_order_release);
-    for (;;) {
-        if (capture_io_latencies_) {
-            uring_data->initiated = std::chrono::steady_clock::now();
-        }
-        auto written = ::write(fds_.msgwrite, &uring_data, sizeof(uring_data));
-        if (written == sizeof(uring_data)) {
-            break;
-        }
-        MONAD_ASSERT(written == -1);
-        MONAD_ASSERT(errno == EINTR);
     }
 }
 

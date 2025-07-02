@@ -78,7 +78,8 @@ public:
 
 bool init_block_hash_buffer_from_triedb(
     mpt::Db &, uint64_t, BlockHashBufferFinalized &);
+
 bool init_block_hash_buffer_from_blockdb(
-    BlockDb &, uint64_t, BlockHashBufferFinalized &);
+    BlockDb &, uint64_t block_number, BlockHashBufferFinalized &);
 
 MONAD_NAMESPACE_END

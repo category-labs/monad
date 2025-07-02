@@ -89,12 +89,11 @@ byte_string encode_transaction(Transaction const &txn)
         auto const prefix =
             byte_string(1, static_cast<unsigned char>(txn.type));
 
-        return prefix +
-               encode_list2(
-                   encode_eip2718_base(txn),
-                   encode_unsigned(static_cast<unsigned>(txn.sc.odd_y_parity)),
-                   encode_unsigned(txn.sc.r),
-                   encode_unsigned(txn.sc.s));
+        return prefix + encode_list2(
+                            encode_eip2718_base(txn),
+                            encode_unsigned(txn.sc.y_parity),
+                            encode_unsigned(txn.sc.r),
+                            encode_unsigned(txn.sc.s));
     }
 }
 
@@ -225,7 +224,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
     BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(payload));
-    BOOST_OUTCOME_TRY(txn.sc.odd_y_parity, decode_bool(payload));
+    BOOST_OUTCOME_TRY(txn.sc.y_parity, decode_unsigned<uint8_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
 

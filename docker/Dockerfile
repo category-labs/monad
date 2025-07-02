@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:24.04 as base
+FROM ubuntu:25.04 as base
 
 RUN apt update && apt upgrade -y
 
@@ -18,9 +18,9 @@ RUN apt update && apt install -y \
 COPY scripts/ubuntu-build/ /opt
 
 RUN apt update && apt install -y \
-  clang-18 \
-  gcc-13 \
-  g++-13
+  clang-19 \
+  gcc-15 \
+  g++-15
 
 RUN /opt/install-boost.sh
 RUN /opt/install-tools.sh

@@ -29,8 +29,7 @@ struct EvmcHost;
 struct ExecutionResult
 {
     Receipt receipt;
-    Address sender;
-    std::vector<CallFrame> call_frames;// what are these?
+    std::vector<CallFrame> call_frames;
 };
 
 uint64_t g_star(
@@ -44,16 +43,10 @@ evmc::Result execute_impl_no_validation(
     Address const &beneficiary, uint64_t max_code_size);
 
 template <evmc_revision rev>
-Result<ExecutionResult> execute_impl(
-    Chain const &, uint64_t i, Transaction const &, Address const &sender,
+Result<ExecutionResult> execute(
+    Chain const &, uint64_t i, Transaction const &, Address const &,
     BlockHeader const &, BlockHashBuffer const &, BlockState &,
     boost::fibers::promise<void> &prev);
-
-template <evmc_revision rev>
-Result<ExecutionResult> execute(
-    Chain const &, uint64_t i, Transaction const &,
-    std::optional<Address> const &, BlockHeader const &,
-    BlockHashBuffer const &, BlockState &, boost::fibers::promise<void> &prev);
 
 inline void wait_for_promise(boost::fibers::promise<void> &promise){
     promise.get_future().wait();

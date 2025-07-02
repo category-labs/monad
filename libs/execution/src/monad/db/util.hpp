@@ -4,6 +4,7 @@
 #include <monad/core/account.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/byte_string.hpp>
+#include <monad/core/monad_block.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/mpt/db.hpp>
@@ -119,9 +120,13 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
 
+Result<std::pair<byte_string_view, byte_string_view>>
+decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
@@ -143,5 +148,14 @@ void load_header(mpt::Db &, BlockHeader const &);
 mpt::Nibbles proposal_prefix(uint64_t);
 
 std::vector<uint64_t> get_proposal_rounds(mpt::Db &, uint64_t block_number);
+
+std::optional<BlockHeader>
+read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
+
+std::optional<byte_string> query_consensus_header(
+    mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
+
+std::optional<MonadConsensusBlockHeader> read_consensus_header(
+    mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
 
 MONAD_NAMESPACE_END

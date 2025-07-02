@@ -7,7 +7,6 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/genesis.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_client_context.hpp>
 #include <monad/statesync/statesync_protocol.hpp>
@@ -24,8 +23,7 @@ unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
-    char const *const genesis_file, unsigned const sq_thread_cpu,
-    monad_statesync_client *sync,
+    unsigned const sq_thread_cpu, monad_statesync_client *sync,
     void (*statesync_send_request)(
         monad_statesync_client *, monad_sync_request))
 {
@@ -34,7 +32,6 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     MONAD_ASSERT(!paths.empty());
     return new monad_statesync_client_context{
         paths,
-        genesis_file,
         sq_thread_cpu == MONAD_SQPOLL_DISABLED
             ? std::nullopt
             : std::make_optional(sq_thread_cpu),
@@ -103,14 +100,11 @@ void monad_statesync_client_handle_target(
 
     ctx->tgrt = tgrt;
 
+    MONAD_ASSERT(
+        tgrt.number, "genesis should be loaded manually without statesync");
+
     if (tgrt.number == ctx->db.get_latest_block_id()) {
         MONAD_ASSERT(monad_statesync_client_has_reached_target(ctx));
-    }
-    else if (tgrt.number == 0) {
-        MONAD_ASSERT(ctx->db.get_latest_block_id() == INVALID_BLOCK_ID);
-        read_genesis(ctx->genesis, ctx->tdb);
-        ctx->progress.assign(
-            ctx->progress.size(), {tgrt.number, INVALID_BLOCK_ID});
     }
     else {
         for (size_t i = 0; i < ctx->progress.size(); ++i) {

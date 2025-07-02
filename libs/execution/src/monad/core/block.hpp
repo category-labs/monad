@@ -40,6 +40,7 @@ struct BlockHeader
     std::optional<uint64_t> blob_gas_used{std::nullopt}; // EIP-4844
     std::optional<uint64_t> excess_blob_gas{std::nullopt}; // EIP-4844
     std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788
+    std::optional<bytes32_t> requests_hash{std::nullopt}; // EIP-7685
 
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
 };
@@ -54,10 +55,10 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
-static_assert(sizeof(BlockHeader) == 728);
+static_assert(sizeof(BlockHeader) == 760);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 808);
+static_assert(sizeof(Block) == 840);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

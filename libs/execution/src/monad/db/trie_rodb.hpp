@@ -5,6 +5,7 @@
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/mpt/db.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <memory>
 #include <optional>
@@ -81,10 +82,10 @@ public:
         return to_bytes(storage.value());
     }
 
-    virtual std::shared_ptr<CodeAnalysis>
+    virtual vm::SharedIntercode
     read_code(bytes32_t const &code_hash) override
     {
-        // TODO read code analysis object
+        // TODO read intercode object
         auto code_leaf_res = db_.find(
             prefix_cursor_,
             mpt::concat(
@@ -92,10 +93,9 @@ public:
                 mpt::NibblesView{to_byte_string_view(code_hash.bytes)}),
             block_number_);
         if (!code_leaf_res.has_value()) {
-            return std::make_shared<CodeAnalysis>(analyze({}));
+            return vm::make_shared_intercode({});
         }
-        return std::make_shared<CodeAnalysis>(
-            analyze(code_leaf_res.value().node->value()));
+        return vm::make_shared_intercode(code_leaf_res.value().node->value());
     }
 
     virtual void commit(

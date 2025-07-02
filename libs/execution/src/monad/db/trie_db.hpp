@@ -13,7 +13,7 @@
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/state_machine.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+#include <monad/vm/vm.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -44,7 +44,7 @@ public:
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
-    virtual std::shared_ptr<CodeAnalysis> read_code(bytes32_t const &) override;
+    virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_round(
         uint64_t block_number,
         std::optional<uint64_t> round_number = std::nullopt) override;

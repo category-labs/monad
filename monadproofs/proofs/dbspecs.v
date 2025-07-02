@@ -3,27 +3,47 @@ Require Export monad.asts.trie_rodb.
 Require Export monad.asts.trie_db.
 Open Scope N_scope.
 
-(** The first task for writing specs of a C++ class is typically to define a Coq type that
-models the data stored by objects of that class.
+(** *Model type for TrieDb/TrieRODb *)
+(** The first task for writing specs of a C++ class is typically
+to define a Coq type that models the data stored by objects of that class.
 This Coq type is also often called the model type.
-The model type is ideally at a very high-level and abstracts away the C++ related implementation details.
-For example, the model type of bytes32 is just `N` the Coq type of unbounded (mathematical) numbers, even though in C++,
-it is laid out as 4 words.
-Similarly, the model type of various sequention C++ containers, e.g. linked lists, arrays, vectors are the same: Coq lists.
+The model type is ideally at a very high-level and abstracts away the C++-related implementation details.
+For example, the model type of bytes32 is just `N` the Coq type of unbounded (mathematical) natural numbers,
+even though in C++, it is laid out 32 machine bytes.
+Similarly, the model type of various sequention C++ containers, e.g. linked lists, arrays, vectors, sets are the typicall the same: Coq lists.
 
 Method specs typically tie the pre/post states of the object to elements of the Coq model type.
 We can then use Coq's logic to write assertions on the model, to capture the pre and post conditions.
 
-The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`.
-*)
+The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents
+ *)
+
+(** [ConsensusBlockHeader] is a model type of the C++ struct `MonadConsensusBlockHeader`.
+This struct has many fields and the Db probably stores all of them.
+But one struct field: `uint64_t round` is special as the Db uses round numbers to make decisions
+For now we just model this field. 
+ *)
 Record ConsensusBlockHeader :=
   {
-    roundNum:N;
-    (* TODO: add more fields *)
+    roundNum: N; (* models `uint64_t round` *)
+    (* TODO: add more fields, to model the following C++ fields
+       uint64_t epoch{0};
+       MonadQuorumCertificate qc{};
+       byte_string_fixed<33> author{};
+       uint64_t seqno{0};
+       uint128_t timestamp_ns{0};
+       byte_string_fixed<96> round_signature{};
+       std::vector<BlockHeader> delayed_execution_results{};
+       BlockHeader execution_inputs{};
+     *)
   }.
     
+(** [EvmState] is persistent state of the entire EVM: state of ALL accounts *)
 Notation EvmState := evm.GlobalState.
 
+(** [ProposalInDb] bundles all of the information for a single block proposal
+    stored in the trie: the consensus header [cheader], the raw [proposedBlock],
+    its [postBlockState] after execution, and the per-transaction [txResults]. *)
 Record ProposalInDb :=
   {
     cheader: ConsensusBlockHeader;
@@ -32,132 +52,203 @@ Record ProposalInDb :=
     txResults: list TransactionResult;
   }.
 
+(** [BlockNumStateInDb] groups together all proposals sharing the same block number.
+*)
 Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
-    finalizedRoundNum : option N;
+    finalizedRoundNum: option N; (** option T is just like std::optional<T> in C++ *)
+    (** for any block number, finalized round number, if any, is set by calling Db::finalize()*)
   }.
     
+(** [ProposalId] identifies a single proposal in the model by its block number
+    and an optional round number.  *)
 Record ProposalId :=
   {
-    idBlockNum : N;
-    idRoundNum: option N;
+    idBlockNum: N;
+    idRoundNum: option N; (** None signifies the finalized round number for block number [idBlockNum] *)
   }.
     
+(** [DbModel] is the complete in-memory trie model for [TrieDb].*)
 Record DbModel : Type :=
   {
     blockNumsStates: list BlockNumStateInDb;
+    (** ^ each member of this list records all proposals (and finalized round number, if any) for some round number.
+       each member of this list represents a unique block number.
+     *)
     
     activeProposal: option ProposalId;
-    (*^ changed by set_block_and_round. None means set_block_and_round has never been called on this object yet *)
-    
+    (** ^ records the active proposal from which reads like read_storage read.
+        set by [set_block_and_round]; None means set_block_and_round has never been called on this object yet. *)
+
     votedMetadata: option (N * N);
-    (*^ (block_num, round) from latest update_voted_metadata *)
-    
+    (** ^ (block_num, round) from the latest [update_voted_metadata] call *)
+
     lastVerifiedBlockIndex: N;
-    
+    (** ^ highest block index marked verified via [update_verified_block] *)
+
     cinvId: gname;
-    (* ^ Coq-specific detail: logical id of the concurrency invariant. there is no C++ analog of this *)
+    (** ^ ignore this Coq detail: invariant name for the concurrent disk/memory ownership.*)
   }.
 
-Definition pblockNum (p: ProposalInDb):=  number (header (proposedBlock p)).
 
-Definition blockNum (b: BlockNumStateInDb) : N:=
+(** * class invariants of Db
+
+Not all members of the [DbModel] type correspond to a data stored in a TrieDb object (and associated disk structures).
+There some invariants, e.g.:
+- the list [blockNumsStates] has a contiguous range of block numbers (no holes)
+- proposals in [blockNumsStates] have distinct round numbers.
+  even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for the same round number: after commit(), the old block cannot be accessed by TrieDb methods.
+  Some TriedRODb methods can still access the old proposal until the next set_block_and_round and we will see how our specs capture that below.
+
+In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
+ *)
+
+
+
+(** extracts the block number from a [ProposalInDb] *)
+Definition pblockNum (p: ProposalInDb): N  := number (header (proposedBlock p)).
+
+(** returns the block number of a [BlockNumStateInDb].
+    clients must ensure that [b] is valid, as defined below by [validBlockNumStateInDb],
+    which asserts that all proposals have the same block number and that there is at least one proposal
+ *)
+Definition blockNum (b: BlockNumStateInDb) : N :=
   match proposals b with
-  | h::_ => pblockNum h
-  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  | h :: _ => pblockNum h
+  | [] => 0 (* dummy: clients must ensure [hasAtLeastOneProposal b] *)
   end.
 
+(** [proposalsHaveSameBlockNum] asserts that all entries in a proposal list
+    share the same block number, enforcing the group invariant. *)
 Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
-  forall (p1 p2: ProposalInDb),
-    p1 ∈ (proposals b)
-    -> p2 ∈ (proposals b)
-    -> pblockNum p1 = pblockNum p2.
+  forall p1 p2,
+    p1 ∈  proposals b -> p2  ∈ proposals b -> pblockNum p1 = pblockNum p2.
 
+(** [hasAtLeastOneProposal] ensures the proposal list is non-empty,
+    a precondition for many helpers on [BlockNumStateInDb]. *)
 Definition hasAtLeastOneProposal (b: BlockNumStateInDb) :=
-  exists p: ProposalInDb, p ∈ (proposals b).
+  exists p, p ∈ proposals b.
 
 Notation NoDuplicate := NoDup.
 
-Definition validBlockNumStateInDb  (b: BlockNumStateInDb) :=
-  hasAtLeastOneProposal b
-  /\ proposalsHaveSameBlockNum b
-  /\ NoDuplicate (map (roundNum ∘ cheader) (proposals b)).
+(** [validBlockNumStateInDb] combines the key invariants on a block-number state:
+    non-empty list, uniform block number, and no duplicate rounds within the group. *)
+Definition validBlockNumStateInDb (b: BlockNumStateInDb) : Prop :=
+  hasAtLeastOneProposal b /\
+  proposalsHaveSameBlockNum b /\
+  NoDuplicate (map (roundNum ∘ cheader) (proposals b)).
 
 Open Scope N_scope.
+(** [contiguousBlockNums] requires that the block-number groups in [lb]
+    cover a contiguous range from [minBlockNum] to [maxBlockNum],
+    so there are no gaps in the recorded block history. *)
 Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
   let blockNums := List.map blockNum lb in
-  let maxBlockNum := maxL blockNums in 
+  let maxBlockNum := maxL blockNums in
   let minBlockNum := minL blockNums in
-  forall blockNumber:N,  minBlockNum <= blockNumber <= maxBlockNum -> exists b, blockNum b = blockNumber /\ b ∈ lb.
-                           
+  forall blockNumber,
+    minBlockNum <= blockNumber <= maxBlockNum ->
+    exists b, blockNum b = blockNumber /\ b ∈ lb.
 
-Definition lowestBlockNum (d: DbModel) : N:=
+(** [lowestBlockNum] returns the smallest block number in the model.
+    Clients must only call this if the model has at least one group. *)
+Definition lowestBlockNum (d: DbModel) : N :=
   match blockNumsStates d with
-  | h::_ => blockNum h
-  | [] => 0 (* dummy value. use sites will ensure this case never happens *)
+  | h :: _ => blockNum h
+  | [] => 0 (* dummy: ensure usage only under non-empty model conditions *)
   end.
 
 (* upstream *)
-Definition nthElem {A:Type} (l: list A) (n:N) : option A :=
+(** [nthElem] is a safe index into a Coq list by [N], returning [None]
+    if [n] exceeds the list length. Useful for translating C++ vectors
+    indexed by unsigned longs. *)
+Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
   nth_error l (N.to_nat n).
              
+(** [lookupBlockByNum] finds the [BlockNumStateInDb] for block number [bnum]
+    if present in [d], or [None] otherwise. Under [validBlockNumStateInDb]
+    it will never return [Some _] with a tail. *)
 Definition lookupBlockByNum (bnum: N) (d: DbModel) : option BlockNumStateInDb :=
-  match List.filter (fun b => bool_decide (blockNum b= bnum)) (blockNumsStates d) with
-  | h::tl => Some h (* [validBlockNumStateInDb b] -> tl = [] *)
+  match List.filter (fun b => bool_decide (blockNum b = bnum)) (blockNumsStates d) with
+  | h :: _ => Some h (* unique under valid invariant *)
   | [] => None
   end.
 
+(** [lookupProposalByRoundNum] selects the unique proposal in [b]
+    whose [roundNum] matches [rnum], if any. Under [validBlockNumStateInDb]
+    the filter can return at most one element. *)
 Definition lookupProposalByRoundNum (b: BlockNumStateInDb) (rnum: N) : option ProposalInDb :=
   match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (proposals b) with
-  | h::tl => Some h (* [validBlockNumStateInDb b] -> tl = [] *)
+  | h :: _ => Some h (* unique under validBlockNumStateInDb *)
   | [] => None
   end.
 
 
-Definition finalizedProposal (b : BlockNumStateInDb): option ProposalInDb :=
+(** [finalizedProposal] yields the proposal in [b] whose round matches
+    [finalizedRoundNum], or [None] if no round has been frozen yet. *)
+Definition finalizedProposal (b : BlockNumStateInDb) : option ProposalInDb :=
   match finalizedRoundNum b with
   | None => None
   | Some rnd => lookupProposalByRoundNum b rnd
   end.
-     
-Definition lookupProposal (id: ProposalId)  (d: DbModel) : option ProposalInDb :=
+
+(** [lookupProposal id d] finds the proposal in [d] matching the block
+    and optional round stored in [id].  If [idRoundNum] is [None], it returns
+    the finalized branch via [finalizedProposal]. *)
+Definition lookupProposal (id: ProposalId) (d: DbModel) : option ProposalInDb :=
   match lookupBlockByNum (idBlockNum id) d with
   | None => None
   | Some b =>
-      match idRoundNum id with
-      | None => finalizedProposal b
-      | Some rnum => lookupProposalByRoundNum b rnum
-      end
-  end.      
+    match idRoundNum id with
+    | None => finalizedProposal b
+    | Some rnum => lookupProposalByRoundNum b rnum
+    end
+  end.
 
+(** [lookupActiveProposal d] retrieves the currently active proposal
+    (set by [TrieDb::set_block_and_round]) if one is pinned. *)
 Definition lookupActiveProposal (d: DbModel) : option ProposalInDb :=
   match activeProposal d with
   | None => None
   | Some ap => lookupProposal ap d
   end.
     
-Definition validActiveProposal  (m: DbModel) : Prop :=
+(** [validActiveProposal m] asserts that if [activeProposal] is set,
+    it must correspond to an existing proposal in [m]. *)
+Definition validActiveProposal (m: DbModel) : Prop :=
   match activeProposal m with
   | None => True
   | Some pid => isSome (lookupProposal pid m)
-  end.                       
+  end.
 
-Definition splitL {A} (n:N) (l: list A) : (list A * (list A)) :=
+(** [splitL n l] splits [l] into the first [n] elements and the remainder,
+    used to partition finalized vs unfinalized block groups in [validDbModel]. *)
+Definition splitL {A} (n: N) (l: list A) : list A * list A :=
   (takeN n l, dropN n l).
 
+(** [validDbModel m] combines all invariants on the top-level DB model:
+    - each block group is valid,
+    - block numbers are contiguous and distinct,
+    - the active proposal is well-formed,
+    - there is a prefix of finalized groups (first [numFinalized]) and the rest unfinalized. *)
 Definition validDbModel (m: DbModel) : Prop :=
-  (forall b, b ∈ (blockNumsStates m) -> validBlockNumStateInDb b)
-  /\ contiguousBlockNums (blockNumsStates m)
-  /\ NoDuplicate (map blockNum (blockNumsStates m))
-  /\ validActiveProposal m
-  /\ (exists numFinalized:N, let '(firstn, rest) := splitL numFinalized (blockNumsStates m) in
-         (forall b, b ∈ firstn -> isSome (finalizedProposal b))
-         /\ (forall b, b ∈ rest -> isNone (finalizedProposal b))
-     ).
+  (forall b, b  blockNumsStates m -> validBlockNumStateInDb b) /
+  contiguousBlockNums (blockNumsStates m) /
+  NoDuplicate (map blockNum (blockNumsStates m)) /
+  validActiveProposal m /
+  (exists numFinalized,
+     let '(firstn, rest) := splitL numFinalized (blockNumsStates m) in
+     (forall b, b  firstn -> isSome (finalizedProposal b)) /
+     (forall b, b  rest -> isNone (finalizedProposal b))).
 
-  Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
+(** [dummyEvmState] provides a fallback global state when no proposal is active.
+    It should never be used in [validDbModel], only for totality of [stateAfterActiveProposal]. *)
+Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
   
+(** [stateAfterActiveProposal m] returns the EVM state after executing
+    the active proposal, or [dummyEvmState] if none is pinned. Used by [read_storage]
+    and [commit] specs to fetch the base state. *)
 Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   match lookupActiveProposal m with
   | None => dummyEvmState
@@ -165,31 +256,30 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   end.
   
 
+(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
+    among those groups that have not yet been finalized. *)
 Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
-  let unfin :=
-    List.filter
-      (fun b => match finalizedProposal b with
-                | None => true | _ => false
-                end)
-      (blockNumsStates d) in
+  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
   match unfin with
   | [] => None
-  | _  => Some (minL (List.map blockNum unfin))
+  | _ => Some (minL (map blockNum unfin))
   end.
 
+(** Generate lens instances for easy functional updates to our record types. *)
 #[only(lens)] derive DbModel.
 #[only(lens)] derive ProposalInDb.
 #[only(lens)] derive BlockNumStateInDb.
 
+(** [updateBlockNum d bnum f] applies a functional update [f] to the
+    single [BlockNumStateInDb] in [d] whose block number is [bnum].
+    All other groups remain unchanged. *)
 Definition updateBlockNum
   (d: DbModel)
   (bnum: N)
   (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
   d &: _blockNumsStates .= 
-    List.map (fun b =>
-                if bool_decide (blockNum b = bnum)
-                then f b else b)
-    (blockNumsStates d).
+    map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
+        (blockNumsStates d).
 
 (** ignore the next 4 lines: Coq boilerplate *)
 Section with_Sigma.
@@ -221,6 +311,17 @@ Section with_Sigma.
   Proof. Admitted.
 
 
+  (** Spec of [TrieDb::read_storage]:
+
+      [read_storage(address, incarnation, key)] reads the 32-byte storage slot
+      from the *active proposal* selected in [preDb]. It requires fractional ownership
+      [q] of the current trie state [preDb], as well as ownership of the pointers
+      for [address], [incarnation], and [key]. The precondition
+      [lookupActiveProposal preDb = Some activeProposal] ensures there is an
+      active proposal to read from. On return, [retp] points to the
+      [bytes32] value obtained by [lookupStorage (postBlockState activeProposal)
+      address key blockTxInd], and the trie state is preserved unchanged.
+  *)
   cpp.spec "monad::TrieDb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
     as read_storage_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
@@ -237,6 +338,18 @@ Section with_Sigma.
         1
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
+  (** Spec of [TrieDb::finalize]:
+
+      [finalize(blockNum, roundNum)] promotes the proposal snapshot at [blockNum]
+      and [roundNum] into the finalized state, making it immutable under
+      the [finalized_nibbles] prefix. It requires fractional ownership [q] of
+      the current DB model [preDb], plus evidence that [preDb] contains a
+      proposal at [blockNum, roundNum], and that [blockNum] is the lowest
+      unfinalized block. On return, the trie state is updated so that the
+      proposal at [blockNum] is marked finalized, and the caller gains
+      [SelectedProposalForBlockNum blockNum prp] to record which proposal
+      was frozen.
+  *)
   cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
@@ -252,6 +365,13 @@ Section with_Sigma.
                                
   (* no finalize in TrieRODB *)
 
+  (** Spec of [TrieDb::update_verified_block]:
+
+      Marks [blockNum] as the last verified block in the DB model without
+      changing any trie prefix. Requires fractional ownership [q] of [preDb]
+      and that [blockNum] is strictly less than the next unfinalized block.
+      On return, only [_lastVerifiedBlockIndex] is updated to [blockNum].
+  *)
   cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb
@@ -262,6 +382,14 @@ Section with_Sigma.
               end |]
       \post this |-> TrieDBR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
 
+  (** Spec of [TrieDb::set_block_and_round]:
+
+      Updates the active proposal selection for a read-write trie instance.
+      Takes full ownership of [preDb] and a proposal identifier [pid],
+      which must exist in [preDb]. After this call, [activeProposal]
+      is set to [Some pid], and the underlying trie prefix used by
+      subsequent [read_storage] and [commit] calls is switched accordingly.
+  *)
   cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as set_block_and_round_spec with (fun (this:ptr) =>
     \prepost{preDb} this |-> TrieDBR 1 preDb
@@ -279,6 +407,15 @@ Section with_Sigma.
     \post this |-> TrieDBR 1 (preDb &: _activeProposal .= Some pid)
   ).
 
+  (** Spec of [TrieRODb::set_block_and_round] (first variant):
+
+      Attempts to pin a read-only view on the proposal [pid]. Given full
+      ownership of the read-only DB model [preActive], it returns a boolean
+      indicating whether the proposal still exists. On success, the view
+      is advanced to [Some proposal] and exposes [SelectedProposalForBlockNum]
+      so future reads can locate the frozen proposal. On failure, the view
+      remains at [None].
+  *)
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
     as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
     (* Full ownership of the Db model *)
@@ -299,6 +436,14 @@ Section with_Sigma.
       else  this |-> TrieRODBR 1 None
   ).
 
+  (** Spec of [TrieRODb::set_block_and_round] (second variant):
+
+      Validates that the previously selected proposal [proposal] is still
+      present in the trie. Requires [SelectedProposalForBlockNum] in the
+      precondition. Returns [true] and retains [Some proposal] if it has
+      not been garbage-collected, or [false] and resets the view to [None]
+      otherwise.
+  *)
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
     \prepost{preActive} this |-> TrieRODBR 1 preActive
@@ -318,6 +463,12 @@ Section with_Sigma.
       else  this |-> TrieRODBR 1 None (* the proposal got garbage collected *)
    ).
 
+  (** Spec of [TrieDb::update_voted_metadata]:
+
+      Records the highest‑round quorum certificate for [blockNum] in
+      [_votedMetadata]. Requires full ownership of [preDb], and on return
+      [_votedMetadata] is updated to [Some (blockNum, roundNum)].
+  *)
   cpp.spec "monad::TrieDb::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
       \prepost{preDb} this |-> TrieDBR 1 preDb
@@ -350,12 +501,25 @@ Section with_Sigma.
   
   Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
   Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
-(* TODO:
-- handle garbage collection
-- handle genesis block creation
- *)
-cpp.spec
-  "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
+  (* TODO:
+  - handle garbage collection
+  - handle genesis block creation
+  *)
+  (** Spec of [TrieDb::commit]:
+
+      Incorporates a new block proposal [newProposal] into the database state.
+      Given full ownership of the current trie [preDb] and of all inputs
+      (state deltas, code deltas, block header, receipts, call frames,
+      senders, transactions, ommers, and optional withdrawals),
+      and assuming that [newProposal] either extends the previous active block
+      or is the genesis block,
+      [commit] updates the in-memory list of proposals and returns the updated
+      trie state [commitPostState preDb newProposal]. All EVM outputs in
+      [newProposal] must match the provided arguments, and the existing state
+      is preserved for other blocks.
+  *)
+  cpp.spec
+    "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
     \prepost{(preDb:DbModel)} this |-> TrieDBR 1 preDb
 

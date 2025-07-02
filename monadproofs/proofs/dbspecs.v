@@ -1,7 +1,25 @@
+
 Require Import monad.proofs.prelude.
 Require Export monad.asts.trie_rodb.
 Require Export monad.asts.trie_db.
 Open Scope N_scope.
+
+(** [dummyEvmState] provides a fallback global state when no proposal is active.
+    It should never be used in [validDbModel], only for totality of [stateAfterActiveProposal]. *)
+Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
+Definition stateRoot (b: Block) : N. Proof. Admitted.
+Definition receiptRoot (b: Block) : N. Proof. Admitted.
+Definition transactionsRoot (b: Block) : N. Proof. Admitted.
+Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
+
+(** [splitL n l] splits [l] into the first [n] elements and the remainder,
+    used to partition finalized vs unfinalized block groups in [validDbModel]. *)
+Definition splitL {A} (n: N) (l: list A) : list A * list A :=
+  (takeN n l, dropN n l).
+
+(** nth element of a list *)
+Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
+  nth_error l (N.to_nat n).
 
 (** *Model type for TrieDb/TrieRODb *)
 (** The first task for writing specs of a C++ class is typically
@@ -102,8 +120,9 @@ There some invariants, e.g.:
   Some TriedRODb methods can still access the old proposal until the next set_block_and_round and we will see how our specs capture that below.
 
 In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
+Class invariants hold before/after every method call.
+(For classes whose methods can be called concurrently, many of the class invariants always hold, even in the middle of the execution of a concurrent method. For more details, review concurrent invariants in the second formal verification tutorial)
  *)
-
 
 
 (** extracts the block number from a [ProposalInDb] *)
@@ -125,11 +144,10 @@ Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
   forall p1 p2,
     p1 ∈  proposals b -> p2  ∈ proposals b -> pblockNum p1 = pblockNum p2.
 
-(** [hasAtLeastOneProposal] ensures the proposal list is non-empty,
-    a precondition for many helpers on [BlockNumStateInDb]. *)
 Definition hasAtLeastOneProposal (b: BlockNumStateInDb) :=
   exists p, p ∈ proposals b.
 
+(* this definition from Coq standard library asserts that a given list has no duplicates *)
 Notation NoDuplicate := NoDup.
 
 (** [validBlockNumStateInDb] combines the key invariants on a block-number state:
@@ -139,10 +157,14 @@ Definition validBlockNumStateInDb (b: BlockNumStateInDb) : Prop :=
   proposalsHaveSameBlockNum b /\
   NoDuplicate (map (roundNum ∘ cheader) (proposals b)).
 
-Open Scope N_scope.
-(** [contiguousBlockNums] requires that the block-number groups in [lb]
-    cover a contiguous range from [minBlockNum] to [maxBlockNum],
-    so there are no gaps in the recorded block history. *)
+(** [validDbModel] does more than just assert [validBlockNumStateInDb] for every item in the [blockNumsStates] list:
+    there are some inter-block number constrants as well, e.g.
+    - block numbers in the db are continguous, with no duplicates
+    - the active block is currently exists in the Db.
+    - there is a maxFinalizedIndex such that every block index below it is finalized and every index above is not finalized.
+ *)
+
+(** asserts that block numbers in lb are continguous: has no holes. assumes lb is nonempty *)
 Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
   let blockNums := List.map blockNum lb in
   let maxBlockNum := maxL blockNums in
@@ -151,51 +173,35 @@ Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
     minBlockNum <= blockNumber <= maxBlockNum ->
     exists b, blockNum b = blockNumber /\ b ∈ lb.
 
-(** [lowestBlockNum] returns the smallest block number in the model.
-    Clients must only call this if the model has at least one group. *)
+(** smallest block number in the model. assumes non-empty [blockNumsStates] *)
 Definition lowestBlockNum (d: DbModel) : N :=
   match blockNumsStates d with
   | h :: _ => blockNum h
-  | [] => 0 (* dummy: ensure usage only under non-empty model conditions *)
+  | [] => 0 (* dummy *)
   end.
-
-(* upstream *)
-(** [nthElem] is a safe index into a Coq list by [N], returning [None]
-    if [n] exceeds the list length. Useful for translating C++ vectors
-    indexed by unsigned longs. *)
-Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
-  nth_error l (N.to_nat n).
              
-(** [lookupBlockByNum] finds the [BlockNumStateInDb] for block number [bnum]
-    if present in [d], or [None] otherwise. Under [validBlockNumStateInDb]
-    it will never return [Some _] with a tail. *)
+(** looks up a block number in the Db. *)
 Definition lookupBlockByNum (bnum: N) (d: DbModel) : option BlockNumStateInDb :=
   match List.filter (fun b => bool_decide (blockNum b = bnum)) (blockNumsStates d) with
-  | h :: _ => Some h (* unique under valid invariant *)
+  | h :: _ => Some h 
   | [] => None
   end.
 
-(** [lookupProposalByRoundNum] selects the unique proposal in [b]
-    whose [roundNum] matches [rnum], if any. Under [validBlockNumStateInDb]
-    the filter can return at most one element. *)
+(** lookup a proposal by a given roundnumber in BlockNumStateInDb *)
 Definition lookupProposalByRoundNum (b: BlockNumStateInDb) (rnum: N) : option ProposalInDb :=
   match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (proposals b) with
   | h :: _ => Some h (* unique under validBlockNumStateInDb *)
   | [] => None
   end.
 
-
-(** [finalizedProposal] yields the proposal in [b] whose round matches
-    [finalizedRoundNum], or [None] if no round has been frozen yet. *)
+(** finalized proposal for a round number, if any *)
 Definition finalizedProposal (b : BlockNumStateInDb) : option ProposalInDb :=
   match finalizedRoundNum b with
   | None => None
   | Some rnd => lookupProposalByRoundNum b rnd
   end.
 
-(** [lookupProposal id d] finds the proposal in [d] matching the block
-    and optional round stored in [id].  If [idRoundNum] is [None], it returns
-    the finalized branch via [finalizedProposal]. *)
+(** lookup a ProposalId (block number, optional round number) in the Db *)
 Definition lookupProposal (id: ProposalId) (d: DbModel) : option ProposalInDb :=
   match lookupBlockByNum (idBlockNum id) d with
   | None => None
@@ -206,8 +212,7 @@ Definition lookupProposal (id: ProposalId) (d: DbModel) : option ProposalInDb :=
     end
   end.
 
-(** [lookupActiveProposal d] retrieves the currently active proposal
-    (set by [TrieDb::set_block_and_round]) if one is pinned. *)
+(** lookup the active proposal *)
 Definition lookupActiveProposal (d: DbModel) : option ProposalInDb :=
   match activeProposal d with
   | None => None
@@ -222,64 +227,25 @@ Definition validActiveProposal (m: DbModel) : Prop :=
   | Some pid => isSome (lookupProposal pid m)
   end.
 
-(** [splitL n l] splits [l] into the first [n] elements and the remainder,
-    used to partition finalized vs unfinalized block groups in [validDbModel]. *)
-Definition splitL {A} (n: N) (l: list A) : list A * list A :=
-  (takeN n l, dropN n l).
-
 (** [validDbModel m] combines all invariants on the top-level DB model:
-    - each block group is valid,
-    - block numbers are contiguous and distinct,
-    - the active proposal is well-formed,
-    - there is a prefix of finalized groups (first [numFinalized]) and the rest unfinalized. *)
+    - block numbers in the db are continguous, with no duplicates
+    - the active block is currently exists in the Db.
+    - there is a maxFinalizedIndex such that every block index below it is finalized and every index above is not finalized.*)
 Definition validDbModel (m: DbModel) : Prop :=
-  (forall b, b  blockNumsStates m -> validBlockNumStateInDb b) /
-  contiguousBlockNums (blockNumsStates m) /
-  NoDuplicate (map blockNum (blockNumsStates m)) /
-  validActiveProposal m /
-  (exists numFinalized,
-     let '(firstn, rest) := splitL numFinalized (blockNumsStates m) in
-     (forall b, b  firstn -> isSome (finalizedProposal b)) /
-     (forall b, b  rest -> isNone (finalizedProposal b))).
+  (forall b, b ∈ blockNumsStates m -> validBlockNumStateInDb b)
+  /\ contiguousBlockNums (blockNumsStates m)
+  /\ NoDuplicate (map blockNum (blockNumsStates m))
+  /\ validActiveProposal m
+  /\ (exists maxFinalizedBlockNum,
+         (forall b, blockNum b <= maxFinalizedBlockNum -> isSome (finalizedProposal b))
+         /\ (forall b, blockNum b > maxFinalizedBlockNum -> isNone (finalizedProposal b))).
 
-(** [dummyEvmState] provides a fallback global state when no proposal is active.
-    It should never be used in [validDbModel], only for totality of [stateAfterActiveProposal]. *)
-Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
   
-(** [stateAfterActiveProposal m] returns the EVM state after executing
-    the active proposal, or [dummyEvmState] if none is pinned. Used by [read_storage]
-    and [commit] specs to fetch the base state. *)
-Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
-  match lookupActiveProposal m with
-  | None => dummyEvmState
-  | Some p => postBlockState p
-  end.
-  
-
-(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
-    among those groups that have not yet been finalized. *)
-Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
-  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
-  match unfin with
-  | [] => None
-  | _ => Some (minL (map blockNum unfin))
-  end.
 
 (** Generate lens instances for easy functional updates to our record types. *)
 #[only(lens)] derive DbModel.
 #[only(lens)] derive ProposalInDb.
 #[only(lens)] derive BlockNumStateInDb.
-
-(** [updateBlockNum d bnum f] applies a functional update [f] to the
-    single [BlockNumStateInDb] in [d] whose block number is [bnum].
-    All other groups remain unchanged. *)
-Definition updateBlockNum
-  (d: DbModel)
-  (bnum: N)
-  (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
-  d &: _blockNumsStates .= 
-    map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
-        (blockNumsStates d).
 
 (** ignore the next 4 lines: Coq boilerplate *)
 Section with_Sigma.
@@ -337,6 +303,27 @@ Section with_Sigma.
         retp |-> bytes32R
         1
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
+
+(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
+    among those groups that have not yet been finalized. *)
+Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
+  match unfin with
+  | [] => None
+  | _ => Some (minL (map blockNum unfin))
+  end.
+
+(** [updateBlockNum d bnum f] applies a functional update [f] to the
+    single [BlockNumStateInDb] in [d] whose block number is [bnum].
+    All other groups remain unchanged. *)
+Definition updateBlockNum
+  (d: DbModel)
+  (bnum: N)
+  (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
+  d &: _blockNumsStates .= 
+    map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
+        (blockNumsStates d).
+
 
   (** Spec of [TrieDb::finalize]:
 
@@ -476,11 +463,6 @@ Section with_Sigma.
       \arg{roundNum:N}   "round"        (Vint roundNum)
       \post this |-> TrieDBR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
 
-  Definition stateRoot (b: Block) : N. Proof. Admitted.
-  Definition receiptRoot (b: Block) : N. Proof. Admitted.
-  Definition transactionsRoot (b: Block) : N. Proof. Admitted.
-  Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
-
   Definition commitPostState
              (preDb       : DbModel)
              (newProposal : ProposalInDb)
@@ -499,12 +481,15 @@ Section with_Sigma.
   Definition allProposalsInDb (d: DbModel) :=
     flat_map proposals (blockNumsStates d).
   
-  Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
-  Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
-  (* TODO:
-  - handle garbage collection
-  - handle genesis block creation
-  *)
+(** [stateAfterActiveProposal m] returns the EVM state after executing
+    the active proposal, or [dummyEvmState] if none is pinned. Used by [read_storage]
+    and [commit] specs to fetch the base state. *)
+Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
+  match lookupActiveProposal m with
+  | None => dummyEvmState
+  | Some p => postBlockState p
+  end.
+  
   (** Spec of [TrieDb::commit]:
 
       Incorporates a new block proposal [newProposal] into the database state.

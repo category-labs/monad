@@ -89,6 +89,57 @@ void set_beacon_root(BlockState &block_state, BlockHeader const &header)
     }
 }
 
+void set_block_hash_history(BlockState &block_state, BlockHeader const &header)
+{
+    constexpr auto HISTORY_STORAGE_ADDRESS{
+        0x0000F90827F1C53a10cb7A02335B175320002935_address};
+    constexpr uint256_t HISTORY_SERVE_WINDOW{8191};
+
+    State state{block_state, Incarnation{header.number, 0}};
+    if (state.account_exists(HISTORY_STORAGE_ADDRESS)) {
+        uint256_t const block_number{header.number};
+        bytes32_t const key{
+            to_bytes(to_big_endian((block_number - 1) % HISTORY_SERVE_WINDOW))};
+
+        state.set_storage(HISTORY_STORAGE_ADDRESS, key, header.parent_hash);
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
+std::vector<std::optional<Address>> recover_senders(
+    std::vector<Transaction> const &transactions,
+    fiber::PriorityPool &priority_pool)
+{
+    std::vector<std::optional<Address>> senders{transactions.size()};
+
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[transactions.size()]};
+
+    for (unsigned i = 0; i < transactions.size(); ++i) {
+        priority_pool.submit(
+            i,
+            [i = i,
+             promises = promises,
+             &sender = senders[i],
+             &transaction = transactions[i]] {
+                sender = recover_sender(transaction);
+                promises[i].set_value();
+            });
+    }
+
+    for (unsigned i = 0; i < transactions.size(); ++i) {
+        promises[i].get_future().wait();
+    }
+
+    return senders;
+}
+
 template <typename TaskFunction>
 void fork_task(fiber::PriorityPool &priority_pool, uint64_t priority, const TaskFunction & task_function){
     priority_pool.submit(priority, [task_function]() { task_function(); });
@@ -105,23 +156,6 @@ void reset_promises(uint64_t num_transactions){
     }
 }
 
-template <typename T>
-using vanilla_ptr = T*;
-void compute_senders(Block const &block, fiber::PriorityPool &priority_pool){
-    reset_promises(block.transactions.size());
-
-    for (uint64_t i = 0; i < block.transactions.size(); ++i) {
-        fork_task(priority_pool, i, [&block, i]() {
-            senders[i] = recover_sender(block.transactions[i]);
-            promises[i].set_value();
-        });
-    }
-
-    for (uint64_t i = 0; i < block.transactions.size(); ++i) {
-        wait_for_promise(promises[i]);
-    }
-}
-
     
 template <evmc_revision rev>
 void execute_transactions(Block const &block, fiber::PriorityPool &priority_pool, Chain const &chain, std::vector<Address> const &senders, BlockHashBuffer const &block_hash_buffer, BlockState &block_state){
@@ -134,6 +168,7 @@ void execute_transactions(Block const &block, fiber::PriorityPool &priority_pool
              &transaction = block.transactions[i],
              &header = block.header,
              &block_hash_buffer,
+             &senders,
              &block_state] {
                 results[i] = execute<rev>(
                     chain,
@@ -203,8 +238,14 @@ Result<std::vector<ExecutionResult>> execute_block(
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
+    MONAD_ASSERT(senders.size() == block.transactions.size());
+
+    if constexpr (rev >= EVMC_PRAGUE) {
+        set_block_hash_history(block_state, block.header);
+    }
+
     if constexpr (rev >= EVMC_CANCUN) {
-        set_beacon_root(block_state, block);
+        set_beacon_root(block_state, block.header);
     }
 
     if constexpr (rev == EVMC_HOMESTEAD) {
@@ -215,7 +256,7 @@ Result<std::vector<ExecutionResult>> execute_block(
     }
 
 
-    execute_transactions<rev>(block, priority_pool, chain, block_hash_buffer, block_state);
+    execute_transactions<rev>(block, priority_pool, chain, senders, block_hash_buffer, block_state);
 
     return finalize_block<rev>(block, block_state);
 }

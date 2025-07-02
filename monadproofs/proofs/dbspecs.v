@@ -3,6 +3,19 @@ Require Export monad.asts.trie_rodb.
 Require Export monad.asts.trie_db.
 Open Scope N_scope.
 
+(** The first task for writing specs of a C++ class is typically to define a Coq type that
+models the data stored by objects of that class.
+This Coq type is also often called the model type.
+The model type is ideally at a very high-level and abstracts away the C++ related implementation details.
+For example, the model type of bytes32 is just `N` the Coq type of unbounded (mathematical) numbers, even though in C++,
+it is laid out as 4 words.
+Similarly, the model type of various sequention C++ containers, e.g. linked lists, arrays, vectors are the same: Coq lists.
+
+Method specs typically tie the pre/post states of the object to elements of the Coq model type.
+We can then use Coq's logic to write assertions on the model, to capture the pre and post conditions.
+
+The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`.
+*)
 Record ConsensusBlockHeader :=
   {
     roundNum:N;

@@ -221,7 +221,6 @@ Section with_Sigma.
         1
         (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
-
   cpp.spec "monad::Db::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
       \prepost{q preDb} this |-> TrieDBR q preDb

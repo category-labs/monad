@@ -121,3 +121,8 @@ Record Chain := {
   }.
 Inductive Revision := Shanghai | Frontier.
 
+Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
+Definition stateRoot (b: evm.GlobalState) : N. Proof. Admitted.
+Definition receiptRoot (b: list TransactionResult) : N. Proof. Admitted.
+Definition transactionsRoot (b: Block) : N. Proof. Admitted.
+Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.

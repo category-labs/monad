@@ -1679,3 +1679,13 @@ Definition minL (l: list N) : N :=
   | [] => 0
   | x :: xs => fold_left N.min xs x
   end.
+
+
+(** [splitL n l] splits [l] into the first [n] elements and the remainder,
+    used to partition finalized vs unfinalized block groups in [validDbModel]. *)
+Definition splitL {A} (n: N) (l: list A) : list A * list A :=
+  (takeN n l, dropN n l).
+
+(** nth element of a list *)
+Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
+  nth_error l (N.to_nat n).

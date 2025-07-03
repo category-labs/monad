@@ -11,22 +11,6 @@ Require Import monad.asts.trie_rodb.
 Require Import  monad.asts.trie_db.
 Open Scope N_scope.
 
-(** [dummyEvmState] provides a fallback global state when no proposal is active.
-    It should never be used in [validDbModel], only for totality of [stateAfterActiveProposal]. *)
-Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
-Definition stateRoot (b: evm.GlobalState) : N. Proof. Admitted.
-Definition receiptRoot (b: list TransactionResult) : N. Proof. Admitted.
-Definition transactionsRoot (b: Block) : N. Proof. Admitted.
-Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
-
-(** [splitL n l] splits [l] into the first [n] elements and the remainder,
-    used to partition finalized vs unfinalized block groups in [validDbModel]. *)
-Definition splitL {A} (n: N) (l: list A) : list A * list A :=
-  (takeN n l, dropN n l).
-
-(** nth element of a list *)
-Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
-  nth_error l (N.to_nat n).
 
 (** *Model type for TrieDb/TrieRODb *)
 (** The first task for writing specs of a C++ class is typically

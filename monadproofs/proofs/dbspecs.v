@@ -242,39 +242,74 @@ Definition validDbModel (m: DbModel) : Prop :=
 
   
 
-(** Generate lens instances for easy functional updates to our record types. *)
+(** ignore the next 8 lines: Coq boilerplate *)
 #[only(lens)] derive DbModel.
 #[only(lens)] derive ProposalInDb.
 #[only(lens)] derive BlockNumStateInDb.
 
-(** ignore the next 4 lines: Coq boilerplate *)
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
   Context  {MODd : trie_db.module ⊧ CU}.
-  
-  
-  (** contains the auth ownership of monad::mpt::Db in-memory datastructures AND also the on-disk datastructures. there can be only 1 object owning the on-disk data at any given time. full 1 fraction is needed to update the state. this ownership [dbAuthR 1 _] is disjoint from [dbFragR] below. The latter can be used to read the database even when some other thread owns [dbAuthR 1 _]: the actual ownership of the disk/memory lives in a concurrent invariant *)
-  Definition TrieDBR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
 
+  (* TODO: move *)
+  Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
+  Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
+
+  
+(** *TrieD/TrieRODb rep predicates
+  Rep predicates are one of the main ingredients of specifications.
+  They define how an element of the model type in Coq is represented in memory/disk starting from the "this" memory location (base pointer of the object).
+  They also assert ownership of such locations.
+  If the object stores pointers to other memory locations or disk locations, Rep predicates can also assert what is stored at those locations and assert ownership of those locations.
+  To understand this in more detail, please review the examples in the first quarter of the 2nd formal verification tutorial.
+ *)
+  
+(** [this |-> TrieDb q m] asserts that at the memory location [this], there is an object representing the [DbModel] [m].
+  the "Proof. Admitted." means that we have not defined it yet and asked Coq to leave it as a hole to be filled later.
+  The Rep predicate(s) of a class is usually an implementation detail and clients do NOT need to know about the exact definition.
+    
+  [this |-> TrieDb q m] also asserts [q] fraction ownership of the object.
+  The definition [TrieDb q m] will also assert ownership of the associated memory and disk cells/blocks as functions of this [q].
+  q ∈ (0,1].
+  q must be 1 to be able to call methods that update Db (e.g. commit, finalize). a smaller fraction suffices to read (e.g. read_storage).
+   *)
+  Definition TrieDbR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
+
+  (** Even though the users of TrieDb (e.g. when writing Coq proofs of callers of TrieDb methods) do not need need to know the definition of
+      TrieDbR, they do need a guarantee that it satisfies the following 3 properties *)
+
+  (** this property says that [this |-> TrieDb q m] must imply that [m] is valid.
+      As discussed in the first tutorial, `|--` is separation logic entailment and ** is the separating conjunction*)
+  Lemma TrieDbREntails (q:Qp) (m: DbModel) : TrieDbR q m |--  TrieDbR q m ** [| validDbModel m|].
+  Proof. Admitted.
+
+  (** TrieDb is a concurrent library. When executing a block, the speculative executions of multiple transactions can concurrently read from the Db. But they know that they will read the pre-block state. No such thread updates the Db.
+  The following lemma allows splitting the 1 ownership of the TrieDb into smaller pieces, as many as we want so that we can pass that ownership pieces to several threads to allow them all to read the Db concurrently.
+   *)
+  Lemma TrieDbRsplit (q1 q2:Qp) (m: DbModel) :
+    TrieDbR (q1+q2) m |--  TrieDbR q1 m ** TrieDbR q2 m.
+  Proof. Admitted.
+
+(** The Db setup supports much more  concurrency than what is discussed above.
+   Unlike ownership of primitive types, even if you hold [this |-> TrieDb 1 m],
+   other thread/processes can read (but not update) the underlying Db using some TrieRODb object.
+   So ownership of TrieRODb can be held separately (in the sense of `**`) from TrieDb 1 m.
+   However, there can only be one TrieDb object based on a disk: it has the authoritative ownership of the underlying disk.
+
+   To get a sense of how TrieDb and TrieRODb can be defined to achieve this using concurrency invariants,
+   review the 2nd and 3rd quarters of the 2nd tutorial: [TrieDbR] is similar to uAuthR and [TrieRODbR] is similar to uFragR.
+
+   Unlike TrieDbR, ownership of TrieRODb cannot assert the current state of the entire Db: there can be another process updating the Db concurrently. Nevertheless, operations on TrieRODb are logicall atomic, they read from a single proposal and not a mishmash of multiple propsals.
+   [this |-> TrieRODb q (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from  the proposal pr. any fraction [q] suffices to do reads: write operations are not supported anyway: they have [| False |] as a precondition.
+   q must be 1 to destruct the object.
+   [this |-> TrieRODb q None] does not suffice to issue any read: the client needs to first call `set_block_and_round` to
+   transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
+ *)
+
+  
   (** Knowledge assertion (no resource ownership) *)
   Definition SelectedProposalForBlockNum (blockNum: N) (b: ProposalInDb) : mpred. Proof. Admitted.
 
-  (** cannot use if different proposals can be done for the same round number *)
-  Definition ProposedInRoundNum (roundNum: N) (b: ProposalInDb) : mpred. Proof. Admitted.
-
-  (** all reads will read from activeProposal, which is determined at TrieRODB::set_block_and_round *)
-  Definition TrieRODBR (q:Qp) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
-
-
-  (** The definition of TrieDBR is a detail of the DB implementation: it defines how a (m: DbModel) is represented in memory and disk. Clients of TrieDB do not need to know this. However, clients need a guarantee that the definition TrieDB satisfies the following properties: *)
-
-  
-  Lemma TrieDBREntails (q:Qp) (m: DbModel) : TrieDBR q m |--  TrieDBR q m ** [| validDbModel m|].
-  Proof. Admitted.
-
-  Lemma TrieDBRsplit (q1 q2:Qp) (m: DbModel) :
-    TrieDBR (q1+q2) m |--  TrieDBR q1 m ** TrieDBR q2 m.
-  Proof. Admitted.
 
 
   (** Spec of [TrieDb::read_storage]:
@@ -290,7 +325,7 @@ Section with_Sigma.
   *)
   cpp.spec "monad::TrieDb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
     as read_storage_spec_auth with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDBR q preDb
+      \prepost{q preDb} this |-> TrieDbR q preDb
       \arg{addressp} "address" (Vptr addressp)
       \prepost{q address} addressp |-> addressR q address
       \arg{incp} "incarnation" (Vptr incp)
@@ -339,14 +374,14 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
     as finalize_spec_auth with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDBR q preDb
+      \prepost{q preDb} this |-> TrieDbR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round_number" (Vint roundNum)
       \let pid := {| idBlockNum := blockNum; idRoundNum:= Some roundNum |}
       \pre{prp} [| lookupProposal pid preDb = Some prp|]
       \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
       \post
-         this |-> TrieDBR q (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
+         this |-> TrieDbR q (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
          ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
                                ).
                                
@@ -361,13 +396,13 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
     as update_verified_block_spec with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDBR q preDb
+      \prepost{q preDb} this |-> TrieDbR q preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \pre [| match lowestUnfinalizedBlockIndex preDb with
               | Some s =>  blockNum < s
               | None => False (* if no block has been finalized yet, cannot call this method *)
               end |]
-      \post this |-> TrieDBR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
+      \post this |-> TrieDbR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
 
   (** Spec of [TrieDb::set_block_and_round]:
 
@@ -379,7 +414,7 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as set_block_and_round_spec with (fun (this:ptr) =>
-    \prepost{preDb} this |-> TrieDBR 1 preDb
+    \prepost{preDb} this |-> TrieDbR 1 preDb
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
 
@@ -391,7 +426,7 @@ Definition updateBlockNum
 
     \pre{prp} [| lookupProposal pid preDb = Some prp|]
 
-    \post this |-> TrieDBR 1 (preDb &: _activeProposal .= Some pid)
+    \post this |-> TrieDbR 1 (preDb &: _activeProposal .= Some pid)
   ).
 
   (** Spec of [TrieRODb::set_block_and_round] (first variant):
@@ -458,10 +493,10 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieDb::update_voted_metadata(unsigned long, unsigned long)"
     as update_voted_metadata_spec with (fun (this:ptr) =>
-      \prepost{preDb} this |-> TrieDBR 1 preDb
+      \prepost{preDb} this |-> TrieDbR 1 preDb
       \arg{blockNum:N}   "block_number" (Vint blockNum)
       \arg{roundNum:N}   "round"        (Vint roundNum)
-      \post this |-> TrieDBR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
+      \post this |-> TrieDbR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
 
   Definition commitPostState
              (preDb       : DbModel)
@@ -506,7 +541,7 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   cpp.spec
     "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
-    \prepost{(preDb:DbModel)} this |-> TrieDBR 1 preDb
+    \prepost{(preDb:DbModel)} this |-> TrieDbR 1 preDb
 
     \arg{(deltas_ptr: ptr) (qs: Qp)} "#0" (Vptr deltas_ptr)
     \prepost{(newProposal: ProposalInDb)}
@@ -577,5 +612,5 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
                      qw ws)
         qw
         (withdrawals (proposedBlock (newProposal)))
-    \post this |-> TrieDBR 1 (commitPostState preDb newProposal)).
+    \post this |-> TrieDbR 1 (commitPostState preDb newProposal)).
 End with_Sigma.

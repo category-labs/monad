@@ -95,13 +95,13 @@ namespace
         uint64_t end{0};
     };
 
-    struct State : Range
+    struct TestState : Range
     {
         ankerl::unordered_dense::segmented_map<uint64_t, Range> storage;
     };
 
     void new_account(
-        StateDeltas &deltas, State &state, Incarnation const incarnation,
+        StateDeltas &deltas, TestState &state, Incarnation const incarnation,
         uint64_t const n)
     {
         bool const success = deltas.emplace(
@@ -115,7 +115,7 @@ namespace
     }
 
     void update_account(
-        StateDeltas &deltas, State &state, TrieDb &db, uint64_t const n,
+        StateDeltas &deltas, TestState &state, TrieDb &db, uint64_t const n,
         Incarnation const incarnation)
     {
         if (state.begin == state.end) {
@@ -141,7 +141,7 @@ namespace
         }
     }
 
-    void remove_account(StateDeltas &deltas, State &state, TrieDb &db)
+    void remove_account(StateDeltas &deltas, TestState &state, TrieDb &db)
     {
         if (state.begin == state.end) {
             return;
@@ -157,8 +157,8 @@ namespace
         ++state.begin;
     }
 
-    void
-    new_storage(StateDeltas &deltas, State &state, TrieDb &db, uint64_t const n)
+    void new_storage(
+        StateDeltas &deltas, TestState &state, TrieDb &db, uint64_t const n)
     {
         if (state.begin == state.end) {
             return;
@@ -178,7 +178,7 @@ namespace
     }
 
     void update_storage(
-        StateDeltas &deltas, State &state, TrieDb &db, uint64_t const n,
+        StateDeltas &deltas, TestState &state, TrieDb &db, uint64_t const n,
         bool const erase)
     {
         if (state.storage.empty()) {
@@ -209,13 +209,13 @@ namespace
     }
 
     void update_storage(
-        StateDeltas &deltas, State &state, TrieDb &db, uint64_t const n)
+        StateDeltas &deltas, TestState &state, TrieDb &db, uint64_t const n)
     {
         update_storage(deltas, state, db, n, false);
     }
 
     void remove_storage(
-        StateDeltas &deltas, State &state, TrieDb &db, uint64_t const n)
+        StateDeltas &deltas, TestState &state, TrieDb &db, uint64_t const n)
     {
         update_storage(deltas, state, db, n, true);
     }
@@ -286,7 +286,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         &statesync_server_send_done);
 
     std::span<uint8_t const> raw{data, size};
-    State state{};
+    TestState state{};
 
     BlockHeader hdr{.number = 0};
     sctx->commit(

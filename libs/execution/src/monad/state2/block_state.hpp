@@ -48,6 +48,8 @@ public:
     void commit(
         MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<PreState> const & = {},
+        std::vector<StateDeltas> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},

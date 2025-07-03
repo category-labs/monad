@@ -21,6 +21,7 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/db/util.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/mpt/db.hpp>
@@ -162,6 +163,8 @@ void TrieDb::commit(
     MonadConsensusBlockHeader const &consensus_header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
+    std::vector<PreState> const &pre_state_traces,
+    std::vector<StateDeltas> const &state_deltas_traces,
     std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
@@ -252,9 +255,13 @@ void TrieDb::commit(
     UpdateList transaction_updates;
     UpdateList tx_hash_updates;
     UpdateList call_frame_updates;
+    UpdateList pre_state_trace_updates;
+    UpdateList state_deltas_trace_updates;
     MONAD_ASSERT(receipts.size() == transactions.size());
     MONAD_ASSERT(transactions.size() == senders.size());
     MONAD_ASSERT(receipts.size() == call_frames.size());
+    MONAD_ASSERT(receipts.size() == pre_state_traces.size());
+    MONAD_ASSERT(receipts.size() == state_deltas_traces.size());
     MONAD_ASSERT(receipts.size() <= std::numeric_limits<uint32_t>::max());
     auto const &encoded_block_number =
         bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
@@ -293,27 +300,51 @@ void TrieDb::commit(
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
+        auto chunk_and_upsert = [&](byte_string_view view, UpdateList &update) {
+            uint8_t chunk_index = 0;
+            auto const prefix = serialize_as_big_endian<sizeof(uint32_t)>(i);
+            while (!view.empty()) {
+                byte_string_view chunk =
+                    view.substr(0, mpt::MAX_VALUE_LEN_OF_LEAF);
+                view.remove_prefix(chunk.size());
+                byte_string const chunk_key =
+                    byte_string{&chunk_index, sizeof(uint8_t)};
+                update.push_front(update_alloc_.emplace_back(Update{
+                    .key = bytes_alloc_.emplace_back(prefix + chunk_key),
+                    .value = chunk,
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_number_)}));
+                ++chunk_index;
+            }
+        };
+
         // Call frames
         std::span<CallFrame const> frames{call_frames[i]};
-        byte_string_view frame_view =
+        byte_string_view call_frame_view =
             bytes_alloc_.emplace_back(rlp::encode_call_frames(frames));
-        uint8_t chunk_index = 0;
-        auto const call_frame_prefix =
-            serialize_as_big_endian<sizeof(uint32_t)>(i);
-        while (!frame_view.empty()) {
-            byte_string_view chunk =
-                frame_view.substr(0, mpt::MAX_VALUE_LEN_OF_LEAF);
-            frame_view.remove_prefix(chunk.size());
-            byte_string const chunk_key =
-                byte_string{&chunk_index, sizeof(uint8_t)};
-            call_frame_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = bytes_alloc_.emplace_back(call_frame_prefix + chunk_key),
-                .value = chunk,
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_number_)}));
-            ++chunk_index;
-        }
+        chunk_and_upsert(call_frame_view, call_frame_updates);
+
+        // prestate traces
+        auto const &prestate_trace_json = state_to_json(pre_state_traces[i]);
+        auto const binary_encoded_prestate_trace =
+            nlohmann::json::to_msgpack(prestate_trace_json);
+        byte_string_view prestate_trace_view =
+            bytes_alloc_.emplace_back(byte_string(
+                binary_encoded_prestate_trace.begin(),
+                binary_encoded_prestate_trace.end()));
+        chunk_and_upsert(prestate_trace_view, pre_state_trace_updates);
+
+        // statedeltas traces
+        auto const &state_deltas_trace_json =
+            state_deltas_to_json(state_deltas_traces[i]);
+        auto const binary_encoded_state_deltas_trace =
+            nlohmann::json::to_msgpack(state_deltas_trace_json);
+        byte_string_view state_deltas_trace_view =
+            bytes_alloc_.emplace_back(byte_string(
+                binary_encoded_state_deltas_trace.begin(),
+                binary_encoded_state_deltas_trace.end()));
+        chunk_and_upsert(state_deltas_trace_view, state_deltas_trace_updates);
     }
 
     UpdateList updates;
@@ -341,6 +372,18 @@ void TrieDb::commit(
         .value = byte_string_view{},
         .incarnation = true,
         .next = std::move(call_frame_updates),
+        .version = static_cast<int64_t>(block_number_)};
+    auto pre_state_trace_update = Update{
+        .key = pre_state_trace_nibble,
+        .value = byte_string_view{},
+        .incarnation = true,
+        .next = std::move(pre_state_trace_updates),
+        .version = static_cast<int64_t>(block_number_)};
+    auto state_deltas_trace_update = Update{
+        .key = state_deltas_trace_nibble,
+        .value = byte_string_view{},
+        .incarnation = true,
+        .next = std::move(state_deltas_trace_updates),
         .version = static_cast<int64_t>(block_number_)};
     auto transaction_update = Update{
         .key = transaction_nibbles,
@@ -371,6 +414,8 @@ void TrieDb::commit(
     updates.push_front(code_update);
     updates.push_front(receipt_update);
     updates.push_front(call_frame_update);
+    updates.push_front(pre_state_trace_update);
+    updates.push_front(state_deltas_trace_update);
     updates.push_front(transaction_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);

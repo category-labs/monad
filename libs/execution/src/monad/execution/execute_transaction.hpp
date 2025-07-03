@@ -6,6 +6,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 
 #include <evmc/evmc.h>
 
@@ -30,6 +31,8 @@ struct ExecutionResult
 {
     Receipt receipt;
     std::vector<CallFrame> call_frames;
+    PreState pre_state;
+    StateDeltas state_deltas;
 };
 
 uint64_t g_star(

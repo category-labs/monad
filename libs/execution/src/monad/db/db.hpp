@@ -11,6 +11,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/core/withdrawal.hpp>
 #include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/vm/vm.hpp>
 
@@ -47,6 +48,8 @@ struct Db
         StateDeltas const &, Code const &, MonadConsensusBlockHeader const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
+        std::vector<PreState> const & = {},
+        std::vector<StateDeltas> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
@@ -57,6 +60,8 @@ struct Db
         MonadConsensusBlockHeader const &consensus_header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<PreState> const &pre_state_traces = {},
+        std::vector<StateDeltas> const &state_deltas_traces = {},
         std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
         std::vector<BlockHeader> const &ommers = {},
@@ -68,6 +73,8 @@ struct Db
             consensus_header,
             receipts,
             call_frames,
+            pre_state_traces,
+            state_deltas_traces,
             senders,
             transactions,
             ommers,

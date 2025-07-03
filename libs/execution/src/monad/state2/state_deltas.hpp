@@ -41,6 +41,8 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+
+    friend bool operator==(StateDelta const &, StateDelta const &) = default;
 };
 
 static_assert(sizeof(StateDelta) == 752);

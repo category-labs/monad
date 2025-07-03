@@ -373,7 +373,6 @@ public:
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
-
         if constexpr (rev < EVMC_CANCUN) {
             add_to_balance(beneficiary, account.value().balance);
             account.value().balance = 0;
@@ -558,6 +557,22 @@ public:
             account = Account{.incarnation = incarnation_};
         }
         account.value().incarnation = incarnation_;
+    }
+
+    ////////////////////////////////////////
+
+    Map<Address, AccountState> get_original_accounts() const
+    {
+        return original_;
+    }
+
+    Map<Address, AccountState> get_current_accounts() const
+    {
+        Map<Address, AccountState> current;
+        for (auto const &[address, stack] : current_) {
+            current.emplace(address, stack.recent());
+        }
+        return current;
     }
 };
 

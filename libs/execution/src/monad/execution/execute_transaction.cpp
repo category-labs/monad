@@ -15,6 +15,7 @@
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/event_trace.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
@@ -266,9 +267,17 @@ Result<ExecutionResult> execute(
             call_tracer.on_finish(receipt.gas_used);
             block_state.merge(state);
 
+#ifdef ENABLE_PRESTATE_TRACING
+            PrestateTracer prestate_tracer{state};
+#else
+            NoopPrestateTracer prestate_tracer{};
+#endif
+
             return ExecutionResult{
                 .receipt = receipt,
-                .call_frames = std::move(call_tracer).get_frames()};
+                .call_frames = std::move(call_tracer).get_frames(),
+                .pre_state = prestate_tracer.get_pre_state(),
+                .state_deltas = prestate_tracer.get_state_deltas()};
         }
     }
     {
@@ -301,9 +310,17 @@ Result<ExecutionResult> execute(
         call_tracer.on_finish(receipt.gas_used);
         block_state.merge(state);
 
+#ifdef ENABLE_PRESTATE_TRACING
+        PrestateTracer prestate_tracer{state};
+#else
+        NoopPrestateTracer prestate_tracer{};
+#endif
+
         return ExecutionResult{
             .receipt = receipt,
-            .call_frames = std::move(call_tracer).get_frames()};
+            .call_frames = std::move(call_tracer).get_frames(),
+            .pre_state = prestate_tracer.get_pre_state(),
+            .state_deltas = prestate_tracer.get_state_deltas()};
     }
 }
 

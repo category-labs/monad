@@ -512,7 +512,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(
@@ -554,7 +554,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
@@ -589,7 +589,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
         bs.merge(s2);
     }
     {
-        bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+        bs.commit({}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
         this->tdb.finalize(0, 0);
         this->tdb.set_block_and_round(0);
         EXPECT_EQ(
@@ -1146,7 +1146,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+    bs.commit({}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
     this->tdb.finalize(0, 0);
     this->tdb.set_block_and_round(0);
 
@@ -1165,7 +1165,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    bs.commit({}, {}, {}, {}, {}, {}, std::nullopt);
+    bs.commit({}, {}, {}, {}, {}, {}, {}, {}, std::nullopt);
 
     EXPECT_EQ(
         this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
@@ -1212,6 +1212,8 @@ TYPED_TEST(StateTest, commit_twice)
         bs.merge(as);
         bs.commit(
             MonadConsensusBlockHeader::from_eth_header({.number = 10}, 5),
+            {},
+            {},
             {},
             {},
             {},

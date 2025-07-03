@@ -8,6 +8,7 @@
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/trace/call_frame.hpp>
+#include <monad/execution/trace/prestate_tracer.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
@@ -39,6 +40,8 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         header,
         std::vector<Receipt>{},
         std::vector<std::vector<CallFrame>>{},
+        std::vector<PreState>{},
+        std::vector<StateDeltas>{},
         std::vector<Address>{},
         std::vector<Transaction>{},
         std::vector<BlockHeader>{},

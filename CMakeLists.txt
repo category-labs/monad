@@ -7,6 +7,7 @@ project(monad)
 option(HUNTER_ENABLED OFF)
 
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)
+option(ENABLE_PRESTATE_TRACING "Enable prestate tracer" ON) # Enables both diff and prestate mode
 option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_SHARED_LIBS OFF)
 
@@ -42,6 +43,9 @@ function(monad_compile_options target)
 
   if(ENABLE_CALL_TRACING)
     target_compile_definitions(${target} PUBLIC "ENABLE_CALL_TRACING=1")
+  endif()
+  if(ENABLE_PRESTATE_TRACING)
+    target_compile_definitions(${target} PUBLIC "ENABLE_PRESTATE_TRACING=1")
   endif()
 endfunction()
 

@@ -1,4 +1,1 @@
-set(constantinoplefix_excluded_tests
-    "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
-    "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
-)
+set(constantinoplefix_excluded_tests "")

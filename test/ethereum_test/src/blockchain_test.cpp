@@ -308,7 +308,7 @@ fiber::PriorityPool *BlockchainTest::pool_ = nullptr;
 
 void BlockchainTest::SetUpTestSuite()
 {
-    pool_ = new fiber::PriorityPool{1, 1};
+    pool_ = new fiber::PriorityPool{4, 256};
 }
 
 void BlockchainTest::TearDownTestSuite()

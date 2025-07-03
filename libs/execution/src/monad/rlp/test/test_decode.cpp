@@ -1,4 +1,5 @@
 #include <monad/core/byte_string.hpp>
+#include <monad/core/hex_literal.hpp>
 #include <monad/rlp/decode.hpp>
 #include <monad/rlp/encode2.hpp>
 
@@ -44,4 +45,34 @@ TEST(Rlp, DecodeAfterEncodeString)
         EXPECT_EQ(encoded_string_view2.size(), 0);
         EXPECT_EQ(decoded_string.value(), to_byte_string_view(long_string));
     }
+}
+
+TEST(Rlp, DecodeSingleByteInvalidString)
+{
+    static std::string const enc = "0x8104";
+    auto const rlp_enc = from_hex(enc);
+    byte_string_view rlp_enc_view{rlp_enc};
+
+    auto const decoded_string = decode_string(rlp_enc_view);
+
+    ASSERT_TRUE(decoded_string.has_error());
+    EXPECT_TRUE(
+        std::strcmp(
+            decoded_string.assume_error().message().c_str(),
+            "invalid number size") == 0);
+}
+
+TEST(Rlp, DecodeLengthofLengthInvalidString)
+{
+    static std::string const enc = "0xb810aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    auto const rlp_enc = from_hex(enc);
+    byte_string_view rlp_enc_view{rlp_enc};
+
+    auto const decoded_string = decode_string(rlp_enc_view);
+
+    ASSERT_TRUE(decoded_string.has_error());
+    EXPECT_TRUE(
+        std::strcmp(
+            decoded_string.assume_error().message().c_str(),
+            "invalid number size") == 0);
 }

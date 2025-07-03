@@ -29,6 +29,7 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
         {DecodeError::ArrayLengthUnexpected, "array length unexpected", {}},
         {DecodeError::InvalidTxnType, "invalid txn type", {}},
         {DecodeError::LeadingZero, "leading zero", {}},
+        {DecodeError::InvalidNumberSize, "invalid number size", {}},
     };
 
     return v;

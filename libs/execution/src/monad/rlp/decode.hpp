@@ -63,6 +63,18 @@ constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
         ++i;
         uint8_t const length = enc[0] - 0x80;
         end = i + length;
+        if (length == 1) {
+            if (MONAD_UNLIKELY(enc.size() == 1)) {
+                return DecodeError::InputTooShort;
+            }
+
+            // For a number: For a single byte whose value is in the [0x00,
+            // 0x7f] (decimal [0, 127]) range, that byte is its own RLP
+            // encoding.
+            if (MONAD_UNLIKELY(enc[1] < 0x80)) {
+                return DecodeError::InvalidNumberSize;
+            }
+        }
     }
     else // [0xb8, 0xbf]
     {
@@ -71,6 +83,13 @@ constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
 
         if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
             return DecodeError::InputTooShort;
+        }
+
+        // If a string is more than 55 bytes long, the RLP encoding consists of
+        // a single byte with value 0xb7 (dec. 183) plus the length in bytes of
+        // the length of the string in binary form
+        if (MONAD_UNLIKELY(length_of_length == 1 && enc[1] < 0x38)) {
+            return DecodeError::InvalidNumberSize;
         }
 
         BOOST_OUTCOME_TRY(

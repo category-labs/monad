@@ -21,29 +21,20 @@ set(cancun_excluded_tests
     "BlockchainTests.GeneralStateTests/stCreate2/*"
     "BlockchainTests.GeneralStateTests/stCreateTest/*"
     # Stricter validation
-    "BlockchainTests.InvalidBlocks/bc4895_withdrawals/accountInteractions.json"
-    "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json"
-    "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json"
-    "BlockchainTests.InvalidBlocks/bcEIP1559/baseFee.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # BaseFee
+    "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
+    "BlockchainTests.InvalidBlocks/bcEIP1559/baseFee.json" # BaseFee
     "BlockchainTests.InvalidBlocks/bcEIP1559/checkGasLimit.json"
     "BlockchainTests.InvalidBlocks/bcEIP1559/feeCap.json"
-    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json"
-    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit40m.json"
+    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json" # ParentHeader
+    "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit40m.json" # ParentHeader
     "BlockchainTests.InvalidBlocks/bcEIP1559/intrinsicOrFail.json"
     "BlockchainTests.InvalidBlocks/bcEIP1559/transFail.json"
     "BlockchainTests.InvalidBlocks/bcEIP1559/valCausesOOF.json"
     "BlockchainTests.InvalidBlocks/bcEIP3675/timestampPerBlock.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/badTimestamp.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/timeDiff0.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongCoinbase.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongGasLimit.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongParentHash.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongParentHash2.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongReceiptTrie.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongStateRoot.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTimestamp.json"
-    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTransactionsTrie.json"
-    "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json"
+    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/badTimestamp.json" # ParentHeader
+    "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongGasLimit.json" # ParentHeader
+    "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
     "BlockchainTests.InvalidBlocks/bcStateTests/CreateTransactionReverted.json"
     "BlockchainTests.InvalidBlocks/bcStateTests/RefundOverflow.json"
     "BlockchainTests.InvalidBlocks/bcStateTests/RefundOverflow2.json"
@@ -51,22 +42,12 @@ set(cancun_excluded_tests
     "BlockchainTests.InvalidBlocks/bcStateTests/createNameRegistratorPerTxsNotEnoughGasAt.json"
     "BlockchainTests.InvalidBlocks/bcStateTests/dataTx.json"
     "BlockchainTests.ValidBlocks/bcEIP4844_blobtransactions/blockWithAllTransactionTypes.json"
-    "BlockchainTests.ValidBlocks/bcRandomBlockhashTest/randomStatetest193BC.json"
-    "BlockchainTests.ValidBlocks/bcRandomBlockhashTest/randomStatetest344BC.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/OOGStateCopyContainingDeletedContract.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/testOpcode_50.json"
-    "BlockchainTests.ValidBlocks/bcStateTests/testOpcode_f0.json"
     "BlockchainTests.ValidBlocks/bcValidBlockTest/reentrencySuicide.json"
     # misc
-    "BlockchainTests.GeneralStateTests/stEIP1559/baseFeeDiffPlaces.json"
-    "BlockchainTests.GeneralStateTests/stEIP1559/gasPriceDiffPlaces.json"
-    "BlockchainTests.GeneralStateTests/stEIP2930/variedContext.json"
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json"
     "BlockchainTests.GeneralStateTests/stPreCompiledContracts/idPrecomps.json"
     "BlockchainTests.GeneralStateTests/stPreCompiledContracts/precompsEIP2929Cancun.json"
     "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit_Paris.json"
-    "BlockchainTests.GeneralStateTests/stRevertTest/TouchToEmptyAccountRevert3_Paris.json"
-    "BlockchainTests.GeneralStateTests/stSelfBalance/diffPlaces.json"
     "BlockchainTests.GeneralStateTests/stSpecialTest/failed_tx_xcf416c53_Paris.json"
     "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json"
     "BlockchainTests.frontier/precompiles/precompiles/precompiles.json"

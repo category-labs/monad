@@ -658,3 +658,35 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
         (withdrawals (proposedBlock (newProposal)))
     \post this |-> TrieDbR 1 (commitPostState preDb newProposal)).
 End with_Sigma.
+
+(*---------------------------------------------------------------------
+ Ownership flow of [TrieDbR] in runloop_monad.cpp and execute_block:
+
+ 1) Before [execute_block]:
+    +--------------------------------------+
+    | TrieDbR (ownership = 1)             |
+    +--------------------------------------+
+    | set_block_and_round(...)            |
+    +--------------------------------------+
+
+ 2) Inside [execute_block] (N fibers):
+    Splits TrieDbR into N read-only slices for each transaction fiber:
+
+      +-------+  +-------+  ...  +-------+
+      |TrieDbR|  |TrieDbR|       |TrieDbR|
+      | (1/N) |  | (1/N) |       | (1/N) |
+      +-------+  +-------+       +-------+
+        fiber1    fiber2         fiberN
+        (read)    (read)         (read)
+
+    Each fiber reads state and builds [BlockState] deltas only.
+
+ 3) After fibers finish, ownership is rejoined and commit is called:
+
+    +--------------------------------------+
+    | TrieDbR (ownership rejoined = 1)     |
+    +--------------------------------------+
+    | TrieDb::commit(...)                  |
+    +--------------------------------------+
+
+--------------------------------------------------------------------- *)

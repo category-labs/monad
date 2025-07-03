@@ -285,7 +285,7 @@ Section with_Sigma.
 
   (** this property says that [this |-> TrieDb q m] must imply that [m] is valid.
       As discussed in the first tutorial, `|--` is separation logic entailment and ** is the separating conjunction*)
-  Lemma TrieDbREntails (q:Qp) (m: DbModel) : TrieDbR q m |--  TrieDbR q m ** [| validDbModel m|].
+  Lemma TrieDbREntailsValidity (q:Qp) (m: DbModel) : TrieDbR q m |--  TrieDbR q m ** [| validDbModel m|].
   Proof. Admitted.
 
   (** TrieDb is a concurrent library. When executing a block, the speculative executions of multiple transactions can concurrently read from the Db. But they know that they will read the pre-block state. No such thread updates the Db.
@@ -318,13 +318,70 @@ Section with_Sigma.
  *)
   Definition TrieRODbR (q:Qp) (dbpath: DbPath) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
   
-  (** [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2): thus, this assertion it can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postconditon of TrieDb::finalize. After calling TrieDb::finalize,  client application can send this assertion to another process (e.g. attached to a socket messsage) and then the client can reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. Its definition will use logical/ghost locations which were covered in tutorial3 () *)
+(** [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2): thus, this assertion it can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postconditon of TrieDb::finalize. After calling TrieDb::finalize,  client application can send this assertion to another process (e.g. attached to a socket messsage) and then the client can reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. Its definition will use logical/ghost locations which were covered in tutorial3 () *)
   Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: ProposalInDb) : mpred. Proof. Admitted.
 
 
 
-(** Finally, we have enough vocabulary to writ the specs. *)
+(** Finally, we have enough vocabulary to writ the specs.
+    Except when committing the genesis block to the Db, before reading/updating the Db, we need to set the active block via set_block_and_round.
+    So, lets see its spec first:
+ *)
 
+  (*TODO: upstream to libspecs. *)
+  Definition optionalPrimR (q:Qp) (primty:type) (on: option N): Rep :=
+    optionR primty
+      (fun v:N => primR primty q (Vint v)) (cQp.mut q) on.
+  
+  cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+    as set_block_and_round_spec with (fun (this:ptr) =>
+    \prepost{preDb: DbModel} this |-> TrieDbR 1 preDb
+    (** ^ requires full(1) ownernership of the TrieDb object.
+        This guarantees that no other threads can be using this object concurrently to read (because reading requires non-zero ownership)
+        This says that the object is in a state where the data it holds (together with the linked disk data)
+        corresponds to some model element [preDb]. Because of the lemma [TrieDbREntailsValidity] above,
+        this also means that all the class invariants defined in [validDbModel] hold just before the call
+       *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
+    (** ^ the {pid: ProposalId} part universally quantifies over a proposal id that
+        serves the combined model of the block_number and round_number arguments.
+        [Vint (idBlockNum pid)] says that the block_number argument should be
+        the number [idBlockNum pid]
+     *)  
+
+    \arg{roundLoc} "round_number" (Vptr roundLoc)
+    \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
+    (** ^ the above 2 lines together describe the round_number argument
+        unline block_number, which is a scalar value of type uint64_t,
+        round, number has type std::optional<uint64_t>.
+        in the formalization of C++ we use, such composite type (struct/array) arguments are represented as memory locations
+        that store the composite value.
+        So, the first line names that memory location as [roundLoc]. (this would typically be a location on stack)
+        The next line line says that at [roundLoc] we have the representation of the optionl number [idRoundNum pid]
+        which is of type [option N] in Coq. Note that pid was already quantified above, when specifyin the block_number argument.
+
+
+        Above, we have connected all the arguments of the method (including the implicit `this` argument) to their corresponding
+        models in Coq (e.g. DbModel) via their Rep predicates (e.g. TrieDbR, optionalPrimR).
+        These Rep predicates already asser that the class invariants hold.
+        Next, we specify any other condition that must hold at the beginning (precondition):
+     *)  
+    
+    \pre [| isSome (lookupProposal pid preDb)|]
+    (** ^ this precondition asserts that the chosen proposal id must exist in the db: the lookup in the db model (preDb) must not return None (analogous to std::nullopt)
+     *)
+
+    \post this |-> TrieDbR 1 (preDb &: _activeProposal .= Some pid)
+     (** this is the post condition. it returns back the full ownernership of TrieDbR but with a modified model, capturing
+         how the implementation updates the state of the Db.
+         In the model, the update is merely to set the [activeProposal] field to the supplied [pid] (of type [ProposalId]).
+         All other fields are unchanged.
+         As we will see in the spec of read_storage, the read operations lookup this proposal id in the [blockNumsIndices] list of [DbModel]
+     *)
+  ).
+
+
+  
   (** [read_storage(address, incarnation, key)] reads the 32-byte storage slot
       from the *active proposal* selected in [preDb]. It requires fractional ownership
       [q] of the current trie state [preDb], as well as ownership of the pointers
@@ -415,30 +472,6 @@ Definition updateBlockNum
               end |]
       \post this |-> TrieDbR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
 
-  (** Spec of [TrieDb::set_block_and_round]:
-
-      Updates the active proposal selection for a read-write trie instance.
-      Takes full ownership of [preDb] and a proposal identifier [pid],
-      which must exist in [preDb]. After this call, [activeProposal]
-      is set to [Some pid], and the underlying trie prefix used by
-      subsequent [read_storage] and [commit] calls is switched accordingly.
-  *)
-  cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-    as set_block_and_round_spec with (fun (this:ptr) =>
-    \prepost{preDb} this |-> TrieDbR 1 preDb
-
-    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
-
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{(qo: Qp) (roundOpt: option N)}
-       (roundLoc |-> optionR "unsigned long"
-          (fun v:N => primR "unsigned long" qo (Vint v)) (cQp.mut qo)
-          (idRoundNum pid))
-
-    \pre{prp} [| lookupProposal pid preDb = Some prp|]
-
-    \post this |-> TrieDbR 1 (preDb &: _activeProposal .= Some pid)
-  ).
 
   (** Spec of [TrieRODb::set_block_and_round] (first variant):
 

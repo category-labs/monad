@@ -67,9 +67,10 @@ Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
     finalizedRoundNum: option N; (** option T is just like std::optional<T> in C++ *)
-    (** for any block number, finalized round number, if any, is set by calling Db::finalize()*)
+    (** ^ for any block number, finalized round number, if any, is set by calling Db::finalize()*)
   }.
-    
+
+
 (** [ProposalId] identifies a single proposal in the model by its block number
     and an optional round number.  *)
 Record ProposalId :=
@@ -77,7 +78,12 @@ Record ProposalId :=
     idBlockNum: N;
     idRoundNum: option N; (** None signifies the finalized round number for block number [idBlockNum] *)
   }.
-    
+
+(* underlying storage for the Db *)
+Inductive DbPath :=
+| BlockDev (fullpath: string)
+| File (fullpath: string).
+  
 (** [DbModel] is the complete in-memory trie model for [TrieDb].*)
 Record DbModel : Type :=
   {
@@ -96,6 +102,9 @@ Record DbModel : Type :=
     lastVerifiedBlockIndex: N;
     (** ^ highest block index marked verified via [update_verified_block] *)
 
+    dbpath: DbPath;
+    (** this path is authoritatively owned by the TrieDB. A client can reason that TrieRODb created with the same underlying path reads the same values that this TrieDb writes *)
+    
     cinvId: gname;
     (** ^ ignore this Coq detail: invariant name for the concurrent disk/memory ownership.*)
   }.
@@ -218,14 +227,20 @@ Definition validActiveProposal (m: DbModel) : Prop :=
   | Some pid => isSome (lookupProposal pid m)
   end.
 
+(** all the proposals in the Db, across all block numbers*)
+Definition allProposalsInDb (d: DbModel) :=
+  flat_map proposals (blockNumsStates d).
+
 (** [validDbModel m] combines all invariants on the top-level DB model:
     - block numbers in the db are continguous, with no duplicates
+    - no duplicate round number across all block numbers
     - the active block is currently exists in the Db.
     - there is a maxFinalizedIndex such that every block index below it is finalized and every index above is not finalized.*)
 Definition validDbModel (m: DbModel) : Prop :=
   (forall b, b ∈ blockNumsStates m -> validBlockNumStateInDb b)
   /\ contiguousBlockNums (blockNumsStates m)
   /\ NoDuplicate (map blockNum (blockNumsStates m))
+  /\ NoDuplicate (map (roundNum ∘ cheader) (allProposalsInDb m))
   /\ validActiveProposal m
   /\ (exists maxFinalizedBlockNum,
          (forall b, blockNum b <= maxFinalizedBlockNum -> isSome (finalizedProposal b))
@@ -242,9 +257,8 @@ Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
   Context  {MODd : trie_db.module ⊧ CU}.
 
-  (* TODO: move *)
+  (* TODO: upstream *)
   Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
-  Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
 
   
 (** *TrieD/TrieRODb rep predicates
@@ -281,31 +295,37 @@ Section with_Sigma.
     TrieDbR (q1+q2) m |--  TrieDbR q1 m ** TrieDbR q2 m.
   Proof. Admitted.
 
-(** The Db setup supports much more  concurrency than what is discussed above.
+(** can construct at most 1 TrieDb object underlying storage location (dbpath).
+    This will be provable when TrieDbR is fully defined because TrieDbR will hod the full authoritative ownership of the storage at dbpath and thus only one object can hold this ownership.
+   *)
+  Lemma max1TrieDbObject  (base1 base2: ptr) (m1 m2: DbModel) :
+    dbpath m1 = dbpath m2 ->
+    base1 |-> TrieDbR 1 m1 ** base2 |-> TrieDbR 1 m2 |-- [| False |].
+  Proof. Admitted.
+  
+(** We can construct several TrieRODb objects on the same underlying storage as an existing TrieDb object.
    Unlike ownership of primitive types, even if you hold [this |-> TrieDb 1 m],
-   other thread/processes can read (but not update) the underlying Db using some TrieRODb object.
-   So ownership of TrieRODb can be held separately (in the sense of `**`) from TrieDb 1 m.
-   However, there can only be one TrieDb object based on a disk: it has the authoritative ownership of the underlying disk.
+   other thread/processes can read (but not update) the underlying Db storage using some TrieRODb object.
 
    To get a sense of how TrieDb and TrieRODb can be defined to achieve this using concurrency invariants,
    review the 2nd and 3rd quarters of tutorial2: [TrieDbR] is similar to uAuthR and [TrieRODbR] is similar to uFragR.
 
    Unlike TrieDbR, ownership of TrieRODb cannot assert the current state of the entire Db: there can be another process updating the Db concurrently. Nevertheless, operations on TrieRODb are logicall atomic, they read from a single proposal and not a mishmash of multiple propsals.
-   [this |-> TrieRODb q (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from  the proposal pr. any fraction [q] suffices to do reads: write operations are not supported anyway: they have [| False |] as a precondition.
-   q must be 1 to destruct the object.
-   [this |-> TrieRODb q None] does not suffice to issue any read: the client needs to first call `set_block_and_round` to
+   [this |-> TrieRODb q dbpath (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from  the proposal [pr]. any fraction [q] suffices to do reads: write operations are not supported anyway: they have [| False |] as a precondition.
+   q must be 1 to destruct the object or to call set_block_and_round which potentially changes the active proposal.
+   [this |-> TrieRODb q dbpath None] does not suffice to issue any read: the client needs to first call `set_block_and_round` to
    transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
  *)
-  Definition TrieRODbR (q:Qp) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
+  Definition TrieRODbR (q:Qp) (dbpath: DbPath) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
   
-  (** Knowledge assertion (no resource ownership) *)
-  Definition SelectedProposalForBlockNum (blockNum: N) (b: ProposalInDb) : mpred. Proof. Admitted.
+  (** [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2): thus, this assertion it can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postconditon of TrieDb::finalize. After calling TrieDb::finalize,  client application can send this assertion to another process (e.g. attached to a socket messsage) and then the client can reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. Its definition will use logical/ghost locations which were covered in tutorial3 () *)
+  Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: ProposalInDb) : mpred. Proof. Admitted.
 
 
 
-  (** Spec of [TrieDb::read_storage]:
+(** Finally, we have enough vocabulary to writ the specs. *)
 
-      [read_storage(address, incarnation, key)] reads the 32-byte storage slot
+  (** [read_storage(address, incarnation, key)] reads the 32-byte storage slot
       from the *active proposal* selected in [preDb]. It requires fractional ownership
       [q] of the current trie state [preDb], as well as ownership of the pointers
       for [address], [incarnation], and [key]. The precondition
@@ -432,7 +452,7 @@ Definition updateBlockNum
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
     as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
     (* Full ownership of the Db model *)
-    \prepost{preActive: option ProposalInDb} this |-> TrieRODbR 1 preActive
+    \prepost{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
 
@@ -444,9 +464,9 @@ Definition updateBlockNum
 
 
     \post{ret} [Vbool ret]
-       if ret then Exists proposal,  this |-> TrieRODbR 1 (Some proposal)
+       if ret then Exists proposal,  this |-> TrieRODbR 1 dbpath (Some proposal)
                                      ** SelectedProposalForBlockNum (idBlockNum pid) proposal
-      else  this |-> TrieRODbR 1 None
+      else  this |-> TrieRODbR 1 dbpath None
   ).
 
   (** Spec of [TrieRODb::set_block_and_round] (second variant):
@@ -459,7 +479,7 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
-    \prepost{preActive} this |-> TrieRODbR 1 preActive
+    \prepost{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
 
@@ -472,8 +492,8 @@ Definition updateBlockNum
     \pre{proposal} SelectedProposalForBlockNum (idBlockNum pid) proposal
 
     \post{ret} [Vbool ret]
-       if ret then this |-> TrieRODbR 1 (Some proposal)
-      else  this |-> TrieRODbR 1 None (* the proposal got garbage collected *)
+       if ret then this |-> TrieRODbR 1 dbpath (Some proposal)
+      else  this |-> TrieRODbR 1 dbpath None (* the proposal got garbage collected *)
    ).
 
   (** Spec of [TrieDb::update_voted_metadata]:
@@ -504,8 +524,6 @@ Definition updateBlockNum
               ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
     end.
 
-  Definition allProposalsInDb (d: DbModel) :=
-    flat_map proposals (blockNumsStates d).
   
 (** [stateAfterActiveProposal m] returns the EVM state after executing
     the active proposal, or [dummyEvmState] if none is pinned. Used by [read_storage]
@@ -515,7 +533,9 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   | None => dummyEvmState
   | Some p => postBlockState p
   end.
-  
+
+  Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
+
   (** Spec of [TrieDb::commit]:
 
       Incorporates a new block proposal [newProposal] into the database state.

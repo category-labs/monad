@@ -1,9 +1,12 @@
 (** Specificatins of TrieDB and TrieRODb.
 Although an attempt has been made to make it understandable to anyone with some familiarity with functional programming (ocaml/haskell),
-it is highly recommended to review the first 2 formal verification tutorials to understand this file.
+it is highly recommended to review the first formal verification tutorial to understand this file.
 At many places, this file refers to analogous concepts explained in the tutorial.
-- tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
-- tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+- Tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
+- Tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+
+Tutorial2 is also highly recommended if as a background review if you want to deeply understand the concurrency aspects of these specs.
+
  *)
 
 Require Import monad.proofs.prelude.
@@ -381,6 +384,112 @@ Section with_Sigma.
   ).
 
 
+  (** The spec of the same method for TrieRODb looks very different. The main reason is that unlike TrieDb, TrieRODb does not have authoritative ownership of the underlying Db: while TrieRODb is reading, a TrieDb can be racing to write. Unlike TrieDbR which asserts what is the state of the whole Db, TrieRODbR just asserts the exact proposal (contents, not id) that the reads will read. Intuitively, at set_block_and_round, TrieRODb *logically atomically* "snapshots" the entire proposal. Until the next call to set_block_and_round, future reads (e.g. TrieRODb::read_storage) will read from this snapshot *even* if a TrieDb::commit overwrote the proposal for this round number. One caveat is that the Db may decide to garbage collect this proposal (entire block number of this proposal) at some TrieDb::commit thus TrieRODb::read_storage may fail. But if it succeeds, it must read from the snapshot
+
+The spec below specifies the intended implementation of  monad::TrieRODb::set_block_and_round, NOT the current implementation.
+The current implementation crashes when the requested block/round number is not found.
+Unlike TrieDb, TrieRODb has no control on updates to the Db. TrieDb::commit can trigger garbage collection and eviction of blocks.
+Ideally, TrieRODb should be crash-resistant to arbitrary concurrent updates by a TrieDb on the same dbpath.
+
+Formally, in the spec of TrieDb::set_block_and_round (above), there was no need to return an error because
+the precondition  [| isSome (lookupProposal pid preDb)|] ensured that the error case will never happen.
+However, TrieRODbR cannot even talk about the whole Db state (it just asserts the currently active proposal content).
+Thus we, cannot even write that precondition in the spec of TrieRODb. 
+Indeed, there is already a [TODO comment](https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/execution/src/monad/db/trie_rodb.hpp#L39) about returning an error instead of crashing.
+
+Thus, the spec below is for the variant of the implementation that returns a bool indicating whether the operation succeeded.
+The postconditon branches on this return value to assert what holds in each chase.
+
+   *)
+  
+
+  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
+    as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
+    \prepost{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
+    (** ^ same as the TrieDb case, except that here we have TrieRODbR instead of TrieDb.
+        [preActive] is the previously active proposal, possibly [None].
+        Note that [preActive], if not None, has the entire content ("snapshot") of the proposal (e.g. account states,..)
+        and is not just the id: check the definition of [ProposalInDb].
+        Note that this method requires a full (1) ownership of this object: this ensures that no other thread is concurrently invoking any other method on this object, not even read_storage.
+        This is necessary to avoid UB races on the `prefix_cursor_` field.
+        However, another TrieRODb object could be doing racy method calls including monad::TrieRODb::set_block_and_round.
+        But that is not a problem because they change the `prefix_cursor_` field of that object, not this object.
+        Also, the underlying Db is well protected by other synchronization mechanisms.
+     *)
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
+    \arg{roundLoc} "round_number" (Vptr roundLoc)
+    \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
+    (** the above 3 lines are exactly as in the TrieDb spec variant above*)
+
+    \post{ret:bool} [Vbool ret]
+      if ret then Exists proposal,
+                    this |-> TrieRODbR 1 dbpath (Some proposal)
+                   ** if idRoundNum pid is None
+                      then FinalizedProposalForBlockNum dbpath (idBlockNum pid) proposal
+                      else emp
+      else this |-> TrieRODbR 1 dbpath None
+    (** ^ the above 5 lines are interesting bits of this spec. it says that the function returns a boolean value.
+        Depending on the return value, different assertions hold.
+        If false, it means the operation failed, e.g. because all data for that block number got garbage collected.
+        The None in this |-> TrieRODbR 1 dbpath None means that no shapshot is active and reads are forbidden in this state.
+        A client will need to try again, e.g. with a different (e.g. higher) block number and get it to succed before issuing any reads like read_storage.
+
+       If the return value is true, we get [this |-> TrieRODbR 1 dbpath (Some proposal)]
+       which asserts that [proposal] is now the active snapshot. The [Exists] existential quantification means that
+       proposal is arbitrary from the client's point of view.
+       In this spec, the client gets no guarantee about what proposal will be returned.
+       Below, we will see a different spec where there is a guarantee, but it requires a stronger precondition
+       and requires that the round number was already finalized.
+
+       To appreciate the added power of the spec below, it is important to understand the second conjunct above in the case
+       ret is true: if [idRoundNum pid is None], we get as postconditon another assertion:
+        [FinalizedProposalForBlockNum dbpath (idBlockNum pid) proposal].
+       As explained where FinalizedProposalForBlockNum was introduced, this is a persistent assertion and can be freely duplicated and shared.
+       In particular, it can be used as a precondition to the next spec of the same method
+     *)
+  ).
+
+  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
+    as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
+    \prepost{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
+    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
+    \arg{roundLoc} "round_number" (Vptr roundLoc)
+    \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
+
+    \pre{proposal} FinalizedProposalForBlockNum dbpath (idBlockNum pid) proposal
+    (** the above line is new w.r.t. the spec above. In the proof of the caller, when using this spec,
+        they have to pass in a proof that the the block number [proposal] was finalized for block number [idBlockNum pid].
+        In return, now they get a guarantee in the postcondition that if the operation is succcessful,
+        the snapshot will be exactly [proposal] and nothing else.
+        This is because finalized blocks cannot change:the TrieDb::commit specs forbid that as we will see below.
+        However, this operation can fail nevertheless if the block number was garbage collected.
+     *)
+    \post{ret} [Vbool ret]
+       if ret then this |-> TrieRODbR 1 dbpath (Some proposal)
+       (** ^ [proposal] is not existentially quantified here: we know exactly which snapshot will be chosen *)              
+       else  this |-> TrieRODbR 1 dbpath None (** the block number got garbage collected *)
+   ).
+
+  (** as an example application of the above 2 specs, we can prove that the following function must return true.
+[[
+bool readTwice(TrieRODb & rdb, Address const &addr, Incarnation inc, bytes32_t const &key) {
+   bool success;
+   success=rdb.set_block_and_round(10);
+   if(!success)
+        return true;
+   bytes32_t r1 = rdb.read_storage(addr, inc, key);
+   success=rdb.set_block_and_round(10);// use the second spec to guarantee that we get the same snapshot again
+   if(!success)
+        return true;
+   bytes32_t r2 = rdb.read_storage(addr, inc, key);
+   if (r1<>r2)
+      return false;
+   return true;
+}
+]]
+
+   To understand it why fully, we need to first look at the spec of TrieRODb::read_storage
+   *)
   
   (** [read_storage(address, incarnation, key)] reads the 32-byte storage slot
       from the *active proposal* selected in [preDb]. It requires fractional ownership
@@ -482,25 +591,6 @@ Definition updateBlockNum
       so future reads can locate the frozen proposal. On failure, the view
       remains at [None].
   *)
-  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
-    as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
-    (* Full ownership of the Db model *)
-    \prepost{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
-
-    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
-
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{(qo: Qp) (roundOpt: option N)}
-       (roundLoc |-> optionR "unsigned long"
-          (fun v:N => primR "unsigned long" qo (Vint v)) (cQp.mut qo)
-          (idRoundNum pid))
-
-
-    \post{ret} [Vbool ret]
-       if ret then Exists proposal,  this |-> TrieRODbR 1 dbpath (Some proposal)
-                                     ** SelectedProposalForBlockNum (idBlockNum pid) proposal
-      else  this |-> TrieRODbR 1 dbpath None
-  ).
 
   (** Spec of [TrieRODb::set_block_and_round] (second variant):
 
@@ -510,24 +600,6 @@ Definition updateBlockNum
       not been garbage-collected, or [false] and resets the view to [None]
       otherwise.
   *)
-  cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-    as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
-    \prepost{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
-
-    \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
-
-    \arg{roundLoc}   "round_number" (Vptr roundLoc)
-    \prepost{(qo: Qp) (roundOpt: option N)}
-       (roundLoc |-> optionR "unsigned long"
-          (fun v:N => primR "unsigned long" qo (Vint v)) (cQp.mut qo)
-          (idRoundNum pid))
-
-    \pre{proposal} SelectedProposalForBlockNum (idBlockNum pid) proposal
-
-    \post{ret} [Vbool ret]
-       if ret then this |-> TrieRODbR 1 dbpath (Some proposal)
-      else  this |-> TrieRODbR 1 dbpath None (* the proposal got garbage collected *)
-   ).
 
   (** Spec of [TrieDb::update_voted_metadata]:
 

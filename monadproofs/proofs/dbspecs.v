@@ -1,14 +1,21 @@
+(** Specificatins of TrieDB and TrieRODb.
+Although an attempt has been made to make it understandable to anyone with some familiarity with functional programming (ocaml/haskell),
+it is highly recommended to review the first 2 formal verification tutorials to understand this file.
+At many places, this file refers to analogous concepts explained in the tutorial.
+- tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
+- tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+ *)
 
 Require Import monad.proofs.prelude.
-Require Export monad.asts.trie_rodb.
-Require Export monad.asts.trie_db.
+Require Import monad.asts.trie_rodb.
+Require Import  monad.asts.trie_db.
 Open Scope N_scope.
 
 (** [dummyEvmState] provides a fallback global state when no proposal is active.
     It should never be used in [validDbModel], only for totality of [stateAfterActiveProposal]. *)
 Definition dummyEvmState: evm.GlobalState. Proof. Admitted.
-Definition stateRoot (b: Block) : N. Proof. Admitted.
-Definition receiptRoot (b: Block) : N. Proof. Admitted.
+Definition stateRoot (b: evm.GlobalState) : N. Proof. Admitted.
+Definition receiptRoot (b: list TransactionResult) : N. Proof. Admitted.
 Definition transactionsRoot (b: Block) : N. Proof. Admitted.
 Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
 
@@ -121,7 +128,7 @@ There some invariants, e.g.:
 
 In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
 Class invariants hold before/after every method call.
-(For classes whose methods can be called concurrently, many of the class invariants always hold, even in the middle of the execution of a concurrent method. For more details, review concurrent invariants in the second formal verification tutorial)
+(For classes whose methods can be called concurrently, many of the class invariants always hold, even in the middle of the execution of a concurrent method. For more details, review concurrent invariants in tutorial2)
  *)
 
 
@@ -261,7 +268,7 @@ Section with_Sigma.
   They define how an element of the model type in Coq is represented in memory/disk starting from the "this" memory location (base pointer of the object).
   They also assert ownership of such locations.
   If the object stores pointers to other memory locations or disk locations, Rep predicates can also assert what is stored at those locations and assert ownership of those locations.
-  To understand this in more detail, please review the examples in the first quarter of the 2nd formal verification tutorial.
+  To understand this in more detail, please review the examples in the first quarter of tutorial2.
  *)
   
 (** [this |-> TrieDb q m] asserts that at the memory location [this], there is an object representing the [DbModel] [m].
@@ -297,7 +304,7 @@ Section with_Sigma.
    However, there can only be one TrieDb object based on a disk: it has the authoritative ownership of the underlying disk.
 
    To get a sense of how TrieDb and TrieRODb can be defined to achieve this using concurrency invariants,
-   review the 2nd and 3rd quarters of the 2nd tutorial: [TrieDbR] is similar to uAuthR and [TrieRODbR] is similar to uFragR.
+   review the 2nd and 3rd quarters of tutorial2: [TrieDbR] is similar to uAuthR and [TrieRODbR] is similar to uFragR.
 
    Unlike TrieDbR, ownership of TrieRODb cannot assert the current state of the entire Db: there can be another process updating the Db concurrently. Nevertheless, operations on TrieRODb are logicall atomic, they read from a single proposal and not a mishmash of multiple propsals.
    [this |-> TrieRODb q (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from  the proposal pr. any fraction [q] suffices to do reads: write operations are not supported anyway: they have [| False |] as a precondition.
@@ -305,7 +312,7 @@ Section with_Sigma.
    [this |-> TrieRODb q None] does not suffice to issue any read: the client needs to first call `set_block_and_round` to
    transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
  *)
-
+  Definition TrieRODbR (q:Qp) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
   
   (** Knowledge assertion (no resource ownership) *)
   Definition SelectedProposalForBlockNum (blockNum: N) (b: ProposalInDb) : mpred. Proof. Admitted.
@@ -441,7 +448,7 @@ Definition updateBlockNum
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
     as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
     (* Full ownership of the Db model *)
-    \prepost{preActive: option ProposalInDb} this |-> TrieRODBR 1 preActive
+    \prepost{preActive: option ProposalInDb} this |-> TrieRODbR 1 preActive
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
 
@@ -453,9 +460,9 @@ Definition updateBlockNum
 
 
     \post{ret} [Vbool ret]
-       if ret then Exists proposal,  this |-> TrieRODBR 1 (Some proposal)
+       if ret then Exists proposal,  this |-> TrieRODbR 1 (Some proposal)
                                      ** SelectedProposalForBlockNum (idBlockNum pid) proposal
-      else  this |-> TrieRODBR 1 None
+      else  this |-> TrieRODbR 1 None
   ).
 
   (** Spec of [TrieRODb::set_block_and_round] (second variant):
@@ -468,7 +475,7 @@ Definition updateBlockNum
   *)
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
-    \prepost{preActive} this |-> TrieRODBR 1 preActive
+    \prepost{preActive} this |-> TrieRODbR 1 preActive
 
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
 
@@ -481,8 +488,8 @@ Definition updateBlockNum
     \pre{proposal} SelectedProposalForBlockNum (idBlockNum pid) proposal
 
     \post{ret} [Vbool ret]
-       if ret then this |-> TrieRODBR 1 (Some proposal)
-      else  this |-> TrieRODBR 1 None (* the proposal got garbage collected *)
+       if ret then this |-> TrieRODbR 1 (Some proposal)
+      else  this |-> TrieRODbR 1 None (* the proposal got garbage collected *)
    ).
 
   (** Spec of [TrieDb::update_voted_metadata]:

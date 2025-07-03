@@ -501,6 +501,190 @@ TEST_F(EthCallFixture, contract_deployment_success)
     monad_eth_call_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, loop_out_of_gas)
+{
+    auto const code = evmc::from_hex("0x5B5F56").value();
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const icode = monad::vm::make_shared_intercode(code);
+
+    auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ca,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{.number = 0});
+
+    Transaction tx{.gas_limit = 100000u, .to = ca, .data = {}};
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        mpt::INVALID_ROUND_NUM,
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        false,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 100000u);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, expensive_read_out_of_gas)
+{
+    auto const code =
+        evmc::from_hex(
+            "0x60806040526004361061007a575f3560e01c8063c3d0f1d01161004d578063c3"
+            "d0f1d014610110578063c7c41c7514610138578063d0e30db014610160578063e7"
+            "c9063e1461016a5761007a565b8063209652551461007e57806356cde25b146100"
+            "a8578063819eb9bb146100e4578063c252ba36146100fa575b5f5ffd5b34801561"
+            "0089575f5ffd5b50610092610194565b60405161009f91906103c0565b60405180"
+            "910390f35b3480156100b3575f5ffd5b506100ce60048036038101906100c99190"
+            "610407565b61019d565b6040516100db91906104fc565b60405180910390f35b34"
+            "80156100ef575f5ffd5b506100f861024c565b005b348015610105575f5ffd5b50"
+            "61010e610297565b005b34801561011b575f5ffd5b506101366004803603810190"
+            "6101319190610407565b6102ec565b005b348015610143575f5ffd5b5061015e60"
+            "04803603810190610159919061051c565b610321565b005b610168610341565b00"
+            "5b348015610175575f5ffd5b5061017e61037c565b60405161018b91906103c056"
+            "5b60405180910390f35b5f600354905090565b60605f83836101ac919061057456"
+            "5b67ffffffffffffffff8111156101c5576101c46105a7565b5b60405190808252"
+            "80602002602001820160405280156101f357816020016020820280368337808201"
+            "91505090505b5090505f8490505b838110156102415760045f8281526020019081"
+            "526020015f2054828281518110610228576102276105d4565b5b60200260200101"
+            "818152505080806001019150506101fb565b508091505092915050565b5f61028c"
+            "576040517f08c379a0000000000000000000000000000000000000000000000000"
+            "0000000081526004016102839061065b565b60405180910390fd5b61162e600181"
+            "905550565b5f5f90505b7fffffffffffffffffffffffffffffffffffffffffffff"
+            "ffffffffffffffffffff8110156102e95760015460045f83815260200190815260"
+            "20015f2081905550808060010191505061029c565b50565b5f8290505b81811015"
+            "61031c578060045f8381526020019081526020015f208190555080806001019150"
+            "506102f1565b505050565b6002548110610336578060028190555061033e565b80"
+            "6003819055505b50565b7fe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c46"
+            "0751c2402c5c5cc9109c33346040516103729291906106b8565b60405180910390"
+            "a1565b5f607b6003819055505f60ff90505f613039905080825d815c6040518181"
+            "52602081602083015e602081f35b5f819050919050565b6103ba816103a8565b82"
+            "525050565b5f6020820190506103d35f8301846103b1565b92915050565b5f5ffd"
+            "5b6103e6816103a8565b81146103f0575f5ffd5b50565b5f813590506104018161"
+            "03dd565b92915050565b5f5f6040838503121561041d5761041c6103d9565b5b5f"
+            "61042a858286016103f3565b925050602061043b858286016103f3565b91505092"
+            "50929050565b5f81519050919050565b5f82825260208201905092915050565b5f"
+            "819050602082019050919050565b610477816103a8565b82525050565b5f610488"
+            "838361046e565b60208301905092915050565b5f602082019050919050565b5f61"
+            "04aa82610445565b6104b4818561044f565b93506104bf8361045f565b805f5b83"
+            "8110156104ef5781516104d6888261047d565b97506104e183610494565b925050"
+            "6001810190506104c2565b5085935050505092915050565b5f6020820190508181"
+            "035f83015261051481846104a0565b905092915050565b5f602082840312156105"
+            "31576105306103d9565b5b5f61053e848285016103f3565b91505092915050565b"
+            "7f4e487b7100000000000000000000000000000000000000000000000000000000"
+            "5f52601160045260245ffd5b5f61057e826103a8565b9150610589836103a8565b"
+            "92508282039050818111156105a1576105a0610547565b5b92915050565b7f4e48"
+            "7b71000000000000000000000000000000000000000000000000000000005f5260"
+            "4160045260245ffd5b7f4e487b7100000000000000000000000000000000000000"
+            "0000000000000000005f52603260045260245ffd5b5f8282526020820190509291"
+            "5050565b7f6a7573742074657374696e67206572726f72206d6573736167657300"
+            "000000005f82015250565b5f610645601b83610601565b91506106508261061156"
+            "5b602082019050919050565b5f6020820190508181035f83015261067281610639"
+            "565b9050919050565b5f73ffffffffffffffffffffffffffffffffffffffff8216"
+            "9050919050565b5f6106a282610679565b9050919050565b6106b281610698565b"
+            "82525050565b5f6040820190506106cb5f8301856106a9565b6106d86020830184"
+            "6103b1565b939250505056fea26469706673582212202210aaae8cb738bbb3e073"
+            "496288d456725b3fbcf0489d86bd53a8f79be4091764736f6c634300081e0033")
+            .value();
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const icode = monad::vm::make_shared_intercode(code);
+
+    auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ca,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{.number = 0});
+
+    auto const data =
+        evmc::from_hex("0x56cde25b000000000000000000000000000000000000000000000"
+                       "0000000000000000000000000000000000000000000000000000000"
+                       "0000000000000000000000004e20")
+            .value();
+    Transaction tx{.gas_limit = 30'000'000u, .to = ca, .data = data};
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        mpt::INVALID_ROUND_NUM,
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        false,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 30'000'000u);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
 TEST_F(EthCallFixture, from_contract_account)
 {
     using namespace intx;

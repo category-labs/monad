@@ -240,8 +240,8 @@ namespace
     Result<EthCallResult> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        uint64_t const round, Address const &sender, TrieRODb &tdb,
-        vm::VM &vm, BlockHashBufferFinalized const &buffer,
+        uint64_t const round, Address const &sender, TrieRODb &tdb, vm::VM &vm,
+        BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides, bool const trace)
     {
         SWITCH_EVMC_REVISION(
@@ -423,7 +423,11 @@ struct monad_eth_call_executor
     std::atomic<unsigned> high_pool_queued_count_{0};
 
     mpt::RODb db_;
-    vm::VM vm_;
+
+    // The VM for executing eth calls needs to unconditionally use the
+    // interpreter rather than the compiler. If it uses the compiler, then
+    // out-of-gas errors can be misreported as generic failures.
+    vm::VM vm_{false};
 
     BlockHashCache blockhash_cache_{7200};
 

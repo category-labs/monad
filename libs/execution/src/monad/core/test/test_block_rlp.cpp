@@ -1203,3 +1203,25 @@ TEST(Rlp_block, IntTypeMismatchRegression)
     ASSERT_FALSE(decoded_block_header.has_error());
     EXPECT_EQ(decoded_block_header.value(), block_header);
 }
+
+TEST(Rlp_block, MonadConsensusBlockBadTxRlpRegression)
+{
+    MonadConsensusBlockBody const monad_block_body{
+        .transactions = {
+            Transaction{
+                .type = TransactionType::eip1559,
+            },
+            Transaction{}}};
+
+    auto const encoded_monad_block_body =
+        rlp::encode_consensus_block_body(monad_block_body);
+    byte_string_view view{
+        encoded_monad_block_body.data(), encoded_monad_block_body.size()};
+
+    auto const decoded_monad_block_body =
+        rlp::decode_consensus_block_body(view);
+    ASSERT_FALSE(decoded_monad_block_body.has_error());
+    EXPECT_EQ(
+        decoded_monad_block_body.value().transactions[0].type,
+        monad_block_body.transactions[0].type);
+}

@@ -16,7 +16,12 @@ byte_string encode_consensus_block_body(MonadConsensusBlockBody const &body)
 {
     byte_string txns;
     for (auto const &tx : body.transactions) {
-        txns += encode_transaction(tx);
+        if (tx.type == TransactionType::legacy) {
+            txns += encode_transaction(tx);
+        }
+        else {
+            txns += encode_string2(encode_transaction(tx));
+        }
     }
     byte_string withdrawals;
     for (auto const &w : body.withdrawals) {
@@ -72,7 +77,8 @@ byte_string encode_quorum_certificate(MonadQuorumCertificate const &qc)
         encode_list2(vote_encoded), encode_list2(signatures_encoded));
 }
 
-byte_string encode_consensus_block_header(MonadConsensusBlockHeader const &header)
+byte_string
+encode_consensus_block_header(MonadConsensusBlockHeader const &header)
 {
     byte_string encoded_header;
     encoded_header += encode_unsigned(header.round);
@@ -218,7 +224,8 @@ decode_consensus_block_header(byte_string_view &enc)
     return consensus_header;
 }
 
-Result<MonadConsensusBlockBody> decode_consensus_block_body(byte_string_view &enc)
+Result<MonadConsensusBlockBody>
+decode_consensus_block_body(byte_string_view &enc)
 {
     MonadConsensusBlockBody body;
 

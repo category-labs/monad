@@ -1,6 +1,3 @@
-[submodule "third_party/compiler"]
-	path = third_party/compiler
-	url = git@github.com:category-labs/monad-compiler.git
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests
@@ -38,3 +35,21 @@
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3
 	url = https://github.com/BLAKE3-team/BLAKE3.git
+[submodule "intx"]
+	path = libs/vm/third_party/intx
+	url = git@github.com:chfast/intx.git
+[submodule "libs/vm/third_party/asmjit"]
+	path = libs/vm/third_party/asmjit
+	url = git@github.com:asmjit/asmjit.git
+[submodule "libs/vm/third_party/ethash"]
+	path = libs/vm/third_party/ethash
+	url = git@github.com:chfast/ethash.git
+[submodule "libs/vm/third_party/evmone"]
+	path = libs/vm/third_party/evmone
+	url = git@github.com:category-labs/evmone.git
+[submodule "libs/vm/third_party/nlohmann_json"]
+	path = libs/vm/third_party/nlohmann_json
+	url = git@github.com:nlohmann/json.git
+[submodule "libs/vm/third_party/ethereum-tests"]
+	path = libs/vm/third_party/ethereum-tests
+	url = git@github.com:ethereum/tests.git

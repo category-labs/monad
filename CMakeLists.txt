@@ -65,7 +65,7 @@ add_subdirectory("third_party/intx")
 # compiler
 set(MONAD_COMPILER_STANDALONE OFF)
 set(MONAD_COMPILER_TESTING OFF)
-add_subdirectory("third_party/compiler")
+add_subdirectory("libs/vm")
 # TODO
 target_compile_options(evmone PRIVATE "-Wno-attributes")
 target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")

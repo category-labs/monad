@@ -5,7 +5,7 @@ At many places, this file refers to analogous concepts explained in the tutorial
 - Tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
 - Tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
 
-Tutorial2 is also highly recommended if as a background review if you want to deeply understand the concurrency aspects of these specs.
+Tutorial2 is also highly recommended if as a background review if you want to more deeply understand the concurrency aspects of these specs.
 
  *)
 
@@ -338,7 +338,7 @@ Section with_Sigma.
   
   cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as set_block_and_round_spec with (fun (this:ptr) =>
-    \prepost{preDb: DbModel} this |-> TrieDbR 1 preDb
+    \pre{preDb: DbModel} this |-> TrieDbR 1 preDb
     (** ^ requires full(1) ownernership of the TrieDb object.
         This guarantees that no other threads can be using this object concurrently to read (because reading requires non-zero ownership)
         This says that the object is in a state where the data it holds (together with the linked disk data)
@@ -405,7 +405,7 @@ The postconditon branches on this return value to assert what holds in each chas
 
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
     as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
-    \prepost{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
+    \pre{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
     (** ^ same as the TrieDb case, except that here we have TrieRODbR instead of TrieDb.
         [preActive] is the previously active proposal, possibly [None].
         Note that [preActive], if not None, has the entire content ("snapshot") of the proposal (e.g. account states,..)
@@ -451,7 +451,7 @@ The postconditon branches on this return value to assert what holds in each chas
 
   cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
     as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
-    \prepost{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
+    \pre{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
     \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
     \arg{roundLoc} "round_number" (Vptr roundLoc)
     \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
@@ -490,41 +490,59 @@ bool readTwice(TrieRODb & rdb, Address const &addr, Incarnation inc, bytes32_t c
 
    To understand it why fully, we need to first look at the spec of TrieRODb::read_storage
    *)
+
+  cpp.spec "monad::TrieRODb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
+    as rodb_read_storage_spec from (trie_rodb.module) with (fun (this:ptr) =>
+    \prepost{(q:Qp) (activeProposal: ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR q dbpath (Some activeProposal)
+   (** ^ \prepost means that this is both a precondition and a postcondition: reading does not change the active proposal. for read_storage, any positive fraction ownership suffices, dont need full ownership. this means that other thread can be racing to do reads. the assertion [this |-> TrieRODbR q dbpath (Some activeProposal)] can only be obtained as a postcondition of a successful call to TrieRODb::set_block_and_round, where the call chose the snapshot [activeProposal]. As the postcondition shows below, the storage would be read from this proposal. [ProposalInDb] has the [postBlockState] field which captures the state after executing this proposal. so the postcondition just looks up teh storage in that state *)
+       
+    \arg{addressp} "address" (Vptr addressp)
+    \prepost{q address} addressp |-> addressR q address
+    \arg{incp} "incarnation" (Vptr incp)
+    \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
+    \arg{keyp} "key" (Vptr keyp)
+    \prepost{key:N} keyp |-> bytes32R q key
+    (**  The above 6 lines just connect the 3 arguments (each of a composite type) to corresponding Coq models *)
+    \post{retp:ptr} [Vptr retp]
+      retp |-> bytes32R 1
+                 (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
   
-  (** [read_storage(address, incarnation, key)] reads the 32-byte storage slot
-      from the *active proposal* selected in [preDb]. It requires fractional ownership
-      [q] of the current trie state [preDb], as well as ownership of the pointers
-      for [address], [incarnation], and [key]. The precondition
-      [lookupActiveProposal preDb = Some activeProposal] ensures there is an
-      active proposal to read from. On return, [retp] points to the
-      [bytes32] value obtained by [lookupStorage (postBlockState activeProposal)
-      address key blockTxInd], and the trie state is preserved unchanged.
+(** The spec of TrieDb:read_storage is similar. The main difference is that [TrieDbR] can talk about the whole db state [DbModel]. Also, TriedDb::set_block_and_round (spec discussed above) just sets the block number and round numbers in the [activeProposal] field of [DbModel]. Unlike TrieRODb::set_block_and_round, it does to a snapshot. So, the last \pre requires that the lookup of the active proposal succeds and evaluates to [Some activeProposal] for some [activePropsal].
+The postcondition then looks up the key in the [postBlockState] of that proposal
   *)
   cpp.spec "monad::TrieDb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
-    as read_storage_spec_auth with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDbR q preDb
-      \arg{addressp} "address" (Vptr addressp)
-      \prepost{q address} addressp |-> addressR q address
-      \arg{incp} "incarnation" (Vptr incp)
-      \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
-      \arg{keyp} "key" (Vptr keyp)
-      \prepost{key:N} keyp |-> bytes32R q key
+    as read_storage_spec with (fun (this:ptr) =>
+    \prepost{q preDb} this |-> TrieDbR q preDb
+    \arg{addressp} "address" (Vptr addressp)
+    \prepost{q address} addressp |-> addressR q address
+    \arg{incp} "incarnation" (Vptr incp)
+    \prepost{q blockTxInd} incp |-> IncarnationR q blockTxInd
+    \arg{keyp} "key" (Vptr keyp)
+    \prepost{key:N} keyp |-> bytes32R q key
       
-      \pre{activeProposal} [| lookupActiveProposal preDb = Some activeProposal |]
-      \post{retp:ptr} [Vptr retp]
-        retp |-> bytes32R
-        1
-        (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
+    \pre{activeProposal} [| lookupActiveProposal preDb = Some activeProposal |]
+    \post{retp:ptr} [Vptr retp]
+        retp |-> bytes32R 1
+           (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
 
-(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
-    among those groups that have not yet been finalized. *)
-Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
-  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
-  match unfin with
-  | [] => None
-  | _ => Some (minL (map blockNum unfin))
-  end.
+  (** The specs of other read functions (e.g. read_account, root_hash ...) in TrieDb are very similar to the spec of TrieDb::read_storage: just replace lookupStorage by appropriate Coq functions on ProposalInDb.
+Similarly, the specs of other read functions (e.g. read_account, root_hash ...) in TrieRODb are very similar to the spec of TrieRODb::read_storage: just replace lookupStorage by appropriate Coq functions on ProposalInDb.
+So we will not discuss specs of the other read methods.
+The other interesting functions from execution perspective are TrieDb::commit and TrieDb::finalize. We will look at their spec below. 
+(TrieRODb does not support update methods like commit, finalize.)
 
+But before that, we sketch why the above specs of TrieRODb suffice to prove the logical atomicity of eth_call even though it does several calls to TrieRODb.
+
+eth_call implementation first [does](https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp#L102) a TrieRODb::set_block_and_round. After that, it only issues reads, whic happen in the [call](https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp#L102) to `execute_impl_no_validation`.
+
+It has been claimed that eth_call can be requested even for unfinalized proposals and that execution can commit multiple distinct proposals for the *same* round number. (every round 1 leader and 1 block number). Thus there it is important that if execution "overwrites" a round number with a different proposal in between 2 reads by `execute_impl_no_validation`, eth_call does not produce results that correspond to a mishmash of 2 different proposals. The TrieRODb specs above already allows us to prove that no matter what TrieDb does after a successfull call to TrieRODb::set_block_and_round, the TrieRODb read methods will keep reading from the snapshot in the postcondition of TrieRODb::set_block_and_round. Thus, eth_call will never see any overwrite that happens after the only call to TrieRODb::set_block_and_round.
+
+The (only) call to TrieRODb::set_block_and_round in eth_call_impl is the commit point of eth_call_impl. In concurrency proofs of logical atomicity, the main challenge is typically to identify and prove a commit point, which is a logically atomic operation in the implementation such that from the perspective of other threads/processes the entire implementation can be equivalently considered to execute at that point. Before and after the TrieRODb::set_block_and_round, whatever eth_call does does not affect and is not affected by any TrieDb operation that may be racing.
+
+Next, we will discuss the spec of TrieDb::commit. But before that, we need to define some helper functions for that spec
+*)
+
+  
 (** [updateBlockNum d bnum f] applies a functional update [f] to the
     single [BlockNumStateInDb] in [d] whose block number is [bnum].
     All other groups remain unchanged. *)
@@ -536,6 +554,15 @@ Definition updateBlockNum
     map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
         (blockNumsStates d).
 
+
+(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
+    among those groups that have not yet been finalized. *)
+Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
+  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
+  match unfin with
+  | [] => None
+  | _ => Some (minL (map blockNum unfin))
+  end.
 
   (** Spec of [TrieDb::finalize]:
 
@@ -559,7 +586,7 @@ Definition updateBlockNum
       \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
       \post
          this |-> TrieDbR q (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
-         ** SelectedProposalForBlockNum blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
+         ** FinalizedProposalForBlockNum (dbpath preDb) blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
                                ).
                                
   (* no finalize in TrieRODB *)

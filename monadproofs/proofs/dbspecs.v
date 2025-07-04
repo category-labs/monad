@@ -539,22 +539,42 @@ It has been claimed that eth_call can be requested even for unfinalized proposal
 
 The (only) call to TrieRODb::set_block_and_round in eth_call_impl is the commit point of eth_call_impl. In concurrency proofs of logical atomicity, the main challenge is typically to identify and prove a commit point, which is a logically atomic operation in the implementation such that from the perspective of other threads/processes the entire implementation can be equivalently considered to execute at that point. Before and after the TrieRODb::set_block_and_round, whatever eth_call does does not affect and is not affected by any TrieDb operation that may be racing.
 
-Next, we will discuss the spec of TrieDb::commit. But before that, we need to define some helper functions for that spec
+Next, we will discuss the spec of TrieDb::commit. Towards that, we need to define some helper functions to define the model state (DbModel) in the postcondition.
+Intuitively, TrieDb::commit just adds a new proposal to the Db, along with the full EVM state after executing the block.
+We already have the Coq type ProposalInDb which captures the entire proposal including full EVM state after executing the block, and the receipts from the execution of the block.
+So we just need to define how to add a new [ProposalInDb] to a [DbModel].
+So, the next 2 items define [addNewProposal].
+This is much simpler than the implementation where the focus is on efficiency: so TrieDb::commit cannot take the entire EVM state (state of all accounts) as an argument: that would be prohibitively big. So it only takes the diff w.r.t the [postBlockState] of the currently active proposal. But in specifications, simplicity not efficiency is the main concern.
 *)
 
-  
-(** [updateBlockNum d bnum f] applies a functional update [f] to the
-    single [BlockNumStateInDb] in [d] whose block number is [bnum].
-    All other groups remain unchanged. *)
-Definition updateBlockNum
-  (d: DbModel)
-  (bnum: N)
-  (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
-  d &: _blockNumsStates .= 
-    map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
-        (blockNumsStates d).
+  (** [updateBlockNum d bnum f] applies a functional update [f] to the single [BlockNumStateInDb] in [d] whose block number is [bnum]. All other block numbers remain unchanged. This is used in defiining the postcondition states after the commit and finalize methods *)
+  Definition updateBlockNum (d: DbModel) (bnum: N)
+    (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
+    d &: _blockNumsStates .= 
+             map (fun b => if bool_decide (blockNum b = bnum) then f b else b)
+             (blockNumsStates d).
 
 
+  (** this is the main ingredient of the postcondition of TrieDb::commit. it first checks whether the there is already a [BlockStateInDb] preDb with the exact same block number as the one of [newProposal]. If there is, it just updates that block number state to add the new proposal to its list of proposals. In case that block number state does not exist, it adds a new one with the singleton list of proposals, containing just [newPrpoposal]. The [blockNumsStates] field of [BlockStateInDb] is always used in an order insensitive way in the specs. so it suffices to just add it to the beginning. *)
+  Definition addNewProposal
+    (preDb       : DbModel)
+    (newProposal : ProposalInDb) : DbModel :=
+    let bnum := pblockNum newProposal in
+    match lookupBlockByNum bnum preDb with
+    | Some _ =>
+        (* add proposal into existing BlockNumState *)
+        updateBlockNum preDb bnum (fun bs => bs &: _proposals .= (newProposal::proposals bs))
+    | None =>
+        (* add a new BlockNumState *)
+        preDb &: _blockNumsStates .=
+              ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
+    end.
+
+  (** the final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. [gcToHistoryLength len dbm] trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. there is a guarantee that [256<len].
+  *)
+
+
+             
 (** [lowestUnfinalizedBlockIndex d] finds the smallest block number
     among those groups that have not yet been finalized. *)
 Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
@@ -641,20 +661,6 @@ Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
       \arg{roundNum:N}   "round"        (Vint roundNum)
       \post this |-> TrieDbR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
 
-  Definition commitPostState
-             (preDb       : DbModel)
-             (newProposal : ProposalInDb)
-    : DbModel :=
-    let bnum := pblockNum newProposal in
-    match lookupBlockByNum bnum preDb with
-    | Some _ =>
-        (* add proposal into existing BlockNumState *)
-        updateBlockNum preDb bnum (fun bs => bs &: _proposals .= (newProposal::proposals bs))
-    | None =>
-        (* add a new BlockNumState *)
-        preDb &: _blockNumsStates .=
-              ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
-    end.
 
   
 (** [stateAfterActiveProposal m] returns the EVM state after executing

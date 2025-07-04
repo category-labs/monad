@@ -228,6 +228,13 @@ static evmc::address deploy_contract(
     return create_address;
 }
 
+static evmc::address deploy_delegated_contract(
+    State &state, evmc::address const &from, evmc::address const &delegatee)
+{
+    bytes code = bytes({0xef, 0x01, 0x00}) + delegatee.bytes;
+    return deploy_contract(state, from, code);
+}
+
 // It's possible for the compiler and evmone to reach equivalent-but-not-equal
 // states after both executing. For example, the compiler may exit a block
 // containing an SSTORE early because of unconditional underflow later in the
@@ -474,6 +481,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
 
+    std::bernoulli_distribution toss(
+        0.1); // biased coin toss, 10% chance for 'true'.
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     for (auto i = 0; i < args.iterations_per_run; ++i) {
@@ -505,6 +515,18 @@ static void do_run(std::size_t const run_index, arguments const &args)
             assert_equal(evmone_state, monad_state);
 
             contract_addresses.push_back(a);
+
+            if (args.revision >= EVMC_PRAGUE && toss(engine)) {
+                auto const b =
+                    deploy_delegated_contract(evmone_state, genesis_address, a);
+                auto const b1 =
+                    deploy_delegated_contract(monad_state, genesis_address, a);
+                MONAD_VM_ASSERT(b == b1);
+
+                assert_equal(evmone_state, monad_state);
+
+                contract_addresses.push_back(b);
+            }
             break;
         }
 

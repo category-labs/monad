@@ -6,6 +6,33 @@
 
 namespace monad::vm::runtime
 {
+    inline bool resolve_delegate_address(
+        Context const *ctx, evmc_address &inout_addr) noexcept
+    {
+        // Copy up to |code_size| bytes of the bytecode. Then test
+        // whether the code begins with the prefix 0xEF0100, if so,
+        // then drop these three bytes and interpret the remainder as
+        // the delegate address.
+        constexpr uint8_t indicator[] = {0xef, 0x01, 0x00};
+        constexpr size_t indicator_size = std::size(indicator);
+        constexpr size_t code_size = indicator_size + sizeof(evmc_address);
+
+        uint8_t code_buffer[code_size];
+        ctx->host->copy_code(
+            ctx->context, &inout_addr, 0, code_buffer, code_size);
+
+        std::span const code{code_buffer, code_size};
+        if (!std::ranges::equal(code.subspan(0, indicator_size), indicator)) {
+            return false;
+        }
+
+        // Copy the delegate address from the code buffer.
+        std::ranges::copy(
+            code.subspan(indicator_size, sizeof(evmc::address)),
+            inout_addr.bytes);
+        return true;
+    }
+
     template <evmc_revision Rev>
     uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
@@ -35,6 +62,18 @@ namespace monad::vm::runtime
                 ctx->host->access_account(ctx->context, &code_address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->gas_remaining -= 2500;
+            }
+        }
+
+        if constexpr (Rev >= EVMC_PRAGUE) {
+            // EIP-7702: if the code address starts with 0xEF0100, then
+            // treat it as a delegated call in the context of the
+            // current authority.
+            if (resolve_delegate_address(ctx, code_address)) {
+                auto const access_status =
+                    ctx->host->access_account(ctx->context, &code_address);
+                ctx->gas_remaining -=
+                    access_status == EVMC_ACCESS_COLD ? 2600 : 100;
             }
         }
 

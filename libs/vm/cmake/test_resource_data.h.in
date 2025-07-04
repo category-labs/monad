@@ -1,0 +1,17 @@
+#pragma once
+
+#include <filesystem>
+
+namespace test_resource
+{
+    inline std::filesystem::path const root_dir = "@ROOT_DIRECTORY@";
+
+    inline auto const third_party_dir = root_dir / "third_party";
+    inline auto const data_dir = root_dir / "data";
+
+    inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
+    inline auto const compile_benchmarks_dir = data_dir / "compile_benchmarks";
+    inline auto const execution_benchmarks_dir =
+        data_dir / "execution_benchmarks";
+    inline auto const regression_tests_dir = data_dir / "regression_tests";
+}

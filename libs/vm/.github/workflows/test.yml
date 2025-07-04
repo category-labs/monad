@@ -1,0 +1,173 @@
+name: Compiler Tests
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+    build:
+        name: Test compiler
+        runs-on: ubuntu-24.04-32
+        strategy:
+          matrix:
+            build:
+              - CMAKE_BUILD_TYPE: RelWithDebInfo
+                TOOLCHAIN: gcc-avx2
+              - CMAKE_BUILD_TYPE: Debug
+                TOOLCHAIN: gcc-asan
+            compiler:
+              - CXX: g++-15
+                CC: gcc-15
+              - CXX: clang++-19
+                CC: clang-19
+            exclude:
+              # GCC's implementation of ASAN breaks the must-tail calling
+              # convention used by the interpreter, so we need to disable that
+              # configuration when running with sanitizers enabled.
+              - build:
+                  CMAKE_BUILD_TYPE: Debug
+                  TOOLCHAIN: gcc-asan
+                compiler:
+                  CXX: g++-15
+                  CC: gcc-15
+
+        steps:
+            - name: Generate token
+              # Use the Github App private key to request an installation
+              # token with read-only access to the organization's private
+              # repositories. This token is then used in the checkout step
+              # (but not in subsequent steps that create releases and upload
+              # assets, those still use the default token that has write
+              # access to the current repository).
+              id: generate_token
+              uses: tibdex/github-app-token@v2
+              with:
+                app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+                private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+                # Limit permissions to what we need (these need to be
+                # configured in the app settings as well).
+                permissions: >-
+                  {"contents": "read"}
+
+            - name: Tell git to do submodules in parallel
+              run: |
+                git config --global submodule.fetchJobs "$(nproc)"
+
+            - uses: actions/checkout@v4
+              with:
+                token: ${{ steps.generate_token.outputs.token }}
+                submodules: recursive
+
+            - name: Setup Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build `base` stage
+              uses: docker/build-push-action@v5
+              with:
+                context: .
+                file: docker/Dockerfile
+                target: base
+                cache-from: type=gha,scope=base
+                cache-to: type=gha,scope=base,mode=max
+
+            - name: Build `build_and_test` stage
+              uses: docker/build-push-action@v5
+              with:
+                context: .
+                file: docker/Dockerfile
+                build-args: |-
+                  CC=${{ matrix.compiler.CC }}
+                  CXX=${{ matrix.compiler.CXX }}
+                  CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
+                  TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
+                target: build_and_test
+                cache-from: type=gha,scope=base
+
+    code-quality:
+      name: Code quality checks
+      runs-on: ubuntu-24.04-32
+      steps:
+          - name: Generate token
+            id: generate_token
+            uses: tibdex/github-app-token@v2
+            with:
+              app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+              private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+              # Limit permissions to what we need (these need to be
+              # configured in the app settings as well).
+              permissions: >-
+                {"contents": "read"}
+
+          - name: Tell git to do submodules in parallel
+            run: |
+              git config --global submodule.fetchJobs "$(nproc)"
+
+          - uses: actions/checkout@v4
+            with:
+              submodules: recursive
+              token: ${{ steps.generate_token.outputs.token }}
+
+          - name: Formatting Check
+            uses: jidicula/clang-format-action@v4.13.0
+            with:
+              exclude-regex: '(build|third_party)'
+              clang-format-version: 19
+
+          - name: Setup Docker Buildx
+            uses: docker/setup-buildx-action@v3
+
+          - name: Build `base` stage
+            uses: docker/build-push-action@v5
+            with:
+              context: .
+              file: docker/Dockerfile
+              target: base
+              cache-from: type=gha,scope=base
+              cache-to: type=gha,scope=base,mode=max
+
+          - name: Build `code_quality` stage
+            uses: docker/build-push-action@v5
+            with:
+              context: .
+              file: docker/Dockerfile
+              target: code_quality
+              cache-from: type=gha,scope=base
+
+    python-code-quality:
+        name: Python code quality checks
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                submodules: false
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v5
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                python-version-file: scripts/benchmark-analysis/.python-version
+
+            - name: Check Python code
+              working-directory: scripts/benchmark-analysis
+              run: make check
+
+    documentation:
+        name: Build documentation
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                submodules: false
+
+            - name: Install Doxygen
+              run: |
+                sudo apt update
+                sudo apt install -y doxygen
+
+            - name: Build documentation
+              run: |
+                doxygen

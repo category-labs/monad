@@ -1,0 +1,21 @@
+{
+    "description": "Haswell cache architecture details",
+    "I1": {
+        "description": "Level 1 instruction cache details",
+        "size": 32768,
+        "assoc": 8,
+        "line_size": 64
+    },
+    "D1": {
+        "description": "Level 1 data cache details",
+        "size": 32768,
+        "assoc": 8,
+        "line_size": 64
+    },
+    "LL": {
+        "description": "Last level instruction cache details",
+        "size": 8388608,
+        "assoc": 16,
+        "line_size": 64
+    }
+}

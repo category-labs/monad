@@ -1,0 +1,45 @@
+[project]
+name = "benchmark-analysis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2.3",
+    "pandas-stubs>=2.2.3.241126",
+    "scipy>=1.15.0",
+    "tabulate>=0.9.0",
+]
+
+[project.scripts]
+compare-benchmarks = "compare_benchmarks.main:main"
+compare-implementations = "compare_implementations.main:main"
+
+[tool.uv]
+package = true
+
+[tool.autoflake]
+recursive = true
+expand-star-imports = true
+remove-all-unused-imports = true
+ignore-init-module-imports = true
+remove-duplicate-keys = true
+remove-unused-variables = true
+
+[tool.black]
+line-length = 120
+skip-string-normalization = true
+
+[tool.mypy]
+disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "autoflake>=2.3.1",
+    "black>=24.10.0",
+    "flake8>=7.1.1",
+    "isort>=5.13.2",
+    "mypy>=1.14.1",
+    "pandas-stubs>=2.2.3.241126",
+    "scipy-stubs>=1.15.0.0",
+]

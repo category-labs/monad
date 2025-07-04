@@ -102,7 +102,7 @@ Record DbModel : Type :=
     votedMetadata: option (N * N);
     (** ^ (block_num, round) from the latest [update_voted_metadata] call *)
 
-    lastVerifiedBlockIndex: N;
+    lastVerifiedBlockNum: N;
     (** ^ highest block index marked verified via [update_verified_block] *)
 
     dbpath: DbPath;
@@ -570,202 +570,176 @@ This is much simpler than the implementation where the focus is on efficiency: s
               ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
     end.
 
-  (** the final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. [gcToHistoryLength len dbm] trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. there is a guarantee that [256<len].
+  (** the final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. [gcToHistoryLen len dbm] trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. there is a guarantee that [256<len].
   *)
 
-
-             
-(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
-    among those groups that have not yet been finalized. *)
-Definition lowestUnfinalizedBlockIndex (d: DbModel) : option N :=
-  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
-  match unfin with
-  | [] => None
-  | _ => Some (minL (map blockNum unfin))
-  end.
-
-  (** Spec of [TrieDb::finalize]:
-
-      [finalize(blockNum, roundNum)] promotes the proposal snapshot at [blockNum]
-      and [roundNum] into the finalized state, making it immutable under
-      the [finalized_nibbles] prefix. It requires fractional ownership [q] of
-      the current DB model [preDb], plus evidence that [preDb] contains a
-      proposal at [blockNum, roundNum], and that [blockNum] is the lowest
-      unfinalized block. On return, the trie state is updated so that the
-      proposal at [blockNum] is marked finalized, and the caller gains
-      [SelectedProposalForBlockNum blockNum prp] to record which proposal
-      was frozen.
-  *)
-  cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
-    as finalize_spec_auth with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDbR q preDb
-      \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \arg{roundNum:N}   "round_number" (Vint roundNum)
-      \let pid := {| idBlockNum := blockNum; idRoundNum:= Some roundNum |}
-      \pre{prp} [| lookupProposal pid preDb = Some prp|]
-      \pre [| lowestUnfinalizedBlockIndex preDb = Some blockNum |]
-      \post
-         this |-> TrieDbR q (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
-         ** FinalizedProposalForBlockNum (dbpath preDb) blockNum prp (* this Knowledge assertion can be used to constrain the output of TrieRODB reads *)
-                               ).
-                               
-  (* no finalize in TrieRODB *)
-
-  (** Spec of [TrieDb::update_verified_block]:
-
-      Marks [blockNum] as the last verified block in the DB model without
-      changing any trie prefix. Requires fractional ownership [q] of [preDb]
-      and that [blockNum] is strictly less than the next unfinalized block.
-      On return, only [_lastVerifiedBlockIndex] is updated to [blockNum].
-  *)
-  cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
-    as update_verified_block_spec with (fun (this:ptr) =>
-      \prepost{q preDb} this |-> TrieDbR q preDb
-      \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \pre [| match lowestUnfinalizedBlockIndex preDb with
-              | Some s =>  blockNum < s
-              | None => False (* if no block has been finalized yet, cannot call this method *)
-              end |]
-      \post this |-> TrieDbR q (preDb &: _lastVerifiedBlockIndex .= blockNum)).
+  Definition gcToHistoryLen (len: N) (d: DbModel) : DbModel :=
+    let blockNums := List.map blockNum (blockNumsStates d) in
+    let maxBlockNum := maxL blockNums in
+    let minBlockNum := minL blockNums in
+    if bool_decide (maxBlockNum <= minBlockNum + len)
+    then d
+    else let newBlockNumsStates :=
+           List.filter (fun b => bool_decide (maxBlockNum-blockNum b <= len)) (blockNumsStates d) in
+         d &: _blockNumsStates .= newBlockNumsStates.
 
 
-  (** Spec of [TrieRODb::set_block_and_round] (first variant):
-
-      Attempts to pin a read-only view on the proposal [pid]. Given full
-      ownership of the read-only DB model [preActive], it returns a boolean
-      indicating whether the proposal still exists. On success, the view
-      is advanced to [Some proposal] and exposes [SelectedProposalForBlockNum]
-      so future reads can locate the frozen proposal. On failure, the view
-      remains at [None].
-  *)
-
-  (** Spec of [TrieRODb::set_block_and_round] (second variant):
-
-      Validates that the previously selected proposal [proposal] is still
-      present in the trie. Requires [SelectedProposalForBlockNum] in the
-      precondition. Returns [true] and retains [Some proposal] if it has
-      not been garbage-collected, or [false] and resets the view to [None]
-      otherwise.
-  *)
-
-  (** Spec of [TrieDb::update_voted_metadata]:
-
-      Records the highest‑round quorum certificate for [blockNum] in
-      [_votedMetadata]. Requires full ownership of [preDb], and on return
-      [_votedMetadata] is updated to [Some (blockNum, roundNum)].
-  *)
-  cpp.spec "monad::TrieDb::update_voted_metadata(unsigned long, unsigned long)"
-    as update_voted_metadata_spec with (fun (this:ptr) =>
-      \prepost{preDb} this |-> TrieDbR 1 preDb
-      \arg{blockNum:N}   "block_number" (Vint blockNum)
-      \arg{roundNum:N}   "round"        (Vint roundNum)
-      \post this |-> TrieDbR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
-
-
-  
-(** [stateAfterActiveProposal m] returns the EVM state after executing
-    the active proposal, or [dummyEvmState] if none is pinned. Used by [read_storage]
-    and [commit] specs to fetch the base state. *)
+(** [stateAfterActiveProposal m] returns the EVM state after executing the active proposal. The StateDeltas argument in TrieDb::commit is
+    diff between the state after the active propposal and the state after executing the new proposal on top of the active proposal *)
 Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   match lookupActiveProposal m with
   | None => dummyEvmState
   | Some p => postBlockState p
   end.
 
+(* TODO: upstream, also upstream ConsensusBlockHeader *)
   Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
+  Definition EmptyCallFramesR (q: cQp.t) : Rep. Proof. Admitted.
 
-  (** Spec of [TrieDb::commit]:
-
-      Incorporates a new block proposal [newProposal] into the database state.
-      Given full ownership of the current trie [preDb] and of all inputs
-      (state deltas, code deltas, block header, receipts, call frames,
-      senders, transactions, ommers, and optional withdrawals),
-      and assuming that [newProposal] either extends the previous active block
-      or is the genesis block,
-      [commit] updates the in-memory list of proposals and returns the updated
-      trie state [commitPostState preDb newProposal]. All EVM outputs in
-      [newProposal] must match the provided arguments, and the existing state
-      is preserved for other blocks.
-  *)
   cpp.spec
     "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
   as commit_spec with (fun (this:ptr) =>
-    \prepost{(preDb:DbModel)} this |-> TrieDbR 1 preDb
+    \pre{(preDb:DbModel) (newProposal : ProposalInDb)} this |-> TrieDbR 1 preDb
+   (** ^ requires full(1) ownernership of the TrieDb object. This guarantees that no other threads can be using this object concurrently to read (because reading requires non-zero ownership).
 
-    \arg{(deltas_ptr: ptr) (qs: Qp)} "#0" (Vptr deltas_ptr)
-    \prepost{(newProposal: ProposalInDb)}
-      deltas_ptr |-> StateDeltasR qs (stateAfterActiveProposal preDb, (postBlockState newProposal))
+     [preDb] and [newProposal] are the only 2 arguments of this function at the logical level of this spec. All C++ arguments can be tied to these:
+    *)
 
-    \arg{(code_ptr:ptr) (qcd: Qp)} "#1" (Vptr code_ptr)
-    \prepost
-      code_ptr |-> CodeDeltaR qcd (stateAfterActiveProposal preDb, (postBlockState newProposal))
+    \arg{(dloc: ptr) (q: Qp)} "state_deltas" (Vptr dloc)
+    \prepost dloc |-> StateDeltasR q (stateAfterActiveProposal preDb, postBlockState newProposal)
+    (** ^ the \arg line above asserts that the the state_deltas argument has a memory location dloc. Then, the \prepost line asserts that dloc has an object that represents delta/diff between thefull  EVM state after the active proposal in preDb and the full EVM state after executing [newProposal]. More generally [l |- StateDeltasR q (old, new)] asserts that at location l we have an object of type StateDeltas which represents the difference between the full EVM states old and new. StateDeltas is a map from account addresses to diffs in account states. Every account that has a different value betwee old and new must have an entry in this map. the diff in account states stores the new/old balance/nonce etc and also has another map that maps storage keys to pairs of values (oldkv, newkv).
+     *)
 
-    \arg{hdr_ptr} "#2" (Vptr hdr_ptr)
-    \prepost{ (qpr: Qp)}
-      hdr_ptr |-> ConsensusBlockHeaderR qpr (cheader newProposal)
-      \pre [| match activeProposal preDb with
+    \arg{(cloc:ptr)} "code" (Vptr cloc)
+    \prepost cloc |-> CodeDeltaR q (stateAfterActiveProposal preDb, postBlockState newProposal)
+    (** the code argument is similar. it is a map from code hashes to code. this map must contain an entry for all the code hashes that exist in [postBlockState newProposal] but does not exist in [stateAfterActiveProposal preDb]. Intuitively, it has one entry for every new code hash that got deployed in [newProposal].
+
+    The other arguments are just other contents of the proposals, e.g. transactions, ommers, withdrawals, senders. The specification below of the other arguments are much more straightforward: newPrposal of type [ProposalInDb] already includes the models for all those parts of a Proposal as fields or fields of fields. So the specs of args below just connect the C++ argument to the corresponding parts of the [newProposal] model.
+     *)
+
+    \arg{hloc} "consensus_header" (Vptr hloc)
+    \prepost hloc |-> ConsensusBlockHeaderR q (cheader newProposal)
+      
+    \arg{rloc} "receipts" (Vptr rloc)
+    \prepost rloc |-> VectorR "monad::Receipt" ReceiptR q (txResults newProposal)
+          
+    \arg{cfloc} "cfloc" (Vptr cfloc)
+    \prepost cfloc |->  EmptyCallFramesR q
+   
+    \arg{sloc} "senders" (Vptr sloc)
+    \prepost sloc |-> VectorR "evmc::address" (addressR q) q
+                         (map sender (transactions (proposedBlock newProposal)))
+
+    \arg{tloc} "transactions" (Vptr tloc)
+    \prepost tloc |-> VectorR "monad::Transaction" (TransactionR q) q
+                        (transactions (proposedBlock newProposal))
+
+    \arg{oloc} "ommers" (Vptr oloc)
+    \prepost oloc |-> VectorR "monad::BlockHeader" (BheaderR q) q
+                         (ommers (proposedBlock newProposal))
+
+    \arg{wloc} "withdrawals" (Vptr wloc)
+    \prepost wloc |-> optionR
+        "std::vector<monad::Withdrawal>"
+          (VectorR "monad::Withdrawal" (WithdrawalR q) q)
+          q
+          (withdrawals (proposedBlock (newProposal)))
+
+    \pre [| match activeProposal preDb with
               | Some activeProp =>
                   pblockNum newProposal = 1 + idBlockNum activeProp
               | None => pblockNum newProposal = 0
               end
-              |]
-   \pre [| (roundNum ∘ cheader) newProposal ∉ (map (roundNum ∘ cheader) (allProposalsInDb preDb)) |] (* delete this, depending on whether consensus can really send us 2 blocks for the same round number *)
+         |]
+    (** ^ other than the class invariants already captured in the Rep predicates TrieDbR and those of the arguments above, the only other precondition is in the \pre line above. It says that if there is an active proposal (set by calling set_block_and_round), the block number of [newProposal] must be 1+ block number of the active proposal.
+If there is no active proposal, than [newProposal] must be the genesis block (block number 0).
+     *)
+    \post Exists (postGcHistLen:N), [| 256 <= postGcHistLen|]
+            ** this |-> TrieDbR 1 (gcToHistoryLen postGcHistLen (addNewProposal preDb newProposal))).
+  (** ^ the postcondition just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by the [addNewproposal] followed by the [gcToHistoryLen] functions that were explained just above the spec. [postGcHistLen] is existentially quantification so the caller's proof cannot assume anything about how many blocks numbers, if any, the garbage collection (GC) phase will reclaim, except that it reduce the history length (number of block numbers) to less thatn 256. Also, if the histor length was alredy less thant 256 no GC will happen: this follows from the definition of [gcToHistoryLen].
 
-    \arg{receipts_ptr} "#3" (Vptr receipts_ptr)
-    \prepost{ (qtrs: Qp)}
-      receipts_ptr |->
-        VectorR
-          "monad::Receipt"%cpp_type
-          (fun r => ReceiptR r)
-          qtrs (txResults newProposal)
-          
-   \arg{cfs_ptr} "#4" (Vptr cfs_ptr)
-   \prepost{qcf}
-      cfs_ptr |->
-        VectorR
-          "std::vector<monad::CallFrame>"%cpp_type
-          (fun inner:unit => emp)
-          qcf []
-    \arg{(senders_ptr: ptr) (qsn: Qp)} "#5" (Vptr senders_ptr)
-    \prepost
-      senders_ptr |->
-        VectorR
-          "evmc::address"%cpp_type
-          (fun a => addressR qsn a)
-          qsn (map sender (transactions (proposedBlock newProposal)))
 
-    \arg{txns_ptr qtxn} "#6" (Vptr txns_ptr)
-    \prepost
-      txns_ptr |->
-        VectorR
-          "monad::Transaction"%cpp_type
-          (fun t => TransactionR qtxn t)
-          qtxn (transactions (proposedBlock newProposal))
+   Our final spec is for TrieDb::finalize(). We just need one helper function for the spec.
+   
+   *)
+  
+(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
+    among those groups that have not yet been finalized. *)
+Definition minUnfinalizedBlockNum (d: DbModel) : option N :=
+  let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
+  match unfin with
+  | [] => None
+  | _ => Some (minL (map blockNum unfin))
+  end.
 
-    \arg{ommers_ptr qo} "ommers" (Vptr ommers_ptr)
-    \prepost
-      ommers_ptr |->
-        VectorR
-          "monad::BlockHeader"%cpp_type
-          (fun h => BheaderR qo h)
-          qo (ommers (proposedBlock newProposal))
+  cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
+    as finalize_spec_auth with (fun (this:ptr) =>
+      \pre{preDb} this |-> TrieDbR 1 preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \arg{roundNum:N}   "round_number" (Vint roundNum)
+      \let pid := {| idBlockNum := blockNum; idRoundNum:= Some roundNum |}
+      \pre{prp} [| lookupProposal pid preDb = Some prp|]
+      \pre [| minUnfinalizedBlockNum preDb = Some blockNum |]
+      (** ^ 2 preconditions: the proposal to be finalized must exist in the Db and must have the lowest unfinalized block number: we cannot finalize a proposal for block number 5 before something for block 4 is fianlized *)
+      \post
+         this |-> TrieDbR 1 (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
+         ** FinalizedProposalForBlockNum (dbpath preDb) blockNum prp
+                               ).
+  (** ^ the first conjunct in the postcondition is straightforward: just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by updateBlockNum, which updates the target block number to record the finalized round number. The second conjunct is more interesting. It is an assertion/token that can be used to claim that the finalized proposal for [blockNum] is [prp], which was obtained by looking up the round number and block number. For example, it can be passed on as a precondition to the second spec of TrieRODb::set_block_and_round to reason that if it succeeds, the chosen snapshot must be prp. For example, in the application below, one can use this to reason that the second read_storage (done by another process) returns the same value:
 
-   \arg{wds_ptr} "#8" (Vptr wds_ptr)
-          
-    \prepost{qw: cQp.t}
-      wds_ptr |-> optionR
-        "std::vector<monad::Withdrawal>"%cpp_type
-        (fun ws => VectorR
-                     "monad::Withdrawal"%cpp_type
-                     (WithdrawalR qw)
-                     qw ws)
-        qw
-        (withdrawals (proposedBlock (newProposal)))
-    \post this |-> TrieDbR 1 (commitPostState preDb newProposal)).
+Process1:
+tdb.finalize(2,3)
+tdb.set_block_and_round(2);
+v=tdb.read_storage(ac, inc, (*key= *) 100);
+write v to shared memory location l;
+Process2.signal();
+
+
+Process2:
+Process2.wait();
+v1= read shared memory location l;
+bool success=trodb.set_block_and_round(2);// use the second spec
+if (!success) exit;
+v2=trodb.read_storage(ac, inc, (*key= *) 100);
+if (v1<>v2) launch nuclear missiles
+
+   *)
+
+  (** the spec of other functions are straightforward: *)
+  
+  Definition maxFinalizedBlockNum (d: DbModel) : option N :=
+    let unfin := filter (fun b => isSome (finalizedProposal b)) (blockNumsStates d) in
+    match unfin with
+    | [] => None
+    | _ => Some (maxL (map blockNum unfin))
+    end.
+
+  cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
+    as update_verified_block_spec with (fun (this:ptr) =>
+      \prepost{q preDb} this |-> TrieDbR q preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \pre [| lastVerifiedBlockNum preDb<= blockNum |]
+      (** ^ lastVerifiedblockNum can never decrease *)
+      \pre [| match maxFinalizedBlockNum preDb with
+              | Some s =>  blockNum <= s
+              | None => False (** if no block has been finalized yet, cannot call this method *)
+              end |]
+      \post this |-> TrieDbR q (preDb &: _lastVerifiedBlockNum .= blockNum)).
+
+
+
+  cpp.spec "monad::TrieDb::update_voted_metadata(unsigned long, unsigned long)"
+    as update_voted_metadata_spec with (fun (this:ptr) =>
+      \pre{preDb} this |-> TrieDbR 1 preDb
+      \arg{blockNum:N}   "block_number" (Vint blockNum)
+      \arg{roundNum:N}   "round"        (Vint roundNum)
+      \post this |-> TrieDbR 1 (preDb &: _votedMetadata .= Some (blockNum, roundNum))).
+
+
+  
 End with_Sigma.
 
-(*---------------------------------------------------------------------
- Ownership flow of [TrieDbR] in runloop_monad.cpp and execute_block:
+(**  Ownership flow of [TrieDbR] in monad::propose_block in runloop_monad.cpp:
 
  1) Before [execute_block]:
     +--------------------------------------+
@@ -784,9 +758,9 @@ End with_Sigma.
         fiber1    fiber2         fiberN
         (read)    (read)         (read)
 
-    Each fiber reads state and builds [BlockState] deltas only.
+    Each fiber reads can concurrently read the db and builds [BlockState] deltas only: no updates to the db
 
- 3) After fibers finish, ownership is rejoined and commit is called:
+ 3) After all fibers finish, the final state is in BlockState, encoded as StateDeltas w.r.t. the preblock state. ownership of TrieDb is rejoined and then commit is called:
 
     +--------------------------------------+
     | TrieDbR (ownership rejoined = 1)     |

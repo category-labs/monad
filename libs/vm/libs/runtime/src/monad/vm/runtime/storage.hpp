@@ -17,10 +17,9 @@ namespace monad::vm::runtime
     {
         auto key = bytes32_from_uint256(*key_ptr);
 
-        auto access_status =
-            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
-
         if constexpr (Rev >= EVMC_BERLIN) {
+            auto access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2000);
             }
@@ -54,8 +53,11 @@ namespace monad::vm::runtime
         auto key = bytes32_from_uint256(*key_ptr);
         auto value = bytes32_from_uint256(*value_ptr);
 
-        auto access_status =
-            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
+        auto access_status = EVMC_ACCESS_COLD;
+        if constexpr (Rev >= EVMC_BERLIN) {
+            access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &key);
+        }
 
         auto storage_status = ctx->host->set_storage(
             ctx->context, &ctx->env.recipient, &key, &value);

@@ -1,11 +1,17 @@
-(** * Specifications of TrieDB and TrieRODb.
+(** * Specifications of TrieDb and TrieRODb.
 
-   We have attempted to make this file understandable to anyone familiar with functional programming (OCaml/Haskell), but we highly recommend reviewing the first formal verification tutorial before reading this file. In many places, this file refers to analogous concepts explained in the tutorial.
+This document presents formal specifications of the TrieDb and TrieRODb classes.
+The goal of these Coq specs is to describe *what* the methods of these classes do, not how.
+While the implementation is optimized be extremely computationally efficient,
+the specs dont care about that and rather optimize for logical simplicity.
+Using separation logic, these also specify what kind of concurrency is allowed when calling the methods.
 
-   - Tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
-   - Tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+We have attempted to make this file understandable to anyone familiar with functional programming (OCaml/Haskell), but we highly recommend reviewing the first formal verification tutorial before reading this file. In many places, this file refers to analogous concepts explained in the tutorial.
 
-   We also recommend Tutorial2 as background review if you want to more deeply understand the concurrency aspects of these specs.
+   - #<href a="https://www.youtube.com/watch?v=zyyoWnF1QUE">Tutorial1</href># (only until 1:17:00): 
+   - #<href a="https://www.youtube.com/watch?v=9fjR_yQmiOU">Tutorial2</href># (only until 1:10:00): 
+
+We also recommend Tutorial2 as background review if you want to more deeply understand the concurrency aspects of these specs.
 *)
 
 
@@ -13,11 +19,12 @@
 
 The first task for writing specs of a C++ class is typically to define a Coq type that models the data stored by objects of that class. This Coq type is also often called the model type.
 The model type is ideally at a very high level and abstracts away C++-related implementation details.
-For example, the model type of `bytes32` is just `N`, the Coq type of unbounded (mathematical) natural numbers,
-even though in C++ it is laid out as 32 machine bytes.
-Similarly, the model type of various sequential C++ containers (e.g., linked lists, arrays, vectors, sets) is typically the same: Coq lists.
+For example, the model type of `bytes32` in C++ is just [N], the Coq type of unbounded (mathematical) natural numbers,
+even though in C++ it is laid out as an array of 32 machine bytes.
+Sequential C++ containers such as linked lists, arrays, vectors, and sets, share the same high-level model, also regardless of the supported level of concurrency.
+We represent them uniformly using Coq lists.
 
-Method specs typically tie the pre- and post-states of the object to elements of the Coq model type. We can then use Coq's logic to write assertions on the model to capture pre- and post-conditions.
+Method specs typically tie the pre- and post-states of the object to elements of the Coq model type. In such specs, we can then use Coq's logic to write assertions on the model to capture pre- and post-conditions.
 
 The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents.
 *)
@@ -31,7 +38,10 @@ Notation EvmState := evm.GlobalState.
 
 (** Below, the [ProposalInDb] record bundles all the information for a single block proposal
     stored in the trie: the consensus header [cheader], the raw [proposedBlock],
-    its [postBlockState] after execution, and the per-transaction [txResults]. *)
+    its [postBlockState] after execution, and the per-transaction [txResults].
+    Almost everything is hyperliked to its definition, even references to Coq items in comments like this one.
+    For example, you can click below on [Block] to jump to its definition and then press the back button on your browser to come back.
+ *)
 Record ProposalInDb : Type :=
   {
     cheader: ConsensusBlockHeader;
@@ -46,7 +56,7 @@ Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
     finalizedRoundNum: option N;
-    (** ^ For any block number, the finalized round number, if any, is set by calling Db::finalize(). `option T` is similar to `std::optional<T>` in C++. *)
+    (** ^ For any block number, the finalized round number, if any, is set by calling Db::finalize(). [option T] is similar to `std::optional<T>` in C++. *)
   }.
 
 
@@ -56,7 +66,7 @@ Record ProposalId :=
   {
     idBlockNum: N;
     idRoundNum: option N;
-    (** ^ None signifies the finalized round number for block number [idBlockNum]. *)
+    (** ^ [None] signifies the finalized round number for block number [idBlockNum]. *)
   }.
 
 (** Underlying storage for the Db. *)
@@ -94,8 +104,7 @@ Record DbModel : Type :=
 Not all members of the [DbModel] type correspond to data stored in a TrieDb object (and associated disk structures).
 There are some invariants, e.g.:
 - The list [blockNumsStates] has a contiguous range of block numbers (no holes).
-- Proposals in [blockNumsStates] have distinct round numbers. Even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for that round number: after commit(), the old block cannot be accessed by TrieDb methods.
-  Some TrieRODb methods can still access the old proposal until the next set_block_and_round, and we will see how our specs capture that below.
+- Proposals in [blockNumsStates] have distinct round numbers. Even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for that round number: after `commit()`, the old block cannot be accessed by TrieDb methods. Some TrieRODb methods can still access the old proposal until the next set_block_and_round, and we will see how our specs capture that below.
 
 In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
 Class invariants hold before/after every method call.
@@ -114,17 +123,17 @@ Definition blockNum (b: BlockNumStateInDb) : N :=
   match proposals b with
   | h :: _ => pblockNum h
   | [] => 0
-  (** ^ dummy: clients must ensure [hasAtLeastOneProposal b] *)
+  (** ^ dummy: clients must ensure [proposals b] is not empty *)
   end.
 
 (** [proposalsHaveSameBlockNum] asserts that all entries in a proposal list
     share the same block number, enforcing the group invariant. *)
 Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
-  forall p1 p2,
+  forall (p1 p2: ProposalInDb),
     p1 ∈  proposals b -> p2  ∈ proposals b -> pblockNum p1 = pblockNum p2.
 
 Definition hasAtLeastOneProposal (b: BlockNumStateInDb) :=
-  exists p, p ∈ proposals b.
+  exists (p:ProposalInDb), p ∈ proposals b.
 
 Notation NoDuplicate := NoDup.
 (** ^ this definition from Coq standard library asserts that a given list has no duplicates *)
@@ -156,7 +165,7 @@ Definition contiguousBlockNums (lb: list BlockNumStateInDb) : Prop :=
 Definition lowestBlockNum (d: DbModel) : N :=
   match blockNumsStates d with
   | h :: _ => blockNum h
-  | [] => 0 (* dummy *)
+  | [] => 0
   end.
              
 (** looks up a block number in the Db. *)
@@ -337,7 +346,6 @@ cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsign
 
   \pre [| isSome (lookupProposal pid preDb)|]
   (** ^ This precondition asserts that the chosen proposal id must exist in the Db: the lookup in the Db model (preDb) must not return None (analogous to std::nullopt). *)
-   *)
 
   \post this |-> TrieDbR 1 (preDb &: _activeProposal .= Some pid)
    (** this is the post condition. it returns back the full ownernership of TrieDbR but with a modified model, capturing

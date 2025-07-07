@@ -1,37 +1,35 @@
-(** * Specificatins of TrieDB and TrieRODb.
-Although an attempt has been made to make it understandable to anyone with some familiarity with functional programming (ocaml/haskell),
-it is highly recommended to review the first formal verification tutorial to understand this file.
-At many places, this file refers to analogous concepts explained in the tutorial.
-- Tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
-- Tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+(** * Specifications of TrieDB and TrieRODb.
 
-Tutorial2 is also highly recommended if as a background review if you want to more deeply understand the concurrency aspects of these specs.
+   We have attempted to make this file understandable to anyone familiar with functional programming (OCaml/Haskell), but we highly recommend reviewing the first formal verification tutorial before reading this file. In many places, this file refers to analogous concepts explained in the tutorial.
 
- *)
+   - Tutorial1 (only until 1:17:00): https://www.youtube.com/watch?v=zyyoWnF1QUE
+   - Tutorial2 (only until 1:10:00): https://www.youtube.com/watch?v=9fjR_yQmiOU
+
+   We also recommend Tutorial2 as background review if you want to more deeply understand the concurrency aspects of these specs.
+*)
 
 
-(** * Model types for TrieDb/TrieRODb 
-The first task for writing specs of a C++ class is typically
-to define a Coq type that models the data stored by objects of that class.
-This Coq type is also often called the model type.
-The model type is ideally at a very high-level and abstracts away the C++-related implementation details.
-For example, the model type of bytes32 is just `N` the Coq type of unbounded (mathematical) natural numbers,
-even though in C++, it is laid out 32 machine bytes.
-Similarly, the model type of various sequention C++ containers, e.g. linked lists, arrays, vectors, sets are the typicall the same: Coq lists.
+(** * Model types for TrieDb/TrieRODb
 
-Method specs typically tie the pre/post states of the object to elements of the Coq model type. We can then use Coq's logic to write assertions on the model, to capture the pre and post conditions.
+The first task for writing specs of a C++ class is typically to define a Coq type that models the data stored by objects of that class. This Coq type is also often called the model type.
+The model type is ideally at a very high level and abstracts away C++-related implementation details.
+For example, the model type of `bytes32` is just `N`, the Coq type of unbounded (mathematical) natural numbers,
+even though in C++ it is laid out as 32 machine bytes.
+Similarly, the model type of various sequential C++ containers (e.g., linked lists, arrays, vectors, sets) is typically the same: Coq lists.
 
-The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents
- *)
+Method specs typically tie the pre- and post-states of the object to elements of the Coq model type. We can then use Coq's logic to write assertions on the model to capture pre- and post-conditions.
+
+The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents.
+*)
 
 Require Import monad.asts.trie_rodb.
 Require Import  monad.asts.trie_db.
 Require Import monad.proofs.prelude.
 
 Notation EvmState := evm.GlobalState.
-(** ^ [EvmState] is persistent state of the entire EVM: state of ALL accounts *)
+(** ^ [EvmState] is the persistent state of the entire EVM: the state of all accounts. *)
 
-(** Below, the [ProposalInDb] record type bundles all of the information for a single block proposal
+(** Below, the [ProposalInDb] record bundles all the information for a single block proposal
     stored in the trie: the consensus header [cheader], the raw [proposedBlock],
     its [postBlockState] after execution, and the per-transaction [txResults]. *)
 Record ProposalInDb : Type :=
@@ -48,7 +46,7 @@ Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
     finalizedRoundNum: option N;
-    (** ^ for any block number, finalized round number, if any, is set by calling Db::finalize(). option T is just like std::optional<T> in C++ *)
+    (** ^ For any block number, the finalized round number, if any, is set by calling Db::finalize(). `option T` is similar to `std::optional<T>` in C++. *)
   }.
 
 
@@ -58,25 +56,24 @@ Record ProposalId :=
   {
     idBlockNum: N;
     idRoundNum: option N;
-    (** ^ None signifies the finalized round number for block number [idBlockNum] *)
+    (** ^ None signifies the finalized round number for block number [idBlockNum]. *)
   }.
 
-(** underlying storage for the Db *)
+(** Underlying storage for the Db. *)
 Inductive DbPath :=
 | BlockDev (fullpath: string)
 | File (fullpath: string).
   
-(** [DbModel] is the complete in-memory trie model for [TrieDb].*)
+(** [DbModel] is the complete in-memory trie model for [TrieDb]. *)
 Record DbModel : Type :=
   {
     blockNumsStates: list BlockNumStateInDb;
     (** ^ each member of this list records all proposals (and finalized round number, if any) for some round number.
-       each member of this list represents a unique block number.
-     *)
+       Each member of this list represents a unique block number. *)
     
     activeProposal: option ProposalId;
-    (** ^ records the active proposal from which reads like read_storage read.
-        set by [set_block_and_round]; None means set_block_and_round has never been called on this object yet. *)
+    (** ^ records the active proposal used by read operations such as read_storage.
+        Set by [set_block_and_round]; None means set_block_and_round has never been called on this object. *)
 
     votedMetadata: option (N * N);
     (** ^ (block_num, round) from the latest [update_voted_metadata] call *)
@@ -85,21 +82,20 @@ Record DbModel : Type :=
     (** ^ highest block index marked verified via [update_verified_block] *)
 
     dbpath: DbPath;
-    (** this path is authoritatively owned by the TrieDB. A client can reason that TrieRODb created with the same underlying path reads the same values that this TrieDb writes *)
+    (** This path is authoritatively owned by the TrieDb. A client can reason that a TrieRODb created with the same underlying path reads the same values that this TrieDb writes. *)
     
     cinvId: gname;
-    (** ^ ignore this Coq detail: invariant name for the concurrent disk/memory ownership.*)
+    (** ^ Ignore this Coq detail: invariant name for concurrent disk/memory ownership. *)
   }.
 
 
-(** * class invariants of Db
+(** * Class invariants of Db.
 
-Not all members of the [DbModel] type correspond to a data stored in a TrieDb object (and associated disk structures).
-There some invariants, e.g.:
-- the list [blockNumsStates] has a contiguous range of block numbers (no holes)
-- proposals in [blockNumsStates] have distinct round numbers.
-  even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for the same round number: after commit(), the old block cannot be accessed by TrieDb methods.
-  Some TriedRODb methods can still access the old proposal until the next set_block_and_round and we will see how our specs capture that below.
+Not all members of the [DbModel] type correspond to data stored in a TrieDb object (and associated disk structures).
+There are some invariants, e.g.:
+- The list [blockNumsStates] has a contiguous range of block numbers (no holes).
+- Proposals in [blockNumsStates] have distinct round numbers. Even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for that round number: after commit(), the old block cannot be accessed by TrieDb methods.
+  Some TrieRODb methods can still access the old proposal until the next set_block_and_round, and we will see how our specs capture that below.
 
 In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
 Class invariants hold before/after every method call.
@@ -243,7 +239,7 @@ Context  {MODd : trie_db.module ⊧ CU}.
 
 
   
-(** * TrieD/TrieRODb rep predicates
+(** * TrieDb/TrieRODb rep predicates
   Rep predicates are one of the main ingredients of specifications.
   They define how an element of the model type in Coq is represented in memory/disk starting from the "this" memory location (base pointer of the object).
   They also assert ownership of such locations.
@@ -252,30 +248,30 @@ Context  {MODd : trie_db.module ⊧ CU}.
  *)
 
 (** [this |-> TrieDb q m] asserts that at the memory location [this], there is an object representing the [DbModel] [m].
- the "Proof. Admitted." means that we have not defined it yet and asked Coq to leave it as a hole to be filled later.
- The Rep predicate(s) of a class is usually an implementation detail and clients do NOT need to know about the exact definition.
+    The "Proof. Admitted." indicates that we have not defined it yet and have asked Coq to leave it as a hole to be filled later.
+    Rep predicates are usually an implementation detail, and clients do not need to know the exact definition.
 
- [this |-> TrieDb q m] also asserts [q] fraction ownership of the object.
- The definition [TrieDb q m] will also assert ownership of the associated memory and disk cells/blocks as functions of this [q].
- q ∈ (0,1].
- q must be 1 to be able to call methods that update Db (e.g. commit, finalize). a smaller fraction suffices to read (e.g. read_storage).
-  *)
+    [this |-> TrieDb q m] also asserts [q] fraction ownership of the object.
+    The definition [TrieDb q m] will also assert ownership of the associated memory and disk cells/blocks as functions of this [q].
+    q ∈ (0,1].
+    q must be 1 to be able to call methods that update the Db (e.g. commit, finalize). A smaller fraction suffices to read (e.g. read_storage).
+*)
 Definition TrieDbR (q:Qp) (m: DbModel) : Rep. Proof. Admitted.
 
-(** Even though the users of TrieDb (e.g. when writing Coq proofs of callers of TrieDb methods) do not need need to know the definition of TrieDbR, they do need a guarantee that it satisfies the following 3 properties *)
+(** Even though users of TrieDb (e.g. when writing Coq proofs of callers of TrieDb methods) do not need to know the definition of TrieDbR, they do need a guarantee that it satisfies the following 3 properties. *)
 
-(** this property says that [this |-> TrieDb q m] must imply that [m] is valid. As discussed in the first tutorial, `|--` is separation logic entailment and ** is the separating conjunction*)
+(** This property says that [this |-> TrieDb q m] must imply that [m] is valid. As discussed in the first tutorial, `|--` is separation logic entailment and `**` is the separating conjunction. *)
 Lemma TrieDbREntailsValidity (q:Qp) (m: DbModel) : TrieDbR q m |--  TrieDbR q m ** [| validDbModel m|].
 Proof. Admitted.
 
-(** TrieDb is a concurrent library. When executing a block, the speculative executions of multiple transactions can concurrently read from the Db. But they know that they will read the pre-block state. No such thread updates the Db. The following lemma allows splitting the 1 ownership of the TrieDb into smaller pieces, as many as we want so that we can pass that ownership pieces to several threads to allow them all to read the Db concurrently.
-  *)
+(** TrieDb is a concurrent library. When executing a block, the speculative executions of multiple transactions can concurrently read from the Db, but they will all read the pre-block state. No thread updates the Db. The following lemma allows splitting the full (1) ownership of the TrieDb into smaller pieces so that we can pass those ownership pieces to several threads to read the Db concurrently.
+*)
 Lemma TrieDbRsplit (q1 q2:Qp) (m: DbModel) :
  TrieDbR (q1+q2) m |--  TrieDbR q1 m ** TrieDbR q2 m.
 Proof. Admitted.
 
-(** can construct at most 1 TrieDb object underlying storage location (dbpath). This will be provable when TrieDbR is fully defined because TrieDbR will hod the full authoritative ownership of the storage at dbpath and thus only one object can hold this ownership.
-  *)
+(** can construct at most one TrieDb object per underlying storage location (dbpath). This will be provable when TrieDbR is fully defined because TrieDbR will hold the full authoritative ownership of the storage at dbpath and thus only one object can hold this ownership.
+*)
 Lemma max1TrieDbObject  (base1 base2: ptr) (m1 m2: DbModel) :
  dbpath m1 = dbpath m2 ->
  base1 |-> TrieDbR 1 m1 ** base2 |-> TrieDbR 1 m2 |-- [| False |].
@@ -283,27 +279,27 @@ Proof. Admitted.
 
 (** We can construct several TrieRODb objects on the same underlying storage as an existing TrieDb object.
  Unlike ownership of primitive types, even if you hold [this |-> TrieDb 1 m],
- other thread/processes can read (but not update) the underlying Db storage using some TrieRODb object.
+ other threads/processes can read (but not update) the underlying Db storage using a TrieRODb object.
 
  To get a sense of how TrieDb and TrieRODb can be defined to achieve this using concurrency invariants,
  review the 2nd and 3rd quarters of tutorial2: [TrieDbR] is similar to uAuthR and [TrieRODbR] is similar to uFragR.
 
- Unlike TrieDbR, ownership of TrieRODb cannot assert the current state of the entire Db: there can be another process updating the Db concurrently. Nevertheless, operations on TrieRODb are logicall atomic, they read from a single proposal and not a mishmash of multiple propsals.
- [this |-> TrieRODb q dbpath (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from  the proposal [pr]. any fraction [q] suffices to do reads: write operations are not supported anyway: they have [| False |] as a precondition.
- q must be 1 to destruct the object or to call set_block_and_round which potentially changes the active proposal.
+Unlike TrieDbR, ownership of TrieRODb cannot assert the current state of the entire Db: there can be another process updating the Db concurrently. Nevertheless, operations on TrieRODb are logically atomic: they read from a single proposal rather than a mishmash of multiple proposals.
+ [this |-> TrieRODb q dbpath (Some pr)] asserts that the read operations on the object (e.g. read_storage, read_account) will read from the proposal [pr]. Any fraction [q] suffices to do reads: write operations are not supported anyway (they have [| False |] as a precondition).
+ Q must be 1 to destruct the object or to call set_block_and_round, which potentially changes the active proposal.
  [this |-> TrieRODb q dbpath None] does not suffice to issue any read: the client needs to first call `set_block_and_round` to
  transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
 *)
 Definition TrieRODbR (q:Qp) (dbpath: DbPath) (activeProposal: option ProposalInDb) : Rep. Proof. Admitted.
 
-(** [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2): thus, this assertion it can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postconditon of TrieDb::finalize. After calling TrieDb::finalize,  client application can send this assertion to another process (e.g. attached to a socket messsage) and then the client can reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. Its definition will use logical/ghost locations which were covered in tutorial3 () *)
+(** [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2); thus, this assertion can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postcondition of TrieDb::finalize. After calling TrieDb::finalize, a client application can send this assertion to another process (e.g. attached to a socket message) and then reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. Its definition will use logical/ghost locations which were covered in tutorial3. *)
 Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: ProposalInDb) : mpred. Proof. Admitted.
 
 
 
-(** Finally, we have enough vocabulary to writ the specs.
-  Except when committing the genesis block to the Db, before reading/updating the Db, we need to set the active block via set_block_and_round.
-  So, lets see its spec first:
+(** Finally, we have enough vocabulary to write the specs.
+    Except when committing the genesis block to the Db, before reading or updating the Db, we need to set the active block via set_block_and_round.
+    So, let's see its spec first:
 *)
 
 (** * spec of TrieDb::set_block_and_round *)
@@ -326,23 +322,21 @@ cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsign
   \arg{roundLoc} "round_number" (Vptr roundLoc)
   \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
   (** ^ the above 2 lines together describe the round_number argument
-      unline block_number, which is a scalar value of type uint64_t,
-      round, number has type std::optional<uint64_t>.
-      in the formalization of C++ we use, such composite type (struct/array) arguments are represented as memory locations
-      that store the composite value.
-      So, the first line names that memory location as [roundLoc]. (this would typically be a location on stack)
-      The next line line says that at [roundLoc] we have the representation of the optionl number [idRoundNum pid]
-      which is of type [option N] in Coq. Note that pid was already quantified above, when specifyin the block_number argument.
+      unlike block_number, which is a scalar value of type uint64_t, round_number has type std::optional<uint64_t>.
+      In our C++ formalization, composite types (struct/array) are represented as memory locations that store the composite value.
+      So, the first line names that location [roundLoc] (typically on the stack).
+      The next line says that at [roundLoc] we have the representation of the optional number [idRoundNum pid],
+      which is of type [option N] in Coq. Note that pid was already quantified above when specifying the block_number argument.
 
 
       Above, we have connected all the arguments of the method (including the implicit `this` argument) to their corresponding
       models in Coq (e.g. DbModel) via their Rep predicates (e.g. TrieDbR, optionalPrimR).
-      These Rep predicates already asser that the class invariants hold.
+      These Rep predicates already assert that the class invariants hold.
       Next, we specify any other condition that must hold at the beginning (precondition):
    *)  
 
   \pre [| isSome (lookupProposal pid preDb)|]
-  (** ^ this precondition asserts that the chosen proposal id must exist in the db: the lookup in the db model (preDb) must not return None (analogous to std::nullopt)
+  (** ^ This precondition asserts that the chosen proposal id must exist in the Db: the lookup in the Db model (preDb) must not return None (analogous to std::nullopt). *)
    *)
 
   \post this |-> TrieDbR 1 (preDb &: _activeProposal .= Some pid)
@@ -371,7 +365,7 @@ Thus we, cannot even write that precondition in the spec of TrieRODb.
 Indeed, there is already a [TODO comment](https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/execution/src/monad/db/trie_rodb.hpp#L39) about returning an error instead of crashing.
 
 Thus, the spec below is for the variant of the implementation that returns a bool indicating whether the operation succeeded.
-The postconditon branches on this return value to assert what holds in each chase.
+The postcondition branches on this return value to assert what holds in each case.
 
  *)
 
@@ -415,7 +409,7 @@ cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsi
      and requires that the round number was already finalized.
 
      To appreciate the added power of the spec below, it is important to understand the second conjunct above in the case
-     ret is true: if [idRoundNum pid is None], we get as postconditon another assertion:
+     ret is true: if [idRoundNum pid is None], we get as postcondition another assertion:
       [FinalizedProposalForBlockNum dbpath (idBlockNum pid) proposal].
      As explained where FinalizedProposalForBlockNum was introduced, this is a persistent assertion and can be freely duplicated and shared.
      In particular, it can be used as a precondition to the next spec of the same method
@@ -750,4 +744,13 @@ End with_Sigma.
     +--------------------------------------+
 
 ]]
+*)
+
+(** * Suggestions for improving explanations
+
+   - Introduction: consider shortening long sentences and formatting tutorial links as clickable references.
+   - Model types section: the paragraph on sequential C++ containers is dense; consider splitting into smaller sentences.
+   - Class invariants section: bullet list items combine multiple ideas; splitting into separate items may improve readability.
+   - Rep predicates: the explanation of [this |-> TrieDb] is dense; consider adding an overview of ownership fractions.
+   - set_block_and_round spec: the argument documentation block is lengthy and hard to follow; consider refactoring into smaller steps.
 *)

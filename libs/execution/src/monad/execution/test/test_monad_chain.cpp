@@ -105,3 +105,12 @@ TEST(MonadChain, Genesis)
         EXPECT_TRUE(static_validate_header<EVMC_CANCUN>(header).has_value());
     }
 }
+
+TEST(MonadChain, create_inside_delegated)
+{
+    EXPECT_FALSE(MonadMainnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadDevnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadTestnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadTestnet2{}.get_create_inside_delegated());
+    EXPECT_TRUE(EthereumMainnet{}.get_create_inside_delegated());
+}

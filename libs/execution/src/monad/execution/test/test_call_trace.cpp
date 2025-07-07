@@ -134,7 +134,7 @@ TEST(CallTrace, execute_success)
     BlockHashBufferFinalized buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170);
+        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);
@@ -203,7 +203,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     BlockHashBufferFinalized buffer{};
     CallTracer call_tracer{tx};
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170);
+        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
 
     auto const result = execute_impl_no_validation<EVMC_SHANGHAI>(
         s, host, tx, sender, 1, beneficiary, MAX_CODE_SIZE_EIP170);

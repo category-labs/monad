@@ -29,6 +29,8 @@ struct MonadChain : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual bool get_create_inside_delegated() const override;
 };
 
 MONAD_NAMESPACE_END

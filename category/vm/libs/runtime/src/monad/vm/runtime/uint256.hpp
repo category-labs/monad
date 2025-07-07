@@ -1005,7 +1005,7 @@ namespace monad::vm::runtime
                 prod[i + j] = static_cast<uint64_t>(p);
                 carry = static_cast<uint64_t>(p >> 64);
             }
-            prod[j + uint256_t::num_words] = carry;
+            prod[j + uint256_t::num_words] += carry;
         }
         return uint256_t{udivrem(prod, mod.as_words()).rem};
     }
@@ -1021,6 +1021,180 @@ namespace monad::vm::runtime
     {
         return udivrem(x, y).rem;
     }
+
+    /**
+     * Multiword multiplication (used for mulmod and Barrett division)
+     */
+    template <size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline constexpr words_t<M + N>
+    mul_words(words_t<M> const &u, words_t<N> const &v) noexcept
+    {
+        words_t<M + N> result{0};
+        for (size_t j = 0; j < N; j++) {
+            uint64_t carry = 0;
+            for (size_t i = 0; i < M; i++) {
+                auto p =
+                    static_cast<uint128_t>(u[i]) * v[j] + carry + result[i + j];
+                result[i + j] = static_cast<uint64_t>(p);
+                carry = static_cast<uint64_t>(p >> 64);
+            }
+            result[j + M] = carry;
+        }
+        return result;
+    }
+
+    template <size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline constexpr void
+    mul_words(uint64_t const *u, uint64_t const *v, uint64_t *result) noexcept
+    {
+        for (size_t j = 0; j < N; j++) {
+            uint64_t carry = 0;
+            for (size_t i = 0; i < M; i++) {
+                auto p =
+                    static_cast<uint128_t>(u[i]) * v[j] + carry + result[i + j];
+                result[i + j] = static_cast<uint64_t>(p);
+                carry = static_cast<uint64_t>(p >> 64);
+            }
+            result[j + M] = carry;
+        }
+    }
+
+    /**
+     * Compute an underapproximation of the reciprocal for use in Barrett
+     * reduction.
+     *
+     * Precondition: `d > 1`
+     * Postcondition: let `M = reciprocal_barrett(v)`. Then for any 256-bit `x`
+     * we have `floor(x*M/2^256) <= x/v <= floor(x*M/2^256) + 1`
+     *
+     * Proof of correctness:
+     *   1. (2^256 / d) - 1 < M <= (2^256 / d)
+     *   2. (x*2^256 / d) - x < M*x <= (x*2^256/d)
+     *   3. (x/d) - (x/2^256) < M*x/2^256 <= x/d
+     * Since x is 256-bit:
+     *   4. x/d - 1 < M*x/2^256 <= x/d
+     * Let q = x/d, q_hat = floor(M*x/2^256). Then:
+     *   5. q_hat <= M*x/2^256 < q_hat + 1
+     *   6. q - 1 < q_hat + 1 (by 4 and 5)
+     *   7. q_hat <= q        (by 4 and 5)
+     * Finally we have q_hat <= q < q_hat+2 as desired
+     */
+    [[gnu::always_inline]] inline constexpr uint256_t
+    reciprocal_barrett(uint256_t const &d) noexcept
+    {
+        MONAD_VM_DEBUG_ASSERT(d > 1);
+        // num = 2^256
+        words_t<uint256_t::num_words + 1> const num{0, 0, 0, 0, 1};
+        auto const res = udivrem(num, d.as_words());
+        // Since d>=2 we know quot < num = 2^256 so we discard res.quot[4]
+        return uint256_t{res.quot[0], res.quot[1], res.quot[2], res.quot[3]};
+    }
+
+    [[gnu::always_inline]]
+    inline constexpr div_result<uint256_t> udivrem_barrett(
+        uint256_t const &u, uint256_t const &v, uint256_t const &rec) noexcept
+    {
+        auto prod = mul_words(u.as_words(), rec.as_words());
+        // Shift right by 256
+        uint256_t q_hat{prod[4], prod[5], prod[6], prod[7]};
+        // TODO: compute r_hat from prod[0..3]?
+        uint256_t r_hat = u - v * q_hat;
+        auto d = subb(r_hat, v);
+        if (d.carry) {
+            // 0 <= r_hat < v
+            return {.quot = q_hat, .rem = r_hat};
+        }
+        else {
+            // v <= r_hat < 2*v
+            return {.quot = q_hat + 1, .rem = d.value};
+        }
+    }
+
+    template <size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline constexpr result_with_carry<words_t<M>>
+    subb(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
+        requires(M >= N)
+    {
+        words_t<M> result;
+        bool borrow = false;
+        for (size_t i = 0; i < N; i++) {
+            auto [wi, bi] = subb(lhs[i], rhs[i], borrow);
+            result[i] = wi;
+            borrow = bi;
+        }
+        for (size_t i = N; i < M; i++) {
+            auto [wi, bi] = subb(lhs[i], 0, borrow);
+            result[i] = wi;
+            borrow = bi;
+        }
+        return {.value = result, .carry = borrow};
+    }
+
+    template <size_t N>
+    [[gnu::always_inline]]
+    inline constexpr result_with_carry<words_t<N>>
+    addc(words_t<N> const &lhs, words_t<N> const &rhs) noexcept
+    {
+        words_t<N> result;
+        bool carry = false;
+        for (size_t i = 0; i < N; i++) {
+            auto [wi, bi] = addc(lhs[i], rhs[i], carry);
+            result[i] = wi;
+            carry = bi;
+        }
+        return {.value = result, .carry = carry};
+    }
+
+    /*
+    template <size_t N>
+    [[gnu::always_inline]] inline constexpr words_t<N>
+    reciprocal_barrett_N(uint256_t const &d) noexcept
+    {
+        MONAD_VM_DEBUG_ASSERT(d > 1);
+        // num = (2^64)^N
+        words_t<N + 1> num{};
+        num[N] = 1;
+        auto const [quot, _] = udivrem(num, d.as_words());
+        words_t<N> result;
+        if consteval {
+            for (size_t i = 0; i < N; i++) {
+                result[i] = quot[i];
+            }
+        }
+        else {
+            std::memcpy(&result, &quot, sizeof(result));
+        }
+        return result;
+    }
+    */
+
+    /*
+    template <size_t N>
+    [[gnu::always_inline]]
+    inline div_result<words_t<N>, uint256_t> udivrem_barrett_N(
+        words_t<N> const &u, uint256_t const &v, words_t<N> const &rec) noexcept
+    {
+        words_t<2*N> prod = mul_words(u, rec);
+        // Shift right by 64*N
+        words_t<N> q_hat;
+        std::memcpy(&q_hat, &prod[N], sizeof(q_hat));
+
+        // TODO: compute r_hat from prod[0..N]?
+        words_t<N> r_hat = subb(u, mul_words(v.as_words(), q_hat)).value;
+        auto d = subb(r_hat, v.as_words());
+        if (d.carry) {
+            // 0 <= r_hat < v
+            return {.quot = q_hat, .rem = r_hat};
+        }
+        else {
+            // v <= r_hat < 2*v
+            return {.quot = q_hat + 1, .rem = d.value};
+        }
+    }
+    */
 
     [[gnu::always_inline]]
     inline constexpr div_result<uint256_t>

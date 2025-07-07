@@ -18,6 +18,7 @@
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/execution/validate_block.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/metrics/block_metrics.hpp>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 
@@ -28,6 +29,7 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -145,7 +147,7 @@ template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, Block &block, std::vector<Address> const &senders,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -173,6 +175,7 @@ Result<std::vector<ExecutionResult>> execute_block(
     std::shared_ptr<std::optional<Result<ExecutionResult>>[]> const results{
         new std::optional<Result<ExecutionResult>>[block.transactions.size()]};
 
+    auto const tx_exec_begin = std::chrono::steady_clock::now();
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         priority_pool.submit(
             i,
@@ -184,7 +187,8 @@ Result<std::vector<ExecutionResult>> execute_block(
              &sender = senders[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
-             &block_state] {
+             &block_state,
+             &block_metrics] {
                 results[i] = execute<rev>(
                     chain,
                     i,
@@ -193,6 +197,7 @@ Result<std::vector<ExecutionResult>> execute_block(
                     header,
                     block_hash_buffer,
                     block_state,
+                    block_metrics,
                     promises[i]);
                 promises[i + 1].set_value();
             });
@@ -200,6 +205,9 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
     promises[last].get_future().wait();
+    block_metrics.set_tx_exec_time(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tx_exec_begin));
 
     std::vector<ExecutionResult> retvals;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
@@ -247,7 +255,7 @@ Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
     std::vector<Address> const &senders, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
@@ -256,7 +264,8 @@ Result<std::vector<ExecutionResult>> execute_block(
         senders,
         block_state,
         block_hash_buffer,
-        priority_pool);
+        priority_pool,
+        block_metrics);
     MONAD_ASSERT(false);
 }
 

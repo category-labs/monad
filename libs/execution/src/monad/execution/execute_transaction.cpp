@@ -18,6 +18,7 @@
 #include <monad/execution/transaction_gas.hpp>
 #include <monad/execution/tx_context.hpp>
 #include <monad/execution/validate_transaction.hpp>
+#include <monad/metrics/block_metrics.hpp>
 #include <monad/state3/state.hpp>
 
 #include <evmc/evmc.h>
@@ -220,7 +221,7 @@ Result<ExecutionResult> execute(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &hdr,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    boost::fibers::promise<void> &prev)
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev)
 {
     TRACE_TXN_EVENT(StartTxn);
 
@@ -271,6 +272,7 @@ Result<ExecutionResult> execute(
                 .call_frames = std::move(call_tracer).get_frames()};
         }
     }
+    block_metrics.inc_retries();
     {
         TRACE_TXN_EVENT(StartRetry);
 

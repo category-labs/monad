@@ -17,6 +17,7 @@
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/metrics/block_metrics.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
@@ -918,6 +919,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         block.value().header.number - 1, block.value().header.parent_hash);
 
     BlockState bs(tdb, this->vm);
+    BlockMetrics metrics;
 
     fiber::PriorityPool pool{1, 1};
 
@@ -929,7 +931,13 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         senders[i] = recovered_senders[i].value();
     }
     auto const results = execute_block<EVMC_SHANGHAI>(
-        EthereumMainnet{}, block.value(), senders, bs, block_hash_buffer, pool);
+        EthereumMainnet{},
+        block.value(),
+        senders,
+        bs,
+        block_hash_buffer,
+        pool,
+        metrics);
 
     ASSERT_TRUE(!results.has_error());
 
@@ -1022,6 +1030,7 @@ TYPED_TEST(DBTest, call_frames_refund)
         block.value().header.number - 1, block.value().header.parent_hash);
 
     BlockState bs(tdb, this->vm);
+    BlockMetrics metrics;
 
     fiber::PriorityPool pool{1, 1};
 
@@ -1038,7 +1047,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         senders,
         bs,
         block_hash_buffer,
-        pool);
+        pool,
+        metrics);
 
     ASSERT_TRUE(!results.has_error());
 

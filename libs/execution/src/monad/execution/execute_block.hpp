@@ -6,6 +6,7 @@
 #include <monad/core/result.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/metrics/block_metrics.hpp>
 
 #include <evmc/evmc.h>
 
@@ -22,11 +23,12 @@ struct ExecutionResult;
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &, Block &, std::vector<Address> const &senders, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &);
+    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &);
 
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
-    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &);
+    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
+    BlockMetrics &);
 
 std::vector<std::optional<Address>>
 recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);

@@ -98,23 +98,16 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
     if (!value.has_value()) {
+        stats_account_no_value();
         return std::nullopt;
     }
+    stats_account_value();
 
     auto encoded_account = value.value();
     auto const acct = decode_account_db_ignore_address(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     return acct.value();
 }
-
-#define MONAD_TRIEDB_STATS
-#ifdef MONAD_TRIEDB_STATS
-    #define STATS_STORAGE_NO_VALUE() stats_storage_no_value()
-    #define STATS_STORAGE_VALUE() stats_storage_value()
-#else
-    #define STATS_STORAGE_NO_VALUE()
-    #define STATS_STORAGE_VALUE()
-#endif
 
 bytes32_t
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
@@ -127,20 +120,15 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
     if (!value.has_value()) {
-        STATS_STORAGE_NO_VALUE();
+        stats_storage_no_value();
         return {};
     }
-    STATS_STORAGE_VALUE();
+    stats_storage_value();
     auto encoded_storage = value.value();
     auto const storage = decode_storage_db_ignore_slot(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
     return to_bytes(storage.value());
 };
-
-#ifdef MONAD_TRIEDB_STATS
-    #undef STATS_STORAGE_NO_VALUE
-    #undef STATS_STORAGE_VALUE
-#endif
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
@@ -592,9 +580,13 @@ std::string TrieDb::print_stats()
 {
     std::string ret;
     ret += std::format(
-        "{:6} {:6}",
+        ",ae={:4},ane={:4},sz={:4},snz={:4}",
+        n_account_no_value_.load(std::memory_order_acquire),
+        n_account_value_.load(std::memory_order_acquire),
         n_storage_no_value_.load(std::memory_order_acquire),
         n_storage_value_.load(std::memory_order_acquire));
+    n_account_no_value_.store(0, std::memory_order_release);
+    n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
     return ret;

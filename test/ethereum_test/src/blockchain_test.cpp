@@ -24,6 +24,7 @@
 #include <monad/execution/validate_block.hpp>
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/metrics/block_metrics.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/rlp/encode2.hpp>
 #include <monad/state2/block_state.hpp>
@@ -207,6 +208,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
 
     BlockState block_state(db, vm);
+    BlockMetrics metrics;
     EthereumMainnetRev const chain{rev};
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     std::vector<Address> senders(block.transactions.size());
@@ -221,7 +223,13 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<rev>(
-            chain, block, senders, block_state, block_hash_buffer, *pool_));
+            chain,
+            block,
+            senders,
+            block_state,
+            block_hash_buffer,
+            *pool_,
+            metrics));
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
     for (unsigned i = 0; i < results.size(); ++i) {

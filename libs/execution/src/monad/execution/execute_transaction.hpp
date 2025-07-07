@@ -6,6 +6,7 @@
 #include <monad/core/receipt.hpp>
 #include <monad/core/result.hpp>
 #include <monad/execution/trace/call_frame.hpp>
+#include <monad/metrics/block_metrics.hpp>
 
 #include <evmc/evmc.h>
 
@@ -45,7 +46,7 @@ evmc::Result execute_impl_no_validation(
 template <evmc_revision rev>
 Result<ExecutionResult> execute(
     Chain const &, uint64_t i, Transaction const &, Address const &,
-    BlockHeader const &, BlockHashBuffer const &, BlockState &,
+    BlockHeader const &, BlockHashBuffer const &, BlockState &, BlockMetrics &,
     boost::fibers::promise<void> &prev);
 
 MONAD_NAMESPACE_END

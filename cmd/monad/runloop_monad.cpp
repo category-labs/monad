@@ -19,6 +19,7 @@
 #include <monad/execution/validate_transaction.hpp>
 #include <monad/execution/wal_reader.hpp>
 #include <monad/fiber/priority_pool.hpp>
+#include <monad/metrics/block_metrics.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
@@ -134,6 +135,8 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     BlockHashChain &block_hash_chain, Chain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
+    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
+    auto const block_begin = std::chrono::steady_clock::now();
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_round());
 
@@ -149,8 +152,12 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         is_first_block ? std::nullopt
                        : std::make_optional(consensus_header.parent_round()));
 
+    auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
         recover_senders(block.transactions, priority_pool);
+    [[maybe_unused]] auto const sender_recovery_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - sender_recovery_begin);
     std::vector<Address> senders(block.transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
@@ -161,6 +168,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         }
     }
     BlockState block_state(db, vm);
+    BlockMetrics block_metrics;
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
@@ -170,7 +178,8 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             senders,
             block_state,
             block_hash_buffer,
-            priority_pool));
+            priority_pool,
+            block_metrics));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -181,6 +190,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     }
 
     block_state.log_debug();
+    auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
         consensus_header,
         receipts,
@@ -189,12 +199,46 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         block.transactions,
         block.ommers,
         block.withdrawals);
+    [[maybe_unused]] auto const commit_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - commit_begin);
     auto const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
 
     auto const block_hash =
         to_bytes(keccak256(rlp::encode_block_header(output_header)));
+
+    [[maybe_unused]] auto const block_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - block_begin);
+    LOG_INFO(
+        "__exec_block,bl={:8},ro={:8},ts={}"
+        ",tx={:5},rt={:4},rtp={:5.2f}%"
+        ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
+        ",gas={:9},gpse={:4},gps={:3}{}",
+        block.header.number,
+        consensus_header.round,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            block_start.time_since_epoch())
+            .count(),
+        block.transactions.size(),
+        block_metrics.num_retries(),
+        100.0 * (double)block_metrics.num_retries() /
+            std::max(1.0, (double)block.transactions.size()),
+        sender_recovery_time,
+        block_metrics.tx_exec_time(),
+        commit_time,
+        block_time,
+        block.transactions.size() * 1'000'000 /
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+        block.transactions.size() * 1'000'000 /
+            (uint64_t)std::max(1L, block_time.count()),
+        output_header.gas_used,
+        output_header.gas_used /
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+        output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
+        db.print_stats());
 
     return std::make_pair(block_hash, output_header.gas_used);
 }

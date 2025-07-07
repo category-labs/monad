@@ -39,6 +39,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
+    BlockMetrics metrics;
 
     {
         State state{bs, Incarnation{0, 0}};
@@ -65,7 +66,15 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     prev.set_value();
 
     auto const result = execute<EVMC_SHANGHAI>(
-        EthereumMainnet{}, 0, tx, from, header, block_hash_buffer, bs, prev);
+        EthereumMainnet{},
+        0,
+        tx,
+        from,
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev);
 
     ASSERT_TRUE(!result.has_error());
 

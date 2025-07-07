@@ -198,8 +198,8 @@ public:
 
     virtual std::string print_stats() override
     {
-        return db_.print_stats() + " | " + accounts_.print_stats() + " | " +
-               storage_.print_stats();
+        return db_.print_stats() + ",ac=" + accounts_.print_stats() +
+               ",sc=" + storage_.print_stats();
     }
 
 private:

@@ -79,10 +79,16 @@ Context  {MODd : exb.module ⊧ CU}.
                 ** opt_engaged_offset somety |-> boolR (cQp.mut q) true
     end.
 
-Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
-  _field "Node::data_" |-> primR "int" q (Vint data)
-  ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
-  ** structR "Node" q.
+
+  Definition optionalPrimR (q:Qp) (primty:type) (on: option N): Rep :=
+    optionR primty
+      (fun v:N => primR primty (cQp.mut q) (Vint v)) (cQp.mut q) on.
+  
+  
+  Definition NodeR  (q: cQp.t) (data: Z) (nextLoc: ptr): Rep :=
+    _field "Node::data_" |-> primR "int" q (Vint data)
+    ** _field "Node::next_" |-> primR "Node*" q (Vptr nextLoc)
+    ** structR "Node" q.
   
   Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
     match l with

@@ -126,3 +126,25 @@ Definition stateRoot (b: evm.GlobalState) : N. Proof. Admitted.
 Definition receiptRoot (b: list TransactionResult) : N. Proof. Admitted.
 Definition transactionsRoot (b: Block) : N. Proof. Admitted.
 Definition withdrawalsRoot (b: Block) : N. Proof. Admitted.
+
+
+
+(** [ConsensusBlockHeader] is a model type of the C++ struct `MonadConsensusBlockHeader`.
+This struct has many fields and the Db probably stores all of them.
+But one struct field: `uint64_t round` is special as the Db uses round numbers to make decisions
+For now we just model this field. 
+ *)
+Record ConsensusBlockHeader :=
+  {
+    roundNum: N; (* models `uint64_t round` *)
+    (* TODO: add more fields, to model the following C++ fields
+       uint64_t epoch{0};
+       MonadQuorumCertificate qc{};
+       byte_string_fixed<33> author{};
+       uint64_t seqno{0};
+       uint128_t timestamp_ns{0};
+       byte_string_fixed<96> round_signature{};
+       std::vector<BlockHeader> delayed_execution_results{};
+       BlockHeader execution_inputs{};
+     *)
+  }.

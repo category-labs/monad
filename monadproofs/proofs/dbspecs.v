@@ -1,4 +1,4 @@
-(** Specificatins of TrieDB and TrieRODb.
+(** * Specificatins of TrieDB and TrieRODb.
 Although an attempt has been made to make it understandable to anyone with some familiarity with functional programming (ocaml/haskell),
 it is highly recommended to review the first formal verification tutorial to understand this file.
 At many places, this file refers to analogous concepts explained in the tutorial.
@@ -9,14 +9,9 @@ Tutorial2 is also highly recommended if as a background review if you want to mo
 
  *)
 
-Require Import monad.proofs.prelude.
-Require Import monad.asts.trie_rodb.
-Require Import  monad.asts.trie_db.
-Open Scope N_scope.
 
-
-(** *Model type for TrieDb/TrieRODb *)
-(** The first task for writing specs of a C++ class is typically
+(** * Model types for TrieDb/TrieRODb 
+The first task for writing specs of a C++ class is typically
 to define a Coq type that models the data stored by objects of that class.
 This Coq type is also often called the model type.
 The model type is ideally at a very high-level and abstracts away the C++-related implementation details.
@@ -24,39 +19,22 @@ For example, the model type of bytes32 is just `N` the Coq type of unbounded (ma
 even though in C++, it is laid out 32 machine bytes.
 Similarly, the model type of various sequention C++ containers, e.g. linked lists, arrays, vectors, sets are the typicall the same: Coq lists.
 
-Method specs typically tie the pre/post states of the object to elements of the Coq model type.
-We can then use Coq's logic to write assertions on the model, to capture the pre and post conditions.
+Method specs typically tie the pre/post states of the object to elements of the Coq model type. We can then use Coq's logic to write assertions on the model, to capture the pre and post conditions.
 
 The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents
  *)
 
-(** [ConsensusBlockHeader] is a model type of the C++ struct `MonadConsensusBlockHeader`.
-This struct has many fields and the Db probably stores all of them.
-But one struct field: `uint64_t round` is special as the Db uses round numbers to make decisions
-For now we just model this field. 
- *)
-Record ConsensusBlockHeader :=
-  {
-    roundNum: N; (* models `uint64_t round` *)
-    (* TODO: add more fields, to model the following C++ fields
-       uint64_t epoch{0};
-       MonadQuorumCertificate qc{};
-       byte_string_fixed<33> author{};
-       uint64_t seqno{0};
-       uint128_t timestamp_ns{0};
-       byte_string_fixed<96> round_signature{};
-       std::vector<BlockHeader> delayed_execution_results{};
-       BlockHeader execution_inputs{};
-     *)
-  }.
-    
-(** [EvmState] is persistent state of the entire EVM: state of ALL accounts *)
-Notation EvmState := evm.GlobalState.
+Require Import monad.asts.trie_rodb.
+Require Import  monad.asts.trie_db.
+Require Import monad.proofs.prelude.
 
-(** [ProposalInDb] bundles all of the information for a single block proposal
+Notation EvmState := evm.GlobalState.
+(** ^ [EvmState] is persistent state of the entire EVM: state of ALL accounts *)
+
+(** Below, the [ProposalInDb] record type bundles all of the information for a single block proposal
     stored in the trie: the consensus header [cheader], the raw [proposedBlock],
     its [postBlockState] after execution, and the per-transaction [txResults]. *)
-Record ProposalInDb :=
+Record ProposalInDb : Type :=
   {
     cheader: ConsensusBlockHeader;
     proposedBlock: Block;
@@ -69,8 +47,8 @@ Record ProposalInDb :=
 Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
-    finalizedRoundNum: option N; (** option T is just like std::optional<T> in C++ *)
-    (** ^ for any block number, finalized round number, if any, is set by calling Db::finalize()*)
+    finalizedRoundNum: option N;
+    (** ^ for any block number, finalized round number, if any, is set by calling Db::finalize(). option T is just like std::optional<T> in C++ *)
   }.
 
 
@@ -79,10 +57,11 @@ Record BlockNumStateInDb :=
 Record ProposalId :=
   {
     idBlockNum: N;
-    idRoundNum: option N; (** None signifies the finalized round number for block number [idBlockNum] *)
+    idRoundNum: option N;
+    (** ^ None signifies the finalized round number for block number [idBlockNum] *)
   }.
 
-(* underlying storage for the Db *)
+(** underlying storage for the Db *)
 Inductive DbPath :=
 | BlockDev (fullpath: string)
 | File (fullpath: string).
@@ -138,7 +117,8 @@ Definition pblockNum (p: ProposalInDb): N  := number (header (proposedBlock p)).
 Definition blockNum (b: BlockNumStateInDb) : N :=
   match proposals b with
   | h :: _ => pblockNum h
-  | [] => 0 (* dummy: clients must ensure [hasAtLeastOneProposal b] *)
+  | [] => 0
+  (** ^ dummy: clients must ensure [hasAtLeastOneProposal b] *)
   end.
 
 (** [proposalsHaveSameBlockNum] asserts that all entries in a proposal list
@@ -150,8 +130,8 @@ Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
 Definition hasAtLeastOneProposal (b: BlockNumStateInDb) :=
   exists p, p ∈ proposals b.
 
-(* this definition from Coq standard library asserts that a given list has no duplicates *)
 Notation NoDuplicate := NoDup.
+(** ^ this definition from Coq standard library asserts that a given list has no duplicates *)
 
 (** [validBlockNumStateInDb] combines the key invariants on a block-number state:
     non-empty list, uniform block number, and no duplicate rounds within the group. *)
@@ -193,7 +173,8 @@ Definition lookupBlockByNum (bnum: N) (d: DbModel) : option BlockNumStateInDb :=
 (** lookup a proposal by a given roundnumber in BlockNumStateInDb *)
 Definition lookupProposalByRoundNum (b: BlockNumStateInDb) (rnum: N) : option ProposalInDb :=
   match List.filter (fun p => bool_decide (roundNum (cheader p) = rnum)) (proposals b) with
-  | h :: _ => Some h (* unique under validBlockNumStateInDb *)
+  | h :: _ => Some h
+  (** ^ unique, assuming [validBlockNumStateInDb b] *)   
   | [] => None
   end.
 
@@ -260,11 +241,9 @@ Section with_Sigma.
 Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
 Context  {MODd : trie_db.module ⊧ CU}.
 
-(* TODO: upstream *)
-Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
 
   
-(** *TrieD/TrieRODb rep predicates
+(** * TrieD/TrieRODb rep predicates
   Rep predicates are one of the main ingredients of specifications.
   They define how an element of the model type in Coq is represented in memory/disk starting from the "this" memory location (base pointer of the object).
   They also assert ownership of such locations.
@@ -327,11 +306,7 @@ Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: Propo
   So, lets see its spec first:
 *)
 
-(*TODO: upstream to libspecs. *)
-Definition optionalPrimR (q:Qp) (primty:type) (on: option N): Rep :=
-  optionR primty
-    (fun v:N => primR primty q (Vint v)) (cQp.mut q) on.
-
+(** * spec of TrieDb::set_block_and_round *)
 cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
   as set_block_and_round_spec with (fun (this:ptr) =>
   \pre{preDb: DbModel} this |-> TrieDbR 1 preDb
@@ -380,6 +355,8 @@ cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsign
 ).
 
 
+(** * Two specs of TrieRODb::set_block_and_round *)
+
 (** The spec of the same method for TrieRODb looks very different. The main reason is that unlike TrieDb, TrieRODb does not have authoritative ownership of the underlying Db: while TrieRODb is reading, a TrieDb can be racing to write. Unlike TrieDbR which asserts what is the state of the whole Db, TrieRODbR just asserts the exact proposal (contents, not id) that the reads will read. Intuitively, at set_block_and_round, TrieRODb *logically atomically* "snapshots" the entire proposal. Until the next call to set_block_and_round, future reads (e.g. TrieRODb::read_storage) will read from this snapshot *even* if a TrieDb::commit overwrote the proposal for this round number. One caveat is that the Db may decide to garbage collect this proposal (entire block number of this proposal) at some TrieDb::commit thus TrieRODb::read_storage may fail. But if it succeeds, it must read from the snapshot
 
 The spec below specifies the intended implementation of  monad::TrieRODb::set_block_and_round, NOT the current implementation.
@@ -400,7 +377,7 @@ The postconditon branches on this return value to assert what holds in each chas
 
 
 cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)" 
-  as rodb_set_block_and_round_spec1 from (trie_rodb.module) with (fun (this:ptr) =>
+  as rodb_set_block_and_round_nd_spec from (trie_rodb.module) with (fun (this:ptr) =>
   \pre{(preActive: option ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR 1 dbpath preActive
   (** ^ same as the TrieDb case, except that here we have TrieRODbR instead of TrieDb.
       [preActive] is the previously active proposal, possibly [None].
@@ -446,7 +423,7 @@ cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsi
 ).
 
 cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsigned long>)"
-  as rodb_set_block_and_round_spec2  from (trie_rodb.module) with (fun (this:ptr) =>
+  as rodb_set_block_and_round_det_spec  from (trie_rodb.module) with (fun (this:ptr) =>
   \pre{preActive dbpath} this |-> TrieRODbR 1 dbpath preActive
   \arg{pid: ProposalId} "block_number" (Vint (idBlockNum pid))
   \arg{roundLoc} "round_number" (Vptr roundLoc)
@@ -487,6 +464,8 @@ bool readTwice(TrieRODb & rdb, Address const &addr, Incarnation inc, bytes32_t c
  To understand it why fully, we need to first look at the spec of TrieRODb::read_storage
  *)
 
+(** * spec of TrieRODb::read_storage *)
+
 cpp.spec "monad::TrieRODb::read_storage(const evmc::address&, monad::Incarnation, const evmc::bytes32&)"
   as rodb_read_storage_spec from (trie_rodb.module) with (fun (this:ptr) =>
   \prepost{(q:Qp) (activeProposal: ProposalInDb) (dbpath: DbPath)} this |-> TrieRODbR q dbpath (Some activeProposal)
@@ -502,6 +481,8 @@ cpp.spec "monad::TrieRODb::read_storage(const evmc::address&, monad::Incarnation
   \post{retp:ptr} [Vptr retp]
     retp |-> bytes32R 1
                (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
+
+(** * spec of TrieDb::read_storage *)
 
 (** The spec of TrieDb:read_storage is similar. The main difference is that [TrieDbR] can talk about the whole db state [DbModel]. Also, TriedDb::set_block_and_round (spec discussed above) just sets the block number and round numbers in the [activeProposal] field of [DbModel]. Unlike TrieRODb::set_block_and_round, it does to a snapshot. So, the last \pre requires that the lookup of the active proposal succeds and evaluates to [Some activeProposal] for some [activePropsal].
 The postcondition then looks up the key in the [postBlockState] of that proposal
@@ -520,6 +501,9 @@ cpp.spec "monad::TrieDb::read_storage(const evmc::address&, monad::Incarnation, 
   \post{retp:ptr} [Vptr retp]
       retp |-> bytes32R 1
          (lookupStorage (postBlockState activeProposal) address key blockTxInd)).
+
+
+(** * spec of TrieDb::commit *)
 
 (** The specs of other read functions (e.g. read_account, root_hash ...) in TrieDb are very similar to the spec of TrieDb::read_storage: just replace lookupStorage by appropriate Coq functions on ProposalInDb.
 Similarly, the specs of other read functions (e.g. read_account, root_hash ...) in TrieRODb are very similar to the spec of TrieRODb::read_storage: just replace lookupStorage by appropriate Coq functions on ProposalInDb.
@@ -558,12 +542,12 @@ Definition addNewProposal
   let bnum := pblockNum newProposal in
   match lookupBlockByNum bnum preDb with
   | Some _ =>
-      (* add proposal into existing BlockNumState *)
       updateBlockNum preDb bnum (fun bs => bs &: _proposals .= (newProposal::proposals bs))
+   (** ^ add proposal into existing BlockNumState *)
   | None =>
-      (* add a new BlockNumState *)
       preDb &: _blockNumsStates .=
             ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
+   (** ^ add a new BlockNumState *)
   end.
 
 (** the final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. [gcToHistoryLen len dbm] trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. there is a guarantee that [256<len].
@@ -588,9 +572,6 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   | Some p => postBlockState p
   end.
 
-(* TODO: upstream, also upstream ConsensusBlockHeader *)
-Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
-Definition EmptyCallFramesR (q: cQp.t) : Rep. Proof. Admitted.
 
   cpp.spec
     "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
@@ -658,6 +639,8 @@ If there is no active proposal, than [newProposal] must be the genesis block (bl
    Our final spec is for TrieDb::finalize(). We just need one helper function for the spec.
    
    *)
+
+(** * spec of TrieDb::finalize *)
   
 (** [lowestUnfinalizedBlockIndex d] finds the smallest block number
     among those groups that have not yet been finalized. *)
@@ -669,7 +652,7 @@ Definition minUnfinalizedBlockNum (d: DbModel) : option N :=
   end.
 
 cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
-  as finalize_spec_auth with (fun (this:ptr) =>
+  as finalize_spec with (fun (this:ptr) =>
   \pre{preDb} this |-> TrieDbR 1 preDb
   \arg{blockNum:N}   "block_number" (Vint blockNum)
   \arg{roundNum:N}   "round_number" (Vint roundNum)
@@ -700,6 +683,8 @@ v2=trodb.read_storage(ac, inc, (*key= *) 100);
 if (v1<>v2) launch nuclear missiles
 ]]
  *)
+
+(** * spec of other TrieDb methods *)
 
 (** the spec of other functions are straightforward: *)
 

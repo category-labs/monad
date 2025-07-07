@@ -6,7 +6,6 @@ Require Export monad.proofs.libspecs.
 Export cQp_compat.
 Open Scope lens_scope.
 Open Scope Z_scope.
-Open Scope N_scope.
 (*
 Require Import EVMOpSem.evmfull. *)
 Export cancelable_invariants.
@@ -14,3 +13,4 @@ Require Export monad.proofs.exec_specs.
 Export linearity.
 Export libspecs.
 
+Open Scope N_scope.

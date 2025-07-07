@@ -831,6 +831,9 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
       \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := false|}.
 
 
+  Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
+  Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
+  Definition EmptyCallFramesR (q: cQp.t) : Rep. Proof. Admitted.
   
   
   (*

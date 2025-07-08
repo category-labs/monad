@@ -38,30 +38,6 @@ enum monad_event_next_result
 static enum monad_event_next_result monad_event_iterator_try_next(
     struct monad_event_iterator *, struct monad_event_descriptor *);
 
-/// Try to copy the descriptor corresponding to a particular sequence number;
-/// returns true only if the descriptor was available and its contents were
-/// copied into descriptor output buffer
-static bool monad_event_iterator_try_copy(
-    struct monad_event_iterator const *, uint64_t seqno,
-    struct monad_event_descriptor *);
-
-/// Obtain a pointer to the event's payload in shared memory in a zero-copy
-/// fashion; to check for expiration, call monad_event_payload_check
-static void const *monad_event_payload_peek(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *);
-
-/// Return true if the zero-copy buffer returned by monad_event_payload_peek
-/// still contains the event payload for the given descriptor; returns false if
-/// the event payload has been overwritten
-static bool monad_event_payload_check(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *);
-
-/// Copy the event payload from shared memory into the supplied buffer, up to
-/// `n` bytes; returns nullptr if the event payload has been overwritten
-static void *monad_event_payload_memcpy(
-    struct monad_event_iterator const *, struct monad_event_descriptor const *,
-    void *dst, size_t n);
-
 /// Reset the iterator to point to the latest event produced; used for gap
 /// recovery
 static uint64_t monad_event_iterator_reset(struct monad_event_iterator *);
@@ -73,9 +49,7 @@ struct monad_event_iterator
 {
     uint64_t read_last_seqno;
     struct monad_event_descriptor const *descriptors;
-    uint8_t const *payload_buf;
     size_t desc_capacity_mask;
-    size_t payload_buf_mask;
     struct monad_event_ring_control const *control;
 };
 

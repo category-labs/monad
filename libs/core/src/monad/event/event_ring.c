@@ -235,6 +235,10 @@ int monad_event_ring_mmap(
             "event ring file `%s` does not contain current magic number",
             error_name);
     }
+    event_ring->desc_capacity_mask =
+        event_ring->header->size.descriptor_capacity - 1;
+    event_ring->payload_buf_mask =
+        event_ring->header->size.payload_buf_size - 1;
 
     // Map the ring descriptor array from the ring fd
     size_t const descriptor_map_len = header->size.descriptor_capacity *
@@ -371,9 +375,7 @@ int monad_event_ring_init_iterator(
         return FORMAT_ERRC(EACCES, "event_ring memory not mapped for reading");
     }
     iter->descriptors = event_ring->descriptors;
-    iter->payload_buf = event_ring->payload_buf;
     iter->desc_capacity_mask = header->size.descriptor_capacity - 1;
-    iter->payload_buf_mask = header->size.payload_buf_size - 1;
     iter->control = &header->control;
     (void)monad_event_iterator_reset(iter);
     return 0;

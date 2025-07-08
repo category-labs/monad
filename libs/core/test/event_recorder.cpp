@@ -127,8 +127,8 @@ static void writer_main(
         ASSERT_EQ(event.payload_size, expected_len);
         auto const test_counter =
             *static_cast<monad_test_event_counter const *>(
-                monad_event_payload_peek(&iter, &event));
-        ASSERT_TRUE(monad_event_payload_check(&iter, &event));
+                monad_event_ring_payload_peek(event_ring, &event));
+        ASSERT_TRUE(monad_event_ring_payload_check(event_ring, &event));
         ASSERT_GT(writer_thread_count, test_counter.writer_id);
         EXPECT_EQ(
             expected_counters[test_counter.writer_id], test_counter.counter);

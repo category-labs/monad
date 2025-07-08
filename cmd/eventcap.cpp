@@ -133,7 +133,7 @@ static void print_event_ring_header(
 }
 
 static void hexdump_event_payload(
-    monad_event_iterator const *iter, monad_event_descriptor const *event,
+    monad_event_ring const *event_ring, monad_event_descriptor const *event,
     std::FILE *out)
 {
     // Large thread_locals will cause a stack overflow, so make the
@@ -142,8 +142,8 @@ static void hexdump_event_payload(
     thread_local static std::unique_ptr<char[]> const hexdump_buf{
         new char[hexdump_buf_size]};
 
-    std::byte const *payload_base =
-        static_cast<std::byte const *>(monad_event_payload_peek(iter, event));
+    std::byte const *payload_base = static_cast<std::byte const *>(
+        monad_event_ring_payload_peek(event_ring, event));
     std::byte const *const payload_end = payload_base + event->payload_size;
     char *o = hexdump_buf.get();
     for (std::byte const *line = payload_base; line < payload_end; line += 16) {
@@ -161,12 +161,12 @@ static void hexdump_event_payload(
         // Every 512 bytes, check if the payload page data is still valid; the
         // + 16 bias is to prevent checking the first iteration
         if ((line - payload_base + 16) % 512 == 0 &&
-            !monad_event_payload_check(iter, event)) {
+            !monad_event_ring_payload_check(event_ring, event)) {
             break; // Escape to the end, which checks the final time
         }
     }
 
-    if (!monad_event_payload_check(iter, event)) {
+    if (!monad_event_ring_payload_check(event_ring, event)) {
         std::fprintf(stderr, "ERROR: event %lu payload lost!\n", event->seqno);
     }
     else {
@@ -179,7 +179,7 @@ static void hexdump_event_payload(
 }
 
 static void print_event(
-    monad_event_iterator *iter, monad_event_descriptor const *event,
+    monad_event_ring const *event_ring, monad_event_descriptor const *event,
     std::span<monad_event_metadata const> metadata_entries, bool dump_payload,
     std::FILE *out)
 {
@@ -225,7 +225,7 @@ static void print_event(
     std::fwrite(event_buf, static_cast<size_t>(o - event_buf), 1, out);
 
     if (dump_payload) {
-        hexdump_event_payload(iter, event, out);
+        hexdump_event_payload(event_ring, event, out);
     }
 }
 
@@ -277,7 +277,8 @@ static void follow_thread_main(
                 not_ready_count = 0;
                 break; // Handled in the main loop body
             }
-            print_event(&iter, &event, event_metadata, dump_payload, out);
+            print_event(
+                &mr.event_ring, &event, event_metadata, dump_payload, out);
         }
     }
 }

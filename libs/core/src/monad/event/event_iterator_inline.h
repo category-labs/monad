@@ -85,56 +85,6 @@ inline enum monad_event_next_result monad_event_iterator_try_next(
                                                         : MONAD_EVENT_GAP;
 }
 
-inline bool monad_event_iterator_try_copy(
-    struct monad_event_iterator const *iter, uint64_t seqno,
-    struct monad_event_descriptor *event)
-{
-    if (__builtin_expect(seqno == 0, 0)) {
-        return false;
-    }
-    struct monad_event_descriptor const *const ring_event =
-        &iter->descriptors[(seqno - 1) & iter->desc_capacity_mask];
-    *event = *ring_event;
-    uint64_t const ring_seqno =
-        __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
-    if (__builtin_expect(ring_seqno != seqno, 0)) {
-        return false;
-    }
-    return true;
-}
-
-inline void const *monad_event_payload_peek(
-    struct monad_event_iterator const *iter,
-    struct monad_event_descriptor const *event)
-{
-    return iter->payload_buf +
-           (event->payload_buf_offset & iter->payload_buf_mask);
-}
-
-inline bool monad_event_payload_check(
-    struct monad_event_iterator const *iter,
-    struct monad_event_descriptor const *event)
-{
-    return event->payload_buf_offset >=
-           __atomic_load_n(
-               &iter->control->buffer_window_start, __ATOMIC_ACQUIRE);
-}
-
-inline void *monad_event_payload_memcpy(
-    struct monad_event_iterator const *iter,
-    struct monad_event_descriptor const *event, void *dst, size_t n)
-{
-    if (__builtin_expect(!monad_event_payload_check(iter, event), 0)) {
-        return nullptr;
-    }
-    void const *const src = monad_event_payload_peek(iter, event);
-    memcpy(dst, src, n);
-    if (__builtin_expect(!monad_event_payload_check(iter, event), 0)) {
-        return nullptr; // Payload expired
-    }
-    return dst;
-}
-
 inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
     return iter->read_last_seqno = monad_event_iterator_sync_wait(iter);

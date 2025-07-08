@@ -32,7 +32,7 @@ We represent them uniformly using Coq lists.
 
 Method specs typically tie the pre- and post-states of the object to elements of the Coq model type. In such specs, we can then use Coq's logic to write assertions on the model to capture pre- and post-conditions.
 
-The next few definitions lead up to the definition of [DbModel], the model type of `monad::Db::TrieDb`, starting with its subcomponents.
+The next few definitions lead up to the definition of [DbModel], the model type of `monad::TrieDb`, starting with its subcomponents.
 *)
 
 Require Import monad.asts.trie_rodb.
@@ -90,7 +90,7 @@ Record DbModel : Type :=
     activeProposal: option ProposalId;
     (** ^ Records the id (block number, round number) of the active proposal. Read operations like `read_storage` read from the proposal with this id. Also TrieDb::commit uses this proposal as the base for applying diffs (`StateDeltas`).
 
-     This field is set in the postcondition of the spec for `TrieDb::set_block_and_round`; [None] means `set_block_and_round has never been called on this object. *)
+     This field is set in the postcondition of the spec for `TrieDb::set_block_and_round`; [None] means `set_block_and_round` has never been called on this object. *)
 
     votedMetadata: option (N * N);
     (** ^ (block number, round number) from the latest [update_voted_metadata] call. [N * N] is analogous to `std::pair<N,N>` *)
@@ -99,7 +99,7 @@ Record DbModel : Type :=
     (** ^ highest block index marked verified via [update_verified_block] *)
 
     dbpath: DbPath;
-    (** This field identifies the disk/file where the Db is stored. It is authoritatively owned by the TrieDb. A client can reason that a TrieRODb created with the same underlying path reads the same values that this TrieDb writes. *)
+    (** ^ This field identifies the disk/file where the Db is stored. It is authoritatively owned by the TrieDb. A client can reason that a TrieRODb created with the same underlying path reads the same values that this TrieDb writes. *)
     
     cinvId: gname;
     (** ^ Ignore this Coq detail: invariant name for concurrent disk/memory ownership. *)
@@ -133,7 +133,7 @@ Definition blockNum (b: BlockNumStateInDb) : N :=
   (** ^ Dummy return value: clients must ensure [proposals b] is not empty *)
   end.
 
-(** `proposalsHaveSameBlockNum` asserts that all entries in a proposal list
+(** `proposalsHaveSameBlockNum` asserts that all entries in the proposal list
     share the same block number, enforcing the group invariant. *)
 Definition proposalsHaveSameBlockNum (b: BlockNumStateInDb) :=
   forall (p1 p2: ProposalInDb),

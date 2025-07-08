@@ -84,7 +84,7 @@ namespace monad::vm::runtime
             }
         }
 
-        bool delegation_indicator = false;
+        bool delegation_indicator;
         if constexpr (Rev >= EVMC_PRAGUE) {
             // EIP-7702: if the code address starts with 0xEF0100, then
             // treat it as a delegated call in the context of the
@@ -98,6 +98,12 @@ namespace monad::vm::runtime
                 ctx->gas_remaining -=
                     access_status == EVMC_ACCESS_COLD ? 2600 : 100;
             }
+            else {
+                delegation_indicator = false;
+            }
+        }
+        else {
+            delegation_indicator = false;
         }
 
         auto recipient = (call_kind == EVMC_CALL || static_call)

@@ -431,7 +431,7 @@ cpp.spec "monad::TrieRODb::set_block_and_round(unsigned long, std::optional<unsi
      [ret] is [true]: if [idRoundNum pid is None], meaning that the block number was already finalized, we get as postcondition another assertion:
       [FinalizedProposalForBlockNum dbpath (idBlockNum pid) proposal].
      As explained where [FinalizedProposalForBlockNum] was introduced (can click it to go there), this is a persistent assertion and can be freely duplicated and shared.
-     In particular, it can be used as a precondition to the next spec of the same method
+     In particular, it can be used to satisfy a precondition of the next spec of the same method:
    *)
 ).
 
@@ -599,7 +599,7 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
 
     \arg{(dloc: ptr) (q: Qp)} "state_deltas" (Vptr dloc)
     \prepost dloc |-> StateDeltasR q (stateAfterActiveProposal preDb, postBlockState newProposal)
-    (** ^ the \arg line above asserts that the the state_deltas argument has a memory location [dloc]. Then, the \prepost line asserts that [dloc] has an object that represents delta/diff between thefull  EVM state after the active proposal in preDb and the full EVM state after executing [newProposal]. More generally [l |-> StateDeltasR q (old, new)] asserts that at location [l] we have an object of type StateDeltas which represents the difference between the full EVM states [old] and [new]. StateDeltas is a map from account addresses to diffs in account states. Every account that has a different value between [old] and [new] must have an entry in this map. The diff in account states stores the new/old balance/nonce etc and also has another map that maps storage keys to pairs of values (oldkv, newkv).
+    (** ^ the \arg line above asserts that the the state_deltas argument has a memory location [dloc]. Then, the \prepost line asserts that [dloc] has an object that represents delta/diff between thefull  EVM state after the active proposal in preDb and the full EVM state after executing [newProposal]. More generally [l |-> StateDeltasR q (old, new)] asserts that at location [l] we have an object of type StateDeltas which represents the difference between the full EVM states [old] and [new]. In C++, StateDeltas is a map from account addresses to diffs in account states. Every account that has a different value between [old] and [new] must have an entry in this map. The diff in account states stores the new/old balance/nonce etc and also has another map that maps storage keys to pairs of values (oldkv, newkv).
      *)
 
     \arg{(cloc:ptr)} "code" (Vptr cloc)
@@ -648,7 +648,7 @@ If there is no active proposal, than [newProposal] must be the genesis block (bl
      *)
   \post Exists (postGcHistLen:N), [| 256 <= postGcHistLen|]
             ** this |-> TrieDbR 1 (gcToHistoryLen postGcHistLen (addNewProposal preDb newProposal))).
-  (** ^ the postcondition just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by the [addNewproposal] followed by the [gcToHistoryLen] functions that were explained just above the spec. [postGcHistLen] is existentially quantification so the caller's proof cannot assume anything about how many blocks numbers, if any, the garbage collection (GC) phase will reclaim, except that it reduce the history length (number of block numbers) to less thatn 256. Also, if the history length was alredy less thant 256 no GC will happen: this follows from the definition of [gcToHistoryLen].
+  (** ^ the postcondition just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by the [addNewProposal] followed by the [gcToHistoryLen] functions that were explained just above the spec. [postGcHistLen] is existentially quantification so the caller's proof cannot assume anything about how many blocks numbers, if any, the garbage collection (GC) phase will reclaim, except that it reduce the history length (number of block numbers) to less thatn 256. Also, if the history length was alredy less thant 256 no GC will happen: this follows from the definition of [gcToHistoryLen].
 
 
    Our final spec is for TrieDb::finalize(). We just need one helper function for the spec.

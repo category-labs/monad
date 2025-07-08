@@ -222,7 +222,6 @@ Definition validActiveProposal (m: DbModel) : Prop :=
   | Some pid => isSome (lookupProposal pid m)
   end.
 
-Locate flat_map.
 (** all the proposals in the Db, across all block numbers*)
 Definition allProposalsInDb (d: DbModel) :=
   List.flat_map proposals (blockNumsStates d).
@@ -528,7 +527,7 @@ The other interesting functions from execution perspective are `TrieDb::commit` 
 
 But before that, we sketch why the above specs of TrieRODb suffice to prove the logical atomicity of eth_call even though it does several calls to TrieRODb.
 
-eth_call implementation first #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L102">calls</a>#  TrieRODb::set_block_and_round. After that, it only issues reads, which happen in the #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp#L214">call</a># to `execute_impl_no_validation`.
+eth_call implementation first #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L102">calls</a>#  TrieRODb::set_block_and_round. After that, it only issues reads, which happen in the #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L214">call</a># to `execute_impl_no_validation`.
 
 It has been claimed that eth_call can be requested even for unfinalized proposals and that execution can commit multiple distinct proposals for the *same* round number. (every round has 1 leader and 1 block number). Thus there it is important that if execution "overwrites" a round number with a different proposal in between 2 reads by `execute_impl_no_validation`, eth_call does not produce results that correspond to a mishmash of 2 different proposals. The TrieRODb specs above already allows us to prove that no matter what TrieDb does after a successfull call to TrieRODb::set_block_and_round, the TrieRODb read methods will keep reading from the snapshot in the postcondition of TrieRODb::set_block_and_round. Thus, eth_call will never see any overwrite that happens after the only call to TrieRODb::set_block_and_round.
 

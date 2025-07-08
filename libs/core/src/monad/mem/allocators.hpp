@@ -190,7 +190,7 @@ namespace allocators
     template <
         allocator TypeAlloc, allocator RawAlloc,
         detail::type_raw_alloc_pair<TypeAlloc, RawAlloc> (*GetAllocator)(),
-        size_t (*GetSize)(typename TypeAlloc::value_type *)>
+        size_t (*GetSize)(typename TypeAlloc::value_type *) = nullptr>
     struct unique_ptr_aliasing_allocator_deleter
     {
         using allocator_type = TypeAlloc;

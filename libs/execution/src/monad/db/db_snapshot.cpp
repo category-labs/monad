@@ -20,6 +20,9 @@ inline constexpr unsigned MONAD_SNAPSHOT_SHARDS =
     1 << (MONAD_SNAPSHOT_SHARD_NIBBLES * 4);
 static_assert(MONAD_SNAPSHOT_SHARDS == 256);
 
+uint64_t max_level = 0;
+uint64_t num_output = 0;
+
 struct monad_db_snapshot_loader
 {
     uint64_t block;
@@ -62,7 +65,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 uint64_t get_shard(monad::mpt::NibblesView const path)
 {
     uint64_t ret = 0;
-    for (unsigned i = 0; i < MONAD_SNAPSHOT_SHARD_NIBBLES; ++i) {
+    for (unsigned i = 1; i < MONAD_SNAPSHOT_SHARD_NIBBLES + 1; ++i) {
         ret <<= 4;
         ret |= path.get(i);
     }
@@ -143,56 +146,63 @@ uint64_t monad_db_snapshot_loader_read_account(
 
 struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 {
-    unsigned char nibble;
-    monad::mpt::Nibbles path;
-    std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> &account_bytes_written;
+    std::array<std::pair<uint64_t, uint64_t>, MONAD_SNAPSHOT_SHARDS>
+        &account_bytes_written;
     uint64_t account_offset;
     uint64_t (*write)(
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user);
     void *user;
 
+    unsigned char nibble() const
+    {
+        return path().get(0);
+    }
+
     MonadSnapshotTraverseMachine(
-        std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> &account_bytes_written,
+        std::array<std::pair<uint64_t, uint64_t>, MONAD_SNAPSHOT_SHARDS>
+            &account_bytes_written,
         uint64_t (*write)(
             uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
             size_t len, void *user),
         void *user)
-        : nibble{monad::mpt::INVALID_BRANCH}
-        , path{}
-        , account_bytes_written{account_bytes_written}
-        , account_offset{std::numeric_limits<uint64_t>::max()}
+        : account_bytes_written{account_bytes_written}
         , write(write)
         , user{user}
     {
     }
 
-    virtual bool
-    down(unsigned char const branch, monad::mpt::Node const &node) override
+    MonadSnapshotTraverseMachine(
+        MonadSnapshotTraverseMachine const &other, unsigned char branch)
+        : TraverseMachine(other, branch)
+        , account_bytes_written{other.account_bytes_written}
+        , account_offset{other.account_offset}
+        , write{other.write}
+        , user{other.user}
+    {
+    }
+
+    virtual void
+    visit(unsigned char const branch, monad::mpt::Node const &node) override
     {
         using namespace monad;
         using namespace monad::mpt;
         constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
 
-        if (branch == INVALID_BRANCH) {
-            MONAD_ASSERT(path.nibble_size() == 0);
-            return true;
+        if (branch == INVALID_BRANCH || path().nibble_size() <= 1) {
+            return;
         }
-        else if (path.nibble_size() == 0 && nibble == INVALID_BRANCH) {
-            nibble = branch;
-            return true;
-        }
-        MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
-
-        path = concat(NibblesView{path}, branch, node.path_nibble_view());
-
+        MONAD_ASSERT(nibble() == STATE_NIBBLE || nibble() == CODE_NIBBLE);
         if (!node.has_value()) {
-            return true;
+            return;
         }
-        uint64_t const shard = get_shard(path);
+
+        ++num_output;
+
+        uint64_t const shard = get_shard(path());
         byte_string_view const val = node.value();
-        if (nibble == CODE_NIBBLE) {
-            MONAD_ASSERT(path.nibble_size() == HASH_SIZE);
+        if (nibble() == CODE_NIBBLE) {
+            MONAD_ASSERT(path().nibble_size() - 1 == HASH_SIZE);
             uint64_t const len = val.size();
             MONAD_ASSERT(
                 write(
@@ -206,16 +216,18 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
                 len);
         }
         else {
-            MONAD_ASSERT(nibble == STATE_NIBBLE);
+            MONAD_ASSERT(nibble() == STATE_NIBBLE);
             monad_snapshot_type type;
-            if (path.nibble_size() == HASH_SIZE) {
+            if (path().nibble_size() - 1 == HASH_SIZE) {
                 type = MONAD_SNAPSHOT_ACCOUNT;
-                account_offset = account_bytes_written.at(shard);
-                account_bytes_written.at(shard) += val.size();
+                account_bytes_written.at(shard).second =
+                    account_bytes_written.at(shard).first;
+                account_bytes_written.at(shard).first += val.size();
             }
             else {
-                MONAD_ASSERT(path.nibble_size() == (HASH_SIZE * 2));
+                MONAD_ASSERT(path().nibble_size() - 1 == (HASH_SIZE * 2));
                 type = MONAD_SNAPSHOT_STORAGE;
+                auto account_offset = account_bytes_written.at(shard).second;
                 MONAD_ASSERT(
                     write(
                         shard,
@@ -229,31 +241,20 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
             MONAD_ASSERT(
                 write(shard, type, val.data(), val.size(), user) == val.size());
         }
-
-        return true;
     }
 
-    virtual void up(unsigned char const, monad::mpt::Node const &node) override
+    virtual std::unique_ptr<TraverseMachine>
+    clone(unsigned char branch) const override
     {
-        if (path.nibble_size() == 0) {
-            nibble = monad::mpt::INVALID_BRANCH;
-            return;
-        }
-        monad::mpt::NibblesView const view{path};
-        path = view.substr(0, view.nibble_size() - 1 - node.path_nibbles_len());
+        return std::make_unique<MonadSnapshotTraverseMachine>(*this, branch);
     }
 
-    virtual std::unique_ptr<TraverseMachine> clone() const override
-    {
-        return std::make_unique<MonadSnapshotTraverseMachine>(*this);
-    }
-
-    virtual bool
-    should_visit(monad::mpt::Node const &, unsigned char const branch) override
+    virtual bool should_visit_child(
+        monad::mpt::Node const &, unsigned char const branch) override
     {
         using namespace monad;
         using namespace monad::mpt;
-        if (path.nibble_size() == 0 && nibble == INVALID_BRANCH) {
+        if (path().nibble_size() == 0) {
             MONAD_ASSERT(branch != INVALID_BRANCH);
             return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
         }
@@ -325,9 +326,10 @@ bool monad_db_dump_snapshot(
         return false;
     }
 
-    std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> account_bytes_written{};
+    std::array<std::pair<uint64_t, uint64_t>, MONAD_SNAPSHOT_SHARDS>
+        account_bytes_written{};
     MonadSnapshotTraverseMachine machine{account_bytes_written, write, user};
-    bool const success = db.traverse(finalized_root, machine, block);
+    bool const success = db.traverse(finalized_root, machine, block, 1024);
     if (!success) {
         LOG_INFO("db traverse for block {} unsuccessful", block);
     }
@@ -386,12 +388,13 @@ void monad_db_snapshot_loader_load(
             MONAD_ASSERT(res.has_value());
             auto &update = account_offset_to_update.at(account_offset);
             uint64_t const consumed = before.size() - storage_view.size();
-            update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(
-                    keccak256(to_bytes(res.value().first))),
-                .value = before.substr(0, consumed),
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(loader->block)}));
+            update.next.push_front(loader->update_alloc.emplace_back(
+                Update{
+                    .key = loader->hash_alloc.emplace_back(
+                        keccak256(to_bytes(res.value().first))),
+                    .value = before.substr(0, consumed),
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(loader->block)}));
             loader->bytes_read += consumed;
             if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
                 monad_db_snapshot_loader_flush(loader);
@@ -407,8 +410,8 @@ void monad_db_snapshot_loader_load(
             code_view.remove_prefix(sizeof(uint64_t));
             MONAD_ASSERT(code_view.size() >= size);
             byte_string_view const val = code_view.substr(0, size);
-            loader->code_updates.push_front(
-                loader->update_alloc.emplace_back(Update{
+            loader->code_updates.push_front(loader->update_alloc.emplace_back(
+                Update{
                     .key = loader->hash_alloc.emplace_back(keccak256(val)),
                     .value = val,
                     .incarnation = false,

@@ -22,43 +22,25 @@ namespace
 {
     struct DummyTraverseMachine : public TraverseMachine
     {
-        Nibbles path{};
+        DummyTraverseMachine() = default;
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        DummyTraverseMachine(
+            DummyTraverseMachine const &parent, unsigned char branch)
+            : TraverseMachine(parent, branch)
         {
-            if (branch == INVALID_BRANCH) {
-                return true;
-            }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
-
-            if (node.has_value()) {
-                MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
-            }
-            return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void visit(unsigned char branch, Node const &node) override
         {
-            auto const path_view = NibblesView{path};
-            auto const rem_size = [&] {
-                if (branch == INVALID_BRANCH) {
-                    MONAD_ASSERT(path_view.nibble_size() == 0);
-                    return 0;
-                }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
-                MONAD_ASSERT(rem_size >= 0);
-                MONAD_ASSERT(
-                    path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
-                return rem_size;
-            }();
-            path = path_view.substr(0, static_cast<unsigned>(rem_size));
+            MONAD_ASSERT(
+                branch == INVALID_BRANCH || !node.has_value() ||
+                path().nibble_size() == KECCAK256_SIZE * 2);
         }
 
-        virtual std::unique_ptr<TraverseMachine> clone() const override
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
         {
-            return std::make_unique<DummyTraverseMachine>(*this);
+            return std::make_unique<DummyTraverseMachine>(*this, branch);
         }
     };
 }

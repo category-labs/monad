@@ -40,11 +40,6 @@ Node::pool()
     return {a, b};
 }
 
-size_t Node::get_deallocate_count(Node *node)
-{
-    return node->get_mem_size();
-}
-
 Node::Node(prevent_public_construction_tag) {}
 
 Node::Node(
@@ -80,8 +75,13 @@ Node::Node(
 
 Node::~Node()
 {
-    for (uint8_t index = 0; index < number_of_children(); ++index) {
-        move_next(index).reset();
+    auto start = next_data();
+    auto end = start + number_of_children() * sizeof(Node *);
+    for (auto child = start; child < end; child += sizeof(Node *)) {
+        auto child_node = unaligned_load<Node *>(child);
+        if (child_node) {
+            Deleter{}(child_node);
+        }
     }
 }
 
@@ -91,11 +91,6 @@ unsigned Node::to_child_index(unsigned const branch) const noexcept
     // index location - index
     MONAD_DEBUG_ASSERT(mask & (1u << branch));
     return bitmask_index(mask, branch);
-}
-
-unsigned Node::number_of_children() const noexcept
-{
-    return static_cast<unsigned>(std::popcount(mask));
 }
 
 chunk_offset_t const Node::fnext(unsigned const index) const noexcept
@@ -111,11 +106,6 @@ void Node::set_fnext(unsigned const index, chunk_offset_t const off) noexcept
         fnext_data + index * sizeof(chunk_offset_t),
         &off,
         sizeof(chunk_offset_t));
-}
-
-unsigned char *Node::child_min_offset_fast_data() noexcept
-{
-    return fnext_data + number_of_children() * sizeof(file_offset_t);
 }
 
 unsigned char const *Node::child_min_offset_fast_data() const noexcept
@@ -141,16 +131,11 @@ void Node::set_min_offset_fast(
         sizeof(compact_virtual_chunk_offset_t));
 }
 
-unsigned char *Node::child_min_offset_slow_data() noexcept
-{
-    return child_min_offset_fast_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
-}
-
 unsigned char const *Node::child_min_offset_slow_data() const noexcept
 {
-    return child_min_offset_fast_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    return fnext_data +
+           number_of_children() *
+               (sizeof(compact_virtual_chunk_offset_t) + sizeof(file_offset_t));
 }
 
 compact_virtual_chunk_offset_t
@@ -171,16 +156,12 @@ void Node::set_min_offset_slow(
         sizeof(compact_virtual_chunk_offset_t));
 }
 
-unsigned char *Node::child_min_version_data() noexcept
-{
-    return child_min_offset_slow_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
-}
-
 unsigned char const *Node::child_min_version_data() const noexcept
 {
-    return child_min_offset_slow_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    return fnext_data +
+           number_of_children() *
+               (sizeof(compact_virtual_chunk_offset_t) +
+                sizeof(compact_virtual_chunk_offset_t) + sizeof(file_offset_t));
 }
 
 int64_t Node::subtrie_min_version(unsigned const index) const noexcept
@@ -198,14 +179,12 @@ void Node::set_subtrie_min_version(
         sizeof(int64_t));
 }
 
-unsigned char *Node::child_off_data() noexcept
-{
-    return child_min_version_data() + number_of_children() * sizeof(int64_t);
-}
-
 unsigned char const *Node::child_off_data() const noexcept
 {
-    return child_min_version_data() + number_of_children() * sizeof(int64_t);
+    return fnext_data +
+           number_of_children() * (sizeof(compact_virtual_chunk_offset_t) +
+                                   sizeof(compact_virtual_chunk_offset_t) +
+                                   sizeof(file_offset_t) + sizeof(int64_t));
 }
 
 uint16_t Node::child_data_offset(unsigned const index) const noexcept
@@ -228,14 +207,13 @@ unsigned Node::child_data_len()
     return child_data_offset(number_of_children()) - child_data_offset(0);
 }
 
-unsigned char *Node::path_data() noexcept
-{
-    return child_off_data() + number_of_children() * sizeof(uint16_t);
-}
-
 unsigned char const *Node::path_data() const noexcept
 {
-    return child_off_data() + number_of_children() * sizeof(uint16_t);
+    return fnext_data +
+           (sizeof(file_offset_t) + sizeof(compact_virtual_chunk_offset_t) +
+            sizeof(compact_virtual_chunk_offset_t) + sizeof(int64_t) +
+            sizeof(uint16_t)) *
+               number_of_children();
 }
 
 unsigned Node::path_nibbles_len() const noexcept
@@ -248,11 +226,6 @@ unsigned Node::path_nibbles_len() const noexcept
 bool Node::has_path() const noexcept
 {
     return path_nibbles_len() > 0;
-}
-
-unsigned Node::path_bytes() const noexcept
-{
-    return (path_nibble_index_end + 1) / 2;
 }
 
 NibblesView Node::path_nibble_view() const noexcept
@@ -340,24 +313,18 @@ void Node::set_child_data(unsigned const index, byte_string_view data) noexcept
     std::memcpy(child_data(index), data.data(), data.size());
 }
 
-unsigned char *Node::next_data() noexcept
-{
-    return child_data() + child_data_offset(number_of_children());
-}
-
 unsigned char const *Node::next_data() const noexcept
 {
-    return child_data() + child_data_offset(number_of_children());
-}
-
-Node *Node::next(size_t const index) noexcept
-{
-    return unaligned_load<Node *>(next_data() + index * sizeof(Node *));
-}
-
-Node const *Node::next(size_t const index) const noexcept
-{
-    return unaligned_load<Node *>(next_data() + index * sizeof(Node *));
+    auto num_children = number_of_children();
+    auto child_off = reinterpret_cast<uint16_t const *>(
+        fnext_data +
+        (sizeof(file_offset_t) + sizeof(compact_virtual_chunk_offset_t) +
+         sizeof(compact_virtual_chunk_offset_t) + sizeof(int64_t)) *
+            num_children);
+    return reinterpret_cast<unsigned char const *>(child_off) +
+           num_children * sizeof(uint16_t) + value_len + path_bytes() +
+           bitpacked.data_len +
+           (num_children == 0 ? 0 : child_off[num_children - 1]);
 }
 
 void Node::set_next(unsigned const index, Node::UniquePtr node_ptr) noexcept
@@ -594,9 +561,6 @@ void serialize_node_to_buffer(
 Node::UniquePtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
 {
-    for (size_t n = 0; n < max_bytes; n += 64) {
-        __builtin_prefetch(read_pos + n, 0, 0);
-    }
     // Load 32-bit node on-disk size
     auto const disk_size = unaligned_load<uint32_t>(read_pos);
     MONAD_ASSERT_PRINTF(
@@ -606,16 +570,20 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
-    auto const alloc_size = static_cast<uint32_t>(
-        disk_size + number_of_children * sizeof(Node *) -
-        Node::disk_size_bytes);
+    auto const alloc_size =
+        disk_size + number_of_children * sizeof(Node *) - Node::disk_size_bytes;
     auto node = Node::make(alloc_size);
     std::copy_n(
         read_pos,
         disk_size - Node::disk_size_bytes,
         (unsigned char *)node.get());
-    std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
-    MONAD_ASSERT(alloc_size == node->get_mem_size());
+    auto next_data = node->next_data();
+    std::memset(next_data, 0, number_of_children * sizeof(Node *));
+    MONAD_ASSERT(
+        alloc_size == number_of_children * sizeof(Node *) +
+                          static_cast<size_t>(
+                              reinterpret_cast<char *>(next_data) -
+                              reinterpret_cast<char *>(node.get())));
     return node;
 }
 

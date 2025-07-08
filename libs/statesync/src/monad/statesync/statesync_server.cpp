@@ -105,9 +105,7 @@ bool statesync_server_handle_request(
 {
     struct Traverse final : public TraverseMachine
     {
-        unsigned char nibble;
-        unsigned depth;
-        Address addr;
+        Address &addr;
         monad_statesync_server *sync;
         NibblesView prefix;
         uint64_t from;
@@ -115,9 +113,8 @@ bool statesync_server_handle_request(
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
-            uint64_t const from, uint64_t const until)
-            : nibble{INVALID_BRANCH}
-            , depth{0}
+            uint64_t const from, uint64_t const until, Address &addr)
+            : addr(addr)
             , sync{sync}
             , prefix{prefix}
             , from{from}
@@ -125,41 +122,32 @@ bool statesync_server_handle_request(
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        Traverse(Traverse const &other, unsigned char branch)
+            : TraverseMachine(other, branch)
+            , addr{other.addr}
+            , sync{other.sync}
+            , prefix{other.prefix}
+            , from{other.from}
+            , until{other.until}
         {
-            if (branch == INVALID_BRANCH) {
-                MONAD_ASSERT(depth == 0);
-                return true;
-            }
-            else if (depth == 0 && nibble == INVALID_BRANCH) {
-                nibble = branch;
-                return true;
+        }
+
+        virtual void visit(unsigned char const, Node const &node) override
+        {
+            if (path().nibble_size() <= 1) {
+                return;
             }
 
+            auto const nibble = path().get(0);
             MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
+            uint8_t const path_size = path().nibble_size() - 1;
+            auto const cmp_size = std::min(path_size, prefix.nibble_size());
             MONAD_ASSERT(
-                depth >= prefix.nibble_size() || prefix.get(depth) == branch);
-            auto const ext = node.path_nibble_view();
-            for (auto i = depth + 1; i < prefix.nibble_size(); ++i) {
-                auto const j = i - (depth + 1);
-                if (j >= ext.nibble_size()) {
-                    break;
-                }
-                if (ext.get(j) != prefix.get(i)) {
-                    return false;
-                }
-            }
-
-            MONAD_ASSERT(node.version >= 0);
-            auto const v = static_cast<uint64_t>(node.version);
-            if (v < from) {
-                return false;
-            }
-
-            depth += 1 + ext.nibble_size();
+                path().substr(1, cmp_size) == prefix.substr(0, cmp_size));
 
             constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
-            bool const account = depth == HASH_SIZE && nibble == STATE_NIBBLE;
+            bool const account =
+                path_size == HASH_SIZE && nibble == STATE_NIBBLE;
             if (account && node.number_of_children() > 0) {
                 MONAD_ASSERT(node.has_value());
                 auto raw = node.value();
@@ -168,7 +156,8 @@ bool statesync_server_handle_request(
                 addr = std::get<Address>(res.assume_value());
             }
 
-            if (node.has_value() && v <= until) {
+            if (node.has_value() &&
+                static_cast<uint64_t>(node.version) <= until) {
                 auto const send_upsert = [&](monad_sync_type const type,
                                              unsigned char const *const v1 =
                                                  nullptr,
@@ -183,16 +172,16 @@ bool statesync_server_handle_request(
                 };
 
                 if (nibble == CODE_NIBBLE) {
-                    MONAD_ASSERT(depth == HASH_SIZE);
+                    MONAD_ASSERT(path_size == HASH_SIZE);
                     send_upsert(SYNC_TYPE_UPSERT_CODE);
                 }
                 else {
                     MONAD_ASSERT(nibble == STATE_NIBBLE);
-                    if (depth == HASH_SIZE) {
+                    if (path_size == HASH_SIZE) {
                         send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
                     }
                     else {
-                        MONAD_ASSERT(depth == (HASH_SIZE * 2));
+                        MONAD_ASSERT(path_size == (HASH_SIZE * 2));
                         send_upsert(
                             SYNC_TYPE_UPSERT_STORAGE,
                             reinterpret_cast<unsigned char *>(&addr),
@@ -200,40 +189,56 @@ bool statesync_server_handle_request(
                     }
                 }
             }
-
-            return true;
-        }
-
-        virtual void up(unsigned char const, Node const &node) override
-        {
-            if (depth == 0) {
-                nibble = INVALID_BRANCH;
-                return;
-            }
-            unsigned const subtrahend = 1 + node.path_nibbles_len();
-            MONAD_ASSERT(depth >= subtrahend);
-            depth -= subtrahend;
-        }
-
-        virtual std::unique_ptr<TraverseMachine> clone() const override
-        {
-            return std::make_unique<Traverse>(*this);
         }
 
         virtual bool
-        should_visit(Node const &node, unsigned char const branch) override
+        should_visit_node(Node const &node, unsigned char const) override
         {
-            if (depth == 0 && nibble == INVALID_BRANCH) {
+            auto const path_size = path().nibble_size();
+            if (path_size <= 1) {
+                return true;
+            }
+
+            auto const ext = node.path_nibble_view();
+            auto const ext_size = ext.nibble_size();
+            if (path_size - 1 - ext_size < prefix.nibble_size()) {
+                uint8_t const prefix_remain =
+                    prefix.nibble_size() -
+                    static_cast<uint8_t>(path_size - 1 - ext_size);
+                auto const cmp_size = std::min(prefix_remain, ext_size);
+                if (cmp_size != 0 && prefix.substr(
+                                         prefix.nibble_size() - prefix_remain,
+                                         cmp_size) != ext.substr(0, cmp_size)) {
+                    return false;
+                }
+            }
+
+            return static_cast<uint64_t>(node.version) >= from;
+        }
+
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
+        {
+            return std::make_unique<Traverse>(*this, branch);
+        }
+
+        virtual bool should_visit_child(
+            Node const &node, unsigned char const branch) override
+        {
+            auto path_size = path().nibble_size();
+            if (path_size == 0) {
                 MONAD_ASSERT(branch != INVALID_BRANCH);
                 return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
             }
+            --path_size;
             auto const v =
                 node.subtrie_min_version(node.to_child_index(branch));
             MONAD_ASSERT(v >= 0);
             if (static_cast<uint64_t>(v) > until) {
                 return false;
             }
-            return depth >= prefix.nibble_size() || prefix.get(depth) == branch;
+            return path_size >= prefix.nibble_size() ||
+                   prefix.get(path_size) == branch;
         }
     };
 
@@ -282,7 +287,8 @@ bool statesync_server_handle_request(
     }
 
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Address addr;
+    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until, addr);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         return false;
     }
@@ -338,12 +344,13 @@ struct monad_statesync_server *monad_statesync_server_create(
     void (*statesync_server_send_done)(
         monad_statesync_server_network *, struct monad_sync_done))
 {
-    return new monad_statesync_server(monad_statesync_server{
-        .context = ctx,
-        .net = net,
-        .statesync_server_recv = statesync_server_recv,
-        .statesync_server_send_upsert = statesync_server_send_upsert,
-        .statesync_server_send_done = statesync_server_send_done});
+    return new monad_statesync_server(
+        monad_statesync_server{
+            .context = ctx,
+            .net = net,
+            .statesync_server_recv = statesync_server_recv,
+            .statesync_server_send_upsert = statesync_server_send_upsert,
+            .statesync_server_send_done = statesync_server_send_done});
 }
 
 void monad_statesync_server_run_once(struct monad_statesync_server *const sync)

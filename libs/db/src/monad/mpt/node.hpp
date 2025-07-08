@@ -5,6 +5,7 @@
 #include <monad/core/endian.hpp> // NOLINT
 #include <monad/core/keccak.h>
 #include <monad/core/math.hpp>
+#include <monad/core/unaligned.hpp>
 #include <monad/mem/allocators.hpp>
 #include <monad/mpt/detail/unsigned_20.hpp>
 #include <monad/mpt/util.hpp>
@@ -125,11 +126,9 @@ public:
     static allocators::detail::type_raw_alloc_pair<
         std::allocator<Node>, BytesAllocator>
     pool();
-    static size_t get_deallocate_count(Node *);
 
     using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
-        std::allocator<Node>, BytesAllocator, &Node::pool,
-        &Node::get_deallocate_count>;
+        std::allocator<Node>, BytesAllocator, &Node::pool>;
     using UniquePtr = std::unique_ptr<Node, Deleter>;
 
     /* 16-bit mask for children */
@@ -195,8 +194,7 @@ public:
         return allocators::allocate_aliasing_unique<
             std::allocator<Node>,
             BytesAllocator,
-            &pool,
-            &get_deallocate_count>(
+            &pool>(
             bytes,
             prevent_public_construction_tag{},
             std::forward<Args>(args)...);
@@ -279,8 +277,7 @@ public:
     //! next pointers
     unsigned char *next_data() noexcept;
     unsigned char const *next_data() const noexcept;
-    Node *next(size_t index) noexcept;
-    Node const *next(size_t index) const noexcept;
+    Node *next(size_t index) const noexcept;
     void set_next(unsigned index, Node::UniquePtr) noexcept;
     UniquePtr move_next(unsigned index) noexcept;
 
@@ -436,5 +433,57 @@ public:
 private:
     uint16_t mask_;
 };
+
+inline unsigned Node::number_of_children() const noexcept
+{
+    return static_cast<unsigned>(std::popcount(mask));
+}
+
+inline unsigned char *Node::child_min_offset_fast_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->child_min_offset_fast_data());
+}
+
+inline unsigned char *Node::child_min_offset_slow_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->child_min_offset_slow_data());
+}
+
+inline unsigned char *Node::child_min_version_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->child_min_version_data());
+}
+
+inline unsigned char *Node::child_off_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->child_off_data());
+}
+
+inline unsigned Node::path_bytes() const noexcept
+{
+    return (path_nibble_index_end + 1) / 2;
+}
+
+inline Node *Node::next(size_t index) const noexcept
+{
+    MONAD_DEBUG_ASSERT(index < number_of_children());
+    return unaligned_load<Node *>(next_data() + index * sizeof(Node *));
+}
+
+inline unsigned char *Node::next_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->next_data());
+}
+
+inline unsigned char *Node::path_data() noexcept
+{
+    return const_cast<unsigned char *>(
+        static_cast<Node const *>(this)->path_data());
+}
 
 MONAD_MPT_NAMESPACE_END

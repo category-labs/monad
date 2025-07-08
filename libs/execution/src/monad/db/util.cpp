@@ -241,12 +241,13 @@ namespace
                 if (in.size() < entry_size) {
                     return total_processed;
                 }
-                code_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(hash_and_len_size, code_len),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
+                code_updates.push_front(update_alloc_.emplace_back(
+                    Update{
+                        .key = in.substr(0, sizeof(bytes32_t)),
+                        .value = in.substr(hash_and_len_size, code_len),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_id_)}));
 
                 total_processed += entry_size;
                 in = in.substr(entry_size);
@@ -284,17 +285,19 @@ namespace
         {
             UpdateList storage_updates;
             while (!in.empty()) {
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
-                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
+                storage_updates.push_front(update_alloc_.emplace_back(
+                    Update{
+                        .key = in.substr(0, sizeof(bytes32_t)),
+                        .value = bytes_alloc_.emplace_back(encode_storage_db(
+                            bytes32_t{}, // TODO: update this when binary
+                                         // checkpoint includes unhashed storage
+                                         // slot
+                            unaligned_load<bytes32_t>(
+                                in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
+                                    .data()))),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_id_)}));
                 in = in.substr(storage_entry_size);
             }
             return storage_updates;
@@ -782,7 +785,6 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
     class ProposalTraverseMachine final : public TraverseMachine
     {
         std::vector<uint64_t> &rounds_;
-        Nibbles path_;
 
     public:
         explicit ProposalTraverseMachine(std::vector<uint64_t> &rounds)
@@ -790,50 +792,36 @@ get_proposal_rounds(mpt::Db &db, uint64_t const block_number)
         {
         }
 
-        ProposalTraverseMachine(ProposalTraverseMachine const &other) = default;
-
-        virtual bool down(unsigned char const branch, Node const &node) override
+        ProposalTraverseMachine(
+            ProposalTraverseMachine const &other, unsigned char branch)
+            : TraverseMachine(other, branch)
+            , rounds_(other.rounds_)
         {
-            if (branch == INVALID_BRANCH) {
-                MONAD_ASSERT(path_.nibble_size() == 0);
-                path_ = node.path_nibble_view();
-                return true;
-            }
+        }
 
-            Nibbles const new_path =
-                concat(NibblesView{path_}, branch, node.path_nibble_view());
-            if (new_path.nibble_size() == PROPOSAL_PREFIX_LEN) {
+        virtual void visit(unsigned char const, Node const &node) override
+        {
+            if (path().nibble_size() == PROPOSAL_PREFIX_LEN) {
                 MONAD_ASSERT(node.has_value());
-                MONAD_ASSERT(new_path.get(0) == PROPOSAL_NIBBLE);
+                MONAD_ASSERT(path().get(0) == PROPOSAL_NIBBLE);
                 rounds_.push_back(
-                    deserialize_from_big_endian<uint64_t>(new_path.substr(1)));
-                return false;
+                    deserialize_from_big_endian<uint64_t>(path().substr(1)));
             }
-            path_ = new_path;
-            return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual bool
+        should_visit_child(Node const &, unsigned char branch) override
         {
-            auto const path_view = monad::mpt::NibblesView{path_};
-            unsigned const prefix_size =
-                branch == monad::mpt::INVALID_BRANCH
-                    ? 0
-                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
-            path_ = path_view.substr(0, prefix_size);
-        }
-
-        virtual bool should_visit(Node const &, unsigned char branch) override
-        {
-            if (path_.nibble_size() == 0) {
+            if (path().nibble_size() == 0) {
                 return branch == PROPOSAL_NIBBLE;
             }
-            return true;
+            return path().nibble_size() != PROPOSAL_PREFIX_LEN;
         }
 
-        virtual std::unique_ptr<TraverseMachine> clone() const override
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
         {
-            return std::make_unique<ProposalTraverseMachine>(*this);
+            return std::make_unique<ProposalTraverseMachine>(*this, branch);
         }
     };
 

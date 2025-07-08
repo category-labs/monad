@@ -340,7 +340,6 @@ int main(int argc, char *const argv[])
 
             struct VersionValidatorMachine : public TraverseMachine
             {
-                Nibbles path{};
                 size_t num_nodes;
                 sig_atomic_t volatile &done;
 
@@ -351,22 +350,25 @@ int main(int argc, char *const argv[])
                 {
                 }
 
-                virtual bool
-                down(unsigned char branch, Node const &node) override
+                VersionValidatorMachine(
+                    VersionValidatorMachine const &parent, unsigned char branch)
+                    : TraverseMachine(parent, branch)
+                    , num_nodes(parent.num_nodes)
+                    , done(parent.done)
                 {
-                    if (branch == INVALID_BRANCH) {
-                        return true;
-                    }
-                    path = concat(
-                        NibblesView{path}, branch, node.path_nibble_view());
+                }
 
-                    if (node.has_value()) {
-                        MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
+                virtual void
+                visit(unsigned char branch, Node const &node) override
+                {
+                    if (branch != INVALID_BRANCH && node.has_value()) {
+                        MONAD_ASSERT(
+                            path().nibble_size() == KECCAK256_SIZE * 2);
                         uint64_t const version =
                             deserialize_from_big_endian<uint64_t>(node.value());
                         bool found = false;
                         for (size_t k = 0; k < num_nodes; ++k) {
-                            if (path ==
+                            if (path() ==
                                 NibblesView{to_key(version * num_nodes + k)}) {
                                 found = true;
                                 break;
@@ -374,32 +376,19 @@ int main(int argc, char *const argv[])
                         }
                         MONAD_ASSERT(found);
                     }
+                }
+
+                virtual bool
+                should_visit_child(Node const &, unsigned char) override
+                {
                     return !g_done;
                 }
 
-                virtual void up(unsigned char branch, Node const &node) override
+                virtual std::unique_ptr<TraverseMachine>
+                clone(unsigned char branch) const override
                 {
-                    auto const path_view = NibblesView{path};
-                    auto const rem_size = [&] {
-                        if (branch == INVALID_BRANCH) {
-                            MONAD_ASSERT(path_view.nibble_size() == 0);
-                            return 0;
-                        }
-                        int const rem_size =
-                            path_view.nibble_size() - 1 -
-                            node.path_nibble_view().nibble_size();
-                        MONAD_ASSERT(rem_size >= 0);
-                        MONAD_ASSERT(
-                            path_view.substr(static_cast<unsigned>(rem_size)) ==
-                            concat(branch, node.path_nibble_view()));
-                        return rem_size;
-                    }();
-                    path = path_view.substr(0, static_cast<unsigned>(rem_size));
-                }
-
-                virtual std::unique_ptr<TraverseMachine> clone() const override
-                {
-                    return std::make_unique<VersionValidatorMachine>(*this);
+                    return std::make_unique<VersionValidatorMachine>(
+                        *this, branch);
                 }
             };
 

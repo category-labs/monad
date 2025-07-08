@@ -140,8 +140,9 @@ namespace
         std::atomic<size_t> cbs{0}; // callbacks when found
 
         OnDiskDbWithFileAsyncFixture()
-            : io_ctx(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths})
+            : io_ctx(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths})
             , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
@@ -232,7 +233,6 @@ namespace
     struct DummyTraverseMachine final : public TraverseMachine
     {
         size_t &num_leaves;
-        Nibbles path{};
         std::vector<std::chrono::steady_clock::time_point> *times{nullptr};
 
         explicit DummyTraverseMachine(size_t &num_leaves)
@@ -240,45 +240,29 @@ namespace
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        DummyTraverseMachine(
+            DummyTraverseMachine const &parent, unsigned char branch)
+            : TraverseMachine(parent, branch)
+            , num_leaves(parent.num_leaves)
+            , times(parent.times)
         {
-            if (branch == INVALID_BRANCH) {
-                return true;
-            }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+        }
 
-            if (node.has_value()) {
+        virtual void visit(unsigned char branch, Node const &node) override
+        {
+            if (branch != INVALID_BRANCH && node.has_value()) {
                 if (times != nullptr && (num_leaves & 4095) == 0) {
                     times->push_back(std::chrono::steady_clock::now());
                 }
                 ++num_leaves;
-                EXPECT_EQ(path.nibble_size(), KECCAK256_SIZE * 2);
+                EXPECT_EQ(path().nibble_size(), KECCAK256_SIZE * 2);
             }
-            return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
         {
-            auto const path_view = NibblesView{path};
-            auto const rem_size = [&] {
-                if (branch == INVALID_BRANCH) {
-                    MONAD_ASSERT(path_view.nibble_size() == 0);
-                    return 0;
-                }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
-                MONAD_ASSERT(rem_size >= 0);
-                MONAD_ASSERT(
-                    path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
-                return rem_size;
-            }();
-            path = path_view.substr(0, static_cast<unsigned>(rem_size));
-        }
-
-        virtual std::unique_ptr<TraverseMachine> clone() const override
-        {
-            return std::make_unique<DummyTraverseMachine>(*this);
+            return std::make_unique<DummyTraverseMachine>(*this, branch);
         }
 
         void reset()
@@ -304,11 +288,12 @@ namespace
         std::deque<Update> updates_alloc;
         for (size_t i = offset; i < nkeys + offset; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
-            updates_alloc.push_back(Update{
-                .key = kv,
-                .value = kv,
-                .incarnation = false,
-                .next = UpdateList{}});
+            updates_alloc.push_back(
+                Update{
+                    .key = kv,
+                    .value = kv,
+                    .incarnation = false,
+                    .next = UpdateList{}});
         }
         return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
     }
@@ -322,9 +307,10 @@ namespace
         static constexpr uint64_t num_blocks = 1000;
 
         ROOnDiskWithFileFixture()
-            : ro_db(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths,
-                  .node_lru_size = 100})
+            : ro_db(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths,
+                      .node_lru_size = 100})
             , pool(2, 16)
         {
             init_db_with_data();
@@ -648,24 +634,26 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
         uint8_t const expected_cache_level{3};
         uint8_t curr_level{0};
 
-        constexpr InMemoryTraverseMachine(uint8_t const expected_cache_level_)
+        InMemoryTraverseMachine(uint8_t const expected_cache_level_)
             : expected_cache_level(expected_cache_level_)
         {
         }
 
-        virtual bool down(unsigned char, Node const &) override
+        InMemoryTraverseMachine(
+            InMemoryTraverseMachine const &parent, unsigned char branch)
+            : TraverseMachine(parent, branch)
+            , expected_cache_level(parent.expected_cache_level)
+            , curr_level(parent.curr_level)
         {
-            ++curr_level;
-            return true;
         }
 
-        virtual void up(unsigned char, Node const &) override
+        virtual void visit(unsigned char, Node const &) override
         {
-            --curr_level;
+            ++curr_level;
         }
 
         virtual bool
-        should_visit(Node const &node, unsigned char branch) override
+        should_visit_child(Node const &node, unsigned char branch) override
         {
             bool next_is_in_memory =
                 node.next(node.to_child_index(branch)) != nullptr;
@@ -673,9 +661,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
             return next_is_in_memory;
         }
 
-        virtual std::unique_ptr<TraverseMachine> clone() const override
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
         {
-            return std::make_unique<InMemoryTraverseMachine>(*this);
+            return std::make_unique<InMemoryTraverseMachine>(*this, branch);
         }
     };
 
@@ -878,11 +867,12 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     auto const &large_value =
         bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
     for (size_t i = 0; i < nkeys; ++i) {
-        updates_alloc.push_back(Update{
-            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
-            .value = large_value,
-            .incarnation = false,
-            .next = UpdateList{}});
+        updates_alloc.push_back(
+            Update{
+                .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+                .value = large_value,
+                .incarnation = false,
+                .next = UpdateList{}});
     }
 
     // construct a read-only aux
@@ -1496,14 +1486,21 @@ TYPED_TEST(DbTraverseTest, traverse)
     {
         size_t &num_leaves;
         size_t index{0};
-        size_t num_up{0};
 
         SimpleTraverse(size_t &num_leaves)
             : num_leaves(num_leaves)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        SimpleTraverse(SimpleTraverse const &other, unsigned char branch)
+            : TraverseMachine(other, branch)
+            , num_leaves(other.num_leaves)
+            , index(other.index)
+        {
+        }
+
+        virtual void
+        visit(unsigned char const branch, Node const &node) override
         {
             if (node.has_value() && branch != INVALID_BRANCH) {
                 ++num_leaves;
@@ -1567,17 +1564,12 @@ TYPED_TEST(DbTraverseTest, traverse)
                 MONAD_ASSERT(false);
             }
             ++index;
-            return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
         {
-            ++num_up;
-        }
-
-        virtual std::unique_ptr<TraverseMachine> clone() const override
-        {
-            return std::make_unique<SimpleTraverse>(*this);
+            return std::make_unique<SimpleTraverse>(*this, branch);
         }
 
         Nibbles make_nibbles(std::initializer_list<uint8_t> nibbles)
@@ -1606,7 +1598,6 @@ TYPED_TEST(DbTraverseTest, traverse)
         SimpleTraverse traverse{num_leaves};
         ASSERT_TRUE(this->db.traverse_blocking(
             this->db.root(), traverse, this->block_id));
-        EXPECT_EQ(traverse.num_up, 7);
         EXPECT_EQ(num_leaves, 4);
     }
 }
@@ -1623,27 +1614,37 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        TrimmedTraverse(TrimmedTraverse const &other, unsigned char branch)
+            : TraverseMachine(other, branch)
+            , num_leaves(other.num_leaves)
+        {
+        }
+
+        virtual void visit(unsigned char const, Node const &node) override
+        {
+            if (node.has_value()) {
+                ++num_leaves;
+            }
+        }
+
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
+        {
+            return std::make_unique<TrimmedTraverse>(*this, branch);
+        }
+
+        virtual bool
+        should_visit_node(Node const &node, unsigned char const branch) override
         {
             if (node.path_nibbles_len() == 3 && branch == 5) {
                 // trim one leaf
                 return false;
             }
-            if (node.has_value()) {
-                ++num_leaves;
-            }
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override {}
-
-        virtual std::unique_ptr<TraverseMachine> clone() const override
-        {
-            return std::make_unique<TrimmedTraverse>(*this);
-        }
-
         virtual bool
-        should_visit(Node const &, unsigned char const branch) override
+        should_visit_child(Node const &, unsigned char const branch) override
         {
             // trim the right most leaf
             return branch != 4;

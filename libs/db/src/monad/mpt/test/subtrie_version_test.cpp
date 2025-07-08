@@ -36,6 +36,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
     {
         std::stack<ExpectedSubtrieVersion> &records;
         bool done_erase{false};
+        Node const *node{nullptr};
 
         TraverseVerifyVersions(
             std::stack<ExpectedSubtrieVersion> &records,
@@ -45,40 +46,39 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         {
         }
 
-        virtual bool down(unsigned char, Node const &node) override
+        TraverseVerifyVersions(
+            TraverseVerifyVersions const &other, unsigned char branch)
+            : TraverseMachine(other, branch)
+            , records(other.records)
+            , done_erase(other.done_erase)
+            , node(other.node)
         {
-            records.push(ExpectedSubtrieVersion{
-                .root = const_cast<Node *>(&node),
-                .min_subtrie_version = node.version,
-                .max_children_version = 0});
-            return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        ~TraverseVerifyVersions() override
         {
             auto const node_record = records.top();
-            ASSERT_TRUE(node_record.root == &node);
+            EXPECT_TRUE(node_record.root == node);
             records.pop();
             if (records.empty()) { // node is root
                 EXPECT_EQ(
-                    node_record.min_subtrie_version,
-                    calc_min_version(*const_cast<Node *>(&node)));
+                    node_record.min_subtrie_version, calc_min_version(*node));
             }
             else {
                 auto &parent_record = records.top();
                 Node *const parent = parent_record.root;
                 // verify version decreasing
-                EXPECT_TRUE(parent->version >= node.version);
+                EXPECT_TRUE(parent->version >= node->version);
 
                 // verify max_children_version for non leaf nodes
-                if (!node.has_value()) {
+                if (!node->has_value()) {
                     if (done_erase) {
                         EXPECT_TRUE(
-                            node.version >= node_record.max_children_version);
+                            node->version >= node_record.max_children_version);
                     }
                     else {
                         EXPECT_EQ(
-                            node.version, node_record.max_children_version);
+                            node->version, node_record.max_children_version);
                     }
                 }
                 else {
@@ -94,13 +94,25 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
                     parent_record.min_subtrie_version,
                     node_record.min_subtrie_version);
                 parent_record.max_children_version =
-                    std::max(parent_record.max_children_version, node.version);
+                    std::max(parent_record.max_children_version, node->version);
             }
         }
 
-        virtual std::unique_ptr<TraverseMachine> clone() const override
+        virtual void
+        visit(unsigned char /* branch */, Node const &node) override
         {
-            return std::make_unique<TraverseVerifyVersions>(*this);
+            this->node = &node;
+            records.push(
+                ExpectedSubtrieVersion{
+                    .root = const_cast<Node *>(&node),
+                    .min_subtrie_version = node.version,
+                    .max_children_version = 0});
+        }
+
+        virtual std::unique_ptr<TraverseMachine>
+        clone(unsigned char branch) const override
+        {
+            return std::make_unique<TraverseVerifyVersions>(*this, branch);
         }
     };
 
@@ -124,12 +136,13 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
-            updates.push_front(updates_alloc.emplace_back(Update{
-                .key = key_values.back(),
-                .value = key_values.back(),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id)}));
+            updates.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = key_values.back(),
+                    .value = key_values.back(),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id)}));
             i++;
         }
         this->root = this->aux.do_update(
@@ -140,14 +153,16 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         std::stack<ExpectedSubtrieVersion> node_records{};
         EXPECT_EQ(calc_min_version(*this->root), 0);
 
-        TraverseVerifyVersions traverse{node_records};
-        // Must traverse in order
-        preorder_traverse_blocking(
-            this->aux,
-            *this->root,
-            traverse,
-            this->aux.db_history_max_version());
-        EXPECT_EQ(traverse.records.empty(), true);
+        {
+            TraverseVerifyVersions traverse{node_records};
+            // Must traverse in order
+            preorder_traverse_blocking(
+                this->aux,
+                *this->root,
+                traverse,
+                this->aux.db_history_max_version());
+        }
+        EXPECT_TRUE(node_records.empty());
     }
 
     // Erase half of the keys
@@ -167,12 +182,13 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
-            updates.push_front(updates_alloc.emplace_back(Update{
-                .key = key_values.back(),
-                .value = std::nullopt,
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id)}));
+            updates.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = key_values.back(),
+                    .value = std::nullopt,
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id)}));
             i++;
         }
         this->root = this->aux.do_update(
@@ -183,13 +199,15 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         std::stack<ExpectedSubtrieVersion> node_records{};
         EXPECT_EQ(calc_min_version(*this->root), 0);
 
-        TraverseVerifyVersions traverse{node_records, true};
-        // Must traverse in order
-        preorder_traverse_blocking(
-            this->aux,
-            *this->root,
-            traverse,
-            this->aux.db_history_max_version());
-        EXPECT_EQ(traverse.records.empty(), true);
+        {
+            TraverseVerifyVersions traverse{node_records, true};
+            // Must traverse in order
+            preorder_traverse_blocking(
+                this->aux,
+                *this->root,
+                traverse,
+                this->aux.db_history_max_version());
+        }
+        EXPECT_EQ(node_records.empty(), true);
     }
 }

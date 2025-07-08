@@ -238,9 +238,41 @@ public:
     constexpr auto operator<=>(NibblesView const &other) const
     {
         unsigned const min_size = std::min(nibble_size(), other.nibble_size());
-        for (unsigned i = 0; i < min_size; ++i) {
-            if (get(i) != other.get(i)) {
-                return get(i) <=> other.get(i);
+        if (begin_nibble_ == other.begin_nibble_) {
+            if (begin_nibble_) {
+                unsigned char const this_first_nibble =
+                    get_nibble(data_, begin_nibble_);
+                unsigned char const other_first_nibble =
+                    get_nibble(other.data_, other.begin_nibble_);
+                auto ret = this_first_nibble <=> other_first_nibble;
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+
+            auto ret = memcmp(
+                data_ + begin_nibble_,
+                other.data_ + begin_nibble_,
+                static_cast<size_type>(min_size - begin_nibble_) / 2);
+            if (ret != 0) {
+                return ret <=> 0;
+            }
+
+            if ((min_size - begin_nibble_) % 2) {
+                // compare last nibble
+                unsigned char const this_last_nibble = get(min_size - 1);
+                unsigned char const other_last_nibble = other.get(min_size - 1);
+                auto ret = this_last_nibble <=> other_last_nibble;
+                if (ret != 0) {
+                    return ret;
+                }
+            }
+        }
+        else {
+            for (unsigned i = 0; i < min_size; ++i) {
+                if (get(i) != other.get(i)) {
+                    return get(i) <=> other.get(i);
+                }
             }
         }
         return nibble_size() <=> other.nibble_size();

@@ -15,7 +15,6 @@ using TraverseCallback = std::function<void(NibblesView, byte_string_view)>;
 
 class RangedGetMachine : public TraverseMachine
 {
-    Nibbles path_;
     Nibbles const min_;
     Nibbles const max_;
     TraverseCallback callback_;
@@ -41,56 +40,43 @@ private:
 public:
     RangedGetMachine(
         NibblesView const min, NibblesView const max, TraverseCallback callback)
-        : path_{}
-        , min_{min}
+        : min_{min}
         , max_{max}
         , callback_(std::move(callback))
     {
     }
 
-    virtual bool down(unsigned char const branch, Node const &node) override
+    RangedGetMachine(RangedGetMachine const &parent, unsigned char branch)
+        : TraverseMachine(parent, branch)
+        , min_(parent.min_)
+        , max_(parent.max_)
+        , callback_(parent.callback_)
     {
-        if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
-            return true;
-        }
-
-        auto next_path =
-            concat(NibblesView{path_}, branch, node.path_nibble_view());
-        if (!does_key_intersect_with_range(next_path)) {
-            return false;
-        }
-
-        path_ = std::move(next_path);
-        if (node.has_value() && path_.nibble_size() >= min_.nibble_size()) {
-            callback_(path_, node.value());
-        }
-
-        return true;
     }
 
-    void up(unsigned char const branch, Node const &node) override
+    RangedGetMachine(RangedGetMachine &&) = default;
+
+    virtual void visit(unsigned char const, Node const &node) override
     {
-        auto const path_view = NibblesView{path_};
-        unsigned const rem_size = [&] {
-            if (branch == INVALID_BRANCH) {
-                return 0u;
-            }
-            constexpr unsigned BRANCH_SIZE = 1;
-            return path_view.nibble_size() - BRANCH_SIZE -
-                   node.path_nibble_view().nibble_size();
-        }();
-        path_ = path_view.substr(0, rem_size);
+        if (node.has_value() && path().nibble_size() >= min_.nibble_size()) {
+            callback_(path(), node.value());
+        }
     }
 
-    bool should_visit(Node const &, unsigned char const branch) override
+    bool should_visit_node(Node const &, unsigned char const) override
     {
-        auto const child = concat(NibblesView{path_}, branch);
+        return does_key_intersect_with_range(path());
+    }
+
+    bool should_visit_child(Node const &, unsigned char const branch) override
+    {
+        auto const child = concat(path(), branch);
         return does_key_intersect_with_range(child);
     }
 
-    std::unique_ptr<TraverseMachine> clone() const override
+    std::unique_ptr<TraverseMachine> clone(unsigned char branch) const override
     {
-        return std::make_unique<RangedGetMachine>(*this);
+        return std::make_unique<RangedGetMachine>(*this, branch);
     }
 };
 

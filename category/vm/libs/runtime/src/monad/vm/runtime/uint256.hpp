@@ -1061,57 +1061,6 @@ namespace monad::vm::runtime
         }
     }
 
-    /**
-     * Compute an underapproximation of the reciprocal for use in Barrett
-     * reduction.
-     *
-     * Precondition: `d > 1`
-     * Postcondition: let `M = reciprocal_barrett(v)`. Then for any 256-bit `x`
-     * we have `floor(x*M/2^256) <= x/v <= floor(x*M/2^256) + 1`
-     *
-     * Proof of correctness:
-     *   1. (2^256 / d) - 1 < M <= (2^256 / d)
-     *   2. (x*2^256 / d) - x < M*x <= (x*2^256/d)
-     *   3. (x/d) - (x/2^256) < M*x/2^256 <= x/d
-     * Since x is 256-bit:
-     *   4. x/d - 1 < M*x/2^256 <= x/d
-     * Let q = x/d, q_hat = floor(M*x/2^256). Then:
-     *   5. q_hat <= M*x/2^256 < q_hat + 1
-     *   6. q - 1 < q_hat + 1 (by 4 and 5)
-     *   7. q_hat <= q        (by 4 and 5)
-     * Finally we have q_hat <= q < q_hat+2 as desired
-     */
-    [[gnu::always_inline]] inline constexpr uint256_t
-    reciprocal_barrett(uint256_t const &d) noexcept
-    {
-        MONAD_VM_DEBUG_ASSERT(d > 1);
-        // num = 2^256
-        words_t<uint256_t::num_words + 1> const num{0, 0, 0, 0, 1};
-        auto const res = udivrem(num, d.as_words());
-        // Since d>=2 we know quot < num = 2^256 so we discard res.quot[4]
-        return uint256_t{res.quot[0], res.quot[1], res.quot[2], res.quot[3]};
-    }
-
-    [[gnu::always_inline]]
-    inline constexpr div_result<uint256_t> udivrem_barrett(
-        uint256_t const &u, uint256_t const &v, uint256_t const &rec) noexcept
-    {
-        auto prod = mul_words(u.as_words(), rec.as_words());
-        // Shift right by 256
-        uint256_t q_hat{prod[4], prod[5], prod[6], prod[7]};
-        // TODO: compute r_hat from prod[0..3]?
-        uint256_t r_hat = u - v * q_hat;
-        auto d = subb(r_hat, v);
-        if (d.carry) {
-            // 0 <= r_hat < v
-            return {.quot = q_hat, .rem = r_hat};
-        }
-        else {
-            // v <= r_hat < 2*v
-            return {.quot = q_hat + 1, .rem = d.value};
-        }
-    }
-
     template <size_t M, size_t N>
     [[gnu::always_inline]]
     inline constexpr result_with_carry<words_t<M>>
@@ -1459,6 +1408,187 @@ namespace monad::vm::runtime
 
         return result;
     }
+
+    namespace barrett
+    {
+
+        template <size_t MIN_DENOMINATOR_, size_t INPUT_BITS_>
+        struct reciprocal
+        {
+            static constexpr size_t MIN_DENOMINATOR = MIN_DENOMINATOR_;
+            static constexpr size_t INPUT_BITS = INPUT_BITS_;
+            static constexpr size_t SHIFT = INPUT_BITS;
+            static constexpr size_t NUMERATOR_WORDS = 1 + SHIFT / 64;
+            static constexpr size_t WORD_SHIFT = SHIFT / 64;
+            static constexpr size_t BIT_SHIFT = SHIFT % 64;
+
+            static constexpr words_t<NUMERATOR_WORDS> _numerator() noexcept
+            {
+                words_t<NUMERATOR_WORDS> num;
+                for (size_t i = 0; i < WORD_SHIFT; i++) {
+                    num[i] = 0;
+                }
+                num[WORD_SHIFT] = 1 << BIT_SHIFT;
+                return num;
+            }
+
+            static constexpr words_t NUMERATOR = _numerator();
+
+            static constexpr size_t _reciprocal_words() noexcept
+            {
+                uint256_t d{MIN_DENOMINATOR};
+                auto [max_q, _] = udivrem(NUMERATOR, d.as_words());
+                size_t significant_words = 0;
+                for (size_t i = 0; i < std::tuple_size<decltype(max_q)>::value;
+                     i++) {
+                    if (max_q[i]) {
+                        significant_words = i + 1;
+                    }
+                }
+                return significant_words;
+            }
+
+            static constexpr size_t RECIPROCAL_WORDS = _reciprocal_words();
+
+            using type = words_t<RECIPROCAL_WORDS>;
+
+            /**
+             * Compute an underapproximation of the reciprocal for use in
+             * Barrett reduction.
+             *
+             * Precondition: `d > MIN_DENOMINATOR`
+             * Postcondition: let `M = reciprocal<Min, N>::of(v)`. Then for any
+             * N-bit `x` we have `floor(x*M/2^N) <= x/v <= floor(x*M/2^N)
+             * + 1`
+             *
+             * Proof of correctness:
+             *   1. (2^N / d) - 1 < M <= (2^N / d)
+             *   2. (x*2^N / d) - x < M*x <= (x*2^N/d)
+             *   3. (x/d) - (x/2^N) < M*x/2^N <= x/d
+             * Since x is N-bit:
+             *   4. x/d - 1 < M*x/2^N <= x/d
+             * Let q = x/d, q_hat = floor(M*x/2^N). Then:
+             *   5. q_hat <= M*x/2^N < q_hat + 1
+             *   6. q - 1 < q_hat + 1 (by 4 and 5)
+             *   7. q_hat <= q        (by 4 and 5)
+             * Finally we have q_hat <= q < q_hat+2 as desired
+             */
+            // TODO: Double-check this proof since it was written before
+            // parameterising the entire thing
+            static constexpr type of(uint256_t const &d) noexcept
+            {
+                MONAD_VM_DEBUG_ASSERT(d >= MIN_DENOMINATOR);
+                auto [q, _] = udivrem(NUMERATOR, d.as_words());
+
+                type result;
+                if consteval {
+                    for (size_t i = 0; i < RECIPROCAL_WORDS; i++) {
+                        result[i] = q[i];
+                    }
+                }
+                else {
+                    std::memcpy(&result, &q, sizeof(result));
+                }
+                return result;
+            }
+        };
+
+        using udivrem_reciprocal = reciprocal<2, 256>;
+        using addmod_reciprocal = reciprocal<3, 257>;
+        using mulmod_reciprocal = reciprocal<2, 512>;
+
+        static_assert(udivrem_reciprocal::RECIPROCAL_WORDS == 4);
+        static_assert(addmod_reciprocal::RECIPROCAL_WORDS == 4);
+        static_assert(mulmod_reciprocal::RECIPROCAL_WORDS == 8);
+
+        [[gnu::always_inline]]
+        inline constexpr div_result<uint256_t> udivrem(
+            uint256_t const &u, uint256_t const &v,
+            barrett::udivrem_reciprocal::type const &rec) noexcept
+        {
+            auto prod = mul_words(u.as_words(), rec);
+            // Shift right by 256
+            uint256_t q_hat{prod[4], prod[5], prod[6], prod[7]};
+            // TODO: compute r_hat from prod[0..3]?
+            uint256_t r_hat = u - v * q_hat;
+            auto d = subb(r_hat, v);
+            if (d.carry) {
+                // 0 <= r_hat < v
+                return {.quot = q_hat, .rem = r_hat};
+            }
+            else {
+                // v <= r_hat < 2*v
+                return {.quot = q_hat + 1, .rem = d.value};
+            }
+        }
+
+        inline constexpr uint256_t addmod(
+            uint256_t const &x, uint256_t const &y, uint256_t const &v,
+            barrett::addmod_reciprocal::type const &rec) noexcept
+        {
+            words_t<uint256_t::num_words + 1> sum;
+            auto [s, c] = addc(x, y);
+            memcpy(&sum, &s, sizeof(s));
+            sum[uint256_t::num_words] = c;
+
+            auto prod = mul_words(sum, rec);
+            // q_hat = prod >> 257
+            uint256_t q_hat;
+            q_hat[3] = shrd(prod[8], prod[7], 1);
+            q_hat[2] = shrd(prod[7], prod[6], 1);
+            q_hat[1] = shrd(prod[6], prod[5], 1);
+            q_hat[0] = shrd(prod[5], prod[4], 1);
+
+            // Compute rem = sum - q_hat*v, but if sum>=2^256 we need to do wide
+            // multiplication
+            uint256_t rem;
+            if (c) {
+                // TODO: replace this with 5-word truncating multiplication?
+                auto prod_long = mul_words(v.as_words(), q_hat.as_words());
+                decltype(sum) prod;
+                memcpy(&prod, &prod_long, sizeof(prod));
+                auto [r_hat, r_carry] = subb(sum, prod);
+                MONAD_VM_DEBUG_ASSERT(!r_carry);
+                auto d = subb(r_hat, v.as_words());
+                if (d.carry) {
+                    // r_hat < v
+                    std::memcpy(&rem, &r_hat, sizeof(rem));
+                }
+                else {
+                    std::memcpy(&rem, &d.value, sizeof(rem));
+                }
+            }
+            else {
+                uint256_t r_hat = s - v * q_hat;
+                auto d = subb(r_hat, v);
+                rem = d.carry ? r_hat : d.value;
+            }
+            return rem;
+        }
+
+        inline constexpr uint256_t mulmod(
+            uint256_t const &x, uint256_t const &y, uint256_t const &d,
+            barrett::mulmod_reciprocal::type const &rec)
+        {
+            auto xy = mul_words(x.as_words(), y.as_words());
+            auto prod = mul_words(xy, rec);
+            // q_hat = prod >> 512
+            words_t<std::tuple_size<decltype(prod)>::value - (512 / 64)> q_hat;
+            memcpy(&q_hat, &prod[8], sizeof(q_hat));
+
+            // TODO: make this multiplication truncating
+            auto qd_ = mul_words(q_hat, d.as_words());
+            decltype(xy) qd;
+            memcpy(&qd, &qd_, sizeof(qd));
+
+            auto [r_hat_0, r_carry_0] = subb(xy, qd);
+            auto [r_hat_1, r_carry_1] = subb(r_hat_0, d.as_words());
+            uint256_t rem;
+            std::memcpy(&rem, &(r_carry_1 ? r_hat_0 : r_hat_1), sizeof(rem));
+            return rem;
+        }
+    }
+
 }
 
 template <>

@@ -307,7 +307,7 @@ Definition TrieRODbR (q:Qp) (dbpath: DbPath) (activeProposal: option ProposalInD
  transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
   *)
 Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: ProposalInDb) : mpred. Admitted.
-(** ^ [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2); thus, this assertion can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postcondition of TrieDb::finalize. After calling TrieDb::finalize, a client application can send this assertion to another process (e.g. attached to a socket message) and then reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. (Its definition will use logical/ghost locations which were covered in #<a href="https://youtu.be/vunTJ28Rt34">Tutorial3</a>#).
+(** ^ [FinalizedProposalForBlockNum dbpath blockNum p] asserts that p is the finalized proposal for block blockNum. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2); thus, this assertion can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postcondition of TrieDb::finalize. After calling TrieDb::finalize, a client application can send this assertion to another process (e.g. attached to a socket message) and then reason that if the recipient process calls TrieRODb::set_block_and_round(blockNum), it will either fail (block blockNum got evicted on garbage collection) or read p and nothing else. (Its definition will use logical/ghost locations which were covered in #<a href="https://youtu.be/vunTJ28Rt34">Tutorial3</a>#).
 
 
  Finally, we have enough vocabulary to write the specs.
@@ -336,10 +336,10 @@ cpp.spec "monad::TrieDb::set_block_and_round(unsigned long, std::optional<unsign
   \prepost roundLoc |-> optionalPrimR 1 "unsigned long" (idRoundNum pid)
   (** ^ the above 2 lines together describe the round_number argument.
       Unlike `block_number`, which is a scalar value of type `uint64_t`, round_number has type `std::optional<uint64_t>`.
-      In our C++ formalization, composite types (struct/array) are represented as memory locations that store the composite value.
+      In our C++ formalization, arguments of composite types (classes/arrays) are represented as memory locations that store the composite value.
       So, the first line names that location as [roundLoc] (typically on the stack).
       The next line says that at [roundLoc] we have the representation of the optional number [idRoundNum pid],
-      which is of type [option N] in Coq. Note that pid was already quantified above when specifying the `block_number` argument.
+      which is of type [option N] in Coq. Note that [pid] was already quantified above when specifying the `block_number` argument.
 
 
       Above, we have connected all the arguments of the method (including the implicit `this` argument) to their corresponding

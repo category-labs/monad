@@ -500,7 +500,10 @@ TEST(uint256, division)
         {
             {0x00ff, 0x00, 0x00, 0xff},
             {0xff00, 0x00, 0x00, 0x00},
-
+        },
+        {
+            {0x0, 0x0, 0x0, std::numeric_limits<uint64_t>::max()},
+            {uint64_t{1} << 63, 1, 1, 0x0},
         }};
     for (auto const &[x, y] : div_inputs) {
         auto const [q, r] = udivrem(x, y);

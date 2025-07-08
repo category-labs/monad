@@ -1,15 +1,14 @@
 (** * Specifications of TrieDb and TrieRODb.
 
 This document presents formal specifications of the TrieDb and TrieRODb classes.
-The goal of these Coq specs is to describe *what* the methods of these classes do, not how.
-While the implementation is optimized be extremely computationally efficient,
+The goal of these Coq specs is to describe WHAT the methods of these classes do, not how. While the implementation is optimized be extremely computationally efficient,
 the specs dont care about that and rather optimize for logical simplicity.
-Using separation logic, these also specify what kind of concurrency is allowed when calling the methods.
+Using separation logic, these specs also precisely specify what kind of concurrency is allowed when calling the methods. These specs should make it easier to understand what happens in case of various races that are allowed.
 
 We have attempted to make this file understandable to anyone familiar with functional programming (OCaml/Haskell), but we highly recommend reviewing the first formal verification tutorial before reading this file. In many places, this file refers to analogous concepts explained in the tutorial.
 
-   - #<href a="https://www.youtube.com/watch?v=zyyoWnF1QUE">Tutorial1</href># (only until 1:17:00): 
-   - #<href a="https://www.youtube.com/watch?v=9fjR_yQmiOU">Tutorial2</href># (only until 1:10:00): 
+   - #<a href="https://www.youtube.com/watch?v=zyyoWnF1QUE">Tutorial1<a/># (only until 1:17:00): 
+   - #<a href="https://www.youtube.com/watch?v=9fjR_yQmiOU">Tutorial2<a/># (only until 1:10:00): 
 
 We also recommend Tutorial2 as background review if you want to more deeply understand the concurrency aspects of these specs.
 *)
@@ -36,11 +35,9 @@ Require Import monad.proofs.prelude.
 Notation EvmState := evm.GlobalState.
 (** ^ [EvmState] is the persistent state of the entire EVM: the state of all accounts. *)
 
-(** Below, the [ProposalInDb] record bundles all the information for a single block proposal
+(** Below, the `ProposalInDb` record bundles all the information for a single block proposal
     stored in the trie: the consensus header [cheader], the raw [proposedBlock],
     its [postBlockState] after execution, and the per-transaction [txResults].
-    Almost everything is hyperliked to its definition, even references to Coq items in comments like this one.
-    For example, you can click below on [Block] to jump to its definition and then press the back button on your browser to come back.
  *)
 Record ProposalInDb : Type :=
   {
@@ -50,17 +47,20 @@ Record ProposalInDb : Type :=
     txResults: list TransactionResult;
   }.
 
-(** [BlockNumStateInDb] groups together all proposals sharing the same block number.
+(** In this document, almost everything is hyperliked to its definition, even references to Coq items in comments like this one. For example, you can click [Block] here or in the occurrence above to jump to its definition and then press the back button on your browser to come back.
+*)
+
+(** Next, `BlockNumStateInDb` groups together all proposals sharing the same block number.
 *)
 Record BlockNumStateInDb :=
   {
     proposals: list ProposalInDb;
     finalizedRoundNum: option N;
-    (** ^ For any block number, the finalized round number, if any, is set by calling Db::finalize(). [option T] is similar to `std::optional<T>` in C++. *)
+    (** ^ For any block number, the finalized round number, if any, is set by calling `TrieDb::finalize()`. [option T] is similar to `std::optional<T>` in C++. Clicking on [option] will take you to its definition in Coq's standard library. *)
   }.
 
 
-(** [ProposalId] identifies a single proposal in the model by its block number
+(** Next, `ProposalId` identifies a single proposal in the model by its block number
     and an optional round number.  *)
 Record ProposalId :=
   {
@@ -69,42 +69,42 @@ Record ProposalId :=
     (** ^ [None] signifies the finalized round number for block number [idBlockNum]. *)
   }.
 
-(** Underlying storage for the Db. *)
+(** Multiple C++ objects can be created based on the same disk storage, e.g. a TrieDb and several TrieRODb objects. So, we track the underlying storage in the model to connect their specs, e.g. how a `TrieDb::commit` affects `TrieRODb::read_storage` if they have the same underlying storage *)
 Inductive DbPath :=
-| BlockDev (fullpath: string)
-| File (fullpath: string).
-  
-(** [DbModel] is the complete in-memory trie model for [TrieDb]. *)
+| BlockDev (fullpath: PrimString.string)
+| File (fullpath: PrimString.string).
+
+(** Finally, `DbModel` is the complete model for [TrieDb], representing in Coq all the data it stores *)
 Record DbModel : Type :=
   {
     blockNumsStates: list BlockNumStateInDb;
-    (** ^ each member of this list records all proposals (and finalized round number, if any) for some round number.
-       Each member of this list represents a unique block number. *)
+    (** ^ Each member of this list records all proposals (and finalized round number, if any) for some block number. Each member of this list represents a unique block number, as we will formalize in [validDbModel] below *)
     
     activeProposal: option ProposalId;
-    (** ^ records the active proposal used by read operations such as read_storage.
-        Set by [set_block_and_round]; None means set_block_and_round has never been called on this object. *)
+    (** ^ Records the id (block number, round number) of the active proposal. Read operations like `read_storage` read from the proposal with this id. Also TrieDb::commit uses this proposal as the base for applying diffs (`StateDeltas`).
+
+     This field is set in the postcondition of the spec for `TrieDb::set_block_and_round`; [None] means `set_block_and_round has never been called on this object. *)
 
     votedMetadata: option (N * N);
-    (** ^ (block_num, round) from the latest [update_voted_metadata] call *)
+    (** ^ (block number, round number) from the latest [update_voted_metadata] call. [N * N] is analogous to `std::pair<N,N>` *)
 
     lastVerifiedBlockNum: N;
     (** ^ highest block index marked verified via [update_verified_block] *)
 
     dbpath: DbPath;
-    (** This path is authoritatively owned by the TrieDb. A client can reason that a TrieRODb created with the same underlying path reads the same values that this TrieDb writes. *)
+    (** This field identifies the disk/file where the Db is stored. It is authoritatively owned by the TrieDb. A client can reason that a TrieRODb created with the same underlying path reads the same values that this TrieDb writes. *)
     
     cinvId: gname;
     (** ^ Ignore this Coq detail: invariant name for concurrent disk/memory ownership. *)
   }.
 
 
-(** * Class invariants of Db.
+(** * Class invariants of TrieDb (DbModel).
 
-Not all members of the [DbModel] type correspond to data stored in a TrieDb object (and associated disk structures).
+Not all members of the above [DbModel] type correspond to data stored in a TrieDb object (and associated disk structures).
 There are some invariants, e.g.:
 - The list [blockNumsStates] has a contiguous range of block numbers (no holes).
-- Proposals in [blockNumsStates] have distinct round numbers. Even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for that round number: after `commit()`, the old block cannot be accessed by TrieDb methods. Some TrieRODb methods can still access the old proposal until the next set_block_and_round, and we will see how our specs capture that below.
+- Proposals in [blockNumsStates] have distinct round numbers. Even if commit() is called multiple times for the same round number, it atomically replaces the old proposal for that round number: after `commit()`, the old block cannot be accessed by TrieDb methods. Some TrieRODb methods can still access the old proposal until the next `set_block_and_round`, and we will see how our specs capture that below.
 
 In this section, we have a sequence of definitions leading up to [validDbModel], which captures these invariants.
 Class invariants hold before/after every method call.

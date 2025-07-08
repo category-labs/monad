@@ -435,7 +435,7 @@ TEST(uint256, arithmetic)
 
 TEST(uint256, division)
 {
-    // Specific tests: inputs that have triggered bugs in the past
+    // Specific tests: inputs to cover special cases
     constexpr std::pair<uint256_t, uint256_t> div_inputs[]{
         {
             {0x00, 0xffffffffffffffff, 0xff, 0x00},

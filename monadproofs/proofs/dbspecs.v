@@ -3,12 +3,19 @@
 This document presents formal specifications of the TrieDb and TrieRODb classes.
 The goal of these Coq specs is to describe WHAT the methods of these classes do, not how. While the implementation is optimized be extremely computationally efficient,
 the specs dont care about that and rather optimize for logical simplicity.
-Using separation logic, these specs also precisely specify what kind of concurrency is allowed when calling the methods. These specs should make it easier to understand what happens in case of various races that are allowed.
+
+Using separation logic, these specs also precisely specify what kind of concurrency is allowed when calling the methods. Also, these specs should make it easier to understand what happens in case of various races that are allowed. Below, we will see examples of such reasonings.
+
+Specs do not need to define exactly what methods do. Using existential quantification in the postcondition, they can force the clients to not depend on certain implementation details that may change later. Formally, there is a guarantee that proofs of such clients will not need to change if such implementation details change in the future. For example, in the spec of `TrieDb::commit` we allow the TrieDb implementation to garbage collect an arbitrary number of lowest block numbers, subject to certain bounds.
+
+Using preconditions, specs can forbid certain calls in certain states. For example, the specs of TrieRODb::read_storage prohibit calls until after there has been a successful call to TrieRODb::set_block_and_round.
+
+
 
 We have attempted to make this file understandable to anyone familiar with functional programming (OCaml/Haskell), but we highly recommend reviewing the first formal verification tutorial before reading this file. In many places, this file refers to analogous concepts explained in the tutorial.
 
-   - #<a href="https://www.youtube.com/watch?v=zyyoWnF1QUE">Tutorial1<a/># (only until 1:17:00): 
-   - #<a href="https://www.youtube.com/watch?v=9fjR_yQmiOU">Tutorial2<a/># (only until 1:10:00): 
+   - #<a href="https://www.youtube.com/watch?v=zyyoWnF1QUE">Tutorial1 recording<a/># (can skip parts after 1:17:00)
+   - #<a href="https://www.youtube.com/watch?v=9fjR_yQmiOU">Tutorial2 recording<a/># (can skip parts after 1:10:00) 
 
 We also recommend Tutorial2 as background review if you want to more deeply understand the concurrency aspects of these specs.
 *)
@@ -301,7 +308,7 @@ Definition TrieRODbR (q:Qp) (dbpath: DbPath) (activeProposal: option ProposalInD
  transform [this |-> TrieRODb q None] to [this |-> TrieRODb q (Some pr)] for some [pr] in case the call succeeds.
   *)
 Definition FinalizedProposalForBlockNum (dbpath: DbPath) (blockNum: N) (p: ProposalInDb) : mpred. Admitted.
-(** ^ [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2); thus, this assertion can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postcondition of TrieDb::finalize. After calling TrieDb::finalize, a client application can send this assertion to another process (e.g. attached to a socket message) and then reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. (Its definition will use logical/ghost locations which were covered in #<a href="">Tutorial3</a>#).
+(** ^ [FinalizedProposalForBlockNum dbpath n p] asserts that p is the finalized proposal for block n. Because the TrieDb specs do NOT allow modifying finalized block numbers, this assertion is a [Persistent] assertion: once it is established, it always holds (unlike the assertion that the value of variable x is 2); thus, this assertion can be freely duplicated and shared with other threads/processes. In particular, this assertion is a postcondition of TrieDb::finalize. After calling TrieDb::finalize, a client application can send this assertion to another process (e.g. attached to a socket message) and then reason that if the recipient process calls TrieRODb::set_block_and_round(n), it will either fail (block n got evicted on garbage collection) or read p and nothing else. (Its definition will use logical/ghost locations which were covered in #<a href="https://youtu.be/vunTJ28Rt34">Tutorial3</a>#).
 
 
  Finally, we have enough vocabulary to write the specs.
@@ -521,7 +528,7 @@ The other interesting functions from execution perspective are `TrieDb::commit` 
 
 But before that, we sketch why the above specs of TrieRODb suffice to prove the logical atomicity of eth_call even though it does several calls to TrieRODb.
 
-eth_call implementation first #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L102>does</a># a `TrieRODb::set_block_and_round`. After that, it only issues reads, whic happen in the #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L102>call</a># to `execute_impl_no_validation`.
+eth_call implementation first #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp##L102">calls</a>#  TrieRODb::set_block_and_round. After that, it only issues reads, which happen in the #<a href="https://github.com/category-labs/monad/blob/3f5ea3fa8954025641cab230405738544a129d7f/libs/rpc/src/monad/rpc/eth_call.cpp#L214">call</a># to `execute_impl_no_validation`.
 
 It has been claimed that eth_call can be requested even for unfinalized proposals and that execution can commit multiple distinct proposals for the *same* round number. (every round has 1 leader and 1 block number). Thus there it is important that if execution "overwrites" a round number with a different proposal in between 2 reads by `execute_impl_no_validation`, eth_call does not produce results that correspond to a mishmash of 2 different proposals. The TrieRODb specs above already allows us to prove that no matter what TrieDb does after a successfull call to TrieRODb::set_block_and_round, the TrieRODb read methods will keep reading from the snapshot in the postcondition of TrieRODb::set_block_and_round. Thus, eth_call will never see any overwrite that happens after the only call to TrieRODb::set_block_and_round.
 
@@ -532,10 +539,10 @@ Intuitively, TrieDb::commit just adds a new proposal to the Db, along with the f
 We already have the Coq type ProposalInDb which captures the entire proposal including full EVM state after executing the block, and the receipts from the execution of the block.
 So we just need to define how to add a new [ProposalInDb] to a [DbModel].
 So, the next 2 items define [addNewProposal].
-This is much simpler than the implementation where the focus is on efficiency: so TrieDb::commit cannot take the entire EVM state (state of all accounts) as an argument: that would be prohibitively big. So it only takes the diff w.r.t the [postBlockState] of the currently active proposal. But in specifications, simplicity not efficiency is the main concern.
+This is much simpler than the implementation where the focus is on efficiency: so TrieDb::commit cannot take the entire EVM state (state of all accounts) as an argument: that would be prohibitively big. So it only takes the diff w.r.t the [postBlockState] of the currently active proposal. But in specifications, simplicity not efficiency is the main concern: so the specs take the whole [ProposalInDb], which includes the whole EVM state after executing the proposal, as the main logical argument.
 *)
 
-(** [updateBlockNum d bnum f] applies a functional update [f] to the single [BlockNumStateInDb] in [d] whose block number is [bnum]. All other block numbers remain unchanged. This is used in defiining the postcondition states after the commit and finalize methods *)
+(** Next, `updateBlockNum d bnum f` applies an update function [f] to the single [BlockNumStateInDb] in [d] whose block number is [bnum]. All other block numbers remain unchanged. This is used in defiining the postcondition states after the commit and finalize methods *)
 Definition updateBlockNum (d: DbModel) (bnum: N)
   (f: BlockNumStateInDb -> BlockNumStateInDb) : DbModel :=
   d &: _blockNumsStates .= 
@@ -543,7 +550,7 @@ Definition updateBlockNum (d: DbModel) (bnum: N)
            (blockNumsStates d).
 
 
-(** this is the main ingredient of the postcondition of TrieDb::commit. it first checks whether the there is already a [BlockStateInDb] preDb with the exact same block number as the one of [newProposal]. If there is, it just updates that block number state to add the new proposal to its list of proposals. In case that block number state does not exist, it adds a new one with the singleton list of proposals, containing just [newPrpoposal]. The [blockNumsStates] field of [BlockStateInDb] is always used in an order insensitive way in the specs. so it suffices to just add it to the beginning. *)
+(** The next definition is the main ingredient of the postcondition of TrieDb::commit. it first checks whether the there is already a [BlockNumStateInDb] preDb with the exact same block number as the one of [newProposal]. If there is, it just updates that block number state to add the new proposal to its list of proposals. In case that block number state does not exist, it adds a new one with the singleton list of proposals, containing just [newPrpoposal]. The [blockNumsStates] field of [BlockStateInDb] is always used in an order insensitive way in the specs. so it suffices to just add it to the beginning. *)
 Definition addNewProposal
   (preDb       : DbModel)
   (newProposal : ProposalInDb) : DbModel :=
@@ -551,14 +558,14 @@ Definition addNewProposal
   match lookupBlockByNum bnum preDb with
   | Some _ =>
       updateBlockNum preDb bnum (fun bs => bs &: _proposals .= (newProposal::proposals bs))
-   (** ^ add proposal into existing BlockNumState *)
+   (** ^ add proposal into existing [BlockNumStateInDb] *)
   | None =>
       preDb &: _blockNumsStates .=
             ({| proposals := [newProposal]; finalizedRoundNum := None |}::(blockNumsStates preDb)) 
-   (** ^ add a new BlockNumState *)
+   (** ^ add a new [BlockNumStateInDb] *)
   end.
 
-(** the final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. [gcToHistoryLen len dbm] trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. there is a guarantee that [256<len].
+(** The final ingredient in the postcondition of TrieDb::commit is to model garbage collection. Garbage collection only happens during TrieDb::commit calls, and not during any other method. Also, there is no separate thread doing garbage collection spontaneously: that could have complicated the specs. Next, `gcToHistoryLen len dbm` trims the lower block number states to ensure that the number of block numbers stored in dbm is no more than len. The spec choses [len] non-deterministically (existential quantification) so the client cannot depend on concrete implementation details on which commits do garbage collection and how much. However, there is a guarantee that [256<len].
 *)
 
 Definition gcToHistoryLen (len: N) (d: DbModel) : DbModel :=
@@ -572,7 +579,7 @@ Definition gcToHistoryLen (len: N) (d: DbModel) : DbModel :=
        d &: _blockNumsStates .= newBlockNumsStates.
 
 
-(** [stateAfterActiveProposal m] returns the EVM state after executing the active proposal. The StateDeltas argument in TrieDb::commit is
+(** `stateAfterActiveProposal m` returns the EVM state after executing the active proposal. The StateDeltas argument in TrieDb::commit is
   diff between the state after the active propposal and the state after executing the new proposal on top of the active proposal *)
 Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   match lookupActiveProposal m with
@@ -580,26 +587,27 @@ Definition stateAfterActiveProposal (m: DbModel) : evm.GlobalState :=
   | Some p => postBlockState p
   end.
 
+(** Finally, we have all the ingredients for the spec of TrieDb::commit: *)
 
   cpp.spec
     "monad::TrieDb::commit(const tbb::detail::d2::concurrent_hash_map<evmc::address, monad::StateDelta, tbb::detail::d1::tbb_hash_compare<evmc::address>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::address, monad::StateDelta>>>&, const tbb::detail::d2::concurrent_hash_map<evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>, tbb::detail::d1::tbb_hash_compare<evmc::bytes32>, tbb::detail::d1::tbb_allocator<std::pair<const evmc::bytes32, std::shared_ptr<const monad::vm::interpreter::Intercode>>>>&, const monad::MonadConsensusBlockHeader&, const std::vector<monad::Receipt, std::allocator<monad::Receipt>>&, const std::vector<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>, std::allocator<std::vector<monad::CallFrame, std::allocator<monad::CallFrame>>>>&, const std::vector<evmc::address, std::allocator<evmc::address>>&, const std::vector<monad::Transaction, std::allocator<monad::Transaction>>&, const std::vector<monad::BlockHeader, std::allocator<monad::BlockHeader>>&, const std::optional<std::vector<monad::Withdrawal, std::allocator<monad::Withdrawal>>>&)"
     as commit_spec with (fun (this:ptr) =>
     \pre{(preDb:DbModel) (newProposal : ProposalInDb)} this |-> TrieDbR 1 preDb
-   (** ^ requires full(1) ownernership of the TrieDb object. This guarantees that no other threads can be using this object concurrently to read (because reading requires non-zero ownership).
+   (** ^ requires full(1) ownernership of the TrieDb object. This guarantees that no other threads can be using this object concurrently, not even to read (because reading requires non-zero ownership). However, there can be another thread/process using a TrieRODb object to do a concurrent read.
 
      [preDb] and [newProposal] are the only 2 arguments of this function at the logical level of this spec. All C++ arguments can be tied to these:
     *)
 
     \arg{(dloc: ptr) (q: Qp)} "state_deltas" (Vptr dloc)
     \prepost dloc |-> StateDeltasR q (stateAfterActiveProposal preDb, postBlockState newProposal)
-    (** ^ the \arg line above asserts that the the state_deltas argument has a memory location dloc. Then, the \prepost line asserts that dloc has an object that represents delta/diff between thefull  EVM state after the active proposal in preDb and the full EVM state after executing [newProposal]. More generally [l |- StateDeltasR q (old, new)] asserts that at location l we have an object of type StateDeltas which represents the difference between the full EVM states old and new. StateDeltas is a map from account addresses to diffs in account states. Every account that has a different value betwee old and new must have an entry in this map. the diff in account states stores the new/old balance/nonce etc and also has another map that maps storage keys to pairs of values (oldkv, newkv).
+    (** ^ the \arg line above asserts that the the state_deltas argument has a memory location [dloc]. Then, the \prepost line asserts that [dloc] has an object that represents delta/diff between thefull  EVM state after the active proposal in preDb and the full EVM state after executing [newProposal]. More generally [l |-> StateDeltasR q (old, new)] asserts that at location [l] we have an object of type StateDeltas which represents the difference between the full EVM states [old] and [new]. StateDeltas is a map from account addresses to diffs in account states. Every account that has a different value between [old] and [new] must have an entry in this map. The diff in account states stores the new/old balance/nonce etc and also has another map that maps storage keys to pairs of values (oldkv, newkv).
      *)
 
     \arg{(cloc:ptr)} "code" (Vptr cloc)
     \prepost cloc |-> CodeDeltaR q (stateAfterActiveProposal preDb, postBlockState newProposal)
     (** the code argument is similar. it is a map from code hashes to code. this map must contain an entry for all the code hashes that exist in [postBlockState newProposal] but does not exist in [stateAfterActiveProposal preDb]. Intuitively, it has one entry for every new code hash that got deployed in [newProposal].
 
-    The other arguments are just other contents of the proposals, e.g. transactions, ommers, withdrawals, senders. The specification below of the other arguments are much more straightforward: newPrposal of type [ProposalInDb] already includes the models for all those parts of a Proposal as fields or fields of fields. So the specs of args below just connect the C++ argument to the corresponding parts of the [newProposal] model.
+    The other arguments are just other contents of [newProposal], e.g. transactions, ommers, withdrawals, senders. The specification below of the other arguments are much more straightforward: [newProposal] of type [ProposalInDb] already includes the models for all those parts of a Proposal as fields or fields of fields. So the specs of args below just connect the C++ argument to the corresponding parts of the [newProposal] model.
      *)
 
   \arg{hloc} "consensus_header" (Vptr hloc)
@@ -641,7 +649,7 @@ If there is no active proposal, than [newProposal] must be the genesis block (bl
      *)
   \post Exists (postGcHistLen:N), [| 256 <= postGcHistLen|]
             ** this |-> TrieDbR 1 (gcToHistoryLen postGcHistLen (addNewProposal preDb newProposal))).
-  (** ^ the postcondition just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by the [addNewproposal] followed by the [gcToHistoryLen] functions that were explained just above the spec. [postGcHistLen] is existentially quantification so the caller's proof cannot assume anything about how many blocks numbers, if any, the garbage collection (GC) phase will reclaim, except that it reduce the history length (number of block numbers) to less thatn 256. Also, if the histor length was alredy less thant 256 no GC will happen: this follows from the definition of [gcToHistoryLen].
+  (** ^ the postcondition just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by the [addNewproposal] followed by the [gcToHistoryLen] functions that were explained just above the spec. [postGcHistLen] is existentially quantification so the caller's proof cannot assume anything about how many blocks numbers, if any, the garbage collection (GC) phase will reclaim, except that it reduce the history length (number of block numbers) to less thatn 256. Also, if the history length was alredy less thant 256 no GC will happen: this follows from the definition of [gcToHistoryLen].
 
 
    Our final spec is for TrieDb::finalize(). We just need one helper function for the spec.
@@ -650,8 +658,7 @@ If there is no active proposal, than [newProposal] must be the genesis block (bl
 
 (** * Spec of TrieDb::finalize *)
   
-(** [lowestUnfinalizedBlockIndex d] finds the smallest block number
-    among those groups that have not yet been finalized. *)
+(** The defn below finds the smallest block number that does not have a finalized proposal *)
 Definition minUnfinalizedBlockNum (d: DbModel) : option N :=
   let unfin := filter (fun b => finalizedProposal b = None) (blockNumsStates d) in
   match unfin with
@@ -672,7 +679,7 @@ cpp.spec "monad::TrieDb::finalize(unsigned long, unsigned long)"
        this |-> TrieDbR 1 (updateBlockNum preDb blockNum (fun d => d &: _finalizedRoundNum .= (Some roundNum)))
        ** FinalizedProposalForBlockNum (dbpath preDb) blockNum prp
                              ).
-(** ^ the first conjunct in the postcondition is straightforward: just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by updateBlockNum, which updates the target block number to record the finalized round number. The second conjunct is more interesting. It is an assertion/token that can be used to claim that the finalized proposal for [blockNum] is [prp], which was obtained by looking up the round number and block number. For example, it can be passed on as a precondition to the second spec of TrieRODb::set_block_and_round to reason that if it succeeds, the chosen snapshot must be prp. For example, in the application below, one can use this to reason that the second read_storage (done by another process) returns the same value:
+(** ^ the first conjunct in the postcondition is straightforward: just asserts that the state of the Db changes to one that corresponds to the new model ([DbModel]) computed by [updateBlockNum], which updates the target block number to record the finalized round number. The second conjunct is more interesting. It is an assertion/token that can be used to claim that the finalized proposal for [blockNum] is [prp], which was obtained by looking up the round number and block number. For example, it can be passed on as a precondition to the second spec of TrieRODb::set_block_and_round to reason that if it succeeds, the chosen snapshot must be prp. For example, in the application below, one can use this to reason that the second read_storage (done by another process) returns the same value:
 [[
 Process1:
 tdb.finalize(2,3)
@@ -711,7 +718,9 @@ cpp.spec "monad::TrieDb::update_verified_block(unsigned long)"
     (** ^ lastVerifiedblockNum can never decrease *)
   \pre [| match maxFinalizedBlockNum preDb with
             | Some s =>  blockNum <= s
-            | None => False (** if no block has been finalized yet, cannot call this method *)
+          (** ^ cannot verify an unfinalized block. *)
+            | None => False
+         (** ^ if no block has been finalized yet, cannot call this method *)
             end |]
   \post this |-> TrieDbR q (preDb &: _lastVerifiedBlockNum .= blockNum)).
 
@@ -758,13 +767,4 @@ End with_Sigma.
     +--------------------------------------+
 
 ]]
-*)
-
-(** * Suggestions for improving explanations
-
-   - Introduction: consider shortening long sentences and formatting tutorial links as clickable references.
-   - Model types section: the paragraph on sequential C++ containers is dense; consider splitting into smaller sentences.
-   - Class invariants section: bullet list items combine multiple ideas; splitting into separate items may improve readability.
-   - Rep predicates: the explanation of [this |-> TrieDb] is dense; consider adding an overview of ownership fractions.
-   - set_block_and_round spec: the argument documentation block is lengthy and hard to follow; consider refactoring into smaller steps.
 *)

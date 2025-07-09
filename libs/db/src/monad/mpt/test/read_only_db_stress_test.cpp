@@ -276,8 +276,9 @@ int main(int argc, char *const argv[])
                 }
             };
 
-            size_t enqueued{};
-            size_t completions{};
+            size_t submitted{}; // Number of requests submitted, always
+                                // incremented
+            size_t completed{}; // Number of requests completed
 
             auto rnd = monad::thread_local_prng();
             while (!g_done) {
@@ -295,25 +296,31 @@ int main(int argc, char *const argv[])
                                     version * num_nodes_per_version + k)}),
                             version),
                         receiver_t{
-                            &completions,
+                            &completed,
                             &ro_db,
                             &nsuccess,
                             &nfailed,
                             version,
                             version_bytes}));
                     state->initiate();
-                    ++enqueued;
+                    ++submitted;
                 }
-                if (enqueued > num_async_reads_inflight) {
+                if (submitted - completed >= num_async_reads_inflight) {
                     constexpr size_t MAX_TRIEDB_ASYNC_POLLS{300'000};
                     size_t poll_count{0};
-                    while (completions < enqueued &&
+                    while (submitted - completed >= num_async_reads_inflight &&
                            poll_count < MAX_TRIEDB_ASYNC_POLLS) {
                         ro_db.poll(true, std::numeric_limits<size_t>::max());
                         ++poll_count;
                     }
                 }
             }
+
+            // Finish all enqueued async reads
+            while (submitted != completed) {
+                ro_db.poll(true, std::numeric_limits<size_t>::max());
+            }
+
             std::ostringstream oss;
             oss << "Async reader thread (0x" << std::hex
                 << std::this_thread::get_id() << std::dec << ") finished"

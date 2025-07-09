@@ -522,7 +522,6 @@ static void do_run(std::size_t const run_index, arguments const &args)
                     evmone_state, monad_state, genesis_address, pre_compile);
                 contract_addresses.push_back(a);
             }
-            continue;
         }
 
         for (;;) {

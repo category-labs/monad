@@ -18,8 +18,6 @@ namespace monad::vm
             evmc::bytes32, SharedVarcode, utils::Hash32Compare>;
 
     public:
-        static std::uint32_t code_size_to_cache_weight(std::size_t code_size);
-
         explicit VarcodeCache(
             std::uint32_t max_cache_kb = default_max_cache_kb,
             std::uint32_t warm_cache_kb = default_warm_cache_kb);
@@ -41,6 +39,14 @@ namespace monad::vm
         {
             return weight_cache_.approx_weight() >= warm_cache_kb_;
         }
+
+        void set_warm_cache_kb(std::uint32_t warm_kb)
+        {
+            warm_cache_kb_ = warm_kb;
+        }
+
+        // Cache weight of the given code size.
+        static std::uint32_t code_size_to_cache_weight(std::size_t code_size);
 
     private:
         WeightCache weight_cache_;

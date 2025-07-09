@@ -40,6 +40,11 @@ namespace monad::vm
             return compiler_;
         }
 
+        CompilerConfig const &compiler_config()
+        {
+            return compiler_config_;
+        }
+
         /// Execute varcode. The function will execute the nativecode in
         /// the varcode if set, and otherwise start async compilation and
         /// execute the intercode with interpreter.

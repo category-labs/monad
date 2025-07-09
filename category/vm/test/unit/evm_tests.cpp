@@ -240,20 +240,17 @@ TEST_F(EvmTest, NativeCodeSizeOutOfBound)
 {
     std::vector<uint8_t> bytecode;
     CompilerConfig const config{.max_code_size_offset = 1024};
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(1);
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(2);
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(3);
-    for (size_t i = 0; i < config.max_code_size_offset; ++i) {
+    uint32_t n_jumpi = 20;
+    for (size_t i = 0; i < n_jumpi; ++i) {
         bytecode.push_back(JUMPI);
     }
     bytecode.push_back(JUMPDEST);
     auto icode = make_shared_intercode(bytecode);
     auto ncode = vm_.compiler().compile(EVMC_CANCUN, icode, config);
+    ASSERT_GT(
+        ncode->code_size_estimate_before_error(),
+        config.max_code_size_offset + n_jumpi * 32);
     ASSERT_EQ(ncode->error_code(), Nativecode::ErrorCode::SizeOutOfBound);
-    ASSERT_GT(ncode->code_size_estimate_before_error(), 1024 * 32);
 }
 
 TEST_F(EvmTest, MaxDeltaOutOfBound)

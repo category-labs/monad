@@ -1504,7 +1504,8 @@ namespace monad::vm::runtime
                     value = udivrem(numerator(y.as_words()), d.as_words()).quot;
                 }
                 else {
-                    auto quot = udivrem(numerator(y.as_words()), d.as_words()).quot;
+                    auto quot =
+                        udivrem(numerator(y.as_words()), d.as_words()).quot;
                     std::memcpy(&value, &quot, sizeof(value));
                     for (size_t i = RECIPROCAL_WORDS;
                          i < std::tuple_size_v<decltype(quot)>;
@@ -1529,6 +1530,10 @@ namespace monad::vm::runtime
                 words_t<OUTPUT_WORDS> result;
                 if constexpr (BIT_SHIFT) {
                     for (size_t i = 0; i < OUTPUT_WORDS; i++) {
+                        result[i] = shrd(
+                            prod[i + 1 + WORD_SHIFT],
+                            prod[i + WORD_SHIFT],
+                            BIT_SHIFT);
                     }
                 }
                 else {

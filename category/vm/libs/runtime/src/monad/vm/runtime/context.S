@@ -24,7 +24,7 @@ monad_vm_runtime_increase_memory_raw:
 //  rdi, rsi, rcx, rdx,
 //  ymm5, ymm6, ..., ymm15
 // Callee save registers:
-//  rsp, rbp, rbx, r12, r13, r14, r15,
+//  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ymm2, ymm3, ymm4
 // Note - no need for vzeroupper before calling this function
 .cfi_startproc
@@ -124,7 +124,7 @@ monad_vm_runtime_increase_memory:
 //  rdi, rsi, rcx, rdx,
 //  ymm5, ymm6, ..., ymm15
 // Callee save registers:
-//  rsp, rbp, rbx, r12, r13, r14, r15,
+//  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ymm2, ymm3, ymm4
 // Note - no need for vzeroupper before calling this function
 .cfi_startproc

@@ -10,21 +10,19 @@
 #include <memory>
 #include <optional>
 
-namespace
+namespace monad::vm
 {
-    std::uint32_t code_size_to_cache_weight(std::size_t code_size)
+    std::uint32_t VarcodeCache::code_size_to_cache_weight(std::size_t code_size)
     {
         MONAD_VM_DEBUG_ASSERT(
             code_size <= std::numeric_limits<uint32_t>::max());
         // Byte size in kB, plus 3 kB overhead:
         return (static_cast<std::uint32_t>(code_size) >> 10) + 3;
     }
-}
 
-namespace monad::vm
-{
-    VarcodeCache::VarcodeCache()
-        : weight_cache_{max_cache_kb}
+    VarcodeCache::VarcodeCache(std::uint32_t max_kb, std::uint32_t warm_kb)
+        : weight_cache_{max_kb}
+        , warm_cache_kb_{warm_kb}
     {
     }
 

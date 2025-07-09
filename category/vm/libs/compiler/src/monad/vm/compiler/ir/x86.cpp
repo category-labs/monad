@@ -124,7 +124,7 @@ namespace
             emit.callvalue();
             break;
         case CallDataLoad:
-            emit.calldataload<rev>(remaining_base_gas);
+            emit.calldataload();
             break;
         case CallDataSize:
             emit.calldatasize();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <monad/vm/compiler/ir/x86/emitter.hpp>
+#include <monad/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <monad/vm/fuzzing/generator/choice.hpp>
 #include <monad/vm/fuzzing/generator/generator.hpp>
 
@@ -59,13 +60,16 @@ namespace monad::vm::fuzzing
 
             emit.checked_debug_comment("BEGIN artificial setup");
 
-            // Potentially move around the rdx and/or rcx register.
-            with_probability(engine, artificial_swap_prob, [&](auto &) {
-                emit.swap_rdx_general_reg_index_if_free();
-            });
-            with_probability(engine, artificial_swap_prob, [&](auto &) {
-                emit.swap_rcx_general_reg_index_if_free();
-            });
+            // For each general reg, potentially exchange two gpq registers.
+            std::uniform_int_distribution<uint8_t> general_reg_index_dist{0, 3};
+            for (uint8_t i = 0; i < compiler::native::GENERAL_REG_COUNT; ++i) {
+                with_probability(engine, artificial_swap_prob, [&](auto &) {
+                    emit.swap_general_reg_indices(
+                        compiler::native::GeneralReg{i},
+                        general_reg_index_dist(engine),
+                        general_reg_index_dist(engine));
+                });
+            }
 
             auto mov_to_stack_offset = [&](std::int32_t i) -> bool {
                 if (stack.has_deferred_comparison_at(i)) {

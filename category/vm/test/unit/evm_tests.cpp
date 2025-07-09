@@ -240,20 +240,17 @@ TEST_F(EvmTest, NativeCodeSizeOutOfBound)
 {
     std::vector<uint8_t> bytecode;
     CompilerConfig const config{.max_code_size_offset = 1024};
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(1);
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(2);
-    bytecode.push_back(PUSH1);
-    bytecode.push_back(3);
-    for (size_t i = 0; i < config.max_code_size_offset; ++i) {
+    uint32_t n_jumpi = 20;
+    for (size_t i = 0; i < n_jumpi; ++i) {
         bytecode.push_back(JUMPI);
     }
     bytecode.push_back(JUMPDEST);
     auto icode = make_shared_intercode(bytecode);
     auto ncode = vm_.compiler().compile(EVMC_CANCUN, icode, config);
+    ASSERT_GT(
+        ncode->code_size_estimate_before_error(),
+        config.max_code_size_offset + n_jumpi * 32);
     ASSERT_EQ(ncode->error_code(), Nativecode::ErrorCode::SizeOutOfBound);
-    ASSERT_GT(ncode->code_size_estimate_before_error(), 1024 * 32);
 }
 
 TEST_F(EvmTest, MaxDeltaOutOfBound)
@@ -374,6 +371,26 @@ TEST_F(EvmTest, LoopOutOfGas)
 
     execute(30'000, code, {}, Implementation::Compiler);
     ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+}
+
+TEST_F(EvmTest, ShrCeilOffByOneRegression)
+{
+    VM vm{};
+    evmc_message msg{};
+    msg.gas = 100;
+
+    std::vector<uint8_t> const code(
+        {0x63, 0x0f, 0xff, 0xff, 0xff, 0x63, 0x0f, 0xff, 0xff, 0xff, 0xfd});
+    auto const icode = make_shared_intercode(code);
+    auto const ncode = vm.compiler().compile(EVMC_CANCUN, icode);
+    MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
+
+    vm.execute_native_entrypoint(
+        &host_.get_interface(),
+        host_.to_context(),
+        &msg,
+        icode,
+        ncode->entrypoint());
 }
 
 // Compiled directly from the Solidity code in:

@@ -2155,7 +2155,13 @@ TEST(Emitter, xor_)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, XOR, &Emitter::xor_, 1, 3, 2);
+    pure_bin_instr_test(rt, XOR, &Emitter::xor_, 3, 1, 2);
     pure_bin_instr_test(rt, XOR, &Emitter::xor_, 2, 1, 3);
+    pure_bin_instr_test(rt, XOR, &Emitter::xor_, 1, 2, 3);
+    pure_bin_instr_test(
+        rt, XOR, &Emitter::xor_, {0, 1, 1, 0}, {0, 0, 1, 0}, {0, 1, 0, 0});
+    pure_bin_instr_test(
+        rt, XOR, &Emitter::xor_, {0, 0, 1, 0}, {0, 1, 1, 0}, {0, 1, 0, 0});
     pure_bin_instr_test(
         rt,
         XOR,
@@ -2163,6 +2169,27 @@ TEST(Emitter, xor_)
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
         1);
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        std::numeric_limits<uint256_t>::max() - 1,
+        std::numeric_limits<uint256_t>::max(),
+        1);
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        std::numeric_limits<uint256_t>::max(),
+        0,
+        std::numeric_limits<uint256_t>::max());
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        0,
+        std::numeric_limits<uint256_t>::max(),
+        std::numeric_limits<uint256_t>::max());
 }
 
 TEST(Emitter, xor_same)
@@ -3094,6 +3121,76 @@ TEST(Emitter, MemoryInstructions)
                     run_mstore_mstore8_mload(
                         ir, i & 3, i & 4, i & 8, sloc1, sloc2, lloc);
                 }
+            }
+        }
+    }
+}
+
+TEST(Emitter, calldataload)
+{
+    auto ctx = test_context();
+    uint8_t calldata[33];
+    for (uint8_t i = 0; i < sizeof(calldata); ++i) {
+        calldata[i] = i + 1;
+    }
+    ctx.env.input_data = calldata;
+    ctx.env.input_data_size = sizeof(calldata);
+
+    for (auto loc : all_locations) {
+        for (uint8_t used_regs = 0; used_regs <= 3; ++used_regs) {
+            for (uint8_t offset = 0; offset <= sizeof(calldata); ++offset) {
+                std::vector<uint8_t> bytecode;
+                for (uint8_t i = 0; i < used_regs; ++i) {
+                    bytecode.push_back(PUSH0);
+                }
+                bytecode.push_back(PUSH0);
+                bytecode.push_back(DUP1);
+                bytecode.push_back(CALLDATALOAD);
+                bytecode.push_back(PUSH0);
+                bytecode.push_back(CALLDATALOAD);
+                bytecode.push_back(RETURN);
+
+                auto const ir = basic_blocks::BasicBlocksIR(bytecode);
+
+                asmjit::JitRuntime rt;
+                Emitter emit{rt, ir.codesize, {.asm_log_path = "/tmp/file.s"}};
+                (void)emit.begin_new_block(ir.blocks()[0]);
+
+                int32_t top_ix = -1;
+                for (uint8_t i = 0; i < used_regs; ++i) {
+                    ++top_ix;
+                    emit.push(0);
+                    mov_literal_to_location_type(
+                        emit, top_ix, Emitter::LocationType::GeneralReg);
+                }
+
+                ++top_ix;
+                emit.push(offset);
+                ++top_ix;
+                emit.dup(1);
+                mov_literal_to_location_type(emit, top_ix, loc);
+                emit.calldataload();
+
+                ++top_ix;
+                emit.push(offset);
+                mov_literal_to_location_type(emit, top_ix, loc);
+                emit.calldataload();
+                emit.return_();
+
+                entrypoint_t entry = emit.finish_contract(rt);
+                auto const &ret = ctx.result;
+
+                auto stack_memory = test_stack_memory();
+                entry(&ctx, stack_memory.get());
+
+                uint256_t expected;
+                std::memcpy(
+                    expected.as_bytes(),
+                    calldata + offset,
+                    std::min(sizeof(expected), sizeof(calldata) - offset));
+
+                ASSERT_EQ(uint256_t::load_le(ret.offset), expected.to_be());
+                ASSERT_EQ(uint256_t::load_le(ret.size), expected.to_be());
             }
         }
     }

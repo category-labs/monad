@@ -71,6 +71,11 @@ namespace monad::vm
             return varcode_cache_.is_warm();
         }
 
+        void set_varcode_cache_warm_kb_threshold(std::uint32_t warm_kb)
+        {
+            return varcode_cache_.set_warm_cache_kb(warm_kb);
+        }
+
         // For testing: wait for compile job queue to become empty.
         void debug_wait_for_empty_queue();
 

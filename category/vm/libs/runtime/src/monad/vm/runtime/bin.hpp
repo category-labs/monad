@@ -80,22 +80,23 @@ namespace monad::vm::runtime
     }
 
     template <std::uint32_t x, std::size_t N>
-        requires(x <= N)
+        requires(x < 32)
     [[gnu::always_inline]]
-    constexpr Bin<N - x> shr_floor(Bin<N> y) noexcept
+    constexpr Bin<N - x> shr(Bin<N> y) noexcept
     {
         return Bin<N - x>::unsafe_from(*y >> x);
     }
 
     template <std::uint32_t x, std::size_t N>
-        requires(x > 0 && x <= N)
+        requires(x < 32 && N < 32)
     [[gnu::always_inline]]
-    constexpr Bin<N - x> shr_ceil(Bin<N> y) noexcept
+    constexpr Bin<std::max(size_t{x}, N) + 1 - x> shr_ceil(Bin<N> y) noexcept
     {
-        return Bin<N - x>::unsafe_from((*y + Bin<x>::upper) >> x);
+        return shr<x>(y + bin<Bin<x>::upper>);
     }
 
     template <std::uint32_t x, std::size_t N>
+        requires(x < 32)
     [[gnu::always_inline]]
     constexpr Bin<N + x> shl(Bin<N> y) noexcept
     {

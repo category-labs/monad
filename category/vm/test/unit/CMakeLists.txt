@@ -1,9 +1,11 @@
 add_executable(unit-tests
     async_compile_tests.cpp
+    bin_tests.cpp
     compiler_tests.cpp
     evm_fixture.cpp
     evm_tests.cpp
     evm-as_tests.cpp
+    monad_vm_interface_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
     rc_ptr_tests.cpp

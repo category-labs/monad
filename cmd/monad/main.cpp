@@ -351,7 +351,11 @@ int main(int const argc, char const *argv[])
             block_db, start_block_num, block_hash_buffer));
     }
 
-    signal(SIGINT, signal_handler);
+    if (isatty(STDIN_FILENO)) {
+        // When stdin is connected to a terminal, we're running interactively
+        signal(SIGINT, signal_handler);
+    }
+    signal(SIGTERM, signal_handler);
     stop = 0;
 
     uint64_t block_num = start_block_num;

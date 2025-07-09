@@ -1,6 +1,9 @@
-name: Compiler Tests
+name: VM Tests
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'libs/vm/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,8 +69,8 @@ jobs:
             - name: Build `base` stage
               uses: docker/build-push-action@v5
               with:
-                context: .
-                file: docker/Dockerfile
+                context: libs/vm
+                file: libs/vm/docker/Dockerfile
                 target: base
                 cache-from: type=gha,scope=base
                 cache-to: type=gha,scope=base,mode=max
@@ -75,8 +78,8 @@ jobs:
             - name: Build `build_and_test` stage
               uses: docker/build-push-action@v5
               with:
-                context: .
-                file: docker/Dockerfile
+                context: libs/vm
+                file: libs/vm/docker/Dockerfile
                 build-args: |-
                   CC=${{ matrix.compiler.CC }}
                   CXX=${{ matrix.compiler.CXX }}
@@ -112,6 +115,7 @@ jobs:
           - name: Formatting Check
             uses: jidicula/clang-format-action@v4.13.0
             with:
+              check-path: libs/vm
               exclude-regex: '(build|third_party)'
               clang-format-version: 19
 
@@ -121,8 +125,8 @@ jobs:
           - name: Build `base` stage
             uses: docker/build-push-action@v5
             with:
-              context: .
-              file: docker/Dockerfile
+              context: libs/vm
+              file: libs/vm/docker/Dockerfile
               target: base
               cache-from: type=gha,scope=base
               cache-to: type=gha,scope=base,mode=max
@@ -130,8 +134,8 @@ jobs:
           - name: Build `code_quality` stage
             uses: docker/build-push-action@v5
             with:
-              context: .
-              file: docker/Dockerfile
+              context: libs/vm
+              file: libs/vm/docker/Dockerfile
               target: code_quality
               cache-from: type=gha,scope=base
 
@@ -149,25 +153,8 @@ jobs:
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
-                python-version-file: scripts/benchmark-analysis/.python-version
+                python-version-file: libs/vm/scripts/benchmark-analysis/.python-version
 
             - name: Check Python code
-              working-directory: scripts/benchmark-analysis
+              working-directory: libs/vm/scripts/benchmark-analysis
               run: make check
-
-    documentation:
-        name: Build documentation
-        runs-on: ubuntu-24.04
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                submodules: false
-
-            - name: Install Doxygen
-              run: |
-                sudo apt update
-                sudo apt install -y doxygen
-
-            - name: Build documentation
-              run: |
-                doxygen

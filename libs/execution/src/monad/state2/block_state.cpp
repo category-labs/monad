@@ -245,6 +245,7 @@ bool BlockState::fix_account_mismatch(
     if (original->incarnation != actual->incarnation) {// how can this happen?
         return false;
     }
+    // actual and original are both alive and have the same code hash and incarnation
     bool const nonce_mismatch = original->nonce != actual->nonce;
     if (nonce_mismatch) {
         if (!state.relaxed_validation()) {
@@ -254,6 +255,7 @@ bool BlockState::fix_account_mismatch(
             return false;
         }
     }
+    // actual and original are both alive and have the same code hash and incarnation and either the nonces are same or nonce checkins is marked as relaxed
     bool const balance_mismatch = original->balance != actual->balance;
     if (balance_mismatch) {
         if (!state.relaxed_validation()) {
@@ -266,7 +268,7 @@ bool BlockState::fix_account_mismatch(
             return false;
         }
     }
-    MONAD_DEBUG_ASSERT(nonce_mismatch || balance_mismatch);
+    MONAD_DEBUG_ASSERT(nonce_mismatch || balance_mismatch);// it can be the case that there is no balance mistmatch (so there must be a nonce mistmatch). in that case, actual->balance < original_state.min_balance() is never checked
     auto it = state.current_.find(address);
     if (it != state.current_.end()) {
         MONAD_ASSERT(it->second.size() == 1);

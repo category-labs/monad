@@ -8,7 +8,7 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
-Require Import monad.proofs.execproofs.exec_transaction.
+(* Require Import monad.proofs.execproofs.exec_transaction. *)
 Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
@@ -25,13 +25,13 @@ Section with_Sigma.
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
    \arg{statep: ptr} "state" (Vref statep)
-   \pre{au}  statep |-> StateR au
+   \pre{au: AssumptionsAndUpdates}  statep |-> StateR au
    \arg{addrp: ptr} "address" (Vref addrp)
    \prepost{qa fixee} addrp |-> addressR qa fixee
    \arg{origp: ptr} "original" (Vref origp)
    \pre{assumedFixeeState ae inds} origp |-> AccountStateR 1 assumedFixeeState ae inds
    \arg{actualp: ptr} "actual" (Vref actualp)
-   \prepost actualp |-> libspecs.optionR "monad::AccountState" (fun acs => AccountStateR 1 acs ae inds) 1 (actualPreTxState !! fixee)
+   \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs inds) 1 (actualPreTxState !! fixee)
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
      [| if satisfiesAssumptionsb then satisfiesAssumptions au actualPreTxState else Logic.True |] **
@@ -467,10 +467,48 @@ Proof using.
   unfold AccountStateR.
   slauto.
   ego.
-  wp_if;[slauto|].
+  wp_if;[slauto; fail|].
+  ego.
+  wp_if;[slauto; fail|].
   slauto.
   ego.
+  slauto.
+  unfold is_Some in *.
   
+  slauto.
+  miscPure.forward_reason.
+  Forward.rwHyps.
+  simpl in *.
+  go.
+  Transparent libspecs.optionR.
+  unfold libspecs.optionR, AccountR.
+  Opaque w256_to_Z.
+  ego.
+  wp_if;[ |].
+  ego. admit.
+
+  slauto.
+  Forward.rwHyps.
+  apply forget.
+  slauto; ego.
+  go.
+  Locate rwHyps.
+  miscPure.rwHyps.
+  misc.forward_reason.
+  
+  Search isSome.
+  Set Nested Proofs Allowed.
+  Lemma isSomeRw {T:Type} (ot:option T): isSome ot -> exists t, ot = Some t.
+  Proof using.
+    unfold isSome.
+    destruct ot; intros; eauto. tauto.
+  Qed.
+  is_Some
+  applyToSomeHyp @isSomeRw.
+  is_Some
+  unfold AccountR.
+  ego.
+  eagerUnifyU.
     
     
       

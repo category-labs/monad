@@ -51,6 +51,11 @@ namespace monad::vm
                                   gas_used, std::memory_order_acq_rel);
         }
 
+        std::uint64_t get_intercode_gas_used()
+        {
+            return intercode_gas_used_.load(std::memory_order_acquire);
+        }
+
         /// Get corresponding intercode.
         /// Can be assumed to always return a non-null result.
         SharedIntercode const &intercode() const

@@ -10,7 +10,7 @@ Require Import Psatz.
 Require Import bluerock.auto.lazy_unfold.
 Require Import bluerock.auto.cpp.elpi.derive.
 Require Import bluerock.ltac2.llm.llm.
-Require Import monad.fmai.prompts.main.
+Require Import monad.proofs.main.
 
   (* FIX: this likely does not normalize inside deep subterms of non-airth context, e.g. foo (gcd a b).
 then remove the shallow prefix
@@ -53,13 +53,22 @@ Section Spec.
       (Forall v, Qs v -* Q v) **  (wp f ρ s (Kreturn (λ v : ptr, Qs v))) |--
         (wp f ρ s (Kcleanup module [] (Kreturn (λ v : ptr, |> Q v)))).
     Proof using. Admitted.
+  Lemma spurious {T:Type} {ing: Inhabited T} (P: mpred) :
+  P |-- Exists a:T, P.
+  Proof using.
+    work.
+    iExists (@inhabitant T _).
+    work.
+  Qed.
+  Lemma absorb_nop_false: forall P:mpred, (<absorb> P = P)%I.
+  Proof. Admitted.
 
-  Fixpoint ListR (q : cQp.t) (l : list Z) : Rep :=
-    match l with
-    | [] => nullR
-    | hd :: tl => Exists (p : ptr), NodeR q hd p ** pureR (p |-> ListR q tl)
-    end.
-
+  Lemma uncurry_post_wand (P:mpred) (Qs Q: ptr -> mpred):
+    (P -* Forall x, (Qs x-* Q x))
+      |-- (Forall x, ((P ** Qs x)-* Q x)).
+  Proof. Admitted.
+  
+End Spec.
 
   Ltac gpt_rewrite foo :=
     (tryif rewrite foo then idtac else aac_rewrite foo);try lia.
@@ -68,13 +77,6 @@ Section Spec.
   Hint Rewrite @left_id using (exact _): equiv.
   Hint Rewrite @right_id using (exact _): equiv.
 
-  Lemma spurious {T:Type} {ing: Inhabited T} (P: mpred) :
-  P |-- Exists a:T, P.
-  Proof using.
-    work.
-    iExists (@inhabitant T _).
-    work.
-  Qed.
 
   Hint Rewrite <- @spurious using exact _: slbwd.
   Hint Resolve @prim.primR_aggressiveC: br_opacity.
@@ -94,8 +96,6 @@ Section Spec.
     resultsIn0or1Goals idtac.
     resultsIn0or1Goals auto.
   Abort.
-  Lemma absorb_nop_false: forall P:mpred, (<absorb> P = P)%I.
-  Proof. Admitted.
 
   Hint Rewrite NodeR.unlock: unfold.
 Ltac proveFalseWeak :=
@@ -166,17 +166,6 @@ You can include the formal loop invariant (written in Coq) in earlier blocks as 
   end.
   Hint Unfold NodeR: transparent. (* before a proof, ask GPT to come up with this? at least put in here all the Rep predicates mentioned in the spec. then, can try iteratively adding more: stuff mentioned in those Rep, as long as those Reps do not belong to another library *)
 
-    Hint Opaque NodeR ListR: br_opacity.
-
-  Lemma learn_list_nil x (y: list Z) : Learnable emp (nullptr |-> ListR (cQp.mut 1) x) [x=[]].
-  Proof using.
-    constructor.
-    apply Some.
-    hnf.
-    ltac1:(slauto). (* can we make ltac1 the default so that the prefix is not needed? *)
-    do 3 (rewrite -> absorb_nop_false).
-    (destructSomeVar ()).
-  Qed.
 
   (* TODO:
      specialize llm prompt to do output the correct loopinv and show that the full proof can be printed. add the missing gcd lemmas to db *)
@@ -635,8 +624,12 @@ Ltac2 extractLoopInvFromResp := extractLastCoqCodeBlockFromResp.
 
 
   Ltac verify_spec1 :=
+    match goal with
+      [H: ?module ⊧ _ |- _] =>
     iApply (verify_spec_new false false false module with ""%string);
-      [vm_compute; reflexivity|].
+    [vm_compute; reflexivity|]
+    end
+  .
 
   Axiom printName: name -> bs.
   Import String.
@@ -670,10 +663,6 @@ Definition newline := String Char.chr_newline EmptyString.
     end.
 
 
-  Lemma uncurry_post_wand (P:mpred) (Qs Q: ptr -> mpred):
-    (P -* Forall x, (Qs x-* Q x))
-      |-- (Forall x, ((P ** Qs x)-* Q x)).
-  Proof. Admitted.
   Ltac verify_spec2 :=
     work; (* NOT go as that puts Seq into the continuation as Kseq, making the next rewrite fail *)
     try rewrite uncurry_post_wand; (* TODO: make it work only the hyp of the form -* POST v *)
@@ -964,5 +953,3 @@ Open Scope Z_scope. (* the loopinv produced by GPT need this *)
     Disable Notation u64R.
     Disable Notation boolR.
     Disable Notation "⊢"(all).
-
-End Spec.

@@ -8,8 +8,47 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.ext.
 Require Import monad.proofs.exec_specs.
+  Import environments.
+  
+Ltac applyPHyp :=
+  let Hbb := fresh "autogenhyp" in
+  match goal with
+    [ Ha:?T, Hb: _ |- _] =>
+      let Tt := type of T in
+      unify Tt Prop;
+      pose proof Hb as Hbb; apply Ha in Hbb
+  end.
 
-Opaque libspecs.optionR.
+      Ltac assertp foo :=  iAssert foo as "#?"%string;[admit|].
+
+  Ltac hidePost :=
+  IPM.perm_left ltac:(fun L n =>
+                          let f:= fresh "fullyHiddenPostcond" in
+                        match L with
+                        | HiddenPostCondition => hideFromWorkAs L f
+                        end
+                     ).
+      Opaque libspecs.optionR.
+  Lemma wAssert2 `{cpp_logic} {A B:Type}(P: A-> B-> Rep) (p:ptr): forall a b, p|->P a b |-- p|-> P a b. Proof. reflexivity. Qed.
+  Lemma wAssert3 `{cpp_logic} {A B C:Type}(P: A-> B-> C-> Rep) (p:ptr): forall a b c, p|->P a b c|-- p|-> P a b c. Proof. reflexivity. Qed.
+  Ltac foldRep Rc R :=
+    (wapply (wAssert2 Rc)
+     || wapply (wAssert3 Rc));
+    lazymatch goal with
+    | |- envs_entails _ (_ ** ?r) =>
+        let fn := fresh "CallresumeUseWand" in
+        hideFromWorkAs r fn
+    end;
+    unfold R;
+    work;
+    repeat (iExists _);
+    eagerUnifyU;
+    work;
+    lazymatch goal with
+    | |- envs_entails _ ?r => hsubst r
+    end.
+    
+  Tactic Notation "foldr" constr(Rc) reference(R) := (foldRep Rc R).
 
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
@@ -183,14 +222,6 @@ Opaque Zdigits.Z_to_binary.
        ** [| indices assumptionsAndUpdatesFinal = indices assumptionsAndUpdates |]
        ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |].
 
-Ltac applyPHyp :=
-  let Hbb := fresh "autogenhyp" in
-  match goal with
-    [ Ha:?T, Hb: _ |- _] =>
-      let Tt := type of T in
-      unify Tt Prop;
-      pose proof Hb as Hbb; apply Ha in Hbb
-  end.
 Lemma ResultSucRDef {T} (R: T-> _) t : ResultSuccessR R t  -|- o_field CU (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "value_fixme")) |-> R t.
 Proof using. Admitted.
 
@@ -355,7 +386,7 @@ Existing Instance UNSAFE_read_prim_cancel.
                    ** (reference_to "monad::State" this) (* convenient but logically redundant *)
                    ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
   
-  Instance Learnable q q2 v tx1 (txp:ptr) :
+  #[global]  Instance Learnable q q2 v tx1 (txp:ptr) :
     Learnable
       (txp |-> TransactionR q tx1)
       (txp ,, o_field CU "monad::Transaction::nonce" |-> primR "unsigned long" q2 v)
@@ -385,48 +416,29 @@ Existing Instance UNSAFE_read_prim_cancel.
         \prepost{qt tx} txp |-> TransactionR qt tx
         \post{x:ptr} [Vptr x] x |-> u256R 1 (minSenderBalForTx tx)
       ).
-  
-  Lemma wAssert2 {A B:Type}(P: A-> B-> Rep) (p:ptr): forall a b, p|->P a b |-- p|-> P a b. Proof. reflexivity. Qed.
-  Lemma wAssert3 {A B C:Type}(P: A-> B-> C-> Rep) (p:ptr): forall a b c, p|->P a b c|-- p|-> P a b c. Proof. reflexivity. Qed.
-  Import environments.
-  Ltac foldRep Rc R :=
-    (wapply (wAssert2 Rc)
-     || wapply (wAssert3 Rc));
-    lazymatch goal with
-    | |- envs_entails _ (_ ** ?r) =>
-        let fn := fresh "CallresumeUseWand" in
-        hideFromWorkAs r fn
-    end;
-    unfold R;
-    work;
-    repeat (iExists _);
-    eagerUnifyU;
-    work;
-    lazymatch goal with
-    | |- envs_entails _ ?r => hsubst r
-    end.
-    
-  Tactic Notation "foldr" constr(Rc) reference(R) := (foldRep Rc R).
-  Instance refineInjVint: RefineInj (=) (=) Vint.
+
+  (*
+  #[global]  Instance refineInjVint: RefineInj (=) (=) Vint.
   Proof using.
     hnf.
     intros.
     congruence.
   Qed.
-  Instance refineInjSr: RefineInj (=) (=) (fun x:Z=> x+1)%Z.
+  #[global]  Instance refineInjSr: RefineInj (=) (=) (fun x:Z=> x+1)%Z.
   Proof using.
     hnf.
     intros.
     lia.
   Qed.
-  Instance refineInjSr2: RefineInj (=) (=) (fun x:nat=> Z.of_nat x+1)%Z.
+  #[global]  Instance refineInjSr2: RefineInj (=) (=) (fun x:nat=> Z.of_nat x+1)%Z.
   Proof using.
     hnf.
     intros.
     lia.
   Qed.
+*)
   Remove Hints primR_split_C: br_opacity. (* TODO: remove *)
-  Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
+  #[global]  Instance lsfjdlksj q q2 hdr hdr2 (hdrp:ptr):
     learn_exist_interface.Learnable
       (hdrp |-> BheaderR q hdr)
       (hdrp ,, o_field CU "monad::BlockHeader::base_fee_per_gas" |-> libspecs.optionR u256t (u256R q2) q2 (base_fee_per_gas hdr2))
@@ -470,13 +482,12 @@ Existing Instance UNSAFE_read_prim_cancel.
        ** [| blockStatePtr assumptionsAndUpdatesFinal = blockStatePtr assumptionsAndUpdates |]
        ** [| indices assumptionsAndUpdatesFinal = indices assumptionsAndUpdates |]
        ** [| (stateAfterTransaction hdr i preTxState t).1 = applyUpdates assumptionsAndUpdatesFinal preTxState |]).
-      Ltac assertp foo :=  iAssert foo as "#?"%string;[admit|].
   
   Lemma CR_const : const.CONST1 module "intx::uint<256u>" u256R.
   Proof. Admitted.
   Definition CR_const_C := [CANCEL] CR_const.
   #[local] Hint Resolve CR_const_C : br_opacity.
-  Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
+  #[global] Instance : LearnEq2 BheaderR:= ltac:(solve_learnable).
 
 cpp.spec "boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::basic_result<monad::ExecutionResult, void>(monad::ExecutionResult&&, boost::outcome_v2::basic_result<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, boost::outcome_v2::experimental::policy::status_code_throw<monad::ExecutionResult, system_error2::errored_status_code<system_error2::detail::erased<long>>, void>>::value_converting_constructor_tag)"
   as result_val_constr with (fun this:ptr =>
@@ -536,17 +547,10 @@ Opaque VectorR.
   Opaque _balance.
   Set Printing Coercions.
 
-  Ltac hidePost :=
-  IPM.perm_left ltac:(fun L n =>
-                          let f:= fresh "fullyHiddenPostcond" in
-                        match L with
-                        | HiddenPostCondition => hideFromWorkAs L f
-                        end
-                     ).
 
   Definition wp_init_implicit_B := [BWD] wp_init_implicit.
   Hint Resolve wp_init_implicit_B: br_opacity. (* TODO: investigagte why it is not already in automation *)
-  Instance lsfjdlksj2 q q2 hdr (hdrp:ptr) v:
+  #[global] Instance lsfjdlksj2 q q2 hdr (hdrp:ptr) v:
     learn_exist_interface.Learnable
       (hdrp |-> BheaderR q hdr)
       (hdrp ,, o_field CU "monad::BlockHeader::number" |-> primR "unsigned long" q2 v)
@@ -568,7 +572,20 @@ Ltac slautot rw := go; tryif progress(try (ego; eagerUnifyU; go; fail); try (app
   then slautot rw  else idtac.
 
 Ltac slauto := slautot idtac. (* try rewrite left_id; *)
-    
+
+ Definition recObserveF s t := @observe_fwd _ _ _ (recObserve s t) .
+Hint Resolve recObserveF: br_opacity.
+
+End with_Sigma.
+  Hint Resolve observeStateF : br_opacity.
+  Hint Resolve borrow_nonce2_C: br_opacity.
+  Hint Resolve borrow_basefee_C: br_opacity.
+  #[local] Hint Resolve CR_const_C : br_opacity.
+  Hint Resolve wp_init_implicit_B: br_opacity. (* TODO: investigagte why it is not already in automation *)
+  Hint Resolve borrow_number_C: br_opacity.
+Hint Resolve observeResult : br_opacity.
+Hint Resolve recObserveF: br_opacity.
+(*
   Lemma prf: denoteModule module
              ** rec_dtor
              ** ct_dtor
@@ -643,7 +660,7 @@ Proof using MODd.
     slauto.
     progress applyPHyp.
     repeat (iExists _). 
-    (* match goal with
+     match goal with
     | H:context[stateAfterTransactionAux ?a1 ?b1 ?c1 ?d1] |- context[stateAfterTransactionAux ?a2 ?b2 ?c2 ?d2] => 
         unify a1 a2; unify b1 b2; unify c1 c2; unify d1 d2;
         remember (stateAfterTransactionAux a1 b1 c1 d1) as saf
@@ -757,5 +774,3 @@ Hint Resolve recObserveF: br_opacity.
     rewrite ResultSucRDef. go.
 }
 Qed. *)
-    Abort.
-End with_Sigma.

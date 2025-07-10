@@ -5,15 +5,8 @@
   Lens Lens.Elpi Equations Equations.Prop Equations.Type
   bluerock iris stdpp elpi ExtLib Ltac2 AAC_tactics
   bluerock.ltac2.llm)
-
- ;; --- coqdoc configuration ----------------------------------------
- ;;  • --utf8   → read UTF-8 sources and add <meta charset="utf-8">
- ;;  • --html   → generate HTML (keeps parity with your current build)
- ;;  • --css    → add our width-fixing / font-fixing stylesheet
  (coqdoc_flags (--utf8))
- ;; -----------------------------------------------------------------
 )
 
 (subdir tutorials
  (include dune.inc))
- 

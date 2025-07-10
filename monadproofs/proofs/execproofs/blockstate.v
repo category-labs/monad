@@ -8,10 +8,13 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
-(* Require Import monad.proofs.execproofs.exec_transaction. *)
+ Require Import monad.proofs.execproofs.exec_transaction. 
 Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
+
+#[only(lazy_unfold)] derive AccountR.
+#[only(lazy_unfold)] derive AccountStateR.
 
 
 Section with_Sigma.
@@ -167,9 +170,7 @@ cpp.spec "evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)" as bytes
   \prepost{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
       ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
     ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
-  \post[Vbool (negb (N.eqb av bv))]
-      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+  \post[Vbool (negb (N.eqb av bv))] emp
 ).
 
   #[global] Instance dec (i1 i2: Indices): Decision (i1=i2) := ltac:(solve_decision).
@@ -181,9 +182,7 @@ cpp.spec "monad::operator==(monad::Incarnation, monad::Incarnation)" as incarnat
   \prepost{(q1 q2: Qp) (idx1 idx2: monad.proofs.exec_specs.Indices)}
       i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
     ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
-  \post[Vbool (bool_decide (idx1 = idx2))]
-      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
-    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+  \post[Vbool (bool_decide (idx1 = idx2))] emp
 ).
 
 (* 5. std::optional<Account>::operator bool() const *)
@@ -419,14 +418,10 @@ cpp.spec
 cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
   as incarnation_copy_spec with (fun this:ptr =>
   \arg{otherp:ptr} "other" (Vref otherp)
-  \pre{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
+  \prepost{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
       otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
-    ** this   |-> bluerock.lang.cpp.logic.heap_pred.aggregate.structR
-                 "monad::Incarnation" (cQp.mut 1)
   \post[Vref this]
-      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx
-      ** otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx).
- 
+      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx).
 
 
 (* 9. U256 greater-or-equal: intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&) *)
@@ -456,15 +451,23 @@ cpp.spec "intx::uint<256u>::~uint()" as uint256dtor with (λ this : ptr, \pre{w}
   Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
   Hint Resolve observeStateF : br_opacity.
   
-Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo)); try iPureIntro.
+Require Import monad.proofs.bigauto.
+Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo; Forward.rwHyps)); try iPureIntro.
 
 Hint Opaque AccountSubstateR : br_opacity.
 Hint Opaque AccountStateR : br_opacity.
+Transparent AccountR.
+Hint Opaque AccountR: br_opacity.
+  Opaque w256_to_Z.
+  Transparent libspecs.optionR.
+  Opaque w256_to_Z.
+  Hint Opaque libspecs.optionR: br_opacity.
+  #[global] Instance learnac : LearnEq3 (AccountR) := ltac:(solve_learnable).
+  #[global] Instance learnby : LearnEq2 (bytes32R) := ltac:(solve_learnable).
+  Arguments libspecs.optionR {_} {_} {_} {_} {_} _ _ _ !o/.
 Lemma prf: verify[module] fix_spec.
 Proof using.
   verify_spec'.
-  slauto.
-  unfold AccountStateR.
   slauto.
   ego.
   wp_if;[slauto; fail|].
@@ -480,44 +483,52 @@ Proof using.
   Forward.rwHyps.
   simpl in *.
   go.
-  Transparent libspecs.optionR.
-  unfold libspecs.optionR, AccountR.
-  Opaque w256_to_Z.
-  ego.
-  wp_if;[ |].
-  ego. admit.
-
+  wp_if;[slauto|].
   slauto.
-  Forward.rwHyps.
-  apply forget.
-  slauto; ego.
-  go.
-  Locate rwHyps.
-  miscPure.rwHyps.
-  misc.forward_reason.
-  
-  Search isSome.
-  Set Nested Proofs Allowed.
-  Lemma isSomeRw {T:Type} (ot:option T): isSome ot -> exists t, ot = Some t.
-  Proof using.
-    unfold isSome.
-    destruct ot; intros; eauto. tauto.
-  Qed.
-  is_Some
-  applyToSomeHyp @isSomeRw.
-  is_Some
-  unfold AccountR.
-  ego.
+  wapplyRev AccountR_unfoldable.
   eagerUnifyU.
-    
-    
-      
+  go.
+  iExists (1%Qp).
+  go.
+  setoid_rewrite <- (bi.exist_intro inds).
+  go.
+  
+  #[global] Instance optionRSome {SomeTyModel:Type} (somety somety2: bluerock.lang.cpp.syntax.core.type)
+    (someTyRep someTyRep2: SomeTyModel -> Rep) (q:Qp) (s: SomeTyModel) (oa: option SomeTyModel) (b:ptr):
+    learn_exist_interface.Learnable (b ,, opt_somety_offset somety |-> someTyRep s)
+      (b |-> libspecs.optionR somety2 someTyRep2 q oa) [ oa = Some s] := ltac:(solve_learnable).
+
+  work. (* bug? the learning instance above does not fire *)
+  iExists (Some x0).
+  Hint Opaque IncarnationR : br_opacity.
+  work.
+  slauto.
+
+  (*
+  b0 : is_empty_model (actualPreTxState !! fixee) = false
+  _H_7 : valid<"bool"> (Vbool true)
+  _H_8 : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce x0))
+  H : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce x))
+  _q_ :
+    (code_hash_of_program (block.block_account_code x0) =?
+     code_hash_of_program (block.block_account_code x))%N =
+    true
+  p : ptr
+  ============================
+  False
+
+*)
 Abort.
-
-
-
-
+  
 
 
 
 End with_Sigma.
+
+
+(** agent improvment:
+- have a separate conversation just to check each spec, before sending to coqtop. do fixes on the fly with the agent. once the agent is done, run the checker on each spec, let it fix. the prompts can be customized for specialized types of specs, e.g. copy constructor, ==
+- check specs for unused vars
+- for every rep predicate, ask to add hints: learnable, unfoldable.
+
+*)

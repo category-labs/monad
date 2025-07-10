@@ -1028,7 +1028,7 @@ namespace monad::vm::runtime
     template <size_t M, size_t N>
     [[gnu::always_inline]]
     inline constexpr words_t<M + N>
-    mul_words(words_t<M> const &u, words_t<N> const &v) noexcept
+    long_mul(words_t<M> const &u, words_t<N> const &v) noexcept
     {
         words_t<M + N> result{0};
         for (size_t j = 0; j < N; j++) {
@@ -1044,21 +1044,29 @@ namespace monad::vm::runtime
         return result;
     }
 
-    template <size_t M, size_t N>
+    /**
+     * Truncating multiword multiplication
+     */
+    template <size_t R, size_t M, size_t N>
     [[gnu::always_inline]]
-    inline constexpr words_t<M + N>
-    mul_words(uint64_t const *u, uint64_t const *v) noexcept
+    inline constexpr words_t<R>
+    truncating_mul(words_t<M> const &u, words_t<N> const &v) noexcept
+        requires(R <= M + N)
     {
-        words_t<M + N> result{0};
-        for (size_t j = 0; j < N; j++) {
+        words_t<R> result{0};
+#pragma GCC unroll(std::min(R, N))
+        for (size_t j = 0; j < std::min(R, N); j++) {
             uint64_t carry = 0;
-            for (size_t i = 0; i < M; i++) {
+            // TODO: see if this loop is unrolled
+            for (size_t i = 0; i < std::min(R - j, M); i++) {
                 auto p =
                     static_cast<uint128_t>(u[i]) * v[j] + carry + result[i + j];
                 result[i + j] = static_cast<uint64_t>(p);
                 carry = static_cast<uint64_t>(p >> 64);
             }
-            result[j + M] = carry;
+            if (j + M < R) {
+                result[j + M] = carry;
+            }
         }
         return result;
     }
@@ -1526,7 +1534,7 @@ namespace monad::vm::runtime
             mul_unshift(words_t<INPUT_WORDS> const &x) const noexcept
             {
                 words_t<min_words(INPUT_BITS + RECIPROCAL_BITS)> prod =
-                    mul_words(x, value);
+                    long_mul(x, value);
                 words_t<OUTPUT_WORDS> result;
                 if constexpr (BIT_SHIFT) {
                     for (size_t i = 0; i < OUTPUT_WORDS; i++) {
@@ -1650,7 +1658,7 @@ namespace monad::vm::runtime
             static words_t<INPUT_WORDS>
             mul_shift(words_t<INPUT_WORDS> const &x, type const &R)
             {
-                words_t<INPUT_WORDS + NUMERATOR_WORDS> prod = mul_words(x, R);
+                words_t<INPUT_WORDS + NUMERATOR_WORDS> prod = long_mul(x, R);
                 words_t<INPUT_WORDS> result;
                 if constexpr (BIT_SHIFT) {
 #pragma GCC unroll(INPUT_WORDS)
@@ -1720,7 +1728,7 @@ namespace monad::vm::runtime
             auto [s, c] = addc(x, y);
             if (!c) {
                 // Shortcut
-                words_t<8> prod = mul_words(s.as_words(), rec.value);
+                words_t<8> prod = long_mul(s.as_words(), rec.value);
                 uint256_t q_hat;
                 q_hat[3] = prod[7] >> 1;
                 q_hat[2] = shrd(prod[7], prod[6], 1);
@@ -1741,9 +1749,17 @@ namespace monad::vm::runtime
 
             // Since sum>=2^256 we need to do wide multiplication
             // TODO: replace this with 5-word truncating multiplication?
-            words_t<8> qd_ = mul_words(q_hat.as_words(), d.as_words());
-            words_t<5> qd;
-            std::memcpy(&qd, &qd_, sizeof(qd));
+            words_t<5> qd = truncating_mul<5>(q_hat.as_words(), d.as_words());
+#ifndef NDEBUG
+            words_t<8> qd_ = long_mul(q_hat.as_words(), d.as_words());
+            for (size_t i = 0; i < 5; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == qd[i]);
+            }
+            for (size_t i = 5; i < 8; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == 0);
+            }
+#endif
+            // std::memcpy(&qd, &qd_, sizeof(qd));
 
             auto [r_hat_0, r_carry_0] = subb(sum, qd);
             MONAD_VM_DEBUG_ASSERT(!r_carry_0);
@@ -1757,13 +1773,21 @@ namespace monad::vm::runtime
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
             barrett::mulmod_reciprocal_1 const &rec)
         {
-            words_t<8> xy = mul_words(x.as_words(), y.as_words());
+            words_t<8> xy = long_mul(x.as_words(), y.as_words());
             words_t<8> q_hat = rec.mul_unshift(xy);
 
             // TODO: make this multiplication truncating
-            words_t<12> qd_ = mul_words(q_hat, d.as_words());
-            words_t<8> qd;
-            std::memcpy(&qd, &qd_, sizeof(qd));
+            words_t<8> qd = truncating_mul<8>(q_hat, d.as_words());
+#ifndef NDEBUG
+            words_t<12> qd_ = long_mul(q_hat, d.as_words());
+            for (size_t i = 0; i < 8; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == qd[i]);
+            }
+            for (size_t i = 8; i < 12; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == 0);
+            }
+#endif
+            // std::memcpy(&qd, &qd_, sizeof(qd));
 
             auto [r_hat_0, r_carry_0] = subb(xy, qd);
             MONAD_VM_DEBUG_ASSERT(!r_carry_0);
@@ -1777,14 +1801,22 @@ namespace monad::vm::runtime
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
             barrett::mulmod_const_reciprocal_1 const &rec)
         {
-            words_t<8> xy = mul_words(x.as_words(), y.as_words());
+            words_t<8> xy = long_mul(x.as_words(), y.as_words());
             words_t<8> q_hat = rec.mul_unshift(x.as_words());
 
             // qd_ = ((x*R) >> 256) * d
             // TODO: truncate
-            words_t<12> qd_ = mul_words(q_hat, d.as_words());
-            words_t<8> qd;
-            std::memcpy(&qd, &qd_, sizeof(qd));
+            words_t<8> qd = truncating_mul<8>(q_hat, d.as_words());
+#ifndef NDEBUG
+            words_t<12> qd_ = long_mul(q_hat, d.as_words());
+            for (size_t i = 0; i < 8; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == qd[i]);
+            }
+            for (size_t i = 8; i < 12; i++) {
+                MONAD_VM_DEBUG_ASSERT(qd_[i] == 0);
+            }
+#endif
+            // std::memcpy(&qd, &qd_, sizeof(qd));
 
             auto [r_hat_0, r_carry_0] = subb(xy, qd);
             MONAD_VM_DEBUG_ASSERT(!r_carry_0);

@@ -16,4 +16,6 @@ target_link_libraries(monad-vm-evm
     PUBLIC monad-vm::monad-vm-core
 )
 
+# test 2
+
 add_library(monad-vm::monad-vm-evm ALIAS monad-vm-evm)

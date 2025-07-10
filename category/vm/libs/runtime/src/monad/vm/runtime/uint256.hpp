@@ -1374,7 +1374,7 @@ namespace monad::vm::runtime
 
         template <BarrettParams Params>
             requires(Params.min_denominator > 0 && Params.input_bits > 0)
-        struct reciprocal_1
+        struct reciprocal
         {
             static constexpr size_t min_words(size_t bits) noexcept
             {
@@ -1475,7 +1475,31 @@ namespace monad::vm::runtime
             static constexpr size_t RECIPROCAL_WORDS =
                 min_words(RECIPROCAL_BITS);
 
-            explicit(true) reciprocal_1(uint256_t const &d) noexcept
+            /**
+             * Compute an underapproximation of the reciprocal for use in
+             * Barrett reduction.
+             *
+             * Precondition: `d >= MIN_DENOMINATOR`
+             * Postcondition: let `M = reciprocal<Min, N>::of(d)`. Then for any
+             * N-bit `x` we have
+             * `floor(x*M/2^N) <= x/v <= floor(x*M/2^N) + 1`
+             *
+             * Proof of correctness:
+             *   1. (2^N / d) - 1 < M <= (2^N / d)
+             *   2. (x*2^N / d) - x < M*x <= (x*2^N/d)
+             *   3. (x/d) - (x/2^N) < M*x/2^N <= x/d
+             * Since x is N-bit:
+             *   4. x/d - 1 < M*x/2^N <= x/d
+             * Let q = x/d, q_hat = floor(M*x/2^N). Then:
+             *   5. q_hat <= M*x/2^N < q_hat + 1
+             *   6. q - 1 < q_hat + 1 (by 4 and 5)
+             *   7. q_hat <= q        (by 4 and 5)
+             * Finally we have q_hat <= q < q_hat+2 as desired
+             */
+            // TODO: Double-check this proof since it was written before
+            // parameterising the entire thing
+
+            explicit(true) reciprocal(uint256_t const &d) noexcept
                 requires(MULTIPLIER_WORDS == 0)
                 : value{}
             {
@@ -1495,7 +1519,7 @@ namespace monad::vm::runtime
             }
 
             explicit(true)
-                reciprocal_1(uint256_t const &y, uint256_t const &d) noexcept
+                reciprocal(uint256_t const &y, uint256_t const &d) noexcept
                 requires(MULTIPLIER_WORDS != 0)
                 : value{}
             {
@@ -1546,156 +1570,38 @@ namespace monad::vm::runtime
             words_t<RECIPROCAL_WORDS> value;
         };
 
-        using udivrem_reciprocal_1 =
-            reciprocal_1<{.min_denominator = 2, .input_bits = 256}>;
-        using addmod_reciprocal_1 =
-            reciprocal_1<{.min_denominator = 3, .input_bits = 257}>;
-        using mulmod_reciprocal_1 =
-            reciprocal_1<{.min_denominator = 2, .input_bits = 512}>;
-        using mulmod_const_reciprocal_1 = reciprocal_1<{
+        using udivrem_reciprocal =
+            reciprocal<{.min_denominator = 2, .input_bits = 256}>;
+        using addmod_reciprocal =
+            reciprocal<{.min_denominator = 3, .input_bits = 257}>;
+        using mulmod_reciprocal =
+            reciprocal<{.min_denominator = 2, .input_bits = 512}>;
+        using mulmod_const_reciprocal = reciprocal<{
             .min_denominator = 2, .input_bits = 256, .multiplier_words = 4}>;
-        static_assert(udivrem_reciprocal_1::RECIPROCAL_BITS == 256);
-        static_assert(udivrem_reciprocal_1::RECIPROCAL_WORDS == 4);
-        static_assert(udivrem_reciprocal_1::INPUT_WORDS == 4);
-        static_assert(udivrem_reciprocal_1::OUTPUT_WORDS == 4);
-
-        static_assert(addmod_reciprocal_1::RECIPROCAL_BITS == 256);
-        static_assert(addmod_reciprocal_1::RECIPROCAL_WORDS == 4);
-        static_assert(addmod_reciprocal_1::INPUT_WORDS == 5);
-        static_assert(addmod_reciprocal_1::OUTPUT_WORDS == 4);
-
-        static_assert(mulmod_reciprocal_1::RECIPROCAL_BITS == 512);
-        static_assert(mulmod_reciprocal_1::RECIPROCAL_WORDS == 8);
-        static_assert(mulmod_reciprocal_1::INPUT_WORDS == 8);
-        static_assert(mulmod_reciprocal_1::OUTPUT_WORDS == 8);
-
-        static_assert(mulmod_const_reciprocal_1::RECIPROCAL_BITS == 511);
-        static_assert(mulmod_const_reciprocal_1::RECIPROCAL_WORDS == 8);
-        static_assert(mulmod_const_reciprocal_1::INPUT_WORDS == 4);
-        static_assert(mulmod_const_reciprocal_1::OUTPUT_WORDS == 8);
-
-        template <size_t MIN_DENOMINATOR_, size_t INPUT_BITS_>
-        struct reciprocal
-        {
-            static constexpr size_t MIN_DENOMINATOR = MIN_DENOMINATOR_;
-            static constexpr size_t INPUT_BITS = INPUT_BITS_;
-            static constexpr size_t INPUT_WORDS = (INPUT_BITS + 63) / 64;
-            static constexpr size_t WORD_SHIFT = INPUT_BITS / 64;
-            static constexpr size_t BIT_SHIFT = INPUT_BITS % 64;
-            static constexpr size_t NUMERATOR_WORDS = 1 + WORD_SHIFT;
-
-            static constexpr words_t<NUMERATOR_WORDS> _numerator() noexcept
-            {
-                words_t<NUMERATOR_WORDS> num;
-                for (size_t i = 0; i < WORD_SHIFT; i++) {
-                    num[i] = 0;
-                }
-                num[WORD_SHIFT] = 1 << BIT_SHIFT;
-                return num;
-            }
-
-            static constexpr words_t<NUMERATOR_WORDS> NUMERATOR = _numerator();
-
-            static constexpr size_t _reciprocal_words() noexcept
-            {
-                uint256_t d{MIN_DENOMINATOR};
-                words_t<NUMERATOR_WORDS> max_q =
-                    udivrem(NUMERATOR, d.as_words()).quot;
-                size_t significant_words = 0;
-                for (size_t i = 0; i < NUMERATOR_WORDS; i++) {
-                    if (max_q[i]) {
-                        significant_words = i + 1;
-                    }
-                }
-                return significant_words;
-            }
-
-            static constexpr size_t RECIPROCAL_WORDS = _reciprocal_words();
-
-            using type = words_t<RECIPROCAL_WORDS>;
-
-            /**
-             * Compute an underapproximation of the reciprocal for use in
-             * Barrett reduction.
-             *
-             * Precondition: `d >= MIN_DENOMINATOR`
-             * Postcondition: let `M = reciprocal<Min, N>::of(d)`. Then for any
-             * N-bit `x` we have
-             * `floor(x*M/2^N) <= x/v <= floor(x*M/2^N) + 1`
-             *
-             * Proof of correctness:
-             *   1. (2^N / d) - 1 < M <= (2^N / d)
-             *   2. (x*2^N / d) - x < M*x <= (x*2^N/d)
-             *   3. (x/d) - (x/2^N) < M*x/2^N <= x/d
-             * Since x is N-bit:
-             *   4. x/d - 1 < M*x/2^N <= x/d
-             * Let q = x/d, q_hat = floor(M*x/2^N). Then:
-             *   5. q_hat <= M*x/2^N < q_hat + 1
-             *   6. q - 1 < q_hat + 1 (by 4 and 5)
-             *   7. q_hat <= q        (by 4 and 5)
-             * Finally we have q_hat <= q < q_hat+2 as desired
-             */
-            // TODO: Double-check this proof since it was written before
-            // parameterising the entire thing
-            static type of(uint256_t const &d) noexcept
-            {
-                MONAD_VM_DEBUG_ASSERT(d >= MIN_DENOMINATOR);
-                auto [q, _] = udivrem(NUMERATOR, d.as_words());
-
-                type result;
-                std::memcpy(&result, &q, sizeof(result));
-                return result;
-            }
-
-            static words_t<INPUT_WORDS>
-            mul_shift(words_t<INPUT_WORDS> const &x, type const &R)
-            {
-                words_t<INPUT_WORDS + NUMERATOR_WORDS> prod = long_mul(x, R);
-                words_t<INPUT_WORDS> result;
-                if constexpr (BIT_SHIFT) {
-#pragma GCC unroll(INPUT_WORDS)
-                    for (size_t i = 0; i < INPUT_WORDS; i++) {
-                        result[i] = shrd(
-                            prod[i + 1 + WORD_SHIFT],
-                            prod[i + WORD_SHIFT],
-                            BIT_SHIFT);
-                    }
-                }
-                else {
-                    std::memcpy(&result, &prod[WORD_SHIFT], sizeof(result));
-                }
-                return result;
-            }
-        };
-
-        using udivrem_reciprocal = reciprocal<2, 256>;
-        using addmod_reciprocal = reciprocal<3, 257>;
-
-        struct mulmod_reciprocal : public reciprocal<2, 512>
-        {
-            using type_extended = words_t<8>;
-
-            static type_extended
-            extended_of(uint256_t const &y, uint256_t const &d) noexcept
-            {
-                type_extended numerator{0};
-                // numerator = y << 256
-                std::memcpy(&numerator[4], &y, sizeof(y));
-                auto [q, _] = udivrem(numerator, d.as_words());
-                return q;
-            }
-        };
-
-        using mulmod_const_reciprocal = reciprocal<2, 256>;
-
+        static_assert(udivrem_reciprocal::RECIPROCAL_BITS == 256);
         static_assert(udivrem_reciprocal::RECIPROCAL_WORDS == 4);
+        static_assert(udivrem_reciprocal::INPUT_WORDS == 4);
+        static_assert(udivrem_reciprocal::OUTPUT_WORDS == 4);
+
+        static_assert(addmod_reciprocal::RECIPROCAL_BITS == 256);
         static_assert(addmod_reciprocal::RECIPROCAL_WORDS == 4);
+        static_assert(addmod_reciprocal::INPUT_WORDS == 5);
+        static_assert(addmod_reciprocal::OUTPUT_WORDS == 4);
+
+        static_assert(mulmod_reciprocal::RECIPROCAL_BITS == 512);
         static_assert(mulmod_reciprocal::RECIPROCAL_WORDS == 8);
+        static_assert(mulmod_reciprocal::INPUT_WORDS == 8);
+        static_assert(mulmod_reciprocal::OUTPUT_WORDS == 8);
+
+        static_assert(mulmod_const_reciprocal::RECIPROCAL_BITS == 511);
+        static_assert(mulmod_const_reciprocal::RECIPROCAL_WORDS == 8);
+        static_assert(mulmod_const_reciprocal::INPUT_WORDS == 4);
+        static_assert(mulmod_const_reciprocal::OUTPUT_WORDS == 8);
 
         [[gnu::always_inline]]
         inline div_result<uint256_t> udivrem(
             uint256_t const &u, uint256_t const &v,
-            barrett::udivrem_reciprocal_1 const &rec) noexcept
+            barrett::udivrem_reciprocal const &rec) noexcept
         {
             // Multiply and shift right by 256
             uint256_t q_hat{rec.mul_unshift(u.as_words())};
@@ -1747,7 +1653,7 @@ namespace monad::vm::runtime
 
         inline uint256_t addmod(
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
-            barrett::addmod_reciprocal_1 const &rec) noexcept
+            barrett::addmod_reciprocal const &rec) noexcept
         {
             words_t<5> sum;
             auto [s, c] = addc(x, y);
@@ -1776,7 +1682,7 @@ namespace monad::vm::runtime
 
         inline uint256_t mulmod(
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
-            barrett::mulmod_reciprocal_1 const &rec)
+            barrett::mulmod_reciprocal const &rec)
         {
             words_t<8> xy = long_mul(x.as_words(), y.as_words());
             words_t<8> q_hat = rec.mul_unshift(xy);
@@ -1786,7 +1692,7 @@ namespace monad::vm::runtime
 
         inline uint256_t mulmod(
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
-            barrett::mulmod_const_reciprocal_1 const &rec)
+            barrett::mulmod_const_reciprocal const &rec)
         {
             words_t<8> xy = long_mul(x.as_words(), y.as_words());
             words_t<8> q_hat = rec.mul_unshift(x.as_words());

@@ -209,8 +209,7 @@ namespace monad::vm::compiler::native
         void breakpoint();
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);
-        void swap_rdx_general_reg_index_if_free();
-        void swap_rcx_general_reg_index_if_free();
+        void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
 
         ////////// Core emit functionality //////////
 
@@ -609,6 +608,9 @@ namespace monad::vm::compiler::native
         unsigned get_stack_elem_general_order_index(
             StackElemRef, std::tuple<LiveSet...> const &);
 
+        template <asmjit::x86::Gpq gpq>
+        uint8_t volatile_gpq_index();
+
         ////////// Private move functionality //////////
 
         template <bool remember_intermediate, bool assume_aligned>
@@ -976,8 +978,6 @@ namespace monad::vm::compiler::native
         Stack stack_;
         bool keep_stack_in_next_block_;
         std::array<Gpq256, 3> gpq256_regs_;
-        uint8_t rcx_general_reg_index; // must be 0 or 3
-        uint8_t rdx_general_reg_index; // must be 1 or 2
         uint64_t bytecode_size_;
         std::unordered_map<byte_offset, asmjit::Label> jump_dests_;
         RoData rodata_;

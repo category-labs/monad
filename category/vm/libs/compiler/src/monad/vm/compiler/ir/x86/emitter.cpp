@@ -617,8 +617,6 @@ namespace monad::vm::compiler::native
         , jump_table_label_{as_.newNamedLabel("JumpTable")}
         , keep_stack_in_next_block_{}
         , gpq256_regs_{Gpq256{x86::r12, x86::r13, x86::r14, x86::r15}, Gpq256{x86::r8, x86::r9, x86::r10, x86::r11}, Gpq256{x86::rcx, x86::rsi, x86::rdx, x86::rdi}}
-        , rcx_general_reg_index{}
-        , rdx_general_reg_index{2}
         , bytecode_size_{codesize}
         , rodata_{as_.newNamedLabel("ROD")}
     {
@@ -940,28 +938,21 @@ namespace monad::vm::compiler::native
         stack_.swap_general_regs(x, y);
     }
 
-    void Emitter::swap_rdx_general_reg_index_if_free()
+    void Emitter::swap_general_reg_indices(GeneralReg r, uint8_t i, uint8_t j)
     {
-        MONAD_VM_ASSERT(
-            rdx_general_reg_index == 1 || rdx_general_reg_index == 2);
-        if (stack_.is_general_reg_on_stack(rdx_general_reg)) {
+        MONAD_VM_ASSERT(i < 4);
+        MONAD_VM_ASSERT(j < 4);
+        if (i == j) {
             return;
         }
-        auto &r = gpq256_regs_[rdx_general_reg.reg];
-        std::swap(r[1], r[2]);
-        rdx_general_reg_index = rdx_general_reg_index == 1 ? 2 : 1;
-    }
-
-    void Emitter::swap_rcx_general_reg_index_if_free()
-    {
-        MONAD_VM_ASSERT(
-            rcx_general_reg_index == 0 || rcx_general_reg_index == 3);
-        if (stack_.is_general_reg_on_stack(rcx_general_reg)) {
-            return;
+        auto &gpq = general_reg_to_gpq256(r);
+        std::swap(gpq[i], gpq[j]);
+        auto *e = stack_.general_reg_stack_elem(r);
+        if (e) {
+            as_.mov(x86::rax, gpq[i]);
+            as_.mov(gpq[i], gpq[j]);
+            as_.mov(gpq[j], x86::rax);
         }
-        auto &r = gpq256_regs_[rcx_general_reg.reg];
-        std::swap(r[0], r[3]);
-        rcx_general_reg_index = rcx_general_reg_index == 0 ? 3 : 0;
     }
 
     void Emitter::fail_with_error(asmjit::Error e)
@@ -1609,6 +1600,25 @@ namespace monad::vm::compiler::native
         }
         MONAD_VM_DEBUG_ASSERT(e->avx_reg().has_value());
         return e_is_live ? 8 : 9;
+    }
+
+    template <asmjit::x86::Gpq gpq>
+    uint8_t Emitter::volatile_gpq_index()
+    {
+        static_assert(
+            gpq == x86::rdi || gpq == x86::rsi || gpq == x86::rcx ||
+            gpq == x86::rdx);
+        MONAD_VM_DEBUG_ASSERT(volatile_general_reg == rdi_general_reg);
+        MONAD_VM_DEBUG_ASSERT(volatile_general_reg == rsi_general_reg);
+        MONAD_VM_DEBUG_ASSERT(volatile_general_reg == rcx_general_reg);
+        MONAD_VM_DEBUG_ASSERT(volatile_general_reg == rdx_general_reg);
+        auto const &gpq256 = general_reg_to_gpq256(volatile_general_reg);
+        for (uint8_t i = 0; i < 4; ++i) {
+            if (gpq256[i] == gpq) {
+                return i;
+            }
+        }
+        MONAD_VM_ASSERT(false);
     }
 
     void Emitter::mov_stack_index_to_avx_reg(int32_t stack_index)
@@ -2855,24 +2865,21 @@ namespace monad::vm::compiler::native
         }
         else if (std::holds_alternative<x86::Gpq>(offset_op)) {
             auto r = std::get<x86::Gpq>(offset_op);
-            if (r == x86::rdi) {
-                as_.mov(x86::esi, x86::dword_ptr(reg_context, size_offset));
-                as_.sub(x86::rsi, x86::rdi);
-                as_.add(x86::rdi, x86::qword_ptr(reg_context, data_offset));
-            }
-            else if (r == x86::rsi) {
-                as_.mov(x86::rax, x86::rsi);
-                as_.mov(x86::rdi, x86::qword_ptr(reg_context, data_offset));
-                as_.add(x86::rdi, x86::rsi);
-                as_.mov(x86::esi, x86::dword_ptr(reg_context, size_offset));
-                as_.sub(x86::rsi, x86::rax);
-            }
-            else {
-                as_.mov(x86::rdi, x86::qword_ptr(reg_context, data_offset));
-                as_.mov(x86::esi, x86::dword_ptr(reg_context, size_offset));
-                as_.add(x86::rdi, r);
-                as_.sub(x86::rsi, r);
-            }
+            // We always have `r` not part of the volatile general reg:
+            // According to `is_bounded_by_bits`, if `r` is part of volatile
+            // general reg, then the stack elem `offset` is live (the case
+            // where `gpq[0]` is returned by `is_bounded_by_bits`). But
+            // `offset` can only hold the volatile general reg in case the
+            // `offset` was updated to be the released stack elem `e`. This
+            // stack elem is not on the stack and therefore `is_live` was false
+            // in `is_bounded_by_bits`. Hence `r` cannot be part of the volatile
+            // general reg and in particular cannot be rdi or rsi, so no need to
+            // worry about overwriting the value of `r` here.
+            MONAD_VM_DEBUG_ASSERT(r != x86::rdi && r != x86::rsi);
+            as_.mov(x86::rdi, x86::qword_ptr(reg_context, data_offset));
+            as_.mov(x86::esi, x86::dword_ptr(reg_context, size_offset));
+            as_.add(x86::rdi, r);
+            as_.sub(x86::rsi, r);
         }
         else {
             MONAD_VM_DEBUG_ASSERT(
@@ -3852,9 +3859,7 @@ namespace monad::vm::compiler::native
         std::tuple<LiveSet...> const &live)
     {
         MONAD_VM_DEBUG_ASSERT(
-            rcx_general_reg_index == 0 || rcx_general_reg_index == 3);
-        MONAD_VM_DEBUG_ASSERT(
-            gpq256_regs_[rcx_general_reg.reg][rcx_general_reg_index] ==
+            gpq256_regs_[rcx_general_reg.reg][volatile_gpq_index<x86::rcx>()] ==
             x86::rcx);
 
         if (value->literal()) {
@@ -3892,19 +3897,14 @@ namespace monad::vm::compiler::native
             as_.mov(x86::rax, x86::rcx);
         }
 
-        bool const dst_has_rcx = dst_gpq[rcx_general_reg_index] == x86::rcx;
-
         uint8_t const last_i = [&] {
             if constexpr (shift_type == ShiftType::SHL) {
                 return 0;
             }
             return 3;
         }();
-        if (dst_has_rcx) {
-            std::swap(dst_gpq[last_i], dst_gpq[rcx_general_reg_index]);
-            rcx_general_reg_index = last_i;
-            MONAD_VM_DEBUG_ASSERT(
-                rcx_general_reg_index == 0 || rcx_general_reg_index == 3);
+        if (*dst->general_reg() == rcx_general_reg) {
+            std::swap(dst_gpq[last_i], dst_gpq[volatile_gpq_index<x86::rcx>()]);
         }
 
         auto cmp_reg = x86::rcx;
@@ -3934,7 +3934,7 @@ namespace monad::vm::compiler::native
             as_.mov(x86::ecx, cmp_reg.r32());
         }
         else {
-            if (dst_has_rcx) {
+            if (*dst->general_reg() == rcx_general_reg) {
                 MONAD_VM_DEBUG_ASSERT(
                     dst->general_reg()->reg != CALLEE_SAVE_GENERAL_REG_ID);
                 offset_reg = x86::rax;
@@ -5101,9 +5101,9 @@ namespace monad::vm::compiler::native
         size_t bit_size, StackElemRef left, MulEmitter::RightMulArg right,
         std::tuple<LiveSet...> const &live)
     {
+        auto const rdx_general_reg_index = volatile_gpq_index<x86::rdx>();
+
         MONAD_VM_DEBUG_ASSERT(bit_size > 0 && bit_size <= 256);
-        MONAD_VM_DEBUG_ASSERT(
-            rdx_general_reg_index == 1 || rdx_general_reg_index == 2);
         MONAD_VM_DEBUG_ASSERT(
             gpq256_regs_[rdx_general_reg.reg][rdx_general_reg_index] ==
             x86::rdx);

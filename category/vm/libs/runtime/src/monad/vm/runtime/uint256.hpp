@@ -183,6 +183,41 @@ namespace monad::vm::runtime
         }
     }
 
+    template <size_t M>
+    using words_t = std::array<uint64_t, M>;
+
+    typedef unsigned __int128 uint128_t;
+    typedef __int128 int128_t;
+
+    /**
+     * Truncating multiword multiplication
+     */
+    template <size_t R, size_t M, size_t N>
+    // TODO: remove used
+    [[gnu::always_inline]] [[gnu::used]]
+    inline constexpr words_t<R>
+    truncating_mul(words_t<M> const &u, words_t<N> const &v) noexcept
+        requires(R <= M + N)
+    {
+        words_t<R> result{0};
+        // GCC does not allow using min(R, N) as the unroll factor
+#pragma GCC unroll(N)
+        for (size_t j = 0; j < std::min(R, N); j++) {
+            uint64_t carry = 0;
+#pragma GCC unroll(M)
+            for (size_t i = 0; i < std::min(R - j, M); i++) {
+                auto p =
+                    static_cast<uint128_t>(u[i]) * v[j] + carry + result[i + j];
+                result[i + j] = static_cast<uint64_t>(p);
+                carry = static_cast<uint64_t>(p >> 64);
+            }
+            if (j + M < R) {
+                result[j + M] = carry;
+            }
+        }
+        return result;
+    }
+
     template <typename Q, typename R = Q>
     struct div_result
     {
@@ -197,9 +232,6 @@ namespace monad::vm::runtime
             return lhs.quot == rhs.quot && lhs.rem == rhs.rem;
         }
     };
-
-    typedef unsigned __int128 uint128_t;
-    typedef __int128 int128_t;
 
     [[gnu::always_inline]]
     constexpr inline div_result<uint64_t>
@@ -406,26 +438,13 @@ namespace monad::vm::runtime
         friend inline constexpr uint256_t
         operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
         {
-            if consteval {
-                return uint256_t(lhs.to_intx() * rhs.to_intx());
-            }
-            else {
-                uint256_t result;
-                monad_vm_runtime_mul(&result, &lhs, &rhs);
-                return result;
-            }
+            return uint256_t{truncating_mul<uint256_t::num_words>(lhs.as_words(), rhs.as_words())};
         }
 
         [[gnu::always_inline]]
         inline constexpr uint256_t &operator*=(uint256_t const &rhs) noexcept
         {
-            if consteval {
-                return *this = *this * rhs;
-            }
-            else {
-                monad_vm_runtime_mul(this, this, &rhs);
-                return *this;
-            }
+            return *this = *this * rhs;
         }
 
         [[gnu::always_inline]]
@@ -883,9 +902,6 @@ namespace monad::vm::runtime
         }
     }
 
-    template <size_t M>
-    using words_t = std::array<uint64_t, M>;
-
     template <size_t M, size_t N>
     inline constexpr div_result<words_t<M>, words_t<N>>
     udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
@@ -1021,35 +1037,6 @@ namespace monad::vm::runtime
     operator%(uint256_t const &x, uint256_t const &y) noexcept
     {
         return udivrem(x, y).rem;
-    }
-
-    /**
-     * Truncating multiword multiplication
-     */
-    template <size_t R, size_t M, size_t N>
-    // TODO: remove used
-    [[gnu::always_inline]] [[gnu::used]]
-    inline constexpr words_t<R>
-    truncating_mul(words_t<M> const &u, words_t<N> const &v) noexcept
-        requires(R <= M + N)
-    {
-        words_t<R> result{0};
-        // GCC does not allow using min(R, N) as the unroll factor
-#pragma GCC unroll(N)
-        for (size_t j = 0; j < std::min(R, N); j++) {
-            uint64_t carry = 0;
-#pragma GCC unroll(M)
-            for (size_t i = 0; i < std::min(R - j, M); i++) {
-                auto p =
-                    static_cast<uint128_t>(u[i]) * v[j] + carry + result[i + j];
-                result[i + j] = static_cast<uint64_t>(p);
-                carry = static_cast<uint64_t>(p >> 64);
-            }
-            if (j + M < R) {
-                result[j + M] = carry;
-            }
-        }
-        return result;
     }
 
     /**
@@ -1499,7 +1486,8 @@ namespace monad::vm::runtime
             // TODO: Double-check this proof since it was written before
             // parameterising the entire thing
 
-            explicit(true) reciprocal(uint256_t const &d) noexcept
+            [[gnu::always_inline]]
+            inline explicit(true) reciprocal(uint256_t const &d) noexcept
                 requires(MULTIPLIER_WORDS == 0)
                 : value{}
             {
@@ -1518,7 +1506,8 @@ namespace monad::vm::runtime
                 }
             }
 
-            explicit(true)
+            [[gnu::always_inline]]
+            inline explicit(true)
                 reciprocal(uint256_t const &y, uint256_t const &d) noexcept
                 requires(MULTIPLIER_WORDS != 0)
                 : value{}
@@ -1546,8 +1535,9 @@ namespace monad::vm::runtime
 
             static constexpr size_t OUTPUT_WORDS = _result_words();
 
+            [[gnu::always_inline]]
             words_t<OUTPUT_WORDS>
-            mul_unshift(words_t<INPUT_WORDS> const &x) const noexcept
+            inline mul_unshift(words_t<INPUT_WORDS> const &x) const noexcept
             {
                 words_t<min_words(INPUT_BITS + RECIPROCAL_BITS)> prod =
                     long_mul(x, value);
@@ -1599,6 +1589,8 @@ namespace monad::vm::runtime
         static_assert(mulmod_const_reciprocal::OUTPUT_WORDS == 8);
 
         [[gnu::always_inline]]
+        // TODO:remove used
+        [[gnu::used]]
         inline div_result<uint256_t> udivrem(
             uint256_t const &u, uint256_t const &v,
             barrett::udivrem_reciprocal const &rec) noexcept

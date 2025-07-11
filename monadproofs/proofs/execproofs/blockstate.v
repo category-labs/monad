@@ -420,7 +420,7 @@ cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
   \arg{otherp:ptr} "other" (Vref otherp)
   \prepost{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
       otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
-  \post[Vref this]
+  \post
       this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx).
 
 
@@ -465,6 +465,12 @@ Hint Opaque AccountR: br_opacity.
   #[global] Instance learnac : LearnEq3 (AccountR) := ltac:(solve_learnable).
   #[global] Instance learnby : LearnEq2 (bytes32R) := ltac:(solve_learnable).
   Arguments libspecs.optionR {_} {_} {_} {_} {_} _ _ _ !o/.
+
+  #[global] Instance optionRSome {SomeTyModel:Type} (somety somety2: bluerock.lang.cpp.syntax.core.type)
+    (someTyRep someTyRep2: SomeTyModel -> Rep) (q:Qp) (s: SomeTyModel) (oa: option SomeTyModel) (b:ptr):
+    learn_exist_interface.Learnable (b ,, opt_somety_offset somety |-> someTyRep s)
+      (b |-> libspecs.optionR somety2 someTyRep2 q oa) [ oa = Some s] := ltac:(solve_learnable).
+  
 Lemma prf: verify[module] fix_spec.
 Proof using.
   verify_spec'.
@@ -488,36 +494,46 @@ Proof using.
   wapplyRev AccountR_unfoldable.
   eagerUnifyU.
   go.
-  iExists (1%Qp).
-  go.
-  setoid_rewrite <- (bi.exist_intro inds).
-  go.
+  Ltac optionSome :=
+  IPM.perm_right ltac:(fun R _ =>
+    match R with
+    | ?b |-> @libspecs.optionR _ _ _ _ ?T ?somety ?someTyRep _ ?oa =>
+        IPM.perm_left ltac:(fun L _ =>
+          match L with
+          | b ,, opt_somety_offset somety |-> ?someTyRep2 =>
+             let f := fresh "evarn" in
+             evar (f:T);
+             let tt:= eval unfold f in (someTyRep f) in
+               unify tt someTyRep2;
+               unify oa (Some f)
+              end)
+    end).
+  iExists _, _, _.
+  optionSome.
   
-  #[global] Instance optionRSome {SomeTyModel:Type} (somety somety2: bluerock.lang.cpp.syntax.core.type)
-    (someTyRep someTyRep2: SomeTyModel -> Rep) (q:Qp) (s: SomeTyModel) (oa: option SomeTyModel) (b:ptr):
-    learn_exist_interface.Learnable (b ,, opt_somety_offset somety |-> someTyRep s)
-      (b |-> libspecs.optionR somety2 someTyRep2 q oa) [ oa = Some s] := ltac:(solve_learnable).
-
-  work. (* bug? the learning instance above does not fire *)
-  iExists (Some x0).
   Hint Opaque IncarnationR : br_opacity.
-  work.
+  slauto.
+  wapplyRev AccountR_unfoldable.
+  go.
+  iExists _, _, _.
+  optionSome.
+  cpp.spec (Nscoped ("monad::Incarnation") (Ndtor))
+    as inc_dtor with
+      (fun (this:ptr) => \pre{r} this |-> IncarnationR 1 r
+                          \post emp
+      ).
+  iAssert (inc_dtor) as "#?". admit.
+  slauto.
+  wapplyRev AccountR_unfoldable.
+  go.
+  iExists _, _, _.
+  optionSome.
   slauto.
 
-  (*
-  b0 : is_empty_model (actualPreTxState !! fixee) = false
-  _H_7 : valid<"bool"> (Vbool true)
-  _H_8 : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce x0))
-  H : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce x))
-  _q_ :
-    (code_hash_of_program (block.block_account_code x0) =?
-     code_hash_of_program (block.block_account_code x))%N =
-    true
-  p : ptr
-  ============================
-  False
 
-*)
+
+
+
 Abort.
   
 
@@ -531,4 +547,11 @@ End with_Sigma.
 - check specs for unused vars
 - for every rep predicate, ask to add hints: learnable, unfoldable.
 
+
+common gpt mistakes in specs
+- ownership duplicated in \post even when using \prepost
+- unused vars
+- copy constructors
+  - this |-> structR as \pre
+  - \post [Vref this]
 *)

@@ -16,7 +16,6 @@ Require Import Lens.Elpi.Elpi.
 #[only(lazy_unfold)] derive AccountR.
 #[only(lazy_unfold)] derive AccountStateR.
 
-
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
@@ -471,8 +470,30 @@ Hint Opaque AccountR: br_opacity.
     learn_exist_interface.Learnable (b ,, opt_somety_offset somety |-> someTyRep s)
       (b |-> libspecs.optionR somety2 someTyRep2 q oa) [ oa = Some s] := ltac:(solve_learnable).
   
+  Ltac optionSome :=
+  IPM.perm_right ltac:(fun R _ =>
+    match R with
+    | ?b |-> @libspecs.optionR _ _ _ _ ?T ?somety ?someTyRep _ ?oa =>
+        IPM.perm_left ltac:(fun L _ =>
+          match L with
+          | b ,, opt_somety_offset somety |-> ?someTyRep2 =>
+             let f := fresh "evarn" in
+             evar (f:T);
+             let tt:= eval unfold f in (someTyRep f) in
+               unify tt someTyRep2;
+               unify oa (Some f)
+              end)
+    end).
+
+  cpp.spec (Nscoped ("monad::Incarnation") (Ndtor))
+    as inc_dtor with
+      (fun (this:ptr) => \pre{r} this |-> IncarnationR 1 r
+                          \post emp
+      ).
 Lemma prf: verify[module] fix_spec.
 Proof using.
+  go.
+  iAssert (inc_dtor) as "#?". admit.
   verify_spec'.
   slauto.
   ego.
@@ -494,20 +515,6 @@ Proof using.
   wapplyRev AccountR_unfoldable.
   eagerUnifyU.
   go.
-  Ltac optionSome :=
-  IPM.perm_right ltac:(fun R _ =>
-    match R with
-    | ?b |-> @libspecs.optionR _ _ _ _ ?T ?somety ?someTyRep _ ?oa =>
-        IPM.perm_left ltac:(fun L _ =>
-          match L with
-          | b ,, opt_somety_offset somety |-> ?someTyRep2 =>
-             let f := fresh "evarn" in
-             evar (f:T);
-             let tt:= eval unfold f in (someTyRep f) in
-               unify tt someTyRep2;
-               unify oa (Some f)
-              end)
-    end).
   iExists _, _, _.
   optionSome.
   
@@ -517,19 +524,44 @@ Proof using.
   go.
   iExists _, _, _.
   optionSome.
-  cpp.spec (Nscoped ("monad::Incarnation") (Ndtor))
-    as inc_dtor with
-      (fun (this:ptr) => \pre{r} this |-> IncarnationR 1 r
-                          \post emp
-      ).
-  iAssert (inc_dtor) as "#?". admit.
   slauto.
   wapplyRev AccountR_unfoldable.
   go.
   iExists _, _, _.
   optionSome.
   slauto.
-
+  iExists _.
+  slauto.
+  Ltac optionSomeBig:=
+    wapplyRev AccountR_unfoldable;
+    work;
+    iExists _, _, _;
+    Forward.rwHyps;
+    optionSome;
+    go.
+  optionSomeBig.
+  iExists _.
+  slauto.
+  wp_if.
+  { (* nonce mismatch *)
+    slauto.
+    wp_if;slauto.
+    block_account_exists
+    wapplyRev AccountR_unfoldable;
+    work.
+    iExists _, _, _;
+    Forward.rwHyps;
+    optionSome;
+    go.
+    optionSomeBig.
+    
+  optionSomeBig.
+  go.
+  ego; fail.
+  ego; fail.
+  go.
+  wapplyR AccountR_unfoldable.
+  go.
 
 
 

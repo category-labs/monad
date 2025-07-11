@@ -15,8 +15,11 @@
 #include <quill/bundled/fmt/format.h>
 
 #include <chrono>
+#include <expected>
 #include <fcntl.h>
+#include <format>
 #include <mutex>
+#include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -42,6 +45,12 @@ using namespace monad;
 using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+struct StatesyncRequestLatencies
+{
+    std::chrono::microseconds overall;
+    std::chrono::microseconds traverse;
+};
 
 byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 {
@@ -100,7 +109,8 @@ bool send_deletion(
     return true;
 }
 
-bool statesync_server_handle_request(
+std::expected<StatesyncRequestLatencies, std::string>
+statesync_server_handle_request(
     monad_statesync_server *const sync, monad_sync_request const rq)
 {
     struct Traverse final : public TraverseMachine
@@ -237,19 +247,19 @@ bool statesync_server_handle_request(
         }
     };
 
-    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
+    auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;
     auto &db = *ctx->ro;
     if (rq.prefix < 256 && rq.target > rq.prefix) {
         auto const version = rq.target - rq.prefix - 1;
         auto const root = db.load_root_for_version(version);
         if (!root.is_valid()) {
-            return false;
+            return std::unexpected("no historical block for eth header");
         }
         auto const res = db.find(
             root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), version);
         if (res.has_error() || !res.value().is_valid()) {
-            return false;
+            return std::unexpected("block for eth header unfinalized");
         }
         auto const &val = res.value().node->value();
         MONAD_ASSERT(!val.empty());
@@ -263,65 +273,62 @@ bool statesync_server_handle_request(
     }
 
     if (!send_deletion(sync, rq, *ctx)) {
-        return false;
+        return std::unexpected("insufficient deletion state");
     }
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
     auto const root = db.load_root_for_version(rq.target);
     if (!root.is_valid()) {
-        return false;
+        return std::unexpected("no db state for target");
     }
     auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
     if (!finalized_root_res.has_value()) {
-        return false;
+        return std::unexpected("target not finalized");
     }
     auto const &finalized_root = finalized_root_res.value();
     if (db.find(finalized_root, state_nibbles, rq.target).has_error() ||
         db.find(finalized_root, code_nibbles, rq.target).has_error()) {
-        return false;
+        return std::unexpected("no state or code nibbles for target");
     }
 
-    [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
+    auto const begin = std::chrono::steady_clock::now();
     Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
-        return false;
+        return std::unexpected("traverse for target failed");
     }
-    [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
+    auto const end = std::chrono::steady_clock::now();
 
+    return StatesyncRequestLatencies{
+        .overall =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - start),
+        .traverse =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - begin)};
+}
+
+void monad_statesync_server_handle_request(
+    monad_statesync_server *const sync, monad_sync_request const rq)
+{
+    auto const result = statesync_server_handle_request(sync, rq);
     LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "
         "until={} "
-        "old_target={} overall={} traverse={}",
+        "old_target={} success={} {}",
         rq.prefix,
         rq.prefix_bytes,
         rq.target,
         rq.from,
         rq.until,
         rq.old_target,
-        std::chrono::duration_cast<std::chrono::microseconds>(end - start),
-        std::chrono::duration_cast<std::chrono::microseconds>(end - begin));
-
-    return true;
-}
-
-void monad_statesync_server_handle_request(
-    monad_statesync_server *const sync, monad_sync_request const rq)
-{
-    auto const success = statesync_server_handle_request(sync, rq);
-    if (!success) {
-        LOG_INFO(
-            "could not handle request prefix={} from={} until={} "
-            "old_target={} target={}",
-            rq.prefix,
-            rq.from,
-            rq.until,
-            rq.old_target,
-            rq.target);
-    }
+        result.has_value(),
+        result.has_value() ? std::format(
+                                 "overall={} traverse={}",
+                                 result.value().overall,
+                                 result.value().traverse)
+                           : std::format("error={}", result.error()));
     sync->statesync_server_send_done(
         sync->net,
         monad_sync_done{
-            .success = success, .prefix = rq.prefix, .n = rq.until});
+            .success = result.has_value(), .prefix = rq.prefix, .n = rq.until});
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END

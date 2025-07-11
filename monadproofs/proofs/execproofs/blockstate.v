@@ -545,12 +545,46 @@ Proof using.
   wp_if.
   { (* nonce mismatch *)
     slauto.
+    Opaque AccountStateR.
     wp_if;slauto.
-    block_account_exists
-    wapplyRev AccountR_unfoldable;
-    work.
-    iExists _, _, _;
-    Forward.rwHyps;
+
+    Set Nested Proofs Allowed.
+    #[global] Instance learning3 : LearnEq2 StorageMapR := ltac:(solve_learnable).
+    go.
+    
+    #[global] Instance learning5 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::storage_"
+         |-> StorageMapR 1 (block.block_account_storage o1))
+      (origp ,, o_field CU "monad::AccountState::storage_"
+         |-> StorageMapR 1 (block.block_account_storage o2))
+      [o1=o2] := ltac:(solve_learnable).
+    #[global] Instance learning6 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
+  |-> primR "bool" 1$m (Vbool (nonce_exact o1)))
+      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
+  |-> primR "bool" 1$m (Vbool (nonce_exact o2)))
+      [o1=o2] := ltac:(solve_learnable).
+    slauto.
+    wp_if; slauto.
+    optionSomeBig; slauto.
+    wp_if; slauto.
+    go.
+    #[global] Instance learning7 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o1)))))
+      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o2)))))
+      [o1=o2] := ltac:(solve_learnable).
+    Ltac big :=
+      repeat(slauto; try optionSomeBig; try wp_if).
+    #[global] Instance ll : LearnEq4 AccountStateR := ltac:(solve_learnable).
+    big.
+    go.
+    unfold AccountStateR.
+Search AccountStateR.   
+    Forward.rwHyps.
+    go.
+    go.
     optionSome;
     go.
     optionSomeBig.

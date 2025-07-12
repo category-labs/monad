@@ -404,14 +404,16 @@ cpp.spec
   as current_find_spec
   with (fun (this: ptr) =>
     \arg{keyp: ptr} "key" (Vref keyp)
-    \pre{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (q: Qp) (addr: monad.proofs.evmopsem.evm.address)}
-      this |-> monad.proofs.exec_specs.MapCurrentR q l
-      ** keyp |-> monad.proofs.libspecs.addressR (cQp.mut q) addr
-    \post{(ret:ptr) (idx:nat) (st:list monad.proofs.evmopsem.evm.account_state)}
-      [Vptr ret] this |-> monad.proofs.exec_specs.MapCurrentR q l
-     ** keyp |-> monad.proofs.libspecs.addressR (cQp.mut q) addr
-     ** ret  |-> mapIterR (Stdlib.NArith.BinNat.N.of_nat idx)
-     ** [| Stdlib.Lists.List.nth_error l idx = Some (addr, st) |]
+    \prepost{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (qk qm: Qp) (addr: monad.proofs.evmopsem.evm.address)}
+      this |-> monad.proofs.exec_specs.MapCurrentR qm l
+    \prepost keyp |-> monad.proofs.libspecs.addressR (cQp.mut qk) addr
+    \post{(ret:ptr) (oidx: option N) (st:list monad.proofs.evmopsem.evm.account_state)}
+      [Vptr ret] ret  |-> mapIterR (ssrfun.Option.default (lengthN l) oidx)
+      ** [| match oidx with
+            | Some idx  => nth_error l (N.to_nat idx) = Some (addr, st)
+            | None => True
+            end
+            |]
   ).
 
 cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
@@ -545,7 +547,6 @@ Proof using.
   wp_if.
   { (* nonce mismatch *)
     slauto.
-    Opaque AccountStateR.
     wp_if;slauto.
 
     Set Nested Proofs Allowed.
@@ -581,6 +582,36 @@ Proof using.
     big.
     go.
     unfold AccountStateR.
+    big.
+    Forward.rwHyps.
+    subst.
+    unfoldLocalDefs.
+    unfold is_Some.
+    Arguments is_Some /_ _.
+    simpl in *.
+    miscPure.forward_reason.
+    subst.
+    go.
+    Forward.rwHyps.
+    go.
+    wp_if; big.
+    Transparent StateR.
+    unfold StateR.
+    Opaque mapIterR.
+    #[global] Instance llll: LearnEq2 MapCurrentR := ltac:(solve_learnable).
+    slauto.
+    rewrite <- wp_const_const_delete.
+    #[global] Instance lllll: LearnEq1 mapIterR := ltac:(solve_learnable).
+    slauto.
+    rewrite <- wp_const_const_delete.
+    slauto.
+    
+    mapIterR
+Search wp_const.
+    go.
+
+    #[global] Instance 
+    
 Search AccountStateR.   
     Forward.rwHyps.
     go.

@@ -187,9 +187,11 @@ Section with_Sigma.
               (if orig.(monad.EVMOpSem.block.block_account_exists)
                then Some orig else None)
     (* persistent storage_ *)
-    ** _field "monad::AccountState::storage_"           |-> StorageMapR q (block.block_account_storage orig)
+    ** _field "monad::AccountState::storage_"
+              |-> StorageMapR q (block.block_account_storage orig)
     (* transient storage_ *)
-    ** (Exists transient_map, _field "monad::AccountState::transient_storage_" |-> StorageMapR q transient_map)
+   ** (Exists transient_map, _field "monad::AccountState::transient_storage_"
+                                          |-> StorageMapR q transient_map)
     (* exact‐nonce flag *)
     ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR (cQp.mut q) (nonce_exact asm)
     (* exact‐balance flag *)

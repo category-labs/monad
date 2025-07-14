@@ -44,7 +44,7 @@ public:
 
 static_assert(sizeof(Incarnation) == 8);
 
-inline bool operator==(Incarnation const &i1, Incarnation const &i2)
+inline bool operator==(Incarnation const i1, Incarnation const i2)
 {
     return i1.to_int() == i2.to_int();
 }

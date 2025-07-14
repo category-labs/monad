@@ -15,6 +15,7 @@ Require Import Lens.Elpi.Elpi.
 
 #[only(lazy_unfold)] derive AccountR.
 #[only(lazy_unfold)] derive AccountStateR.
+#[only(lazy_unfold)] derive StateR.
 
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
@@ -453,7 +454,6 @@ cpp.spec "intx::uint<256u>::~uint()" as uint256dtor with (λ this : ptr, \pre{w}
   Hint Resolve observeStateF : br_opacity.
   
 Require Import monad.proofs.bigauto.
-Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo; Forward.rwHyps)); try iPureIntro.
 
 Hint Opaque AccountSubstateR : br_opacity.
 Hint Opaque AccountStateR : br_opacity.
@@ -492,11 +492,246 @@ Hint Opaque AccountR: br_opacity.
       (fun (this:ptr) => \pre{r} this |-> IncarnationR 1 r
                           \post emp
       ).
+  Ltac optionSomeBig final :=
+    wapplyRev AccountR_unfoldable;
+    work;
+    repeat (iExists _);
+    Forward.rwHyps;
+    optionSome;
+    final.
+  Hint Opaque IncarnationR : br_opacity.
+    #[global] Instance learning3 : LearnEq2 StorageMapR := ltac:(solve_learnable).
+    #[global] Instance learning5 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::storage_"
+         |-> StorageMapR 1 (block.block_account_storage o1))
+      (origp ,, o_field CU "monad::AccountState::storage_"
+         |-> StorageMapR 1 (block.block_account_storage o2))
+      [o1=o2] := ltac:(solve_learnable).
+    #[global] Instance learning6 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
+  |-> primR "bool" 1$m (Vbool (nonce_exact o1)))
+      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
+  |-> primR "bool" 1$m (Vbool (nonce_exact o2)))
+      [o1=o2] := ltac:(solve_learnable).
+    #[global] Instance learning7 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o1)))))
+      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o2)))))
+      [o1=o2] := ltac:(solve_learnable).
+    #[global] Instance ll : LearnEq4 AccountStateR := ltac:(solve_learnable).
+    
+  Ltac unifyOptionR :=
+    IPM.perm_right ltac:(fun R _ =>
+    match R with
+    | ?b |-> @libspecs.optionR _ _ _ _ ?T ?somety ?someTyRep _ _ =>
+        IPM.perm_left ltac:(fun L _ =>
+          match L with
+          | b |-> @libspecs.optionR _ _ _ _ T somety ?someTyRep2 _ _ =>
+              unify someTyRep someTyRep2
+          end)
+    end).
+  Ltac instOptionR :=
+    repeat (iExists _); unifyOptionR.
+
+  Ltac slauto := (slautot ltac:(autorewrite with syntactic equiv iff slbwd; try rewrite left_id; try solveRefereceTo; try autounfold with unfold; try Forward.forward_reason; try Forward.rwHyps; (* try optionSomeBig; *) try instOptionR)); try iPureIntro.
+  
+  Arguments is_Some /_ _.
+  #[global] Instance llll: LearnEq2 MapCurrentR := ltac:(solve_learnable).
+  #[global] Instance lllll: LearnEq1 mapIterR := ltac:(solve_learnable).
+
+    #[global] Instance optionRSomeAc 
+     q oas (origp:ptr) x inds idx:
+    learn_exist_interface.Learnable (origp ,, opt_somety_offset
+                                                               "monad::Account"
+                                                               |-> AccountR 1 x inds)
+                                    
+      (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
+         q oas) [ oas = Some x; inds = idx] := ltac:(solve_learnable).
+
+      #[global] Instance foldedLv2Lear (origp:ptr) q qq oas x idx: learn_exist_interface.Learnable
+    (origp ,, opt_somety_offset
+    "monad::Account" ,, 
+      o_field CU "monad::Account::balance"
+      |-> u256R qq (w256_to_N (block.block_account_balance x)))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
+       q oas)
+    [ oas = Some x;  q=1%Qp] := ltac:(solve_learnable).
+
+    Opaque mapIterR.
+  Existing Instance UNSAFE_read_prim_learn.
+  Lemma andSep {T} (P Q : T->mpred) E:
+    environments.envs_entails E (Exists t:T, (P t ** (P t -* Q t)))
+    -> environments.envs_entails E (Exists t:T, (P t //\\ Q t)).
+  Proof using Sigma.
+    apply environments.envs_entails_mono.
+    - reflexivity.
+    -  ego; eagerUnifyU. go. iStopProof. apply lose_resources.
+  Qed.
+  Lemma trueSepEmp (P: mpred) E:
+    environments.envs_entails E P
+    -> environments.envs_entails E (True ** P).
+  Proof using Sigma.
+    apply environments.envs_entails_mono.
+    - reflexivity.
+    - go.
+  Qed.
+
+  Ltac big :=
+    repeat(slauto; try (wp_if;slauto;[])). (* only do a case split if one case can be fully solved *)
+  
+  Definition foldAccountR := [FWD] (fun p a b c => @AutoUnlocking.unfold_eq _ _ _ (@AutoUnlocking.Unfoldable_at _ _ _ _ _ p (AccountR_unfoldable _ _ _ _ a b c))).
+  Hint Resolve foldAccountR : br_opacity.
+  Definition costRemB := [BWD<-]wp_const_const_delete.
+  Hint Resolve costRemB: br_opacity.
 Lemma prf: verify[module] fix_spec.
 Proof using.
-  go.
+  work.
   iAssert (inc_dtor) as "#?". admit.
   verify_spec'.
+  big.
+  wp_if.
+  2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
+  big.
+  wp_if.
+  2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
+
+  big.
+  wp_if.
+  { (* more complex case where there is an entry in the current map, which the tx did an operation that can potentially update the state of that account. needs some more detailed specs about iterators to reason about how iter->second works *)
+    admit.
+  }
+  {
+    Remove Hints foldedLv2Lear : typeclass_instances.
+    go.
+    iExists _.
+    iExists (Some x0).
+    go.
+    
+    iExists _.
+    iExists (Some x).
+    go.
+    iExists _.
+    iExists (Some x0).
+    go.
+    
+    iExists _.
+    iExists (Some (x &: _block_account_nonce .= block.block_account_nonce x0)).
+    destruct x.
+    simpl.
+    go.
+
+    
+    HERE
+
+
+    
+  #[global] Instance foldedLv2Lear2 (origp:ptr) q qq oas x idx: learn_exist_interface.Learnable
+    (origp ,, opt_somety_offset
+    "monad::Account" ,, 
+      o_field CU "monad::Account::code_hash"
+      |->  bytes32R qq (code_hash_of_program (block.block_account_code x)))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
+       q oas)
+    [ oas = Some x;  q=qq%Qp] := ltac:(solve_learnable).
+  go.
+    go.
+    do 8 run1.
+    do 4 run1.
+    do 4 run1.
+    do 4 run1.
+    do 4 run1.
+    do 4 run1.
+    do 4 run1.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+
+    Search x0.
+    iFrame.
+    iFrame.
+    iFrame.
+    iFrame.
+    iFrame.
+    work.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    step.
+    work.
+    run1.
+    run1.
+    run1.
+    do 4 run1.
+    do 4 run1.
+    do 4 run1.
+    
+    go.
+    big.
+    iassert
+  
+  2:{ }
+  2:{  slauto.
+  - slauto. admit. fail.
+  big.
+    rewrite <- .
+  go.
+  work.
+  
+  go.
+  apply andSep.
+  go.
+  apply trueSepEmp.
+  go.
+  
+  progress big.
+
+  True **
+  (Exists q : cQp.t,
+   actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::nonce"
+   |-> ulongR q (w256_to_Z (block.block_account_nonce x0)) ** True -∗
+   operators.wp_eval_binop.body module Bneq "unsigned long" "unsigned long" "bool"
+     (w256_to_Z (block.block_account_nonce x)) (w256_to_Z (block.block_account_nonce x0))
+     (fun v' : val =>
+      nonce_mismatch_addr |-> primR "bool" 1$c v' -∗
+      interp module ((1 >*> 1) |*| (1 >*> 1))
+        (wp_decls module  
+  go.
+  Search True emp.
+  Set Nested Proofs Allowed.
+  apply andSep.
+  go.
+  Search learn_exist_interface.Learnable primR.
+  work.
+    Search environments.envs_entails.
+    intros.
+  PrimRSep
+
+
+  work.
+  go.
+  instOptionR.
+  instOptionR. go.
+    
+  subst.
+  ego.
   slauto.
   ego.
   wp_if;[slauto; fail|].
@@ -520,7 +755,6 @@ Proof using.
   iExists _, _, _.
   optionSome.
   
-  Hint Opaque IncarnationR : br_opacity.
   slauto.
   wapplyRev AccountR_unfoldable.
   go.
@@ -534,13 +768,6 @@ Proof using.
   slauto.
   iExists _.
   slauto.
-  Ltac optionSomeBig:=
-    wapplyRev AccountR_unfoldable;
-    work;
-    iExists _, _, _;
-    Forward.rwHyps;
-    optionSome;
-    go.
   optionSomeBig.
   iExists _.
   slauto.
@@ -550,35 +777,13 @@ Proof using.
     wp_if;slauto.
 
     Set Nested Proofs Allowed.
-    #[global] Instance learning3 : LearnEq2 StorageMapR := ltac:(solve_learnable).
     go.
     
-    #[global] Instance learning5 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
-      (origp ,, o_field CU "monad::AccountState::storage_"
-         |-> StorageMapR 1 (block.block_account_storage o1))
-      (origp ,, o_field CU "monad::AccountState::storage_"
-         |-> StorageMapR 1 (block.block_account_storage o2))
-      [o1=o2] := ltac:(solve_learnable).
-    #[global] Instance learning6 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
-      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
-  |-> primR "bool" 1$m (Vbool (nonce_exact o1)))
-      (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
-  |-> primR "bool" 1$m (Vbool (nonce_exact o2)))
-      [o1=o2] := ltac:(solve_learnable).
     slauto.
     wp_if; slauto.
     optionSomeBig; slauto.
     wp_if; slauto.
     go.
-    #[global] Instance learning7 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
-      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
-  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o1)))))
-      (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
-  |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o2)))))
-      [o1=o2] := ltac:(solve_learnable).
-    Ltac big :=
-      repeat(slauto; try optionSomeBig; try wp_if).
-    #[global] Instance ll : LearnEq4 AccountStateR := ltac:(solve_learnable).
     big.
     go.
     unfold AccountStateR.
@@ -587,7 +792,6 @@ Proof using.
     subst.
     unfoldLocalDefs.
     unfold is_Some.
-    Arguments is_Some /_ _.
     simpl in *.
     miscPure.forward_reason.
     subst.
@@ -597,11 +801,8 @@ Proof using.
     wp_if; big.
     Transparent StateR.
     unfold StateR.
-    Opaque mapIterR.
-    #[global] Instance llll: LearnEq2 MapCurrentR := ltac:(solve_learnable).
     slauto.
     rewrite <- wp_const_const_delete.
-    #[global] Instance lllll: LearnEq1 mapIterR := ltac:(solve_learnable).
     slauto.
     rewrite <- wp_const_const_delete.
     slauto.
@@ -651,4 +852,5 @@ common gpt mistakes in specs
 - copy constructors
   - this |-> structR as \pre
   - \post [Vref this]
+- consider the error case of functions, e.g. iterator not found case spec was wrong.
 *)

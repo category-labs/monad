@@ -199,13 +199,12 @@ Section with_Sigma.
                                                                     (Corelib.Init.Datatypes.negb
                                                                        (bool_decide (stdpp.option.is_Some (min_balance asm))))
     (* min_balance_ bound *)
-    ** (match min_balance asm with
-        | Corelib.Init.Datatypes.Some n =>
-           _field "monad::AccountState::min_balance_" |-> u256R q n
-        | Corelib.Init.Datatypes.None =>
-           Exists (nb: Corelib.Numbers.BinNums.N),
-             _field "monad::AccountState::min_balance_" |-> u256R q nb
-        end)
+    ** _field "monad::AccountState::min_balance_" |->
+        match min_balance asm with             
+        | Some n => u256R q n
+        | None =>
+           Exists (nb: N),  u256R q nb
+        end
     (* the struct itself *)
     ** structR "monad::AccountState"%cpp_name (cQp.mut q).
 

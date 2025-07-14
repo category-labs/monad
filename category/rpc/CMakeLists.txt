@@ -7,12 +7,11 @@ project(monad_rpc)
 add_library(
   monad_rpc
   # rpc
-  "src/monad/rpc/eth_call.cpp"
-  "src/monad/rpc/eth_call.h")
+  "eth_call.cpp" "eth_call.h")
 
-target_include_directories(monad_rpc PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})
 
 monad_compile_options(monad_rpc)
 target_link_libraries(monad_rpc PRIVATE monad_execution)
 
-monad_add_test_folder("src/monad/rpc")
+monad_add_test_folder(".")

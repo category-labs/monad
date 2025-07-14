@@ -1,4 +1,5 @@
 #include <category/core/bytes.hpp>
+#include <category/rpc/eth_call.h>
 #include <monad/chain/chain_config.h>
 #include <monad/core/block.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
@@ -11,7 +12,6 @@
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/rpc/eth_call.h>
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>

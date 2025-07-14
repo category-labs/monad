@@ -3,6 +3,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/lru/lru_cache.hpp>
+#include <category/rpc/eth_call.h>
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/monad_devnet.hpp>
@@ -26,7 +27,6 @@
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
 #include <monad/mpt/util.hpp>
-#include <monad/rpc/eth_call.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/state3/state.hpp>
 #include <monad/types/incarnation.hpp>

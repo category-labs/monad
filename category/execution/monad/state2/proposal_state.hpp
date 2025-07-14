@@ -4,6 +4,8 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <monad/vm/vm.hpp>
 
+#include <evmc/hex.hpp>
+
 #include <quill/Quill.h>
 
 #include <map>
@@ -161,8 +163,8 @@ public:
         std::unique_ptr<ProposalState> ps = std::move(it->second);
         // Clean up proposals earlier or equal to the finalized block
         for (auto it2 = proposal_map_.begin();
-             it2->first.first <= finalized_block_ &&
-             it2 != proposal_map_.end();) {
+             it2 != proposal_map_.end() &&
+             it2->first.first <= finalized_block_;) {
             it2 = proposal_map_.erase(it2);
         }
         return ps;
@@ -180,7 +182,19 @@ private:
             if (block_id == finalized_block_id_) {
                 break;
             }
-            MONAD_ASSERT(block_number > finalized_block_);
+            MONAD_ASSERT_PRINTF(
+                block_number > finalized_block_,
+                "block_number %lu is not greater than last finalized block "
+                "%lu. block_id = %s, block_ %lu, block_id_ %s, "
+                "finalized_block_id_ = %s, depth = %d",
+                block_number,
+                finalized_block_,
+                evmc::hex(to_byte_string_view(block_id.bytes)).c_str(),
+                block_,
+                evmc::hex(to_byte_string_view(block_id_.bytes)).c_str(),
+                evmc::hex(to_byte_string_view(finalized_block_id_.bytes))
+                    .c_str(),
+                depth);
             auto const it =
                 proposal_map_.find(std::make_pair(block_number, block_id));
             if (it == proposal_map_.end()) {

@@ -8,9 +8,8 @@ project(monad_async)
 # deps
 # ##############################################################################
 
-find_package(
-  Boost 1.83 # 1.83 really is the minimum
-  CONFIG REQUIRED COMPONENTS fiber)
+find_package(Boost 1.83 # 1.83 really is the minimum
+             CONFIG REQUIRED COMPONENTS fiber)
 
 # ##############################################################################
 # libs
@@ -18,9 +17,23 @@ find_package(
 
 add_library(
   monad_async STATIC
-  "src/monad/async/io.cpp" "src/monad/async/storage_pool.cpp"
-  "src/monad/async/util.cpp")
-target_include_directories(monad_async PUBLIC "src")
+  "concepts.hpp"
+  "config.hpp"
+  "connected_operation.hpp"
+  "detail/connected_operation_storage.hpp"
+  "detail/scope_polyfill.hpp"
+  "detail/start_lifetime_as_polyfill.hpp"
+  "erased_connected_operation.hpp"
+  "io.cpp"
+  "io.hpp"
+  "io_senders.hpp"
+  "sender_errc.hpp"
+  "storage_pool.cpp"
+  "storage_pool.hpp"
+  "util.cpp"
+  "util.hpp")
+
+target_include_directories(monad_async PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_async)
 target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
 
@@ -47,10 +60,10 @@ function(add_async_test)
                TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer)
 endfunction()
 
-add_subdirectory("src/monad/async/test")
+add_subdirectory("test")
 
 # monad async perf test
-add_executable(benchmark_io_test "src/monad/async/test/benchmark_io_test.cpp")
+add_executable(benchmark_io_test "test/benchmark_io_test.cpp")
 monad_compile_options(benchmark_io_test)
 target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
                                                monad_async)

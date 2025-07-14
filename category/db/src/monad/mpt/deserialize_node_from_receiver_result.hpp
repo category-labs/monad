@@ -2,7 +2,7 @@
 
 #include <monad/mpt/config.hpp>
 
-#include <monad/async/io_senders.hpp>
+#include <category/async/io_senders.hpp>
 #include <monad/mpt/node.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN

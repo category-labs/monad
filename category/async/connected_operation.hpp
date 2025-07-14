@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/async/detail/connected_operation_storage.hpp>
+#include <category/async/detail/connected_operation_storage.hpp>
 
 /* The following Sender-Receiver implementation is loosely based on
 https://wg21.link/p2300 `std::execution`. We don't actually

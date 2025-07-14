@@ -2,7 +2,7 @@
 
 #include "gtest/gtest.h"
 
-#include <monad/async/io.hpp>
+#include <category/async/io.hpp>
 
 #include <monad/core/small_prng.hpp>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT

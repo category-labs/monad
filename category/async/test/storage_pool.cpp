@@ -1,9 +1,9 @@
 #include "gtest/gtest.h"
 
-#include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
-#include <monad/async/storage_pool.hpp>
-#include <monad/async/util.hpp>
+#include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/storage_pool.hpp>
+#include <category/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
 

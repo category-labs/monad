@@ -1,10 +1,10 @@
 #include "test_fixtures_base.hpp"
 
-#include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
-#include <monad/async/erased_connected_operation.hpp>
-#include <monad/async/storage_pool.hpp>
-#include <monad/async/util.hpp>
+#include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/erased_connected_operation.hpp>
+#include <category/async/storage_pool.hpp>
+#include <category/async/util.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>

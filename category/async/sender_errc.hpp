@@ -1,7 +1,7 @@
 #pragma once
 
-#include <monad/async/concepts.hpp>
-#include <monad/async/erased_connected_operation.hpp>
+#include <category/async/concepts.hpp>
+#include <category/async/erased_connected_operation.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/nested_status_code.hpp>)

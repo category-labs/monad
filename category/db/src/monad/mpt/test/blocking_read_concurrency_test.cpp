@@ -1,6 +1,6 @@
 #include "test_fixtures_gtest.hpp"
 
-#include <monad/async/io.hpp>
+#include <category/async/io.hpp>
 #include <monad/io/buffers.hpp>
 #include <monad/io/ring.hpp>
 #include <monad/mpt/node.hpp>

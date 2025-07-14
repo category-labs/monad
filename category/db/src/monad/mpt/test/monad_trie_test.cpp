@@ -2,13 +2,13 @@
 
 #include "test_fixtures_base.hpp"
 
-#include <monad/async/config.hpp>
-#include <monad/async/connected_operation.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
-#include <monad/async/erased_connected_operation.hpp>
-#include <monad/async/io.hpp>
-#include <monad/async/io_senders.hpp>
-#include <monad/async/storage_pool.hpp>
+#include <category/async/config.hpp>
+#include <category/async/connected_operation.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/erased_connected_operation.hpp>
+#include <category/async/io.hpp>
+#include <category/async/io_senders.hpp>
+#include <category/async/storage_pool.hpp>
 #include <monad/core/array.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>

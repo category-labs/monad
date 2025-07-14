@@ -1,10 +1,10 @@
 #include "test_fixtures_gtest.hpp" // NOLINT
 
-#include <monad/async/concepts.hpp>
-#include <monad/async/config.hpp>
-#include <monad/async/erased_connected_operation.hpp>
-#include <monad/async/io_senders.hpp>
-#include <monad/async/util.hpp>
+#include <category/async/concepts.hpp>
+#include <category/async/config.hpp>
+#include <category/async/erased_connected_operation.hpp>
+#include <category/async/io_senders.hpp>
+#include <category/async/util.hpp>
 #include <monad/core/small_prng.hpp>
 
 #include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT

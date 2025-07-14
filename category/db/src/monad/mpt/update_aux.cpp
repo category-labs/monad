@@ -1,7 +1,7 @@
-#include <monad/async/config.hpp>
-#include <monad/async/detail/scope_polyfill.hpp>
-#include <monad/async/detail/start_lifetime_as_polyfill.hpp>
-#include <monad/async/storage_pool.hpp>
+#include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/detail/start_lifetime_as_polyfill.hpp>
+#include <category/async/storage_pool.hpp>
 #include <monad/core/assert.h>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/small_prng.hpp>

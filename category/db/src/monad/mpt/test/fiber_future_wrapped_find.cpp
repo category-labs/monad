@@ -3,8 +3,8 @@
 
 #include "fuzz/one_hundred_updates.hpp"
 
-#include <monad/async/config.hpp>
-#include <monad/async/io.hpp>
+#include <category/async/config.hpp>
+#include <category/async/io.hpp>
 #include <monad/core/byte_string.hpp>
 #include <monad/core/hex_literal.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>

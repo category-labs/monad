@@ -4,6 +4,8 @@ cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 project(monad)
 
+set(CATEGORY_MAIN_DIR ${PROJECT_SOURCE_DIR})
+
 option(HUNTER_ENABLED OFF)
 
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)

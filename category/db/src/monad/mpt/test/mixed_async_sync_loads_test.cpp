@@ -1,6 +1,6 @@
-#include "monad/async/erased_connected_operation.hpp"
 #include "monad/mpt/find_request_sender.hpp"
 #include "test_fixtures_gtest.hpp"
+#include <category/async/erased_connected_operation.hpp>
 
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>

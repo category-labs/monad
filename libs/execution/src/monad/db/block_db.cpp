@@ -36,15 +36,50 @@ bool BlockDb::get(uint64_t const num, Block &block) const
         return false;
     }
     auto const view = to_byte_string_view(result.value());
-    size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
-    byte_string brotli_buffer;
-    brotli_buffer.resize(brotli_size);
-    auto const brotli_result = BrotliDecoderDecompress(
-        view.size(), view.data(), &brotli_size, brotli_buffer.data());
-    brotli_buffer.resize(brotli_size);
-    MONAD_ASSERT(brotli_result == BROTLI_DECODER_RESULT_SUCCESS);
-    byte_string_view view2{brotli_buffer};
 
+    BrotliDecoderState *state =
+        BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
+    MONAD_ASSERT(state != nullptr);
+
+    uint8_t const *next_in = view.data();
+    size_t available_in = view.size();
+
+    size_t const buffer_size = 1 << 16; // TODO: bench for optimal size
+    std::vector<uint8_t> buffer(buffer_size);
+    uint8_t *next_out = buffer.data();
+    size_t available_out = buffer.size();
+    size_t total_out = 0;
+
+    std::vector<uint8_t> decompressed;
+    decompressed.reserve(
+        std::min(view.size() * 4, buffer_size)); // TODO: bench for optimal size
+
+    while (true) {
+        auto const result = BrotliDecoderDecompressStream(
+            state,
+            &available_in,
+            &next_in,
+            &available_out,
+            &next_out,
+            &total_out);
+        MONAD_ASSERT(
+            (result != BROTLI_DECODER_RESULT_ERROR) &&
+            (result != BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT));
+
+        size_t const out_size = buffer_size - available_out;
+        decompressed.insert(
+            decompressed.end(), buffer.data(), buffer.data() + out_size);
+
+        if (result == BROTLI_DECODER_RESULT_SUCCESS) {
+            break;
+        }
+
+        next_out = buffer.data();
+        available_out = buffer.size();
+    }
+
+    BrotliDecoderDestroyInstance(state);
+    byte_string_view view2{decompressed};
     auto const decoded_block = rlp::decode_block(view2);
     MONAD_ASSERT(!decoded_block.has_error());
     MONAD_ASSERT(view2.size() == 0);

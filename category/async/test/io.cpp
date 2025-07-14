@@ -7,11 +7,11 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/core/array.hpp>
-#include <monad/core/assert.h>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/array.hpp>
+#include <category/core/assert.h>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <chrono>
 #include <climits>

@@ -1,7 +1,7 @@
-#include <monad/core/unordered_map.hpp>
+#include <category/core/unordered_map.hpp>
 
-#include <monad/config.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <category/core/config.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp>  // NOLINT
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include <cstdlib>
 
 #ifdef NDEBUG
-    #include <monad/core/small_prng.hpp>
+    #include <category/core/small_prng.hpp>
 
     #include <chrono>
     #include <iostream>

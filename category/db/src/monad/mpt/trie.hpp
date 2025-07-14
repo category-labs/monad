@@ -1,8 +1,8 @@
 #pragma once
 
 #include <category/async/config.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/lru/static_lru_cache.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/lru/static_lru_cache.hpp>
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/collected_stats.hpp>
@@ -17,8 +17,8 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 
-#include <monad/core/tl_tid.h>
-#include <monad/core/unordered_map.hpp>
+#include <category/core/tl_tid.h>
+#include <category/core/unordered_map.hpp>
 
 #ifdef __clang__
     #pragma clang diagnostic push

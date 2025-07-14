@@ -3,8 +3,8 @@
 #include <monad/chain/genesis_state.hpp>
 #include <monad/chain/monad_chain.hpp>
 #include <monad/chain/monad_revision.h>
-#include <monad/config.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

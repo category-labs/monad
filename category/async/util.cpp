@@ -1,7 +1,7 @@
 #include <category/async/config.hpp>
 
 #include <category/async/util.hpp>
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 
 #include <cerrno>
 #include <cstdlib> // for mkstemp

@@ -4,8 +4,8 @@
 
 #include <category/async/io.hpp>
 
-#include <monad/core/small_prng.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/small_prng.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 namespace monad::test
 {

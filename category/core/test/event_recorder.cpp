@@ -19,12 +19,12 @@
 #include <unistd.h>
 
 #include <gtest/gtest.h>
-#include <monad/core/likely.h>
-#include <monad/event/event_iterator.h>
-#include <monad/event/event_recorder.h>
-#include <monad/event/event_ring.h>
-#include <monad/event/event_ring_util.h>
-#include <monad/event/test_event_types.h>
+#include <category/core/likely.h>
+#include <category/core/event/event_iterator.h>
+#include <category/core/event/event_recorder.h>
+#include <category/core/event/event_ring.h>
+#include <category/core/event/event_ring_util.h>
+#include <category/core/event/test_event_types.h>
 
 static uint8_t PERF_ITER_SHIFT = 20;
 

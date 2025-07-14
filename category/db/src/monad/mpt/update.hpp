@@ -3,7 +3,7 @@
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 
-#include <monad/core/byte_string.hpp>
+#include <category/core/byte_string.hpp>
 
 #include <boost/intrusive/slist.hpp>
 

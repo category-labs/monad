@@ -1,10 +1,10 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/int.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/core/result.hpp>
+#include <category/core/result.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/metrics/block_metrics.hpp>
 

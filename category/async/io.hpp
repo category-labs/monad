@@ -4,11 +4,11 @@
 
 #include <category/async/storage_pool.hpp>
 
-#include <monad/io/buffer_pool.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/io/buffer_pool.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 
-#include <monad/mem/allocators.hpp>
+#include <category/core/mem/allocators.hpp>
 
 #include <atomic>
 #include <cassert>

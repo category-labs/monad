@@ -7,11 +7,11 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <filesystem>
 #include <future>

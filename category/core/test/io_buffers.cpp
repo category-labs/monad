@@ -1,8 +1,8 @@
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 
-#include <monad/config.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/config.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
 

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/keccak.hpp>
-#include <monad/core/nibble.h>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
+#include <category/core/nibble.h>
 #include <monad/mpt/config.hpp>
 
 #include <cstdint>

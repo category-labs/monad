@@ -2,7 +2,7 @@
 
 #include <monad/mpt/config.hpp>
 
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 
 #include <compare>
 #include <concepts>

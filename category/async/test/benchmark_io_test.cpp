@@ -4,11 +4,11 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/small_prng.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
-#include <monad/mem/huge_mem.hpp>
+#include <category/core/assert.h>
+#include <category/core/small_prng.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
+#include <category/core/mem/huge_mem.hpp>
 
 #include <CLI/CLI.hpp>
 

@@ -1,14 +1,14 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
-#include <monad/core/byte_string.hpp>
+#include <category/core/byte_string.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/core/hex_literal.hpp>
+#include <category/core/assert.h>
+#include <category/core/hex_literal.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/update.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #if defined(__GNUC__) && !defined(__clang__)
     #pragma GCC diagnostic push

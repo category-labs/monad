@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 
 #define MONAD_MPT_NAMESPACE_BEGIN                                              \
     MONAD_NAMESPACE_BEGIN namespace mpt                                        \

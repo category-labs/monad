@@ -1,14 +1,14 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp" // NOLINT
 
-#include <monad/core/byte_string.hpp>
-#include <monad/core/hex_literal.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex_literal.hpp>
 #include <monad/mpt/detail/boost_fiber_workarounds.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <boost/fiber/future/future_status.hpp>
 

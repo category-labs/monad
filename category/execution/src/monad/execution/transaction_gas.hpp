@@ -1,7 +1,7 @@
 #pragma once
 
-#include <monad/config.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
 
 #include <evmc/evmc.h>
 

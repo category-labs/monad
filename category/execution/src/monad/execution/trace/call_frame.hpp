@@ -1,9 +1,9 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>

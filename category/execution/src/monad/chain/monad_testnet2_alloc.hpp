@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

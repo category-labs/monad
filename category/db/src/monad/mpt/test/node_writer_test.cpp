@@ -1,10 +1,10 @@
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 
 #include <category/async/config.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <cstddef>
 #include <cstdint>

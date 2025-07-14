@@ -17,7 +17,8 @@ option(MONAD_CORE_FORCE_DEBUG_ASSERT
 include("cmake/find_our_dependency.cmake")
 
 find_package(
-  Boost CONFIG REQUIRED COMPONENTS context fiber stacktrace_basic
+  Boost CONFIG REQUIRED
+  COMPONENTS context fiber stacktrace_basic
   OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)
@@ -56,7 +57,7 @@ add_subdirectory("third_party/unordered_dense")
 add_library(openssl_sha3 OBJECT)
 target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-  target_sources(openssl_sha3 PRIVATE "src/monad/core/keccak_impl.S")
+  target_sources(openssl_sha3 PRIVATE "keccak_impl.S")
 else()
   target_sources(openssl_sha3
                  PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
@@ -69,109 +70,109 @@ endif()
 add_library(
   monad_core STATIC
   # config
-  "src/monad/config.hpp"
+  "config.hpp"
   # core
-  "src/monad/core/array.hpp"
-  "src/monad/core/assert.c"
-  "src/monad/core/assert.h"
-  "src/monad/core/backtrace.cpp"
-  "src/monad/core/backtrace.hpp"
-  "src/monad/core/basic_formatter.hpp"
-  "src/monad/core/bit_util.h"
-  "src/monad/core/blake3.hpp"
-  "src/monad/core/byte_string.hpp"
-  "src/monad/core/bytes.hpp"
-  "src/monad/core/bytes_hash_compare.hpp"
-  "src/monad/core/cmemory.hpp"
-  "src/monad/core/cleanup.h"
-  "src/monad/core/cleanup.c"
-  "src/monad/core/cpu_relax.h"
-  "src/monad/core/endian.hpp"
-  "src/monad/core/format_err.c"
-  "src/monad/core/format_err.h"
-  "src/monad/core/hash.hpp"
-  "src/monad/core/hex_literal.hpp"
-  "src/monad/core/int.hpp"
-  "src/monad/core/keccak.c"
-  "src/monad/core/keccak.h"
-  "src/monad/core/keccak.hpp"
-  "src/monad/core/likely.h"
-  "src/monad/core/math.hpp"
-  "src/monad/core/nibble.h"
-  "src/monad/core/offset.hpp"
-  "src/monad/core/result.hpp"
-  "src/monad/core/size_of.hpp"
-  "src/monad/core/small_prng.hpp"
-  "src/monad/core/spinlock.h"
-  "src/monad/core/srcloc.h"
-  "src/monad/core/tl_tid.c"
-  "src/monad/core/tl_tid.h"
-  "src/monad/core/unaligned.hpp"
-  "src/monad/core/unordered_map.hpp"
-  "src/monad/lru/lru_cache.hpp"
-  "src/monad/lru/static_lru_cache.hpp"
-  "src/monad/mem/batch_mem_pool.hpp"
-  "src/monad/synchronization/spin_lock.hpp"
+  "array.hpp"
+  "assert.c"
+  "assert.h"
+  "backtrace.cpp"
+  "backtrace.hpp"
+  "basic_formatter.hpp"
+  "bit_util.h"
+  "blake3.hpp"
+  "byte_string.hpp"
+  "bytes.hpp"
+  "bytes_hash_compare.hpp"
+  "cmemory.hpp"
+  "cleanup.h"
+  "cleanup.c"
+  "cpu_relax.h"
+  "endian.hpp"
+  "format_err.c"
+  "format_err.h"
+  "hash.hpp"
+  "hex_literal.hpp"
+  "int.hpp"
+  "keccak.c"
+  "keccak.h"
+  "keccak.hpp"
+  "likely.h"
+  "math.hpp"
+  "nibble.h"
+  "offset.hpp"
+  "result.hpp"
+  "size_of.hpp"
+  "small_prng.hpp"
+  "spinlock.h"
+  "srcloc.h"
+  "tl_tid.c"
+  "tl_tid.h"
+  "unaligned.hpp"
+  "unordered_map.hpp"
+  "lru/lru_cache.hpp"
+  "lru/static_lru_cache.hpp"
+  "mem/batch_mem_pool.hpp"
+  "synchronization/spin_lock.hpp"
   # event
-  "src/monad/event/event_iterator.h"
-  "src/monad/event/event_iterator_inline.h"
-  "src/monad/event/event_metadata.h"
-  "src/monad/event/event_recorder.h"
-  "src/monad/event/event_recorder_inline.h"
-  "src/monad/event/event_ring.c"
-  "src/monad/event/event_ring.h"
-  "src/monad/event/event_ring_util.c"
-  "src/monad/event/event_ring_util.h"
-  "src/monad/event/test_event_types.h"
-  "src/monad/event/test_event_metadata.c"
+  "event/event_iterator.h"
+  "event/event_iterator_inline.h"
+  "event/event_metadata.h"
+  "event/event_recorder.h"
+  "event/event_recorder_inline.h"
+  "event/event_ring.c"
+  "event/event_ring.h"
+  "event/event_ring_util.c"
+  "event/event_ring_util.h"
+  "event/test_event_types.h"
+  "event/test_event_metadata.c"
   # fiber
-  "src/monad/fiber/config.hpp"
-  "src/monad/fiber/priority_algorithm.cpp"
-  "src/monad/fiber/priority_algorithm.hpp"
-  "src/monad/fiber/priority_pool.cpp"
-  "src/monad/fiber/priority_pool.hpp"
-  "src/monad/fiber/priority_properties.hpp"
-  "src/monad/fiber/priority_queue.cpp"
-  "src/monad/fiber/priority_queue.hpp"
-  "src/monad/fiber/priority_task.hpp"
+  "fiber/config.hpp"
+  "fiber/priority_algorithm.cpp"
+  "fiber/priority_algorithm.hpp"
+  "fiber/priority_pool.cpp"
+  "fiber/priority_pool.hpp"
+  "fiber/priority_properties.hpp"
+  "fiber/priority_queue.cpp"
+  "fiber/priority_queue.hpp"
+  "fiber/priority_task.hpp"
   # io
-  "src/monad/io/buffer_pool.cpp"
-  "src/monad/io/buffer_pool.hpp"
-  "src/monad/io/config.hpp"
+  "io/buffer_pool.cpp"
+  "io/buffer_pool.hpp"
+  "io/config.hpp"
   # mem
-  "src/monad/mem/align.h"
+  "mem/align.h"
   # rlp
-  "src/monad/rlp/config.hpp"
-  "src/monad/rlp/encode.hpp"
+  "rlp/config.hpp"
+  "rlp/encode.hpp"
   # test
-  "src/monad/test/gtest_signal_stacktrace_printer.hpp"
+  "test_util/gtest_signal_stacktrace_printer.hpp"
   # util
-  "src/monad/util/stopwatch.hpp")
+  "util/stopwatch.hpp")
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Append Linux-specific implementation files
   target_sources(
     monad_core
     PRIVATE # core
-            "src/monad/core/cgroup.c"
-            "src/monad/core/cgroup.h"
-            "src/monad/core/cpuset.c"
-            "src/monad/core/cpuset.h"
+            "cgroup.c"
+            "cgroup.h"
+            "cpuset.c"
+            "cpuset.h"
             # io
-            "src/monad/io/buffers.cpp"
-            "src/monad/io/buffers.hpp"
-            "src/monad/io/ring.hpp"
-            "src/monad/io/ring.cpp"
+            "io/buffers.cpp"
+            "io/buffers.hpp"
+            "io/ring.hpp"
+            "io/ring.cpp"
             # mem
-            "src/monad/mem/huge_mem.hpp"
-            "src/monad/mem/huge_mem.cpp"
+            "mem/huge_mem.hpp"
+            "mem/huge_mem.cpp"
             # procfs
-            "src/monad/procfs/statm.c"
-            "src/monad/procfs/statm.h")
+            "procfs/statm.c"
+            "procfs/statm.h")
 endif()
 
 monad_compile_options(monad_core)
-target_include_directories(monad_core PUBLIC "src")
+target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
 
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
   target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")
@@ -201,11 +202,9 @@ endif()
 add_library(
   monad_core_disas STATIC
   # core
-  "src/monad/core/math_disas.cpp"
-  "src/monad/core/offset_disas.cpp"
-  "src/monad/core/spinlock_disas.c"
+  "math_disas.cpp" "offset_disas.cpp" "spinlock_disas.c"
   # rlp
-  "src/monad/rlp/encode_disas.cpp")
+  "rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
 
@@ -219,5 +218,5 @@ find_package(GTest REQUIRED)
 
 add_subdirectory("test")
 
-monad_add_test(bit_util_test src/monad/core/bit_util_test.cpp)
-monad_add_test(static_lru_test src/monad/lru/static_lru_test.cpp)
+monad_add_test(bit_util_test bit_util_test.cpp)
+monad_add_test(static_lru_test lru/static_lru_test.cpp)

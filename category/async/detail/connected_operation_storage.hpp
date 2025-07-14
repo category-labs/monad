@@ -3,7 +3,7 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/sender_errc.hpp>
-#include <monad/core/tl_tid.h>
+#include <category/core/tl_tid.h>
 
 #include <memory>
 

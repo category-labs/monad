@@ -1,7 +1,7 @@
 #pragma once
 
-#include <monad/config.hpp>
-#include <monad/core/result.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
 #include <monad/vm/vm.hpp>
 
 #include <cstdint>

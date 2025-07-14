@@ -3,13 +3,13 @@
 
 #include <cstddef>
 #include <memory>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/hex_literal.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex_literal.hpp>
 #include <monad/mpt/state_machine.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gmock/gmock.h>
 

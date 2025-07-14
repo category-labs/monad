@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/monad_block.hpp>
 
 #include <evmc/evmc.h>

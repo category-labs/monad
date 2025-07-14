@@ -2,8 +2,8 @@
 
 #include <monad/chain/chain.hpp>
 #include <monad/chain/monad_revision.h>
-#include <monad/config.hpp>
-#include <monad/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/core/bytes.hpp>
 
 #include <evmc/evmc.h>
 

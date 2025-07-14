@@ -2,8 +2,8 @@
 #include <category/async/storage_pool.hpp>
 
 #include <category/async/detail/scope_polyfill.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/hash.hpp>
+#include <category/core/assert.h>
+#include <category/core/hash.hpp>
 
 #include <category/async/config.hpp>
 #include <category/async/detail/start_lifetime_as_polyfill.hpp>

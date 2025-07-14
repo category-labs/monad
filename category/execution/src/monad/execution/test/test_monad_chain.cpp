@@ -1,3 +1,5 @@
+#include <category/core/bytes.hpp>
+#include <category/core/keccak.hpp>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/genesis_state.hpp>
 #include <monad/chain/monad_devnet.hpp>
@@ -5,8 +7,6 @@
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/chain/monad_testnet2.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/core/keccak.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>

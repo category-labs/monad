@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/statesync/statesync_messages.h>
 
 struct monad_statesync_client_context;

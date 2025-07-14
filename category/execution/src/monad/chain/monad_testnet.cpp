@@ -1,8 +1,8 @@
 #include <monad/chain/monad_revision.h>
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/chain/monad_testnet_alloc.hpp>
-#include <monad/config.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

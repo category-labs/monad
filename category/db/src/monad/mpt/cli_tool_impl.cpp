@@ -8,9 +8,9 @@
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
-#include <monad/core/assert.h>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/assert.h>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/db_metadata.hpp>
 #include <monad/mpt/detail/kbhit.hpp>

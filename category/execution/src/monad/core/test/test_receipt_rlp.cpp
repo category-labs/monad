@@ -1,4 +1,4 @@
-#include <monad/core/byte_string.hpp>
+#include <category/core/byte_string.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/rlp/receipt_rlp.hpp>
 #include <monad/core/transaction.hpp>
@@ -56,7 +56,7 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
         ASSERT_FALSE(decoded_log_outcome.has_error());
         EXPECT_EQ(encoded_log_view.size(), 0);
 
-        auto const& decoded_log = decoded_log_outcome.value();
+        auto const &decoded_log = decoded_log_outcome.value();
         EXPECT_EQ(decoded_log.data, log.data);
         EXPECT_EQ(decoded_log.address, log.address);
 
@@ -173,7 +173,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_outcome.value();
+    auto const &decoded_receipt = decoded_receipt_outcome.value();
 
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
@@ -187,8 +187,7 @@ TEST(Rlp_Receipt, DecodeEncodeEip155Receipt)
     for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.logs[i].topics.size(),
-            r.logs[i].topics.size());
+            decoded_receipt.logs[i].topics.size(), r.logs[i].topics.size());
         EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
@@ -211,7 +210,21 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
     bloom[182] = 0x01;
     bloom[232] = 0x01;
 
-    Receipt::Log log{.data = data, .topics = {topic1, topic2, topic1, topic2, topic1, topic2, topic1, topic2, topic1, topic2, topic1}, .address = addr};
+    Receipt::Log log{
+        .data = data,
+        .topics =
+            {topic1,
+             topic2,
+             topic1,
+             topic2,
+             topic1,
+             topic2,
+             topic1,
+             topic2,
+             topic1,
+             topic2,
+             topic1},
+        .address = addr};
     Receipt const r{
         .bloom = bloom,
         .gas_used = gas,
@@ -222,7 +235,7 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
     byte_string_view encoded_receipt_view{encoded};
     auto const decoded_receipt_outcome = decode_receipt(encoded_receipt_view);
     ASSERT_FALSE(decoded_receipt_outcome.has_error());
-    auto const& decoded_receipt = decoded_receipt_outcome.value();
+    auto const &decoded_receipt = decoded_receipt_outcome.value();
 
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
@@ -239,8 +252,7 @@ TEST(Rlp_Receipt, DecodeEncodeReceiptLogSize)
     for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.logs[i].topics.size(),
-            r.logs[i].topics.size());
+            decoded_receipt.logs[i].topics.size(), r.logs[i].topics.size());
         EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
@@ -313,7 +325,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_outcome.value();
+    auto const &decoded_receipt = decoded_receipt_outcome.value();
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
     EXPECT_EQ(decoded_receipt.status, r.status);
@@ -326,8 +338,7 @@ TEST(Rlp_Receipt, EncodeEip1559Receipt)
     for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.logs[i].topics.size(),
-            r.logs[i].topics.size());
+            decoded_receipt.logs[i].topics.size(), r.logs[i].topics.size());
         EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }
@@ -400,7 +411,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     ASSERT_FALSE(decoded_receipt_outcome.has_error());
     EXPECT_EQ(encoded_receipt_view.size(), 0);
 
-    auto const& decoded_receipt = decoded_receipt_outcome.value();
+    auto const &decoded_receipt = decoded_receipt_outcome.value();
     EXPECT_EQ(decoded_receipt.type, r.type);
     EXPECT_EQ(decoded_receipt.gas_used, r.gas_used);
     EXPECT_EQ(decoded_receipt.status, r.status);
@@ -413,8 +424,7 @@ TEST(Rlp_Receipt, EncodeEip2930Receipt)
     for (size_t i = 0u; i < decoded_receipt.logs.size(); ++i) {
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
         EXPECT_EQ(
-            decoded_receipt.logs[i].topics.size(),
-            r.logs[i].topics.size());
+            decoded_receipt.logs[i].topics.size(), r.logs[i].topics.size());
         EXPECT_EQ(decoded_receipt.logs[i].topics, r.logs[i].topics);
         EXPECT_EQ(decoded_receipt.logs[i].address, r.logs[i].address);
     }

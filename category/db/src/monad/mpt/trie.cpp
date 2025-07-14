@@ -4,9 +4,9 @@
 #include <category/async/config.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io_senders.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/nibble.h>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/nibble.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>

@@ -14,11 +14,11 @@
 #include <category/async/sender_errc.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
-#include <monad/core/array.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/small_prng.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/array.hpp>
+#include <category/core/assert.h>
+#include <category/core/small_prng.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 
 #include <boost/fiber/fiber.hpp>
 #ifdef __clang__

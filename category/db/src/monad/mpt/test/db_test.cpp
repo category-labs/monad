@@ -5,15 +5,15 @@
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/hex_literal.hpp>
-#include <monad/core/result.hpp>
-#include <monad/core/small_prng.hpp>
-#include <monad/core/unaligned.hpp>
-#include <monad/fiber/priority_pool.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex_literal.hpp>
+#include <category/core/result.hpp>
+#include <category/core/small_prng.hpp>
+#include <category/core/unaligned.hpp>
+#include <category/core/fiber/priority_pool.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/mpt/db_error.hpp>
 #include <monad/mpt/nibbles_view.hpp>
@@ -23,7 +23,7 @@
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
 

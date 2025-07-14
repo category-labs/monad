@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/bytes.hpp>
 #include <monad/core/receipt.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/db.hpp>

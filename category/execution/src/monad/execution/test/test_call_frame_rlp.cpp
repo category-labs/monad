@@ -1,5 +1,5 @@
+#include <category/core/byte_string.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/byte_string.hpp>
 #include <monad/execution/trace/call_frame.hpp>
 #include <monad/execution/trace/rlp/call_frame_rlp.hpp>
 

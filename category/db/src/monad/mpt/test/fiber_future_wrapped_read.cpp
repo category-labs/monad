@@ -5,9 +5,9 @@
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/util.hpp>
-#include <monad/core/small_prng.hpp>
+#include <category/core/small_prng.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <boost/fiber/future/async.hpp>
 #include <boost/fiber/future/future.hpp>

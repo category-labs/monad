@@ -1,5 +1,5 @@
 #include <category/async/detail/scope_polyfill.hpp>
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/trie.hpp>

@@ -8,7 +8,7 @@
 #include <stop_token>
 #include <thread>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 TEST(db_metadata, DISABLED_copy)
 {

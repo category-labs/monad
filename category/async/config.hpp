@@ -20,8 +20,8 @@
 
 #define MONAD_ASYNC_NAMESPACE ::monad::async
 
-#include <monad/core/assert.h>
-#include <monad/core/hash.hpp>
+#include <category/core/assert.h>
+#include <category/core/hash.hpp>
 
 #ifndef MONAD_CONTEXT_HAVE_ASAN
     #ifndef __clang__

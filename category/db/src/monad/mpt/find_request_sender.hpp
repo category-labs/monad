@@ -2,7 +2,7 @@
 
 #include <category/async/concepts.hpp>
 #include <category/async/erased_connected_operation.hpp>
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/util.hpp>

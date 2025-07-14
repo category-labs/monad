@@ -3,8 +3,8 @@
 #include <monad/mpt/compute.hpp>
 #include <monad/mpt/trie.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/core/small_prng.hpp>
+#include <category/core/assert.h>
+#include <category/core/small_prng.hpp>
 
 #include <array>
 #include <vector>

@@ -1,6 +1,6 @@
+#include <category/core/int.hpp>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/core/block.hpp>
-#include <monad/core/int.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>

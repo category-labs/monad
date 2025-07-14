@@ -1,17 +1,17 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/hex_literal.hpp>
-#include <monad/core/small_prng.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex_literal.hpp>
+#include <category/core/small_prng.hpp>
 #include <monad/mpt/node.hpp>
 #include <monad/mpt/traverse.hpp>
 #include <monad/mpt/trie.hpp>
 #include <monad/mpt/update.hpp>
 #include <monad/mpt/util.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <algorithm>
 #include <atomic>

@@ -1,6 +1,6 @@
+#include <category/core/bytes.hpp>
 #include <monad/chain/chain_config.h>
 #include <monad/core/block.hpp>
-#include <monad/core/bytes.hpp>
 #include <monad/core/rlp/address_rlp.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/core/rlp/bytes_rlp.hpp>

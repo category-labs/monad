@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/rlp/config.hpp>
+#include <category/core/rlp/config.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)

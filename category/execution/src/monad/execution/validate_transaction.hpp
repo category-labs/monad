@@ -1,9 +1,9 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
+#include <category/core/result.hpp>
 #include <monad/core/account.hpp>
-#include <monad/core/int.hpp>
-#include <monad/core/result.hpp>
 
 #include <evmc/evmc.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <monad/core/basic_formatter.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/basic_formatter.hpp>
+#include <category/core/int.hpp>
 
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>

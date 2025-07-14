@@ -1,8 +1,8 @@
-#include <monad/core/assert.h>
-#include <monad/core/backtrace.hpp>
+#include <category/core/assert.h>
+#include <category/core/backtrace.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/assert.h>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <array>
 #include <cstddef>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 
 #include <quill/Quill.h>
 
@@ -10,8 +10,8 @@
 #include <utility>
 
 #ifdef ENABLE_EVENT_TRACING
-    #include <monad/core/likely.h>
-    #include <monad/fiber/priority_properties.hpp>
+    #include <category/core/likely.h>
+    #include <category/core/fiber/priority_properties.hpp>
 
     #include <boost/fiber/operations.hpp>
 

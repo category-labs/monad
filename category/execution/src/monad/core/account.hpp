@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/config.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/core/int.hpp>
+#include <category/core/config.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <monad/types/incarnation.hpp>
 
 #include <cstdint>

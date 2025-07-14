@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <monad/fiber/priority_pool.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 
-#include <monad/test/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <atomic>
 #include <chrono>

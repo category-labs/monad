@@ -6,11 +6,11 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/tl_tid.h>
-#include <monad/core/unordered_map.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
+#include <category/core/assert.h>
+#include <category/core/tl_tid.h>
+#include <category/core/unordered_map.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 
 #include <atomic>
 #include <cassert>

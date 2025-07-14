@@ -2,9 +2,9 @@
 
 #include <ethereum_test.hpp>
 
-#include <monad/config.hpp>
-#include <monad/core/result.hpp>
-#include <monad/fiber/priority_pool.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <monad/test/config.hpp>
 #include <monad/vm/vm.hpp>
 

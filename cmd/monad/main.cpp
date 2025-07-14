@@ -1,6 +1,12 @@
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
 
+#include <category/core/assert.h>
+#include <category/core/basic_formatter.hpp>
+#include <category/core/config.hpp>
+#include <category/core/fiber/priority_pool.hpp>
+#include <category/core/likely.h>
+#include <category/core/procfs/statm.h>
 #include <monad/chain/chain_config.h>
 #include <monad/chain/ethereum_mainnet.hpp>
 #include <monad/chain/genesis_state.hpp>
@@ -8,11 +14,7 @@
 #include <monad/chain/monad_mainnet.hpp>
 #include <monad/chain/monad_testnet.hpp>
 #include <monad/chain/monad_testnet2.hpp>
-#include <monad/config.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/basic_formatter.hpp>
 #include <monad/core/fmt/bytes_fmt.hpp>
-#include <monad/core/likely.h>
 #include <monad/core/log_level_map.hpp>
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/block_db.hpp>
@@ -20,9 +22,7 @@
 #include <monad/db/trie_db.hpp>
 #include <monad/execution/block_hash_buffer.hpp>
 #include <monad/execution/trace/event_trace.hpp>
-#include <monad/fiber/priority_pool.hpp>
 #include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/procfs/statm.h>
 #include <monad/state2/block_state.hpp>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>

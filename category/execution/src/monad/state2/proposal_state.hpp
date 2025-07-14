@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/state2/state_deltas.hpp>
 #include <monad/vm/vm.hpp>
 

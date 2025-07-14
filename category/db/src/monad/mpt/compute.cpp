@@ -1,14 +1,14 @@
 #include <monad/mpt/compute.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/keccak.h>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.h>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/merkle/compact_encode.hpp>
 #include <monad/mpt/merkle/node_reference.hpp>
 #include <monad/mpt/nibbles_view.hpp>
 #include <monad/mpt/node.hpp>
-#include <monad/rlp/encode.hpp>
+#include <category/core/rlp/encode.hpp>
 
 #include <cstddef>
 #include <cstring>

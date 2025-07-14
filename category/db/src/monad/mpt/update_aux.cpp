@@ -2,11 +2,11 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/detail/start_lifetime_as_polyfill.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/core/assert.h>
-#include <monad/core/byte_string.hpp>
-#include <monad/core/small_prng.hpp>
-#include <monad/core/unaligned.hpp>
-#include <monad/core/unordered_map.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/small_prng.hpp>
+#include <category/core/unaligned.hpp>
+#include <category/core/unordered_map.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/detail/unsigned_20.hpp>
 #include <monad/mpt/state_machine.hpp>

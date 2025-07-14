@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/core/result.hpp>
+#include <category/core/result.hpp>
 #include <monad/mpt/config.hpp>
 
 // TODO unstable paths between versions

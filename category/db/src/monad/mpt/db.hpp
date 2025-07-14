@@ -6,11 +6,11 @@
 #include <category/async/config.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
-#include <monad/core/bytes.hpp>
-#include <monad/core/result.hpp>
-#include <monad/io/buffers.hpp>
-#include <monad/io/ring.hpp>
-#include <monad/lru/static_lru_cache.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/result.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
+#include <category/core/lru/static_lru_cache.hpp>
 #include <monad/mpt/config.hpp>
 #include <monad/mpt/find_request_sender.hpp>
 #include <monad/mpt/nibbles_view.hpp>

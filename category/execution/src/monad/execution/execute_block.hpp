@@ -1,11 +1,11 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/address.hpp>
 #include <monad/core/receipt.hpp>
-#include <monad/core/result.hpp>
+#include <category/core/result.hpp>
 #include <monad/execution/trace/call_tracer.hpp>
-#include <monad/fiber/priority_pool.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <monad/metrics/block_metrics.hpp>
 
 #include <evmc/evmc.h>

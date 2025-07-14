@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/config.hpp>
+#include <category/core/config.hpp>
 #include <monad/core/address.hpp>
-#include <monad/core/byte_string.hpp>
+#include <category/core/byte_string.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

@@ -2,7 +2,7 @@
 
 #include <category/async/concepts.hpp>
 
-#include <monad/core/assert.h>
+#include <category/core/assert.h>
 
 #include <boost/intrusive/rbtree_algorithms.hpp>
 

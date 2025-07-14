@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <monad/core/cleanup.h>
-#include <monad/core/cpuset.h>
+#include <category/core/cleanup.h>
+#include <category/core/cpuset.h>
 
 TEST(Cpuset, parse_all)
 {

@@ -1,7 +1,7 @@
 #include <monad/chain/chain.hpp>
 
-#include <monad/config.hpp>
-#include <monad/core/result.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>

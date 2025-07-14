@@ -29,12 +29,12 @@
 
 #include <CLI/CLI.hpp>
 
-#include <monad/core/assert.h>
-#include <monad/event/event_iterator.h>
-#include <monad/event/event_metadata.h>
-#include <monad/event/event_ring.h>
-#include <monad/event/event_ring_util.h>
-#include <monad/event/test_event_types.h>
+#include <category/core/assert.h>
+#include <category/core/event/event_iterator.h>
+#include <category/core/event/event_metadata.h>
+#include <category/core/event/event_ring.h>
+#include <category/core/event/event_ring_util.h>
+#include <category/core/event/test_event_types.h>
 
 static sig_atomic_t g_should_exit = 0;
 

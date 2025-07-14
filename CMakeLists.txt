@@ -65,7 +65,7 @@ add_subdirectory("third_party/intx")
 # compiler
 set(MONAD_COMPILER_STANDALONE OFF)
 set(MONAD_COMPILER_TESTING OFF)
-add_subdirectory("libs/vm")
+add_subdirectory("category/vm")
 # TODO
 target_compile_options(evmone PRIVATE "-Wno-attributes")
 target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")
@@ -179,13 +179,13 @@ endfunction()
 # libs
 # ##############################################################################
 
-add_subdirectory("libs/async")
-add_subdirectory("libs/core")
-add_subdirectory("libs/db")
-add_subdirectory("libs/event")
-add_subdirectory("libs/execution")
-add_subdirectory("libs/rpc")
-add_subdirectory("libs/statesync")
+add_subdirectory("category/async")
+add_subdirectory("category/core")
+add_subdirectory("category/db")
+add_subdirectory("category/event")
+add_subdirectory("category/execution")
+add_subdirectory("category/rpc")
+add_subdirectory("category/statesync")
 
 # ##############################################################################
 # cmds

@@ -24,32 +24,32 @@
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
 [submodule "core/third_party/nanobench"]
-	path = libs/core/third_party/nanobench
+	path = category/core/third_party/nanobench
 	url = https://github.com/martinus/nanobench.git
 [submodule "core/third_party/nlohmann_json"]
-	path = libs/core/third_party/nlohmann_json
+	path = category/core/third_party/nlohmann_json
 	url = https://github.com/nlohmann/json.git
 [submodule "core/third_party/unordered_dense"]
-	path = libs/core/third_party/unordered_dense
+	path = category/core/third_party/unordered_dense
 	url = https://github.com/martinus/unordered_dense.git
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3
 	url = https://github.com/BLAKE3-team/BLAKE3.git
 [submodule "intx"]
-	path = libs/vm/third_party/intx
+	path = category/vm/third_party/intx
 	url = git@github.com:chfast/intx.git
 [submodule "libs/vm/third_party/asmjit"]
-	path = libs/vm/third_party/asmjit
+	path = category/vm/third_party/asmjit
 	url = git@github.com:asmjit/asmjit.git
 [submodule "libs/vm/third_party/ethash"]
-	path = libs/vm/third_party/ethash
+	path = category/vm/third_party/ethash
 	url = git@github.com:chfast/ethash.git
 [submodule "libs/vm/third_party/evmone"]
-	path = libs/vm/third_party/evmone
+	path = category/vm/third_party/evmone
 	url = git@github.com:category-labs/evmone.git
 [submodule "libs/vm/third_party/nlohmann_json"]
-	path = libs/vm/third_party/nlohmann_json
+	path = category/vm/third_party/nlohmann_json
 	url = git@github.com:nlohmann/json.git
 [submodule "libs/vm/third_party/ethereum-tests"]
-	path = libs/vm/third_party/ethereum-tests
+	path = category/vm/third_party/ethereum-tests
 	url = git@github.com:ethereum/tests.git

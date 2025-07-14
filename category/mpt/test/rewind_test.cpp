@@ -47,7 +47,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(0, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
     EXPECT_EQ(9990, aux.get_latest_finalized_version());
-    EXPECT_EQ(9990, aux.get_latest_verified_version());
+    EXPECT_EQ(aux.get_latest_verified_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     std::cout << "\nClosing DB ..." << std::endl;
@@ -60,7 +60,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(9990, aux.db_history_max_version());
     // rewind to latest is noop
     EXPECT_EQ(9990, aux.get_latest_finalized_version());
-    EXPECT_EQ(9990, aux.get_latest_verified_version());
+    EXPECT_EQ(aux.get_latest_verified_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     aux.unset_io();
@@ -85,7 +85,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(991, aux.db_history_max_version());
     EXPECT_EQ(991, aux.get_latest_finalized_version());
-    EXPECT_EQ(991, aux.get_latest_verified_version());
+    EXPECT_EQ(aux.get_latest_verified_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
 }

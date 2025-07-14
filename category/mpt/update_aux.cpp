@@ -468,10 +468,7 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
         latest_finalized != INVALID_BLOCK_NUM && latest_finalized > version) {
         set_latest_finalized_version(version);
     }
-    if (auto const latest_verified = get_latest_verified_version();
-        latest_verified != INVALID_BLOCK_NUM && latest_verified > version) {
-        set_latest_verified_version(version);
-    }
+    set_latest_verified_version(INVALID_BLOCK_NUM);
     set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
     auto last_written_offset = root_offsets()[version];
     bool const last_written_offset_is_in_fast_list =

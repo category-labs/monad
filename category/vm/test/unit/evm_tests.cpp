@@ -373,6 +373,26 @@ TEST_F(EvmTest, LoopOutOfGas)
     ASSERT_EQ(result_.status_code, EVMC_FAILURE);
 }
 
+TEST_F(EvmTest, ShrCeilOffByOneRegression)
+{
+    VM vm{};
+    evmc_message msg{};
+    msg.gas = 100;
+
+    std::vector<uint8_t> const code(
+        {0x63, 0x0f, 0xff, 0xff, 0xff, 0x63, 0x0f, 0xff, 0xff, 0xff, 0xfd});
+    auto const icode = make_shared_intercode(code);
+    auto const ncode = vm.compiler().compile(EVMC_CANCUN, icode);
+    MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
+
+    vm.execute_native_entrypoint(
+        &host_.get_interface(),
+        host_.to_context(),
+        &msg,
+        icode,
+        ncode->entrypoint());
+}
+
 // Compiled directly from the Solidity code in:
 //   `monad-integration/tests/test_contract_interaction/example.sol`
 //

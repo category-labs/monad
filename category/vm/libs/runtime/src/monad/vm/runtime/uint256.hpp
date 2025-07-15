@@ -202,7 +202,7 @@ namespace monad::vm::runtime
         requires(R <= M + N)
     {
 #ifndef NDEBUG
-        std::cout << M << "x" << N << "->" << R << " (slow)" << std::endl;
+        //std::cout << M << "x" << N << "->" << R << " (slow)" << std::endl;
 #endif
         words_t<R> result{0};
 // GCC does not allow using min(R, N) as the unroll factor
@@ -255,7 +255,7 @@ namespace monad::vm::runtime
     fast_truncating_mul(words_t<M> const &u, words_t<N> const &v) noexcept
     {
 #ifndef NDEBUG
-        std::cout << M << "x" << N << "->" << R << std::endl;
+        //std::cout << M << "x" << N << "->" << R << std::endl;
 #endif
         words_t<R> result;
         uint128_t carry = 0;
@@ -1088,17 +1088,7 @@ namespace monad::vm::runtime
     inline constexpr uint256_t mulmod(
         uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
     {
-        words_t<2 * uint256_t::num_words> prod{0};
-        for (size_t j = 0; j < uint256_t::num_words; j++) {
-            uint64_t carry = 0;
-            for (size_t i = 0; i < uint256_t::num_words; i++) {
-                auto p =
-                    static_cast<uint128_t>(u[i]) * v[j] + carry + prod[i + j];
-                prod[i + j] = static_cast<uint64_t>(p);
-                carry = static_cast<uint64_t>(p >> 64);
-            }
-            prod[j + uint256_t::num_words] += carry;
-        }
+        auto prod = fast_mul(u.as_words(), v.as_words());
         return uint256_t{udivrem(prod, mod.as_words()).rem};
     }
 
@@ -1114,25 +1104,28 @@ namespace monad::vm::runtime
         return udivrem(x, y).rem;
     }
 
-    template <size_t M, size_t N>
+    template <size_t R, size_t M, size_t N>
     [[gnu::always_inline]]
-    inline constexpr result_with_carry<words_t<M>>
-    subb(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
-        requires(M >= N)
+    inline constexpr result_with_carry<words_t<R>>
+    subb_truncating(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
+        requires (R <= M && N <= M)
     {
-        words_t<M> result;
+        words_t<R> result;
         bool borrow = false;
-        for (size_t i = 0; i < N; i++) {
+        for (size_t i = 0; i < R; i++) {
             auto [wi, bi] = subb(lhs[i], rhs[i], borrow);
             result[i] = wi;
             borrow = bi;
         }
-        for (size_t i = N; i < M; i++) {
-            auto [wi, bi] = subb(lhs[i], 0, borrow);
-            result[i] = wi;
-            borrow = bi;
-        }
         return {.value = result, .carry = borrow};
+    }
+
+    template <size_t M>
+    [[gnu::always_inline]]
+    inline constexpr result_with_carry<words_t<M>>
+    subb(words_t<M> const &lhs, words_t<M> const &rhs) noexcept
+    {
+        return subb_truncating<M>(lhs, rhs);
     }
 
     template <size_t N>
@@ -1531,14 +1524,6 @@ namespace monad::vm::runtime
             static constexpr size_t RECIPROCAL_WORDS =
                 min_words(RECIPROCAL_BITS);
 
-            [[gnu::always_inline]]
-            inline constexpr bool valid_denominator(uint256_t const &d) noexcept
-            {
-                constexpr size_t w = MIN_DENOMINATOR_BITS / 64;
-                constexpr size_t b = MIN_DENOMINATOR_BITS % 64;
-                return d[w] >= (uint64_t{1} << b);
-            }
-
             /**
              * Compute an underapproximation of the reciprocal for use in
              * Barrett reduction.
@@ -1568,7 +1553,7 @@ namespace monad::vm::runtime
                 requires(MULTIPLIER_WORDS == 0)
                 : value{}
             {
-                MONAD_VM_DEBUG_ASSERT(valid_denominator(d));
+                MONAD_VM_DEBUG_ASSERT(d >= MIN_DENOMINATOR);
                 if constexpr (NUMERATOR_WORDS == RECIPROCAL_WORDS) {
                     value = udivrem(numerator(), d.as_words()).quot;
                 }
@@ -1589,7 +1574,7 @@ namespace monad::vm::runtime
                 requires(MULTIPLIER_WORDS != 0)
                 : value{}
             {
-                MONAD_VM_DEBUG_ASSERT(valid_denominator(d));
+                MONAD_VM_DEBUG_ASSERT(d >= MIN_DENOMINATOR);
                 if constexpr (NUMERATOR_WORDS == RECIPROCAL_WORDS) {
                     value = udivrem(numerator(y.as_words()), d.as_words()).quot;
                 }
@@ -1617,7 +1602,7 @@ namespace monad::vm::runtime
             mul_unshift(words_t<INPUT_WORDS> const &x) const noexcept
             {
                 words_t<min_words(INPUT_BITS + RECIPROCAL_BITS)> prod =
-                    fast_mul<INPUT_WORDS, RECIPROCAL_WORDS>(x, value);
+                    fast_mul(x, value);
                 words_t<OUTPUT_WORDS> result;
                 if constexpr (BIT_SHIFT) {
                     for (size_t i = 0; i < OUTPUT_WORDS; i++) {
@@ -1717,64 +1702,28 @@ namespace monad::vm::runtime
 
         template <size_t M, size_t N, size_t O>
         [[gnu::always_inline]]
-        inline words_t<4> refine_remainder(
+        inline words_t<N> refine_remainder(
             words_t<M> const &u, words_t<N> const &d,
             words_t<O> const &q_hat) noexcept
         {
             // truncating_mul is faster than fast_truncating_mul here
-            words_t<M> qd = truncating_mul<M>(q_hat, d);
-            /*
-#ifndef NDEBUG
-            words_t<O + N> qd_ = fast_mul(q_hat, d);
-            for (size_t i = 0; i < O; i++) {
-                MONAD_VM_DEBUG_ASSERT(qd_[i] == qd[i]);
+            words_t<std::min(N+1, M)> qd = truncating_mul<std::min(N+1, M)>(q_hat, d);
+            // We know q_hat <= q <= q_hat+1, therefore u - q_hat * d < 2d. The result
+            // will fit in N+1 words
+            auto [r_hat_0, r_carry_0] = subb_truncating<std::min(N + 1, M)>(u, qd);
+            if constexpr (std::is_same_v<decltype(u), decltype(qd)>) {
+                MONAD_VM_DEBUG_ASSERT(!r_carry_0);
             }
-            for (size_t i = M; i < O + N; i++) {
-                MONAD_VM_DEBUG_ASSERT(qd_[i] == 0);
-            }
-#endif
-            */
-            auto [r_hat_0, r_carry_0] = subb(u, qd);
-            MONAD_VM_DEBUG_ASSERT(!r_carry_0);
-            auto [r_hat_1, r_carry_1] = subb(r_hat_0, d);
-            /*
-#ifndef NDEBUG
-            static_assert(
-                std::tuple_size_v<decltype(r_hat_0)> ==
-                std::tuple_size_v<decltype(r_hat_1)>);
-            for (size_t i = 4; i < std::tuple_size_v<decltype(r_hat_0)>; i++) {
-                MONAD_VM_DEBUG_ASSERT(!r_hat_0[i]);
-                MONAD_VM_DEBUG_ASSERT(!r_hat_1[i]);
-            }
-#endif
-            */
-            words_t<4> rem;
-            if (r_carry_1) {
-                std::memcpy(&rem, &r_hat_0, sizeof(rem));
-            }
-            else {
-                std::memcpy(&rem, &r_hat_1, sizeof(rem));
-            }
-            return rem;
-        }
 
-        template <size_t M, size_t N>
-        [[gnu::always_inline]]
-        inline words_t<4> refine_prod_remainder(
-            words_t<M> const &u, words_t<N> const &d,
-            words_t<M> const &qd) noexcept
-        {
-            auto [r_hat_0, r_carry_0] = subb(u, qd);
-            MONAD_VM_DEBUG_ASSERT(!r_carry_0);
-            auto [r_hat_1, r_carry_1] = subb(r_hat_0, d);
-            words_t<4> rem;
-            if (r_carry_1) {
-                std::memcpy(&rem, &r_hat_0, sizeof(rem));
+            // q_hat + 1 >= q, therefore u - (q_hat+1)d < d and the subtraction
+            // fits in N words
+            auto [r_hat_1, r_carry_1] = subb_truncating<N>(r_hat_0, d);
+            if (MONAD_VM_UNLIKELY(!r_carry_1)) {
+                return r_hat_1;
             }
-            else {
-                std::memcpy(&rem, &r_hat_1, sizeof(rem));
-            }
-            return rem;
+            words_t<N> result;
+            std::memcpy(&result, &r_hat_0, sizeof(result));
+            return result;
         }
 
         [[gnu::always_inline]]
@@ -1838,9 +1787,10 @@ namespace monad::vm::runtime
         {
             words_t<8> xy = fast_mul<4, 4>(x.as_words(), y.as_words());
             // words_t<8> xy = dummy(x, y, rec);
-            //words_t<5> msw{xy[3], xy[4], xy[5], xy[6], xy[7]};
-            //words_t<5> q_hat = rec.mul_unshift(msw);
-            words_t<5> q_hat = rec.mul_unshift(xy);
+            words_t<5> msw{xy[3], xy[4], xy[5], xy[6], xy[7]};
+            auto prod = fast_mul(msw, rec.value);
+            words_t<5> q_hat{prod[5], prod[6], prod[7], prod[8], prod[9]};
+            //words_t<5> q_hat = rec.mul_unshift(xy);
             // words_t<8> q_hat  = dummy(x, y, rec);
 
             return uint256_t{refine_remainder(xy, d.as_words(), q_hat)};

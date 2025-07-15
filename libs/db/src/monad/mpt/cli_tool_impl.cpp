@@ -1402,7 +1402,8 @@ opened.
             cli_ops_group->add_option(
                 "--reset-history-length",
                 impl.reset_history_length,
-                "reset database history length to fixed length");
+                "reset database history to a fixed length, must be a positive "
+                "integer within root offset ring buffer capacity");
             cli_ops_group->add_option(
                 "--rewind-to",
                 impl.rewind_database_to,
@@ -1573,6 +1574,16 @@ opened.
                 cout << "\nResetting history length from "
                      << aux.version_history_length() << " to "
                      << impl.reset_history_length.value() << "... \n";
+                auto const ro_capacity = aux.root_offsets().capacity();
+                if (impl.reset_history_length.value() == 0 ||
+                    impl.reset_history_length.value() > ro_capacity) {
+                    throw std::runtime_error(std::format(
+                        "Invalid reset history length: {}. Please reset it "
+                        "within the valid range (0, {}].",
+                        impl.reset_history_length.value(),
+                        ro_capacity));
+                    return 1;
+                }
                 if (impl.reset_history_length.value() <
                     aux.version_history_length()) {
                     std::stringstream ss;

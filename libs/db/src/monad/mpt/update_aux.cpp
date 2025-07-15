@@ -962,6 +962,9 @@ void UpdateAuxImpl::set_io(
             // fast_offset.id chunck
             rewind_to_match_offsets();
             if (history_len.has_value()) {
+                MONAD_ASSERT(
+                    history_len.value() > 0 &&
+                    history_len.value() <= root_offsets().capacity());
                 // reset history length
                 if (history_len < version_history_length() &&
                     history_len <= db_history_max_version()) {

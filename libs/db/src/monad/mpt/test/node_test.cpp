@@ -170,3 +170,27 @@ TEST(NodeTest, super_large_node)
         node->get_disk_size(),
         value_len + sizeof(Node) + Node::disk_size_bytes);
 }
+
+TEST(NodeTest, children_iterator)
+{
+    auto f = [](uint16_t mask) {
+        std::vector<std::pair<uint8_t, unsigned char>> children,
+            expected_children;
+        for (auto i = 0, j = 0; i < 16; ++i) {
+            if (mask & (1u << i)) {
+                expected_children.emplace_back(j++, i);
+            }
+        }
+        for (auto [branch, index] : NodeChildrenRange{mask}) {
+            children.emplace_back(branch, index);
+        }
+        ASSERT_EQ(expected_children, children)
+            << std::hex << "mask: " << mask << std::dec;
+    };
+
+    uint16_t masks[] = {
+        0b0u, 0b1u, 0b11u, 0b10101u, 0b101010u, 0b1111111111111111u};
+    for (auto mask : masks) {
+        ASSERT_NO_FATAL_FAILURE(f(mask));
+    }
+}

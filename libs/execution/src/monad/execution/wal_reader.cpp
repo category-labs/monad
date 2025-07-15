@@ -7,6 +7,7 @@
 #include <monad/execution/wal_reader.hpp>
 
 #include <evmc/hex.hpp>
+#include <quill/Quill.h>
 
 #include <sstream>
 
@@ -85,6 +86,14 @@ std::optional<WalReader::Result> WalReader::next()
     }
     else {
         // execution got ahead
+        if (!cursor_.eof()) {
+            MONAD_ASSERT(!cursor_.good());
+            LOG_WARNING(
+                "wal entry read failure fail={} bad={} errrno={}",
+                cursor_.fail(),
+                cursor_.bad(),
+                strerror(errno));
+        }
         cursor_.clear();
         cursor_.seekg(pos);
         return {};

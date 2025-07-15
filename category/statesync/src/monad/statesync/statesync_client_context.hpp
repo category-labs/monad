@@ -2,10 +2,10 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <monad/core/address.hpp>
-#include <monad/core/block.hpp>
-#include <monad/db/trie_db.hpp>
-#include <monad/db/util.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <monad/mpt/db.hpp>
 #include <monad/statesync/statesync_protocol.hpp>
 

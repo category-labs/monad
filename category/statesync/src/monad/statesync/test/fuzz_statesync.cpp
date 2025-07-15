@@ -1,10 +1,10 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/unaligned.hpp>
-#include <monad/core/address.hpp>
-#include <monad/core/rlp/block_rlp.hpp>
-#include <monad/db/trie_db.hpp>
-#include <monad/state2/state_deltas.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <monad/statesync/statesync_client.h>
 #include <monad/statesync/statesync_client_context.hpp>
 #include <monad/statesync/statesync_messages.h>

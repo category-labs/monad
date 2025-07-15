@@ -1,0 +1,50 @@
+#pragma once
+
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
+
+#include <evmc/evmc.hpp>
+#include <nlohmann/json.hpp>
+
+#include <optional>
+
+MONAD_NAMESPACE_BEGIN
+
+enum class CallType
+{
+    CALL = 0,
+    DELEGATECALL,
+    CALLCODE,
+    CREATE,
+    CREATE2,
+    SELFDESTRUCT,
+};
+
+struct CallFrame
+{
+    CallType type{};
+    uint32_t flags{};
+    Address from{};
+    std::optional<Address> to{};
+    uint256_t value{};
+    uint64_t gas{};
+    uint64_t gas_used{};
+    byte_string input{};
+    byte_string output{};
+    evmc_status_code status{};
+    uint64_t depth{};
+
+    friend bool operator==(CallFrame const &, CallFrame const &) = default;
+
+    // TODO: official documentation doesn't contain "logs", but geth/reth
+    // implementation does
+};
+
+static_assert(sizeof(CallFrame) == 184);
+static_assert(alignof(CallFrame) == 8);
+
+nlohmann::json to_json(CallFrame const &);
+
+MONAD_NAMESPACE_END

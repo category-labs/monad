@@ -4,9 +4,9 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/unaligned.hpp>
-#include <monad/core/block.hpp>
-#include <monad/core/rlp/bytes_rlp.hpp>
-#include <monad/db/util.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <monad/mpt/traverse.hpp>
 #include <monad/statesync/statesync_server.h>
 #include <monad/statesync/statesync_server_context.hpp>

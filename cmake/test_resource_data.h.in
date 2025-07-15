@@ -2,9 +2,9 @@
 
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
-#include <monad/core/address.hpp>
-#include <monad/core/monad_block.hpp>
-#include <monad/db/trie_db.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <monad/test/config.hpp>
 #include <monad/vm/vm.hpp>
 

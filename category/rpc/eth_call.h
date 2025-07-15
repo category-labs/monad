@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/chain/chain_config.h>
+#include <category/execution/ethereum/chain/chain_config.h>
 
 #include <stddef.h>
 #include <stdint.h>

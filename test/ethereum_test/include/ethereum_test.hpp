@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>

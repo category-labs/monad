@@ -1,6 +1,6 @@
 #include <category/core/config.hpp>
-#include <monad/core/log_level_map.hpp>
-#include <monad/execution/trace/event_trace.hpp>
+#include <category/execution/ethereum/core/log_level_map.hpp>
+#include <category/execution/ethereum/trace/event_trace.hpp>
 
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>

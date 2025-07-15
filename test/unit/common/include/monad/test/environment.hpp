@@ -4,7 +4,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/assert.h>
-#include <monad/execution/trace/event_trace.hpp>
+#include <category/execution/ethereum/trace/event_trace.hpp>
 #include <monad/test/config.hpp>
 
 #include <quill/Quill.h>

@@ -4,10 +4,18 @@ Require Import stdpp.gmap.
 (* delete and inline? *)
 Definition Transaction := transaction.
 
+Record Indices :=
+  {
+    block_index: N;
+    tx_index: N;
+  }.
+
+Definition AccountM : Type := (block.block_account * Indices).
+
 Module evm.
   Definition log_entry: Type := EVMOpSem.evm.log_entry.
   Definition address: Type := EVMOpSem.evm.address.
-  Definition account_state: Type (* TODO: investigate why Set doesnt work here *) := block_account.
+  Definition account_state: Type (* TODO: investigate why Set doesnt work here *) := AccountM.
 
   #[global] Instance : EqDecision address. Proof. Admitted.
    #[global] Instance : Countable address. Proof. Admitted.

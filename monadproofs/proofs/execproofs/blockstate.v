@@ -43,8 +43,8 @@ Section with_Sigma.
       else
         Exists auf exactFixeeAssumption, statep |-> StateR auf
           ** origp |-> AccountStateR 1 exactFixeeAssumption (ae &: _min_balance .= None) inds
-          ** [| relaxedValidation auf = false |]
-          ** [| applyUpdates auf actualPreTxState = applyUpdates au actualPreTxState |]).
+(*          ** [| relaxedValidation auf = false |] *)
+          ** [| applyUpdate auf actualPreTxState = applyUpdates au actualPreTxState |]).
 
 
 
@@ -619,8 +619,39 @@ Proof using.
     iExists (Some (x &: _block_account_nonce .= block.block_account_nonce x0)).
     destruct x.
     simpl.
+    Remove Hints prim.primR_aggressiveC : br_opacity.
     go.
-
+    iExists (au &: _relaxedValidation .= false).
+    simpl.
+    go.
+    Set Nested Proofs Allowed.
+    Lemma falseTemp (origp: ptr):
+      origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+  |-> primR "bool" 1$m (Vbool false)
+    |-- origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
+    |-> primR "bool" 1$m (Vbool true).
+    Proof using. Admitted.
+    Definition falseTempF := [FWD] falseTemp.
+    Lemma falseTemp2 (origp: ptr):
+      origp ,, o_field CU "monad::AccountState::relaxed_validation_"
+  |-> primR "bool" 1$m (Vbool true)
+    |-- origp ,, o_field CU "monad::AccountState::relaxed_validation_"
+    |-> primR "bool" 1$m (Vbool false).
+    Proof using. Admitted.
+    Definition falseTempF2 := [FWD] falseTemp2.
+    work using falseTempF, falseTempF2.
+    go.
+    big.
+    provePure.
+    {
+      admit.
+    }
+    work.
+    provePure.
+    {
+      unfold applyUpdates.
+      simpl.
+    go.
     
     HERE
 

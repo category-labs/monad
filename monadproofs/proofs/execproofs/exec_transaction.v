@@ -156,8 +156,8 @@ Require Import bluerock.prelude.lens.
         sf =
           {|
             relaxedValidation:= true;
-            newStates:= ∅;
-            original := <[sender_addr := (senderAc, {| min_balance := Some min_sender_balance  ; nonce_exact :=false |}) ]> ∅;
+            newStates:= [];
+            original := <[sender_addr := (senderAc, {| min_balance := Some min_sender_balance  ; nonce_exact :=false |}) ]> [];
             blockStatePtr := bsp;
             indices:= ind;
           |}.

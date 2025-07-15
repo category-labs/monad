@@ -133,6 +133,10 @@ class NibblesView
     friend inline std::ostream &
     operator<<(std::ostream &s, NibblesView const &v);
 
+    friend constexpr byte_string_view compact_encode(
+        unsigned char *const res, NibblesView const nibbles,
+        bool const terminating);
+
 private:
     friend class Nibbles;
     friend class Node;

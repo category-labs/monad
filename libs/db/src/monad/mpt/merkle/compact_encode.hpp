@@ -21,25 +21,39 @@ compact_encode_len(unsigned const si, unsigned const ei)
 [[nodiscard]] constexpr byte_string_view compact_encode(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
-    unsigned i = 0;
+    auto const size_is_odd = nibbles.nibble_size() % 2;
 
     MONAD_DEBUG_ASSERT(nibbles.nibble_size() || terminating);
 
     // Populate first byte with the encoded nibbles type and potentially
     // also the first nibble if number of nibbles is odd
     res[0] = terminating ? 0x20 : 0x00;
-    if (nibbles.nibble_size() % 2) {
+    if (size_is_odd) {
         res[0] |= static_cast<unsigned char>(0x10 | nibbles.get(0));
-        i = 1;
     }
 
-    unsigned res_ci = 2;
-    for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci++, nibbles.get(i));
-    }
+    // at this point destination is byte aligned and remaining number of nibbles
+    // is even
+    if (size_is_odd == nibbles.begin_nibble_) {
+        // source is byte aligned can use simple copy
+        auto const end = std::copy(
+            nibbles.data_ + size_is_odd,
+            nibbles.data_ + nibbles.data_size(),
+            res + 1);
 
-    return byte_string_view{
-        res, nibbles.nibble_size() ? (nibbles.nibble_size() / 2 + 1) : 1u};
+        return {res, end};
+    }
+    else {
+        // copy from unaligned source to aligned destination
+        auto np = nibbles.data_;
+        auto res_p = res + 1;
+        // last byte has single nibble, stop after processing previous byte
+        auto const end = nibbles.data_ + nibbles.data_size() - 1;
+        for (; np < end; ++np, ++res_p) {
+            *res_p = static_cast<unsigned char>((*np << 4) | (*(np + 1) >> 4));
+        }
+        return {res, res_p};
+    }
 }
 
 MONAD_MPT_NAMESPACE_END

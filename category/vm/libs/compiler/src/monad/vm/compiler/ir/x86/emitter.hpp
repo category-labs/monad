@@ -75,14 +75,8 @@ namespace monad::vm::compiler::native
 
             asmjit::x86::Mem add32(runtime::uint256_t const &);
             asmjit::x86::Mem add16(uint64_t, uint64_t);
-            asmjit::x86::Mem add16(uint32_t, uint32_t, uint32_t, uint32_t);
             asmjit::x86::Mem add8(uint64_t);
-            asmjit::x86::Mem add8(uint32_t, uint32_t);
-            asmjit::x86::Mem add8(uint16_t, uint16_t, uint16_t, uint16_t);
             asmjit::x86::Mem add4(uint32_t);
-            asmjit::x86::Mem add4(uint16_t, uint16_t);
-            asmjit::x86::Mem add4(uint8_t, uint8_t, uint8_t, uint8_t);
-            asmjit::x86::Mem add2(uint8_t, uint8_t);
 
         private:
             template <size_t N>
@@ -96,7 +90,6 @@ namespace monad::vm::compiler::native
             RoSubdata<16> sub16_;
             RoSubdata<8> sub8_;
             RoSubdata<4> sub4_;
-            RoSubdata<2> sub2_;
         };
 
         using Gpq256 = std::array<asmjit::x86::Gpq, 4>;

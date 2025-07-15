@@ -21,7 +21,8 @@ struct CallTracerBase
 {
     virtual void on_enter(evmc_message const &) = 0;
     virtual void on_exit(evmc::Result const &) = 0;
-    virtual void on_self_destruct(Address const &from, Address const &to) = 0;
+    virtual void on_self_destruct(
+        Address const &from, Address const &to, uint256_t const &refund) = 0;
     virtual void on_finish(uint64_t const) = 0;
     virtual std::vector<CallFrame> &&get_frames() && = 0;
 
@@ -32,7 +33,9 @@ struct NoopCallTracer final : public CallTracerBase
 {
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
-    virtual void on_self_destruct(Address const &, Address const &) override;
+    virtual void on_self_destruct(
+        Address const &from, Address const &to,
+        uint256_t const &refund) override;
     virtual void on_finish(uint64_t const) override;
     virtual std::vector<CallFrame> &&get_frames() && override;
 
@@ -55,8 +58,9 @@ public:
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
-    virtual void
-    on_self_destruct(Address const &from, Address const &to) override;
+    virtual void on_self_destruct(
+        Address const &from, Address const &to,
+        uint256_t const &refund) override;
     virtual void on_finish(uint64_t const) override;
     virtual std::vector<CallFrame> &&get_frames() && override;
 

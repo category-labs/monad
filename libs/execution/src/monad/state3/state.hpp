@@ -368,7 +368,8 @@ public:
     ////////////////////////////////////////
 
     template <evmc_revision rev>
-    bool selfdestruct(Address const &address, Address const &beneficiary)
+    bool selfdestruct(
+        Address const &address, Address const &beneficiary, uint256_t &refund)
     {
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
@@ -376,12 +377,14 @@ public:
 
         if constexpr (rev < EVMC_CANCUN) {
             add_to_balance(beneficiary, account.value().balance);
+            refund = account.value().balance;
             account.value().balance = 0;
         }
         else {
             if (address != beneficiary ||
                 account->incarnation == incarnation_) {
                 add_to_balance(beneficiary, account.value().balance);
+                refund = account.value().balance;
                 account.value().balance = 0;
             }
         }

@@ -59,6 +59,8 @@ namespace
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
     auto const icode2 = vm::make_shared_intercode(code2);
 
+    uint256_t refund = 0; // intentional used throughout
+
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
         InMemoryMachine machine;
@@ -266,15 +268,15 @@ TYPED_TEST(StateTest, selfdestruct)
     s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
-    EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(a, c));
+    EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(a, c, refund));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EVMC_SHANGHAI>(a, c));
+    EXPECT_FALSE(s.selfdestruct<EVMC_SHANGHAI>(a, c, refund));
 
-    EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(b, c));
+    EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(b, c, refund));
     EXPECT_EQ(s.get_balance(b), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{84'000});
-    EXPECT_FALSE(s.selfdestruct<EVMC_SHANGHAI>(b, c));
+    EXPECT_FALSE(s.selfdestruct<EVMC_SHANGHAI>(b, c, refund));
 
     s.destruct_suicides<EVMC_SHANGHAI>();
     EXPECT_FALSE(s.account_exists(a));
@@ -306,10 +308,10 @@ TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
 
     State s{bs, Incarnation{1, 2}};
 
-    EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, c));
+    EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, c, refund));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EVMC_CANCUN>(a, c));
+    EXPECT_FALSE(s.selfdestruct<EVMC_CANCUN>(a, c, refund));
 
     s.destruct_suicides<EVMC_CANCUN>();
     EXPECT_TRUE(s.account_exists(a));
@@ -340,10 +342,10 @@ TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, c));
+    EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, c, refund));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EVMC_CANCUN>(a, c));
+    EXPECT_FALSE(s.selfdestruct<EVMC_CANCUN>(a, c, refund));
 
     s.destruct_suicides<EVMC_CANCUN>();
     EXPECT_FALSE(s.account_exists(a));
@@ -365,7 +367,7 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
         // Pre-cancun behavior
         State s{bs, Incarnation{1, 1}};
 
-        EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(a, a));
+        EXPECT_TRUE(s.selfdestruct<EVMC_SHANGHAI>(a, a, refund));
         EXPECT_EQ(s.get_balance(a), bytes32_t{});
 
         s.destruct_suicides<EVMC_SHANGHAI>();
@@ -375,7 +377,7 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
         // Post-cancun behavior
         State s{bs, Incarnation{1, 1}};
 
-        EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, a));
+        EXPECT_TRUE(s.selfdestruct<EVMC_CANCUN>(a, a, refund));
         EXPECT_EQ(s.get_balance(a), bytes32_t{18'000}); // no ether burned
 
         s.destruct_suicides<EVMC_CANCUN>();
@@ -402,7 +404,7 @@ TYPED_TEST(StateTest, selfdestruct_self_same_tx)
     auto run = [&]<evmc_revision rev>() {
         State s{bs, Incarnation{1, 1}};
 
-        EXPECT_TRUE(s.selfdestruct<rev>(a, a));
+        EXPECT_TRUE(s.selfdestruct<rev>(a, a, refund));
         EXPECT_EQ(s.get_balance(a), bytes32_t{});
 
         s.destruct_suicides<rev>();
@@ -428,7 +430,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EVMC_SHANGHAI>(a, a);
+        s1.selfdestruct<EVMC_SHANGHAI>(a, a, refund);
         s1.destruct_suicides<EVMC_SHANGHAI>();
 
         EXPECT_TRUE(bs.can_merge(s1));
@@ -457,7 +459,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EVMC_SHANGHAI>(a, b);
+        s1.selfdestruct<EVMC_SHANGHAI>(a, b, refund);
         s1.destruct_suicides<EVMC_SHANGHAI>();
 
         EXPECT_TRUE(bs.can_merge(s1));
@@ -501,7 +503,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EVMC_SHANGHAI>(a, a);
+        s1.selfdestruct<EVMC_SHANGHAI>(a, a, refund);
         s1.destruct_suicides<EVMC_SHANGHAI>();
 
         EXPECT_TRUE(bs.can_merge(s1));
@@ -540,7 +542,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EVMC_SHANGHAI>(a, a);
+        s1.selfdestruct<EVMC_SHANGHAI>(a, a, refund);
         s1.destruct_suicides<EVMC_SHANGHAI>();
 
         EXPECT_TRUE(bs.can_merge(s1));
@@ -578,7 +580,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 
         s1.create_contract(a);
         s1.set_storage(a, key1, value1);
-        s1.selfdestruct<EVMC_SHANGHAI>(a, b);
+        s1.selfdestruct<EVMC_SHANGHAI>(a, b, refund);
         s1.destruct_suicides<EVMC_SHANGHAI>();
 
         EXPECT_TRUE(bs.can_merge(s1));
@@ -1138,7 +1140,7 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_TRUE(cs.selfdestruct<EVMC_SHANGHAI>(c, a));
+    EXPECT_TRUE(cs.selfdestruct<EVMC_SHANGHAI>(c, a, refund));
     cs.destruct_suicides<EVMC_SHANGHAI>();
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
@@ -1248,7 +1250,7 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
-        EXPECT_TRUE(cs.selfdestruct<EVMC_SHANGHAI>(c, a));
+        EXPECT_TRUE(cs.selfdestruct<EVMC_SHANGHAI>(c, a, refund));
         cs.destruct_suicides<EVMC_SHANGHAI>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);

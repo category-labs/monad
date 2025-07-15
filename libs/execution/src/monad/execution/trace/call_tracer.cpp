@@ -54,7 +54,10 @@ void NoopCallTracer::on_enter(evmc_message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
-void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
+void NoopCallTracer::on_self_destruct(
+    Address const &, Address const &, uint256_t const &)
+{
+}
 
 void NoopCallTracer::on_finish(uint64_t const) {}
 
@@ -148,7 +151,8 @@ void CallTracer::on_exit(evmc::Result const &res)
     last_.pop();
 }
 
-void CallTracer::on_self_destruct(Address const &from, Address const &to)
+void CallTracer::on_self_destruct(
+    Address const &from, Address const &to, uint256_t const &refund)
 {
     // we don't change depth_ here, because exit and enter combined
     // together here
@@ -157,12 +161,13 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
         .flags = 0,
         .from = from,
         .to = to,
-        .value = 0,
+        .value = refund,
         .gas = 0,
         .gas_used = 0,
         .input = {},
         .output = {},
-        .status = EVMC_SUCCESS, // TODO
+        .status = EVMC_SUCCESS, // The return status code is always SUCCESS for
+                                // self-destruct
         .depth = depth_ + 1,
     });
 }

@@ -90,8 +90,11 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool selfdestruct(
         Address const &address, Address const &beneficiary) noexcept override
     {
-        call_tracer_.on_self_destruct(address, beneficiary);
-        return state_.selfdestruct<rev>(address, beneficiary);
+        uint256_t refund = 0;
+        bool const success =
+            state_.selfdestruct<rev>(address, beneficiary, refund);
+        call_tracer_.on_self_destruct(address, beneficiary, refund);
+        return success;
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override

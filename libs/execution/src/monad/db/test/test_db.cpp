@@ -88,6 +88,16 @@ namespace
         }
     };
 
+    struct CancunEthereumMainnet : EthereumMainnet
+    {
+        virtual evmc_revision get_revision(
+            uint64_t /* block_number */,
+            uint64_t /* timestamp */) const override
+        {
+            return EVMC_CANCUN;
+        }
+    };
+
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
         static constexpr bool on_disk = false;
@@ -1092,6 +1102,171 @@ TYPED_TEST(DBTest, call_frames_refund)
         .depth = 0};
 
     EXPECT_EQ(actual_call_frames[0], expected);
+#else
+    EXPECT_EQ(actual_call_frames.size(), 0);
+#endif
+}
+
+// test referenced from :
+// https://github.com/ethereum/tests/blob/e46e1db503ee2711ad02e1f5b3ea45d43e9cd8cb/BlockchainTests/GeneralStateTests/stCallCodes/callcall_00_SuicideEnd.json
+TYPED_TEST(DBTest, call_frames_suicide)
+{
+    TrieDb tdb{this->db};
+
+    auto const a = 0x000f3df6d732807ef1319fb7b8bb8522d0beac02_address;
+    auto const b = 0x1000000000000000000000000000000000000000_address;
+    auto const c = 0x1000000000000000000000000000000000000001_address;
+    auto const d = 0x1000000000000000000000000000000000000002_address;
+    auto const e = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    auto const a_code =
+        evmc::from_hex(
+            "0x3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024"
+            "575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff"
+            "01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500")
+            .value();
+    auto const a_code_hash = to_bytes(keccak256(a_code));
+    auto const a_icode = vm::make_shared_intercode(a_code);
+
+    auto const b_code =
+        evmc::from_hex("0x60406000604060006000731000000000000000000000000000000"
+                       "000000001620249f0f160005500")
+            .value();
+    auto const b_code_hash = to_bytes(keccak256(b_code));
+    auto const b_icode = vm::make_shared_intercode(b_code);
+
+    auto const c_code =
+        evmc::from_hex(
+            "0x6040600060406000600073100000000000000000000000000000000000000261"
+            "c350f1600155731000000000000000000000000000000000000000ff00")
+            .value();
+    auto const c_code_hash = to_bytes(keccak256(c_code));
+    auto const c_icode = vm::make_shared_intercode(c_code);
+
+    auto const d_code = evmc::from_hex("0x600160025500").value();
+    auto const d_code_hash = to_bytes(keccak256(d_code));
+    auto const d_icode = vm::make_shared_intercode(d_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {a,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x00,
+                          .code_hash = a_code_hash,
+                          .nonce = 0x01}}}},
+            {b,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x0de0b6b3a7640000,
+                          .code_hash = b_code_hash,
+                          .nonce = 0x00}}}},
+            {c,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x02540be400, .code_hash = c_code_hash}}}},
+            {d,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x02540be400, .code_hash = d_code_hash}}}},
+
+            {e,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0x0de0b6b3a7640000,
+                          .code_hash = NULL_HASH}}}}},
+        Code{
+            {a_code_hash, a_icode},
+            {b_code_hash, b_icode},
+            {c_code_hash, c_icode},
+            {d_code_hash, d_icode},
+        },
+        BlockHeader{.number = 0});
+
+    // clang-format off
+    byte_string const block_rlp = evmc::from_hex("0xf902a4f9023ba0090ae0fda05940b89b72611cbe9a7e3bcdcc5cff77f357759f1ee73c74f8a8ffa01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa00f3b73ee6d3d77ebff3a7f6d62ddbe4eb9f5cc9db9d73c4d6432676d9c3824c6a0a02cfaaef253dee0e8c7e6cfcc1960f4566d266cf1081772f1446d2109838efba0ac41e0f689ecedc9b7b4fbda9c745278b22457a30b43691002b5655601fc2cfdb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018401c9c38083017d218203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b4218080a00000000000000000000000000000000000000000000000000000000000000000f862f860800a832dc6c094100000000000000000000000000000000000000080801ba07763c200d265ba0050627c8c7b4c19bf118b3581a3de22dbcebdfcb6e8565790a0514908f638ddc4b1402230e34692f43bb92713ff2cad3627814cf6fb19ac2e43c0c0")
+            .value();
+    // clang-format on
+    byte_string_view block_rlp_view{block_rlp};
+    auto block = rlp::decode_block(block_rlp_view);
+    ASSERT_TRUE(!block.has_error());
+    EXPECT_EQ(block.value().header.number, 1);
+
+    BlockHashBufferFinalized block_hash_buffer;
+    block_hash_buffer.set(
+        block.value().header.number - 1, block.value().header.parent_hash);
+
+    BlockState bs(tdb, this->vm);
+
+    fiber::PriorityPool pool{1, 1};
+
+    auto const recovered_senders =
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        MONAD_ASSERT(recovered_senders[i].has_value());
+        senders[i] = recovered_senders[i].value();
+    }
+
+    auto const results = execute_block<EVMC_CANCUN>(
+        CancunEthereumMainnet{},
+        block.value(),
+        senders,
+        bs,
+        block_hash_buffer,
+        pool);
+
+    ASSERT_TRUE(!results.has_error());
+
+    bs.log_debug();
+
+    std::vector<Receipt> receipts;
+    std::vector<std::vector<CallFrame>> call_frames;
+    for (auto &result : results.value()) {
+        receipts.emplace_back(std::move(result.receipt));
+        call_frames.emplace_back(std::move(result.call_frames));
+    }
+
+    auto const &transactions = block.value().transactions;
+    bs.commit(
+        MonadConsensusBlockHeader::from_eth_header(block.value().header),
+        receipts,
+        call_frames,
+        recover_senders(transactions),
+        transactions,
+        {},
+        std::nullopt);
+    tdb.finalize(1, 1);
+    tdb.set_block_and_round(1);
+
+    auto const actual_call_frames =
+        read_call_frame(this->db, tdb.get_block_number(), 0);
+
+#ifdef ENABLE_CALL_TRACING
+    EXPECT_EQ(actual_call_frames.size(), 4);
+    CallFrame expected{
+        .type = CallType::SELFDESTRUCT,
+        .flags = 0,
+        .from = c,
+        .to = b,
+        .value = 0x2540be400, // refund_balance
+        .gas = 0,
+        .gas_used = 0,
+        .status = EVMC_SUCCESS,
+        .depth = 3};
+
+    EXPECT_EQ(actual_call_frames[3], expected);
 #else
     EXPECT_EQ(actual_call_frames.size(), 0);
 #endif

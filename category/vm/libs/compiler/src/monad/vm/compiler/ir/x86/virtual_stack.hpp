@@ -415,10 +415,10 @@ namespace monad::vm::compiler::native
         void push_deferred_comparison(Comparison);
 
         /**
-         * If stack top element is deferred comparison, then negate it.
-         * Returns true if the top element was a deferred comparison.
+         * If given stack elem is deferred comparison, then negate it.
+         * Returns null if the stack elem is not a deferred comparison.
          */
-        bool negate_top_deferred_comparison();
+        StackElemRef negate_if_deferred_comparison(StackElemRef);
 
         /**
          * Push a literal onto the top of the stack, updating book-keeping

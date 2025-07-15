@@ -58,7 +58,8 @@ namespace
         return ret;
     }
 
-    runtime::Context test_context(int64_t gas_remaining = 1'000'000)
+    runtime::Context
+    test_context(int64_t gas_remaining = (uint64_t{1} << 63) - 1)
     {
         return runtime::Context{
             .host = nullptr,
@@ -1271,7 +1272,10 @@ TEST(Emitter, lt)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, LT, &Emitter::lt, 5, 6, 1);
+    pure_bin_instr_test(rt, LT, &Emitter::lt, 6, 5, 0);
     pure_bin_instr_test(rt, LT, &Emitter::lt, -1, -1, 0);
+    pure_bin_instr_test(
+        rt, LT, &Emitter::lt, {0, 0, -1, -1}, {0, 0, -1, -1}, 0);
     pure_bin_instr_test(
         rt,
         LT,
@@ -1279,13 +1283,41 @@ TEST(Emitter, lt)
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
         0);
+    pure_bin_instr_test(
+        rt,
+        LT,
+        &Emitter::lt,
+        std::numeric_limits<uint256_t>::max() - 1,
+        std::numeric_limits<uint256_t>::max(),
+        1);
+    pure_bin_instr_test(rt, LT, &Emitter::lt, {0, 0, 1, 0}, {0, 0, 0, 1}, 1);
+    pure_bin_instr_test(rt, LT, &Emitter::lt, {0, 0, 0, 1}, {0, 0, 1, 0}, 0);
+}
+
+TEST(Emitter, lt_same)
+{
+    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, LT});
+    asmjit::JitRuntime const rt;
+    Emitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.push(0);
+    emit.dup(1);
+    mov_literal_to_location_type(emit, 0, Emitter::LocationType::AvxReg);
+    auto e0 = emit.get_stack().get(0);
+    auto e1 = emit.get_stack().get(1);
+    ASSERT_EQ(e0, e1);
+    emit.lt();
+    ASSERT_EQ(emit.get_stack().get(0)->literal()->value, uint256_t{0});
 }
 
 TEST(Emitter, gt)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, GT, &Emitter::gt, 5, 6, 0);
+    pure_bin_instr_test(rt, GT, &Emitter::gt, 6, 5, 1);
     pure_bin_instr_test(rt, GT, &Emitter::gt, -1, -1, 0);
+    pure_bin_instr_test(
+        rt, GT, &Emitter::gt, {0, 0, -1, -1}, {0, 0, -1, -1}, 0);
     pure_bin_instr_test(
         rt,
         GT,
@@ -1293,13 +1325,41 @@ TEST(Emitter, gt)
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
         1);
+    pure_bin_instr_test(
+        rt,
+        GT,
+        &Emitter::gt,
+        std::numeric_limits<uint256_t>::max() - 1,
+        std::numeric_limits<uint256_t>::max(),
+        0);
+    pure_bin_instr_test(rt, LT, &Emitter::gt, {0, 0, 1, 0}, {0, 0, 0, 1}, 0);
+    pure_bin_instr_test(rt, LT, &Emitter::gt, {0, 0, 0, 1}, {0, 0, 1, 0}, 1);
+}
+
+TEST(Emitter, gt_same)
+{
+    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, GT});
+    asmjit::JitRuntime const rt;
+    Emitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.push(0);
+    emit.dup(1);
+    mov_literal_to_location_type(emit, 0, Emitter::LocationType::AvxReg);
+    auto e0 = emit.get_stack().get(0);
+    auto e1 = emit.get_stack().get(1);
+    ASSERT_EQ(e0, e1);
+    emit.gt();
+    ASSERT_EQ(emit.get_stack().get(0)->literal()->value, uint256_t{0});
 }
 
 TEST(Emitter, slt)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, SLT, &Emitter::slt, 5, 6, 1);
+    pure_bin_instr_test(rt, SLT, &Emitter::slt, 6, 5, 0);
     pure_bin_instr_test(rt, SLT, &Emitter::slt, -1, -1, 0);
+    pure_bin_instr_test(
+        rt, SLT, &Emitter::slt, {0, 0, -1, -1}, {0, 0, -1, -1}, 0);
     pure_bin_instr_test(
         rt,
         SLT,
@@ -1314,27 +1374,98 @@ TEST(Emitter, slt)
         std::numeric_limits<uint256_t>::max() - 1,
         std::numeric_limits<uint256_t>::max(),
         1);
+    pure_bin_instr_test(
+        rt,
+        SLT,
+        &Emitter::slt,
+        std::numeric_limits<uint256_t>::max() >> 1,
+        0,
+        0);
+    pure_bin_instr_test(
+        rt,
+        SLT,
+        &Emitter::slt,
+        0,
+        std::numeric_limits<uint256_t>::max() >> 1,
+        1);
+    pure_bin_instr_test(rt, SLT, &Emitter::slt, uint256_t{1} << 255, 0, 1);
+    pure_bin_instr_test(rt, SLT, &Emitter::slt, 0, uint256_t{1} << 255, 0);
+    pure_bin_instr_test(rt, SLT, &Emitter::slt, {0, 0, 1, 0}, {0, 0, 0, 1}, 1);
+    pure_bin_instr_test(rt, SLT, &Emitter::slt, {0, 0, 0, 1}, {0, 0, 1, 0}, 0);
+}
+
+TEST(Emitter, slt_same)
+{
+    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, SLT});
+    asmjit::JitRuntime const rt;
+    Emitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.push(0);
+    emit.dup(1);
+    mov_literal_to_location_type(emit, 0, Emitter::LocationType::AvxReg);
+    auto e0 = emit.get_stack().get(0);
+    auto e1 = emit.get_stack().get(1);
+    ASSERT_EQ(e0, e1);
+    emit.slt();
+    ASSERT_EQ(emit.get_stack().get(0)->literal()->value, uint256_t{0});
 }
 
 TEST(Emitter, sgt)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, SGT, &Emitter::sgt, 5, 6, 0);
+    pure_bin_instr_test(rt, SGT, &Emitter::sgt, 6, 5, 1);
     pure_bin_instr_test(rt, SGT, &Emitter::sgt, -1, -1, 0);
+    pure_bin_instr_test(
+        rt, SGT, &Emitter::sgt, {0, 0, -1, -1}, {0, 0, -1, -1}, 0);
     pure_bin_instr_test(
         rt,
         SGT,
-        &Emitter::gt,
+        &Emitter::sgt,
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
         1);
     pure_bin_instr_test(
         rt,
         SGT,
-        &Emitter::gt,
+        &Emitter::sgt,
         std::numeric_limits<uint256_t>::max() - 1,
         std::numeric_limits<uint256_t>::max(),
         0);
+    pure_bin_instr_test(
+        rt,
+        SGT,
+        &Emitter::sgt,
+        std::numeric_limits<uint256_t>::max() >> 1,
+        0,
+        1);
+    pure_bin_instr_test(
+        rt,
+        SGT,
+        &Emitter::sgt,
+        0,
+        std::numeric_limits<uint256_t>::max() >> 1,
+        0);
+    pure_bin_instr_test(rt, SGT, &Emitter::sgt, uint256_t{1} << 255, 0, 0);
+    pure_bin_instr_test(rt, SGT, &Emitter::sgt, 0, uint256_t{1} << 255, 1);
+    pure_bin_instr_test(rt, SGT, &Emitter::sgt, {0, 0, 1, 0}, {0, 0, 0, 1}, 0);
+    pure_bin_instr_test(rt, SGT, &Emitter::sgt, {0, 0, 0, 1}, {0, 0, 1, 0}, 1);
+}
+
+TEST(Emitter, sgt_same)
+{
+    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, SGT});
+    asmjit::JitRuntime const rt;
+    Emitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.push(0);
+    emit.dup(1);
+    mov_literal_to_location_type(emit, 0, Emitter::LocationType::AvxReg);
+    auto e0 = emit.get_stack().get(0);
+    auto e1 = emit.get_stack().get(1);
+    ASSERT_EQ(e0, e1);
+    emit.sgt();
+    ASSERT_EQ(emit.get_stack().get(0)->literal()->value, uint256_t{0});
 }
 
 TEST(Emitter, sub)
@@ -2212,13 +2343,29 @@ TEST(Emitter, eq)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, EQ, &Emitter::eq, 0, 0, 1);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, 1, 1, 1);
     pure_bin_instr_test(rt, EQ, &Emitter::eq, 1, 0, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, 0, 1, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {0, 1}, 0, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, 0, {0, 1}, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {1, 1}, {0, 1}, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {0, 1}, {1, 1}, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {0, 0, 1, 0}, {0, 0, 1, 0}, 1);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {0, 0, 1, 0}, {0, 0, 3, 0}, 0);
+    pure_bin_instr_test(rt, EQ, &Emitter::eq, {0, 0, 3, 0}, {0, 0, 1, 0}, 0);
     pure_bin_instr_test(
         rt,
         EQ,
         &Emitter::eq,
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
+        0);
+    pure_bin_instr_test(
+        rt,
+        EQ,
+        &Emitter::eq,
+        std::numeric_limits<uint256_t>::max() - 1,
+        std::numeric_limits<uint256_t>::max(),
         0);
     pure_bin_instr_test(
         rt,
@@ -3126,6 +3273,102 @@ TEST(Emitter, MemoryInstructions)
     }
 }
 
+TEST(Emitter, mstore_not_bounded_by_bits)
+{
+    std::vector<uint8_t> bytecode{PUSH0, PUSH0, MSTORE};
+
+    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(0);
+        emit.push((uint256_t{1} << runtime::Memory::offset_bits) - 1);
+        mov_literal_to_location_type(emit, 1, loc);
+
+        emit.mstore();
+        emit.stop();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    }
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(0);
+        emit.push(uint256_t{1} << runtime::Memory::offset_bits);
+        mov_literal_to_location_type(emit, 1, loc);
+
+        emit.mstore();
+        emit.stop();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+    }
+}
+
+TEST(Emitter, mload_not_bounded_by_bits)
+{
+    std::vector<uint8_t> bytecode{PUSH0, MLOAD};
+
+    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push((uint256_t{1} << runtime::Memory::offset_bits) - 1);
+        mov_literal_to_location_type(emit, 0, loc);
+
+        emit.mload();
+        emit.stop();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    }
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(uint256_t{1} << runtime::Memory::offset_bits);
+        mov_literal_to_location_type(emit, 0, loc);
+
+        emit.mload();
+        emit.stop();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+    }
+}
+
 TEST(Emitter, calldataload)
 {
     auto ctx = test_context();
@@ -3193,6 +3436,92 @@ TEST(Emitter, calldataload)
                 ASSERT_EQ(uint256_t::load_le(ret.size), expected.to_be());
             }
         }
+    }
+}
+
+TEST(Emitter, calldataload_not_bounded_by_bits)
+{
+    std::vector<uint8_t> bytecode{PUSH0, CALLDATALOAD, DUP1, RETURN};
+
+    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+
+    static constexpr uint32_t input_data_size = (uint64_t{1} << 32) - 1;
+    std::unique_ptr<uint8_t[]> input_data{new uint8_t[input_data_size]};
+    input_data[input_data_size - 1] = 0xff;
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(input_data_size - 1);
+        mov_literal_to_location_type(emit, 0, loc);
+
+        emit.calldataload();
+        emit.dup(1);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        ctx.env.input_data = input_data.get();
+        ctx.env.input_data_size = input_data_size;
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(uint256_t::load_le(ret.offset), uint256_t{0xff} << 248);
+        ASSERT_EQ(uint256_t::load_le(ret.size), uint256_t{0xff} << 248);
+    }
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(input_data_size);
+        mov_literal_to_location_type(emit, 0, loc);
+
+        emit.calldataload();
+        emit.dup(1);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        ctx.env.input_data = input_data.get();
+        ctx.env.input_data_size = input_data_size;
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
+        ASSERT_EQ(uint256_t::load_le(ret.size), 0);
+    }
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        Emitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(uint256_t{input_data_size} + 1);
+        mov_literal_to_location_type(emit, 0, loc);
+
+        emit.calldataload();
+        emit.dup(1);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        ctx.env.input_data = input_data.get();
+        ctx.env.input_data_size = input_data_size;
+        auto const &ret = ctx.result;
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
+        ASSERT_EQ(uint256_t::load_le(ret.size), 0);
     }
 }
 

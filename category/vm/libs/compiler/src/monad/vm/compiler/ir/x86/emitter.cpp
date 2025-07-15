@@ -2554,6 +2554,14 @@ namespace monad::vm::compiler::native
             push(x == y);
             return;
         }
+        if (pre_dst->literal() && !pre_dst->literal()->value) {
+            push_iszero(std::move(pre_src));
+            return;
+        }
+        if (pre_src->literal() && !pre_src->literal()->value) {
+            push_iszero(std::move(pre_dst));
+            return;
+        }
 
         discharge_deferred_comparison();
 
@@ -2563,8 +2571,8 @@ namespace monad::vm::compiler::native
                 std::move(pre_dst), std::move(pre_src), {});
 
         AVX_OR_GENERAL_BIN_INSTR(xor_, vpxor)
-        (dst, left, left_loc, right, right_loc, [](size_t, uint64_t) {
-            return false;
+        (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
+            return x == 0;
         });
 
         if (left_loc == LocationType::AvxReg) {
@@ -2581,18 +2589,25 @@ namespace monad::vm::compiler::native
         stack_.push_deferred_comparison(Comparison::Equal);
     }
 
-    // Discharge, except when top element is deferred comparison
+    // Discharge through push_iszero
     void Emitter::iszero()
     {
-        if (stack_.negate_top_deferred_comparison()) {
-            return;
-        }
         auto elem = stack_.pop();
+        push_iszero(std::move(elem));
+    }
+
+    // Discharge when returning Comparison
+    std::variant<Comparison, StackElemRef> Emitter::iszero(StackElemRef elem)
+    {
         if (elem->literal()) {
-            push(elem->literal()->value == 0);
-            return;
+            return stack_.alloc_literal({!elem->literal()->value});
         }
+        if (auto neg = stack_.negate_if_deferred_comparison(elem)) {
+            return neg;
+        }
+
         discharge_deferred_comparison();
+
         auto [left, right, loc] = get_una_arguments(false, elem, {});
         MONAD_VM_DEBUG_ASSERT(left == right);
         if (loc == LocationType::AvxReg) {
@@ -2614,7 +2629,55 @@ namespace monad::vm::compiler::native
                 as_.or_(gpq[0], gpq[2]);
             }
         }
-        stack_.push_deferred_comparison(Comparison::Equal);
+
+        return Comparison::Equal;
+    }
+
+    // Discharge through iszero
+    void Emitter::push_iszero(StackElemRef elem)
+    {
+        auto res = iszero(std::move(elem));
+        if (std::holds_alternative<Comparison>(res)) {
+            stack_.push_deferred_comparison(std::get<Comparison>(res));
+        }
+        else {
+            MONAD_VM_DEBUG_ASSERT(std::holds_alternative<StackElemRef>(res));
+            stack_.push(std::get<StackElemRef>(res));
+        }
+    }
+
+    // Discharge
+    // Returns null without discharging when `e` is deferred comparison,
+    // which cannot be signed.
+    std::optional<Comparison> Emitter::issigned(StackElemRef e)
+    {
+        // Unimplemented for literal, because it is not needed.
+        MONAD_VM_DEBUG_ASSERT(!e->literal().has_value());
+
+        auto const dc = stack_.peek_deferred_comparison();
+        if (e.get() == dc.stack_elem || e.get() == dc.negated_stack_elem) {
+            return std::nullopt;
+        }
+
+        discharge_deferred_comparison();
+
+        if (e->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*e->general_reg());
+            as_.test(gpq[3], gpq[3]);
+            return Comparison::Less;
+        }
+        if (e->avx_reg()) {
+            auto const y = avx_reg_to_ymm(*e->avx_reg());
+            as_.vmovmskpd(x86::eax, y);
+            as_.test(x86::eax, 8);
+            return Comparison::NotEqual;
+        }
+        MONAD_VM_DEBUG_ASSERT(e->stack_offset().has_value());
+        auto m = stack_offset_to_mem(*e->stack_offset());
+        m.addOffset(24);
+        as_.mov(x86::rax, m);
+        as_.test(x86::rax, x86::rax);
+        return Comparison::Less;
     }
 
     // Discharge
@@ -2640,7 +2703,7 @@ namespace monad::vm::compiler::native
             }
             else {
                 auto const m =
-                    rodata_.add32({std::numeric_limits<uint256_t>::max()});
+                    rodata_.add32(std::numeric_limits<uint256_t>::max());
                 as_.vpxor(y_left, y_right, m);
             }
         }
@@ -3416,8 +3479,13 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
+    // Discharge
     void Emitter::lt(StackElemRef pre_dst, StackElemRef pre_src)
     {
+        if (pre_dst == pre_src) {
+            push(0);
+            return;
+        }
         if (pre_dst->literal() && pre_src->literal()) {
             auto const &x = pre_dst->literal()->value;
             auto const &y = pre_src->literal()->value;
@@ -3425,35 +3493,96 @@ namespace monad::vm::compiler::native
             return;
         }
         discharge_deferred_comparison();
+
+        bool negate = false;
+        if (pre_dst->literal()) {
+            // Unsigned overflow to `0` is fine:
+            pre_dst = stack_.alloc_literal({pre_dst->literal()->value + 1});
+            std::swap(pre_dst, pre_src);
+            negate = true;
+        }
+        if (pre_src->literal() && !pre_src->literal()->value) {
+            push(0);
+            return;
+        }
+
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
             false, std::move(pre_dst), std::move(pre_src), {});
-        cmp(std::move(dst), dst_loc, std::move(src), src_loc);
-        stack_.push_deferred_comparison(Comparison::Below);
+        GENERAL_BIN_INSTR(cmp, sbb)
+        (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
+            return i == 0 && x == 0;
+        });
+        if (negate) {
+            stack_.push_deferred_comparison(Comparison::AboveEqual);
+        }
+        else {
+            stack_.push_deferred_comparison(Comparison::Below);
+        }
     }
 
+    // Discharge
     void Emitter::slt(StackElemRef pre_dst, StackElemRef pre_src)
     {
+        if (pre_dst == pre_src) {
+            push(0);
+            return;
+        }
         if (pre_dst->literal() && pre_src->literal()) {
             auto const &x = pre_dst->literal()->value;
             auto const &y = pre_src->literal()->value;
             push(runtime::slt(x, y));
             return;
         }
+
+        bool negate = false;
+        if (pre_dst->literal()) {
+            // Signed overflow to `1 << 255` is fine:
+            pre_dst = stack_.alloc_literal({pre_dst->literal()->value + 1});
+            std::swap(pre_dst, pre_src);
+            negate = true;
+        }
+        if (pre_src->literal() && pre_src->literal()->value == uint256_t{1}
+                                                                   << 255) {
+            push(0);
+            return;
+        }
+
+        if (pre_src->literal() && !pre_src->literal()->value) {
+            pre_src.reset(); // Clear locations
+            if (auto const r = issigned(std::move(pre_dst))) {
+                auto comparison = *r;
+                if (negate) {
+                    comparison = negate_comparison(comparison);
+                }
+                stack_.push_deferred_comparison(comparison);
+            }
+            else {
+                if (negate) {
+                    push(1);
+                }
+                else {
+                    push(0);
+                }
+            }
+            return;
+        }
+
         discharge_deferred_comparison();
+
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
             false, std::move(pre_dst), std::move(pre_src), {});
-        cmp(std::move(dst), dst_loc, std::move(src), src_loc);
-        stack_.push_deferred_comparison(Comparison::Less);
-    }
-
-    void Emitter::cmp(
-        StackElemRef dst, LocationType dst_loc, StackElemRef src,
-        LocationType src_loc)
-    {
         GENERAL_BIN_INSTR(cmp, sbb)
-        (dst, dst_loc, src, src_loc, [](size_t, uint64_t) { return false; });
+        (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
+            return i == 0 && x == 0;
+        });
+        if (negate) {
+            stack_.push_deferred_comparison(Comparison::GreaterEqual);
+        }
+        else {
+            stack_.push_deferred_comparison(Comparison::Less);
+        }
     }
 
     void Emitter::byte_literal_ix(uint256_t const &ix, StackOffset src)
@@ -3520,9 +3649,10 @@ namespace monad::vm::compiler::native
 
     // Sets zero flag according to whether `e` is below `i`.
     template <typename... LiveSet>
-    void Emitter::cmp_stack_elem_to_uint32(
-        StackElemRef e, uint32_t i, std::tuple<LiveSet...> const &live)
+    void Emitter::cmp_stack_elem_to_uint16(
+        StackElemRef e, uint16_t i, std::tuple<LiveSet...> const &live)
     {
+        MONAD_VM_DEBUG_ASSERT(i > 0);
         MONAD_VM_DEBUG_ASSERT(!e->literal().has_value());
         if (e->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*e->general_reg());
@@ -3539,10 +3669,16 @@ namespace monad::vm::compiler::native
                 as_.or_(x86::rax, gpq[3]);
             }
         }
+        else if (e->avx_reg()) {
+            auto const y = avx_reg_to_ymm(*e->avx_reg());
+            auto const [tmp_e, reserv] = alloc_avx_reg();
+            auto const tmp_y = avx_reg_to_ymm(*tmp_e->avx_reg());
+            as_.vpsubusw(tmp_y, y, rodata_.add32(i - 1));
+            // `tmp_y` is zero iff `y <= i-1`, so zero iff `y < i`
+            as_.vptest(tmp_y, tmp_y);
+        }
         else {
-            if (!e->stack_offset()) {
-                mov_avx_reg_to_stack_offset(e);
-            }
+            MONAD_VM_ASSERT(e->stack_offset().has_value());
             x86::Mem mem = stack_offset_to_mem(*e->stack_offset());
             as_.cmp(mem, i);
             mem.addOffset(8);
@@ -3592,7 +3728,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
 
-        cmp_stack_elem_to_uint32(ix, 32, std::make_tuple(src));
+        cmp_stack_elem_to_uint16(ix, 32, std::make_tuple(src));
 
         static constexpr int32_t byte_off = sp_offset_temp_word2 - 1;
 
@@ -3608,6 +3744,12 @@ namespace monad::vm::compiler::native
             as_.cmovnz(byte_ix.r32(), bound_mem);
             as_.neg(byte_ix);
             stack_mem = x86::qword_ptr(x86::rsp, byte_ix, 0, byte_off);
+        }
+        else if (ix->avx_reg()) {
+            as_.vmovd(x86::eax, avx_reg_to_xmm(*ix->avx_reg()));
+            as_.cmovnz(x86::eax, bound_mem);
+            as_.neg(x86::rax);
+            stack_mem = x86::qword_ptr(x86::rsp, x86::rax, 0, byte_off);
         }
         else {
             MONAD_VM_DEBUG_ASSERT(ix->stack_offset().has_value());
@@ -3869,7 +4011,7 @@ namespace monad::vm::compiler::native
         auto [dst, dst_reserv] = alloc_general_reg();
         Gpq256 &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
 
-        cmp_stack_elem_to_uint32(shift, 257, {});
+        cmp_stack_elem_to_uint16(shift, 257, {});
 
         // We only need to preserve rcx if it is in a stack element which is
         // currently on the virtual stack.
@@ -3903,7 +4045,11 @@ namespace monad::vm::compiler::native
                 cmp_reg = gpq[0];
             }
         }
+        else if (shift->avx_reg()) {
+            as_.vmovd(cmp_reg.r32(), avx_reg_to_xmm(*shift->avx_reg()));
+        }
         else {
+            MONAD_VM_DEBUG_ASSERT(shift->stack_offset().has_value());
             auto mem = stack_offset_to_mem(*shift->stack_offset());
             as_.mov(cmp_reg.r32(), mem);
         }
@@ -4208,6 +4354,9 @@ namespace monad::vm::compiler::native
                 },
                 src_op);
         }
+
+        // This is not required to be an invariant, but it currently is:
+        MONAD_VM_DEBUG_ASSERT(instr_ix > 0);
     }
 
     template <typename... LiveSet>
@@ -4518,10 +4667,17 @@ namespace monad::vm::compiler::native
             return x86::rax;
         }
 
-        if (!elem->stack_offset()) {
-            MONAD_VM_DEBUG_ASSERT(elem->avx_reg().has_value());
-            mov_avx_reg_to_stack_offset(elem);
+        if (elem->avx_reg()) {
+            auto const y = avx_reg_to_ymm(*elem->avx_reg());
+            auto const mask = std::numeric_limits<uint256_t>::max() << bits;
+            as_.vptest(y, rodata_.add32(mask));
+            as_.jnz(skip_label);
+            as_.vmovd(x86::eax, y.xmm());
+            return x86::rax;
         }
+
+        MONAD_VM_DEBUG_ASSERT(elem->stack_offset().has_value());
+
         auto mem = stack_offset_to_mem(*elem->stack_offset());
         mem.addOffset(8);
         as_.mov(x86::rax, mem);

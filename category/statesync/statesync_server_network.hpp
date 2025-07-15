@@ -2,7 +2,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/byte_string.hpp>
-#include <monad/statesync/statesync_messages.h>
+#include <category/statesync/statesync_messages.h>
 
 #include <quill/Quill.h>
 

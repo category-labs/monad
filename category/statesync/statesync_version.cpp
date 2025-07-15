@@ -1,4 +1,4 @@
-#include <monad/statesync/statesync_version.h>
+#include <category/statesync/statesync_version.h>
 
 // Modify when there are changes to the protocol
 

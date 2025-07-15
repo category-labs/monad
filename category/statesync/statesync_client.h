@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/statesync/statesync_messages.h>
+#include <category/statesync/statesync_messages.h>
 
 #ifdef __cplusplus
 extern "C"

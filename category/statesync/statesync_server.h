@@ -1,6 +1,6 @@
 #pragma once
 
-#include <monad/statesync/statesync_messages.h>
+#include <category/statesync/statesync_messages.h>
 
 struct monad_statesync_server;
 struct monad_statesync_server_context;

@@ -7,10 +7,10 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <monad/statesync/statesync_client.h>
-#include <monad/statesync/statesync_client_context.hpp>
-#include <monad/statesync/statesync_protocol.hpp>
-#include <monad/statesync/statesync_version.h>
+#include <category/statesync/statesync_client.h>
+#include <category/statesync/statesync_client_context.hpp>
+#include <category/statesync/statesync_protocol.hpp>
+#include <category/statesync/statesync_version.h>
 
 #include <algorithm>
 #include <filesystem>

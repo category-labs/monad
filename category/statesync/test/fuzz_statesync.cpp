@@ -5,12 +5,12 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <monad/statesync/statesync_client.h>
-#include <monad/statesync/statesync_client_context.hpp>
-#include <monad/statesync/statesync_messages.h>
-#include <monad/statesync/statesync_server.h>
-#include <monad/statesync/statesync_server_context.hpp>
-#include <monad/statesync/statesync_version.h>
+#include <category/statesync/statesync_client.h>
+#include <category/statesync/statesync_client_context.hpp>
+#include <category/statesync/statesync_messages.h>
+#include <category/statesync/statesync_server.h>
+#include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_version.h>
 
 #include <ankerl/unordered_dense.h>
 #include <quill/Quill.h>

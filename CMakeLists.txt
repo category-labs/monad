@@ -6,6 +6,16 @@ project(monad)
 
 set(CATEGORY_MAIN_DIR ${PROJECT_SOURCE_DIR})
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+        message(FATAL_ERROR "GCC version 15 or higher is required.")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
+        message(FATAL_ERROR "Clang version 19 or higher is required.")
+    endif()
+endif()
+
 option(HUNTER_ENABLED OFF)
 
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)

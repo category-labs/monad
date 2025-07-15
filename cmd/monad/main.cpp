@@ -23,10 +23,10 @@
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/chain/monad_testnet2.hpp>
-#include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/statesync/statesync_server.h>
-#include <monad/statesync/statesync_server_context.hpp>
-#include <monad/statesync/statesync_server_network.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
+#include <category/statesync/statesync_server.h>
+#include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_server_network.hpp>
 #include <monad/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>

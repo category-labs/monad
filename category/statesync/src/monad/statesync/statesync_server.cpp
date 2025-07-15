@@ -7,9 +7,9 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <monad/mpt/traverse.hpp>
-#include <monad/statesync/statesync_server.h>
-#include <monad/statesync/statesync_server_context.hpp>
+#include <category/mpt/traverse.hpp>
+#include <category/statesync/statesync_server.h>
+#include <category/statesync/statesync_server_context.hpp>
 
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>

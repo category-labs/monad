@@ -9,11 +9,11 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/statesync/statesync_client.h>
-#include <monad/statesync/statesync_server.h>
-#include <monad/statesync/statesync_server_context.hpp>
-#include <monad/statesync/statesync_version.h>
+#include <category/mpt/ondisk_db_config.hpp>
+#include <category/statesync/statesync_client.h>
+#include <category/statesync/statesync_server.h>
+#include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_version.h>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>

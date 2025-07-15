@@ -28,7 +28,7 @@
 #include <category/execution/ethereum/switch_evmc_revision.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <monad/mpt/nibbles_view.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>

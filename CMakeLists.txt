@@ -183,7 +183,7 @@ endfunction()
 
 add_subdirectory("category/async")
 add_subdirectory("category/core")
-add_subdirectory("category/db")
+add_subdirectory("category/mpt")
 add_subdirectory("category/event")
 add_subdirectory("category/execution")
 add_subdirectory("category/rpc")

@@ -8,9 +8,9 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
-#include <monad/mpt/db.hpp>
-#include <monad/mpt/ondisk_db_config.hpp>
-#include <monad/mpt/util.hpp>
+#include <category/mpt/db.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/util.hpp>
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>

@@ -9,7 +9,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
-#include <monad/mpt/ondisk_db_config.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>

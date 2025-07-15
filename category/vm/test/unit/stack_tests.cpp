@@ -639,7 +639,10 @@ TEST(VirtualStack, deferred_comparison_test_2)
     ASSERT_TRUE(stack.has_deferred_comparison_at(0));
     ASSERT_FALSE(stack.has_deferred_comparison_at(1));
 
-    ASSERT_FALSE(stack.negate_top_deferred_comparison());
+    auto e1 = stack.pop();
+    auto e2 = stack.negate_if_deferred_comparison(e1);
+    ASSERT_FALSE(e2);
+    stack.push(std::move(e1));
     ASSERT_TRUE(stack.has_deferred_comparison_at(0));
     ASSERT_FALSE(stack.has_deferred_comparison_at(1));
 
@@ -647,7 +650,10 @@ TEST(VirtualStack, deferred_comparison_test_2)
     ASSERT_TRUE(stack.has_deferred_comparison_at(0));
     ASSERT_FALSE(stack.has_deferred_comparison_at(1));
 
-    ASSERT_TRUE(stack.negate_top_deferred_comparison());
+    e1 = stack.pop();
+    e2 = stack.negate_if_deferred_comparison(std::move(e1));
+    ASSERT_TRUE(e2);
+    stack.push(std::move(e2));
     ASSERT_TRUE(stack.has_deferred_comparison_at(0));
 
     auto dc = stack.discharge_deferred_comparison();
@@ -719,7 +725,10 @@ TEST(VirtualStack, deferred_comparison_test_4)
     ASSERT_FALSE(stack.has_deferred_comparison_at(2)); // 0
     ASSERT_TRUE(stack.has_deferred_comparison_at(3)); // GT
 
-    ASSERT_TRUE(stack.negate_top_deferred_comparison());
+    auto e1 = stack.pop();
+    auto e2 = stack.negate_if_deferred_comparison(std::move(e1));
+    ASSERT_TRUE(e2);
+    stack.push(std::move(e2));
     ASSERT_TRUE(stack.has_deferred_comparison_at(0)); // GT
     ASSERT_TRUE(stack.has_deferred_comparison_at(1)); // GT
     ASSERT_FALSE(stack.has_deferred_comparison_at(2)); // 0
@@ -739,7 +748,10 @@ TEST(VirtualStack, deferred_comparison_test_4)
     ASSERT_TRUE(stack.has_deferred_comparison_at(3)); // LE
     ASSERT_TRUE(stack.has_deferred_comparison_at(4)); // GT
 
-    ASSERT_TRUE(stack.negate_top_deferred_comparison());
+    e1 = stack.pop();
+    e2 = stack.negate_if_deferred_comparison(std::move(e1));
+    ASSERT_TRUE(e2);
+    stack.push(std::move(e2));
     ASSERT_TRUE(stack.has_deferred_comparison_at(0)); // GT
     ASSERT_TRUE(stack.has_deferred_comparison_at(1)); // LE
     ASSERT_FALSE(stack.has_deferred_comparison_at(2)); // 0
@@ -753,7 +765,10 @@ TEST(VirtualStack, deferred_comparison_test_4)
     ASSERT_TRUE(stack.has_deferred_comparison_at(3)); // LE
     ASSERT_TRUE(stack.has_deferred_comparison_at(4)); // LE
 
-    ASSERT_TRUE(stack.negate_top_deferred_comparison());
+    e1 = stack.pop();
+    e2 = stack.negate_if_deferred_comparison(std::move(e1));
+    ASSERT_TRUE(e2);
+    stack.push(std::move(e2));
     ASSERT_TRUE(stack.has_deferred_comparison_at(0)); // GT
     ASSERT_TRUE(stack.has_deferred_comparison_at(1)); // LE
     ASSERT_FALSE(stack.has_deferred_comparison_at(2)); // 0

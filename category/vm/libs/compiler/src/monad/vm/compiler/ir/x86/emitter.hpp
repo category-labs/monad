@@ -704,6 +704,11 @@ namespace monad::vm::compiler::native
         StackElemRef
         xor_(StackElemRef, StackElemRef, std::tuple<LiveSet...> const &);
 
+        std::variant<Comparison, StackElemRef> iszero(StackElemRef);
+        void push_iszero(StackElemRef);
+
+        std::optional<Comparison> issigned(StackElemRef);
+
         StackElemRef negate_by_sub(StackElemRef);
         void negate_gpq256(Gpq256 const &);
 
@@ -831,16 +836,14 @@ namespace monad::vm::compiler::native
 
         void lt(StackElemRef dst, StackElemRef src);
         void slt(StackElemRef dst, StackElemRef src);
-        void
-        cmp(StackElemRef dst, LocationType, StackElemRef src, LocationType);
 
         void byte_literal_ix(uint256_t const &ix, StackOffset src);
         void
         byte_general_reg_or_stack_offset_ix(StackElemRef ix, StackOffset src);
 
         template <typename... LiveSet>
-        void cmp_stack_elem_to_uint32(
-            StackElemRef, uint32_t, std::tuple<LiveSet...> const &);
+        void cmp_stack_elem_to_uint16(
+            StackElemRef, uint16_t, std::tuple<LiveSet...> const &);
 
         void signextend_literal_ix(uint256_t const &ix, StackElemRef src);
         template <typename... LiveSet>

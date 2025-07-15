@@ -402,40 +402,35 @@ namespace monad::vm::compiler::native
         at(top_index_) = std::move(e);
     }
 
-    bool Stack::negate_top_deferred_comparison()
+    StackElemRef Stack::negate_if_deferred_comparison(StackElemRef e)
     {
-        auto e = get(top_index_);
         auto &dc = deferred_comparison_;
         if (dc.stack_elem == e.get()) {
-            pop();
             if (dc.negated_stack_elem) {
                 auto i = dc.negated_stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(
                     i != dc.negated_stack_elem->stack_indices_.end());
-                push(at(*i));
+                return at(*i);
             }
             else {
                 auto d = new_stack_elem();
                 d->negated_deferred_comparison();
-                push(std::move(d));
+                return d;
             }
-            return true;
         }
         else if (dc.negated_stack_elem == e.get()) {
-            pop();
             if (dc.stack_elem) {
                 auto i = dc.stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(i != dc.stack_elem->stack_indices_.end());
-                push(at(*i));
+                return at(*i);
             }
             else {
                 auto d = new_stack_elem();
                 d->deferred_comparison();
-                push(std::move(d));
+                return d;
             }
-            return true;
         }
-        return false;
+        return StackElemRef{};
     }
 
     void Stack::push_literal(uint256_t const &x)

@@ -151,16 +151,28 @@ public:
     bool is_read_only() const;
 };
 
+// Key for the LRU cache that stores the root node of a trie.
+//
+// If root node is overwritten without changing version, a new root
+// is allocated with different offset. The same offset can be overwritten and
+// contain different nodes at different versions. Therefore the key is using
+// both offset and version.
+struct RootKey
+{
+    chunk_offset_t offset;
+    uint64_t version;
+
+    bool operator==(RootKey const &) const = default;
+};
+
 // The following are not threadsafe. Please use async get from the RODb owning
 // thread.
-
 struct AsyncContext
-
 {
     using inflight_root_t = unordered_dense_map<
         uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
-    using TrieRootCache = static_lru_cache<
-        chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
+    using TrieRootCache =
+        static_lru_cache<RootKey, std::shared_ptr<Node>, fnv1a_hash<RootKey>>;
 
     UpdateAux<> &aux;
     TrieRootCache root_cache;

@@ -1402,7 +1402,7 @@ uint64_t Db::get_history_length() const
 
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
-    , root_cache(lru_size, chunk_offset_t::invalid_value())
+    , root_cache(lru_size, RootKey{INVALID_OFFSET, INVALID_BLOCK_ID})
 {
 }
 
@@ -1469,9 +1469,11 @@ namespace detail
                 {
                     AsyncContext::TrieRootCache::ConstAccessor acc;
                     MONAD_ASSERT(
-                        sender->context.root_cache.find(acc, offset) == false);
+                        sender->context.root_cache.find(
+                            acc, RootKey{offset, sender->block_id}) == false);
                 }
-                sender->context.root_cache.insert(offset, sender->root);
+                sender->context.root_cache.insert(
+                    RootKey{offset, sender->block_id}, sender->root);
             }
             else {
                 sender->res_root = {
@@ -1532,7 +1534,7 @@ namespace detail
             chunk_offset_t const offset =
                 context.aux.get_root_offset_at_version(block_id);
             AsyncContext::TrieRootCache::ConstAccessor acc;
-            if (context.root_cache.find(acc, offset)) {
+            if (context.root_cache.find(acc, RootKey{offset, block_id})) {
                 // found in LRU - no IO necessary
                 root = acc->second->val;
                 res_root = {NodeCursor{*root.get()}, find_result::success};

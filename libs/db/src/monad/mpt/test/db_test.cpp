@@ -688,7 +688,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     ASSERT_NE(offset, INVALID_OFFSET);
 
     AsyncContext::TrieRootCache::ConstAccessor acc;
-    ASSERT_TRUE(ctx->root_cache.find(acc, offset));
+    ASSERT_TRUE(ctx->root_cache.find(acc, RootKey{offset, version}));
     auto root = acc->second->val;
     // MUST use traverse_blocking() to check the in memory nodes as they are.
     // The `Db::traverse()` API make a copy of traverse root which does not

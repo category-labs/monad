@@ -2435,6 +2435,25 @@ TEST(Emitter, signextend)
         rt, SIGNEXTEND, &Emitter::signextend, 31, {0, 0, 0, -1}, {0, 0, 0, -1});
     pure_bin_instr_test(
         rt, SIGNEXTEND, &Emitter::signextend, 32, {0, 0, 0, -1}, {0, 0, 0, -1});
+
+    uint256_t bits = {
+        0x5555555555555555,
+        0x5555555555555555,
+        0x5555555555555555,
+        0x5555555555555555}; // Alternating 0 and 1
+    for (size_t i = 0; i <= 32; i++) {
+        // 0x55 always has the sign bit off
+        pure_bin_instr_test(
+            rt, SIGNEXTEND, &Emitter::signextend, i, bits, signextend(i, bits));
+        // 0xAA (~0x55) always has the sign bit on
+        pure_bin_instr_test(
+            rt,
+            SIGNEXTEND,
+            &Emitter::signextend,
+            i,
+            ~bits,
+            signextend(i, ~bits));
+    }
 }
 
 TEST(Emitter, shl)

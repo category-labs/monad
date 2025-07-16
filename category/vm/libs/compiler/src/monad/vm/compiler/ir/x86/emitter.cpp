@@ -2534,10 +2534,18 @@ namespace monad::vm::compiler::native
         if (pre_dst == pre_src) {
             return stack_.alloc_literal({0});
         }
-        if (pre_dst->literal() && pre_src->literal()) {
-            auto const &x = pre_dst->literal()->value;
-            auto const &y = pre_src->literal()->value;
-            return stack_.alloc_literal({x ^ y});
+        if (pre_dst->literal()) {
+            if (pre_src->literal()) {
+                auto const &x = pre_dst->literal()->value;
+                auto const &y = pre_src->literal()->value;
+                return stack_.alloc_literal({x ^ y});
+            }
+            if (!pre_dst->literal()->value) {
+                return pre_src;
+            }
+        }
+        if (pre_src->literal() && !pre_src->literal()->value) {
+            return pre_dst;
         }
 
         discharge_deferred_comparison();
@@ -2548,8 +2556,8 @@ namespace monad::vm::compiler::native
                 std::move(pre_dst), std::move(pre_src), live);
 
         AVX_OR_GENERAL_BIN_INSTR(xor_, vpxor)
-        (dst, left, left_loc, right, right_loc, [](size_t, uint64_t) {
-            return false;
+        (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
+            return x == 0;
         });
 
         return dst;

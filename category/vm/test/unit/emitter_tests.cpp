@@ -2155,7 +2155,13 @@ TEST(Emitter, xor_)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, XOR, &Emitter::xor_, 1, 3, 2);
+    pure_bin_instr_test(rt, XOR, &Emitter::xor_, 3, 1, 2);
     pure_bin_instr_test(rt, XOR, &Emitter::xor_, 2, 1, 3);
+    pure_bin_instr_test(rt, XOR, &Emitter::xor_, 1, 2, 3);
+    pure_bin_instr_test(
+        rt, XOR, &Emitter::xor_, {0, 1, 1, 0}, {0, 0, 1, 0}, {0, 1, 0, 0});
+    pure_bin_instr_test(
+        rt, XOR, &Emitter::xor_, {0, 0, 1, 0}, {0, 1, 1, 0}, {0, 1, 0, 0});
     pure_bin_instr_test(
         rt,
         XOR,
@@ -2163,6 +2169,27 @@ TEST(Emitter, xor_)
         std::numeric_limits<uint256_t>::max(),
         std::numeric_limits<uint256_t>::max() - 1,
         1);
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        std::numeric_limits<uint256_t>::max() - 1,
+        std::numeric_limits<uint256_t>::max(),
+        1);
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        std::numeric_limits<uint256_t>::max(),
+        0,
+        std::numeric_limits<uint256_t>::max());
+    pure_bin_instr_test(
+        rt,
+        XOR,
+        &Emitter::xor_,
+        0,
+        std::numeric_limits<uint256_t>::max(),
+        std::numeric_limits<uint256_t>::max());
 }
 
 TEST(Emitter, xor_same)

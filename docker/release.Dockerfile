@@ -66,7 +66,7 @@ ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-  -DCMAKE_TOOLCHAIN_FILE:STRING=libs/core/toolchains/temp-strip-release.cmake \
+  -DCMAKE_TOOLCHAIN_FILE:STRING=category/core/toolchains/temp-strip-release.cmake \
   -DCMAKE_BUILD_TYPE:STRING=Release \
   -B build \
   -G Ninja
@@ -79,6 +79,6 @@ RUN VERBOSE=1 cmake \
 RUN --security=insecure CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
 
 FROM base as runner
-COPY --from=build /src/build/libs/db/monad_mpt /usr/local/bin/
+COPY --from=build /src/build/category/mpt/monad_mpt /usr/local/bin/
 COPY --from=build /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build /src/build/cmd/monad /usr/local/bin/

@@ -450,6 +450,37 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
 }
 
+static std::vector<evmc::address> get_precompile_addresses(evmc_revision rev)
+{
+    auto const num_precompiles = [rev]() -> uint8_t {
+        if (rev <= EVMC_SPURIOUS_DRAGON) {
+            return 4;
+        }
+        else if (rev <= EVMC_PETERSBURG) {
+            return 8;
+        }
+        else if (rev <= EVMC_SHANGHAI) {
+            return 9;
+        }
+        else if (rev == EVMC_CANCUN) {
+            return 10;
+        }
+        else if (rev == EVMC_PRAGUE) {
+            return 17;
+        }
+        else {
+            MONAD_VM_ASSERT(false);
+        }
+    }();
+
+    std::vector<evmc::address> addrs(num_precompiles, evmc::address{});
+    for (size_t i = 0; i < num_precompiles; ++i) {
+        addrs[i].bytes[19] = static_cast<uint8_t>(i + 1);
+    }
+
+    return addrs;
+}
+
 static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;
@@ -470,6 +501,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto monad_state = State{initial_state_};
 
     auto contract_addresses = std::vector<evmc::address>{};
+    auto const precompile_addresses = get_precompile_addresses(rev);
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
@@ -505,16 +537,15 @@ static void do_run(std::size_t const run_index, arguments const &args)
             assert_equal(evmone_state, monad_state);
 
             contract_addresses.push_back(a);
+
             break;
         }
 
         for (auto j = 0u; j < args.messages; ++j) {
-            auto const target =
-                monad::vm::fuzzing::uniform_sample(engine, contract_addresses);
             auto msg = monad::vm::fuzzing::generate_message(
                 focus,
                 engine,
-                target,
+                precompile_addresses,
                 contract_addresses,
                 {genesis_address},
                 [&](auto const &address) {

@@ -788,7 +788,7 @@ namespace monad::vm::fuzzing
             }
 
             // If there is only one or zero valid jump destinations,
-            // then we will lilely fail due to invalid jump destination
+            // then we will likely fail due to invalid jump destination
             // or due to generating a loop. So in this case we will generate a
             // return instead of a jump(i) instruction with 90% probability.
             auto const return_prob = valid_jumpdests.size() > 1 ? 0 : 0.9;
@@ -940,7 +940,8 @@ namespace monad::vm::fuzzing
      */
     template <typename Engine, typename LookupFunc>
     message_ptr generate_message(
-        GeneratorFocus focus, Engine &eng, evmc::address const &target,
+        GeneratorFocus focus, Engine &eng,
+        std::vector<evmc::address> const &precompile_addresses,
         std::vector<evmc::address> const &known_addresses,
         std::vector<evmc::address> const &known_eoas,
         LookupFunc address_lookup) noexcept
@@ -957,6 +958,12 @@ namespace monad::vm::fuzzing
             std::uniform_int_distribution<decltype(evmc_message::depth)>(
                 0, 1023)(eng);
 
+        auto const target = discrete_choice<evmc::address>(
+            eng,
+            [&](auto &g) { return uniform_sample(g, known_addresses); },
+            Choice(0.005, [&](auto &g) {
+                return uniform_sample(g, precompile_addresses);
+            }));
         auto const recipient =
             (kind == EVMC_CALL)
                 ? target
@@ -965,7 +972,10 @@ namespace monad::vm::fuzzing
                       [&](auto &g) {
                           return uniform_sample(g, known_addresses);
                       },
-                      Choice(0.01, [&](auto &g) { return random_address(g); }));
+                      Choice(0.001, [&](auto &g) { return random_address(g); }),
+                      Choice(0.005, [&](auto &g) {
+                          return uniform_sample(g, precompile_addresses);
+                      }));
 
         auto const eoa_prob = known_eoas.empty() ? 0.0 : 0.5;
         auto const sender = discrete_choice<evmc::address>(

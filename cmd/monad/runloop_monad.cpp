@@ -337,8 +337,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         if (to_finalize.empty()) {
             id = head_pointer_to_id(proposed_head);
             if (MONAD_LIKELY(id != bytes32_t{})) {
-                do {
+                for (;;) {
                     header = read_header(id, header_dir);
+                    if (header.seqno <= last_finalized_by_execution) {
+                        break;
+                    }
                     auto const parent_id = header.parent_id();
                     if (header.seqno <= end_block_num &&
                         !has_executed(raw_db, header, id)) {
@@ -347,22 +350,26 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     }
                     id = parent_id;
                 }
-                while (header.seqno - 1 > last_finalized_by_execution);
 
                 // Before executing this proposal chain, verify we are on the
-                // canonical chain. Note that this condition doesn't hold when
-                // no blocks have been finalized because consensus starts at
-                // block 1 with a parent_id of 0x0, but will work after the
+                // latest canonical chain. Note that this condition doesn't hold
+                // when no blocks have been finalized because consensus starts
+                // at block 1 with a parent_id of 0x0, but will work after the
                 // finalized_head points to a block with seqno >= 1.
                 if (!to_execute.empty()) {
+                    auto const &first_header = to_execute.front().header;
+                    MONAD_ASSERT(
+                        first_header.seqno - 1 == last_finalized_by_execution);
                     bool const on_canonical_chain =
                         query_consensus_header(
-                            raw_db, header.seqno - 1, finalized_nibbles)
-                            .transform(
-                                [&header](byte_string const &header_data) {
-                                    return to_bytes(blake3(header_data)) ==
-                                           header.parent_id();
-                                })
+                            raw_db,
+                            last_finalized_by_execution,
+                            finalized_nibbles)
+                            .transform([&first_header](
+                                           byte_string const &header_data) {
+                                return to_bytes(blake3(header_data)) ==
+                                       first_header.parent_id();
+                            })
                             .value_or(false);
                     if (MONAD_UNLIKELY(!on_canonical_chain)) {
                         to_execute.clear();

@@ -3692,12 +3692,57 @@ namespace monad::vm::compiler::native
         }
     }
 
+    asmjit::x86::Gp cast_reg_to_size(asmjit::x86::Gpq const &gpq, size_t ix)
+    {
+        switch (ix) {
+        case 1: return gpq.r8();
+        case 2: return gpq.r16();
+        case 4: return gpq.r32();
+        case 8: return gpq.r64();
+        default: MONAD_VM_DEBUG_ASSERT(false);
+        }
+    }
+
     void Emitter::signextend_literal_ix(uint256_t const &ix, StackElemRef src)
     {
         MONAD_VM_DEBUG_ASSERT(!src->literal().has_value());
 
         if (ix >= 31) {
             return stack_.push(std::move(src));
+        }
+
+        // The signextend instruction supports all integer size up to 32 bytes,
+        // but the sizes that are powers of two are probably much more common
+        // than everything else and are easier to map to x86 instructions so we
+        // have a fast path for them.
+        if (src->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*src->general_reg());
+            auto const sign_reg = static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
+            auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8; // Offset in the register
+
+            // First we sign extend the register with the sign bit
+            if (ix == 8) {
+                // Nothing to do!
+            } else if ((ix == 1 || ix == 2 || ix == 4 || ix == 16)) {
+                // If ix is a power of two, we can use movsx to sign-extend
+                as_.movsx(gpq[sign_reg].r64(), cast_reg_to_size(gpq[sign_reg], ix[0] >= 8 ? 8 : ix[0]));
+            } else {
+                // Otherwise we use a left shift followed by right arithmetic shift to sign-extend
+                as_.shl(gpq[sign_reg].r64(), 64 - (sign_reg_offset * 8));
+                as_.sar(gpq[sign_reg].r64(), 64 - (sign_reg_offset * 8));
+            }
+
+            // Then propagate the sign bit to the other registers.
+            // SAR copies the sign bit to the other bits. It's repeated for each
+            // register but it could also be done once on gpq[sign_reg + 1] and
+            // then copied to the others, at the cost of creating dependencies
+            // between registers.
+            for (size_t i = sign_reg + 1; i < 4; ++i) {
+                as_.mov(gpq[i].r64(), gpq[sign_reg].r64());
+                as_.sar(gpq[i].r64(), 63); // Arithmetic right shift to put sign bit everywhere
+            }
+            stack_.push(std::move(src));
+            return;
         }
 
         int32_t const byte_ix = static_cast<int32_t>(ix);

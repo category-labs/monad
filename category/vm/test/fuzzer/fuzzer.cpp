@@ -370,14 +370,62 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
+static uint8_t num_precompiles(evmc_revision rev)
+{
+    if (rev <= EVMC_SPURIOUS_DRAGON) {
+        return 4;
+    }
+    else if (rev <= EVMC_PETERSBURG) {
+        return 8;
+    }
+    else if (rev <= EVMC_SHANGHAI) {
+        return 9;
+    }
+    else if (rev == EVMC_CANCUN) {
+        return 10;
+    }
+    else if (rev == EVMC_PRAGUE) {
+        return 17;
+    }
+    else {
+        MONAD_VM_ASSERT(false);
+    }
+}
+
+static std::vector<evmc::address> get_precompile_addresses(evmc_revision rev)
+{
+    size_t const n = static_cast<size_t>(num_precompiles(rev));
+    std::vector<evmc::address> addrs(n, evmc::address{});
+    for (uint8_t i = 0; i < n; ++i) {
+        addrs[i].bytes[sizeof(evmc::address) - 1] = i + 1;
+    }
+
+    return addrs;
+}
+
+static bool is_precompile(evmc_revision const rev, evmc::address const &addr)
+{
+    for (size_t i = 0; i < sizeof(evmc::address) - 1; i++) {
+        if (addr.bytes[i] != 0x00) {
+            return false;
+        }
+    }
+    auto const last_byte = addr.bytes[sizeof(evmc::address) - 1];
+    return last_byte != 0x00 && last_byte <= (num_precompiles(rev) + 1);
+}
+
 static evmc_status_code fuzz_iteration(
     evmc_message const &msg, evmc_revision const rev, State &evmone_state,
     evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
     for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
+        if (!is_precompile(rev, msg.recipient)) {
+            state.get_or_insert(msg.recipient);
+        }
+        // Sender is always sampled from known non-precompile addresses
+        // and known eoas.
         state.get_or_insert(msg.sender);
-        state.get_or_insert(msg.recipient);
     }
 
     auto const evmone_checkpoint = evmone_state.checkpoint();
@@ -470,6 +518,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto monad_state = State{initial_state_};
 
     auto contract_addresses = std::vector<evmc::address>{};
+    auto const precompile_addresses = get_precompile_addresses(rev);
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
@@ -505,16 +554,15 @@ static void do_run(std::size_t const run_index, arguments const &args)
             assert_equal(evmone_state, monad_state);
 
             contract_addresses.push_back(a);
+
             break;
         }
 
         for (auto j = 0u; j < args.messages; ++j) {
-            auto const target =
-                monad::vm::fuzzing::uniform_sample(engine, contract_addresses);
             auto msg = monad::vm::fuzzing::generate_message(
                 focus,
                 engine,
-                target,
+                precompile_addresses,
                 contract_addresses,
                 {genesis_address},
                 [&](auto const &address) {

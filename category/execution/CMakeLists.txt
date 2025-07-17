@@ -46,6 +46,8 @@ add_library(
   "ethereum/core/block.hpp"
   "ethereum/core/eth_ctypes.h"
   "ethereum/core/contract/big_endian.hpp"
+  "ethereum/core/contract/storage_array.hpp"
+  "ethereum/core/contract/storage_variable.hpp"
   "ethereum/core/fmt/account_fmt.hpp"
   "ethereum/core/fmt/address_fmt.hpp"
   "ethereum/core/fmt/block_fmt.hpp"

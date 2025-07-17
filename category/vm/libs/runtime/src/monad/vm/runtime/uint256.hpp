@@ -225,19 +225,6 @@ namespace monad::vm::runtime
         return result;
     }
 
-    /**
-     * Multiword multiplication (used for mulmod and Barrett division)
-     */
-    /*
-    template <size_t M, size_t N>
-    [[gnu::always_inline]] [[gnu::used]]
-    inline constexpr words_t<M + N>
-    long_mul(words_t<M> const &u, words_t<N> const &v) noexcept
-    {
-        return truncating_mul<M + N>(u, v);
-    }
-    */
-
 #define LO(dw) (static_cast<uint64_t>((dw)))
 #define HI(dw) (static_cast<uint64_t>((dw) >> 64))
 
@@ -247,11 +234,16 @@ namespace monad::vm::runtime
     truncating_mul_prodscan(words_t<M> const & u, words_t<N> const &v) noexcept
     {
         words_t<R> result;
-        uint128_t carry = 0;
+        //uint128_t carry = 0;
+        uint64_t c0 = 0;
+        uint64_t c1 = 0;
 #pragma GCC unroll(R)
         for (size_t k = 0; k < R - 1; k++) {
-            uint64_t sum = LO(carry);
-            carry = HI(carry);
+            //uint64_t sum = LO(carry);
+            //carry = HI(carry);
+            uint64_t sum = c0;
+            c0 = c1;
+            c1 = 0;
 #pragma GCC unroll(N)
             for (size_t j = 0; j < N; j++) {
                 int i0 = static_cast<int>(k) - static_cast<int>(j);
@@ -261,15 +253,18 @@ namespace monad::vm::runtime
                 size_t i = static_cast<size_t>(i0);
                 auto prod = mul(v[j], u[i]);
 
-                unsigned long long c1;
-                sum = __builtin_addcll(LO(prod), sum, 0, &c1);
-                carry += HI(prod) + c1;
+                unsigned long long cc;
+                sum = __builtin_addcll(LO(prod), sum, 0, &cc);
+                c0 = __builtin_addcll(HI(prod), c0, cc, &cc);
+                c1 = __builtin_addcll(0, c1, cc, &cc);
+                //carry += HI(prod) + c1;
             }
             result[k] = sum;
         }
         // No need to propagate a carry for the last iteration
         size_t k = R - 1;
-        uint64_t sum = LO(carry);
+        //uint64_t sum = LO(carry);
+        uint64_t sum = c0;
 #pragma GCC unroll(N)
         for (size_t j = 0; j < N; j++) {
             int i0 = static_cast<int>(k) - static_cast<int>(j);
@@ -291,10 +286,10 @@ namespace monad::vm::runtime
     truncating_mul(words_t<M> const &u, words_t<N> const &v) noexcept
     {
         // TODO: fine-tune this
-        if constexpr (R <= 8) {
-            return truncating_mul_prodscan<R>(u, v);
+        if constexpr (R > 16) {
+            return truncating_mul_opscan<R>(u, v);
         } else {
-        return truncating_mul_opscan<R>(u, v);
+            return truncating_mul_prodscan<R>(u, v);
         }
     }
 
@@ -1613,7 +1608,7 @@ namespace monad::vm::runtime
             static constexpr size_t OUTPUT_WORDS = _result_words();
 
             template <size_t R>
-            [[gnu::always_inline]] [[gnu::used]]
+            [[gnu::always_inline]]
             inline words_t<R>
             mul_unshift(words_t<INPUT_WORDS> const &x) const noexcept
                 requires(R <= OUTPUT_WORDS)
@@ -1833,12 +1828,12 @@ namespace monad::vm::runtime
             barrett::mulmod_reciprocal const &rec)
         {
             // Maybe product scanning is faster?
-            words_t<8> xy = mul(x.as_words(), y.as_words());
+            words_t<8> xy = truncating_mul_opscan<8>(x.as_words(), y.as_words());
 
-            auto prod = truncating_mul<8 + 5>(xy, rec.value);
+            auto prod = truncating_mul_opscan<8 + 5>(xy, rec.value);
             words_t<5> q_hat{prod[8], prod[9], prod[10], prod[11], prod[12]};
 
-            words_t<5> qd = truncating_mul<5>(q_hat, d.as_words());
+            words_t<5> qd = truncating_mul_opscan<5>(q_hat, d.as_words());
             auto [r_hat_0, r_carry_0] = subb_truncating<5>(xy, qd);
             auto [r_hat_1, r_carry_1] =
                 subb_truncating<4>(r_hat_0, d.as_words());
@@ -1850,6 +1845,7 @@ namespace monad::vm::runtime
             return uint256_t{result};
         }
 
+        /*
         [[gnu::always_inline]] [[gnu::used]]
         inline uint256_t mulmod_direct(
             uint256_t const &x, uint256_t const &y, uint256_t const &d,
@@ -1867,6 +1863,7 @@ namespace monad::vm::runtime
                 subb_truncating<4>(r_hat_0, d.as_words());
             return uint256_t{r_hat_1};
         }
+        */
 
         [[gnu::always_inline]] [[gnu::used]]
         inline uint256_t mulmod(

@@ -25,6 +25,7 @@
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/delegator.hpp>
+#include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
 
 #include <evmc/evmc.h>
@@ -347,6 +348,159 @@ public:
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
     } vars;
+
+private:
+    /////////////
+    // Events //
+    /////////////
+
+    // event ValidatorCreated(
+    //     uint64  indexed valId,
+    //     address indexed auth_delegator);
+    void
+    emit_validator_created_event(u64_be val_id, Address const &auth_delegator);
+
+    // event ValidatorStatusChanged(
+    //     uint64  indexed valId,
+    //     address indexed auth_delegator,
+    //     uint64          flags);
+    void emit_validator_status_changed_event(u64_be val_id, u64_be flags);
+
+    // event Delegate(
+    //     uint64  indexed valId,
+    //     address indexed delegator,
+    //     uint256         amount,
+    //     uint64          activationEpoch);
+    void emit_delegation_event(
+        u64_be val_id, Address const &delegator, u256_be const &amount,
+        u64_be activation_epoch);
+
+    // event Undelegate(
+    //      uint64  indexed valId,
+    //      address indexed delegator,
+    //      uint8           withdrawal_id,
+    //      uint256         amount,
+    //      uint64          activationEpoch);
+    void emit_undelegate_event(
+        u64_be val_id, Address const &delegator, uint8_t withdrawal_id,
+        u256_be const &amount, u64_be activation_epoch);
+
+    // event Withdraw(
+    //      uint64  indexed valId,
+    //      address indexed delegator,
+    //      uint8           withdrawal_id,
+    //      uint256         amount,
+    //      uint64          withdrawEpoch);
+    void emit_withdraw_event(
+        u64_be val_id, Address const &delegator, uint8_t withdrawal_id,
+        u256_be const &amount);
+
+    // event ClaimRewards(
+    // uint256 indexed valId,
+    // address indexed delegatorAddress
+    // uint256         amount);
+    void emit_claim_rewards_event(
+        u64_be val_id, Address const &delegator, u256_be const &amount);
+
+    /////////////
+    // Helpers //
+    /////////////
+
+    // Mint tokens in the staking contract. Done in reward.
+    void mint_tokens(uint256_t const &);
+
+    // Send tokens from the staking contract to a delegator. Done in claim and
+    // withdraw.
+    void send_tokens(Address const &, uint256_t const &);
+
+    // Sets an existence bit in state that `val_id` is present in the set.
+    // Returns `true` if the validator is already in the set. Called in
+    // delegate.
+    bool add_to_valset(u64_be const val_id);
+
+    // Removes the existence bit. Called in the snapshot syscall.
+    void remove_from_valset(u64_be const val_id);
+
+    Result<void> reward_invariant(ValExecution &, uint256_t const &);
+
+    // increments a future accumulator value for a validator.  this value is
+    // overriden on epoch change when the accumulator for that epoch is
+    // complete. Used by delegate and undelegate.
+    void increment_accumulator_refcount(u64_be const val_id);
+
+    // reads an future accumulator from state and decrements the refcount.
+    u256_be decrement_accumulator_refcount(u64_be epoch, u64_be const val_id);
+
+    // Returns the epoch when the delegation or undelegation will activate.
+    uint64_t get_activation_epoch() const noexcept;
+
+    // Checks if a delegation or undelegation are ready
+    bool is_epoch_active(uint64_t) const noexcept;
+
+    // Compounds a delegation into the current stake and computes the rewards
+    // for the time that stake was active, then folds that stake in the active
+    // delegator stake.
+    Result<uint256_t> apply_compound(u64_be, Delegator &);
+
+    // Compounds delegations before and after the boundary, and computes the
+    // rewards over those windows. The deltas are then folded into the active
+    // stake.
+    Result<void> pull_delegator_up_to_date(u64_be, Delegator &);
+
+    // helper function for delegate. used by three compiles:
+    //  1. add_validator
+    //  2. delegate
+    //  1. compound
+    Result<void> delegate(u64_be, uint256_t const &, Address const &);
+
+    // Helper function for getting a valset. used by the three valset getters.
+    Result<byte_string>
+    get_valset(byte_string_view, StorageArray<u64_be> const &);
+
+public:
+    using PrecompileFunc = Result<byte_string> (StakingContract::*)(
+        byte_string_view, evmc_address const &, evmc_bytes32 const &);
+
+    /////////////////
+    // Precompiles //
+    /////////////////
+    static std::pair<PrecompileFunc, uint64_t>
+    precompile_dispatch(byte_string_view &);
+
+    Result<byte_string> precompile_get_validator(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_delegator(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_withdrawal_request(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_consensus_valset(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_snapshot_valset(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_execution_valset(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+
+    Result<byte_string> precompile_fallback(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_add_validator(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_delegate(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_undelegate(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_compound(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_withdraw(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_claim_rewards(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+
+    ////////////////////
+    //  System Calls  //
+    ////////////////////
+    Result<void> syscall_on_epoch_change(byte_string_view);
+    Result<void> syscall_reward(byte_string_view, uint256_t const &);
+    Result<void> syscall_snapshot(byte_string_view);
 };
 
 MONAD_STAKING_NAMESPACE_END

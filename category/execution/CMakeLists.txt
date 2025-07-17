@@ -205,9 +205,15 @@ add_library(
   "monad/staking/config.hpp"
   "monad/staking/staking_contract.cpp"
   "monad/staking/staking_contract.hpp"
+  "monad/staking/util/bls.cpp"
+  "monad/staking/util/bls.hpp"
   "monad/staking/util/constants.hpp"
   "monad/staking/util/delegator.cpp"
   "monad/staking/util/delegator.hpp"
+  "monad/staking/util/secp256k1.cpp"
+  "monad/staking/util/secp256k1.hpp"
+  "monad/staking/util/staking_error.cpp"
+  "monad/staking/util/staking_error.hpp"
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
   # monad/state2
@@ -231,7 +237,7 @@ target_link_libraries(
   PUBLIC monad-vm
   PUBLIC monad_core
   PUBLIC monad_trie
-  PRIVATE blst::blst
+  PUBLIC blst::blst
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PUBLIC c-kzg-4844

@@ -38,6 +38,7 @@ inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{50'000'000 * MON};
 inline constexpr uint256_t UNIT_BIAS{100000000000000000000000000000_u256};
 
 inline constexpr Address STAKING_CA{0x1000};
+inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};
 inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
 
 enum

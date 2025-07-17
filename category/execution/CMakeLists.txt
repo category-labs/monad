@@ -195,6 +195,15 @@ add_library(
   # monad/execution
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
+  # monad/staking
+  "monad/staking/config.hpp"
+  "monad/staking/staking_contract.cpp"
+  "monad/staking/staking_contract.hpp"
+  "monad/staking/util/constants.hpp"
+  "monad/staking/util/delegator.cpp"
+  "monad/staking/util/delegator.hpp"
+  "monad/staking/util/val_execution.cpp"
+  "monad/staking/util/val_execution.hpp"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

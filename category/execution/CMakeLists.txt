@@ -45,6 +45,7 @@ add_library(
   "ethereum/core/base_ctypes.h"
   "ethereum/core/block.hpp"
   "ethereum/core/eth_ctypes.h"
+  "ethereum/core/contract/abi_encode.hpp"
   "ethereum/core/contract/big_endian.hpp"
   "ethereum/core/contract/storage_array.hpp"
   "ethereum/core/contract/storage_variable.hpp"

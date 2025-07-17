@@ -53,7 +53,7 @@
 #include <unistd.h>
 
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
-#include "concurrentqueue.h"
+#include <concurrentqueue.h>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

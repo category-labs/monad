@@ -222,6 +222,7 @@ int main(int const argc, char const *argv[])
                 mpt::OnDiskDbConfig{
                     .append = true,
                     .compaction = !no_compaction,
+                    .rewind_to_latest_finalized = true,
                     .rd_buffers = 8192,
                     .wr_buffers = 32,
                     .uring_entries = 128,

@@ -6,7 +6,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -152,11 +151,5 @@ std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
 std::optional<BlockHeader>
 read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
-
-std::optional<byte_string> query_consensus_header(
-    mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
-
-std::optional<MonadConsensusBlockHeader> read_consensus_header(
-    mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
 
 MONAD_NAMESPACE_END

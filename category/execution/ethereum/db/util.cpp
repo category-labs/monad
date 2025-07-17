@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
-#include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -872,28 +871,6 @@ std::optional<BlockHeader> read_eth_header(
     auto const decoded = rlp::decode_block_header(view);
     MONAD_ASSERT(decoded.has_value());
     return decoded.value();
-}
-
-std::optional<byte_string> query_consensus_header(
-    mpt::Db const &db, uint64_t const block, mpt::NibblesView const prefix)
-{
-    auto const query_res = db.get(mpt::concat(prefix, BFT_BLOCK_NIBBLE), block);
-    if (MONAD_UNLIKELY(!query_res.has_value())) {
-        return std::nullopt;
-    }
-    return byte_string{query_res.value()};
-}
-
-std::optional<MonadConsensusBlockHeader> read_consensus_header(
-    mpt::Db const &db, uint64_t const block, mpt::NibblesView const prefix)
-{
-    return query_consensus_header(db, block, prefix)
-        .transform([](byte_string const &data) {
-            byte_string_view view{data};
-            auto const decoded = rlp::decode_consensus_block_header(view);
-            MONAD_ASSERT(decoded.has_value());
-            return decoded.value();
-        });
 }
 
 MONAD_NAMESPACE_END

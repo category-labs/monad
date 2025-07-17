@@ -67,38 +67,12 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
-void init_block_hash_chain_proposals(
-    mpt::Db &db, BlockHashChain &block_hash_chain,
-    uint64_t const start_block_num)
-{
-    uint64_t const end_block_num = db.get_latest_version();
-    for (uint64_t b = start_block_num; b <= end_block_num; ++b) {
-        for (bytes32_t const &id : get_proposal_block_ids(db, b)) {
-            auto const consensus_header =
-                read_consensus_header(db, b, proposal_prefix(id));
-            MONAD_ASSERT_PRINTF(
-                consensus_header.has_value(),
-                "Could not decode consensus block at %lu block_id %s",
-                b,
-                fmt::format("{}", id).c_str());
-            auto const encoded_eth_header =
-                db.get(mpt::concat(proposal_prefix(id), BLOCKHEADER_NIBBLE), b);
-            MONAD_ASSERT(encoded_eth_header.has_value());
-            block_hash_chain.propose(
-                to_bytes(keccak256(encoded_eth_header.value())),
-                b,
-                id,
-                consensus_header.value().parent_id());
-        }
-    }
-}
-
 bool has_executed(
     mpt::Db const &db, MonadConsensusBlockHeader const &header,
     bytes32_t const &block_id)
 {
     auto const prefix = proposal_prefix(block_id);
-    return header == read_consensus_header(db, header.seqno, prefix);
+    return db.find(prefix, header.seqno).has_value();
 }
 
 bool validate_delayed_execution_results(
@@ -262,7 +236,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = finalized_block_num;
     BlockHashChain block_hash_chain(block_hash_buffer);
-    init_block_hash_chain_proposals(raw_db, block_hash_chain, start_block_num);
 
     auto const body_dir = ledger_dir / "bodies";
     auto const header_dir = ledger_dir / "headers";
@@ -287,6 +260,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
     std::deque<ToExecute> to_execute;
     std::deque<ToFinalize> to_finalize;
+    bytes32_t last_finalized_block_id = NULL_HASH_BLAKE3;
 
     MONAD_ASSERT(
         raw_db.get_latest_finalized_version() != mpt::INVALID_BLOCK_NUM);
@@ -357,21 +331,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 // at block 1 with a parent_id of 0x0, but will work after the
                 // finalized_head points to a block with seqno >= 1.
                 if (!to_execute.empty()) {
-                    auto const &first_header = to_execute.front().header;
-                    MONAD_ASSERT(
-                        first_header.seqno - 1 == last_finalized_by_execution);
-                    bool const on_canonical_chain =
-                        query_consensus_header(
-                            raw_db,
-                            last_finalized_by_execution,
-                            finalized_nibbles)
-                            .transform([&first_header](
-                                           byte_string const &header_data) {
-                                return to_bytes(blake3(header_data)) ==
-                                       first_header.parent_id();
-                            })
-                            .value_or(false);
-                    if (MONAD_UNLIKELY(!on_canonical_chain)) {
+                    auto const &hdr = to_execute.front().header;
+                    MONAD_ASSERT(hdr.seqno - 1 == last_finalized_by_execution);
+                    if (MONAD_UNLIKELY(
+                            last_finalized_block_id != hdr.parent_id())) {
                         to_execute.clear();
                     }
                 }
@@ -438,6 +401,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 db.update_verified_block(verified_block);
             }
             finalized_block_num = block;
+            last_finalized_block_id = block_id;
         }
     }
 

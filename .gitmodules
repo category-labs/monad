@@ -1,3 +1,6 @@
+[submodule "third_party/concurrentqueue"]
+	path = third_party/concurrentqueue
+	url = https://github.com/cameron314/concurrentqueue
 [submodule "third_party/ethereum-tests"]
 	path = third_party/ethereum-tests
 	url = https://github.com/ethereum/tests

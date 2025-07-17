@@ -67,6 +67,9 @@ add_subdirectory(third_party/BLAKE3/c)
 # cli11
 find_package(CLI11 REQUIRED)
 
+# concurrentqueue
+add_subdirectory("third_party/concurrentqueue")
+
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")

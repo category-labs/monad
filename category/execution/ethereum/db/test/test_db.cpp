@@ -337,8 +337,8 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 
     std::set<bytes32_t> block_ids;
     tdb.set_block_and_prefix(9); // block 9 finalized
-    auto const [header0, block_id0] =
-        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 0);
+    BlockHeader const header0{.number = 10};
+    bytes32_t const block_id0{header0.number};
     block_ids.emplace(block_id0);
     tdb.commit(StateDeltas{}, Code{}, block_id0, header0);
     {
@@ -346,8 +346,8 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
         EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
     tdb.set_block_and_prefix(9);
-    auto const [header1, block_id1] =
-        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 1);
+    BlockHeader const header1{.number = 10};
+    bytes32_t const block_id1{header1.number};
     block_ids.emplace(block_id1);
     tdb.commit(StateDeltas{}, Code{}, block_id1, header1);
     {
@@ -356,8 +356,8 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
     }
 
     tdb.set_block_and_prefix(9);
-    auto const [header2, block_id2] =
-        consensus_header_and_id_from_eth_header(BlockHeader{.number = 10}, 2);
+    BlockHeader const header2{.number = 10};
+    bytes32_t const block_id2{header2.number};
     block_ids.emplace(block_id2);
     tdb.commit(StateDeltas{}, Code{}, block_id2, header2);
 
@@ -946,8 +946,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         call_frames.emplace_back(std::move(result.call_frames));
     }
     auto const &transactions = block.value().transactions;
-    auto const [header, block_id] =
-        consensus_header_and_id_from_eth_header(BlockHeader{.number = 1});
+    BlockHeader const header{.number = 1};
+    bytes32_t const block_id{header.number};
     bs.commit(
         block_id,
         header,
@@ -1061,8 +1061,8 @@ TYPED_TEST(DBTest, call_frames_refund)
     }
 
     auto const &transactions = block.value().transactions;
-    auto const [header, block_id] =
-        consensus_header_and_id_from_eth_header(block.value().header);
+    BlockHeader const header = block.value().header;
+    bytes32_t const block_id{header.number};
     bs.commit(
         block_id,
         header,

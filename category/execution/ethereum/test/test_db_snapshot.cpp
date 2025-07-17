@@ -81,10 +81,9 @@ TEST(DbBinarySnapshot, Basic)
             code_delta.emplace(hash, icode);
         }
         TrieDb tdb{db};
-        auto const [consensus_header, block_id] =
-            consensus_header_and_id_from_eth_header(BlockHeader{.number = 100});
-        tdb.commit(deltas, code_delta, block_id, consensus_header);
-        tdb.finalize(100, block_id);
+        tdb.commit(
+            deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
+        tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
         root = tdb.state_root();
     }

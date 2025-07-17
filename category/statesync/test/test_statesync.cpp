@@ -208,9 +208,7 @@ TEST_F(StateSyncFixture, sync_from_latest)
         load_db(tdb, N);
         // commit some proposal to client db
         tdb.set_block_and_prefix(N);
-        auto const [header, block_id] =
-            consensus_header_and_id_from_eth_header({.number = N + 1});
-        tdb.commit({}, {}, block_id, header);
+        tdb.commit({}, {}, bytes32_t{N + 1}, BlockHeader{.number = N + 1});
         init();
     }
     handle_target(
@@ -289,9 +287,7 @@ TEST_F(StateSyncFixture, sync_from_some)
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
-        auto const [header, block_id] =
-            consensus_header_and_id_from_eth_header({.number = 1}, 0);
-        tdb.commit({}, {}, block_id, header);
+        tdb.commit({}, {}, NULL_HASH_BLAKE3, BlockHeader{.number = 1});
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
@@ -484,8 +480,6 @@ TEST_F(StateSyncFixture, deletion_proposal)
         sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
     // delete ADDR1 on one fork
-    auto const [header_1, block_id_1] =
-        consensus_header_and_id_from_eth_header({.number = 1}, 1);
     {
         constexpr auto ADDR1 =
             0x000d836201318ec6899a67540690382780743280_address;
@@ -495,12 +489,10 @@ TEST_F(StateSyncFixture, deletion_proposal)
         sctx.commit(
             StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
             Code{},
-            block_id_1,
-            header_1);
+            bytes32_t{1},
+            BlockHeader{.number = 1});
     }
     // delete ADDR2 on another
-    auto const [header_2, block_id_2] =
-        consensus_header_and_id_from_eth_header({.number = 1}, 2);
     {
         constexpr auto ADDR2 =
             0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
@@ -510,15 +502,15 @@ TEST_F(StateSyncFixture, deletion_proposal)
         sctx.commit(
             StateDeltas{{ADDR2, {.account = {acct, std::nullopt}}}},
             Code{},
-            block_id_2,
-            header_2);
+            bytes32_t{2},
+            BlockHeader{.number = 1});
     }
-    sctx.finalize(1, block_id_2);
+    sctx.finalize(1, bytes32_t{2});
 
-    sctx.set_block_and_prefix(1, block_id_1);
+    sctx.set_block_and_prefix(1, bytes32_t{1});
     auto const bad_header = sctx.read_eth_header();
 
-    sctx.set_block_and_prefix(1, block_id_2);
+    sctx.set_block_and_prefix(1, bytes32_t{2});
     auto const finalized_header = sctx.read_eth_header();
 
     EXPECT_NE(finalized_header.state_root, bad_header.state_root);
@@ -636,9 +628,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         TrieDb tdb{db};
         load_header(db, BlockHeader{.number = 0});
         for (uint64_t n = 1; n <= 249; ++n) {
-            auto const [header, block_id] =
-                consensus_header_and_id_from_eth_header({.number = n});
-            tdb.commit({}, {}, block_id, header);
+            tdb.commit({}, {}, bytes32_t{n}, BlockHeader{.number = n});
         }
     }
 

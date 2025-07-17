@@ -290,10 +290,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
 
     BlockHeader hdr{.number = 0};
     {
-        auto const [consensus_header, block_id] =
-            consensus_header_and_id_from_eth_header(hdr);
-        sctx->commit(StateDeltas{}, Code{}, block_id, consensus_header);
-        sctx->finalize(0, block_id);
+        sctx->commit(
+            StateDeltas{}, Code{}, bytes32_t{0}, BlockHeader{.number = 0});
+        sctx->finalize(0, bytes32_t{0});
     }
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;
@@ -326,10 +325,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         hdr.number = stdb.get_block_number() + 1;
         MONAD_ASSERT(hdr.number > 0);
         sctx->set_block_and_prefix(hdr.number - 1);
-        auto const [consensus_header, block_id] =
-            consensus_header_and_id_from_eth_header(hdr);
-        sctx->commit(deltas, {}, block_id, consensus_header);
-        sctx->finalize(hdr.number, block_id);
+        sctx->commit(deltas, {}, bytes32_t{hdr.number}, hdr);
+        sctx->finalize(hdr.number, bytes32_t{hdr.number});
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {

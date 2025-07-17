@@ -156,7 +156,6 @@ add_library(
   "monad/chain/monad_testnet2.hpp"
   "monad/chain/monad_testnet2_alloc.hpp"
   # monad/core
-  "monad/core/monad_block.cpp"
   "monad/core/monad_block.hpp"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"

@@ -100,7 +100,7 @@ public:
 
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &,
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
+        BlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},

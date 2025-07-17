@@ -17,7 +17,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
 
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
@@ -112,10 +111,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 return TransactionError::MissingSender;
             }
         }
-        // Ethereum: Each block executes on top of its parent proposal, except
-        // for the first block, which executes on the last finalized state. For
-        // every block, commit a proposal of round = block_number and block_id =
-        // blake3(consensus_header), then immediately finalize the proposal.
         db.set_block_and_prefix(block.header.number - 1, parent_block_id);
         BlockState block_state(db, vm);
         BlockMetrics block_metrics;
@@ -141,11 +136,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         block_state.log_debug();
         auto const commit_begin = std::chrono::steady_clock::now();
-        auto const [consensus_header, block_id] =
-            consensus_header_and_id_from_eth_header(block.header);
         block_state.commit(
-            block_id,
-            consensus_header,
+            bytes32_t{block.header.number},
+            block.header,
             receipts,
             call_frames,
             senders,
@@ -159,7 +152,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         BOOST_OUTCOME_TRY(
             chain.validate_output_header(block.header, output_header));
 
-        db.finalize(block.header.number, block_id);
+        db.finalize(block.header.number, bytes32_t{block.header.number});
         db.update_verified_block(block.header.number);
 
         auto const h =
@@ -214,8 +207,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             batch_gas = 0;
             batch_begin = std::chrono::steady_clock::now();
         }
+        parent_block_id = bytes32_t{block_num};
         ++block_num;
-        parent_block_id = block_id;
     }
     if (batch_num_blocks > 0) {
         log_tps(

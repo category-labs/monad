@@ -4,7 +4,6 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
 #include <monad/test/config.hpp>
 #include <monad/vm/vm.hpp>
 
@@ -87,13 +86,13 @@ inline bytes32_t commit_sequential(
     std::vector<BlockHeader> const &ommers = {},
     std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt)
 {
-    auto const [consensus_header, block_id] =
-        consensus_header_and_id_from_eth_header(eth_header);
+    bytes32_t const block_id =
+        eth_header.number ? bytes32_t{eth_header.number} : NULL_HASH_BLAKE3;
     db.commit(
         deltas,
         code,
         block_id,
-        consensus_header,
+        eth_header,
         receipts,
         call_frames,
         senders,

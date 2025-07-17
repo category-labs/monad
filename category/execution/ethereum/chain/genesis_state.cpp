@@ -8,8 +8,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
-#include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
@@ -33,15 +31,11 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
             intx::from_string<uint256_t>(item.value()["wei_balance"]);
         deltas.emplace(addr, StateDelta{.account = {std::nullopt, account}});
     }
-    MonadConsensusBlockHeader header;
-    header.execution_inputs = genesis.header;
-    bytes32_t const block_id =
-        to_bytes(blake3(rlp::encode_consensus_block_header(header)));
     db.commit(
         deltas,
         Code{},
-        block_id,
-        header,
+        NULL_HASH_BLAKE3,
+        genesis.header,
         std::vector<Receipt>{},
         std::vector<std::vector<CallFrame>>{},
         std::vector<Address>{},
@@ -50,7 +44,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         genesis.header.withdrawals_root == NULL_ROOT
             ? std::make_optional<std::vector<Withdrawal>>()
             : std::nullopt);
-    db.finalize(0, block_id);
+    db.finalize(0, NULL_HASH_BLAKE3);
 }
 
 MONAD_NAMESPACE_END

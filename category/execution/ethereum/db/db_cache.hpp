@@ -138,7 +138,7 @@ public:
 
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &,
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const &,
+        BlockHeader const &, std::vector<Receipt> const &,
         std::vector<std::vector<CallFrame>> const &,
         std::vector<Address> const &, std::vector<Transaction> const &,
         std::vector<BlockHeader> const &,
@@ -149,8 +149,7 @@ public:
 
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, Code const &code,
-        bytes32_t const &block_id,
-        MonadConsensusBlockHeader const &consensus_header,
+        bytes32_t const &block_id, BlockHeader const &header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
         std::vector<Address> const &senders = {},
@@ -162,7 +161,7 @@ public:
             *state_deltas,
             code,
             block_id,
-            consensus_header,
+            header,
             receipts,
             call_frames,
             senders,
@@ -170,8 +169,7 @@ public:
             ommers,
             withdrawals);
 
-        proposals_.commit(
-            std::move(state_deltas), consensus_header.seqno, block_id);
+        proposals_.commit(std::move(state_deltas), header.number, block_id);
     }
 
     virtual BlockHeader read_eth_header() override

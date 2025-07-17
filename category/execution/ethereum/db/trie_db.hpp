@@ -50,7 +50,7 @@ public:
         bytes32_t const &block_id = bytes32_t{}) override;
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &block_id,
-        MonadConsensusBlockHeader const &, std::vector<Receipt> const & = {},
+        BlockHeader const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},

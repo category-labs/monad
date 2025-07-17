@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/nibbles_view_fmt.hpp> // NOLINT
@@ -147,8 +146,7 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    bytes32_t const &block_id,
-    MonadConsensusBlockHeader const &consensus_header,
+    bytes32_t const &block_id, BlockHeader const &header,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Address> const &senders,
@@ -156,7 +154,6 @@ void TrieDb::commit(
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
-    auto const &header = consensus_header.execution_inputs;
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
     auto const parent_hash = [&]() {
@@ -350,13 +347,6 @@ void TrieDb::commit(
         .incarnation = false,
         .next = std::move(tx_hash_updates),
         .version = static_cast<int64_t>(block_number_)};
-    auto bft_block_update = Update{
-        .key = bft_block_nibbles,
-        .value = bytes_alloc_.emplace_back(
-            rlp::encode_consensus_block_header(consensus_header)),
-        .incarnation = true,
-        .next = UpdateList{},
-        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
@@ -364,7 +354,6 @@ void TrieDb::commit(
     updates.push_front(transaction_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);
-    updates.push_front(bft_block_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value

@@ -171,7 +171,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
         block_id,
-        consensus_header,
+        consensus_header.execution_inputs,
         receipts,
         call_frames,
         senders,

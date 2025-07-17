@@ -10,7 +10,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <iostream>

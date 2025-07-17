@@ -47,6 +47,7 @@ add_library(
   "ethereum/core/eth_ctypes.h"
   "ethereum/core/contract/abi_encode.hpp"
   "ethereum/core/contract/big_endian.hpp"
+  "ethereum/core/contract/events.hpp"
   "ethereum/core/contract/storage_array.hpp"
   "ethereum/core/contract/storage_variable.hpp"
   "ethereum/core/fmt/account_fmt.hpp"

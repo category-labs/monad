@@ -104,6 +104,7 @@ function(add_trie_test)
 endfunction()
 
 add_subdirectory("test")
+add_subdirectory("bench")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   add_subdirectory("test/fuzz")

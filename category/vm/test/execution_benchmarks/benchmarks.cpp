@@ -152,7 +152,7 @@ namespace
             auto const result = evmc::Result{vm_ptr->execute(
                 interface, ctx, EVMC_CANCUN, &msg, code, code_size)};
 
-            MONAD_VM_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+            MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
         }
     }
 
@@ -167,7 +167,7 @@ namespace
     void run_benchmark_json(
         benchmark::State &state, BlockchainTestVM::Implementation const impl,
         evmone::test::TestState const &initial_test_state,
-        evmc_message const msg)
+        evmc_message const msg, bool assert_success)
     {
 
         auto vm = evmc::VM(new BlockchainTestVM(impl));
@@ -194,7 +194,12 @@ namespace
             auto const result = evmc::Result{vm_ptr->execute(
                 interface, ctx, EVMC_CANCUN, &msg, code.data(), code.size())};
 
-            MONAD_VM_DEBUG_ASSERT(result.status_code == EVMC_SUCCESS);
+            if (assert_success) {
+                MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
+            }
+            else {
+                MONAD_VM_ASSERT(result.status_code != EVMC_SUCCESS);
+            }
         }
     }
 
@@ -271,6 +276,14 @@ namespace
                         .code_size = 0,
                     };
 
+                    std::vector<std::string> const failure_tests = {
+                        "delegatecall_slow_interpreter"};
+
+                    bool assert_success = std::find(
+                                              failure_tests.begin(),
+                                              failure_tests.end(),
+                                              test.name) == failure_tests.end();
+
                     for (auto const impl :
                          {Interpreter, Compiler, LLVM, Evmone}) {
                         benchmark::RegisterBenchmark(
@@ -283,7 +296,8 @@ namespace
                             run_benchmark_json,
                             impl,
                             test.pre_state,
-                            msg);
+                            msg,
+                            assert_success);
                     }
                 }
             }

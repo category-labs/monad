@@ -558,10 +558,11 @@ namespace monad::vm::fuzzing
     void compile_percent(std::vector<std::uint8_t> &program, uint8_t pct)
     {
         program.push_back(PUSH1);
+        program.push_back(10);
+        program.push_back(SWAP1);
+        program.push_back(PUSH1);
         program.push_back(pct);
         program.push_back(MUL);
-        program.push_back(PUSH1);
-        program.push_back(10);
         program.push_back(DIV);
     }
 

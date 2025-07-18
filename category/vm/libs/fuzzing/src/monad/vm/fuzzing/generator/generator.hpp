@@ -847,38 +847,6 @@ namespace monad::vm::fuzzing
         return prog;
     }
 
-    template <typename Engine>
-    evmc::address
-    generate_pre_compile_address(Engine &eng, evmc_revision const rev)
-    {
-        auto const num_precompiles = [rev]() -> uint8_t {
-            if (rev <= EVMC_SPURIOUS_DRAGON) {
-                return 4;
-            }
-            else if (rev <= EVMC_PETERSBURG) {
-                return 8;
-            }
-            else if (rev <= EVMC_SHANGHAI) {
-                return 9;
-            }
-            else if (rev == EVMC_CANCUN) {
-                return 10;
-            }
-            else if (rev == EVMC_PRAGUE) {
-                return 17;
-            }
-            else {
-                MONAD_VM_ASSERT(false);
-            }
-        }();
-
-        auto pick_precompile_addr =
-            std::uniform_int_distribution<uint8_t>(1, num_precompiles);
-        evmc::address addr;
-        addr.bytes[19] = pick_precompile_addr(eng);
-        return addr;
-    }
-
     template <typename Engine, typename LookupFunc>
     auto message_gas(
         Engine &eng, evmc::address const &target,

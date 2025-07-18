@@ -370,14 +370,62 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
+static uint8_t num_precompiles(evmc_revision rev)
+{
+    if (rev <= EVMC_SPURIOUS_DRAGON) {
+        return 4;
+    }
+    else if (rev <= EVMC_PETERSBURG) {
+        return 8;
+    }
+    else if (rev <= EVMC_SHANGHAI) {
+        return 9;
+    }
+    else if (rev == EVMC_CANCUN) {
+        return 10;
+    }
+    else if (rev == EVMC_PRAGUE) {
+        return 17;
+    }
+    else {
+        MONAD_VM_ASSERT(false);
+    }
+}
+
+static std::vector<evmc::address> get_precompile_addresses(evmc_revision rev)
+{
+    size_t const n = static_cast<size_t>(num_precompiles(rev));
+    std::vector<evmc::address> addrs(n, evmc::address{});
+    for (uint8_t i = 0; i < n; ++i) {
+        addrs[i].bytes[sizeof(evmc::address) - 1] = i + 1;
+    }
+
+    return addrs;
+}
+
+static bool is_precompile(evmc_revision const rev, evmc::address const &addr)
+{
+    for (size_t i = 0; i < sizeof(evmc::address) - 1; i++) {
+        if (addr.bytes[i] != 0x00) {
+            return false;
+        }
+    }
+    auto const last_byte = addr.bytes[sizeof(evmc::address) - 1];
+    return last_byte != 0x00 && last_byte <= (num_precompiles(rev) + 1);
+}
+
 static evmc_status_code fuzz_iteration(
     evmc_message const &msg, evmc_revision const rev, State &evmone_state,
     evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
     for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
+        if (!is_precompile(rev, msg.recipient)) {
+            state.get_or_insert(msg.recipient);
+        }
+        // Sender is always sampled from known non-precompile addresses
+        // and known eoas.
         state.get_or_insert(msg.sender);
-        state.get_or_insert(msg.recipient);
     }
 
     auto const evmone_checkpoint = evmone_state.checkpoint();
@@ -448,37 +496,6 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
     }
 
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
-}
-
-static std::vector<evmc::address> get_precompile_addresses(evmc_revision rev)
-{
-    auto const num_precompiles = [rev]() -> uint8_t {
-        if (rev <= EVMC_SPURIOUS_DRAGON) {
-            return 4;
-        }
-        else if (rev <= EVMC_PETERSBURG) {
-            return 8;
-        }
-        else if (rev <= EVMC_SHANGHAI) {
-            return 9;
-        }
-        else if (rev == EVMC_CANCUN) {
-            return 10;
-        }
-        else if (rev == EVMC_PRAGUE) {
-            return 17;
-        }
-        else {
-            MONAD_VM_ASSERT(false);
-        }
-    }();
-
-    std::vector<evmc::address> addrs(num_precompiles, evmc::address{});
-    for (size_t i = 0; i < num_precompiles; ++i) {
-        addrs[i].bytes[19] = static_cast<uint8_t>(i + 1);
-    }
-
-    return addrs;
 }
 
 static void do_run(std::size_t const run_index, arguments const &args)

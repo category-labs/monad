@@ -124,5 +124,7 @@ namespace monad::vm::compiler::test
         void set_balance(uint256_t addr, uint256_t balance);
 
         std::basic_string_view<uint8_t> result_data();
+
+        void add_account_at(uint256_t addr, std::span<uint8_t> const code);
     };
 }

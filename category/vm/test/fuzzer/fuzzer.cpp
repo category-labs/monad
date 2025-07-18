@@ -228,6 +228,26 @@ static evmc::address deploy_contract(
     return create_address;
 }
 
+static evmc::address deploy_delegated_contract(
+    State &state, evmc::address const &from, evmc::address const &delegatee)
+{
+    std::vector<uint8_t> code = {0xef, 0x01, 0x00};
+    code.append_range(delegatee.bytes);
+    MONAD_VM_ASSERT(code.size() == 23);
+    return deploy_contract(state, from, code);
+}
+
+static evmc::address deploy_delegated_contracts(
+    State &evmone_state, State &monad_state, evmc::address const &from,
+    evmc::address delegatee)
+{
+    auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
+    auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
+    MONAD_VM_ASSERT(a == a1);
+    assert_equal(evmone_state, monad_state);
+    return a;
+}
+
 // It's possible for the compiler and evmone to reach equivalent-but-not-equal
 // states after both executing. For example, the compiler may exit a block
 // containing an SSTORE early because of unconditional underflow later in the
@@ -498,6 +518,14 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
 }
 
+// Coin toss, biased whenever p != 0.5
+template <typename Engine>
+static bool toss(Engine &engine, double p)
+{
+    std::bernoulli_distribution dist(p);
+    return dist(engine);
+}
+
 static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;
@@ -533,6 +561,14 @@ static void do_run(std::size_t const run_index, arguments const &args)
             Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
             Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
 
+        if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
+            auto pre_compile = monad::vm::fuzzing::uniform_sample(
+                engine, precompile_addresses);
+            auto const a = deploy_delegated_contracts(
+                evmone_state, monad_state, genesis_address, pre_compile);
+            contract_addresses.push_back(a);
+        }
+
         for (;;) {
             auto const contract = monad::vm::fuzzing::generate_program(
                 focus, engine, contract_addresses);
@@ -555,6 +591,11 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
             contract_addresses.push_back(a);
 
+            if (args.revision >= EVMC_PRAGUE && toss(engine, 0.1)) {
+                auto const b = deploy_delegated_contracts(
+                    evmone_state, monad_state, genesis_address, a);
+                contract_addresses.push_back(b);
+            }
             break;
         }
 

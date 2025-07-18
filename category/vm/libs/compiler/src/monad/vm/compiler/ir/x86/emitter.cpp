@@ -3715,21 +3715,25 @@ namespace monad::vm::compiler::native
         // but the sizes that are powers of two are probably much more common
         // than everything else and are easier to map to x86 instructions so we
         // have a fast path for them.
+        // Note that ix is the index of the byte with the sign bit. ix + 1 is
+        // the size of the integer.
         if (src->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*src->general_reg());
             auto const sign_reg = static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
             auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8; // Offset in the register
 
             // First we sign extend the register with the sign bit
-            if (ix == 8) {
-                // Nothing to do!
-            } else if ((ix == 1 || ix == 2 || ix == 4 || ix == 16)) {
+            if (sign_reg_offset == 7) {
+                // The sign bit is already in position, nothing to do!
+            } else if (sign_reg_offset == 0    //  8-bit movsx
+                    || sign_reg_offset == 1    // 16-bit movsx
+                    || sign_reg_offset == 3) { // 32-bit movsx
                 // If ix is a power of two, we can use movsx to sign-extend
-                as_.movsx(gpq[sign_reg].r64(), cast_reg_to_size(gpq[sign_reg], ix[0] >= 8 ? 8 : ix[0]));
+                as_.movsx(gpq[sign_reg].r64(), cast_reg_to_size(gpq[sign_reg], sign_reg_offset + 1));
             } else {
                 // Otherwise we use a left shift followed by right arithmetic shift to sign-extend
-                as_.shl(gpq[sign_reg].r64(), 64 - (sign_reg_offset * 8));
-                as_.sar(gpq[sign_reg].r64(), 64 - (sign_reg_offset * 8));
+                as_.shl(gpq[sign_reg].r64(), (7 - sign_reg_offset) * 8);
+                as_.sar(gpq[sign_reg].r64(), (7 - sign_reg_offset) * 8);
             }
 
             // Then propagate the sign bit to the other registers.

@@ -9,6 +9,7 @@ Print evm.network.
 Import linearity.
 Require Import monad.asts.exb.
 Require Export bluerock.auto.cpp.spec.
+From AAC_tactics Require Import AAC.
 
 Require Import monad.proofs.libspecs.
 Import cQp_compat.
@@ -103,7 +104,7 @@ End with_Sigma. End OneTbbMap.
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI fracR}. (* some standard assumptions about the c++ logic *)
 
-Definition AnkerMapR {K V:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDecision K}
+Definition AnkerMapR {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqDecision K} *)
            (krep : Qp -> K -> Rep) 
            (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
            (* CFrational vrep *)
@@ -113,6 +114,32 @@ Definition AnkerMapR {K V:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDeci
   structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
   (* move to libspecs *)
 
+Definition AnkerMapSpineR {K:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDecision K}
+           (krep : Qp -> K -> Rep) 
+           (q: Qp)
+           (locs : list (K*ptr)) (* listed in iteration order *)
+    : Rep :=
+  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
+
+
+Definition AnkerMapPayloadsR {V:Type} (tykey tyval: type) 
+           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
+           (q: Qp)
+           (locs : list (ptr*V)) (* listed in iteration order, but clients dont need to know that *)
+    : Rep :=
+  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
+
+
+Lemma AnkerMapSplit {K V:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDecision K}
+           (krep : Qp -> K -> Rep) 
+           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
+           (* CFrational vrep *)
+           (q: Qp)
+           (m: MapModel K V) :
+  AnkerMapR tykey tyval khash krep vrep q m -|-
+    AnkerMapSpineR tykey tyval khash krep q (map (fun p => let '(a,(b,c)) := p in (a,b)) m)
+    ** AnkerMapPayloadsR tykey tyval vrep q (map (fun p => let '(a,(b,c)) := p in (b,c)) m).
+Proof. Admitted.
   Definition u256R  (q:Qp) (n:N) : Rep. Proof. Admitted.
   Definition u256t : type := (Tnamed (Ninst (Nscoped (Nglobal (Nid "intx")) (Nid "uint")) [Avalue (Eint 256 "unsigned int")])).
   Definition bytes32R (q:Qp) (z:N) : Rep. Proof. Admitted.
@@ -605,14 +632,25 @@ Definition MapOriginalR
            q
            m.
 
-(** TODO: use AnkerMapR just as in MapOriginalR **)
+Definition VersionStackR {ElemType} (cppType: type) (elemRep: Qp -> ElemType -> Rep) (q:Qp) (lt:list ElemType): Rep. Proof. Admitted.
+
+
 Definition MapCurrentR
            (q: stdpp.numbers.Qp)
            (m: MapModel address (list AccountM))
   : Rep :=
-  structR
+  AnkerMapR "evmc::address" "monad::VersionStack<monad::AccountState>" 
+           addressToN
+           addressR
+           (VersionStackR "monad::AccountState" AccountStateR)
+           q
+           m.
+
+(*
+structR
     "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
     (cQp.mut q).
+*)
 
 (** 4) Rep for monad::State::logs_ (VersionStack<vector<Receipt::Log>>) **)
 Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
@@ -719,19 +757,22 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
                | Some f => f
                | None => (block.block_account_default, dummyInc)
                end.
-  
-  Definition applyUpdate (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: StateOfAccounts) (acup: address * (ModelWithPtr (list AccountM))) :
-    StateOfAccounts :=
-    let '(addr, upd) :=  acup in
+
+
+  Definition accountFinalVal (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: AccountM) (upd: (ModelWithPtr (list AccountM))) : AccountM :=
     match snd upd, orig with
     | [], _ => actualPreTxState (* cannot happen. length upd = 1 *)
     | _, None => actualPreTxState (* cannot happen. if an address exists in the State::current_ map, it must exist in the State::original map. *)
     | h::_, Some (assumedPreTxState, assumEx) =>
-        let '(postTxBal, postTxNonce) := postTxActualBalNonce assumedPreTxState assumEx h (actualPreTxState !!! addr) in
-        if negb (relaxedValidation ) then <[addr:=h]> actualPreTxState else
+        let '(postTxBal, postTxNonce) := postTxActualBalNonce assumedPreTxState assumEx h (actualPreTxState) in
+        if negb (relaxedValidation ) then h else
           let postAcState := if (isNone (min_balance assumEx)) then h else h &: _balance .= postTxBal in
-          <[addr := if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)]> actualPreTxState
+          if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)
     end.
+  
+  Definition applyUpdate (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: StateOfAccounts) (acup: address * (ModelWithPtr (list AccountM))) :  StateOfAccounts :=
+    let '(addr, upd) :=  acup in    
+    <[addr := accountFinalVal relaxedValidation orig (actualPreTxState !!! addr) upd]> actualPreTxState.
 
   Definition applyUpdates (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) :StateOfAccounts :=
     let ups := newStates a in fold_left (fun s aupd => applyUpdate (relaxedValidation a) (original a !! fst aupd) s aupd) ups preTxState.
@@ -936,3 +977,7 @@ day 2:
 #[global] Hint Opaque TransactionR : br_opacity.
 #[global] Opaque StateR.
 #[global] Hint Opaque StateR : br_opacity.
+#[global] Hint Opaque AnkerMapPayloadsR : br_opacity.
+#[global] Hint Opaque AnkerMapR : br_opacity.
+#[global] Hint Opaque AnkerMapSpineR : br_opacity.
+#[global] Hint Opaque AnkerMapPayloadsR : br_opacity.

@@ -44,7 +44,6 @@ class State
 
     Map<Address, AccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> current_{};// where exactly are the non-head items used?
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 

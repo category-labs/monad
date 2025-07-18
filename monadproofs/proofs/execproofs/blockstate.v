@@ -8,6 +8,7 @@ Require Import bluerock.auto.cpp.proof.
 Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.asts.block_state_cpp.
 Require Import monad.proofs.exec_specs.
+
  Require Import monad.proofs.execproofs.exec_transaction. 
 Disable Notation atomic_name'.
 Require Import Lens.Elpi.Elpi.
@@ -23,7 +24,18 @@ Section with_Sigma.
 
   #[only(lens)] derive AssumptionExactness. (* TODO: move to decl *)
 
+
+  Definition update {K V} `{EqDecision K}  (k: K) (newval: ptr*V) (m: MapModel K V): MapModel K V :=
+    (k,newval)::(List.filter (fun p => bool_decide (fst p <> k)) m).
+
+  Definition lookupr {K V} `{Countable K} := fun k m =>
+     (((list_to_map m):(gmap K (ModelWithPtr V))) !! k).
   
+  Global Instance lkk {K V} `{Countable K}:  Lookup K  V (MapModel K V) := fun k m =>
+    option_map snd (lookupr k m).
+
+  Typeclasses Transparent MapModel.
+  Typeclasses Transparent ModelWithPtr.
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
@@ -32,26 +44,23 @@ Section with_Sigma.
    \arg{addrp: ptr} "address" (Vref addrp)
    \prepost{qa fixee} addrp |-> addressR qa fixee
    \arg{origp: ptr} "original" (Vref origp)
-   \pre{assumedFixeeState ae inds} origp |-> AccountStateR 1 assumedFixeeState ae inds
+   \pre{assumedFixeeState ae} origp |-> OriginalAccountStateR 1 ae assumedFixeeState
    \arg{actualp: ptr} "actual" (Vref actualp)
-   \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs inds) 1 (actualPreTxState !! fixee)
+   \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs) 1 (actualPreTxState !! fixee)
+   \pre{fixeeNewStateLoc fixeeNewState} [| lookupr fixee (newStates au) = Some (fixeeNewStateLoc, fixeeNewState)  |]
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
      [| if satisfiesAssumptionsb then satisfiesAssumptions au actualPreTxState else Logic.True |] **
       if (negb satisfiesAssumptionsb)
-      then statep |-> StateR au ** origp |-> AccountStateR 1 assumedFixeeState ae inds
+      then statep |-> StateR au ** origp |-> AccountStateR 1 assumedFixeeState
       else
-        Exists auf exactFixeeAssumption, statep |-> StateR auf
-          ** origp |-> AccountStateR 1 exactFixeeAssumption (ae &: _min_balance .= None) inds
-(*          ** [| relaxedValidation auf = false |] *)
-          ** [| applyUpdate auf actualPreTxState = applyUpdates au actualPreTxState |]).
+        Exists fixedFixeeNewState exactFixeeAssumption actualPreTxStateFixee,
+          statep |-> StateR (au &: _newStates %= (update fixee (fixeeNewStateLoc,[fixedFixeeNewState])))
+          ** [| actualPreTxState !! fixee = Some actualPreTxStateFixee |]
+          **  origp |-> OriginalAccountStateR 1 (ae &: _min_balance .= None) exactFixeeAssumption
+          ** [| fixedFixeeNewState = accountFinalVal (relaxedValidation au) (Some (assumedFixeeState, ae)) actualPreTxStateFixee (fixeeNewStateLoc, fixeeNewState) |]).
 
 
-
-(* Rep predicate for VersionStack<monad::AccountState> *)
-Definition VersionStackR (q: cQp.t) (ls: list monad.EVMOpSem.evm.account_state) : Rep :=
-  bluerock.lang.cpp.logic.heap_pred.aggregate.structR
-    "monad::VersionStack<monad::AccountState>" q.
 
 (* Model predicates for is_empty and is_dead *)
 
@@ -78,66 +87,55 @@ Definition is_dead_model (oas: option monad.EVMOpSem.block.block_account) : bool
 cpp.spec "monad::AccountState::min_balance() const"
   as accountstate_min_balance_spec
   with (fun this:ptr =>
-    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
+    \prepost{orig_state asm} this |-> OriginalAccountStateR 1 asm orig_state
     \post[Vptr (this ,, _field "monad::AccountState::min_balance_")]
-          this |-> AccountStateR 1 orig_state asm idx).
+          emp).
 
 cpp.spec "monad::AccountState::validate_exact_balance() const"
   as accountstate_validate_exact_balance_spec
   with (fun this:ptr =>
-    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
-    \post[Vbool (~~ bool_decide (option.is_Some (min_balance asm)))]
-          this |-> AccountStateR 1 orig_state asm idx).
+    \prepost{orig_state asm} this |-> OriginalAccountStateR 1  asm orig_state
+    \post[Vbool (~~ bool_decide (option.is_Some (min_balance asm)))] emp).
 
 cpp.spec "monad::AccountState::validate_exact_nonce() const"
   as accountstate_validate_exact_nonce_spec
   with (fun this:ptr =>
-    \pre{orig_state asm idx} this |-> AccountStateR 1 orig_state asm idx
-    \post[Vbool (nonce_exact asm)]
-          this |-> AccountStateR 1 orig_state asm idx).
+    \prepost{orig_state asm} this |-> OriginalAccountStateR 1 asm orig_state
+    \post[Vbool (nonce_exact asm)] emp).
 
 cpp.spec "monad::State::relaxed_validation() const"
   as state_relaxed_validation_spec
   with (fun this:ptr =>
-    \pre{au} this |-> StateR au
-    \post[Vbool (relaxedValidation au)]
-          this |-> StateR au).
+    \prepost{au} this |-> StateR au
+    \post[Vbool (relaxedValidation au)] emp).
 
 (* Specs for the free functions is_empty and is_dead *)
 
 cpp.spec "monad::is_empty(const monad::Account&)" as is_empty_spec with (
   \arg{accountp: ptr} "account" (Vref accountp)
-  \pre{(oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
-      accountp |-> monad.proofs.libspecs.optionR
+  \prepost{(oas: option AccountM) }
+      accountp |-> libspecs.optionR
                    "monad::Account"
-                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
-  \post[Vbool (is_empty_model oas)]
-      accountp |-> monad.proofs.libspecs.optionR
-                   "monad::Account"
-                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
-).
+                   (fun ba => AccountR 1 ba) 1 oas
+  \post[Vbool (is_empty_model (option_map fst oas))] emp).
 
 cpp.spec "monad::is_dead(const std::optional<monad::Account>&)" as is_dead_spec with (
   \arg{accountp: ptr} "account" (Vref accountp)
-  \pre{(oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
-      accountp |-> monad.proofs.libspecs.optionR
+  \prepost{(oas: option AccountM)}
+      accountp |-> libspecs.optionR
                    "monad::Account"
-                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
-  \post[Vbool (is_dead_model oas)]
-      accountp |-> monad.proofs.libspecs.optionR
-                   "monad::Account"
-                   (fun ba => monad.proofs.exec_specs.AccountR 1 ba idx) 1 oas
+                   (fun ba => AccountR 1 ba) 1 oas
+  \post[Vbool (is_dead_model (option_map fst oas))] emp
 ).
 
-(* Spec of VersionStack::size(), a method, so we use fun this:ptr => … *)
 
+(* TODO: generalize *)
 cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
   as versionstack_size_spec
   with (fun this:ptr =>
-    \pre{(ls: list monad.EVMOpSem.evm.account_state) (q:Qp)}
-        this |-> VersionStackR (cQp.mut q) ls
-    \post[Vint (Z.of_nat (length ls))]
-        this |-> VersionStackR (cQp.mut q) ls
+    \prepost{ls q}
+        this |-> VersionStackR "monad::AccountState" AccountStateR (cQp.mut q) ls
+    \post[Vint (Z.of_nat (length ls))] emp
   ).
 
 
@@ -145,22 +143,22 @@ cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
 cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_add_assign_spec with ( fun (this:ptr) =>
   \arg{yp: ptr} "y" (Vref yp)
   \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) xv
+    ** yp   |-> u256R (cQp.mut qy) yv
   \post[Vref this]
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv + yv) (2 ^ 256))%N
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) (N.modulo (xv + yv) (2 ^ 256))%N
+    ** yp   |-> u256R (cQp.mut qy) yv
 ).
 
 (* 2. U256 subtraction assignment: intx::uint<256u>::operator-=(const intx::uint<256u>&) *)
 cpp.spec "intx::uint<256u>::operator-=(const intx::uint<256u>&)" as u256_sub_assign_spec with (fun (this:ptr) =>
   \arg{yp: ptr} "y" (Vref yp)
   \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) xv
+    ** yp   |-> u256R (cQp.mut qy) yv
   \post[Vref this]
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) (N.modulo (xv - yv) (2 ^ 256))%N
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) (N.modulo (xv - yv) (2 ^ 256))%N
+    ** yp   |-> u256R (cQp.mut qy) yv
 ).
 
 (* 3. Bytes32 inequality: evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&) *)
@@ -168,8 +166,8 @@ cpp.spec "evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)" as bytes
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \prepost{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.bytes32R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.bytes32R (cQp.mut qb) bv
+      ap |-> bytes32R (cQp.mut qa) av
+    ** bp |-> bytes32R (cQp.mut qb) bv
   \post[Vbool (negb (N.eqb av bv))] emp
 ).
 
@@ -179,22 +177,19 @@ cpp.spec "evmc::operator!=(const evmc::bytes32&, const evmc::bytes32&)" as bytes
 cpp.spec "monad::operator==(monad::Incarnation, monad::Incarnation)" as incarnation_eq_spec with (
   \arg{i1p: ptr} "i1" (Vref i1p)
   \arg{i2p: ptr} "i2" (Vref i2p)
-  \prepost{(q1 q2: Qp) (idx1 idx2: monad.proofs.exec_specs.Indices)}
-      i1p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q1) idx1
-    ** i2p |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q2) idx2
+  \prepost{(q1 q2: Qp) (idx1 idx2: Indices)}
+      i1p |-> IncarnationR (cQp.mut q1) idx1
+    ** i2p |-> IncarnationR (cQp.mut q2) idx2
   \post[Vbool (bool_decide (idx1 = idx2))] emp
 ).
 
 (* 5. std::optional<Account>::operator bool() const *)
 cpp.spec "std::optional<monad::Account>::operator bool() const" as optional_bool_spec with ( fun (this:ptr) =>
-  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
-      this |-> monad.proofs.libspecs.optionR
+  \prepost{(q: Qp) oas}
+      this |-> libspecs.optionR
                 "monad::Account"
-                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
-  \post[Vbool (bool_decide (stdpp.option.is_Some oas))]
-      this |-> monad.proofs.libspecs.optionR
-                "monad::Account"
-                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+                (fun ba => AccountR (cQp.mut q) ba) q oas
+  \post[Vbool (bool_decide (stdpp.option.is_Some oas))] emp
 ).
 
 
@@ -203,11 +198,11 @@ cpp.spec "std::optional<monad::Account>::operator bool() const" as optional_bool
 cpp.spec "intx::uint<256u>::operator=(const intx::uint<256u>&)" as u256_assign_spec with (fun (this:ptr) =>
   \arg{yp: ptr} "y" (Vref yp)
   \pre{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) xv
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) xv
+    ** yp   |-> u256R (cQp.mut qy) yv
   \post[Vref this]
-      this |-> monad.proofs.exec_specs.u256R (cQp.mut q) yv
-    ** yp   |-> monad.proofs.exec_specs.u256R (cQp.mut qy) yv
+      this |-> u256R (cQp.mut q) yv
+    ** yp   |-> u256R (cQp.mut qy) yv
 ).
 
 (* 7. U256 less-than: intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&) *)
@@ -215,22 +210,22 @@ cpp.spec "intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)" as 
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
   \post[Vbool (av <? bv)%N]
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
 ).
 
 cpp.spec "intx::operator==(const intx::uint<256u>&, const intx::uint<256u>&)" as u256_eq_spec with (
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
   \post[Vbool (bool_decide (av = bv)%N)]
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
 ).
 
 (* 8. U256 greater-than: intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&) *)
@@ -238,11 +233,11 @@ cpp.spec "intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)" as 
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
   \post[Vbool (bv <? av)%N]
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
 ).
 
 (* 9. U256 greater-or-equal: intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&) *)
@@ -250,29 +245,29 @@ cpp.spec "intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)" as
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
   \post[Vbool (bv <=? av)%N]
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
 ).
 
 
 (* 8. std::optional<Account>::operator->() non‐const *)
 cpp.spec "std::optional<monad::Account>::operator->()" as optional_arrow_spec with (fun (this:ptr) =>
-  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
-      this |-> monad.proofs.libspecs.optionR
+  \prepost{(q: Qp) oas}
+      this |-> libspecs.optionR
                 "monad::Account"
-                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+                (fun ba => AccountR (cQp.mut q) ba) q oas
   \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
 ).
 
 (* 9. std::optional<Account>::operator->() const *)
 cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_const_spec with (fun (this:ptr) =>
-  \prepost{(q: Qp) (oas: option monad.EVMOpSem.block.block_account) (idx: monad.proofs.exec_specs.Indices)}
-      this |-> monad.proofs.libspecs.optionR
+  \prepost{(q: Qp) oas}
+      this |-> libspecs.optionR
                 "monad::Account"
-                (fun ba => monad.proofs.exec_specs.AccountR (cQp.mut q) ba idx) q oas
+                (fun ba => AccountR (cQp.mut q) ba) q oas
   \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
 ).
 
@@ -280,8 +275,8 @@ cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_c
 
 
 
-(* Rep predicate for the iterator object *)
- Definition mapIterR (i: N) : Rep :=
+(* Rep predicate for the iterator object. this is specialized for the case the key is a non-scalar *)
+ Definition mapIterR (i: N) (keyLoc valueLoc : ptr) : Rep :=
   structR
       "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>" 1. (* TODO: add ownership of fields *)
 
@@ -367,17 +362,15 @@ Print merge.
   cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const" as iter_neq_spec with
   (fun this: ptr =>
      \arg{otherp: ptr} "other" (Vref otherp)
-     \prepost{(i1 i2: Corelib.Numbers.BinNums.N)}
-       this  |-> mapIterR i1
-     ** otherp |-> mapIterR i2
-     \post[Vbool (negb (i1 =? i2)%N)]
-       this  |-> mapIterR i1
-     ** otherp |-> mapIterR i2).
+     \prepost{(i1 i2: N) k1 k2 v1 v2}
+       this  |-> mapIterR i1 k1 v1
+     ** otherp |-> mapIterR i2 k2 v2
+     \post[Vbool (negb (bool_decide (i1 = i2 /\ k1=k2 /\ v1=v2)))] emp).
 
   (* 16. iterator destructor *)
   cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()" as iterd with
   (fun this: ptr =>
-     \pre{(i: Corelib.Numbers.BinNums.N)} this |-> mapIterR i
+     \pre{i k v} this |-> mapIterR i k v
      \post emp
   ).
 
@@ -386,17 +379,21 @@ Print merge.
 (* with index‐correctness assertions                                  *)
 (* ------------------------------------------------------------------- *)
 
-(* end(): index = length l *)
+(* end(): index = length l. TODO: generalize the method signature *)
 cpp.spec
   "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"
   as current_end_spec
   with (fun (this: ptr) =>
-    \pre{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (q: Qp)}
-      this |-> monad.proofs.exec_specs.MapCurrentR q l
-    \post{(ret:ptr) (i:nat)}
-      [Vptr ret] this |-> monad.proofs.exec_specs.MapCurrentR q l
-     ** ret |-> mapIterR (Stdlib.NArith.BinNat.N.of_nat i)
-     ** [| i = length l |]
+    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
+      this |->  AnkerMapR ktycpp vtycpp
+           khash
+           kR
+           vR
+           q
+           m
+
+    \post{(ret:ptr)}
+      [Vptr ret]  ret |-> mapIterR (lengthN m) nullptr nullptr
   ).
 
 (* find(key): index matches position of key in l *)
@@ -405,25 +402,28 @@ cpp.spec
   as current_find_spec
   with (fun (this: ptr) =>
     \arg{keyp: ptr} "key" (Vref keyp)
-    \prepost{(l: list (monad.proofs.evmopsem.evm.address * list monad.proofs.evmopsem.evm.account_state)) (qk qm: Qp) (addr: monad.proofs.evmopsem.evm.address)}
-      this |-> monad.proofs.exec_specs.MapCurrentR qm l
-    \prepost keyp |-> monad.proofs.libspecs.addressR (cQp.mut qk) addr
-    \post{(ret:ptr) (oidx: option N) (st:list monad.proofs.evmopsem.evm.account_state)}
-      [Vptr ret] ret  |-> mapIterR (ssrfun.Option.default (lengthN l) oidx)
-      ** [| match oidx with
-            | Some idx  => nth_error l (N.to_nat idx) = Some (addr, st)
-            | None => True
-            end
-            |]
+    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
+      this |->  AnkerMapR ktycpp vtycpp
+           khash
+           kR
+           vR
+           q
+           m
+    \prepost{qk k} keyp |-> kR qk k
+    \post{(ret:ptr)}
+    [Vptr ret] ( (ret |-> mapIterR (lengthN m) nullptr nullptr ** [| k ∉ (map fst m)|])
+                   \\// Exists kloc vloc v i, 
+(ret |-> mapIterR i kloc vloc ** [| nth_error m (N.to_nat i) = Some (k, (vloc, v)) |])
+    )
   ).
 
 cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
   as incarnation_copy_spec with (fun this:ptr =>
   \arg{otherp:ptr} "other" (Vref otherp)
-  \prepost{(q:Qp) (idx: monad.proofs.exec_specs.Indices)}
-      otherp |-> monad.proofs.exec_specs.IncarnationR (cQp.mut q) idx
+  \prepost{(q:Qp) (idx: Indices)}
+      otherp |-> IncarnationR (cQp.mut q) idx
   \post
-      this   |-> monad.proofs.exec_specs.IncarnationR (cQp.mut 1) idx).
+      this   |-> IncarnationR (cQp.mut 1) idx).
 
 
 (* 9. U256 greater-or-equal: intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&) *)
@@ -431,12 +431,12 @@ cpp.spec "intx::operator-(const intx::uint<256u>&, const intx::uint<256u>&)" as 
   \arg{ap: ptr} "a" (Vref ap)
   \arg{bp: ptr} "b" (Vref bp)
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
   \post{ret}[Vptr ret]
-      ap |-> monad.proofs.exec_specs.u256R (cQp.mut qa) av
-    ** bp |-> monad.proofs.exec_specs.u256R (cQp.mut qb) bv
-    ** ret |-> monad.proofs.exec_specs.u256R (cQp.mut qb) ((av -bv) `mod` (2 ^ 256))%N
+      ap |-> u256R (cQp.mut qa) av
+    ** bp |-> u256R (cQp.mut qb) bv
+    ** ret |-> u256R (cQp.mut qb) ((av -bv) `mod` (2 ^ 256))%N
 ).
 
 
@@ -445,13 +445,19 @@ cpp.spec "intx::uint<256u>::~uint()" as uint256dtor with (λ this : ptr, \pre{w}
                         \post    emp).
 #[global] Instance : LearnEq2 u256R := ltac:(solve_learnable).
 
-  Lemma observeState (state_addr:ptr) q t ae inds:
+  Lemma observeOrigState (state_addr:ptr) q t ae:
     Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> AccountStateR q t ae inds).
+            (state_addr |-> OriginalAccountStateR q t ae).
   Proof using. Admitted.
 
-  Definition observeStateF r q t a b:= @observe_fwd _ _ _ (observeState r q t a b).
-  Hint Resolve observeStateF : br_opacity.
+  Lemma observeState (state_addr:ptr) q t:
+    Observe (reference_to "monad::AccountState" state_addr)
+            (state_addr |-> AccountStateR q t).
+  Proof using. Admitted.
+  
+  Definition observeStateF r q t:= @observe_fwd _ _ _ (observeState r q t).
+  Definition observeOrigStateF r q t a:= @observe_fwd _ _ _ (observeOrigState r q t a).
+  Hint Resolve observeStateF observeOrigStateF : br_opacity.
   
 Require Import monad.proofs.bigauto.
 
@@ -538,23 +544,23 @@ Hint Opaque AccountR: br_opacity.
   
   Arguments is_Some /_ _.
   #[global] Instance llll: LearnEq2 MapCurrentR := ltac:(solve_learnable).
-  #[global] Instance lllll: LearnEq1 mapIterR := ltac:(solve_learnable).
+  #[global] Instance lllll: LearnEq3 mapIterR := ltac:(solve_learnable).
 
     #[global] Instance optionRSomeAc 
-     q oas (origp:ptr) x inds idx:
+     q oas (origp:ptr) x:
     learn_exist_interface.Learnable (origp ,, opt_somety_offset
                                                                "monad::Account"
-                                                               |-> AccountR 1 x inds)
+                                                               |-> AccountR 1 x)
                                     
-      (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
-         q oas) [ oas = Some x; inds = idx] := ltac:(solve_learnable).
+      (origp |->  libspecs.optionR "monad::Account" (fun ba=> AccountR q ba)
+         q oas) [ oas = Some x] := ltac:(solve_learnable).
 
-      #[global] Instance foldedLv2Lear (origp:ptr) q qq oas x idx: learn_exist_interface.Learnable
+      #[global] Instance foldedLv2Lear (origp:ptr) q qq oas x: learn_exist_interface.Learnable
     (origp ,, opt_somety_offset
     "monad::Account" ,, 
       o_field CU "monad::Account::balance"
-      |-> u256R qq (w256_to_N (block.block_account_balance x)))
-    (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
+      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
        q oas)
     [ oas = Some x;  q=1%Qp] := ltac:(solve_learnable).
 
@@ -580,7 +586,7 @@ Hint Opaque AccountR: br_opacity.
   Ltac big :=
     repeat(slauto; try (wp_if;slauto;[])). (* only do a case split if one case can be fully solved *)
   
-  Definition foldAccountR := [FWD] (fun p a b c => @AutoUnlocking.unfold_eq _ _ _ (@AutoUnlocking.Unfoldable_at _ _ _ _ _ p (AccountR_unfoldable _ _ _ _ a b c))).
+  Definition foldAccountR := [FWD] (fun p a b => @AutoUnlocking.unfold_eq _ _ _ (@AutoUnlocking.Unfoldable_at _ _ _ _ _ p (AccountR_unfoldable _ _ _ _ a b))).
   Hint Resolve foldAccountR : br_opacity.
   Definition costRemB := [BWD<-]wp_const_const_delete.
   Hint Resolve costRemB: br_opacity.

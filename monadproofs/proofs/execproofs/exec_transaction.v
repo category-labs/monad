@@ -150,14 +150,14 @@ Require Import bluerock.prelude.lens.
     #[local] Open Scope lens_scope.
 
     Locate balance.
-  Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
+    Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
     Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce min_sender_balance: N) (bsp: ptr) (ind: Indices) (sf: AssumptionsAndUpdates) : Prop :=
-      exists senderAc, senderAc .^ _nonce = sender_nonce /\ (min_sender_balance <= senderAc .^ _balance)%Z  /\
+      exists (loc:ptr) senderAc, senderAc .^ _nonce = sender_nonce /\ (min_sender_balance <= senderAc .^ _balance)%Z  /\
         sf =
           {|
             relaxedValidation:= true;
             newStates:= [];
-            original := <[sender_addr := (senderAc, {| min_balance := Some min_sender_balance  ; nonce_exact :=false |}) ]> [];
+            original := [(sender_addr, (loc,(senderAc,  {| min_balance := Some min_sender_balance  ; nonce_exact :=false |})))];
             blockStatePtr := bsp;
             indices:= ind;
           |}.
@@ -176,7 +176,7 @@ Require Import bluerock.prelude.lens.
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \prepost{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := ∅; newStates:= ∅ ; relaxedValidation := true|}).
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := []; newStates:= []; relaxedValidation := true|}).
   
   Lemma observeState (state_addr:ptr) t: 
     Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))) state_addr)

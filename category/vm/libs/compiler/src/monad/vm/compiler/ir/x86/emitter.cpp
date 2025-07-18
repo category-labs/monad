@@ -3718,34 +3718,52 @@ namespace monad::vm::compiler::native
         // Note that ix is the index of the byte with the sign bit. ix + 1 is
         // the size of the integer.
         if (src->general_reg()) {
-            auto const &gpq = general_reg_to_gpq256(*src->general_reg());
-            auto const sign_reg = static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
+            auto const sign_reg_ix = static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
             auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8; // Offset in the register
+            auto const dst = [&] {
+                if (is_live(src, {})) {
+                    auto const [dst, reserv] = alloc_general_reg();
+                    return dst;
+                } else
+                    return src;
+            }();
+            auto const &src_gpq = general_reg_to_gpq256(*src->general_reg());
+            auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+            auto const src_sign_reg = src_gpq[sign_reg_ix];
+            auto const dst_sign_reg = dst_gpq[sign_reg_ix];
 
-            // First we sign extend the register with the sign bit
+            // First we copy the part of the src and dst registers that are not sign-extended
+            if (src != dst) {
+                for (size_t i = 0; i < sign_reg_ix; ++i) {
+                    as_.mov(dst_gpq[i].r64(), src_gpq[i].r64());
+                }
+            }
+
+            // Then we sign extend the register with the sign bit (so called `sign_reg`).
             if (sign_reg_offset == 7) {
-                // The sign bit is already in position, nothing to do!
+                // The sign bit is already in position, nothing to do unless src != dst
+                if (src != dst) as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
             } else if (sign_reg_offset == 0    //  8-bit movsx
                     || sign_reg_offset == 1    // 16-bit movsx
                     || sign_reg_offset == 3) { // 32-bit movsx
-                // If ix is a power of two, we can use movsx to sign-extend
-                as_.movsx(gpq[sign_reg].r64(), cast_reg_to_size(gpq[sign_reg], sign_reg_offset + 1));
+                // If ix is a power of two, we can use movsx to sign-extend the sign register
+                as_.movsx(dst_sign_reg.r64(), cast_reg_to_size(src_sign_reg, sign_reg_offset + 1));
             } else {
                 // Otherwise we use a left shift followed by right arithmetic shift to sign-extend
-                as_.shl(gpq[sign_reg].r64(), (7 - sign_reg_offset) * 8);
-                as_.sar(gpq[sign_reg].r64(), (7 - sign_reg_offset) * 8);
+                if (src != dst) as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
+                as_.shl(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
+                as_.sar(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
             }
 
-            // Then propagate the sign bit to the other registers.
-            // SAR copies the sign bit to the other bits. It's repeated for each
-            // register but it could also be done once on gpq[sign_reg + 1] and
-            // then copied to the others, at the cost of creating dependencies
-            // between registers.
-            for (size_t i = sign_reg + 1; i < 4; ++i) {
-                as_.mov(gpq[i].r64(), gpq[sign_reg].r64());
-                as_.sar(gpq[i].r64(), 63); // Arithmetic right shift to put sign bit everywhere
+            // Then propagate the sign bit to the other registers. SAR copies
+            // the sign bit to the other bits. It's repeated for each register
+            // but it could also be done once and then copied to the others
+            // registers, at the cost of creating dependencies between movs.
+            for (size_t i = sign_reg_ix + 1; i < 4; ++i) {
+                as_.mov(dst_gpq[i].r64(), dst_sign_reg.r64());
+                as_.sar(dst_gpq[i].r64(), 63); // Arithmetic right shift to put sign bit everywhere
             }
-            stack_.push(std::move(src));
+            stack_.push(std::move(dst));
             return;
         }
 

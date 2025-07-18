@@ -1,6 +1,7 @@
 #include "fixture.hpp"
 
 #include <monad/vm/runtime/call.hpp>
+#include <monad/vm/runtime/keccak.hpp>
 #include <monad/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.h>
@@ -133,4 +134,196 @@ TEST_F(RuntimeTest, CallTooDeep)
     ASSERT_EQ(res, 0);
     ASSERT_EQ(ctx_.memory.size, 0);
     ASSERT_EQ(ctx_.gas_remaining, 65800);
+}
+
+TEST_F(RuntimeTest, DelegatedCallPrague)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    auto const delegate_addr = address_from_uint256(0xBEEF);
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(delegate_addr.bytes);
+    ASSERT_EQ(coffee_code.size(), 23);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    std::vector<uint8_t> beef_code = {0x00};
+    add_account_at(0xBEEF, beef_code);
+
+    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+
+    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    ctx_.gas_remaining = 100000;
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        static_cast<uint32_t>(EVMC_DELEGATED));
+}
+
+TEST_F(RuntimeTest, DelegatedStaticCallPrague)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    auto const delegate_addr = address_from_uint256(0xBEEF);
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(delegate_addr.bytes);
+    ASSERT_EQ(coffee_code.size(), 23);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    std::vector<uint8_t> beef_code = {0x00};
+    add_account_at(0xBEEF, beef_code);
+
+    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+
+    auto do_call = wrap(monad::vm::runtime::staticcall<rev>);
+    ctx_.gas_remaining = 100000;
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        static_cast<uint32_t>(EVMC_DELEGATED));
+}
+
+TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    auto const delegate_addr = address_from_uint256(0xBEEF);
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(delegate_addr.bytes);
+    ASSERT_EQ(coffee_code.size(), 23);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    std::vector<uint8_t> beef_code = {0x00};
+    add_account_at(0xBEEF, beef_code);
+
+    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+
+    auto do_call = wrap(monad::vm::runtime::delegatecall<rev>);
+    ctx_.gas_remaining = 100000;
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        static_cast<uint32_t>(EVMC_DELEGATED));
+}
+
+TEST_F(RuntimeTest, DelegatedCallcodePrague)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    auto const delegate_addr = address_from_uint256(0xBEEF);
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(delegate_addr.bytes);
+    ASSERT_EQ(coffee_code.size(), 23);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    std::vector<uint8_t> beef_code = {0x00};
+    add_account_at(0xBEEF, beef_code);
+
+    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+
+    auto do_call = wrap(monad::vm::runtime::callcode<rev>);
+    ctx_.gas_remaining = 100000;
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        static_cast<uint32_t>(EVMC_DELEGATED));
+}
+
+TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    auto const delegate_addr = address_from_uint256(0x01);
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(delegate_addr.bytes);
+    ASSERT_EQ(coffee_code.size(), 23);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+
+    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    ctx_.gas_remaining = 100000;
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(
+        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        static_cast<uint32_t>(EVMC_DELEGATED));
+}
+
+TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    std::array<uint8_t, 2> baad_addr{0xBA, 0xAD};
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    coffee_code.append_range(baad_addr);
+    add_account_at(0xC0FFEE, coffee_code);
+
+    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    ctx_.gas_remaining = 100000;
+    host_.call_result = success_result(2000);
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        0);
+}
+
+TEST_F(RuntimeTest, DelegatedCallPragueBadCode2)
+{
+    constexpr auto rev = EVMC_PRAGUE;
+
+    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+    add_account_at(0xC0FFEE, coffee_code);
+
+    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    ctx_.gas_remaining = 100000;
+    host_.call_result = success_result(2000);
+
+    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
+
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(
+        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        0);
 }

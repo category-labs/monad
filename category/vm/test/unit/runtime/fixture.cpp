@@ -1,6 +1,7 @@
 #include "fixture.hpp"
 
 #include <monad/vm/runtime/allocator.hpp>
+#include <monad/vm/runtime/keccak.hpp>
 #include <monad/vm/runtime/transmute.hpp>
 #include <monad/vm/runtime/types.hpp>
 #include <monad/vm/runtime/uint256.hpp>
@@ -145,5 +146,25 @@ namespace monad::vm::compiler::test
             reinterpret_cast<std::uint8_t *>(std::malloc(output_size));
         std::memcpy(output_data, call_return_data_.data(), output_size);
         return {output_data, output_size};
+    }
+
+    void
+    RuntimeTest::add_account_at(uint256_t addr, std::span<uint8_t> const code)
+    {
+        auto const contract_addr = address_from_uint256(addr);
+        auto const codehash = ethash::keccak256(code.data(), code.size());
+        evmc::bytes32 codehash_bytes;
+        std::copy(codehash.bytes, codehash.bytes + 32, codehash_bytes.bytes);
+        auto const account = evmc::MockedAccount{
+            .nonce = 0,
+            .code = evmc::bytes(code.data(), code.size()),
+            .codehash = codehash_bytes,
+            .balance = {},
+            .storage = {},
+            .transient_storage = {},
+        };
+        auto const [_, inserted] =
+            host_.accounts.insert({contract_addr, account});
+        ASSERT_TRUE(inserted);
     }
 }

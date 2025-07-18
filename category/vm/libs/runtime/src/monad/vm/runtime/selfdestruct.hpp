@@ -12,7 +12,7 @@ namespace monad::vm::runtime
     template <evmc_revision Rev>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        if (ctx->env.evmc_flags == EVMC_STATIC) {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 

@@ -228,6 +228,26 @@ static evmc::address deploy_contract(
     return create_address;
 }
 
+static evmc::address deploy_delegated_contract(
+    State &state, evmc::address const &from, evmc::address const &delegatee)
+{
+    std::vector<uint8_t> code = {0xef, 0x01, 0x00};
+    code.append_range(delegatee.bytes);
+    MONAD_VM_ASSERT(code.size() == 23);
+    return deploy_contract(state, from, code);
+}
+
+static evmc::address deploy_delegated_contracts(
+    State &evmone_state, State &monad_state, evmc::address const &from,
+    evmc::address delegatee)
+{
+    auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
+    auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
+    MONAD_VM_ASSERT(a == a1);
+    assert_equal(evmone_state, monad_state);
+    return a;
+}
+
 // It's possible for the compiler and evmone to reach equivalent-but-not-equal
 // states after both executing. For example, the compiler may exit a block
 // containing an SSTORE early because of unconditional underflow later in the
@@ -370,62 +390,14 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
-static uint8_t num_precompiles(evmc_revision rev)
-{
-    if (rev <= EVMC_SPURIOUS_DRAGON) {
-        return 4;
-    }
-    else if (rev <= EVMC_PETERSBURG) {
-        return 8;
-    }
-    else if (rev <= EVMC_SHANGHAI) {
-        return 9;
-    }
-    else if (rev == EVMC_CANCUN) {
-        return 10;
-    }
-    else if (rev == EVMC_PRAGUE) {
-        return 17;
-    }
-    else {
-        MONAD_VM_ASSERT(false);
-    }
-}
-
-static std::vector<evmc::address> get_precompile_addresses(evmc_revision rev)
-{
-    size_t const n = static_cast<size_t>(num_precompiles(rev));
-    std::vector<evmc::address> addrs(n, evmc::address{});
-    for (uint8_t i = 0; i < n; ++i) {
-        addrs[i].bytes[sizeof(evmc::address) - 1] = i + 1;
-    }
-
-    return addrs;
-}
-
-static bool is_precompile(evmc_revision const rev, evmc::address const &addr)
-{
-    for (size_t i = 0; i < sizeof(evmc::address) - 1; i++) {
-        if (addr.bytes[i] != 0x00) {
-            return false;
-        }
-    }
-    auto const last_byte = addr.bytes[sizeof(evmc::address) - 1];
-    return last_byte != 0x00 && last_byte <= (num_precompiles(rev) + 1);
-}
-
 static evmc_status_code fuzz_iteration(
     evmc_message const &msg, evmc_revision const rev, State &evmone_state,
     evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
     for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
-        if (!is_precompile(rev, msg.recipient)) {
-            state.get_or_insert(msg.recipient);
-        }
-        // Sender is always sampled from known non-precompile addresses
-        // and known eoas.
         state.get_or_insert(msg.sender);
+        state.get_or_insert(msg.recipient);
     }
 
     auto const evmone_checkpoint = evmone_state.checkpoint();
@@ -498,14 +470,17 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
 }
 
+// Coin toss, biased whenever p != 0.5
+template <typename Engine>
+static bool toss(Engine &engine, double p)
+{
+    std::bernoulli_distribution dist(p);
+    return dist(engine);
+}
+
 static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;
-
-    std::cerr << std::format(
-        "Fuzzing with seed @ {}: {}\n",
-        evmc_revision_to_string(rev),
-        args.seed);
 
     auto engine = random_engine_t(args.seed);
 
@@ -518,7 +493,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto monad_state = State{initial_state_};
 
     auto contract_addresses = std::vector<evmc::address>{};
-    auto const precompile_addresses = get_precompile_addresses(rev);
+    auto known_addresses = std::vector<evmc::address>{};
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
@@ -533,9 +508,18 @@ static void do_run(std::size_t const run_index, arguments const &args)
             Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
             Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
 
+        if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
+            auto precompile =
+                monad::vm::fuzzing::generate_precompile_address(engine, rev);
+            auto const a = deploy_delegated_contracts(
+                evmone_state, monad_state, genesis_address, precompile);
+            known_addresses.push_back(a);
+        }
+
         for (;;) {
             auto const contract = monad::vm::fuzzing::generate_program(
-                focus, engine, contract_addresses);
+                focus, engine, rev, known_addresses);
+
             if (contract.size() > evmone::MAX_CODE_SIZE) {
                 // The evmone host will fail when we attempt to deploy
                 // contracts of this size. It rarely happens that we
@@ -554,7 +538,13 @@ static void do_run(std::size_t const run_index, arguments const &args)
             assert_equal(evmone_state, monad_state);
 
             contract_addresses.push_back(a);
+            known_addresses.push_back(a);
 
+            if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
+                auto const b = deploy_delegated_contracts(
+                    evmone_state, monad_state, genesis_address, a);
+                known_addresses.push_back(b);
+            }
             break;
         }
 
@@ -562,7 +552,6 @@ static void do_run(std::size_t const run_index, arguments const &args)
             auto msg = monad::vm::fuzzing::generate_message(
                 focus,
                 engine,
-                precompile_addresses,
                 contract_addresses,
                 {genesis_address},
                 [&](auto const &address) {
@@ -593,7 +582,10 @@ static void do_run(std::size_t const run_index, arguments const &args)
 static void run_loop(int argc, char **argv)
 {
     auto args = parse_args(argc, argv);
+    auto const *msg_rev = evmc_revision_to_string(args.revision);
     for (auto i = 0u; i < args.runs; ++i) {
+        std::cerr << std::format(
+            "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);
         do_run(i, args);
         args.seed = random_engine_t(args.seed)();
     }

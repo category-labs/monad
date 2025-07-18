@@ -8,6 +8,11 @@ namespace monad::vm::fuzzing
 {
     using enum monad::vm::compiler::EvmOpCode;
 
+    // The following instructions are special cases in the generator:
+    //   RETURNDATACOPY  (generate_returndatacopy)
+    //   PUSH0 - PUSH32  (generate_push)
+    //   CREATE, CREATE2 (generate_create)
+
     constexpr auto call_non_terminators = std::array{
         CALL,
         CALLCODE,
@@ -42,6 +47,7 @@ namespace monad::vm::fuzzing
         SLOAD,    SSTORE,      TLOAD,       TSTORE,
     };
 
+    // Note DIFFICULTY == PREVRANDAO
     constexpr auto common_non_terminators = std::array{
         ADD,        MUL,         SUB,
         DIV,        SDIV,        MOD,

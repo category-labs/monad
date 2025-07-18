@@ -6,6 +6,54 @@
 
 namespace monad::vm::runtime
 {
+    inline std::optional<evmc_address> resolve_delegate_address(
+        Context const *ctx, evmc_address const &addr) noexcept
+    {
+        // Copy up to |code_size| bytes of the bytecode. Then test
+        // whether the code begins with the prefix 0xEF0100, if so,
+        // then drop these three bytes and interpret the remainder as
+        // the delegate address.
+        constexpr uint8_t indicator[] = {0xef, 0x01, 0x00};
+        constexpr size_t indicator_size = std::size(indicator);
+        constexpr size_t expected_code_size =
+            indicator_size + sizeof(evmc_address);
+        static_assert(expected_code_size == 23);
+
+        uint8_t code_buffer[expected_code_size];
+        auto const actual_code_size = ctx->host->copy_code(
+            ctx->context, &addr, 0, code_buffer, expected_code_size);
+
+        std::span const code{code_buffer, actual_code_size};
+        if (actual_code_size != expected_code_size ||
+            !std::ranges::equal(code.subspan(0, indicator_size), indicator)) {
+            return std::nullopt;
+        }
+
+        // Copy the delegate address from the code buffer.
+        evmc::address designation;
+        std::ranges::copy(
+            code.subspan(indicator_size, sizeof(evmc_address)),
+            designation.bytes);
+        return designation;
+    }
+
+    inline std::uint32_t message_flags(
+        std::uint32_t env_flags, bool static_call, bool delegation_indicator)
+    {
+        if (static_call) {
+            env_flags = static_cast<std::uint32_t>(EVMC_STATIC);
+        }
+
+        if (delegation_indicator) {
+            env_flags |= static_cast<std::uint32_t>(EVMC_DELEGATED);
+        }
+        else {
+            env_flags &= ~static_cast<std::uint32_t>(EVMC_DELEGATED);
+        }
+
+        return env_flags;
+    }
+
     template <evmc_revision Rev>
     uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
@@ -28,18 +76,35 @@ namespace monad::vm::runtime
 
         ctx->expand_memory(max(args_offset + args_size, ret_offset + ret_size));
 
-        auto code_address = address_from_uint256(address);
+        auto const dest_address = address_from_uint256(address);
 
         if constexpr (Rev >= EVMC_BERLIN) {
             auto access_status =
-                ctx->host->access_account(ctx->context, &code_address);
+                ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->gas_remaining -= 2500;
             }
         }
 
+        auto const code_address = [&]() -> evmc::address {
+            if constexpr (Rev >= EVMC_PRAGUE) {
+                // EIP-7702: if the code address starts with 0xEF0100, then
+                // treat it as a delegated call in the context of the
+                // current authority.
+                if (auto delegate_address =
+                        resolve_delegate_address(ctx, dest_address)) {
+                    auto const access_status = ctx->host->access_account(
+                        ctx->context, &*delegate_address);
+                    ctx->gas_remaining -=
+                        access_status == EVMC_ACCESS_COLD ? 2600 : 100;
+                    return *delegate_address;
+                }
+            }
+            return dest_address;
+        }();
+
         auto recipient = (call_kind == EVMC_CALL || static_call)
-                             ? code_address
+                             ? dest_address
                              : ctx->env.recipient;
 
         auto sender = (call_kind == EVMC_DELEGATECALL) ? ctx->env.sender
@@ -93,8 +158,8 @@ namespace monad::vm::runtime
 
         auto message = evmc_message{
             .kind = call_kind,
-            .flags = static_call ? static_cast<std::uint32_t>(EVMC_STATIC)
-                                 : ctx->env.evmc_flags,
+            .flags = message_flags(
+                ctx->env.evmc_flags, static_call, dest_address != code_address),
             .depth = ctx->env.depth + 1,
             .gas = gas,
             .recipient = recipient,

@@ -612,16 +612,16 @@ Proof using.
 
   (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)
   Set Nested Proofs Allowed.
-  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState.
+  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState /\ block.block_account_exists assumedFixeeState.1 = true.
   Proof using. intros Heq.
   destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
   remember (block.block_account_exists assumedFixeeState) as rd.
   destruct rd; simpl in *; try discriminate;[].
   destruct x as [assumedFixeeState1 inds1]; try discriminate.
-  simplify_eq.
-  reflexivity.
+  simplify_eq. auto.
   Qed.
   applyToSomeHyp equationfoo.
+  miscPure.forward_reason.
   subst.
   (*
   destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
@@ -661,35 +661,48 @@ big.
 repeat (iExists _).
 eagerUnifyU.
 big.
-(* mow make cases on the \\// from find() *)
-  wp_if.
-  { (* more complex case where there is an entry in the current map, which the tx did an operation that can potentially update the state of that account. needs some more detailed specs about iterators to reason about how iter->second works *)
-    admit.
-  }
-  {
+#[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable).
+rewrite bi.or_alt.
+go.
+rename b into notfound. (* TODO change the spec to use bool instead of \\// *)
+destruct notfound.
+{ (* fixee (address) not found in state.current *)
     Remove Hints foldedLv2Lear : typeclass_instances.
     go.
+    iExists _. (* 1%Qp *)
+    iExists (Some x0).
+    slauto.
+    
+    iExists _.
+    iExists (Some assumedFixeeState).
+    go.
     iExists _.
     iExists (Some x0).
     go.
     
     iExists _.
-    iExists (Some x).
+    iExists (Some (assumedFixeeState &: lens._fst .@ _block_account_nonce .= block.block_account_nonce (fst x0))).
+    set (fixedAssumedFixeeState := ((assumedFixeeState &: lens._fst .@ _block_account_nonce .= block.block_account_nonce (fst x0) &: lens._fst .@ _block_account_balance .= block.block_account_balance (fst x0)))).
+    destruct assumedFixeeState as [assumedFixeeState inds].
+    simpl in *. subst.
+    destruct assumedFixeeState.
+    simpl.
+    Remove Hints foldedLv2Lear2 : typeclass_instances.
     go.
-    iExists _.
-    iExists (Some x0).
+    simpl.
+    iExists fixedAssumedFixeeState.
+    slauto.
+    subst.
+    simpl in *.
+    subst.
+    simpl in *.
     go.
+    (*
+  --------------------------------------□
+  [| false = true |] ** [| satisfiesAssumptions au actualPreTxState |]
+     *)
     
-    iExists _.
-    iExists (Some (x &: _block_account_nonce .= block.block_account_nonce x0)).
-    destruct x.
-    simpl.
-    Remove Hints prim.primR_aggressiveC : br_opacity.
-    go.
-    iExists (au &: _relaxedValidation .= false).
-    simpl.
-    go.
-    Set Nested Proofs Allowed.
+(*    
     Lemma falseTemp (origp: ptr):
       origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
   |-> primR "bool" 1$m (Vbool false)
@@ -705,227 +718,7 @@ big.
     Proof using. Admitted.
     Definition falseTempF2 := [FWD] falseTemp2.
     work using falseTempF, falseTempF2.
-    go.
-    big.
-    provePure.
-    {
-      admit.
-    }
-    work.
-    provePure.
-    {
-      unfold applyUpdates.
-      simpl.
-    go.
-    
-    HERE
-
-
-    
-  #[global] Instance foldedLv2Lear2 (origp:ptr) q qq oas x idx: learn_exist_interface.Learnable
-    (origp ,, opt_somety_offset
-    "monad::Account" ,, 
-      o_field CU "monad::Account::code_hash"
-      |->  bytes32R qq (code_hash_of_program (block.block_account_code x)))
-    (origp |->  libspecs.optionR "monad::Account" (fun ba : block.block_account => AccountR q ba idx)
-       q oas)
-    [ oas = Some x;  q=qq%Qp] := ltac:(solve_learnable).
-  go.
-    go.
-    do 8 run1.
-    do 4 run1.
-    do 4 run1.
-    do 4 run1.
-    do 4 run1.
-    do 4 run1.
-    do 4 run1.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-
-    Search x0.
-    iFrame.
-    iFrame.
-    iFrame.
-    iFrame.
-    iFrame.
-    work.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    step.
-    work.
-    run1.
-    run1.
-    run1.
-    do 4 run1.
-    do 4 run1.
-    do 4 run1.
-    
-    go.
-    big.
-    iassert
-  
-  2:{ }
-  2:{  slauto.
-  - slauto. admit. fail.
-  big.
-    rewrite <- .
-  go.
-  work.
-  
-  go.
-  apply andSep.
-  go.
-  apply trueSepEmp.
-  go.
-  
-  progress big.
-
-  True **
-  (Exists q : cQp.t,
-   actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::nonce"
-   |-> ulongR q (w256_to_Z (block.block_account_nonce x0)) ** True -∗
-   operators.wp_eval_binop.body module Bneq "unsigned long" "unsigned long" "bool"
-     (w256_to_Z (block.block_account_nonce x)) (w256_to_Z (block.block_account_nonce x0))
-     (fun v' : val =>
-      nonce_mismatch_addr |-> primR "bool" 1$c v' -∗
-      interp module ((1 >*> 1) |*| (1 >*> 1))
-        (wp_decls module  
-  go.
-  Search True emp.
-  Set Nested Proofs Allowed.
-  apply andSep.
-  go.
-  Search learn_exist_interface.Learnable primR.
-  work.
-    Search environments.envs_entails.
-    intros.
-  PrimRSep
-
-
-  work.
-  go.
-  instOptionR.
-  instOptionR. go.
-    
-  subst.
-  ego.
-  slauto.
-  ego.
-  wp_if;[slauto; fail|].
-  ego.
-  wp_if;[slauto; fail|].
-  slauto.
-  ego.
-  slauto.
-  unfold is_Some in *.
-  
-  slauto.
-  miscPure.forward_reason.
-  Forward.rwHyps.
-  simpl in *.
-  go.
-  wp_if;[slauto|].
-  slauto.
-  wapplyRev AccountR_unfoldable.
-  eagerUnifyU.
-  go.
-  iExists _, _, _.
-  optionSome.
-  
-  slauto.
-  wapplyRev AccountR_unfoldable.
-  go.
-  iExists _, _, _.
-  optionSome.
-  slauto.
-  wapplyRev AccountR_unfoldable.
-  go.
-  iExists _, _, _.
-  optionSome.
-  slauto.
-  iExists _.
-  slauto.
-  optionSomeBig.
-  iExists _.
-  slauto.
-  wp_if.
-  { (* nonce mismatch *)
-    slauto.
-    wp_if;slauto.
-
-    Set Nested Proofs Allowed.
-    go.
-    
-    slauto.
-    wp_if; slauto.
-    optionSomeBig; slauto.
-    wp_if; slauto.
-    go.
-    big.
-    go.
-    unfold AccountStateR.
-    big.
-    Forward.rwHyps.
-    subst.
-    unfoldLocalDefs.
-    unfold is_Some.
-    simpl in *.
-    miscPure.forward_reason.
-    subst.
-    go.
-    Forward.rwHyps.
-    go.
-    wp_if; big.
-    Transparent StateR.
-    unfold StateR.
-    slauto.
-    rewrite <- wp_const_const_delete.
-    slauto.
-    rewrite <- wp_const_const_delete.
-    slauto.
-    
-    mapIterR
-Search wp_const.
-    go.
-
-    #[global] Instance 
-    
-Search AccountStateR.   
-    Forward.rwHyps.
-    go.
-    go.
-    optionSome;
-    go.
-    optionSomeBig.
-    
-  optionSomeBig.
-  go.
-  ego; fail.
-  ego; fail.
-  go.
-  wapplyR AccountR_unfoldable.
-  go.
-
-
+ *)
 
 
 Abort.

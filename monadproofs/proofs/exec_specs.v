@@ -71,8 +71,8 @@ Definition MapModel K V := list (K * ModelWithPtr V).
 Record AssumptionsAndUpdates (* StateM *) :=
   {
     relaxedValidation: bool;
-    original: MapModel evm.address (AccountM * AssumptionExactness);
-    newStates: MapModel evm.address (list AccountM); (* head is the latest *)
+    original: MapModel evm.address (AccountM * AssumptionExactness (* * accessedKeys: list address *));
+    newStates: MapModel evm.address (list AccountM (* * accessedKeys: list address *)); (* head is the latest *)
     blockStatePtr: ptr;
     indices: Indices
   }.
@@ -777,6 +777,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
                end.
 
 
+  (* TODO: apply storage diffs *)
   Definition accountFinalVal (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: AccountM) (upd: (ModelWithPtr (list AccountM))) : AccountM :=
     match snd upd, orig with
     | [], _ => actualPreTxState (* cannot happen. length upd = 1 *)

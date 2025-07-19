@@ -680,16 +680,87 @@ destruct notfound.
     iExists (Some x0).
     go.
     
-    iExists _.
+    iExists (1%Qp).
     iExists (Some (assumedFixeeState &: lens._fst .@ _block_account_nonce .= block.block_account_nonce (fst x0))).
     set (fixedAssumedFixeeState := ((assumedFixeeState &: lens._fst .@ _block_account_nonce .= block.block_account_nonce (fst x0) &: lens._fst .@ _block_account_balance .= block.block_account_balance (fst x0)))).
     destruct assumedFixeeState as [assumedFixeeState inds].
     simpl in *. subst.
     destruct assumedFixeeState.
     simpl.
-    Remove Hints foldedLv2Lear2 : typeclass_instances.
-    go.
+    Remove Hints foldedLv2Lear2 optionRSomeAc: typeclass_instances.
+    Remove Hints prim.primR_aggressiveC: br_opacity.
+    run1.
+    run1.
+    run1.
+    run1.
+    run1.
+    run1.
+    run1.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
     simpl.
+    cancelHead
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    progress step.
+    run1.
+    
+    run1.
+    run1.
+    run1.
+    simpl.
+    Set Printing Depth 10000000.
     iExists fixedAssumedFixeeState.
     slauto.
     subst.

@@ -217,10 +217,10 @@ Proof. Admitted.
     ** _field "monad::AccountState::account_"
          |-> libspecs.optionR
               "monad::Account"%cpp_type
-              (fun ba' => AccountR q origp)
+              (fun ba => AccountR q ba)
               q
-              (if orig.(monad.EVMOpSem.block.block_account_exists)
-               then Some orig else None)
+              (if orig.(block.block_account_exists)
+               then Some origp else None)
     (* persistent storage_ *)
     ** _field "monad::AccountState::storage_"
               |-> StorageMapR q (block.block_account_storage orig)
@@ -233,7 +233,25 @@ Proof. Admitted.
              (q: Qp)
              (asm:          AssumptionExactness)
              (origp:         AccountM) : Rep :=
-    AccountStateR q origp 
+    (* todo: the initial part of it is just AccountStateR, but lazy unfolding hint generator doesnt work when doing that. in the final code, this will not be an issue anyway because AccountState is a superclass of OriginalAccountState *)
+    let orig := fst origp in
+    _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
+      |-> AccountSubstateR q (Build_AccountSubstateModel false false false [])
+    (* account_ via optionR *)
+    ** _field "monad::AccountState::account_"
+         |-> libspecs.optionR
+              "monad::Account"%cpp_type
+              (fun ba => AccountR q ba)
+              q
+              (if orig.(block.block_account_exists)
+               then Some origp else None)
+    (* persistent storage_ *)
+    ** _field "monad::AccountState::storage_"
+              |-> StorageMapR q (block.block_account_storage orig)
+    (* transient storage_ *)
+   ** (Exists transient_map, _field "monad::AccountState::transient_storage_"
+                                          |-> StorageMapR q transient_map)
+    ** structR "monad::AccountState"%cpp_name (cQp.mut q) 
     ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR (cQp.mut q) (nonce_exact asm)
     (* exact‐balance flag *)
     ** _field "monad::AccountState::validate_exact_balance_" |-> boolR (cQp.mut q)

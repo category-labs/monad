@@ -16,6 +16,7 @@ Require Import Lens.Elpi.Elpi.
 
 #[only(lazy_unfold)] derive AccountR.
 #[only(lazy_unfold)] derive AccountStateR.
+#[only(lazy_unfold)] derive OriginalAccountStateR.
 #[only(lazy_unfold)] derive StateR.
 
 Section with_Sigma.
@@ -52,7 +53,7 @@ Section with_Sigma.
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
      [| if satisfiesAssumptionsb then satisfiesAssumptions au actualPreTxState else Logic.True |] **
       if (negb satisfiesAssumptionsb)
-      then statep |-> StateR au ** origp |-> AccountStateR 1 assumedFixeeState
+      then statep |-> StateR au ** origp |-> OriginalAccountStateR 1 ae assumedFixeeState
       else
         Exists fixedFixeeNewState exactFixeeAssumption actualPreTxStateFixee,
           statep |-> StateR (au &: _newStates %= (update fixee (fixeeNewStateLoc,[fixedFixeeNewState])))
@@ -64,10 +65,10 @@ Section with_Sigma.
 
 (* Model predicates for is_empty and is_dead *)
 
-Definition is_empty_model (oas: option monad.EVMOpSem.block.block_account) : bool :=
+Definition is_empty_model (oas: option AccountM) : bool :=
   match oas with
   | None => true
-  | Some ba =>
+  | Some (ba,_) =>
       let ch := monad.proofs.exec_specs.code_hash_of_program
                   (monad.EVMOpSem.block.block_account_code ba) in
       let zn := monad.proofs.exec_specs.w256_to_Z
@@ -79,7 +80,7 @@ Definition is_empty_model (oas: option monad.EVMOpSem.block.block_account) : boo
       && (N.eqb bn 0%N)
   end.
 
-Definition is_dead_model (oas: option monad.EVMOpSem.block.block_account) : bool :=
+Definition is_dead_model (oas: option AccountM) : bool :=
   negb (bool_decide (option.is_Some oas)) || is_empty_model oas.
 
 (* Basic getter specs for AccountState and State *)
@@ -117,7 +118,7 @@ cpp.spec "monad::is_empty(const monad::Account&)" as is_empty_spec with (
       accountp |-> libspecs.optionR
                    "monad::Account"
                    (fun ba => AccountR 1 ba) 1 oas
-  \post[Vbool (is_empty_model (option_map fst oas))] emp).
+  \post[Vbool (is_empty_model oas)] emp).
 
 cpp.spec "monad::is_dead(const std::optional<monad::Account>&)" as is_dead_spec with (
   \arg{accountp: ptr} "account" (Vref accountp)
@@ -125,7 +126,7 @@ cpp.spec "monad::is_dead(const std::optional<monad::Account>&)" as is_dead_spec 
       accountp |-> libspecs.optionR
                    "monad::Account"
                    (fun ba => AccountR 1 ba) 1 oas
-  \post[Vbool (is_dead_model (option_map fst oas))] emp
+  \post[Vbool (is_dead_model oas)] emp
 ).
 
 
@@ -599,6 +600,28 @@ Proof using.
   wp_if.
   2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
   big.
+      #[global] Instance foldedLv2Lear2 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
+    (origp ,, opt_somety_offset
+    "monad::Account" ,, 
+      o_field CU "monad::Account::balance"
+      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
+       q (if block.block_account_exists oas.1 then Some oas else None))
+    [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
+  go.
+
+  (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)    
+  destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
+  remember (block.block_account_exists assumedFixeeState) as rd.
+  destruct rd; simpl in *; try discriminate;[].
+  destruct x as [assumedFixeeState1 inds1]; try discriminate.
+  destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
+  simpl in *.
+  subst.
+  orient_rwHyps.
+  simplify_eq.
+  slauto.
+
   wp_if.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 

@@ -386,7 +386,7 @@ Existing Instance UNSAFE_read_prim_cancel.
                    ** (reference_to "monad::State" this) (* convenient but logically redundant *)
                    ** [| relaxed_constructor_init_state sender_addr sender_nonce sender_bal bsp inc au|]).
   
-  #[global]  Instance Learnable q q2 v tx1 (txp:ptr) :
+  #[global]  Instance kldsjflsjal q q2 v tx1 (txp:ptr) :
     Learnable
       (txp |-> TransactionR q tx1)
       (txp ,, o_field CU "monad::Transaction::nonce" |-> primR "unsigned long" q2 v)

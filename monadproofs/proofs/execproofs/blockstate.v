@@ -470,7 +470,7 @@ Hint Opaque AccountR: br_opacity.
   Transparent libspecs.optionR.
   Opaque w256_to_Z.
   Hint Opaque libspecs.optionR: br_opacity.
-  #[global] Instance learnac : LearnEq3 (AccountR) := ltac:(solve_learnable).
+  #[global] Instance learnac : LearnEq2 (AccountR) := ltac:(solve_learnable).
   #[global] Instance learnby : LearnEq2 (bytes32R) := ltac:(solve_learnable).
   Arguments libspecs.optionR {_} {_} {_} {_} {_} _ _ _ !o/.
 
@@ -526,7 +526,8 @@ Hint Opaque AccountR: br_opacity.
       (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
   |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o2)))))
       [o1=o2] := ltac:(solve_learnable).
-    #[global] Instance ll : LearnEq4 AccountStateR := ltac:(solve_learnable).
+    #[global] Instance ll : LearnEq2 AccountStateR := ltac:(solve_learnable).
+    #[global] Instance ll2 : LearnEq3 OriginalAccountStateR := ltac:(solve_learnable).
     
   Ltac unifyOptionR :=
     IPM.perm_right ltac:(fun R _ =>
@@ -591,6 +592,14 @@ Hint Opaque AccountR: br_opacity.
   Hint Resolve foldAccountR : br_opacity.
   Definition costRemB := [BWD<-]wp_const_const_delete.
   Hint Resolve costRemB: br_opacity.
+      #[global] Instance foldedLv2Lear2 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
+    (origp ,, opt_somety_offset
+    "monad::Account" ,, 
+      o_field CU "monad::Account::balance"
+      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
+       q (if block.block_account_exists oas.1 then Some oas else None))
+    [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
 Lemma prf: verify[module] fix_spec.
 Proof using.
   work.
@@ -600,7 +609,30 @@ Proof using.
   wp_if.
   2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
   big.
-      #[global] Instance foldedLv2Lear2 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
+
+  (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)
+  Set Nested Proofs Allowed.
+  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState.
+  Proof using. intros Heq.
+  destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
+  remember (block.block_account_exists assumedFixeeState) as rd.
+  destruct rd; simpl in *; try discriminate;[].
+  destruct x as [assumedFixeeState1 inds1]; try discriminate.
+  simplify_eq.
+  reflexivity.
+  Qed.
+  applyToSomeHyp equationfoo.
+  subst.
+  (*
+  destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
+  simpl in *.
+  subst. 
+  orient_rwHyps.
+  simplify_eq.*)
+
+  big.
+  (*
+      #[global] Instance foldedLv2Lear3 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
     (origp ,, opt_somety_offset
     "monad::Account" ,, 
       o_field CU "monad::Account::balance"
@@ -608,24 +640,28 @@ Proof using.
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
        q (if block.block_account_exists oas.1 then Some oas else None))
     [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
-  go.
-
-  (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)    
-  destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
-  remember (block.block_account_exists assumedFixeeState) as rd.
-  destruct rd; simpl in *; try discriminate;[].
-  destruct x as [assumedFixeeState1 inds1]; try discriminate.
-  destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
-  simpl in *.
-  subst.
-  orient_rwHyps.
-  simplify_eq.
-  slauto.
-
+*)
   wp_if.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 
   big.
+  unfold MapCurrentR.
+Notation LearnEq7 P :=
+  (forall a a' b b' c c' d d' e e' f f' g g',
+    learn_exist_interface.Learnable
+      (P a b c d e f g)
+      (P a' b' c' d' e' f' g')
+      [a = a'; b = b'; c = c'; d = d'; e = e'; f = f'; g=g']).
+  
+#[global] Instance lanker {K V} : LearnEq7 (@AnkerMapR _ _ _ _ K V) := ltac:(solve_learnable).
+go.
+repeat (iExists _).
+eagerUnifyU.
+big.
+repeat (iExists _).
+eagerUnifyU.
+big.
+(* mow make cases on the \\// from find() *)
   wp_if.
   { (* more complex case where there is an entry in the current map, which the tx did an operation that can potentially update the state of that account. needs some more detailed specs about iterators to reason about how iter->second works *)
     admit.

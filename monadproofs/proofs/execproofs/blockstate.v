@@ -600,6 +600,26 @@ Hint Opaque AccountR: br_opacity.
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
        q (if block.block_account_exists oas.1 then Some oas else None))
     [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
+
+  Set Nested Proofs Allowed.
+  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState /\ block.block_account_exists assumedFixeeState.1 = true.
+  Proof using. intros Heq.
+  destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
+  remember (block.block_account_exists assumedFixeeState) as rd.
+  destruct rd; simpl in *; try discriminate;[].
+  destruct x as [assumedFixeeState1 inds1]; try discriminate.
+  simplify_eq. auto.
+  Qed.
+Notation LearnEq7 P :=
+  (forall a a' b b' c c' d d' e e' f f' g g',
+    learn_exist_interface.Learnable
+      (P a b c d e f g)
+      (P a' b' c' d' e' f' g')
+      [a = a'; b = b'; c = c'; d = d'; e = e'; f = f'; g=g']).
+  
+#[global] Instance lanker {K V} : LearnEq7 (@AnkerMapR _ _ _ K V) := ltac:(solve_learnable).
+#[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable).
+      
 Lemma prf: verify[module] fix_spec.
 Proof using.
   work.
@@ -611,15 +631,6 @@ Proof using.
   big.
 
   (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)
-  Set Nested Proofs Allowed.
-  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState /\ block.block_account_exists assumedFixeeState.1 = true.
-  Proof using. intros Heq.
-  destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
-  remember (block.block_account_exists assumedFixeeState) as rd.
-  destruct rd; simpl in *; try discriminate;[].
-  destruct x as [assumedFixeeState1 inds1]; try discriminate.
-  simplify_eq. auto.
-  Qed.
   applyToSomeHyp equationfoo.
   miscPure.forward_reason.
   subst.
@@ -646,22 +657,13 @@ Proof using.
 
   big.
   unfold MapCurrentR.
-Notation LearnEq7 P :=
-  (forall a a' b b' c c' d d' e e' f f' g g',
-    learn_exist_interface.Learnable
-      (P a b c d e f g)
-      (P a' b' c' d' e' f' g')
-      [a = a'; b = b'; c = c'; d = d'; e = e'; f = f'; g=g']).
-  
-#[global] Instance lanker {K V} : LearnEq7 (@AnkerMapR _ _ _ _ K V) := ltac:(solve_learnable).
 go.
-repeat (iExists _).
+repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
 eagerUnifyU.
 big.
 repeat (iExists _).
 eagerUnifyU.
 big.
-#[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable).
 rewrite bi.or_alt.
 go.
 rename b into notfound. (* TODO change the spec to use bool instead of \\// *)
@@ -689,78 +691,7 @@ destruct notfound.
     simpl.
     Remove Hints foldedLv2Lear2 optionRSomeAc: typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
-    run1.
-    run1.
-    run1.
-    run1.
-    run1.
-    run1.
-    run1.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    simpl.
-    cancelHead
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    progress step.
-    run1.
-    
-    run1.
-    run1.
-    run1.
-    simpl.
-    Set Printing Depth 10000000.
+    go.
     iExists fixedAssumedFixeeState.
     slauto.
     subst.
@@ -770,7 +701,28 @@ destruct notfound.
     go.
     (*
   --------------------------------------□
-  [| false = true |] ** [| satisfiesAssumptions au actualPreTxState |]
+  origp ,, o_field CU "monad::AccountState::account_"
+  |-> libspecs.optionR "monad::Account" (fun ba : AccountM => AccountR 1 ba) 1
+        (if block_account_exists then Some fixedAssumedFixeeState else None) **
+  origp ,, o_field CU "monad::AccountState::validate_exact_balance_" |-> primR "bool" 1$m (Vbool true) **
+  statep ,, o_field CU "monad::State::current_"
+  |-> MapCurrentR 1
+        (update fixee
+           (fixeeNewStateLoc,
+            [accountFinalVal true
+               (Some
+                  ({|
+                     block.block_account_address := block_account_address;
+                     block.block_account_storage := block_account_storage;
+                     block.block_account_code := block_account_code;
+                     block.block_account_balance := block_account_balance;
+                     block.block_account_nonce := block_account_nonce;
+                     block.block_account_exists := block_account_exists;
+                     block.block_account_hascode := block_account_hascode
+                   |}, x0.2, ae))
+               x0 (fixeeNewStateLoc, fixeeNewState)])
+           (newStates au)) **
+  [| satisfiesAssumptions au actualPreTxState |]
      *)
     
 (*    

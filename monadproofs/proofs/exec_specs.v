@@ -88,15 +88,15 @@ Module OneTbbMap. Section with_Sigma.
            (* CFrational vrep *)
            (q: stdpp.numbers.Qp) (* one::tbb::concurrent_map itself is used as a value time (storage delta in StateDelta) so Rauth itself must be fractional. q<1 means can only read. unlike Rfrag, we can depend on the value being m *)
            (m: list (K*V))
-    : Rep :=
-  structR (Ninst "oneapi::tbb::concurrent_hash_map" [Atype tykey; Atype tyval]) (1/2).
+    : Rep. Proof. Admitted.
+(*  structR (Ninst "oneapi::tbb::concurrent_hash_map" [Atype tykey; Atype tyval]) (1/2). *)
 
   (* TODO: generalize over MapOriginalR and MapCurrentR and specialize with AccountStatR, move that up *)
   Definition Rfrag {K V:Type} (tykey tyval: type) (khash: K -> N) `{EqDecidable K}
            (krep : K -> Rep)
            (vrep : V -> Rep)
-           (q: stdpp.numbers.Qp): Rep :=
-  structR (Ninst "oneapi::tbb::concurrent_hash_map" [Atype tykey; Atype tyval]) (q/2).
+           (q: stdpp.numbers.Qp): Rep. Proof. Admitted.
+ (*  structR (Ninst "oneapi::tbb::concurrent_hash_map" [Atype tykey; Atype tyval]) (q/2). *)
   
 End with_Sigma. End OneTbbMap.
 
@@ -110,24 +110,24 @@ Definition AnkerMapR {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqD
            (* CFrational vrep *)
            (q: Qp)
            (m: MapModel K V)
-    : Rep :=
-  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
+    : Rep. Proof. Admitted.
+(*  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *) *)
   (* move to libspecs *)
 
 Definition AnkerMapSpineR {K:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDecision K}
            (krep : Qp -> K -> Rep) 
            (q: Qp)
            (locs : list (K*ptr)) (* listed in iteration order *)
-    : Rep :=
-  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
+    : Rep. Proof. Admitted.
+ (* structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *) *)
 
 
 Definition AnkerMapPayloadsR {V:Type} (tykey tyval: type) 
            (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
            (q: Qp)
            (locs : list (ptr*V)) (* listed in iteration order, but clients dont need to know that *)
-    : Rep :=
-  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *)
+    : Rep. Proof. Admitted.
+(*  structR (Ninst "anker::map" [Atype tykey; Atype tyval]) (1/2). (* TODO : fix *) *)
 
 
 Lemma AnkerMapSplit {K V:Type} (tykey tyval: type) (khash: K -> N) {eqd: EqDecision K}
@@ -670,7 +670,7 @@ structR
     (cQp.mut q).
 *)
 
-(** 4) Rep for monad::State::logs_ (VersionStack<vector<Receipt::Log>>) **)
+(** TODO: fix: add the actual logs **)
 Definition LogsR (q: stdpp.numbers.Qp) : Rep :=
   structR
     "monad::VersionStack<std::vector<monad::Receipt::Log, std::allocator<monad::Receipt::Log>>>"
@@ -681,10 +681,11 @@ Definition CodeMapR
            (q: stdpp.numbers.Qp)
            (cm: stdpp.gmap.gmap Corelib.Numbers.BinNums.N (* bytes32 as N *)
                              (list N)) 
-  : Rep :=
+  : Rep. Proof. Admitted.
+(*
   structR
     "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, std::shared_ptr<evmone::baseline::CodeAnalysis>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"
-    (cQp.mut q).
+    (cQp.mut q). *)
 
 (** Helper to extract the newly‐deployed code map from the State model **)
 

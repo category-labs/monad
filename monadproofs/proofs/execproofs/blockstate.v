@@ -37,18 +37,28 @@ Section with_Sigma.
 
   Typeclasses Transparent MapModel.
   Typeclasses Transparent ModelWithPtr.
+Definition AnkerMapRSlice {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqDecision K} *)
+           (krep : Qp -> K -> Rep) 
+           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
+           (* CFrational vrep *)
+           (key: K)
+           (val: ModelWithPtr V)
+    : Rep. Proof. Admitted.
+  
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
    \arg{statep: ptr} "state" (Vref statep)
-   \pre{au: AssumptionsAndUpdates}  statep |-> StateR au
+   \pre{au: AssumptionsAndUpdates}     _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
+   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s) ∗
+
    \arg{addrp: ptr} "address" (Vref addrp)
    \prepost{qa fixee} addrp |-> addressR qa fixee
    \arg{origp: ptr} "original" (Vref origp)
-   \pre{assumedFixeeState ae} origp |-> OriginalAccountStateR 1 ae assumedFixeeState
+   (* \pre{assumedFixeeState ae} origp |-> OriginalAccountStateR 1 ae assumedFixeeState *)
    \arg{actualp: ptr} "actual" (Vref actualp)
    \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs) 1 (actualPreTxState !! fixee)
-   \pre{fixeeNewStateLoc fixeeNewState} [| lookupr fixee (newStates au) = Some (fixeeNewStateLoc, fixeeNewState)  |]
+   \pre{assumedFixeeState ae} [| lookupr fixee (original au) = Some (origp, (assumedFixeeState, ae))  |]
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
      [| if satisfiesAssumptionsb then satisfiesAssumptions au actualPreTxState else Logic.True |] **

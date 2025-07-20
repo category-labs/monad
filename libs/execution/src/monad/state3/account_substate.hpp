@@ -10,7 +10,7 @@
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
-class AccountSubstate
+class AccountSubstate// is this class completely irrelevant to OriginalAccountState?
 {
     template <class Key>
     using Set = ankerl::unordered_dense::set<Key>;

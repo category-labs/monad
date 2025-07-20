@@ -16,6 +16,14 @@ Import cQp_compat.
 #[local] Open Scope lens_scope.
 
 #[only(lens)] derive block.block_account.
+Section Map.
+  Context {A B : Type} {HDE : EqDecision A}.
+  Definition ix (a : A) : (A -> B) -l> B :=
+    {| Lens.view := fun m => m a
+     ; Lens.over := fun (f : B -> B) m =>
+         fun a' => if decide (a = a') then f (m a') else m a' |}.
+End Map.
+
 (* delete ? *)
 Notation resultn ty :=
                   (Ninst (Nscoped (Nscoped (Nglobal (Nid "boost")) (Nid "outcome_v2")) (Nid "basic_result"))
@@ -68,11 +76,25 @@ Definition  ModelWithPtr (ModelType: Type) : Type := ptr * ModelType.
 
 Definition MapModel K V := list (K * ModelWithPtr V).
 
-Record AssumptionsAndUpdates (* StateM *) :=
+Record PartialAccountState :=
+  {
+    coreState: option AccountM; (* this defines storage values for ALL possible keys, typicall most mapped to 0. ideally storage should be made a partial map here. then the field below [accessedKeys] would not be needed. when used to encode updates, dead accounts stay as Some here until execute_final *)
+    relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
+    must be [] if coreState is []*)
+    substateModel : AccountSubstateModel
+  }.
+    
+Record AssumptionAndUpdate :=
+  {
+    preTxAcStateAssumptions: PartialAccountState * AssumptionExactness;
+    txUpdates : option PartialAccountState; (* None means, the tx did not make any updates to this account *)
+  }.
+
+Record StateM :=
   {
     relaxedValidation: bool;
-    original: MapModel evm.address (AccountM * AssumptionExactness (* * accessedKeys: list address *));
-    newStates: MapModel evm.address (list AccountM (* * accessedKeys: list address *)); (* head is the latest *)
+    preTxAssumedState: MapModel evm.address (PartialAccountState * AssumptionExactness );
+    newStates: MapModel evm.address (list PartialAccountState ); (* head is the latest *)
     blockStatePtr: ptr;
     indices: Indices
   }.
@@ -153,10 +175,10 @@ Proof. Admitted.
     anyR
       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, void, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<evmc::bytes32>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 0b>"%cpp_type
       (cQp.mut q).
+  
   (* A simplistic layout of the "storage_" and "transient_storage_" tables: *)
-  Definition StorageMapR (q: stdpp.numbers.Qp)
-             (m: monad.EVMOpSem.evm.storage)
-    : bluerock.lang.cpp.logic.rep_defs.Rep :=
+  Definition StorageMapR (q: Qp)
+             (m: list (N*N)) : Rep :=
     anyR
       "ankerl::unordered_dense::v4_1_0::detail::table<evmc::bytes32, evmc::bytes32, ankerl::unordered_dense::v4_1_0::hash<evmc::bytes32, void>, std::equal_to<evmc::bytes32>, std::allocator<std::pair<evmc::bytes32, evmc::bytes32>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>"%cpp_type
       (cQp.mut q).
@@ -170,7 +192,7 @@ Proof. Admitted.
 
 
   Definition computeCodeMap
-    (s : AssumptionsAndUpdates)
+    (s : StateM)
     : stdpp.gmap.gmap Corelib.Numbers.BinNums.N (list N) :=
     ∅.  (* TOFIXLATER: fold over s.newStates and extract code from each created account *)
 
@@ -203,28 +225,20 @@ Proof. Admitted.
     ** _field "monad::Account::incarnation"|-> IncarnationR q (snd ac)
     ** structR "monad::Account"%cpp_name    (cQp.mut q).
 
-  (* ------------------------------------------------------------------------- *)
-  (* 4) AccountStateR: everything now fully defined                             *)
-  (* ------------------------------------------------------------------------- *)
+  Definition storageMapOf (p: PartialAccountState): list (N*N). Proof. Admitted.
   Definition AccountStateR
              (q: stdpp.numbers.Qp)
-             (origp:         AccountM) : Rep :=
-    (* base substate *)
-    let orig := fst origp in
+             (origp: PartialAccountState) : Rep :=
     _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
       |-> AccountSubstateR q (Build_AccountSubstateModel false false false [])
-    (* account_ via optionR *)
     ** _field "monad::AccountState::account_"
          |-> libspecs.optionR
               "monad::Account"%cpp_type
               (fun ba => AccountR q ba)
               q
-              (if orig.(block.block_account_exists)
-               then Some origp else None)
-    (* persistent storage_ *)
+              (coreState origp)
     ** _field "monad::AccountState::storage_"
-              |-> StorageMapR q (block.block_account_storage orig)
-    (* transient storage_ *)
+              |-> StorageMapR q (storageMapOf origp)
    ** (Exists transient_map, _field "monad::AccountState::transient_storage_"
                                           |-> StorageMapR q transient_map)
     ** structR "monad::AccountState"%cpp_name (cQp.mut q).
@@ -232,26 +246,21 @@ Proof. Admitted.
   Definition OriginalAccountStateR
              (q: Qp)
              (asm:          AssumptionExactness)
-             (origp:         AccountM) : Rep :=
+             (origp:         PartialAccountState) : Rep :=
     (* todo: the initial part of it is just AccountStateR, but lazy unfolding hint generator doesnt work when doing that. in the final code, this will not be an issue anyway because AccountState is a superclass of OriginalAccountState *)
-    let orig := fst origp in
     _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
       |-> AccountSubstateR q (Build_AccountSubstateModel false false false [])
-    (* account_ via optionR *)
     ** _field "monad::AccountState::account_"
          |-> libspecs.optionR
               "monad::Account"%cpp_type
               (fun ba => AccountR q ba)
               q
-              (if orig.(block.block_account_exists)
-               then Some origp else None)
-    (* persistent storage_ *)
+              (coreState origp)
     ** _field "monad::AccountState::storage_"
-              |-> StorageMapR q (block.block_account_storage orig)
-    (* transient storage_ *)
+              |-> StorageMapR q (storageMapOf origp)
    ** (Exists transient_map, _field "monad::AccountState::transient_storage_"
                                           |-> StorageMapR q transient_map)
-    ** structR "monad::AccountState"%cpp_name (cQp.mut q) 
+    ** structR "monad::AccountState"%cpp_name (cQp.mut q)
     ** _field "monad::AccountState::validate_exact_nonce_"   |-> boolR (cQp.mut q) (nonce_exact asm)
     (* exact‐balance flag *)
     ** _field "monad::AccountState::validate_exact_balance_" |-> boolR (cQp.mut q)
@@ -640,7 +649,7 @@ Definition MapOriginalR
            (q: stdpp.numbers.Qp)
            (m: MapModel 
                   evm.address
-                  (AccountM
+                  (PartialAccountState
                    * AssumptionExactness))
   : Rep :=
   AnkerMapR "evmc::address" "monad::OriginalAccountState" 
@@ -655,7 +664,7 @@ Definition VersionStackR {ElemType} (cppType: type) (elemRep: Qp -> ElemType -> 
 
 Definition MapCurrentR
            (q: stdpp.numbers.Qp)
-           (m: MapModel address (list AccountM))
+           (m: MapModel address (list PartialAccountState))
   : Rep :=
   AnkerMapR "evmc::address" "monad::VersionStack<monad::AccountState>" 
            addressToN
@@ -690,10 +699,10 @@ Definition CodeMapR
 (** Helper to extract the newly‐deployed code map from the State model **)
 
 (** Now lay out StateR.  We *no longer* re‐open the section here. **)
-Definition StateR (s: AssumptionsAndUpdates) : Rep :=
+Definition StateR (s: StateM) : Rep :=
    _field "monad::State::block_state_" |-> ptrR<"monad::BlockState"> 1$m (blockStatePtr s) ∗
    _field "monad::State::incarnation_" |-> IncarnationR 1$m%cQp (indices s) ∗
-   _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
+   _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (preTxAssumedState s) ∗
    _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s) ∗
    _field "monad::State::logs_" |-> LogsR 1$m%cQp ∗ (* TOFIX: add a model arg to LogsR *)
    _field "monad::State::code_" |-> CodeMapR 1$m%cQp (computeCodeMap s) ∗
@@ -702,11 +711,11 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
    structR "monad::State" 1$m.  
   
 
-  Definition nullifyBalNonce (e: AccountM) : AccountM. Proof. Admitted.
+  Definition nullifyBalNonceStorage (e: AccountM) : AccountM. Proof. Admitted.
   (*    := {[ e with evm.account_balance := 0, evm.account_nonce:=0 ]}. *)
   
   (*
-  Definition preImpl2 (blockStatePtr: ptr) (senderAddr: evm.address) (sender: account_state): AssumptionsAndUpdates:=
+  Definition preImpl2 (blockStatePtr: ptr) (senderAddr: evm.address) (sender: account_state): StateM:=
     {|
       blockStatePtr:= blockStatePtr;
       newStates:= ∅;
@@ -725,10 +734,16 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
   Definition zbvlens {A:Type} (l: Lens A A keccak.w256 keccak.w256): Lens A A Z Z :=
     {| view := λ a : A, Zdigits.binary_value 256 (a .^ l);
       over := λ (fz : Z → Z) (a : A), (l %= zbvfun fz) a |}.
-  Definition _balance : Lens AccountM AccountM Z Z:=
+  Definition _balance : Lens AccountM AccountM Z Z (* TODO: Z -> N *):=
     zbvlens (lens._fst .@ _block_account_balance).
   Definition _nonce : Lens AccountM evm.account_state Z Z:=
     zbvlens (lens._fst .@ _block_account_nonce).
+
+  Locate storage.
+  Print evm.storage.
+  Print keccak.w256.
+  Definition _storage (key: Z): Lens AccountM evm.account_state Z Z:=
+    zbvlens (lens._fst .@ _block_account_storage .@ (ix (Zdigits.Z_to_binary _ key))).
   
   Definition isNone {T} (a: option T):= negb (isSome a).
   Definition min_balanceN (a: AssumptionExactness) : N:=
@@ -739,30 +754,57 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
 
   Global Instance lkk {K V} `{Countable K}:  Lookup K  V (MapModel K V) := fun k m =>
     option_map snd (((list_to_map m):(gmap K (ModelWithPtr V))) !! k).
+
+  Search option.
+  Definition assumptionAndUpdateOfAddr (s: StateM) (a: evm.address): option AssumptionAndUpdate :=
+    match preTxAssumedState s !! a  with
+      | None => None
+      | Some p => Some
+          {|
+            preTxAcStateAssumptions := p;
+            txUpdates :=  ((newStates s) !! a) ≫= head
+          |}
+    end.
       
-  Definition satisfiesAssumptions (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) : Prop :=
+  Definition interpAssumptions (relaxedValidation: bool) (a: option AssumptionAndUpdate) (actualPreTxAcState: option AccountM) : Prop :=
+      match option_map preTxAcStateAssumptions a  with
+      | Some (assumedState, assumEx) =>
+          match coreState assumedState, actualPreTxAcState  with
+          | Some cs, Some csActual =>
+             (if (negb relaxedValidation || isNone (min_balance assumEx))
+              then cs .^ _balance = csActual .^ _balance
+              else (min_balanceN assumEx <= (csActual) .^ _balance))
+             /\ (if (negb relaxedValidation || nonce_exact assumEx)
+                 then cs .^ _nonce = (csActual).^ _nonce
+                 else True)
+             /\ (forall storageKey: N, storageKey ∈ relevantKeys assumedState
+                                       -> csActual .^ _storage storageKey = cs .^ _storage storageKey)
+          | None, None => True
+          | _, _ => False
+          end
+      | None  => True
+      end.
+      
+  Definition satisfiesAssumptions (a: StateM) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr: address,
-      match original a !! acAddr, preTxState !! acAddr  with
-      | Some assumAcE, Some preTxAc =>
-          let '(assumState, assumEx) := assumAcE in
-          nullifyBalNonce assumState = nullifyBalNonce preTxAc
-          /\ (if (negb (relaxedValidation a) || isNone (min_balance assumEx))
-             then assumState .^ _balance = preTxAc .^ _balance
-             else (min_balanceN assumEx <= (preTxAc) .^ _balance))
-          /\ (if (negb (relaxedValidation a) || nonce_exact assumEx)
-              then (assumState) .^ _nonce = (preTxAc).^ _nonce
-              else True)
-      | None, None => True
-      | _, _ => False                        
-      end.
-  Definition validAU (a: AssumptionsAndUpdates) : Prop :=
-    forall acAddr,
-      match original a !! acAddr  with
-      | Some (assumState, assumEx) =>
-          if ((relaxedValidation a) && isSome (min_balance assumEx))
-          then (min_balanceN assumEx <= assumState .^ _balance) else True
-      | None => True
-      end.
+      interpAssumptions (relaxedValidation a) (assumptionAndUpdateOfAddr a acAddr) (preTxState !! acAddr).
+
+  Definition validAU (relaxedValidation: bool) (a: option AssumptionAndUpdate) : Prop :=
+    match option_map preTxAcStateAssumptions a  with
+    | None  => True
+    | Some (assumedState, assumEx) =>
+        match coreState assumedState  with
+        | None => relevantKeys assumedState = []
+        | Some cs => 
+            if (relaxedValidation && isSome (min_balance assumEx))
+            then (min_balanceN assumEx <= cs .^ _balance) else True
+        end
+    end. (* TODO: add more conditions, e.g. about the updates *)
+      
+  Definition validStateM (a: StateM) : Prop :=
+    forall addr,
+      validAU (relaxedValidation a) (assumptionAndUpdateOfAddr a addr)
+      /\ addr ∈ (map fst (newStates a)) -> addr ∈ (map fst (preTxAssumedState a)).
 
   Definition dummyEx : AssumptionExactness :=  {| min_balance := None; nonce_exact := true |}.
 
@@ -777,25 +819,70 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
                | None => (block.block_account_default, dummyInc)
                end.
 
+(*
+  Definition applyUpdates (p: PartialAccountState) (base: AccountM) : AccountM :=
+    {
+ *)
 
-  (* TODO: apply storage diffs *)
+  
+  Definition updateStorage (pre: option evm.storage) (updates: PartialAccountState) : evm.storage. Proof. Admitted.
+  Definition accountFinalVal (relaxedValidation: bool) (au : AssumptionAndUpdate) (actualPreTxState: option AccountM)  : option AccountM :=
+    let '(assumedPreTxState, assumEx) := preTxAcStateAssumptions au in
+    match  txUpdates au   with
+    | None => actualPreTxState
+    | Some txUpds =>
+        match coreState txUpds  with
+        | None => None (* account did suicide if it existed *)
+        | Some csUpdated =>
+            let base := csUpdated &: lens._fst .@ _block_account_storage .= updateStorage (option_map (block.block_account_storage ∘ fst) actualPreTxState) txUpds in
+            if relaxedValidation then Some base else
+              match coreState assumedPreTxState, actualPreTxState  with 
+              | Some csAssumed, Some csActual => Some(
+                  let '(postTxBal, postTxNonce) := postTxActualBalNonce csAssumed assumEx csUpdated csActual in
+                  let postAcState := if (isNone (min_balance assumEx)) then base else base &: _balance .= postTxBal in
+                  if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce))
+              | _ , _ => Some base (* no relexed validation if either account is dead *)
+              end
+        end
+    end.
+        
+  (* TODO: apply storage diffs 
   Definition accountFinalVal (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: AccountM) (upd: (ModelWithPtr (list AccountM))) : AccountM :=
     match snd upd, orig with
     | [], _ => actualPreTxState (* cannot happen. length upd = 1 *)
-    | _, None => actualPreTxState (* cannot happen. if an address exists in the State::current_ map, it must exist in the State::original map. *)
+    | _, None => actualPreTxState (* cannot happen. if an address exists in the State::current_ map, it must exist in the State::preTxAssumedState map. *)
     | h::_, Some (assumedPreTxState, assumEx) =>
         let '(postTxBal, postTxNonce) := postTxActualBalNonce assumedPreTxState assumEx h (actualPreTxState) in
         if negb (relaxedValidation ) then h else
           let postAcState := if (isNone (min_balance assumEx)) then h else h &: _balance .= postTxBal in
           if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce)
-    end.
+    end. *)
+
+  (*
+  Definition applyUpdate (relaxedValidation: bool) (orig : AssumptionAndUpdate) (actualPreTxState: StateOfAccounts) (acup: address * (ModelWithPtr (list AccountM))) :  StateOfAccounts :=
+    let '(addr, upd) :=  acup in    
+    <[addr := accountFinalVal relaxedValidation orig (actualPreTxState !!! addr) upd]> actualPreTxState.
   
   Definition applyUpdate (relaxedValidation: bool) (orig : option (account_state* AssumptionExactness)) (actualPreTxState: StateOfAccounts) (acup: address * (ModelWithPtr (list AccountM))) :  StateOfAccounts :=
     let '(addr, upd) :=  acup in    
     <[addr := accountFinalVal relaxedValidation orig (actualPreTxState !!! addr) upd]> actualPreTxState.
+   *)
 
-  Definition applyUpdates (a: AssumptionsAndUpdates) (preTxState: StateOfAccounts) :StateOfAccounts :=
-    let ups := newStates a in fold_left (fun s aupd => applyUpdate (relaxedValidation a) (original a !! fst aupd) s aupd) ups preTxState.
+  Definition gmapMap {K V} `{Countable K} (f: K -> V -> option V) (g: gmap K V) : gmap K V. Proof. Admitted.
+(*  Definition del {K V} `{Countable K} (k:K) (g: gmap K V) : gmap K V := delete k g. *)
+  Definition applyUpdates (m: StateM) (preTxState: StateOfAccounts) :StateOfAccounts :=
+    List.fold_left
+      (fun ss upd => let addr := fst upd in
+                     match assumptionAndUpdateOfAddr m addr with
+                     | None => ss
+                     | Some au =>
+                         match accountFinalVal (relaxedValidation m) au (preTxState !! addr) with
+                         | None => delete addr ss
+                         | Some fv => <[ addr := fv ]> ss
+                         end
+                     end
+      )
+      (newStates m) preTxState.
   
   Definition execute_impl2_spec : WpSpec mpredI val val :=
     \arg{chainp :ptr} "chain" (Vref chainp)
@@ -808,8 +895,8 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
     \prepost{qh header} hdrp |-> BheaderR qh header
     \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vref block_hash_bufferp)
     \arg{statep: ptr} "state" (Vref statep)
-    \pre{au: AssumptionsAndUpdates} statep |-> StateR au
-    \pre [| newStates au = []|] (* this is a weaker asumption than the impl, which also guarantees that original only has the sender's account *)
+    \pre{au: StateM} statep |-> StateR au
+    \pre [| newStates au = []|] (* this is a weaker asumption than the impl, which also guarantees that preTxAssumedState only has the sender's account *)
     \prepost{(preBlockState: StateOfAccounts) (gl: BlockState.glocs) qb}
       (blockStatePtr au) |-> BlockState.Rfrag preBlockState qb gl
     \post{retp}[Vptr retp] Exists assumptionsAndUpdates result,
@@ -835,8 +922,8 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
     \prepost{qh header} hdrp |-> BheaderR qh header
     \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vref block_hash_bufferp)
     \arg{statep: ptr} "state" (Vref statep)
-    \pre{au: AssumptionsAndUpdates} statep |-> StateR au
-    \pre [| newStates au = []|] (* this is a weaker asumption than the impl, which also guarantees that original only has the sender's account *)
+    \pre{au: StateM} statep |-> StateR au
+    \pre [| newStates au = []|] (* this is a weaker asumption than the impl, which also guarantees that preTxAssumedState only has the sender's account *)
     \prepost{(preBlockState: StateOfAccounts) (gl: BlockState.glocs) qb}
     (blockStatePtr au) |-> BlockState.Rfrag preBlockState qb gl
     \prepost{preTxState} (if speculative then emp else blockStatePtr au |-> BlockState.Rauth preBlockState gl preTxState)
@@ -844,7 +931,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
       statep |-> StateR assumptionsAndUpdates
       ** retp |-> ResultSuccessR EvmcResultR result 
       ** [| blockStatePtr assumptionsAndUpdates = blockStatePtr au |]
-      ** [| validAU assumptionsAndUpdates |]
+      ** [| validStateM assumptionsAndUpdates |]
        ** [| indices assumptionsAndUpdates = indices au |]
        ** [| let postCond preTxState :=
                let '(postTxState, actualResult) := stateAfterTransactionAux header preTxState (N.to_nat (tx_index (indices au))) t in
@@ -906,7 +993,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \pre{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := []; newStates:= []; relaxedValidation := false|}.
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; preTxAssumedState := []; newStates:= []; relaxedValidation := false|}.
 
 
   Definition WithdrawalR (q: cQp.t) (w: Withdrawal) : Rep. Proof. Admitted.
@@ -916,7 +1003,7 @@ Definition StateR (s: AssumptionsAndUpdates) : Rep :=
   
   (*
       \pre [| block.block_account_nonce senderAcState = block.tr_nonce t|]
-     \post  [| match original assumptionsAndUpdates !! senderAddr with
+     \post  [| match preTxAssumedState assumptionsAndUpdates !! senderAddr with
             | Some senderAcState' => senderAcState'= senderAcState
             | _ => False
             end |]

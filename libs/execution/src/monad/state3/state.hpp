@@ -44,6 +44,7 @@ class State
 
     Map<Address, AccountState> original_{};
 
+    Map<Address, VersionStack<AccountState>> current_{};
 
     VersionStack<std::vector<Receipt::Log>> logs_{{}};
 

@@ -26,10 +26,11 @@ public: // TODO
     template <class Key, class T>
     using Map = ankerl::unordered_dense::segmented_map<Key, T>;
 
-    std::optional<Account> account_{};// what does None mean here?
+    std::optional<Account> account_{};// None means the account was did not exist in the Db. But we can still create an AccountState for it and support some operations in State, e.g. reading value of a non-existent account returns 0. 
+    // when it is None, are there some constraints on other fienlds: storage must be empty?
     Map<bytes32_t, bytes32_t> storage_{};
     Map<bytes32_t, bytes32_t> transient_storage_{};
-    bool validate_exact_nonce_{false};
+    bool validate_exact_nonce_{false}; // this is implicitly true when account_ is None
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};// can we just use account_.value.balance for this? validate_exact_balance_ will determine whether it is an exact value or a lower bound
 
@@ -95,7 +96,7 @@ public:
 
     [[nodiscard]] bool validate_exact_balance() const
     {
-        return validate_exact_balance_;
+        return validate_exact_balance_; 
     }
 
     [[nodiscard]] uint256_t const &min_balance() const

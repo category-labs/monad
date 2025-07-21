@@ -74,7 +74,7 @@ Record AssumptionExactness :=
 Definition  ModelWithPtr (ModelType: Type) : Type := ptr * ModelType.
 Definition MapModel K V := list (K * ModelWithPtr V).
 (* used both for original and current state *)
-Record PartialAccountState :=
+                                                                     Record PartialAccountState :=
   {
     coreState: option AccountM; (* this defines storage values for ALL possible keys, typicall most mapped to 0. ideally storage should be made a partial map here. then the field below [accessedKeys] would not be needed. when used to encode updates, dead accounts stay as Some here until execute_final *)
     relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
@@ -85,7 +85,8 @@ Record PartialAccountState :=
 Record AssumptionAndUpdate :=
   {
     preTxAcStateAssumptions: PartialAccountState * AssumptionExactness;
-    txUpdates : option PartialAccountState; (* None means, the tx did not make any updates to this account *)
+    originalLoc: ptr;
+    txUpdates : option (ptr*PartialAccountState); (* None means, the tx did not make any updates to this account *)
   }.
 
 Record StateM :=
@@ -750,17 +751,21 @@ Definition StateR (s: StateM) : Rep :=
     | None => 0
     end.
 
-  Global Instance lkk {K V} `{Countable K}:  Lookup K  V (MapModel K V) := fun k m =>
-    option_map snd (((list_to_map m):(gmap K (ModelWithPtr V))) !! k).
+  Global Instance lkk {K V} `{Countable K}:  Lookup K  (ModelWithPtr V) (MapModel K V) := fun k m =>
+     (((list_to_map m):(gmap K (ModelWithPtr V))) !! k).
 
-  Search option.
   Definition assumptionAndUpdateOfAddr (s: StateM) (a: evm.address): option AssumptionAndUpdate :=
     match preTxAssumedState s !! a  with
       | None => None
       | Some p => Some
           {|
-            preTxAcStateAssumptions := p;
-            txUpdates :=  ((newStates s) !! a) ≫= head
+            preTxAcStateAssumptions := snd p;
+            originalLoc := fst p;
+            txUpdates :=  ((newStates s) !! a) ≫= (fun a => match head (snd a) with
+                                                            | None => None
+                                                            | Some upd => Some (fst a,upd)
+                                                            end
+                                                  )
           |}
     end.
       
@@ -782,7 +787,7 @@ Definition StateR (s: StateM) : Rep :=
           end
       | None  => True
       end.
-      
+  
   Definition satisfiesAssumptions (a: StateM) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr: address,
       interpAssumptions (relaxedValidation a) (assumptionAndUpdateOfAddr a acAddr) (preTxState !! acAddr).
@@ -828,7 +833,7 @@ Definition StateR (s: StateM) : Rep :=
     let '(assumedPreTxState, assumEx) := preTxAcStateAssumptions au in
     match  txUpdates au   with
     | None => actualPreTxState
-    | Some txUpds =>
+    | Some (_, txUpds) =>
         match coreState txUpds  with
         | None => None (* account did suicide if it existed *)
         | Some csUpdated =>

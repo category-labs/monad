@@ -45,15 +45,14 @@ Definition AnkerMapRSlice {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd
            (val: option (ModelWithPtr V))
     : Rep. Proof. Admitted.
 
-
-Definition StateAccountSlice (addr: evm.address) (a: AssumptionAndUpdate) (relaxedVal: bool) (loc: ptr) qstruct : Rep :=
+Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (relaxedVal: bool) : Rep :=
   _field "monad::State::original_" |->
      AnkerMapRSlice "evmc::address" "monad::OriginalAccountState" 
            addressToN
            addressR
            (fun q asae => let '(ast, ae) := asae in OriginalAccountStateR q ae ast)
            addr
-           (Some (loc, preTxAcStateAssumptions a))
+           (Some (originalLoc a, preTxAcStateAssumptions a))
          
   ** _field "monad::State::current_" |->
         AnkerMapRSlice "evmc::address" "monad::VersionStack<monad::AccountState>" 
@@ -61,35 +60,32 @@ Definition StateAccountSlice (addr: evm.address) (a: AssumptionAndUpdate) (relax
            addressR
            (VersionStackR "monad::AccountState" AccountStateR)
            addr
-           m
-   _field "monad::State::relaxed_validation_" |-> boolR 1$m relaxedVal ∗
-   structR "monad::State" q$m.
+           (match txUpdates a with None => None | Some (loc, upd) => Some (loc, [upd])  end)
+  ** _field "monad::State::relaxed_validation_" |-> boolR 1$m relaxedVal
+  **  structR "monad::State" (1/2)$m.
   
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
    \arg{statep: ptr} "state" (Vref statep)
-   \pre{au: StateM}     _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
-   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s)
-
+   \pre{fixeeAddr fixeeStateSlice relaxedVal}
+      statep |-> StateAccountSliceR fixeeAddr fixeeStateSlice relaxedVal
    \arg{addrp: ptr} "address" (Vref addrp)
-   \prepost{qa fixee} addrp |-> addressR qa fixee
-   \arg{origp: ptr} "original" (Vref origp)
+   \prepost{qa} addrp |-> addressR qa fixeeAddr
+   \arg "original" (Vref (originalLoc fixeeStateSlice))
    (* \pre{assumedFixeeState ae} origp |-> OriginalAccountStateR 1 ae assumedFixeeState *)
    \arg{actualp: ptr} "actual" (Vref actualp)
-   \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs) 1 (actualPreTxState !! fixee)
-   \pre{assumedFixeeState ae} [| lookupr fixee (original au) = Some (origp, (assumedFixeeState, ae))  |]
+   \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs) 1 (actualPreTxState !! fixeeAddr)
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
-     [| if satisfiesAssumptionsb then satisfiesAssumptions au actualPreTxState else Logic.True |] **
+     [| if satisfiesAssumptionsb then  interpAssumptions relaxedVal (Some fixeeStateSlice) (actualPreTxState !! fixeeAddr)
+        else Logic.True |] **
       if (negb satisfiesAssumptionsb)
-      then statep |-> StateR au ** origp |-> OriginalAccountStateR 1 ae assumedFixeeState
+      then statep |-> StateAccountSliceR fixeeAddr fixeeStateSlice relaxedVal
       else
-        Exists fixedFixeeNewState exactFixeeAssumption actualPreTxStateFixee,
-          statep |-> StateR (au &: _newStates %= (update fixee (fixeeNewStateLoc,[fixedFixeeNewState])))
-          ** [| actualPreTxState !! fixee = Some actualPreTxStateFixee |]
-          **  origp |-> OriginalAccountStateR 1 (ae &: _min_balance .= None) exactFixeeAssumption
-          ** [| fixedFixeeNewState = accountFinalVal (relaxedValidation au) (Some (assumedFixeeState, ae)) actualPreTxStateFixee (fixeeNewStateLoc, fixeeNewState) |] ).
+        Exists fixeeStateSliceFinal,
+          statep |-> StateAccountSliceR fixeeAddr fixeeStateSliceFinal relaxedVal
+          ** [| accountFinalVal false fixeeStateSliceFinal (actualPreTxState !! fixeeAddr)  = accountFinalVal relaxedVal fixeeStateSlice (actualPreTxState !! fixeeAddr) |] ).
 
 
 

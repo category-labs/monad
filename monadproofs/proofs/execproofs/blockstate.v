@@ -37,17 +37,10 @@ Section with_Sigma.
 
   Typeclasses Transparent MapModel.
   Typeclasses Transparent ModelWithPtr.
-Definition AnkerMapRSlice {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqDecision K} *)
-           (krep : Qp -> K -> Rep) 
-           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
-           (* CFrational vrep *)
-           (key: K)
-           (val: option (ModelWithPtr V))
-    : Rep. Proof. Admitted.
 
 Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (relaxedVal: bool) : Rep :=
   _field "monad::State::original_" |->
-     AnkerMapRSlice "evmc::address" "monad::OriginalAccountState" 
+     AnkerMapSliceR "evmc::address" "monad::OriginalAccountState" 
            addressToN
            addressR
            (fun q asae => let '(ast, ae) := asae in OriginalAccountStateR q ae ast)
@@ -55,7 +48,7 @@ Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (rela
            (Some (originalLoc a, preTxAcStateAssumptions a))
          
   ** _field "monad::State::current_" |->
-        AnkerMapRSlice "evmc::address" "monad::VersionStack<monad::AccountState>" 
+        AnkerMapSliceR "evmc::address" "monad::VersionStack<monad::AccountState>" 
            addressToN
            addressR
            (VersionStackR "monad::AccountState" AccountStateR)
@@ -131,10 +124,15 @@ cpp.spec "monad::AccountState::validate_exact_nonce() const"
     \post[Vbool (nonce_exact asm)] emp).
 
 cpp.spec "monad::State::relaxed_validation() const"
+  as state_relaxed_validation_spec inline.
+
+(*
+cpp.spec "monad::State::relaxed_validation() const"
   as state_relaxed_validation_spec
   with (fun this:ptr =>
     \prepost{au} this |-> StateR au
     \post[Vbool (relaxedValidation au)] emp).
+*)
 
 (* Specs for the free functions is_empty and is_dead *)
 
@@ -301,14 +299,6 @@ cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_c
 
 
 
-
-(* Rep predicate for the iterator object. this is specialized for the case the key is a non-scalar *)
- Definition mapIterR (i: N) (keyLoc valueLoc : ptr) : Rep :=
-  structR
-      "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>" 1. (* TODO: add ownership of fields *)
-
-
-
 (**
 Monad is a new L1 blockchain that can execute EVM-compative transactions much faster.
 The C++ class `monad::AccountState` stores the state of an account while a transaction is being executed.
@@ -386,63 +376,12 @@ CppDefnOf monad::BlockState::merge.
 Print merge.
  *)
 
-  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const" as iter_neq_spec with
-  (fun this: ptr =>
-     \arg{otherp: ptr} "other" (Vref otherp)
-     \prepost{(i1 i2: N) k1 k2 v1 v2}
-       this  |-> mapIterR i1 k1 v1
-     ** otherp |-> mapIterR i2 k2 v2
-     \post[Vbool (negb (bool_decide (i1 = i2 /\ k1=k2 /\ v1=v2)))] emp).
-
-  (* 16. iterator destructor *)
-  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()" as iterd with
-  (fun this: ptr =>
-     \pre{i k v} this |-> mapIterR i k v
-     \post emp
-  ).
 
 (* ------------------------------------------------------------------- *)
 (* Specs of State::current_.end() and find() using MapCurrentR        *)
 (* with index‐correctness assertions                                  *)
 (* ------------------------------------------------------------------- *)
 
-(* end(): index = length l. TODO: generalize the method signature *)
-cpp.spec
-  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"
-  as current_end_spec
-  with (fun (this: ptr) =>
-    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
-      this |->  AnkerMapR ktycpp vtycpp
-           khash
-           kR
-           vR
-           q
-           m
-
-    \post{(ret:ptr)}
-      [Vptr ret]  ret |-> mapIterR (lengthN m) nullptr nullptr
-  ).
-
-(* find(key): index matches position of key in l *)
-cpp.spec
-  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"
-  as current_find_spec
-  with (fun (this: ptr) =>
-    \arg{keyp: ptr} "key" (Vref keyp)
-    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
-      this |->  AnkerMapR ktycpp vtycpp
-           khash
-           kR
-           vR
-           q
-           m
-    \prepost{qk k} keyp |-> kR qk k
-    \post{(ret:ptr)}
-    [Vptr ret] ( (ret |-> mapIterR (lengthN m) nullptr nullptr ** [| k ∉ (map fst m)|])
-                   \\// Exists kloc vloc v i, 
-(ret |-> mapIterR i kloc vloc ** [| nth_error m (N.to_nat i) = Some (k, (vloc, v)) |])
-    )
-  ).
 
 cpp.spec "monad::Incarnation::Incarnation(const monad::Incarnation&)"
   as incarnation_copy_spec with (fun this:ptr =>
@@ -534,11 +473,11 @@ Hint Opaque AccountR: br_opacity.
     final.
   Hint Opaque IncarnationR : br_opacity.
     #[global] Instance learning3 : LearnEq2 StorageMapR := ltac:(solve_learnable).
-    #[global] Instance learning5 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
+    #[global] Instance learning5 (origp: ptr) o1 o2: Learnable 
       (origp ,, o_field CU "monad::AccountState::storage_"
-         |-> StorageMapR 1 (block.block_account_storage o1))
+         |-> StorageMapR 1 (storageMapOf o1))
       (origp ,, o_field CU "monad::AccountState::storage_"
-         |-> StorageMapR 1 (block.block_account_storage o2))
+         |-> StorageMapR 1 (storageMapOf o2))
       [o1=o2] := ltac:(solve_learnable).
     #[global] Instance learning6 (origp: ptr) o1 o2: learn_exist_interface.Learnable 
       (origp ,, o_field CU "monad::AccountState::validate_exact_nonce_"
@@ -572,7 +511,7 @@ Hint Opaque AccountR: br_opacity.
   
   Arguments is_Some /_ _.
   #[global] Instance llll: LearnEq2 MapCurrentR := ltac:(solve_learnable).
-  #[global] Instance lllll: LearnEq3 mapIterR := ltac:(solve_learnable).
+  #[global] Instance lllll: LearnEq3 AnkerMapIterR := ltac:(solve_learnable).
 
     #[global] Instance optionRSomeAc 
      q oas (origp:ptr) x:
@@ -592,7 +531,7 @@ Hint Opaque AccountR: br_opacity.
        q oas)
     [ oas = Some x;  q=1%Qp] := ltac:(solve_learnable).
 
-    Opaque mapIterR.
+    Opaque AnkerMapIterR.
   Existing Instance UNSAFE_read_prim_learn.
   Lemma andSep {T} (P Q : T->mpred) E:
     environments.envs_entails E (Exists t:T, (P t ** (P t -* Q t)))
@@ -644,22 +583,27 @@ Notation LearnEq7 P :=
       [a = a'; b = b'; c = c'; d = d'; e = e'; f = f'; g=g']).
   
 #[global] Instance lanker {K V} : LearnEq7 (@AnkerMapR _ _ _ K V) := ltac:(solve_learnable).
-#[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable).
+(* #[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable). *)
       
+  Opaque Zdigits.binary_value Zdigits.Z_to_binary.
 Lemma prf: verify[module] fix_spec.
 Proof using.
-  work.
-  iAssert (inc_dtor) as "#?". admit.
   verify_spec'.
+  iAssert (inc_dtor) as "#?". admit.
+  unfold StateAccountSliceR.
+  go.
+  unfold AnkerMapSliceR.
+  go.
+  destruct fixeeStateSlice.
+  simpl in *.
+  destruct preTxAcStateAssumptions as [pAssumed ae].
+  simpl in *.
   big.
   wp_if.
   2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
   big.
 
   (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)
-  applyToSomeHyp equationfoo.
-  miscPure.forward_reason.
-  subst.
   (*
   destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
   simpl in *.
@@ -667,7 +611,6 @@ Proof using.
   orient_rwHyps.
   simplify_eq.*)
 
-  big.
   (*
       #[global] Instance foldedLv2Lear3 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
     (origp ,, opt_somety_offset
@@ -682,25 +625,34 @@ Proof using.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 
   big.
-  unfold MapCurrentR.
-go.
-repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
-eagerUnifyU.
-big.
-repeat (iExists _).
-eagerUnifyU.
-big.
-rewrite bi.or_alt.
-go.
-rename b into notfound. (* TODO change the spec to use bool instead of \\// *)
-destruct notfound.
-{ (* fixee (address) not found in state.current *)
+  repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
+  eagerUnifyU.
+  slauto.
+  repeat (iExists _).
+  eagerUnifyU.
+  slauto.
+  destruct txUpdates as [txUpdates |].
+  { (* fixee (address) not found in state.current *)
+    Remove Hints foldedLv2Lear : typeclass_instances.
+    destruct txUpdates as [updLoc txUpdates].
+    simpl in *.
+    go.
+    (*
+invoke.wp_minvoke_O.body module Direct
+    "const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"
+    "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*"
+    "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*()"
+    "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"
+     *)
+    admit.
+  }
+  {
     Remove Hints foldedLv2Lear : typeclass_instances.
     go.
     iExists _. (* 1%Qp *)
     iExists (Some x0).
     slauto.
-    
+    rename x into assumedFixeeState.
     iExists _.
     iExists (Some assumedFixeeState).
     go.
@@ -718,8 +670,37 @@ destruct notfound.
     Remove Hints foldedLv2Lear2 optionRSomeAc: typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
     go.
-    iExists fixedAssumedFixeeState.
+  #[only(lens)] derive PartialAccountState. (* TODO: move to decl *)
+    iExists
+      {| preTxAcStateAssumptions := (pAssumed &: _coreState .= Some fixedAssumedFixeeState, ae) ; exec_specs.originalLoc := originalLoc; txUpdates := None |}.
     slauto.
+    split.
+    - unfold min_balanceN. rwHypsP.
+      destruct x0.
+      simpl in *.
+      Search x1.
+      destruct b1.
+      simpl in *.
+      Search x1.
+      unfold w256_to_N in *.
+      Search x1.
+      Transparent w256_to_Z.
+      unfold w256_to_Z in *.
+      Search x1.
+      Search N.ltb false.
+      applyToSomeHyp N.ltb_ge.
+      Search x1.
+      revert autogenhyp.
+      (*
+(x1 ≤ Z.to_N (Zdigits.binary_value 256 block_account_balance0))%N -> x1 ≤ Zdigits.binary_value 256 block_account_balance0 *)
+      admit.
+    - 
+  }
+  
+      lia.
+      
+      lia.
+      Check b1.
     subst.
     simpl in *.
     subst.

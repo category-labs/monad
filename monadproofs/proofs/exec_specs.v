@@ -1003,15 +1003,120 @@ Definition StateR (s: StateM) : Rep :=
   Definition ConsensusBlockHeaderR (q: cQp.t) (w: ConsensusBlockHeader) : Rep. Proof. Admitted.
   Definition EmptyCallFramesR (q: cQp.t) : Rep. Proof. Admitted.
   
-  
+  Definition AnkerMapIterR (i: option N) (keyLoc valueLoc : ptr) : Rep. Proof. Admitted.
   (*
-      \pre [| block.block_account_nonce senderAcState = block.tr_nonce t|]
-     \post  [| match preTxAssumedState assumptionsAndUpdates !! senderAddr with
-            | Some senderAcState' => senderAcState'= senderAcState
-            | _ => False
-            end |]
+  structR
+      "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>" 1. (* TODO: add ownership of fields *)
+   *)
 
-*)  
+  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator!=<0b>(const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>&) const" as iter_neq_spec with
+  (fun this: ptr =>
+     \arg{otherp: ptr} "other" (Vref otherp)
+     \prepost{(i1 i2: option N) k1 k2 v1 v2}
+       this  |-> AnkerMapIterR i1 k1 v1
+     ** otherp |-> AnkerMapIterR i2 k2 v2
+     \post[Vbool (negb (bool_decide (i1 = i2 /\ k1=k2 /\ v1=v2)))] emp).
+
+  cpp.spec "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::~iter_t()" as iterd with
+  (fun this: ptr =>
+     \pre{i k v} this |-> AnkerMapIterR i k v
+     \post emp
+  ).
+
+Definition AnkerMapSliceSpineR {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqDecision K} *)
+           (krep : Qp -> K -> Rep) 
+           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
+           (* CFrational vrep *)
+           (key: K)
+           (loc: option ptr)
+  : Rep. Proof. Admitted.
+
+Definition AnkerMapSliceR {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd: EqDecision K} *)
+           (krep : Qp -> K -> Rep) 
+           (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
+           (* CFrational vrep *)
+           (key: K)
+           (val: option (ModelWithPtr V))
+  : Rep := AnkerMapSliceSpineR tykey tyval khash krep vrep key (option_map fst val)
+             ** match val with
+                | Some (loc, vall) => pureR (loc |-> vrep 1%Qp vall)
+                | None => emp
+                end.
+
+
+   Definition current_end_spec_full : ptr -> WpSpec mpredI val val  :=
+   (fun (this: ptr) =>
+    \prepost{K V ktycpp vtycpp khash q (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
+      this |->  AnkerMapR ktycpp vtycpp
+           khash
+           kR
+           vR
+           q
+           m
+
+    \post{(ret:ptr)}
+      [Vptr ret]  ret |-> AnkerMapIterR None nullptr nullptr
+  ).
+
+(* end(): index = length l. TODO: generalize the method signature *)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::end()"
+  as current_end_spec
+  with (fun (this: ptr) =>
+    \prepost{K V ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) k oloc}
+      this |->  AnkerMapSliceSpineR ktycpp vtycpp
+           khash
+           kR
+           vR
+           k
+           oloc
+
+    \post{(ret:ptr)}
+      [Vptr ret]  ret |-> AnkerMapIterR None nullptr nullptr
+  ).
+
+Definition ankerMapFind : ptr -> WpSpec mpredI val val  :=
+  (fun (this: ptr) =>
+    \arg{keyp: ptr} "key" (Vref keyp)
+    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) m}
+      this |->  AnkerMapR ktycpp vtycpp
+           khash
+           kR
+           vR
+           q
+           m
+    \prepost{qk k} keyp |-> kR qk k
+    \post{(ret:ptr)}
+    [Vptr ret] (Exists (found: bool),
+      if found
+      then (ret |-> AnkerMapIterR None nullptr nullptr ** [| k ∉ (map fst m)|])
+      else Exists kloc vloc v i, 
+              (ret |-> AnkerMapIterR (Some i) kloc vloc ** [| nth_error m (N.to_nat i) = Some (k, (vloc, v)) |])
+    )
+  ).
+(* find(key): index matches position of key in l *)
+cpp.spec
+  "ankerl::unordered_dense::v4_1_0::detail::table<evmc::address, monad::VersionStack<monad::AccountState>, ankerl::unordered_dense::v4_1_0::hash<evmc::address, void>, std::equal_to<evmc::address>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, ankerl::unordered_dense::v4_1_0::bucket_type::standard, 1b>::find(const evmc::address&)"
+  as current_find_spec
+  with (fun (this: ptr) =>
+    \arg{keyp: ptr} "key" (Vref keyp)
+    \prepost{K V (q: Qp) ktycpp vtycpp khash (kR: Qp-> K->Rep) (vR : Qp -> V->Rep) k ovloc}
+      this |->  AnkerMapSliceSpineR ktycpp vtycpp
+           khash
+           kR
+           vR
+           k
+           ovloc
+    \prepost{qk k} keyp |-> kR qk k
+    \post{(ret:ptr)}
+    [Vptr ret]  ret |->
+        match ovloc with
+        | None =>  AnkerMapIterR None nullptr nullptr
+        | Some vloc => Exists kloc i,
+            AnkerMapIterR (Some i) kloc vloc
+        end
+  ).
+
 End with_Sigma.
 (*
 Module Generalized1.
@@ -1095,3 +1200,5 @@ day 2:
 
 (* TODO: move to evmopsem *)
 #[only(lens)] derive block.block_account.
+Opaque Zdigits.binary_value Zdigits.Z_to_binary.
+

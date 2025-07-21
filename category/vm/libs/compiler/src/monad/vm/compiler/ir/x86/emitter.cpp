@@ -1579,27 +1579,60 @@ namespace monad::vm::compiler::native
         return gpq256_regs_[reg.reg];
     }
 
+    // Low order index means `e` is suitable as destination operand.
+    // High order index means `e` is suitable as source operand.
     template <typename... LiveSet>
     unsigned Emitter::get_stack_elem_general_order_index(
         StackElemRef e, std::tuple<LiveSet...> const &live)
     {
-        bool const e_is_live = is_live(e, live);
-        // For general reg, not live has lowest ordering.
-        // For other locations, live has lowest ordering.
         if (e->general_reg()) {
-            return !e_is_live ? 0 : 1;
-        }
-        if (e->literal() && is_literal_bounded(*e->literal())) {
-            return e_is_live ? 2 : 3;
-        }
-        if (e->stack_offset()) {
-            return e_is_live ? 4 : 5;
+            // General reg is perfect dst operand, so low order index.
+            bool const e_is_live = is_live(e, live);
+            if (e->literal()) {
+                // If also literal, then it might also be good src candidate,
+                // therefore the order index is higher when literal.
+                if (!e_is_live) {
+                    // Not live and not literal is the lowest possible order
+                    // index with `e` also literal.
+                    return 2;
+                }
+                if (e->avx_reg() || e->stack_offset()) {
+                    // We can release the general reg without a spill, so this
+                    // is relatively good.
+                    return 3;
+                }
+                // Releasing the general requires a spill.
+                return 5;
+            }
+            if (!e->literal()) {
+                if (!e_is_live) {
+                    // Not live and not literal is the lowest order index.
+                    return 0;
+                }
+                if (e->avx_reg() || e->stack_offset()) {
+                    // We can release the general reg without a spill, so this
+                    // is relatively good.
+                    return 1;
+                }
+                // Releasing the general requires a spill.
+                return 4;
+            }
         }
         if (e->literal()) {
-            return e_is_live ? 6 : 7;
+            if (is_literal_bounded(*e->literal())) {
+                // Bounded literal is a perfect src operand and it may trigger
+                // optimizations later. Therefore the highest order index.
+                return 9;
+            }
+            // Unbounded literal is not too bad as dst operand, because moving
+            // to GPR has no dependencies and no memory load is necessary.
+            return 6;
+        }
+        if (e->stack_offset()) {
+            return 7;
         }
         MONAD_VM_DEBUG_ASSERT(e->avx_reg().has_value());
-        return e_is_live ? 8 : 9;
+        return 8;
     }
 
     template <asmjit::x86::Gpq gpq>
@@ -4039,14 +4072,11 @@ namespace monad::vm::compiler::native
         }
 
         if (!dst->general_reg()) {
-            if (dst->literal() && is_literal_bounded(*dst->literal())) {
+            if (dst->literal()) {
                 mov_literal_to_general_reg(dst);
             }
             else if (dst->stack_offset()) {
                 mov_stack_offset_to_general_reg(dst);
-            }
-            else if (dst->literal()) {
-                mov_literal_to_general_reg(dst);
             }
             else {
                 MONAD_VM_DEBUG_ASSERT(dst->avx_reg().has_value());
@@ -5805,14 +5835,11 @@ namespace monad::vm::compiler::native
         }
 
         if (!dst->general_reg()) {
-            if (dst->literal() && is_literal_bounded(*dst->literal())) {
+            if (dst->literal()) {
                 mov_literal_to_general_reg_mod2(dst, exp);
             }
             else if (dst->stack_offset()) {
                 mov_stack_offset_to_general_reg_mod2(dst, exp);
-            }
-            else if (dst->literal()) {
-                mov_literal_to_general_reg_mod2(dst, exp);
             }
             else {
                 MONAD_VM_DEBUG_ASSERT(dst->avx_reg().has_value());

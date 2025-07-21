@@ -3695,11 +3695,16 @@ namespace monad::vm::compiler::native
     asmjit::x86::Gp cast_reg_to_size(asmjit::x86::Gpq const &gpq, size_t ix)
     {
         switch (ix) {
-        case 1: return gpq.r8();
-        case 2: return gpq.r16();
-        case 4: return gpq.r32();
-        case 8: return gpq.r64();
-        default: MONAD_VM_DEBUG_ASSERT(false);
+        case 1:
+            return gpq.r8();
+        case 2:
+            return gpq.r16();
+        case 4:
+            return gpq.r32();
+        case 8:
+            return gpq.r64();
+        default:
+            MONAD_VM_DEBUG_ASSERT(false);
         }
     }
 
@@ -3718,39 +3723,57 @@ namespace monad::vm::compiler::native
         // Note that ix is the index of the byte with the sign bit. ix + 1 is
         // the size of the integer.
         if (src->general_reg()) {
-            auto const sign_reg_ix = static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
-            auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8; // Offset in the register
+            auto const sign_reg_ix =
+                static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
+            auto const sign_reg_offset =
+                static_cast<size_t>(ix[0]) % 8; // Offset in the register
             auto const dst = [&] {
                 if (is_live(src, {})) {
                     auto const [dst, reserv] = alloc_general_reg();
                     return dst;
-                } else
+                }
+                else {
                     return src;
+                }
             }();
             auto const &src_gpq = general_reg_to_gpq256(*src->general_reg());
             auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
             auto const src_sign_reg = src_gpq[sign_reg_ix];
             auto const dst_sign_reg = dst_gpq[sign_reg_ix];
 
-            // First we copy the part of the src and dst registers that are not sign-extended
+            // First we copy the part of the src and dst registers that are not
+            // sign-extended
             if (src != dst) {
                 for (size_t i = 0; i < sign_reg_ix; ++i) {
                     as_.mov(dst_gpq[i].r64(), src_gpq[i].r64());
                 }
             }
 
-            // Then we sign extend the register with the sign bit (so called `sign_reg`).
+            // Then we sign extend the register with the sign bit (so called
+            // `sign_reg`).
             if (sign_reg_offset == 7) {
-                // The sign bit is already in position, nothing to do unless src != dst
-                if (src != dst) as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
-            } else if (sign_reg_offset == 0    //  8-bit movsx
-                    || sign_reg_offset == 1    // 16-bit movsx
-                    || sign_reg_offset == 3) { // 32-bit movsx
-                // If ix is a power of two, we can use movsx to sign-extend the sign register
-                as_.movsx(dst_sign_reg.r64(), cast_reg_to_size(src_sign_reg, sign_reg_offset + 1));
-            } else {
-                // Otherwise we use a left shift followed by right arithmetic shift to sign-extend
-                if (src != dst) as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
+                // The sign bit is already in position, nothing to do unless src
+                // != dst
+                if (src != dst) {
+                    as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
+                }
+            }
+            else if (
+                sign_reg_offset == 0 //  8-bit movsx
+                || sign_reg_offset == 1 // 16-bit movsx
+                || sign_reg_offset == 3) { // 32-bit movsx
+                // If ix is a power of two, we can use movsx to sign-extend the
+                // sign register
+                as_.movsx(
+                    dst_sign_reg.r64(),
+                    cast_reg_to_size(src_sign_reg, sign_reg_offset + 1));
+            }
+            else {
+                // Otherwise we use a left shift followed by right arithmetic
+                // shift to sign-extend
+                if (src != dst) {
+                    as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
+                }
                 as_.shl(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
                 as_.sar(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
             }
@@ -3761,7 +3784,8 @@ namespace monad::vm::compiler::native
             // registers, at the cost of creating dependencies between movs.
             for (size_t i = sign_reg_ix + 1; i < 4; ++i) {
                 as_.mov(dst_gpq[i].r64(), dst_sign_reg.r64());
-                as_.sar(dst_gpq[i].r64(), 63); // Arithmetic right shift to put sign bit everywhere
+                // Arithmetic right shift to put sign bit everywhere
+                as_.sar(dst_gpq[i].r64(), 63);
             }
             stack_.push(std::move(dst));
             return;

@@ -42,15 +42,35 @@ Definition AnkerMapRSlice {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd
            (vrep : Qp -> V -> Rep) (* fraction needed as there can be multiple concrrent readers of the value *)
            (* CFrational vrep *)
            (key: K)
-           (val: ModelWithPtr V)
+           (val: option (ModelWithPtr V))
     : Rep. Proof. Admitted.
+
+
+Definition StateAccountSlice (addr: evm.address) (a: AssumptionAndUpdate) (relaxedVal: bool) (loc: ptr) qstruct : Rep :=
+  _field "monad::State::original_" |->
+     AnkerMapRSlice "evmc::address" "monad::OriginalAccountState" 
+           addressToN
+           addressR
+           (fun q asae => let '(ast, ae) := asae in OriginalAccountStateR q ae ast)
+           addr
+           (Some (loc, preTxAcStateAssumptions a))
+         
+  ** _field "monad::State::current_" |->
+        AnkerMapRSlice "evmc::address" "monad::VersionStack<monad::AccountState>" 
+           addressToN
+           addressR
+           (VersionStackR "monad::AccountState" AccountStateR)
+           addr
+           m
+   _field "monad::State::relaxed_validation_" |-> boolR 1$m relaxedVal ∗
+   structR "monad::State" q$m.
   
   cpp.spec "monad::BlockState::fix_account_mismatch(monad::State&, const evmc::address&, monad::AccountState&, const std::optional<monad::Account>&) const" as fix_spec with (fun this:ptr =>
    \prepost{preBlockState g au actualPreTxState} (blockStatePtr au) |-> BlockState.Rauth preBlockState g actualPreTxState
    \pre [| blockStatePtr au = this |]
    \arg{statep: ptr} "state" (Vref statep)
-   \pre{au: AssumptionsAndUpdates}     _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
-   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s) ∗
+   \pre{au: StateM}     _field "monad::State::original_" |-> MapOriginalR 1$m%cQp (original s) ∗
+   _field "monad::State::current_" |-> MapCurrentR 1$m%cQp (newStates s)
 
    \arg{addrp: ptr} "address" (Vref addrp)
    \prepost{qa fixee} addrp |-> addressR qa fixee
@@ -69,7 +89,7 @@ Definition AnkerMapRSlice {K V:Type} (tykey tyval: type) (khash: K -> N) (* {eqd
           statep |-> StateR (au &: _newStates %= (update fixee (fixeeNewStateLoc,[fixedFixeeNewState])))
           ** [| actualPreTxState !! fixee = Some actualPreTxStateFixee |]
           **  origp |-> OriginalAccountStateR 1 (ae &: _min_balance .= None) exactFixeeAssumption
-          ** [| fixedFixeeNewState = accountFinalVal (relaxedValidation au) (Some (assumedFixeeState, ae)) actualPreTxStateFixee (fixeeNewStateLoc, fixeeNewState) |]).
+          ** [| fixedFixeeNewState = accountFinalVal (relaxedValidation au) (Some (assumedFixeeState, ae)) actualPreTxStateFixee (fixeeNewStateLoc, fixeeNewState) |] ).
 
 
 

@@ -142,8 +142,6 @@ Definition destr_incarnation :=
     |} (λ this : ptr, \pre{w} this |-> IncarnationR 1 w
                         \post    emp).
 Require Import bluerock.prelude.lens.
-    #[only(lens)] derive AssumptionsAndUpdates.
-    #[only(lens)] derive block.block_account.
 
 
     Import LensNotations.
@@ -151,13 +149,13 @@ Require Import bluerock.prelude.lens.
 
     Locate balance.
     Definition minSenderBalForTx (tx: Transaction): N. Proof. Admitted.
-    Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce min_sender_balance: N) (bsp: ptr) (ind: Indices) (sf: AssumptionsAndUpdates) : Prop :=
+    Definition relaxed_constructor_init_state (sender_addr: evm.address) (sender_nonce min_sender_balance: N) (bsp: ptr) (ind: Indices) (sf: StateM) : Prop :=
       exists (loc:ptr) senderAc, senderAc .^ _nonce = sender_nonce /\ (min_sender_balance <= senderAc .^ _balance)%Z  /\
         sf =
           {|
             relaxedValidation:= true;
             newStates:= [];
-            original := [(sender_addr, (loc,(senderAc,  {| min_balance := Some min_sender_balance  ; nonce_exact :=false |})))];
+            preTxAssumedState := [(sender_addr, (loc,( {| coreState := Some senderAc; relevantKeys :=[]; substateModel := Build_AccountSubstateModel false false false [] |},  {| min_balance := Some min_sender_balance  ; nonce_exact :=false |})))];
             blockStatePtr := bsp;
             indices:= ind;
           |}.
@@ -176,7 +174,7 @@ Require Import bluerock.prelude.lens.
       \arg{bsp} "" (Vref bsp)
       \arg{incp} "" (Vptr incp)
       \prepost{q inc} incp |-> IncarnationR q inc 
-      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; original := []; newStates:= []; relaxedValidation := true|}).
+      \post this |-> StateR {| blockStatePtr := bsp; indices:= inc; preTxAssumedState := []; newStates:= []; relaxedValidation := true|}).
   
   Lemma observeState (state_addr:ptr) t: 
     Observe (reference_to (Tnamed (Nscoped (Nglobal (Nid "monad")) (Nid "State"))) state_addr)
@@ -672,7 +670,7 @@ Proof using MODd.
     rewrite ResultSucRDef.
     progress go.
     forward_reason.
-    ren_hyp au AssumptionsAndUpdates.
+    ren_hyp au StateM.
     subst.
     Forward.rwHyps.
     go.

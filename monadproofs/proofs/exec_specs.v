@@ -70,18 +70,16 @@ Record AssumptionExactness :=
     nonce_exact: bool;
   }.
 
-Search (list (_ * _)) gmap.
 
 Definition  ModelWithPtr (ModelType: Type) : Type := ptr * ModelType.
-
 Definition MapModel K V := list (K * ModelWithPtr V).
-
+(* used both for original and current state *)
 Record PartialAccountState :=
   {
     coreState: option AccountM; (* this defines storage values for ALL possible keys, typicall most mapped to 0. ideally storage should be made a partial map here. then the field below [accessedKeys] would not be needed. when used to encode updates, dead accounts stay as Some here until execute_final *)
     relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
     must be [] if coreState is []*)
-    substateModel : AccountSubstateModel
+    substateModel : AccountSubstateModel (* delete this as this is not relevant for original state. *)
   }.
     
 Record AssumptionAndUpdate :=
@@ -1088,3 +1086,7 @@ day 2:
 #[global] Hint Opaque AnkerMapR : br_opacity.
 #[global] Hint Opaque AnkerMapSpineR : br_opacity.
 #[global] Hint Opaque AnkerMapPayloadsR : br_opacity.
+#[only(lens)] derive StateM.
+
+(* TODO: move to evmopsem *)
+#[only(lens)] derive block.block_account.

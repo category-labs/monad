@@ -22,6 +22,10 @@ This document summarizes how **version** works in `version_stack.hpp` and how it
 - On successful return, `state.pop_accept()` commits the snapshot.
 - On failure (revert or OOG), `state.pop_reject()` rolls back state and logs.
 
+## 4. original_ vs current_ consistency
+
+- Whenever `current_` gains an entry for an address, it always calls `original_account_state(address)` first, which creates (if needed) an entry in `original_`.  Hence `current_` never contains an address absent from `original_`.
+
 ## Conclusion
 
 The **version** parameter is a snapshot identifier used by `VersionStack` to fork, commit, or revert per-account state and logs in lock-step with nested EVM calls. Although it increments and decrements in sync with callchain nesting, conceptually it is a generic version tag rather than strictly the call depth.

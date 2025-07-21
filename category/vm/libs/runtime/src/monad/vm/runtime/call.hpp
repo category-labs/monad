@@ -116,7 +116,7 @@ namespace monad::vm::runtime
 
         if (call_kind == EVMC_CALL) {
             if (MONAD_VM_UNLIKELY(
-                    has_value && ctx->env.evmc_flags == EVMC_STATIC)) {
+                    has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
                 ctx->exit(StatusCode::Error);
             }
 

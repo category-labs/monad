@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
+#include <functional>
 #include <istream>
 
 MONAD_NAMESPACE_BEGIN
@@ -149,5 +150,9 @@ std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
 std::optional<BlockHeader>
 read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
+
+bool for_each_code(
+    mpt::Db &, uint64_t block,
+    std::function<void(bytes32_t const &, byte_string_view)>);
 
 MONAD_NAMESPACE_END

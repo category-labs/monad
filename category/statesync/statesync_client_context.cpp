@@ -77,17 +77,13 @@ void monad_statesync_client_context::commit()
     }
     UpdateList code_updates;
 
-    std::deque<bytes32_t> upserted;
-    for (auto const &hash : pending) {
-        if (code.contains(hash)) {
-            code_updates.push_front(alloc.emplace_back(Update{
-                .key = NibblesView{hash},
-                .value = code.at(hash),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(current)}));
-            upserted.emplace_back(hash);
-        }
+    for (auto const &[hash, bytes] : code) {
+        code_updates.push_front(alloc.emplace_back(Update{
+            .key = NibblesView{hash},
+            .value = bytes,
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(current)}));
     }
 
     auto state_update = Update{
@@ -125,10 +121,6 @@ void monad_statesync_client_context::commit()
 
     db.upsert(std::move(finalized_updates), current, false, false);
     tdb.set_block_and_prefix(current);
-    for (auto const &hash : upserted) {
-        MONAD_ASSERT(this->upserted.emplace(hash).second);
-        MONAD_ASSERT(pending.erase(hash) == 1);
-        MONAD_ASSERT(code.erase(hash) == 1);
-    }
+    code.clear();
     deltas.clear();
 }

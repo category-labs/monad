@@ -149,14 +149,20 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
         // sent storage with no account
         return false;
     }
-    else if (!ctx->pending.empty()) {
+
+    auto const latest_version = ctx->db.get_latest_version();
+
+    MONAD_ASSERT(for_each_code(
+        ctx->db, latest_version, [&](bytes32_t const &hash, byte_string_view) {
+            ctx->seen_code.erase(hash);
+        }));
+    if (!ctx->seen_code.empty()) {
         // missing code
         return false;
     }
 
-    if (ctx->db.get_latest_version() != tgrt.number) {
-        ctx->db.move_trie_version_forward(
-            ctx->db.get_latest_version(), tgrt.number);
+    if (latest_version != tgrt.number) {
+        ctx->db.move_trie_version_forward(latest_version, tgrt.number);
         bytes32_t expected = tgrt.parent_hash;
         for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
             auto const v = tgrt.number - i - 1;

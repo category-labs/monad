@@ -520,52 +520,6 @@ TEST_F(StateSyncFixture, deletion_proposal)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
-TEST_F(StateSyncFixture, ignore_unused_code)
-{
-    constexpr auto N = 1'000'000;
-    bytes32_t parent_hash{NULL_HASH};
-    {
-        load_header(sdb, BlockHeader{.number = N - 257});
-        for (size_t i = N - 256; i < N; ++i) {
-            stdb.set_block_and_prefix(i - 1);
-            commit_sequential(
-                stdb,
-                {},
-                {},
-                BlockHeader{.parent_hash = parent_hash, .number = i});
-            parent_hash = to_bytes(
-                keccak256(rlp::encode_block_header(stdb.read_eth_header())));
-        }
-        load_db(stdb, N);
-        init();
-    }
-
-    auto const code =
-        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                       "ffffffffffffffffffffffff")
-            .value();
-    auto const code_hash = to_bytes(keccak256(code));
-    handle_target(
-        cctx,
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .state_root =
-                0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32,
-            .number = N});
-    // send some random code
-    statesync_server_send_upsert(
-        &net, SYNC_TYPE_UPSERT_CODE, code.data(), code.size(), nullptr, 0);
-    run();
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
-    OnDiskMachine machine;
-    mpt::Db cdb{
-        machine,
-        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
-    TrieDb ctdb{cdb};
-    EXPECT_EQ(ctdb.read_code(code_hash)->code_size(), 0);
-}
-
 TEST_F(StateSyncFixture, sync_one_account)
 {
     constexpr auto N = 1'000'000;

@@ -29,9 +29,8 @@ void account_update(
 
     if (acct.has_value()) {
         auto const &hash = acct.value().code_hash;
-        if (hash != NULL_HASH && !ctx.pending.contains(hash) &&
-            !ctx.upserted.contains(hash)) {
-            ctx.pending.emplace(hash);
+        if (hash != NULL_HASH) {
+            ctx.seen_code.emplace(hash);
         }
     }
 

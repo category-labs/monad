@@ -872,4 +872,65 @@ std::optional<BlockHeader> read_eth_header(
     return decoded.value();
 }
 
+bool for_each_code(
+    mpt::Db &db, uint64_t const block,
+    std::function<void(bytes32_t const &, byte_string_view)> const fn)
+{
+    class CodeTraverseMachine final : public TraverseMachine
+    {
+        std::function<void(bytes32_t const &, byte_string_view)> fn_;
+        Nibbles path_;
+
+    public:
+        explicit CodeTraverseMachine(
+            std::function<void(bytes32_t const &, byte_string_view)> const fn)
+            : fn_(fn)
+        {
+        }
+
+        CodeTraverseMachine(CodeTraverseMachine const &other) = default;
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(path_.nibble_size() == 0);
+                return true;
+            }
+
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+            if (node.has_value()) {
+                MONAD_ASSERT(path_.nibble_size() == (sizeof(bytes32_t) * 2));
+                fn_(to_bytes({path_.data(), sizeof(bytes32_t)}), node.value());
+                return false;
+            }
+            return true;
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            auto const path_view = monad::mpt::NibblesView{path_};
+            unsigned const prefix_size =
+                branch == monad::mpt::INVALID_BRANCH
+                    ? 0
+                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
+            path_ = path_view.substr(0, prefix_size);
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<CodeTraverseMachine>(*this);
+        }
+    };
+
+    auto const root = db.find(concat(FINALIZED_NIBBLE, CODE_NIBBLE), block);
+    if (MONAD_UNLIKELY(!root.has_value())) {
+        return false;
+    }
+    CodeTraverseMachine machine{fn};
+    if (MONAD_UNLIKELY(!db.traverse(root.value(), machine, block))) {
+        return false;
+    }
+    return true;
+}
+
 MONAD_NAMESPACE_END

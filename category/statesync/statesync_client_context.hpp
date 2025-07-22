@@ -39,8 +39,7 @@ struct monad_statesync_client_context
     monad::BlockHeader tgrt;
     uint64_t current;
     Map<monad::Address, StorageDeltas> buffered;
-    ankerl::unordered_dense::segmented_set<monad::bytes32_t> upserted;
-    ankerl::unordered_dense::segmented_set<monad::bytes32_t> pending;
+    ankerl::unordered_dense::segmented_set<monad::bytes32_t> seen_code;
     Map<monad::bytes32_t, monad::byte_string> code;
     Map<monad::Address, std::optional<StateDelta>> deltas;
     uint64_t n_upserts;

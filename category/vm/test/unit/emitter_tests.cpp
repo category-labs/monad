@@ -2436,18 +2436,37 @@ TEST(Emitter, signextend)
     pure_bin_instr_test(
         rt, SIGNEXTEND, &Emitter::signextend, 32, {0, 0, 0, -1}, {0, 0, 0, -1});
 
-    uint256_t bits = {0x5555555555555555, 0x5555555555555555, 0x5555555555555555, 0x5555555555555555}; // Alternating 0 and 1
+    uint256_t bits = {
+        0x5555555555555555,
+        0x5555555555555555,
+        0x5555555555555555,
+        0x5555555555555555}; // Alternating 0 and 1
     for (size_t i = 1; i == 1; i++) {
-        auto bit_pos = 8 * i + 7;
-        uint256_t sign_bit = ((uint256_t) 1 << bit_pos); // 000...010...000
-        uint256_t sign_bits_mask = ~(((uint256_t) 1 << (bit_pos + 1)) - 1); // 11111111...0...
-        auto compute_expected = [&sign_bit, &sign_bits_mask](uint256_t value) {
-            return (value & sign_bit) ? value | sign_bits_mask : value & ~sign_bits_mask;
+        auto const bit_pos = 8 * i + 7;
+        uint256_t const sign_bit = ((uint256_t)1 << bit_pos); // 000...010...000
+        uint256_t const sign_bits_mask =
+            ~(((uint256_t)1 << (bit_pos + 1)) - 1); // 11111111...0...
+        auto const compute_expected = [&sign_bit,
+                                       &sign_bits_mask](uint256_t value) {
+            return (value & sign_bit) ? value | sign_bits_mask
+                                      : value & ~sign_bits_mask;
         };
         // 0x55 always has the sign bit off
-        pure_bin_instr_test(rt, SIGNEXTEND, &Emitter::signextend, i, bits, compute_expected(bits));
+        pure_bin_instr_test(
+            rt,
+            SIGNEXTEND,
+            &Emitter::signextend,
+            i,
+            bits,
+            compute_expected(bits));
         // 0xAA (~0x55) always has the sign bit on
-        pure_bin_instr_test(rt, SIGNEXTEND, &Emitter::signextend, i, ~bits, compute_expected(~bits));
+        pure_bin_instr_test(
+            rt,
+            SIGNEXTEND,
+            &Emitter::signextend,
+            i,
+            ~bits,
+            compute_expected(~bits));
     }
 }
 

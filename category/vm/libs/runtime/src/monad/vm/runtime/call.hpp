@@ -129,7 +129,7 @@ namespace monad::vm::runtime
                 has_empty_cost = has_value;
             }
             if (has_empty_cost &&
-                !ctx->host->account_exists(ctx->context, &code_address)) {
+                !ctx->host->account_exists(ctx->context, &dest_address)) {
                 ctx->gas_remaining -= 25000;
             }
         }

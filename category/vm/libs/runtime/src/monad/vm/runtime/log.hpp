@@ -10,7 +10,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
         std::span<evmc::bytes32 const> topics)
     {
-        if (ctx->env.evmc_flags == EVMC_STATIC) {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 

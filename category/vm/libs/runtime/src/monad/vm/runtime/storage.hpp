@@ -36,7 +36,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         std::int64_t remaining_block_base_gas)
     {
-        if (ctx->env.evmc_flags == evmc_flags::EVMC_STATIC) {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 
@@ -94,7 +94,7 @@ namespace monad::vm::runtime
     inline void
     tstore(Context *ctx, uint256_t const *key_ptr, uint256_t const *val_ptr)
     {
-        if (ctx->env.evmc_flags == evmc_flags::EVMC_STATIC) {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 

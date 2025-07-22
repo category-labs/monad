@@ -194,9 +194,5 @@ target_link_options(monad_execution PRIVATE LINKER:-z,defs)
 # unit tests
 # ##############################################################################
 
-monad_add_test_folder("ethereum/core")
-monad_add_test_folder("ethereum/db")
-monad_add_test_folder("ethereum/execution")
-monad_add_test_folder("ethereum/rlp")
-monad_add_test_folder("ethereum/state2")
-monad_add_test_folder("monad/core")
+monad_add_test_folder("ethereum")
+monad_add_test_folder("monad")

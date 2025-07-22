@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'category/vm/**'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

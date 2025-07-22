@@ -117,7 +117,11 @@ namespace monad::vm::runtime
         if (call_kind == EVMC_CALL) {
             if (MONAD_VM_UNLIKELY(
                     has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
-                ctx->exit(StatusCode::Error);
+                auto error_code =
+                    ctx->gas_remaining + remaining_block_base_gas < 0
+                        ? StatusCode::OutOfGas
+                        : StatusCode::Error;
+                ctx->exit(error_code);
             }
 
             auto has_empty_cost = true;

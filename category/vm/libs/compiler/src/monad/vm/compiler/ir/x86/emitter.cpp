@@ -3692,22 +3692,6 @@ namespace monad::vm::compiler::native
         }
     }
 
-    asmjit::x86::Gp cast_reg_to_size(asmjit::x86::Gpq const &gpq, size_t ix)
-    {
-        switch (ix) {
-        case 1:
-            return gpq.r8();
-        case 2:
-            return gpq.r16();
-        case 4:
-            return gpq.r32();
-        case 8:
-            return gpq.r64();
-        default:
-            MONAD_VM_DEBUG_ASSERT(false);
-        }
-    }
-
     void Emitter::signextend_literal_ix(uint256_t const &ix, StackElemRef src)
     {
         MONAD_VM_DEBUG_ASSERT(!src->literal().has_value());
@@ -3724,9 +3708,9 @@ namespace monad::vm::compiler::native
         // the size of the integer.
         if (src->general_reg()) {
             auto const sign_reg_ix =
-                static_cast<size_t>(ix[0]) / 8; // Reg with sign bit
+                static_cast<size_t>(ix[0]) / 8;
             auto const sign_reg_offset =
-                static_cast<size_t>(ix[0]) % 8; // Offset in the register
+                static_cast<size_t>(ix[0]) % 8;
             auto const dst = [&] {
                 if (is_live(src, {})) {
                     auto const [dst, reserv] = alloc_general_reg();
@@ -3751,41 +3735,38 @@ namespace monad::vm::compiler::native
 
             // Then we sign extend the register with the sign bit (so called
             // `sign_reg`).
-            if (sign_reg_offset == 7) {
-                // The sign bit is already in position, nothing to do unless src
-                // != dst
-                if (src != dst) {
-                    as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
-                }
+            if (sign_reg_offset == 0) {
+                as_.movsx(dst_sign_reg, src_sign_reg.r8Lo());
             }
-            else if (
-                sign_reg_offset == 0 //  8-bit movsx
-                || sign_reg_offset == 1 // 16-bit movsx
-                || sign_reg_offset == 3) { // 32-bit movsx
-                // If ix is a power of two, we can use movsx to sign-extend the
-                // sign register
-                as_.movsx(
-                    dst_sign_reg.r64(),
-                    cast_reg_to_size(src_sign_reg, sign_reg_offset + 1));
+            else if (sign_reg_offset == 1) {
+                as_.movsx(dst_sign_reg, src_sign_reg.r16());
+            }
+            else if (sign_reg_offset == 3) {
+                as_.movsx(dst_sign_reg, src_sign_reg.r32());
+            }
+            else if (sign_reg_offset == 7) {
+                if (src != dst) {
+                    as_.mov(dst_sign_reg, src_sign_reg);
+                }
             }
             else {
-                // Otherwise we use a left shift followed by right arithmetic
-                // shift to sign-extend
                 if (src != dst) {
                     as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
                 }
+                // we use left then right shifts to sign-extend
                 as_.shl(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
                 as_.sar(dst_sign_reg.r64(), (7 - sign_reg_offset) * 8);
             }
 
-            // Then propagate the sign bit to the other registers. SAR copies
-            // the sign bit to the other bits. It's repeated for each register
-            // but it could also be done once and then copied to the others
-            // registers, at the cost of creating dependencies between movs.
-            for (size_t i = sign_reg_ix + 1; i < 4; ++i) {
-                as_.mov(dst_gpq[i].r64(), dst_sign_reg.r64());
-                // Arithmetic right shift to put sign bit everywhere
-                as_.sar(dst_gpq[i].r64(), 63);
+            // Then propagate the sign bit to the other registers.
+            size_t reg_ix = sign_reg_ix + 1;
+            if (reg_ix < 4) {
+                auto dst_ones = dst_gpq[reg_ix];
+                as_.mov(dst_ones, dst_sign_reg);
+                as_.sar(dst_ones, 63);
+                while (++reg_ix < 4) {
+                    as_.mov(dst_gpq[reg_ix], dst_ones);
+                }
             }
             stack_.push(std::move(dst));
             return;

@@ -3707,10 +3707,8 @@ namespace monad::vm::compiler::native
         // Note that ix is the index of the byte with the sign bit. ix + 1 is
         // the size of the integer.
         if (src->general_reg()) {
-            auto const sign_reg_ix =
-                static_cast<size_t>(ix[0]) / 8;
-            auto const sign_reg_offset =
-                static_cast<size_t>(ix[0]) % 8;
+            auto const sign_reg_ix = static_cast<size_t>(ix[0]) / 8;
+            auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8;
             auto const dst = [&] {
                 if (is_live(src, {})) {
                     auto const [dst, reserv] = alloc_general_reg();

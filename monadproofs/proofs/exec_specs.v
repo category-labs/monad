@@ -768,8 +768,8 @@ Definition StateR (s: StateM) : Rep :=
                                                   )
           |}
     end.
-      
-  Definition interpAssumptions (relaxedValidation: bool) (a: option AssumptionAndUpdate) (actualPreTxAcState: option AccountM) : Prop :=
+
+  Definition satAccountNonStorageAssumptions (relaxedValidation: bool) (a: option AssumptionAndUpdate) (actualPreTxAcState: option AccountM) : Prop :=
       match option_map preTxAcStateAssumptions a  with
       | Some (assumedState, assumEx) =>
           match coreState assumedState, actualPreTxAcState  with
@@ -780,7 +780,18 @@ Definition StateR (s: StateM) : Rep :=
              /\ (if (negb relaxedValidation || nonce_exact assumEx)
                  then cs .^ _nonce = (csActual).^ _nonce
                  else True)
-             /\ (forall storageKey: N, storageKey ∈ relevantKeys assumedState
+          | None, None => True
+          | _, _ => False
+          end
+      | None  => True
+      end.
+
+  Definition satAccountStrageAssumptions (relaxedValidation: bool) (a: option AssumptionAndUpdate) (actualPreTxAcState: option AccountM) : Prop :=
+      match option_map preTxAcStateAssumptions a  with
+      | Some (assumedState, assumEx) =>
+          match coreState assumedState, actualPreTxAcState  with
+          | Some cs, Some csActual =>
+             (forall storageKey: N, storageKey ∈ relevantKeys assumedState
                                        -> csActual .^ _storage storageKey = cs .^ _storage storageKey)
           | None, None => True
           | _, _ => False
@@ -788,9 +799,13 @@ Definition StateR (s: StateM) : Rep :=
       | None  => True
       end.
   
+  
+  Definition satAccountAssumptions (relaxedValidation: bool) (a: option AssumptionAndUpdate) (actualPreTxAcState: option AccountM) : Prop :=
+    satAccountNonStorageAssumptions relaxedValidation a actualPreTxAcState /\  satAccountStrageAssumptions relaxedValidation a actualPreTxAcState.
+  
   Definition satisfiesAssumptions (a: StateM) (preTxState: StateOfAccounts) : Prop :=
     forall acAddr: address,
-      interpAssumptions (relaxedValidation a) (assumptionAndUpdateOfAddr a acAddr) (preTxState !! acAddr).
+      satAccountAssumptions (relaxedValidation a) (assumptionAndUpdateOfAddr a acAddr) (preTxState !! acAddr).
 
   Definition validAU (relaxedValidation: bool) (a: option AssumptionAndUpdate) : Prop :=
     match option_map preTxAcStateAssumptions a  with

@@ -71,7 +71,7 @@ Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (rela
    \prepost actualp |-> libspecs.optionR "monad::Account" (fun acs => AccountR 1 acs) 1 (actualPreTxState !! fixeeAddr)
    \post{satisfiesAssumptionsb:bool} [Vbool satisfiesAssumptionsb]
     (*  [| satisfiesAssumptionsb <-> satisfiesAssumptions au actualPreTxState |] **  may be provable, and may find performance bugs but wont strengthen the overall exec_block spec. the next line is weaker and suffices *)
-     [| if satisfiesAssumptionsb then  interpAssumptions relaxedVal (Some fixeeStateSlice) (actualPreTxState !! fixeeAddr)
+     [| if satisfiesAssumptionsb then  satAccountNonStorageAssumptions relaxedVal (Some fixeeStateSlice) (actualPreTxState !! fixeeAddr)
         else Logic.True |] **
       if (negb satisfiesAssumptionsb)
       then statep |-> StateAccountSliceR fixeeAddr fixeeStateSlice relaxedVal
@@ -693,6 +693,7 @@ invoke.wp_minvoke_O.body module Direct
       revert autogenhyp.
       (*
 (x1 ≤ Z.to_N (Zdigits.binary_value 256 block_account_balance0))%N -> x1 ≤ Zdigits.binary_value 256 block_account_balance0 *)
+      Set Printing Coercions.
       admit.
     - 
   }

@@ -641,9 +641,34 @@ Proof using.
     unfold pairOffsets.
     go.
     #[global] Instance kjsfdjs {T} a: LearnEq3 (@VersionStackR _ _ _ T a) := ltac:(solve_learnable).
+    #[global] Instance kjfslksfdjs a: LearnEq2 (@VersionStackSpineR _ _ _ a) := ltac:(solve_learnable).
+    #[global] Instance fsdkflj {A B} (foo:A*B) ls: Refine1 false false (map fst ls = [foo.1]) [ls=[foo]] :=
+      ltac:(constructor; auto).
+Arguments pairSndOffset/.
+Arguments pairOffsets/.
+     unfold VersionStackR.
+     slauto.
+     destruct txUpdates as [txUpdloc txUpd].
+     simpl in *.
+     slauto.
+     wp_if;[slauto|]. (* return false if the optuonal account in txUpd is None *)
+     slauto.
+     go.
+    unfold Vers
+  iAssert (version_stack_recent_spec) as "#?". admit.
+  unfold VersionStackR.
+  slauto.
+    go.
     slauto.
+    iExists txUpdates, [].
+    slauto.
+    
+    constructor.
+    solve_refine.
+  rwHypsP.
+  Search txUpdates.
 
-    "monad::AccountState&()" "monad::VersionStack<monad::AccountState>::recent()"
+  
                              
     iExists _,_.
     slauto.

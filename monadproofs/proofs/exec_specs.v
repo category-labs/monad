@@ -86,14 +86,14 @@ Record AssumptionAndUpdate :=
   {
     preTxAcStateAssumptions: PartialAccountState * AssumptionExactness;
     originalLoc: ptr;
-    txUpdates : option (ptr*PartialAccountState); (* None means, the tx did not make any updates to this account *)
+    txUpdates : option (ptr*(ptr *PartialAccountState)); (* None means, the tx did not make any updates to this account. outer ptr is the location in the map, inner ptr is the location of the PartialAccountState in the VersionS *)
   }.
 
 Record StateM :=
   {
     relaxedValidation: bool;
     preTxAssumedState: MapModel evm.address (PartialAccountState * AssumptionExactness );
-    newStates: MapModel evm.address (list PartialAccountState ); (* head is the latest *)
+    newStates: MapModel evm.address (list (ptr*PartialAccountState)); (* head is the latest *)
     blockStatePtr: ptr;
     indices: Indices
   }.
@@ -658,12 +658,15 @@ Definition MapOriginalR
            q
            m.
 
-Definition VersionStackR {ElemType} (cppType: type) (elemRep: Qp -> ElemType -> Rep) (q:Qp) (lt:list ElemType): Rep. Proof. Admitted.
 
+Definition VersionStackSpineR (cppType: type) (q:Qp) (lt:list ptr): Rep. Proof. Admitted.
+
+Definition VersionStackR {ElemType} (cppType: type) (elemRep: Qp -> ElemType -> Rep) (q:Qp) (lt:list (ptr*ElemType)): Rep :=
+  VersionStackSpineR cppType q (map fst lt) ** pureR ([∗ list] p ∈ lt, let '(loc, val) := p in  (loc:ptr) |-> elemRep q val).
 
 Definition MapCurrentR
            (q: stdpp.numbers.Qp)
-           (m: MapModel address (list PartialAccountState))
+           (m: MapModel address (list (ptr* PartialAccountState)))
   : Rep :=
   AnkerMapR "evmc::address" "monad::VersionStack<monad::AccountState>" 
            addressToN
@@ -763,7 +766,7 @@ Definition StateR (s: StateM) : Rep :=
             originalLoc := fst p;
             txUpdates :=  ((newStates s) !! a) ≫= (fun a => match head (snd a) with
                                                             | None => None
-                                                            | Some upd => Some (fst a,upd)
+                                                            | Some (loc, upd) => Some (fst a, (loc, upd))
                                                             end
                                                   )
           |}
@@ -848,7 +851,7 @@ Definition StateR (s: StateM) : Rep :=
     let '(assumedPreTxState, assumEx) := preTxAcStateAssumptions au in
     match  txUpdates au   with
     | None => actualPreTxState
-    | Some (_, txUpds) =>
+    | Some (_, (_,txUpds)) =>
         match coreState txUpds  with
         | None => None (* account did suicide if it existed *)
         | Some csUpdated =>
@@ -1151,6 +1154,15 @@ Definition pairR {K V:Type} (tykey tyval: type)
         ** [| v = retp ,, pairSndOffset "evmc::address" "monad::VersionStack<monad::AccountState>" |]
            ).
 
+  cpp.spec "monad::VersionStack<monad::AccountState>::recent()"
+      as version_stack_recent_spec
+        with (fun (this: ptr) =>
+                \prepost{q h tl} this |-> VersionStackSpineR
+                  "monad::AccountState"
+                     (cQp.mut q)
+                     (h::tl)
+                     \post [Vptr  h] emp).
+    
 End with_Sigma.
 (*
 Module Generalized1.

@@ -324,40 +324,10 @@ namespace monad::vm::compiler::native
         return add<16>(x);
     }
 
-    asmjit::x86::Mem
-    Emitter::RoData::add16(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3)
-    {
-        std::array<uint8_t, 16> x;
-        std::memcpy(x.data(), &x0, 4);
-        std::memcpy(x.data() + 4, &x1, 4);
-        std::memcpy(x.data() + 8, &x2, 4);
-        std::memcpy(x.data() + 12, &x3, 4);
-        return add<16>(x);
-    }
-
     asmjit::x86::Mem Emitter::RoData::add8(uint64_t x0)
     {
         std::array<uint8_t, 8> x;
         std::memcpy(x.data(), &x0, 8);
-        return add<8>(x);
-    }
-
-    asmjit::x86::Mem Emitter::RoData::add8(uint32_t x0, uint32_t x1)
-    {
-        std::array<uint8_t, 8> x;
-        std::memcpy(x.data(), &x0, 4);
-        std::memcpy(x.data() + 4, &x1, 4);
-        return add<8>(x);
-    }
-
-    asmjit::x86::Mem
-    Emitter::RoData::add8(uint16_t x0, uint16_t x1, uint16_t x2, uint16_t x3)
-    {
-        std::array<uint8_t, 8> x;
-        std::memcpy(x.data(), &x0, 2);
-        std::memcpy(x.data() + 2, &x1, 2);
-        std::memcpy(x.data() + 4, &x2, 2);
-        std::memcpy(x.data() + 6, &x3, 2);
         return add<8>(x);
     }
 
@@ -370,31 +340,6 @@ namespace monad::vm::compiler::native
         return m;
     }
 
-    asmjit::x86::Mem Emitter::RoData::add4(uint16_t x0, uint16_t x1)
-    {
-        std::array<uint8_t, 4> x;
-        std::memcpy(x.data(), &x0, 2);
-        std::memcpy(x.data() + 2, &x1, 2);
-        auto m = add<4>(x);
-        m.setSize(4);
-        return m;
-    }
-
-    asmjit::x86::Mem
-    Emitter::RoData::add4(uint8_t x0, uint8_t x1, uint8_t x2, uint8_t x3)
-    {
-        auto m = add<4>({x0, x1, x2, x3});
-        m.setSize(4);
-        return m;
-    }
-
-    asmjit::x86::Mem Emitter::RoData::add2(uint8_t x0, uint8_t x1)
-    {
-        auto m = add<2>({x0, x1});
-        m.setSize(2);
-        return m;
-    }
-
     template <size_t N>
     asmjit::x86::Mem Emitter::RoData::add(std::array<uint8_t, N> const &x)
     {
@@ -404,16 +349,13 @@ namespace monad::vm::compiler::native
         static_assert(code_size_hard_upper_bound <= (uint64_t{1} << 31));
         MONAD_VM_ASSERT(data_.size() < (code_size_hard_upper_bound >> 4));
 
-        static_assert(N < 32);
+        static_assert(4 <= N && N <= 16);
         static_assert(std::popcount(N) == 1);
         static constexpr int32_t n = static_cast<int32_t>(N);
         static constexpr int32_t align = std::min(8, n);
         static constexpr int32_t align_mask = align - 1;
 
         RoSubdata<N> &sub = [this] -> RoSubdata<N> & {
-            if constexpr (N == 2) {
-                return sub2_;
-            }
             if constexpr (N == 4) {
                 return sub4_;
             }

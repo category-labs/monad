@@ -290,7 +290,6 @@ namespace monad::vm::fuzzing
         std::uint8_t opcode;
         uint8_t balancePct;
         Constant offset;
-        Constant size;
         Constant salt;
         bool isTrivial; // sometimes just emit a simple CREATE/CREATE2
     };
@@ -310,7 +309,6 @@ namespace monad::vm::fuzzing
             .opcode = uniform_sample(eng, create_non_terminators),
             .balancePct = uniform_sample(eng, pcts),
             .offset = memory_constant(eng),
-            .size = memory_constant(eng),
             .salt = random_constant(eng),
             .isTrivial = false,
         };
@@ -532,12 +530,53 @@ namespace monad::vm::fuzzing
         return program;
     }
 
+    inline uint8_t num_precompiles(evmc_revision rev)
+    {
+        if (rev <= EVMC_SPURIOUS_DRAGON) {
+            return 4;
+        }
+        else if (rev <= EVMC_PETERSBURG) {
+            return 8;
+        }
+        else if (rev <= EVMC_SHANGHAI) {
+            return 9;
+        }
+        else if (rev == EVMC_CANCUN) {
+            return 10;
+        }
+        else if (rev == EVMC_PRAGUE) {
+            return 17;
+        }
+        else {
+            MONAD_VM_ASSERT(false);
+        }
+    }
+
+    template <typename Engine>
+    evmc::address generate_precompile_address(Engine &eng, evmc_revision rev)
+    {
+        std::uniform_int_distribution<uint8_t> dist(1, num_precompiles(rev));
+        evmc::address addr{};
+        addr.bytes[sizeof(evmc::address) - 1] = dist(eng);
+        return addr;
+    }
+
     template <typename Engine>
     void compile_address(
-        Engine &eng, std::vector<std::uint8_t> &program,
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
         std::vector<evmc::address> const &valid_addresses)
     {
-        auto const &addr = uniform_sample(eng, valid_addresses);
+        auto const &addr = [&] {
+            if (valid_addresses.empty()) {
+                return generate_precompile_address(eng, rev);
+            }
+            return discrete_choice<evmc::address>(
+                eng,
+                [&](auto &g) { return uniform_sample(g, valid_addresses); },
+                Choice(0.001, [rev](auto &g) {
+                    return generate_precompile_address(g, rev);
+                }));
+        }();
 
         program.push_back(PUSH20);
         for (auto b : addr.bytes) {
@@ -581,16 +620,42 @@ namespace monad::vm::fuzzing
         program.push_back(RETURNDATACOPY);
     }
 
-    void compile_create(std::vector<std::uint8_t> &program, Create const &c)
+    template <typename Engine>
+    void compile_create(
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
+        Create const &c, std::vector<evmc::address> const &valid_addresses)
     {
         if (!c.isTrivial) {
             if (c.opcode == CREATE2) {
                 compile_constant(program, c.salt);
             }
-            compile_constant(program, c.size);
+            // -> [salt (CREATE2)]
+
+            compile_address(eng, rev, program, valid_addresses);
+            // -> [address, salt (CREATE2)]
+            program.push_back(DUP1);
+            // -> [address, address, salt (CREATE2)]
+            program.push_back(EXTCODESIZE);
+            // -> [size, address, salt (CREATE2)]
+            program.push_back(DUP1);
+            // -> [size, size, address, salt (CREATE2)]
+            compile_constant(program, Constant{0});
+            // -> [0, size, size, address, salt (CREATE2)]
             compile_constant(program, c.offset);
-            program.push_back(BALANCE);
+            // -> [dest_offset, 0, size, size, address, salt (CREATE2)]
+            program.push_back(DUP5);
+            // -> [address, dest_offset, 0, size, size, address, salt (CREATE2)]
+            program.push_back(EXTCODECOPY);
+            // -> [size, address, salt (CREATE2)]
+            program.push_back(SWAP1);
+            // -> [address, size, salt (CREATE2)]
+            program.push_back(POP);
+            // -> [size, salt (if CREATE2)]
+            compile_constant(program, c.offset);
+            // -> [dest_offset, size, salt (if CREATE2)]
+            program.push_back(SELFBALANCE);
             compile_percent(program, c.balancePct);
+            // -> [value, dest_offset, size, salt (if CREATE2)]
         }
 
         program.push_back(c.opcode);
@@ -598,10 +663,10 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_call(
-        Engine &eng, std::vector<std::uint8_t> &program, Call const &call,
-        std::vector<evmc::address> const &valid_addresses)
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
+        Call const &call, std::vector<evmc::address> const &valid_addresses)
     {
-        bool isTrivial = call.isTrivial || valid_addresses.empty();
+        bool isTrivial = call.isTrivial;
 
         if (!isTrivial) {
             compile_constant(program, call.retSize);
@@ -610,11 +675,11 @@ namespace monad::vm::fuzzing
             compile_constant(program, call.argsOffset);
 
             if (call.opcode == CALL || call.opcode == CALLCODE) {
-                program.push_back(BALANCE);
+                program.push_back(SELFBALANCE);
                 compile_percent(program, call.balancePct);
             }
 
-            compile_address(eng, program, valid_addresses);
+            compile_address(eng, rev, program, valid_addresses);
 
             // send some percentage of available gas
             program.push_back(GAS);
@@ -675,7 +740,7 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_block(
-        Engine &eng, std::vector<std::uint8_t> &program,
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
         std::vector<Instruction> const &block,
         std::vector<evmc::address> const &valid_addresses,
         std::vector<std::uint32_t> &valid_jumpdests,
@@ -721,12 +786,14 @@ namespace monad::vm::fuzzing
                             eng, program, p, valid_addresses, jumpdest_patches);
                     },
                     [&](Call const &c) {
-                        compile_call(eng, program, c, valid_addresses);
+                        compile_call(eng, rev, program, c, valid_addresses);
                     },
                     [&](ReturnDataCopy const &r) {
                         compile_returndatacopy(program, r);
                     },
-                    [&](Create const &c) { compile_create(program, c); },
+                    [&](Create const &c) {
+                        compile_create(eng, rev, program, c, valid_addresses);
+                    },
                 },
                 inst);
         }
@@ -803,7 +870,7 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     std::vector<std::uint8_t> generate_program(
-        GeneratorFocus focus, Engine &eng,
+        GeneratorFocus focus, Engine &eng, evmc_revision rev,
         std::vector<evmc::address> const &valid_addresses)
     {
         auto prog = std::vector<std::uint8_t>{};
@@ -837,6 +904,7 @@ namespace monad::vm::fuzzing
 
             compile_block(
                 eng,
+                rev,
                 prog,
                 block,
                 valid_addresses,
@@ -851,7 +919,7 @@ namespace monad::vm::fuzzing
     template <typename Engine, typename LookupFunc>
     auto message_gas(
         Engine &eng, evmc::address const &target,
-        std::vector<evmc::address> const &known_addresses,
+        std::vector<evmc::address> const &contract_addresses,
         LookupFunc address_lookup) noexcept
     {
         using gas_t = decltype(evmc_message::gas);
@@ -866,7 +934,7 @@ namespace monad::vm::fuzzing
             Choice(0.10, [](auto &) { return 0.0; }));
 
         auto const factor =
-            address_lookup(target).size() * known_addresses.size();
+            address_lookup(target).size() * contract_addresses.size();
 
         auto scale_dist = std::normal_distribution(
             /* mean */ 32.0, /* stddev */ 16.0);
@@ -906,7 +974,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     std::uint8_t const *generate_input_data(
         GeneratorFocus focus, Engine &eng, std::size_t const size,
-        std::vector<evmc::address> const &known_addresses)
+        std::vector<evmc::address> const &contract_addresses)
     {
         if (size == 0) {
             return nullptr;
@@ -917,7 +985,7 @@ namespace monad::vm::fuzzing
 
         while (data.size() < size) {
             auto const next_item = generate_calldata_item(focus, eng);
-            compile_push(eng, data, next_item, known_addresses);
+            compile_push(eng, data, next_item, contract_addresses);
         }
 
         auto *const return_buf = new std::uint8_t[size];
@@ -942,46 +1010,46 @@ namespace monad::vm::fuzzing
     template <typename Engine, typename LookupFunc>
     message_ptr generate_message(
         GeneratorFocus focus, Engine &eng,
-        std::vector<evmc::address> const &precompile_addresses,
-        std::vector<evmc::address> const &known_addresses,
+        std::vector<evmc::address> const &contract_addresses,
         std::vector<evmc::address> const &known_eoas,
         LookupFunc address_lookup) noexcept
     {
         auto const kind = uniform_sample(
             eng, std::array{EVMC_CALL, EVMC_DELEGATECALL, EVMC_CALLCODE});
 
-        auto const flags = discrete_choice<evmc_flags>(
+        auto const static_flag = discrete_choice<evmc_flags>(
             eng,
             [](auto &) { return static_cast<evmc_flags>(0); },
             Choice(0.02, [](auto &) { return EVMC_STATIC; }));
+        auto const delegated_flag = discrete_choice<evmc_flags>(
+            eng,
+            [](auto &) { return static_cast<evmc_flags>(0); },
+            Choice(0.5, [](auto &) { return EVMC_DELEGATED; }));
+
+        auto const flags =
+            static_cast<evmc_flags>(static_flag | delegated_flag);
 
         auto const depth =
             std::uniform_int_distribution<decltype(evmc_message::depth)>(
                 0, 1023)(eng);
 
-        auto const target = discrete_choice<evmc::address>(
-            eng,
-            [&](auto &g) { return uniform_sample(g, known_addresses); },
-            Choice(0.005, [&](auto &g) {
-                return uniform_sample(g, precompile_addresses);
-            }));
+        auto const target = uniform_sample(eng, contract_addresses);
+
         auto const recipient =
             (kind == EVMC_CALL)
                 ? target
                 : discrete_choice<evmc::address>(
                       eng,
                       [&](auto &g) {
-                          return uniform_sample(g, known_addresses);
+                          return uniform_sample(g, contract_addresses);
                       },
-                      Choice(0.001, [&](auto &g) { return random_address(g); }),
-                      Choice(0.005, [&](auto &g) {
-                          return uniform_sample(g, precompile_addresses);
-                      }));
+                      Choice(
+                          0.001, [&](auto &g) { return random_address(g); }));
 
         auto const eoa_prob = known_eoas.empty() ? 0.0 : 0.5;
         auto const sender = discrete_choice<evmc::address>(
             eng,
-            [&](auto &g) { return uniform_sample(g, known_addresses); },
+            [&](auto &g) { return uniform_sample(g, contract_addresses); },
             Choice(eoa_prob, [&](auto &g) {
                 return uniform_sample(g, known_eoas);
             }));
@@ -989,7 +1057,7 @@ namespace monad::vm::fuzzing
         auto const input_size =
             std::uniform_int_distribution<std::size_t>(0, 1024)(eng);
         auto const *input_data =
-            generate_input_data(focus, eng, input_size, known_addresses);
+            generate_input_data(focus, eng, input_size, contract_addresses);
 
         auto const value = discrete_choice<runtime::uint256_t>(
             eng, [](auto &) { return 0; }, Choice(0.9, [&](auto &g) {
@@ -1004,7 +1072,8 @@ namespace monad::vm::fuzzing
             .kind = kind,
             .flags = flags,
             .depth = depth,
-            .gas = message_gas(eng, recipient, known_addresses, address_lookup),
+            .gas =
+                message_gas(eng, recipient, contract_addresses, address_lookup),
             .recipient = recipient,
             .sender = sender,
             .input_data = input_data,

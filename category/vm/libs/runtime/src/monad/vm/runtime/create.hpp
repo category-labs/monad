@@ -24,7 +24,7 @@ namespace monad::vm::runtime
         uint256_t const &size_word, uint256_t const &salt_word,
         evmc_call_kind kind, std::int64_t remaining_block_base_gas)
     {
-        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags == EVMC_STATIC)) {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 
@@ -61,7 +61,7 @@ namespace monad::vm::runtime
 
         auto message = evmc_message{
             .kind = kind,
-            .flags = ctx->env.evmc_flags,
+            .flags = 0,
             .depth = ctx->env.depth + 1,
             .gas = gas,
             .recipient = evmc::address{},

@@ -279,13 +279,13 @@ bool BlockState::fix_account_mismatch(
         }
         if (nonce_mismatch) {
             MONAD_ASSERT(original->nonce < actual->nonce);
-            auto const diff = actual->nonce - original->nonce;
+            auto const diff = actual->nonce - original->nonce; // this requires encoding that 1) ever tx can only increase the nonce. 2) the account read during speculation phase reads the value commited by some earlier tx.
             local->nonce += diff;
         }
         if (balance_mismatch) {
             if (original->balance > actual->balance) {
                 auto const diff = original->balance - actual->balance;
-                MONAD_ASSERT(local->balance >= diff);
+                MONAD_ASSERT(local->balance >= diff); // local->balance >= diff <-> local->balance - (original->balance - actual->balance) >= 0 <-> local->balance - assumed->balance + actual->balance >= 0 <- local->balance - assumed->balance >= 0 <- min_balance >= 0
                 local->balance -= diff;
             }
             else {

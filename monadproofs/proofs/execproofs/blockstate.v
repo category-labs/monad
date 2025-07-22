@@ -637,14 +637,38 @@ Proof using.
     destruct txUpdates as [updLoc txUpdates].
     simpl in *.
     go.
-    (*
-invoke.wp_minvoke_O.body module Direct
-    "const ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"
-    "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*"
-    "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*()"
-    "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"
-     *)
-    admit.
+
+Definition pairOffsets (aty bty: type) (fst: bool) : offset :=
+  _field (Nscoped (Ninst "std::pair" [Atype aty; Atype bty]) (Nid (if fst then "first":ident else "second":ident))).
+      
+Definition pairFstOffset (tykey tyval: type) : offset := pairOffsets tykey tyval true.
+Definition pairSndOffset (tykey tyval: type) : offset := pairOffsets tykey tyval false.
+Definition pairR {K V:Type} (tykey tyval: type)
+           (krep : Qp -> K -> Rep) 
+           (vrep : Qp -> V -> Rep) (q:Qp) (v: K*V) : Rep :=
+  pairFstOffset tykey tyval |-> (vrep q (snd v)) **  pairSndOffset tykey tyval  |-> (vrep q (snd v)).
+    cpp.spec
+      "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>,std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>::operator->() const"
+      as iter_arrow_spec
+      with (fun this: ptr =>
+        \pre{i k v} this |-> AnkerMapIterR i k v
+        \post{retp: ptr} [Vptr retp] Exists kk vv, 
+        retp |-> pairR "evmc::address" "monad::VersionStack<monad::AccountState>"
+           addressR
+           (VersionStackR "monad::AccountState" AccountStateR)
+            1%Qp (kk, vv)
+           ).
+    iAssert iter_arrow_spec as "#?". admit.
+    go.
+    unfold pairR.
+    go.
+    unfold pairSndOffset.
+    unfold pairOffsets.
+    go.
+    iExists _,_.
+    slauto.
+    Print atomic_name_.
+    Compute .
   }
   {
     Remove Hints foldedLv2Lear : typeclass_instances.

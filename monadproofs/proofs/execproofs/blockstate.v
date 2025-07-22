@@ -632,8 +632,7 @@ Proof using.
   eagerUnifyU.
   slauto.
   destruct txUpdates as [txUpdates |].
-  { (* fixee (address) not found in state.current *)
-    Remove Hints foldedLv2Lear : typeclass_instances.
+  { (* fixee (address) found in state.current *)
     destruct txUpdates as [updLoc txUpdates].
     simpl in *.
     go.
@@ -652,7 +651,17 @@ Arguments pairOffsets/.
      simpl in *.
      slauto.
      wp_if;[slauto|]. (* return false if the optuonal account in txUpd is None *)
+     slauto. (* above, we admitted the nonce match case, so we directly go the nonce mismatch case *)
+     rename x into assumed.
+     rename x0 into actual.
+     assert (w256_to_Z (block.block_account_nonce assumed.1) < w256_to_Z (block.block_account_nonce actual.1)) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
      slauto.
+     wp_if.
+     { (* assumed balance > actual balance *)
+     
+    Remove Hints prim.primR_aggressiveC: br_opacity.
+       slauto.
+       
      go.
     unfold Vers
   iAssert (version_stack_recent_spec) as "#?". admit.
@@ -675,7 +684,7 @@ Arguments pairOffsets/.
     Print atomic_name_.
     Compute .
   }
-  {
+  { (* fixee (address) NOT found in state.current *)
     Remove Hints foldedLv2Lear : typeclass_instances.
     go.
     iExists _. (* 1%Qp *)

@@ -19,16 +19,13 @@ struct Transaction;
 
 class State;
 
-/// Record the TXN_START event
-void record_txn_start_event(
+/// Record the TXN_START event, followed by the TXN_EVM_OUTPUT, TXN_REJECT, or
+/// EVM_ERROR events, depending on what happened during transaction execution;
+/// in the TXN_EVM_OUTPUT case, also record other execution output events
+/// (TXN_LOG, TXN_CALL_FRAME, etc.)
+void record_txn_events(
     uint32_t txn_num, Transaction const &, Address const &sender,
-    uint64_t ingest_epoch_nanos, boost::fibers::promise<void> &txn_record_sync);
-
-/// Record the TXN_EVM_OUTPUT, TXN_REJECT, or EVM_ERROR events, depending on
-/// what happened during transaction execution; in the TXN_EVM_OUTPUT case,
-/// also record other execution output events (TXN_LOG, TXN_CALL_FRAME, etc.)
-void record_txn_exec_result_events(
-    uint32_t txn_num, Result<ExecutionResult> const &);
+    Result<ExecutionResult> const &);
 
 /// Record all account state accesses (both reads and writes) described by a
 /// State object

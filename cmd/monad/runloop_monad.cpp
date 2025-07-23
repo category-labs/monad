@@ -177,12 +177,10 @@ Result<BlockExecOutput> propose_block(
         is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
     size_t const transaction_count = block.transactions.size();
-    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
-        transaction_count);
 
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool, txn_sync_barriers);
+        recover_senders(block.transactions, priority_pool);
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
@@ -211,8 +209,7 @@ Result<BlockExecOutput> propose_block(
             block_state,
             block_hash_buffer,
             priority_pool,
-            block_metrics,
-            txn_sync_barriers));
+            block_metrics));
     record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     std::vector<Receipt> receipts(results.size());

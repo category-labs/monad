@@ -27,7 +27,6 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
@@ -920,12 +919,9 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 
     fiber::PriorityPool pool{1, 1};
 
-    size_t const transaction_count = block.value().transactions.size();
-    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
-        transaction_count);
     auto const recovered_senders =
-        recover_senders(block.value().transactions, pool, txn_sync_barriers);
-    std::vector<Address> senders(transaction_count);
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
@@ -937,8 +933,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         bs,
         block_hash_buffer,
         pool,
-        metrics,
-        txn_sync_barriers);
+        metrics);
 
     ASSERT_TRUE(!results.has_error());
 
@@ -1038,12 +1033,9 @@ TYPED_TEST(DBTest, call_frames_refund)
 
     fiber::PriorityPool pool{1, 1};
 
-    size_t const transaction_count = block.value().transactions.size();
-    std::vector<boost::fibers::promise<void>> txn_sync_barriers(
-        transaction_count);
     auto const recovered_senders =
-        recover_senders(block.value().transactions, pool, txn_sync_barriers);
-    std::vector<Address> senders(transaction_count);
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
@@ -1055,8 +1047,7 @@ TYPED_TEST(DBTest, call_frames_refund)
         bs,
         block_hash_buffer,
         pool,
-        metrics,
-        txn_sync_barriers);
+        metrics);
 
     ASSERT_TRUE(!results.has_error());
 

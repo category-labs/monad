@@ -111,9 +111,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 std::vector<std::optional<Address>> recover_senders(
-    std::span<Transaction const> transactions,
-    fiber::PriorityPool &priority_pool,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers)
+    std::vector<Transaction> const &transactions,
+    fiber::PriorityPool &priority_pool)
 {
     std::vector<std::optional<Address>> senders{transactions.size()};
     std::atomic<std::size_t> recovered_count = 0;
@@ -122,30 +121,11 @@ std::vector<std::optional<Address>> recover_senders(
     for (unsigned i = 0; i < txn_count; ++i) {
         priority_pool.submit(
             i,
-            [i = i,
-             txn_count,
-             &sender = senders[i],
+            [&sender = senders[i],
              &transaction = transactions[i],
-             &txn_sync_barrier = txn_record_sync_barriers[i],
              &recovered_count] {
-                uint64_t const ingest_epoch_nanos =
-                    monad_event_get_epoch_nanos();
                 sender = recover_sender(transaction);
                 recovered_count.fetch_add(1, std::memory_order_relaxed);
-
-                // Epilogue: demote the priority of the recording
-                // operation and yield to do something more important
-                if (sender) {
-                    boost::this_fiber::properties<fiber::PriorityProperties>()
-                        .set_priority(txn_count + i);
-                    boost::this_fiber::yield();
-                    record_txn_start_event(
-                        i,
-                        transaction,
-                        *sender,
-                        ingest_epoch_nanos,
-                        txn_sync_barrier);
-                }
             });
     }
 
@@ -158,10 +138,9 @@ std::vector<std::optional<Address>> recover_senders(
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &chain, Block &block, std::span<Address const> senders,
+    Chain const &chain, Block &block, std::vector<Address> const &senders,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -214,7 +193,6 @@ Result<std::vector<ExecutionResult>> execute_block(
              &block_hash_buffer = block_hash_buffer,
              &block_state,
              &block_metrics,
-             &txn_record_sync = txn_record_sync_barriers[i],
              &txn_exec_finished] {
                 record_exec_event(i, MONAD_EXEC_TXN_PERF_EVM_ENTER);
                 results[i].emplace(execute<rev>(
@@ -233,10 +211,9 @@ Result<std::vector<ExecutionResult>> execute_block(
                 // Epilogue: demote the priority of the recording
                 // operation and yield the thread to a more important fiber
                 boost::this_fiber::properties<fiber::PriorityProperties>()
-                    .set_priority(2 * txn_count + i);
+                    .set_priority(txn_count + i);
                 boost::this_fiber::yield();
-                txn_record_sync.get_future().wait();
-                record_txn_exec_result_events(i, *results[i]);
+                record_txn_events(i, transaction, sender, *results[i]);
                 txn_exec_finished.fetch_add(1, std::memory_order::relaxed);
             });
     }
@@ -252,7 +229,7 @@ Result<std::vector<ExecutionResult>> execute_block(
     // post-execution code that occurs immediately after that, e.g.
     // `record_txn_exec_result_events`. This waits for everything to finish
     // so that it's safe to assume we're the only ones using `results`.
-    while (txn_exec_finished.load() < block.transactions.size()) {
+    while (txn_exec_finished.load() < txn_count) {
         cpu_relax();
     }
 
@@ -302,10 +279,9 @@ EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<ExecutionResult>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
-    std::span<Address const> senders, BlockState &block_state,
+    std::vector<Address> const &senders, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
@@ -315,8 +291,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         block_state,
         block_hash_buffer,
         priority_pool,
-        block_metrics,
-        txn_record_sync_barriers);
+        block_metrics);
     MONAD_ABORT_PRINTF(
         "unhandled evmc revision %u", static_cast<unsigned>(rev));
 }

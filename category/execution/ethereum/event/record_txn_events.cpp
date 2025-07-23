@@ -253,54 +253,23 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-void record_txn_start_event(
+void record_txn_events(
     uint32_t txn_num, Transaction const &transaction, Address const &sender,
-    uint64_t ingest_epoch_nanos, boost::fibers::promise<void> &txn_record_sync)
+    Result<ExecutionResult> const &txn_exec_result)
 {
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
-        txn_record_sync.set_value();
         return;
     }
 
-    // Record TXN_START; txn_record_sync is used to ensure that TXN_START is
-    // definitely recorded before TXN_EVM_OUTPUT is; it's very unlikely this
-    // would happen in normal operation, but it is possible for very small
-    // blocks in rare jitter cases. Transaction initialization happens on a
-    // different fiber (which primarily does public key recovery from the
-    // cryptographic signature) than the core execution fiber. The recording
-    // of events from both fibers is completely "unlocked", and can race
-    // against each other.
-    uint64_t seqno;
-    uint8_t *payload;
+    // TXN_START
     monad_exec_txn_start txn_start_event;
+    std::span<std::byte const> txn_data =
+        init_txn_start(transaction, sender, 0, &txn_start_event);
+    exec_recorder->record(
+        txn_num, MONAD_EXEC_TXN_START, txn_start_event, txn_data);
 
-    std::span<std::byte const> txn_data = init_txn_start(
-        transaction, sender, ingest_epoch_nanos, &txn_start_event);
-    monad_event_descriptor *const event = exec_recorder->record_reserve(
-        sizeof txn_start_event + size(txn_data), &seqno, &payload);
-    if (!event) [[unlikely]] {
-        return;
-    }
-    txn_record_sync.set_value();
-    event->event_type = std::to_underlying(MONAD_EXEC_TXN_START);
-    event->user[MONAD_FLOW_BLOCK_SEQNO] =
-        exec_recorder->get_block_start_seqno();
-    event->user[MONAD_FLOW_TXN_ID] = txn_num + 1;
-    memcpy(payload, &txn_start_event, sizeof txn_start_event);
-    memcpy(payload + sizeof txn_start_event, data(txn_data), size(txn_data));
-    monad_event_recorder_commit(event, seqno);
-}
-
-void record_txn_exec_result_events(
-    uint32_t txn_num, Result<ExecutionResult> const &r)
-{
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
-    if (exec_recorder == nullptr) {
-        return;
-    }
-
-    if (r.has_error()) {
+    if (txn_exec_result.has_error()) {
         // Create a reference error so we can extract its domain with
         // `ref_txn_error.domain()`, for the purpose of checking if the
         // r.error() domain is a TransactionError. We record these as
@@ -309,8 +278,8 @@ void record_txn_exec_result_events(
         static Result<ExecutionResult>::error_type const ref_txn_error =
             TransactionError::InsufficientBalance;
         static auto const &txn_err_domain = ref_txn_error.domain();
-        auto const &error_domain = r.error().domain();
-        auto const error_value = r.error().value();
+        auto const &error_domain = txn_exec_result.error().domain();
+        auto const error_value = txn_exec_result.error().value();
         if (error_domain == txn_err_domain) {
             exec_recorder->record(txn_num, MONAD_EXEC_TXN_REJECT, error_value);
         }
@@ -323,17 +292,17 @@ void record_txn_exec_result_events(
         return;
     }
 
-    ExecutionResult const &exec_results = r.value();
-    Receipt const &receipt = exec_results.receipt;
-    monad_exec_txn_evm_output const evm_output_event = {
+    // TXN_EVM_OUTPUT
+    ExecutionResult const &evm_output = txn_exec_result.value();
+    Receipt const &receipt = evm_output.receipt;
+    monad_exec_txn_evm_output const output_event = {
         .receipt =
             {.status = receipt.status == 1,
              .log_count = static_cast<uint32_t>(size(receipt.logs)),
              .gas_used = receipt.gas_used},
-        .call_frame_count =
-            static_cast<uint32_t>(size(exec_results.call_frames)),
+        .call_frame_count = static_cast<uint32_t>(size(evm_output.call_frames)),
     };
-    exec_recorder->record(txn_num, MONAD_EXEC_TXN_EVM_OUTPUT, evm_output_event);
+    exec_recorder->record(txn_num, MONAD_EXEC_TXN_EVM_OUTPUT, output_event);
     for (uint32_t index = 0; auto const &log : receipt.logs) {
         monad_exec_txn_log const log_event = {
             .index = index++,
@@ -347,8 +316,7 @@ void record_txn_exec_result_events(
             as_bytes(std::span{log.topics}),
             as_bytes(std::span{log.data}));
     }
-    for (uint32_t index = 0;
-         auto const &call_frame : exec_results.call_frames) {
+    for (uint32_t index = 0; auto const &call_frame : evm_output.call_frames) {
         monad_exec_txn_call_frame const call_frame_event = {
             .index = index++,
             .caller = call_frame.from,
@@ -378,7 +346,7 @@ void record_txn_exec_result_events(
         exec_recorder,
         MONAD_ACCT_ACCESS_TRANSACTION,
         txn_num,
-        exec_results.state);
+        evm_output.state);
     exec_recorder->record(txn_num, MONAD_EXEC_TXN_END);
 }
 

@@ -4,13 +4,10 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.h>
 
 #include <optional>
-#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -24,18 +21,15 @@ struct ExecutionResult;
 
 template <evmc_revision rev>
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &, Block &, std::span<Address const> senders, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers);
+    Chain const &, Block &, std::vector<Address> const &senders, BlockState &,
+    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &);
 
 Result<std::vector<ExecutionResult>> execute_block(
-    Chain const &, evmc_revision, Block &, std::span<Address const> senders,
+    Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers);
+    BlockMetrics &);
 
-std::vector<std::optional<Address>> recover_senders(
-    std::span<Transaction const>, fiber::PriorityPool &,
-    std::span<boost::fibers::promise<void>> txn_record_sync_barriers);
+std::vector<std::optional<Address>>
+recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

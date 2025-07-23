@@ -14,7 +14,8 @@
 namespace monad::vm
 {
     Compiler::Compiler(bool enable_async, size_t compile_job_soft_limit)
-        : compile_job_lock_{compile_job_mutex_}
+        : asmjit_rt_{&asmjit_create_params_}
+        , compile_job_lock_{compile_job_mutex_}
         , compile_job_soft_limit_{compile_job_soft_limit}
         , enable_async_compilation_{enable_async}
     {

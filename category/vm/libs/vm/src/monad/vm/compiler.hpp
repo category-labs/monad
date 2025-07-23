@@ -85,6 +85,11 @@ namespace monad::vm
         void compile_loop();
         void dispense_compile_jobs();
 
+        static constexpr asmjit::JitAllocator::CreateParams
+            asmjit_create_params_{
+                .options = asmjit::JitAllocatorOptions::kUseDualMapping,
+            };
+
         asmjit::JitRuntime asmjit_rt_;
         VarcodeCache varcode_cache_;
         CompileJobMap compile_job_map_;

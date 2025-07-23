@@ -2397,10 +2397,48 @@ TEST(Emitter, byte)
     asmjit::JitRuntime rt;
     pure_bin_instr_test(rt, BYTE, &Emitter::byte, 31, 1, 1);
     pure_bin_instr_test(
-        rt, BYTE, &Emitter::byte, 0, {0, 0, 0, 0x8877665544332211}, 0x88);
+        rt,
+        BYTE,
+        &Emitter::byte,
+        0,
+        {0x3333333333333333,
+         0x2222222222222222,
+         0x1111111111111111,
+         0x8877665544332211},
+        0x88);
+    pure_bin_instr_test(
+        rt, BYTE, &Emitter::byte, 8, {0, 0, 0x8877665544332211, 0}, 0x88);
+    pure_bin_instr_test(
+        rt, BYTE, &Emitter::byte, 17, {0, 0x8877665544332211, 0, 0}, 0x77);
+    pure_bin_instr_test(
+        rt, BYTE, &Emitter::byte, 26, {0x8877665544332211, 0, 0, 0}, 0x66);
     pure_bin_instr_test(
         rt, BYTE, &Emitter::byte, 4, {0, 0, 0, 0x8877665544332211}, 0x44);
     pure_bin_instr_test(rt, BYTE, &Emitter::byte, 32, {-1, -1, -1, -1}, 0);
+    pure_bin_instr_test(
+        rt,
+        BYTE,
+        &Emitter::byte,
+        std::numeric_limits<uint256_t>::max(),
+        {-1, -1, -1, -1},
+        0);
+    uint256_t value{
+        0x0807060504030201,
+        0x100f0e0d0c0b0a09,
+        0x8887868584838281,
+        0x908f8e8d8c8b8a89};
+    for (uint64_t i = 0; i <= 32; i += 1) {
+        uint256_t indices[5] = {
+            i,
+            i | (uint256_t{1} << 65),
+            i | (uint256_t{1} << 128),
+            i | (uint256_t{1} << 224),
+            i | (uint256_t{1} << 255)};
+        for (auto const &i : indices) {
+            pure_bin_instr_test(
+                rt, BYTE, &Emitter::byte, i, value, runtime::byte(i, value));
+        }
+    }
 }
 
 TEST(Emitter, signextend)

@@ -242,6 +242,10 @@ namespace monad::vm::compiler::native
         alloc_or_release_general_reg(
             StackElemRef, std::tuple<LiveSet...> const &);
 
+        template <typename... LiveSet>
+        [[nodiscard]] std::pair<StackElemRef, AvxRegReserv>
+        alloc_or_release_avx_reg(StackElemRef, std::tuple<LiveSet...> const &);
+
         void discharge_deferred_comparison(); // Leaves eflags unchanged
 
         ////////// Move functionality //////////
@@ -848,13 +852,19 @@ namespace monad::vm::compiler::native
         void lt(StackElemRef dst, StackElemRef src);
         void slt(StackElemRef dst, StackElemRef src);
 
-        void byte_literal_ix(uint256_t const &ix, StackOffset src);
-        void
-        byte_general_reg_or_stack_offset_ix(StackElemRef ix, StackOffset src);
-
         template <typename... LiveSet>
         void cmp_stack_elem_to_uint16(
             StackElemRef, uint16_t, std::tuple<LiveSet...> const &);
+
+        void
+        byte_literal_ix_stack_offset_src(StackElemRef ix, StackElemRef src);
+        void byte_non_literal_ix_literal_or_stack_offset_src(
+            StackElemRef ix, StackElemRef src);
+        void byte_literal_ix_general_reg_src(StackElemRef ix, StackElemRef src);
+        void
+        byte_non_literal_ix_general_reg_src(StackElemRef ix, StackElemRef src);
+        void byte_literal_ix_avx_reg_src(StackElemRef ix, StackElemRef src);
+        void byte_non_literal_ix_avx_reg_src(StackElemRef ix, StackElemRef src);
 
         void signextend_literal_ix(uint256_t const &ix, StackElemRef src);
         template <typename... LiveSet>
@@ -996,8 +1006,6 @@ namespace monad::vm::compiler::native
         uint64_t bytecode_size_;
         std::unordered_map<byte_offset, asmjit::Label> jump_dests_;
         RoData rodata_;
-        std::vector<std::tuple<asmjit::Label, Gpq256, asmjit::Label>>
-            byte_out_of_bounds_handlers_;
         std::vector<std::tuple<asmjit::Label, asmjit::x86::Mem, asmjit::Label>>
             load_bounded_le_handlers_;
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;

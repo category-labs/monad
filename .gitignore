@@ -156,3 +156,6 @@ vcpkg_installed/
 
 # Jetbrains IDEs (i.e. CLion)
 /.idea
+
+# VM Fuzzer log files
+tmux-fuzzer-log/

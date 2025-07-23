@@ -1,6 +1,8 @@
 #!/bin/bash
 
 packages=(
+  clang-tools-19
+  clang-tidy-19
   cmake
   gdb
   git

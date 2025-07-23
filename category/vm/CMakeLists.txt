@@ -16,13 +16,10 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(MONAD_COMPILER_STANDALONE "Build as a standalone project" ON)
 option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
-option(MONAD_COMPILER_TESTING "Build compiler tests" ON)
+option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
 option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
-
-include(cmake/MonadCompileOptions.cmake)
 
 find_package(CLI11 REQUIRED)
 find_package(TBB REQUIRED)
@@ -38,14 +35,6 @@ endif()
 set(ROOT_DIRECTORY "${PROJECT_SOURCE_DIR}")
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-
-if(MONAD_COMPILER_STANDALONE)
-    set(ETHASH_TESTING NO)
-    add_subdirectory(third_party/ethash)
-
-    add_subdirectory(third_party/intx)
-    add_subdirectory(third_party/nlohmann_json)
-endif()
 
 if(MONAD_COMPILER_TESTING)
     add_definitions(-DMONAD_COMPILER_TESTING)
@@ -108,10 +97,6 @@ if(MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
     target_link_libraries(evmone-state PUBLIC ethash::keccak intx::intx nlohmann_json::nlohmann_json)
     target_link_libraries(evmone-statetestutils PUBLIC nlohmann_json::nlohmann_json)
 endif()
-
-# asmjit
-set(ASMJIT_STATIC ON)
-add_subdirectory(third_party/asmjit)
 
 add_subdirectory(libs/compiler)
 add_subdirectory(libs/core)

@@ -61,6 +61,10 @@ find_package(Boost REQUIRED COMPONENTS fiber json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 
+# asmjit
+set(ASMJIT_STATIC ON)
+add_subdirectory(third_party/asmjit)
+
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
 
@@ -78,8 +82,6 @@ add_subdirectory("third_party/ethash")
 add_subdirectory("third_party/intx")
 
 # compiler
-set(MONAD_COMPILER_STANDALONE OFF)
-set(MONAD_COMPILER_TESTING OFF)
 add_subdirectory("category/vm")
 # TODO
 target_compile_options(evmone PRIVATE "-Wno-attributes")

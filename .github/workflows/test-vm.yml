@@ -70,23 +70,23 @@ jobs:
             - name: Build `base` stage
               uses: docker/build-push-action@v5
               with:
-                context: category/vm
-                file: category/vm/docker/Dockerfile
+                context: .
+                file: docker/Dockerfile
                 target: base
                 cache-from: type=gha,scope=base
                 cache-to: type=gha,scope=base,mode=max
 
-            - name: Build `build_and_test` stage
+            - name: Build `build_and_test_vm` stage
               uses: docker/build-push-action@v5
               with:
-                context: category/vm
-                file: category/vm/docker/Dockerfile
+                context: .
+                file: docker/Dockerfile
                 build-args: |-
                   CC=${{ matrix.compiler.CC }}
                   CXX=${{ matrix.compiler.CXX }}
                   CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
                   TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
-                target: build_and_test
+                target: build_and_test_vm
                 cache-from: type=gha,scope=base
 
     code-quality:
@@ -126,8 +126,8 @@ jobs:
           - name: Build `base` stage
             uses: docker/build-push-action@v5
             with:
-              context: category/vm
-              file: category/vm/docker/Dockerfile
+              context: .
+              file: docker/Dockerfile
               target: base
               cache-from: type=gha,scope=base
               cache-to: type=gha,scope=base,mode=max
@@ -135,9 +135,9 @@ jobs:
           - name: Build `code_quality` stage
             uses: docker/build-push-action@v5
             with:
-              context: category/vm
-              file: category/vm/docker/Dockerfile
-              target: code_quality
+              context: .
+              file: docker/Dockerfile
+              target: vm_code_quality
               cache-from: type=gha,scope=base
 
     python-code-quality:

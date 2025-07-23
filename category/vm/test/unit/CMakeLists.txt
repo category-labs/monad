@@ -1,4 +1,4 @@
-add_executable(unit-tests
+add_executable(vm-unit-tests
     async_compile_tests.cpp
     bin_tests.cpp
     compiler_tests.cpp
@@ -33,12 +33,12 @@ add_executable(unit-tests
 )
 
 if(MONAD_COMPILER_COVERAGE)
-    target_compile_options(unit-tests PRIVATE -coverage)
-    target_link_options(unit-tests PRIVATE -coverage)
+    target_compile_options(vm-unit-tests PRIVATE -coverage)
+    target_link_options(vm-unit-tests PRIVATE -coverage)
 endif()
 
-monad_compile_options(unit-tests)
-target_link_libraries(unit-tests
+monad_compile_options(vm-unit-tests)
+target_link_libraries(vm-unit-tests
     monad-vm::monad-vm
     monad-vm::monad-vm-compiler
     monad-vm::monad-vm-fuzzing
@@ -48,7 +48,7 @@ target_link_libraries(unit-tests
     evmc::mocked_host
 )
 
-target_include_directories(unit-tests
+target_include_directories(vm-unit-tests
     PRIVATE
         "${TOP_CURRENT_BINARY_DIR}/test"
 )

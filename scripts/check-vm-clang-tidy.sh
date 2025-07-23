@@ -38,7 +38,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 mapfile -t inputs < <(\
-  find libs \
+  find category/vm/libs \
     \( -name '*.cpp' -or -name '*.c' \) \
     -and -not -path '*third_party*')
 

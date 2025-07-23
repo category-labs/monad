@@ -3740,7 +3740,7 @@ namespace monad::vm::compiler::native
                 as_.movsx(dst_sign_reg, src_sign_reg.r16());
             }
             else if (sign_reg_offset == 3) {
-                as_.movsx(dst_sign_reg, src_sign_reg.r32());
+                as_.movsxd(dst_sign_reg, src_sign_reg.r32());
             }
             else if (sign_reg_offset == 7) {
                 if (src != dst) {

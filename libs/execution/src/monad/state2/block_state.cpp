@@ -230,23 +230,27 @@ void BlockState::log_debug()
 
 bool BlockState::fix_account_mismatch(
     State &state, Address const &address, AccountState &original_state,
-    std::optional<Account> const &actual) const
+    std::optional<Account> const &oactual) const
 {
-    auto &original = original_state.account_;
-    if (is_dead(original)) {
+    auto &ooriginal = original_state.account_;
+    if (is_dead(ooriginal)) {
         return false;
     }
-    if (is_dead(actual)) {
+    if (is_dead(oactual)) {
         return false;
     }
-    if (original->code_hash != actual->code_hash) {// the code at an account can change? how?
+    auto & original=ooriginal.value();
+    auto & actual=oactual.value();
+    if (original.code_hash != actual.code_hash) {// the code at an account can change? how?
         return false;
     }
-    if (original->incarnation != actual->incarnation) {// how can this happen?
+    if (original.incarnation != actual.incarnation) {// how can this happen?
         return false;
     }
+
+
     // actual and original are both alive and have the same code hash and incarnation
-    bool const nonce_mismatch = original->nonce != actual->nonce;
+    bool const nonce_mismatch = original.nonce != actual.nonce;
     if (nonce_mismatch) {
         if (!state.relaxed_validation()) {
             return false;
@@ -256,7 +260,7 @@ bool BlockState::fix_account_mismatch(
         }
     }
     // actual and original are both alive and have the same code hash and incarnation and either the nonces are same or nonce checkins is marked as relaxed
-    bool const balance_mismatch = original->balance != actual->balance;
+    bool const balance_mismatch = original.balance != actual.balance;
     if (balance_mismatch) {
         if (!state.relaxed_validation()) {
             return false;
@@ -264,7 +268,7 @@ bool BlockState::fix_account_mismatch(
         if (original_state.validate_exact_balance()) {
             return false;
         }
-        if (actual->balance < original_state.min_balance()) {// this check needs to be done even if there is no balance mismatch? no, the min_balance assumption is only set if the assumption is consistent with the original balance: see sender_has_balance and set_original_nonce_and_balance which are the only 2 places min_balance is set
+        if (actual.balance < original_state.min_balance()) {// this check needs to be done even if there is no balance mismatch? no, the min_balance assumption is only set if the assumption is consistent with the original balance: see sender_has_balance and set_original_nonce_and_balance which are the only 2 places min_balance is set
             return false;
         }
     }
@@ -278,28 +282,28 @@ bool BlockState::fix_account_mismatch(
             return false;
         }
         if (nonce_mismatch) {
-            MONAD_ASSERT(original->nonce < actual->nonce);
-            auto const diff = actual->nonce - original->nonce; // this requires encoding that 1) ever tx can only increase the nonce. 2) the account read during speculation phase reads the value commited by some earlier tx.
+            MONAD_ASSERT(original.nonce < actual.nonce);
+            auto const diff = actual.nonce - original.nonce; // this requires encoding that 1) ever tx can only increase the nonce. 2) the account read during speculation phase reads the value commited by some earlier tx.
             local->nonce += diff;
         }
         if (balance_mismatch) {
-            if (original->balance > actual->balance) {
-                auto const diff = original->balance - actual->balance;
+            if (original.balance > actual.balance) {
+                auto const diff = original.balance - actual.balance;
                 MONAD_ASSERT(local->balance >= diff); // local->balance >= diff <-> local->balance - (original->balance - actual->balance) >= 0 <-> local->balance - assumed->balance + actual->balance >= 0 <- local->balance - assumed->balance >= 0 <- min_balance >= 0
                 local->balance -= diff;
             }
             else {
-                auto const diff = actual->balance - original->balance;
+                auto const diff = actual.balance - original.balance;
                 local->balance += diff;
             }
         }
     }
     // rest of the code, except the return is not needed as we dont check assumptions after the return anyway. but in case of future changes to the client code, it is good to leave the field in a logically consistent state
     if (nonce_mismatch) {
-        original->nonce = actual->nonce;
+        original.nonce = actual.nonce;
     }
     if (balance_mismatch) {
-        original->balance = actual->balance;
+        original.balance = actual.balance;
     }
     //state.set_strict_validation();// not really necessary because the validation is already done.but helps in proof. else the proof will require a ghost location.
     return true;

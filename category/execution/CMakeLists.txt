@@ -139,6 +139,9 @@ add_library(
   # ethereum/types
   "ethereum/types/incarnation.hpp"
   "ethereum/types/fmt/incarnation_fmt.hpp"
+  # monad/execution
+  "monad/system_call.cpp"
+  "monad/system_call.hpp"
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"

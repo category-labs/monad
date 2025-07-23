@@ -591,15 +591,6 @@ namespace monad::vm::compiler::native
             as_.jmp(back);
         }
 
-        for (auto const &[lbl, rpq, back] : byte_out_of_bounds_handlers_) {
-            as_.bind(lbl);
-            as_.xor_(rpq[0].r32(), rpq[0].r32());
-            as_.xor_(rpq[1].r32(), rpq[1].r32());
-            as_.xor_(rpq[2].r32(), rpq[2].r32());
-            as_.xor_(rpq[3].r32(), rpq[3].r32());
-            as_.jmp(back);
-        }
-
         error_block(error_label_, runtime::StatusCode::Error);
 
         // By putting jump table in the text section, we can use the
@@ -951,7 +942,6 @@ namespace monad::vm::compiler::native
         // size of jump table
         return code_holder_.textSection()->realSize() +
                (load_bounded_le_handlers_.size() << 5) +
-               (byte_out_of_bounds_handlers_.size() << 5) +
                (rodata_.data().size() << 5) + (bytecode_size_ << 2);
     }
 
@@ -1133,6 +1123,21 @@ namespace monad::vm::compiler::native
         }
         auto r = stack_.release_general_reg(std::move(elem));
         return {r, GeneralRegReserv{r}};
+    }
+
+    template <typename... LiveSet>
+    std::pair<StackElemRef, AvxRegReserv> Emitter::alloc_or_release_avx_reg(
+        StackElemRef elem, std::tuple<LiveSet...> const &live)
+    {
+        if (is_live(elem, live)) {
+            if (stack_.has_free_avx_reg() ||
+                (!elem->stack_offset() && !elem->general_reg() &&
+                 !elem->literal())) {
+                return alloc_avx_reg();
+            }
+        }
+        auto r = stack_.release_avx_reg(std::move(elem));
+        return {r, AvxRegReserv{r}};
     }
 
     template <typename... LiveSet, size_t... Is>
@@ -2313,11 +2318,17 @@ namespace monad::vm::compiler::native
         auto ix = stack_.pop();
         auto src = stack_.pop();
 
-        if (ix->literal() && src->literal()) {
+        if (ix->literal()) {
             auto const &i = ix->literal()->value;
-            auto const &x = src->literal()->value;
-            push(runtime::byte(i, x));
-            return;
+            if (i >= 32) {
+                push(0);
+                return;
+            }
+            if (src->literal()) {
+                auto const &x = src->literal()->value;
+                push(runtime::byte(i, x));
+                return;
+            }
         }
 
         RegReserv const ix_reserv{ix};
@@ -2325,23 +2336,33 @@ namespace monad::vm::compiler::native
 
         discharge_deferred_comparison();
 
-        if (!src->stack_offset()) {
-            mov_stack_elem_to_stack_offset(src);
+        if (src->general_reg()) {
+            if (ix->literal()) {
+                byte_literal_ix_general_reg_src(std::move(ix), std::move(src));
+            }
+            else {
+                byte_non_literal_ix_general_reg_src(
+                    std::move(ix), std::move(src));
+            }
         }
-        if (ix->literal()) {
-            byte_literal_ix(ix->literal()->value, *src->stack_offset());
-            return;
+        else if (src->avx_reg()) {
+            if (ix->literal()) {
+                byte_literal_ix_avx_reg_src(std::move(ix), std::move(src));
+            }
+            else {
+                byte_non_literal_ix_avx_reg_src(std::move(ix), std::move(src));
+            }
         }
-        if (ix->general_reg()) {
-            byte_general_reg_or_stack_offset_ix(
-                std::move(ix), *src->stack_offset());
-            return;
+        else {
+            if (ix->literal()) {
+                MONAD_VM_DEBUG_ASSERT(src->stack_offset().has_value());
+                byte_literal_ix_stack_offset_src(std::move(ix), std::move(src));
+            }
+            else {
+                byte_non_literal_ix_literal_or_stack_offset_src(
+                    std::move(ix), std::move(src));
+            }
         }
-        if (!ix->stack_offset()) {
-            mov_avx_reg_to_stack_offset(ix);
-        }
-        byte_general_reg_or_stack_offset_ix(
-            std::move(ix), *src->stack_offset());
     }
 
     // Discharge
@@ -3656,68 +3677,6 @@ namespace monad::vm::compiler::native
         }
     }
 
-    void Emitter::byte_literal_ix(uint256_t const &ix, StackOffset src)
-    {
-        if (ix >= 32) {
-            return push(0);
-        }
-        int64_t const i = 31 - static_cast<int64_t>(ix[0]);
-
-        auto [dst, dst_reserv] = alloc_general_reg();
-        Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
-
-        as_.xor_(gpq[0].r32(), gpq[0].r32());
-        as_.xor_(gpq[1].r32(), gpq[1].r32());
-        as_.xor_(gpq[2].r32(), gpq[2].r32());
-        as_.xor_(gpq[3].r32(), gpq[3].r32());
-        auto m = stack_offset_to_mem(src);
-        m.addOffset(i);
-        as_.mov(gpq[0].r8Lo(), m);
-
-        stack_.push(std::move(dst));
-    }
-
-    void Emitter::byte_general_reg_or_stack_offset_ix(
-        StackElemRef ix, StackOffset src)
-    {
-        auto [dst, dst_reserv] = alloc_general_reg();
-
-        Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
-
-        as_.mov(dst_gpq[0], 31);
-        as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
-        as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
-        as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
-        if (ix->general_reg()) {
-            Gpq256 const &ix_gpq = general_reg_to_gpq256(*ix->general_reg());
-            as_.sub(dst_gpq[0], ix_gpq[0]);
-            as_.sbb(dst_gpq[1], ix_gpq[1]);
-            as_.sbb(dst_gpq[2], ix_gpq[2]);
-            as_.sbb(dst_gpq[3], ix_gpq[3]);
-        }
-        else {
-            MONAD_VM_DEBUG_ASSERT(ix->stack_offset().has_value());
-            x86::Mem m = stack_offset_to_mem(*ix->stack_offset());
-            as_.sub(dst_gpq[0], m);
-            for (size_t i = 1; i < 4; ++i) {
-                m.addOffset(8);
-                as_.sbb(dst_gpq[i], m);
-            }
-        }
-        auto byte_out_of_bounds_lbl = as_.newLabel();
-        auto byte_after_lbl = as_.newLabel();
-        as_.jb(byte_out_of_bounds_lbl);
-        auto m = stack_offset_to_mem(src);
-        m.setIndex(dst_gpq[0]);
-        as_.mov(dst_gpq[0].r8Lo(), m);
-        as_.bind(byte_after_lbl);
-
-        byte_out_of_bounds_handlers_.emplace_back(
-            byte_out_of_bounds_lbl, dst_gpq, byte_after_lbl);
-
-        stack_.push(std::move(dst));
-    }
-
     // Sets zero flag according to whether `e` is below `i`.
     // Does not update the low 64 bits, even when `e` is not live.
     template <typename... LiveSet>
@@ -3762,6 +3721,288 @@ namespace monad::vm::compiler::native
             mem.addOffset(8);
             as_.or_(x86::rax, mem);
         }
+    }
+
+    void
+    Emitter::byte_literal_ix_stack_offset_src(StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->stack_offset().has_value());
+
+        auto [dst, dst_reserv] = alloc_general_reg();
+        Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        auto src_mem = stack_offset_to_mem(*src->stack_offset());
+        // we set the size to 1 so that asmjit generates a
+        // movzx dst BYTE PTR [src_mem]
+        // instruction and only copies a single byte
+        src_mem.setSize(1);
+
+        as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+        as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+        as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+
+        auto const &i = ix->literal()->value;
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+        src_mem.addOffset(31 - static_cast<int64_t>(i[0]));
+        as_.movzx(dst_gpq[0].r32(), src_mem);
+
+        stack_.push(std::move(dst));
+    }
+
+    void Emitter::byte_non_literal_ix_literal_or_stack_offset_src(
+        StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(
+            src->literal().has_value() || src->stack_offset().has_value());
+
+        auto [dst, dst_reserv] = alloc_general_reg();
+        Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+        as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+        as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+
+        auto zero_reg = dst_gpq[1];
+        as_.mov(dst_gpq[0].r32(), 31);
+
+        if (ix->general_reg()) {
+            Gpq256 const &ix_gpq = general_reg_to_gpq256(*ix->general_reg());
+            as_.sub(dst_gpq[0], ix_gpq[0]);
+        }
+        else if (ix->stack_offset()) {
+            auto ix_mem = stack_offset_to_mem(*ix->stack_offset());
+            as_.sub(dst_gpq[0], ix_mem);
+        }
+        else {
+            auto const ix_ymm = avx_reg_to_ymm(*ix->avx_reg());
+            as_.vmovq(x86::rax, ix_ymm.xmm());
+            as_.sub(dst_gpq[0], x86::rax);
+        }
+
+        cmp_stack_elem_to_uint16(ix, 32, std::make_tuple(src));
+
+        // in case idx >= 31, we need to constrain the value of ix_temp_reg
+        // to a known valid offset, in this case 0, even if we discard the
+        // value in the end due to the second cmov below
+        as_.cmovnz(dst_gpq[0], zero_reg);
+
+        if (src->stack_offset()) {
+            auto src_mem = stack_offset_to_mem(*src->stack_offset());
+            // we set the size to 1 so that asmjit generates a
+            // movzx dst BYTE PTR [src_mem]
+            // instruction and only copies a single byte
+            src_mem.setSize(1);
+
+            src_mem.setIndex(dst_gpq[0]);
+            as_.movzx(dst_gpq[0], src_mem);
+        }
+        else {
+            // x86 does not permit a [base_label + index_register + offset]
+            // memory operand, so in the case of src being in rodata, we move
+            // the address of the literal to rax and then emit a
+            // [base_register + index_register] version of movzx
+            as_.lea(x86::rax, rodata_.add32(src->literal()->value));
+            as_.movzx(dst_gpq[0], x86::byte_ptr(x86::rax, dst_gpq[0]));
+        }
+        // if ix > 31 (i.e. byte_check_bounds_compute_idx set ZF=0), we copy
+        // 0 into the dst[0] register
+        as_.cmovnz(dst_gpq[0], zero_reg);
+
+        stack_.push(std::move(dst));
+    }
+
+    // TODO: remove when this implementation is benchmarked and optimized
+    void
+    Emitter::byte_literal_ix_general_reg_src(StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->general_reg().has_value());
+
+        Gpq256 const &src_gpq = general_reg_to_gpq256(*src->general_reg());
+        auto [dst, dst_reserv] =
+            alloc_or_release_general_reg(std::move(src), std::make_tuple(ix));
+        Gpq256 &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        auto const &i = ix->literal()->value;
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+        uint64_t const byte_index = 31 - i[0];
+        uint64_t const word_index = byte_index >> 3;
+        if (&src_gpq == &dst_gpq) {
+            std::swap(dst_gpq[0], dst_gpq[word_index]);
+        }
+        else {
+            as_.mov(dst_gpq[0], src_gpq[word_index]);
+        }
+
+        uint64_t const byte_index_in_word = (byte_index & 7) << 3;
+        if (byte_index_in_word) {
+            as_.shr(dst_gpq[0], byte_index_in_word);
+        }
+
+        if (byte_index_in_word < 56) {
+            as_.movzx(dst_gpq[0].r32(), dst_gpq[0].r8Lo());
+        }
+        else {
+            // if byte_index & 7 == 7 we only have to zero out the upper 32 bits
+            // because the preceeding shift zeroed out everything but the lowest
+            // byte
+            as_.mov(dst_gpq[0].r32(), dst_gpq[0].r32());
+        }
+
+        as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+        as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+        as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+
+        stack_.push(std::move(dst));
+    }
+
+    void Emitter::byte_non_literal_ix_general_reg_src(
+        StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->general_reg().has_value());
+
+        Gpq256 const &src_gpq = general_reg_to_gpq256(*src->general_reg());
+        auto [dst, dst_reserv] =
+            alloc_or_release_general_reg(std::move(src), std::make_tuple(ix));
+        Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        x86::Gpq ix0;
+        if (ix->general_reg()) {
+            Gpq256 const &ix_gpq = general_reg_to_gpq256(*ix->general_reg());
+            ix0 = ix_gpq[0];
+        }
+        else if (ix->stack_offset()) {
+            auto ix_mem = stack_offset_to_mem(*ix->stack_offset());
+            as_.mov(x86::rax, ix_mem);
+            ix0 = x86::rax;
+        }
+        else {
+            MONAD_VM_DEBUG_ASSERT(ix->avx_reg().has_value());
+            auto const ix_ymm = avx_reg_to_ymm(*ix->avx_reg());
+            as_.vmovq(x86::rax, ix_ymm.xmm());
+            ix0 = x86::rax;
+        }
+
+        if (src_gpq[0] != dst_gpq[0]) {
+            as_.mov(dst_gpq[0], src_gpq[0]);
+        }
+        as_.cmp(ix0, 24);
+        as_.cmovb(dst_gpq[0], src_gpq[1]);
+        as_.cmp(ix0, 16);
+        as_.cmovb(dst_gpq[0], src_gpq[2]);
+        as_.cmp(ix0, 8);
+        as_.cmovb(dst_gpq[0], src_gpq[3]);
+
+        as_.mov(dst_gpq[1].r32(), 31);
+        as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+        as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+
+        as_.sub(dst_gpq[1], ix0);
+        // zero out result if ix[0] > 31
+        as_.cmovb(dst_gpq[0], dst_gpq[2]);
+
+        test_high_bits192(ix, std::make_tuple(dst));
+        // zero out result if any of the upper 192 bits of ix are set
+        as_.cmovnz(dst_gpq[0], dst_gpq[2]);
+
+        as_.and_(dst_gpq[1], 7);
+        as_.shl(dst_gpq[1], 3);
+
+        as_.shrx(dst_gpq[0], dst_gpq[0], dst_gpq[1]);
+        as_.movzx(dst_gpq[0].r32(), dst_gpq[0].r8Lo());
+        as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+
+        stack_.push(std::move(dst));
+    }
+
+    // TODO: remove when this implementation is benchmarked and optimized
+    void Emitter::byte_literal_ix_avx_reg_src(StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->avx_reg().has_value());
+        auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
+        auto [dst, dst_reserv] =
+            alloc_or_release_avx_reg(std::move(src), std::make_tuple(ix));
+        auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
+        auto [scratch, scratch_reserv] = alloc_avx_reg();
+        auto scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
+        auto const mask = rodata_.add16(0xff, 0);
+
+        auto const &i = ix->literal()->value;
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+        uint64_t const byte_index = 31 - i[0];
+        uint64_t const dword_index = byte_index >> 2;
+        // equivalent to sub_byte_index = (byte_index % 4) * 8
+        uint64_t const sub_byte_index = (byte_index & 3) << 3;
+        as_.mov(x86::rax, dword_index);
+        as_.vmovq(scratch_ymm.xmm(), x86::rax);
+        // select double word from src based on dword_index
+        as_.vpermps(dst_ymm, scratch_ymm, src_ymm);
+
+        as_.mov(x86::rax, sub_byte_index);
+        as_.vmovq(scratch_ymm.xmm(), x86::rax);
+        // shift right by sub_byte_index bytes
+        as_.vpsrlq(dst_ymm.xmm(), dst_ymm.xmm(), scratch_ymm.xmm());
+        // clear everything but the lowest byte
+        as_.vpand(dst_ymm.xmm(), dst_ymm.xmm(), mask);
+
+        stack_.push(std::move(dst));
+    }
+
+    void
+    Emitter::byte_non_literal_ix_avx_reg_src(StackElemRef ix, StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->avx_reg().has_value());
+        auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
+        test_high_bits192(ix, std::make_tuple(src));
+
+        auto [dst, dst_reserv] =
+            alloc_or_release_avx_reg(std::move(src), std::make_tuple(ix));
+        auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
+        auto [scratch, scratch_reserv] = alloc_avx_reg();
+        auto scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
+
+        if (ix->general_reg()) {
+            Gpq256 const &ix_gpq = general_reg_to_gpq256(*ix->general_reg());
+            as_.mov(x86::rax, ix_gpq[0]);
+        }
+        else if (ix->stack_offset()) {
+            auto const ix_mem = stack_offset_to_mem(*ix->stack_offset());
+            as_.mov(x86::rax, ix_mem);
+        }
+        else {
+            MONAD_VM_DEBUG_ASSERT(ix->avx_reg().has_value());
+            auto const ix_ymm = avx_reg_to_ymm(*ix->avx_reg());
+            as_.vmovq(x86::rax, ix_ymm.xmm());
+        }
+
+        // set rax to 0xffffffff if any of the upper 192 bits of ix are set or
+        // ix[0] > 31
+        as_.cmovnz(x86::rax, rodata_.add8(32));
+        as_.sub(x86::rax, 31);
+        as_.cmova(x86::rax, rodata_.add8(1));
+        as_.neg(x86::rax);
+        as_.vmovd(scratch_ymm.xmm(), x86::rax);
+        as_.vpsrld(scratch_ymm.xmm(), scratch_ymm.xmm(), 2);
+        as_.vpermps(dst_ymm, scratch_ymm, src_ymm);
+
+        // setting scratch_ymm to all 1s will set all dst_ymm bytes to 0
+        // when used as vpshufb control mask
+        as_.vpcmpeqd(scratch_ymm.xmm(), scratch_ymm.xmm(), scratch_ymm.xmm());
+        // if ix <= 31, eax & 0xe3 is equivalent to eax % 4,
+        // which will be used to move the correct byte within the previously
+        // copied double word from src_ymm to 0th position
+        // if ix > 31, eax & 0xe3 == 0x3e will be inserted instead and since
+        // the MSB of 0xe3 is 1, vpshufb will zero the lowest byte of dst_ymm
+        as_.and_(x86::eax, 0xe3);
+        as_.vpinsrb(scratch_ymm.xmm(), scratch_ymm.xmm(), x86::eax, 0x0);
+        as_.vpshufb(dst_ymm.xmm(), dst_ymm.xmm(), scratch_ymm.xmm());
+
+        stack_.push(std::move(dst));
     }
 
     void Emitter::signextend_literal_ix(uint256_t const &ix, StackElemRef src)

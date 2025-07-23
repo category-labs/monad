@@ -167,7 +167,7 @@ cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
 (* 1. U256 addition assignment: intx::uint<256u>::operator+=(const intx::uint<256u>&) *)
 cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_add_assign_spec with ( fun (this:ptr) =>
   \arg{yp: ptr} "y" (Vref yp)
-  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+  \pre{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
       this |-> u256R (cQp.mut q) xv
     ** yp   |-> u256R (cQp.mut qy) yv
   \post[Vref this]
@@ -178,7 +178,7 @@ cpp.spec "intx::uint<256u>::operator+=(const intx::uint<256u>&)" as u256_add_ass
 (* 2. U256 subtraction assignment: intx::uint<256u>::operator-=(const intx::uint<256u>&) *)
 cpp.spec "intx::uint<256u>::operator-=(const intx::uint<256u>&)" as u256_sub_assign_spec with (fun (this:ptr) =>
   \arg{yp: ptr} "y" (Vref yp)
-  \prepost{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
+  \pre{(q qy: Qp) (xv yv: Corelib.Numbers.BinNums.N)}
       this |-> u256R (cQp.mut q) xv
     ** yp   |-> u256R (cQp.mut qy) yv
   \post[Vref this]
@@ -296,6 +296,23 @@ cpp.spec "std::optional<monad::Account>::operator->() const" as optional_arrow_c
   \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
 ).
 
+(* 8. std::optional<Account>::operator->() non‐const *)
+cpp.spec "std::optional<monad::Account>::value() &" as optional_val_spec with (fun (this:ptr) =>
+  \prepost{(q: Qp) oas}
+      this |-> libspecs.optionR
+                "monad::Account"
+                (fun ba => AccountR (cQp.mut q) ba) q oas
+  \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
+).
+
+(* 9. std::optional<Account>::operator->() const *)
+cpp.spec "std::optional<monad::Account>::value() const &" as optional_val_const_spec with (fun (this:ptr) =>
+  \prepost{(q: Qp) oas}
+      this |-> libspecs.optionR
+                "monad::Account"
+                (fun ba => AccountR (cQp.mut q) ba) q oas
+  \post[Vptr (this ,, opt_somety_offset "monad::Account")] emp
+).
 
 
 
@@ -620,7 +637,11 @@ Proof using.
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
        q (if block.block_account_exists oas.1 then Some oas else None))
     [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
-*)
+   *)
+  unfold OriginalAccountStateR. go.
+  unfold AccountR. go.
+  rwHypsP.
+  slauto.
   wp_if.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 
@@ -654,14 +675,429 @@ Arguments pairOffsets/.
      slauto. (* above, we admitted the nonce match case, so we directly go the nonce mismatch case *)
      rename x into assumed.
      rename x0 into actual.
-     assert (w256_to_Z (block.block_account_nonce assumed.1) < w256_to_Z (block.block_account_nonce actual.1)) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
+     assert (w256_to_Z (block.block_account_nonce assumed.1) <= w256_to_Z (block.block_account_nonce actual.1)) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
      slauto.
      wp_if.
      { (* assumed balance > actual balance *)
      
+    Remove Hints foldedLv2Lear : typeclass_instances.
+    Remove Hints foldedLv2Lear2 : typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
+Set Printing Depth 999999999.
        slauto.
-       
+
+       (*
+1 focused goal (shelved: 1) (ID 5909603)
+  
+  thread_info : biIndex
+  _Σ : gFunctors
+  Sigma : cpp_logic thread_info _Σ
+  CU : genv
+  MODd : ext.module ⊧ CU
+  f := fix_spec : mpredI
+  _H_ : module ⊧ CU
+  _x_ : ptr -> mpred
+  state_addr, address_addr, original_state_addr, oactual_addr : ptr
+  preBlockState : StateOfAccounts
+  g : BlockState.glocs
+  au : StateM
+  actualPreTxState : StateOfAccounts
+  statep : ptr
+  fixeeAddr : evm.address
+  pAssumed : PartialAccountState
+  ae : AssumptionExactness
+  originalLoc, txUpdloc : ptr
+  txUpd : PartialAccountState
+  addrp : ptr
+  qa : Qp
+  actualp, ooriginal_addr : ptr
+  assumed : AccountM
+  original_addr, actual_addr : ptr
+  actual : AccountM
+  nonce_mismatch_addr, balance_mismatch_addr, local_state_addr, olocal_addr, local_addr : ptr
+  x2 : AccountM
+  GUARDS : GWs.GUARDS
+  _H_0 : valid<"monad::State&"> (Vptr statep)
+  _H_1 : valid<"evmc::address&"> (Vptr addrp)
+  _H_2 : valid<"monad::AccountState&"> (Vptr originalLoc)
+  _H_3 : valid<"std::optional<monad::Account>&"> (Vptr actualp)
+  _H_4 : valid<"bool"> (Vbool true)
+  _H_5 : valid<"std::optional<monad::Account>&"> (Vptr (originalLoc ,, o_field CU "monad::AccountState::account_"))
+  _transient_map_ : list (N * N)
+  _H_6 : valid<"bool"> (Vbool (~~ bool_decide (exists x : N, min_balance ae = Some x)))
+  _H_7 : valid<"bool"> (Vbool (nonce_exact ae))
+  H0 : coreState pAssumed = Some assumed
+  b : is_empty_model (coreState pAssumed) = false
+  _H_8 : valid<"bool"> (Vbool true)
+  _H_9 : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce assumed.1))
+  H1 : actualPreTxState !! fixeeAddr = Some actual
+  b0 : is_empty_model (actualPreTxState !! fixeeAddr) = false
+  _H_10 :
+    valid<"monad::Account&"> (Vptr
+                                (originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset
+                                                                                                "monad::Account"))
+  _H_11 : valid<"monad::Account&"> (Vptr (actualp ,, opt_somety_offset "monad::Account"))
+  _H_12 : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce actual.1))
+  _q_ :
+    (code_hash_of_program (block.block_account_code assumed.1) =? code_hash_of_program (block.block_account_code actual.1))%N =
+    true
+  _q1_ : assumed.2 = actual.2
+  _H_13 :
+    valid<"bool"> (Vbool
+                     (bool_decide
+                        (w256_to_Z (block.block_account_nonce assumed.1) ≠ w256_to_Z (block.block_account_nonce actual.1))))
+  _p_ : w256_to_Z (block.block_account_nonce assumed.1) ≠ w256_to_Z (block.block_account_nonce actual.1)
+  _q2_ : nonce_exact ae = false
+  _transient_map_0 : list (N * N)
+  _H_14 : valid<"bool"> (Vbool false)
+  _H_15 :
+    valid<"bool"> (Vbool
+                     (~~
+                      bool_decide
+                        (w256_to_N (block.block_account_balance assumed.1) = w256_to_N (block.block_account_balance actual.1))))
+  _p1_ : w256_to_N (block.block_account_balance assumed.1) ≠ w256_to_N (block.block_account_balance actual.1)
+  x1 : N
+  H2 : min_balance ae = Some x1
+  _transient_map_1 : list (N * N)
+  _q3_ : (w256_to_N (block.block_account_balance actual.1) <? x1)%N = false
+  it_addr : ptr
+  i : N
+  _x_1, _x_0 : ptr
+  _H_16 :
+    _x_1 ,, pairFstOffset "evmc::address" "monad::VersionStack<monad::AccountState>" =
+    _x_0 ,, pairFstOffset "evmc::address" "monad::VersionStack<monad::AccountState>"
+  _H_17 :
+    _x_1 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second" =
+    _x_0 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second"
+  _H_18 : valid<"monad::AccountState&"> (Vptr txUpdloc)
+  _H_19 : valid<"std::optional<monad::Account>&"> (Vptr (txUpdloc ,, o_field CU "monad::AccountState::account_"))
+  transient_map : list (N * N)
+  H3 : coreState txUpd = Some x2
+  _H_20 :
+    valid<"monad::Account&"> (Vptr
+                                (txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account"))
+  _H_21 : valid<"unsigned long"> (w256_to_Z (block.block_account_nonce x2.1))
+  Hle : w256_to_Z (block.block_account_nonce assumed.1) ≤ w256_to_Z (block.block_account_nonce actual.1)
+  _H_22 :
+    valid<"unsigned long"> (w256_to_Z (block.block_account_nonce actual.1) - w256_to_Z (block.block_account_nonce assumed.1))
+  _H_23 :
+    valid<"unsigned long"> (trim 64
+                              (w256_to_Z (block.block_account_nonce x2.1) +
+                               (w256_to_Z (block.block_account_nonce actual.1) -
+                                w256_to_Z (block.block_account_nonce assumed.1))))
+  _p2_ : (w256_to_N (block.block_account_balance actual.1) <? w256_to_N (block.block_account_balance assumed.1))%N = true
+  diff_addr : ptr
+  ============================
+  _ : denoteModule module
+  _ : type_ptr "monad::State&" state_addr
+  _ : type_ptr "evmc::address&" address_addr
+  _ : type_ptr "monad::AccountState&" original_state_addr
+  _ : type_ptr "std::optional<monad::Account>&" oactual_addr
+  _ : type_ptr "monad::State" statep
+  _ : type_ptr "std::optional<monad::Account>" actualp
+  _ : versionstack_size_spec
+  _ : uint256dtor
+  _ : u256_sub_assign_spec
+  _ : u256_minus_spec
+  _ : u256_lt_spec
+  _ : u256_gt_spec
+  _ : u256_ge_spec
+  _ : u256_eq_spec
+  _ : u256_assign_spec
+  _ : u256_add_assign_spec
+  _ : optional_val_spec
+  _ : optional_val_const_spec
+  _ : optional_bool_spec
+  _ : is_dead_spec
+  _ : incarnation_eq_spec
+  _ : incarnation_copy_spec
+  _ : bytes32_neq_spec
+  _ : accountstate_validate_exact_nonce_spec
+  _ : accountstate_validate_exact_balance_spec
+  _ : accountstate_min_balance_spec
+  _ : version_stack_recent_spec
+  _ : iterd
+  _ : iter_neq_spec
+  _ : iter_arrow_spec
+  _ : current_find_spec
+  _ : current_end_spec
+  _ : inc_dtor
+  _ : reference_to "monad::AccountState" originalLoc
+  _ : type_ptr "monad::AccountState" originalLoc
+  _ : type_ptr "std::optional<monad::Account>&" ooriginal_addr
+  _ : type_ptr "monad::AccountSubstate" (originalLoc ,, o_base CU "monad::AccountState" "monad::AccountSubstate")
+  _ : type_ptr "bool" (originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_engaged_offset "monad::Account")
+  _ : type_ptr "monad::Account"
+        (originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account")
+  _ : type_ptr "monad::Account&" original_addr
+  _ : type_ptr "monad::Account&" actual_addr
+  _ : type_ptr "bool" (actualp ,, opt_engaged_offset "monad::Account")
+  _ : type_ptr "monad::Account" (actualp ,, opt_somety_offset "monad::Account")
+  _ : type_ptr "bool" nonce_mismatch_addr
+  _ : type_ptr "bool" balance_mismatch_addr
+  _ : validP<"bool"> (Vbool false)
+  _ : reference_to
+        "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"
+        it_addr
+  _ : validP<"std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*"> (Vptr _x_1)
+  _ : reference_to "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>" _x_1
+  _ : reference_to "monad::VersionStack<monad::AccountState>"
+        (_x_0 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second")
+  _ : validP<"std::pair<evmc::address, monad::VersionStack<monad::AccountState>>*"> (Vptr _x_0)
+  _ : reference_to "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>" _x_0
+  _ : type_ptr "monad::AccountState&" local_state_addr
+  _ : reference_to "std::optional<monad::Account>" (txUpdloc ,, o_field CU "monad::AccountState::account_")
+  _ : type_ptr "std::optional<monad::Account>&" olocal_addr
+  _ : reference_to "monad::AccountState" txUpdloc
+  _ : type_ptr "monad::AccountState" txUpdloc
+  _ : type_ptr "monad::AccountSubstate" (txUpdloc ,, o_base CU "monad::AccountState" "monad::AccountSubstate")
+  _ : type_ptr "monad::Account&" local_addr
+  _ : type_ptr "bool" (txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_engaged_offset "monad::Account")
+  _ : type_ptr "monad::Account" (txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account")
+  _ : validP<"bool"> (Vbool true)
+  _ : reference_to "intx::uint<256u>" diff_addr
+  _ : validP<"bool"> (Vbool
+                        ((w256_to_N (block.block_account_balance assumed.1) - w256_to_N (block.block_account_balance actual.1))
+                         `mod` 2 ^ 256 <=? w256_to_N (block.block_account_balance x2.1))%N)
+  --------------------------------------□
+  _ : blockStatePtr au |-> BlockState.Rauth preBlockState g actualPreTxState
+  _ : HiddenPostCondition
+  _ : state_addr |-> primR "monad::State&" 1$m (Vptr statep)
+  _ : address_addr |-> primR "evmc::address&" 1$m (Vptr addrp)
+  _ : original_state_addr |-> primR "monad::AccountState&" 1$m (Vptr originalLoc)
+  _ : oactual_addr |-> primR "std::optional<monad::Account>&" 1$m (Vptr actualp)
+  _ : statep |-> structR "monad::State" (1 / 2)$m
+  _ : statep ,, o_field CU "monad::State::relaxed_validation_" |-> primR "bool" 1$m (Vbool true)
+  _ : statep ,, o_field CU "monad::State::original_"
+      |-> AnkerMapSliceSpineR "evmc::address" "monad::OriginalAccountState" addressToN addressR
+            (fun (q : Qp) '(ast, ae0) =>
+             o_base CU "monad::AccountState" "monad::AccountSubstate"
+             |-> AccountSubstateR q
+                   {| asm_destructed := false; asm_touched := false; asm_accessed := false; asm_accessed_keys := [] |} **
+             o_field CU "monad::AccountState::account_"
+             |-> libspecs.optionR "monad::Account"
+                   (fun ba : AccountM =>
+                    o_field CU "monad::Account::balance" |-> u256R q (w256_to_N (block.block_account_balance ba.1)) **
+                    o_field CU "monad::Account::code_hash"
+                    |-> bytes32R q (code_hash_of_program (block.block_account_code ba.1)) **
+                    o_field CU "monad::Account::nonce" |-> ulongR q$m (w256_to_Z (block.block_account_nonce ba.1)) **
+                    o_field CU "monad::Account::incarnation" |-> IncarnationR q ba.2 ** structR "monad::Account" q$m)
+                   q (coreState ast) **
+             o_field CU "monad::AccountState::storage_" |-> StorageMapR q (storageMapOf ast) **
+             (Exists transient_map0 : list (N * N),
+              o_field CU "monad::AccountState::transient_storage_" |-> StorageMapR q transient_map0) **
+             structR "monad::AccountState" q$m **
+             o_field CU "monad::AccountState::validate_exact_nonce_" |-> primR "bool" q$m (Vbool (nonce_exact ae0)) **
+             o_field CU "monad::AccountState::validate_exact_balance_"
+             |-> primR "bool" q$m (Vbool (~~ bool_decide (exists x : N, min_balance ae0 = Some x))) **
+             o_field CU "monad::AccountState::min_balance_"
+             |-> match min_balance ae0 with
+                 | Some n => u256R q n
+                 | None => Exists nb : N, u256R q nb
+                 end)
+            fixeeAddr (Some originalLoc)
+  _ : ooriginal_addr
+      |-> primR "std::optional<monad::Account>&" 1$m (Vptr (originalLoc ,, o_field CU "monad::AccountState::account_"))
+  _ : original_addr
+      |-> primR "monad::Account&" 1$m
+            (Vptr (originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account"))
+  _ : actual_addr |-> primR "monad::Account&" 1$m (Vptr (actualp ,, opt_somety_offset "monad::Account"))
+  _ : actualp |-> structR "std::optional<monad::Account>" 1$m
+  _ : actualp ,, opt_engaged_offset "monad::Account" |-> primR "bool" 1$m (Vbool true)
+  _ : actualp ,, opt_somety_offset "monad::Account" |-> structR "monad::Account" 1$m
+  _ : actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::nonce"
+      |-> ulongR 1$m (w256_to_Z (block.block_account_nonce actual.1))
+  _ : actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::code_hash"
+      |-> bytes32R 1 (code_hash_of_program (block.block_account_code actual.1))
+  _ : actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::incarnation" |-> IncarnationR 1 actual.2
+  _ : nonce_mismatch_addr |-> primR "bool" 1$c (Vbool true)
+  _ : balance_mismatch_addr |-> primR "bool" 1$c (Vbool true)
+  _ : originalLoc |-> structR "monad::AccountState" 1$m
+  _ : originalLoc ,, o_field CU "monad::AccountState::validate_exact_balance_" |-> primR "bool" 1$m (Vbool false)
+  _ : originalLoc ,, o_field CU "monad::AccountState::validate_exact_nonce_" |-> primR "bool" 1$m (Vbool false)
+  _ : originalLoc ,, o_field CU "monad::AccountState::storage_" |-> StorageMapR 1 (storageMapOf pAssumed)
+  _ : originalLoc ,, o_base CU "monad::AccountState" "monad::AccountSubstate"
+      |-> AccountSubstateR 1
+            {| asm_destructed := false; asm_touched := false; asm_accessed := false; asm_accessed_keys := [] |}
+  _ : originalLoc ,, o_field CU "monad::AccountState::transient_storage_" |-> StorageMapR 1 _transient_map_1
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" |-> structR "std::optional<monad::Account>" 1$m
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_engaged_offset "monad::Account"
+      |-> primR "bool" 1$m (Vbool true)
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account"
+      |-> structR "monad::Account" 1$m
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::incarnation" |-> IncarnationR 1 actual.2
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::nonce" |-> ulongR 1$m (w256_to_Z (block.block_account_nonce assumed.1))
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::code_hash" |-> bytes32R 1 (code_hash_of_program (block.block_account_code assumed.1))
+  _ : originalLoc ,, o_field CU "monad::AccountState::min_balance_" |-> u256R 1 x1
+  _ : addrp |-> addressR qa fixeeAddr
+  _ : statep ,, o_field CU "monad::State::current_"
+      |-> AnkerMapSliceSpineR "evmc::address" "monad::VersionStack<monad::AccountState>" addressToN addressR
+            (fun (q : Qp) (lt : list (ptr * PartialAccountState)) =>
+             VersionStackSpineR "monad::AccountState" q (map fst lt) **
+             pureR ([∗ list] '(loc, val0) ∈ lt, loc |-> AccountStateR q val0))
+            fixeeAddr (Some (_x_0 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second"))
+  _ : it_addr
+      |-> AnkerMapIterR (Some i) (_x_0 ,, pairFstOffset "evmc::address" "monad::VersionStack<monad::AccountState>")
+            (_x_0 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second")
+  _ : _x_0 ,, o_field CU "std::pair<evmc::address, monad::VersionStack<monad::AccountState>>::second"
+      |-> VersionStackSpineR "monad::AccountState" 1 [txUpdloc]
+  _ : local_state_addr |-> primR "monad::AccountState&" 1$m (Vptr txUpdloc)
+  _ : olocal_addr
+      |-> primR "std::optional<monad::Account>&" 1$m (Vptr (txUpdloc ,, o_field CU "monad::AccountState::account_"))
+  _ : txUpdloc |-> structR "monad::AccountState" 1$m
+  _ : txUpdloc ,, o_field CU "monad::AccountState::storage_" |-> StorageMapR 1 (storageMapOf txUpd)
+  _ : txUpdloc ,, o_base CU "monad::AccountState" "monad::AccountSubstate"
+      |-> AccountSubstateR 1
+            {| asm_destructed := false; asm_touched := false; asm_accessed := false; asm_accessed_keys := [] |}
+  _ : txUpdloc ,, o_field CU "monad::AccountState::transient_storage_" |-> StorageMapR 1 transient_map
+  _ : local_addr
+      |-> primR "monad::Account&" 1$m
+            (Vptr (txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account"))
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" |-> structR "std::optional<monad::Account>" 1$m
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::incarnation" |-> IncarnationR 1 x2.2
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::code_hash" |-> bytes32R 1 (code_hash_of_program (block.block_account_code x2.1))
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_engaged_offset "monad::Account"
+      |-> primR "bool" 1$m (Vbool true)
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account"
+      |-> structR "monad::Account" 1$m
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::nonce"
+      |-> ulongR 1$m
+            (trim 64
+               (w256_to_Z (block.block_account_nonce x2.1) +
+                (w256_to_Z (block.block_account_nonce actual.1) - w256_to_Z (block.block_account_nonce assumed.1))))
+  _ : originalLoc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::balance" |-> u256R 1 (w256_to_N (block.block_account_balance assumed.1))
+  _ : actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::balance"
+      |-> u256R 1 (w256_to_N (block.block_account_balance actual.1))
+  _ : txUpdloc ,, o_field CU "monad::AccountState::account_" ,, opt_somety_offset "monad::Account" ,, 
+      o_field CU "monad::Account::balance" |-> u256R 1 (w256_to_N (block.block_account_balance x2.1))
+  _ : diff_addr
+      |-> u256R 1
+            ((w256_to_N (block.block_account_balance assumed.1) - w256_to_N (block.block_account_balance actual.1))
+             `mod` 2 ^ 256)
+  --------------------------------------∗
+  branch.stmt module
+    [region:
+      "diff" @ diff_addr; "local" @ local_addr; "olocal" @ olocal_addr; "local_state" @ local_state_addr; 
+      "it" @ it_addr; "balance_mismatch" @ balance_mismatch_addr; "nonce_mismatch" @ nonce_mismatch_addr;
+      "actual" @ actual_addr; "original" @ original_addr; "ooriginal" @ ooriginal_addr; "oactual" @ oactual_addr;
+      "original_state" @ original_state_addr; "address" @ address_addr; "state" @ state_addr; [this := blockStatePtr au];
+      return {?: "bool"}]
+    (~~
+     ~~
+     ((w256_to_N (block.block_account_balance assumed.1) - w256_to_N (block.block_account_balance actual.1)) `mod` 2 ^ 256 <=?
+      w256_to_N (block.block_account_balance x2.1))%N)
+    (Sseq [])
+    (Sseq
+       [Sexpr
+          (Ecall
+             (Ecast Cfun2ptr
+                (Eglobal "monad_assertion_failed" "void(const char*, const char*, const char*, long, const char*)"))
+             [Ecast Carray2ptr
+                (Estring {| literal_string.bytes := "local.balance >= diff"; literal_string.bytes_per_char := 1 |} "char");
+              Ecast Carray2ptr
+                (Estring
+                   {|
+                     literal_string.bytes :=
+                       "bool monad::BlockState::fix_account_mismatch(State &, const Address &, AccountState &, const std::optional<Account> &) const";
+                     literal_string.bytes_per_char := 1
+                   |} "char");
+              Ecast Carray2ptr
+                (Estring
+                   {|
+                     literal_string.bytes :=
+                       "/home/abhishek/fv-workspace/monad/libs/execution/src/monad/state2/block_state.cpp";
+                     literal_string.bytes_per_char := 1
+                   |} "char");
+              Ecast (Cintegral "long") (Eint 293 "int"); Ecast (Cnull2ptr "const char*") Enull])])
+    (Kseq
+       (wp_block module
+          [region:
+            "diff" @ diff_addr; "local" @ local_addr; "olocal" @ olocal_addr; "local_state" @ local_state_addr;
+            "it" @ it_addr; "balance_mismatch" @ balance_mismatch_addr; "nonce_mismatch" @ nonce_mismatch_addr;
+            "actual" @ actual_addr; "original" @ original_addr; "ooriginal" @ ooriginal_addr; "oactual" @ oactual_addr;
+            "original_state" @ original_state_addr; "address" @ address_addr; "state" @ state_addr;
+            [this := blockStatePtr au]; return {?: "bool"}]
+          [Sseq [];
+           Sexpr
+             (Eoperator_call OOMinusEqual
+                (operator_impl.MFunc "intx::uint<256u>::operator-=(const intx::uint<256u>&)"%cpp_name Direct
+                   "intx::uint<256u>&(const intx::uint<256u>&)"%cpp_type)
+                [Emember false (Evar "local" "monad::Account&") (Nid "balance") false "intx::uint<256u>";
+                 Evar "diff" "const intx::uint<256u>"])])
+       (Kfree module (1 >*> FreeTemps.delete "const intx::uint<256u>" diff_addr)
+          (Kseq
+             (wp_block module
+                [region:
+                  "local" @ local_addr; "olocal" @ olocal_addr; "local_state" @ local_state_addr; 
+                  "it" @ it_addr; "balance_mismatch" @ balance_mismatch_addr; "nonce_mismatch" @ nonce_mismatch_addr;
+                  "actual" @ actual_addr; "original" @ original_addr; "ooriginal" @ ooriginal_addr; 
+                  "oactual" @ oactual_addr; "original_state" @ original_state_addr; "address" @ address_addr;
+                  "state" @ state_addr; [this := blockStatePtr au]; return {?: "bool"}]
+                [])
+             (Kseq
+                (wp_block module
+                   [region:
+                     "local" @ local_addr; "olocal" @ olocal_addr; "local_state" @ local_state_addr; 
+                     "it" @ it_addr; "balance_mismatch" @ balance_mismatch_addr; "nonce_mismatch" @ nonce_mismatch_addr;
+                     "actual" @ actual_addr; "original" @ original_addr; "ooriginal" @ ooriginal_addr;
+                     "oactual" @ oactual_addr; "original_state" @ original_state_addr; "address" @ address_addr;
+                     "state" @ state_addr; [this := blockStatePtr au]; return {?: "bool"}]
+                   [])
+                (Kfree module (1 >*> FreeTemps.delete "monad::Account&" local_addr)
+                   (Kfree module (1 >*> FreeTemps.delete "std::optional<monad::Account>&" olocal_addr)
+                      (Kfree module (1 >*> FreeTemps.delete "monad::AccountState&" local_state_addr)
+                         (Kseq
+                            (wp_block module
+                               [region:
+                                 "it" @ it_addr; "balance_mismatch" @ balance_mismatch_addr;
+                                 "nonce_mismatch" @ nonce_mismatch_addr; "actual" @ actual_addr; "original" @ original_addr;
+                                 "ooriginal" @ ooriginal_addr; "oactual" @ oactual_addr;
+                                 "original_state" @ original_state_addr; "address" @ address_addr; 
+                                 "state" @ state_addr; [this := blockStatePtr au]; return {?: "bool"}]
+                               [Sif None (Ecast Cl2r (Evar "nonce_mismatch" "const bool"))
+                                  (Sseq
+                                     [Sexpr
+                                        (Eassign
+                                           (Emember false (Evar "original" "monad::Account&") (Nid "nonce") false
+                                              "unsigned long")
+                                           (Ecast Cl2r
+                                              (Emember false (Evar "actual" "const monad::Account&") 
+                                                 (Nid "nonce") false "unsigned long"))
+                                           "unsigned long")])
+                                  (Sseq []);
+                                Sif None (Ecast Cl2r (Evar "balance_mismatch" "const bool"))
+                                  (Sseq
+                                     [Sexpr
+                                        (Eoperator_call OOEqual
+                                           (operator_impl.MFunc
+                                              "intx::uint<256u>::operator=(const intx::uint<256u>&)"%cpp_name Direct
+                                              "intx::uint<256u>&(const intx::uint<256u>&)"%cpp_type)
+                                           [Emember false (Evar "original" "monad::Account&") (Nid "balance") false
+                                              "intx::uint<256u>";
+                                            Emember false (Evar "actual" "const monad::Account&") 
+                                              (Nid "balance") false "intx::uint<256u>"])])
+                                  (Sseq []);
+                                Sreturn (Some (Ebool true))])
+                            (Kfree module
+                               (1 >*>
+                                FreeTemps.delete
+                                  "ankerl::unordered_dense::v4_1_0::segmented_vector<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>, std::allocator<std::pair<evmc::address, monad::VersionStack<monad::AccountState>>>, 4096ul>::iter_t<0b>"
+                                  it_addr)
+                               (Kfree module (1 >*> FreeTemps.delete "const bool" balance_mismatch_addr)
+                                  (Kfree module (1 >*> FreeTemps.delete "const bool" nonce_mismatch_addr)
+                                     (Kfree module (1 >*> FreeTemps.delete "const monad::Account&" actual_addr)
+                                        (Kfree module (1 >*> FreeTemps.delete "monad::Account&" original_addr)
+                                           (Kfree module
+                                              (1 >*> FreeTemps.delete "std::optional<monad::Account>&" ooriginal_addr)
+                                              (Kcleanup module [] (Kreturn (fun v : ptr => ▷ _x_ v)))))))))))))))))
+*)       
      go.
     unfold Vers
   iAssert (version_stack_recent_spec) as "#?". admit.

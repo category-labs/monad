@@ -59,10 +59,12 @@ Section with_Sigma.
   Set Printing Coercions.
   #[global] Instance learnOpt a b c d e a1 b1 c1 d1 e1: Learnable (@libspecs.optionR _ _ _ _ a b c d e) (@libspecs.optionR _ _ _ _ a1 b1 c1 d1 e1) [a=a1] := ltac:(solve_learnable).
 
+  (*
   cpp.spec (Ninst
      "monad::execute_impl(const monad::Chain&, unsigned long, const monad::Transaction&, const evmc::address&, const monad::BlockHeader&, const monad::BlockHashBuffer&, monad::BlockState&, boost::fibers::promise<void>&)"
      [Avalue (Eint 11 "enum evmc_revision")]) as fff inline.
-
+   *)
+  
   cpp.spec (Ninst
         "monad::static_validate_transaction(const monad::Transaction&, const std::optional<intx::uint<256u>>&, const intx::uint<256u>&, unsigned long)"
         [Avalue (Eint 11 "enum evmc_revision")])  as validate_spec with

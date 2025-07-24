@@ -19,6 +19,16 @@ Require Import Lens.Elpi.Elpi.
 #[only(lazy_unfold)] derive OriginalAccountStateR.
 #[only(lazy_unfold)] derive StateR.
 
+Open Scope N_scope.
+    Lemma balassertion (minBal localBal orignalBal actualBal: N):
+    orignalBal - localBal <= minBal (* crucial for the proof *)
+   ->  minBal <= actualBal
+   ->  actualBal < orignalBal
+   -> (orignalBal - actualBal) <= localBal.
+    Proof using.
+      lia. (* success *)
+    Qed.
+
 Section with_Sigma.
   Context `{Sigma:cpp_logic} {CU: genv}.
   Context  {MODd : ext.module ⊧ CU}.
@@ -691,35 +701,6 @@ Arguments pairOffsets/.
 original.balance:
 
      *)
-
-(* the key property for the assertion is assumedBal - finalBal <= minBal
-   why does it hold?
-   let totD_t be the total debit so far in the tx at step/time t of executing it. totC_t is similarly the total credit so far. let f be the final step.
-   minBal_t = max_i(totD_i - totC_i) for i in 0..t
-   minBal_f = max_i(totD_i - totC_i) for i in 0..f
-   minBal_f = max_i(totD_i - totC_i) >= (totD_f - totC_f) = originalBal - localBal
-   minBal_f  >=  originalBal - localBal
-  
- *)    
-    Lemma balassertion (minBal localBal orignalBal actualBal: N):
-    orignalBal - localBal <= minBal (* crucial for the proof *)
-   ->  minBal <= actualBal
-   ->  actualBal < orignalBal
-   -> (orignalBal - actualBal) <= localBal.
-    Proof using.
-      lia. (* success *)
-
-      Lemma lemma (minBal finalBal assumedBal actualBal: N):
-    assumedBal - finalBal <= minBal (* crucial for the proof *)
-   ->  minBal <= actualBal
-   ->  actualBal < assumedBal
-   -> (assumedBal - actualBal) <= finalBal.
-    Proof using.
-      clear.
-      intros.
-      lia. (* success *)
-    
-
 
        (*
 1 focused goal (shelved: 1) (ID 5909603)

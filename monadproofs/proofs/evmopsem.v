@@ -156,3 +156,117 @@ Record ConsensusBlockHeader :=
        BlockHeader execution_inputs{};
      *)
   }.
+
+
+Definition txMaxFee (t: Transaction) : N. Proof. Admitted.
+
+Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256) : Z :=
+  monad.EVMOpSem.Zdigits.binary_value 256 w.
+
+Definition w256_to_N (w: monad.EVMOpSem.keccak.w256) : N :=
+  Z.to_N (w256_to_Z w).
+
+Definition Z_to_w256 wnz : monad.EVMOpSem.keccak.w256 := Zdigits.Z_to_binary _ wnz.
+
+Opaque Zdigits.binary_value Zdigits.Z_to_binary.
+
+
+Opaque w256_to_Z.
+Opaque Z_to_w256.
+(* TODO: add other checks:
+
+   uint512_t const v0 =
+        tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+
+    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+        // YP (71)
+        if (tx.nonce) {
+            return TransactionError::BadNonce;
+        }
+        // YP (71)
+        if (v0) {
+            return TransactionError::InsufficientBalance;
+        }
+        return success();
+    }
+
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->code_hash != NULL_HASH)) {
+        return TransactionError::SenderNotEoa;
+    }
+
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
+        return TransactionError::BadNonce;
+    }
+
+    // YP (71)
+    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
+        return TransactionError::InsufficientBalance;
+    }
+
+    // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
+    // (It requires knowing the parent block)
+
+    return success();
+ *)
+
+Definition validateTx (preTxState: StateOfAccounts) (t: Transaction): bool :=
+  match preTxState !! (sender t) with
+  | None => false
+  | Some (ac,_) => bool_decide (txMaxFee t <= w256_to_N (block.block_account_balance ac))%N
+  end.
+  
+(* txindex can be used to store incarnation numbers *)
+Definition stateAfterTransactionV (hdr: BlockHeader) (txindex: nat) (s: StateOfAccounts) (t: Transaction): option (StateOfAccounts * TransactionResult) :=
+  if (negb (validateTx s t))
+  then None
+  else
+    let (si, r) := stateAfterTransactionAux hdr s txindex t in
+    Some (applyGasRefundsAndRewards hdr si r, r).
+
+Fixpoint stateAfterTransactionsV' (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction) (start:nat) (prevResults: list TransactionResult): option (StateOfAccounts * list TransactionResult) :=
+  match ts with
+  | [] => Some (s, prevResults)
+  | t::tls => let (sf, r) := stateAfterTransaction hdr start s t in
+              stateAfterTransactionsV' hdr sf tls (1+start) (prevResults++[r])
+  end.
+    
+    
+Definition stateAfterTransactionsV  (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction): option (StateOfAccounts * list TransactionResult) := stateAfterTransactionsV' hdr s ts 0 [].
+
+
+Definition stateAfterBlockV (b: Block) (s: StateOfAccounts): option (StateOfAccounts * list TransactionResult) :=
+  match stateAfterTransactionsV (header b) s (transactions b) with
+  | None => None
+  | Some (s, tr) =>
+      let s:= applyWithdrawals s (withdrawals b) in
+      Some (applyBlockReward s (length (ommers b)), tr)
+  end.
+
+Open Scope N_scope.
+Definition totalTxFees (lt: list Transaction): gmap evm.address N :=
+  List.fold_left (fun r t =>
+                    let feesr := r !!!  (sender t) in 
+                    <[ sender t := feesr + txMaxFee t]> r
+    ) lt ∅.
+
+Definition ReserveBal : N. Proof. Admitted. (* TODO: make it per/account and possibly dynamic *)
+
+
+Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=
+  forall addr,
+    match (totalTxFees lt) !! addr with
+    | Some total =>
+        match s !! addr with
+        | None => False
+        | Some (f,_) => total <= w256_to_N (block.block_account_balance f)
+                    /\ total <= ReserveBal
+        end
+    | None => True
+    end.
+
+(*
+Lemma noLowBalAbort bheader lt : txFeesUB s lt ->
+    execTra
+*)

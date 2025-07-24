@@ -57,12 +57,6 @@ Require Import EVMOpSem.evmfull. *)
 Import cancelable_invariants.
 
 
-Definition w256_to_Z (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.Z :=
-  monad.EVMOpSem.Zdigits.binary_value 256 w.
-
-Definition w256_to_N (w: monad.EVMOpSem.keccak.w256) : Corelib.Numbers.BinNums.N :=
-  Stdlib.ZArith.BinInt.Z.to_N (w256_to_Z w).
-
 
 Record AssumptionExactness :=
   {
@@ -375,7 +369,7 @@ Section with_Sigma.
   Proof using. Admitted.
 
   Definition tx_nonce tx :=
-    (Z.to_N (Zdigits.binary_value _ (block.tr_nonce tx))).
+    (w256_to_N (block.tr_nonce tx)).
   Definition TransactionR (q:Qp) (tx: Transaction) : Rep :=
     structR "monad::Transaction" q **
       _field "monad::Transaction::nonce" |-> ulongR q (tx_nonce tx).
@@ -399,7 +393,8 @@ Section with_Sigma.
   Definition ResultSuccessR {T} (trep: T -> Rep) (t:T): Rep. Proof. Admitted.
   Definition ReceiptR (t: TransactionResult): Rep. Admitted.
   Definition EvmcResultR (t: TransactionResult): Rep. Admitted.
-  
+  Definition ResultFailureR: Rep. Proof. Admitted.
+
   Definition valOfRev (r : Revision) : val := Vint 0. (* TODO: fix *)
 
   Record BlockHashBuffer :=
@@ -455,6 +450,33 @@ Section with_Sigma.
       retp |-> VectorR (Tnamed "::monad::Receipt") ReceiptR 1 receipts
       ** block_statep |-> BlockState.Rauth preBlockState g actual_final_state.
 
+
+  Definition execute_block_spec_fixed : WpSpec mpredI val val :=
+    \arg{chainp :ptr} "chain" (Vptr chainp)
+    \prepost{(qchain:Qp) (chain: Chain)} chainp |-> ChainR qchain chain
+    \arg{blockp: ptr} "block" (Vptr blockp)
+    \prepost{qb (block: Block)} blockp |-> BlockR qb block
+    \arg{block_statep: ptr} "block_state" (Vptr block_statep)
+    \pre{(preBlockState: StateOfAccounts) g qf}
+       block_statep |-> BlockState.Rauth preBlockState g preBlockState
+    \pre [| txsFeesUB  preBlockState (transactions block )|]
+    \prepost block_statep |-> BlockState.Rfrag preBlockState qf g
+    \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vptr block_hash_bufferp)
+    \prepost{buf qbuf} block_hash_bufferp |-> BlockHashBufferR qbuf buf
+    \arg{priority_poolp: ptr} "priority_pool" (Vptr priority_poolp)
+    \prepost{priority_pool: PriorityPool} priority_poolp |-> PriorityPoolR 1 priority_pool 
+    \post{retp}[Vptr retp]
+    
+       match stateAfterBlockV block preBlockState with
+       | Some (actual_final_state, results) =>
+           retp |-> ResultSuccessR (fun r =>VectorR (Tnamed "::monad::Receipt") ReceiptR 1 r) results
+           ** block_statep |-> BlockState.Rauth preBlockState g actual_final_state
+       | None =>
+          (* [| ¬ txsFeesUB preBlockState (transactions block) |]  this conjunct can be derived as a lemma about stateAfterBlockV *)
+           retp |-> ResultFailureR
+           ** Exists garbage, block_statep |-> BlockState.Rauth preBlockState g garbage
+       end.
+  
 Import namemap.
 Import translation_unit.
 Require Import List.
@@ -729,12 +751,12 @@ Definition StateR (s: StateM) : Rep :=
   Open Scope Z_scope.
 
   Definition zbvfun (fz: Z -> Z) (w: keccak.w256): keccak.w256:=
-    let wnz := fz (Zdigits.binary_value _ w) in
-    Zdigits.Z_to_binary _ wnz.
+    let wnz := fz (w256_to_Z w) in
+    Z_to_w256 wnz.
     
    
   Definition zbvlens {A:Type} (l: Lens A A keccak.w256 keccak.w256): Lens A A Z Z :=
-    {| view := λ a : A, Zdigits.binary_value 256 (a .^ l);
+    {| view := λ a : A, w256_to_Z (a .^ l);
       over := λ (fz : Z → Z) (a : A), (l %= zbvfun fz) a |}.
   Definition _balance : Lens AccountM AccountM Z Z (* TODO: Z -> N *):=
     zbvlens (lens._fst .@ _block_account_balance).
@@ -745,7 +767,7 @@ Definition StateR (s: StateM) : Rep :=
   Print evm.storage.
   Print keccak.w256.
   Definition _storage (key: Z): Lens AccountM evm.account_state Z Z:=
-    zbvlens (lens._fst .@ _block_account_storage .@ (ix (Zdigits.Z_to_binary _ key))).
+    zbvlens (lens._fst .@ _block_account_storage .@ (ix (Z_to_w256 key))).
   
   Definition isNone {T} (a: option T):= negb (isSome a).
   Definition min_balanceN (a: AssumptionExactness) : N:=
@@ -1246,5 +1268,4 @@ day 2:
 
 (* TODO: move to evmopsem *)
 #[only(lens)] derive block.block_account.
-Opaque Zdigits.binary_value Zdigits.Z_to_binary.
 

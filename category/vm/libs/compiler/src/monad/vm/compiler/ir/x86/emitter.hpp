@@ -199,6 +199,7 @@ namespace monad::vm::compiler::native
         void runtime_print_input_stack(std::string const &msg);
         void runtime_store_input_stack(uint64_t);
         void runtime_print_top2(std::string const &msg);
+        void runtime_print_top1(std::string const &msg);
         void breakpoint();
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);

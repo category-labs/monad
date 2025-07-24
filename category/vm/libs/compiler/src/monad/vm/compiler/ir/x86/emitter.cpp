@@ -130,6 +130,11 @@ namespace
         std::cout << msg << ": " << x->to_string() << " and " << y->to_string()
                   << std::endl;
     }
+
+    void runtime_print_top1_impl(char const *msg, runtime::uint256_t const *x)
+    {
+        std::cout << msg << ": " << x->to_string() << std::endl;
+    }
 }
 
 // For reducing noise
@@ -562,6 +567,9 @@ namespace monad::vm::compiler::native
         , bytecode_size_{codesize}
         , rodata_{as_.newNamedLabel("ROD")}
     {
+#ifdef MONAD_VM_TESTING
+        as_.addDiagnosticOptions(kValidateAssembler);
+#endif
         contract_prologue();
     }
 
@@ -849,6 +857,32 @@ namespace monad::vm::compiler::native
         else {
             auto const m = rodata_.add_literal(e2->literal().value());
             as_.lea(x86::rdx, m);
+        }
+        as_.vzeroupper();
+        as_.call(fn_mem);
+    }
+
+    void Emitter::runtime_print_top1(std::string const &msg)
+    {
+        auto msg_lbl = as_.newLabel();
+        debug_messages_.emplace_back(msg_lbl, msg);
+        auto fn_mem = rodata_.add_external_function(runtime_print_top1_impl);
+
+        discharge_deferred_comparison();
+        spill_caller_save_regs(true);
+
+        as_.lea(x86::rdi, x86::qword_ptr(msg_lbl));
+
+        auto e1 = stack_.get(stack_.top_index());
+        if (!e1->stack_offset() && !e1->literal()) {
+            mov_stack_elem_to_stack_offset(e1);
+        }
+        if (e1->stack_offset().has_value()) {
+            as_.lea(x86::rsi, stack_offset_to_mem(e1->stack_offset().value()));
+        }
+        else {
+            auto const m = rodata_.add_literal(e1->literal().value());
+            as_.lea(x86::rsi, m);
         }
         as_.vzeroupper();
         as_.call(fn_mem);
@@ -3709,23 +3743,29 @@ namespace monad::vm::compiler::native
         if (src->general_reg()) {
             auto const sign_reg_ix = static_cast<size_t>(ix[0]) / 8;
             auto const sign_reg_offset = static_cast<size_t>(ix[0]) % 8;
-            auto const dst = [&] {
+
+            auto const &src_gpq = general_reg_to_gpq256(*src->general_reg());
+            auto const src_sign_reg = src_gpq[sign_reg_ix];
+
+            auto const dst = [&, this] {
                 if (is_live(src, {})) {
-                    auto const [dst, reserv] = alloc_general_reg();
-                    return dst;
+                    if (stack_.has_free_general_reg() ||
+                        (!src->stack_offset() && !src->avx_reg())) {
+                        auto const [dst, reserv] = alloc_general_reg();
+                        return dst;
+                    }
+                    return stack_.release_general_reg(std::move(src));
                 }
                 else {
-                    return src;
+                    return stack_.release_general_reg(std::move(src));
                 }
             }();
-            auto const &src_gpq = general_reg_to_gpq256(*src->general_reg());
             auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
-            auto const src_sign_reg = src_gpq[sign_reg_ix];
             auto const dst_sign_reg = dst_gpq[sign_reg_ix];
 
             // First we copy the part of the src and dst registers that are not
             // sign-extended
-            if (src != dst) {
+            if (&src_gpq != &dst_gpq) {
                 for (size_t i = 0; i < sign_reg_ix; ++i) {
                     as_.mov(dst_gpq[i].r64(), src_gpq[i].r64());
                 }
@@ -3743,12 +3783,12 @@ namespace monad::vm::compiler::native
                 as_.movsxd(dst_sign_reg, src_sign_reg.r32());
             }
             else if (sign_reg_offset == 7) {
-                if (src != dst) {
+                if (&src_gpq != &dst_gpq) {
                     as_.mov(dst_sign_reg, src_sign_reg);
                 }
             }
             else {
-                if (src != dst) {
+                if (&src_gpq != &dst_gpq) {
                     as_.mov(dst_sign_reg.r64(), src_sign_reg.r64());
                 }
                 // we use left then right shifts to sign-extend

@@ -1,6 +1,7 @@
 Require Import monad.EVMOpSem.block.
 Require Import stdpp.gmap.
 
+
 (* delete and inline? *)
 Definition Transaction := transaction.
 
@@ -83,6 +84,8 @@ Definition stateAfterTransactions  (hdr: BlockHeader) (s: StateOfAccounts) (ts: 
         rewrite <- Nat.add_succ_r.
         reflexivity.
       Qed.
+
+      
       Lemma stateAfterTransactionsC (hdr: BlockHeader) (s: StateOfAccounts) (c: Transaction) (ts: list Transaction):
         stateAfterTransactions hdr s (ts++[c])
         = let '(sf, prevs) := stateAfterTransactions hdr s (ts) in
@@ -228,8 +231,12 @@ Definition stateAfterTransactionV (hdr: BlockHeader) (txindex: nat) (s: StateOfA
 Fixpoint stateAfterTransactionsV' (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction) (start:nat) (prevResults: list TransactionResult): option (StateOfAccounts * list TransactionResult) :=
   match ts with
   | [] => Some (s, prevResults)
-  | t::tls => let (sf, r) := stateAfterTransaction hdr start s t in
-              stateAfterTransactionsV' hdr sf tls (1+start) (prevResults++[r])
+  | t::tls => match stateAfterTransactionV hdr start s t with
+              | Some (sf, r)=>
+                  stateAfterTransactionsV' hdr sf tls (1+start) (prevResults++[r])
+              | None => None
+              end
+                
   end.
     
     
@@ -245,11 +252,14 @@ Definition stateAfterBlockV (b: Block) (s: StateOfAccounts): option (StateOfAcco
   end.
 
 Open Scope N_scope.
-Definition totalTxFees (lt: list Transaction): gmap evm.address N :=
-  List.fold_left (fun r t =>
-                    let feesr := r !!!  (sender t) in 
-                    <[ sender t := feesr + txMaxFee t]> r
-    ) lt ∅.
+Fixpoint totalTxFees (lt: list Transaction): gmap evm.address N :=
+  match lt with
+  | t::tl => 
+      let r:= totalTxFees tl in
+      let feesr := r !!!  (sender t) in 
+      <[ sender t := feesr + txMaxFee t]> r
+  | [] => ∅
+  end.
 
 Definition ReserveBal : N. Proof. Admitted. (* TODO: make it per/account and possibly dynamic *)
 
@@ -266,7 +276,98 @@ Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=
     | None => True
     end.
 
-(*
-Lemma noLowBalAbort bheader lt : txFeesUB s lt ->
-    execTra
-*)
+
+Lemma noLowBalAbort bheader s lt :
+  txsFeesUB s lt ->
+  match stateAfterTransactionsV bheader s lt with
+  | None => False
+  | Some _ => True
+  end.
+Proof using.
+Abort.
+
+Lemma noLowBalAbort bheader s lt :
+  txsFeesUB s lt ->
+  match stateAfterTransactionsV bheader s lt with
+  | None => False
+  | Some _ => True
+  end.
+Proof using.
+Abort.
+
+Require Import bluerock.auto.rwdb.
+Require Import bluerock.auto.miscPure.
+Require Import bluerock.hw_models.utils.
+
+Open Scope N_scope.
+Lemma noLowBalAbort' bheader s lt res index:
+  txsFeesUB s lt ->
+  match stateAfterTransactionsV' bheader s lt index res with
+  | None => False
+  | Some _ => True
+  end.
+Proof using.
+  revert res index s.
+  induction lt;[ simpl; auto; fail|].
+  simpl.
+  intros ? ? ? Htx.
+  unfold txsFeesUB in *.
+  simpl in *.
+  pose proof (Htx (sender a)) as Htxs.
+  Hint Rewrite @gmap.lookup_insert_iff : syntactic.
+  rewrite  @gmap.lookup_insert_iff in Htxs;[| exact 0%N].
+  miscPure.resolveDecide tauto.
+  GC.
+  unfold stateAfterTransactionV.
+  unfold validateTx.
+  remember (s !! sender a) as sa.
+  destruct sa as [sender|]; simpl in *;[| contradiction].
+  destruct sender as [sender inc].
+  simpl in *.
+  Require Import monad.proofs.bigauto.
+  forward_reason.
+  resolveDecide lia.
+  simpl.
+  remember ( stateAfterTransactionAux bheader s index a) as sa.
+  destruct sa.
+  apply IHlt.
+  intros addr.
+  specialize (Htx addr).
+  destruct (decide (addr= evmopsem.sender a)).
+  {
+    subst.
+    unfold lookup_total in *.
+    simpl in *.
+    unfold map_lookup_total in *.
+    remember (totalTxFees lt !! evmopsem.sender a) as ltfeesa.
+    destruct ltfeesa as [ltfeesa |]; auto;[].
+    simpl in *.
+    remember (applyGasRefundsAndRewards bheader g t !! evmopsem.sender a) as agrr.
+    destruct agrr.
+    2:{ admit. (* not possible due to Heqsa and Heqsa0 *) }
+    destruct p as [pa i].
+    assert (N.ge (w256_to_N (block_account_balance pa))  (w256_to_N (block_account_balance sender) - txMaxFee a)%N) as Heq by admit.
+    lia.
+  }
+  {
+    rewrite  @gmap.lookup_insert_iff in Htx;[| exact 0%N].
+    resolveDecide congruence.
+    remember (applyGasRefundsAndRewards bheader g t !! addr) as agrr.
+    destruct agrr as [pp |].
+    2:{ admit. (* not possible due to Heqsa and Heqsa0 *) }
+    destruct pp as [pa i].
+    destruct (totalTxFees lt !! addr); auto.
+    remember (s!!addr) as saddr.
+    destruct saddr as [saddr|]; auto.
+    {
+      destruct saddr as [saddr inds].
+      simpl in *.
+      assert (N.ge (w256_to_N (block_account_balance pa))  (w256_to_N (block_account_balance saddr))) as Heq by admit.
+      lia.
+    }
+    {
+      (* similar as above *)
+      admit.
+    }
+  }
+Abort.

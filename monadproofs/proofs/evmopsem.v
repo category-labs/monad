@@ -402,3 +402,156 @@ Proof using.
     lia.
   }
 Qed.
+
+Definition dummyAc : AccountM := (block_account_default, Build_Indices 0 0).
+
+Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
+
+Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N -> N) : evm.GlobalState. Proof. Admitted.
+
+Definition txDelegatedEOAs (tx: Transaction) : list evm.address. Proof. Admitted.
+
+
+Existing Instance list_forall_dec.
+Definition execTxAfterValidationV2 hdr s txindex t:=
+  let (si, r) := stateAfterTransactionAux hdr s txindex t in
+  if (bool_decide (ReserveBal - txMaxFee t <= balanceOfAc si (sender t) (* debit gas fee from paymaster account?*)
+                   /\ forall dac, dac ∈ txDelegatedEOAs t -> ReserveBal <= balanceOfAc si dac))
+  then (applyGasRefundsAndRewards hdr si r, r)
+  else 
+    (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
+
+(* txindex can be used to store incarnation numbers *)
+Definition stateAfterTransactionV2 (hdr: BlockHeader) (txindex: nat) (s: StateOfAccounts) (t: Transaction): option (StateOfAccounts * TransactionResult) :=
+  if (negb (validateTx s t))
+  then None
+  else Some (execTxAfterValidationV2 hdr s txindex t).
+
+Fixpoint stateAfterTransactionsV2' (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction) (start:nat) (prevResults: list TransactionResult): option (StateOfAccounts * list TransactionResult) :=
+  match ts with
+  | [] => Some (s, prevResults)
+  | t::tls => match stateAfterTransactionV2 hdr start s t with
+              | Some (sf, r)=>
+                  stateAfterTransactionsV2' hdr sf tls (1+start) (prevResults++[r])
+              | None => None
+              end
+                
+  end.
+    
+Definition stateAfterTransactionsV2  (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction): option (StateOfAccounts * list TransactionResult) := stateAfterTransactionsV2' hdr s ts 0 [].
+
+Lemma eoaPresV2:
+  forall bheader s index tx,
+  let '(sf, rct) := execTxAfterValidationV2 bheader s index tx in
+  forall lt, txSendersAreEOA s lt -> txSendersAreEOA sf lt.
+Proof. Admitted.
+
+Lemma balanceOfUpd s ac f acp:
+  balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
+Proof. Admitted.
+
+Definition evmTxDebits: Prop :=
+  forall bheader s index tx,
+  let '(sf, rct) := execTxAfterValidationV2 bheader s index tx in
+  forall addr, isEOA s addr
+               -> isEOA sf addr
+                  /\ if (decide (addr =  sender tx))
+                     then (balanceOfAc sf addr >= balanceOfAc s addr - txMaxFee tx)
+                     else (balanceOfAc sf addr >= balanceOfAc s addr).
+
+Lemma noLowBalAbortV2' bheader s lt res index:
+  txSendersAreEOA s lt ->
+  txsFeesUB s lt ->
+  match stateAfterTransactionsV2' bheader s lt index res with
+  | None => False
+  | Some _ => True
+  end.
+Proof using.
+  intros Hts.
+  revert Hts.
+  revert res index s.
+  induction lt;[ simpl; auto; fail|].
+  simpl.
+  intros ? ? ? ? Htx.
+  pose proof (eoaPresV2 bheader s index a) as Hpres.
+  unfold txsFeesUB in *.
+  simpl in *.
+  forward_reason.
+  pose proof (txFeesAreEoa s lt ltac:(auto)) as Hfeoa.
+  pose proof (Htx (sender a)) as Htxs.
+  Hint Rewrite @gmap.lookup_insert_iff : syntactic.
+  rewrite  @gmap.lookup_insert_iff in Htxs;[| exact 0%N].
+  miscPure.resolveDecide tauto.
+  GC.
+  unfold stateAfterTransactionV2.
+  unfold validateTx.
+  forward_reason.
+  resolveDecide lia.
+  simpl.
+  unfold execTxAfterValidationV2 in *.
+  destruct (stateAfterTransactionAux bheader s index a) as [si tr].
+  simpl in *.
+  case_bool_decide.
+  2:{ (* transaction reverts *)
+      apply IHlt; eauto.
+      clear IHlt.
+      intros addr.
+      specialize (Htx addr).
+      specialize (Hfeoa addr).
+      rewrite balanceOfUpd.
+      destruct (decide (addr= evmopsem.sender a)).
+      {
+        subst.
+        unfold lookup_total in *.
+        simpl in *.
+        unfold map_lookup_total in *.
+        remember (totalTxFees lt !! evmopsem.sender a) as ltfeesa.
+        destruct ltfeesa as [ltfeesa |]; auto;[].
+        simpl in *.
+        resolveDecide tauto.
+        forward_reason.
+        lia.
+      }
+      {
+        rewrite  @gmap.lookup_insert_iff in Htx;[| exact 0%N].
+        resolveDecide congruence.
+        destruct (totalTxFees lt !! addr); auto;[].
+        revert Htx.
+        case_bool_decide. tauto.
+        intros.
+        Search n1.
+        lia.
+      }
+  }
+  {
+      apply IHlt; eauto.
+      clear IHlt.
+      intros addr.
+      specialize (Htx addr).
+      specialize (Hfeoa addr).
+      destruct (decide (addr= evmopsem.sender a)).
+      {
+        subst.
+        unfold lookup_total in *.
+        simpl in *.
+        unfold map_lookup_total in *.
+        remember (totalTxFees lt !! evmopsem.sender a) as ltfeesa.
+        destruct ltfeesa as [ltfeesa |]; auto;[].
+        simpl in *.
+        resolveDecide tauto.
+        forward_reason.
+        lia.
+      }
+      {
+        rewrite  @gmap.lookup_insert_iff in Htx;[| exact 0%N].
+        resolveDecide congruence.
+        destruct (totalTxFees lt !! addr); auto;[].
+        revert Htx.
+        case_bool_decide. tauto.
+        intros.
+        Search n1.
+        lia.
+      }
+    
+  
+Qed.

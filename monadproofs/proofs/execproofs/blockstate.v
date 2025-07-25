@@ -247,7 +247,7 @@ cpp.spec "intx::operator<(const intx::uint<256u>&, const intx::uint<256u>&)" as 
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
-  \post[Vbool (av <? bv)%N]
+  \post[Vbool (bool_decide (av < bv))]
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
 ).
@@ -258,7 +258,7 @@ cpp.spec "intx::operator==(const intx::uint<256u>&, const intx::uint<256u>&)" as
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
-  \post[Vbool (bool_decide (av = bv)%N)]
+  \post[Vbool (bool_decide (av = bv))]
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
 ).
@@ -270,7 +270,7 @@ cpp.spec "intx::operator>(const intx::uint<256u>&, const intx::uint<256u>&)" as 
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
-  \post[Vbool (bv <? av)%N]
+  \post[Vbool (bool_decide (bv < av))]
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
 ).
@@ -282,7 +282,7 @@ cpp.spec "intx::operator>=(const intx::uint<256u>&, const intx::uint<256u>&)" as
   \pre{(qa qb: Qp) (av bv: Corelib.Numbers.BinNums.N)}
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
-  \post[Vbool (bv <=? av)%N]
+  \post[Vbool (bool_decide (bv <= av))]
       ap |-> u256R (cQp.mut qa) av
     ** bp |-> u256R (cQp.mut qb) bv
 ).
@@ -695,6 +695,9 @@ Arguments pairOffsets/.
     Remove Hints prim.primR_aggressiveC: br_opacity.
     Set Printing Depth 999999999.
     slauto.
+    remove_useless_mod_a.
+    Search w256_to_N.
+    iExists ()
     (* assumedBal ~ original.balance
        updatedBal ~ local.balance
 

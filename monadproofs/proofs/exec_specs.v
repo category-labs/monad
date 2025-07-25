@@ -448,7 +448,8 @@ Section with_Sigma.
     \post{retp}[Vptr retp]
       let (actual_final_state, receipts) := stateAfterBlock block preBlockState in
       retp |-> VectorR (Tnamed "::monad::Receipt") ReceiptR 1 receipts
-      ** block_statep |-> BlockState.Rauth preBlockState g actual_final_state.
+        ** block_statep |-> BlockState.Rauth preBlockState g actual_final_state.
+  (* unproven spec of execute_impl2_specg assumes exec_imp2 never fails. need to add conditions *)
 
 
   Definition execute_block_spec_fixed : WpSpec mpredI val val :=
@@ -459,7 +460,6 @@ Section with_Sigma.
     \arg{block_statep: ptr} "block_state" (Vptr block_statep)
     \pre{(preBlockState: StateOfAccounts) g qf}
        block_statep |-> BlockState.Rauth preBlockState g preBlockState
-    \pre [| txsFeesUB  preBlockState (transactions block )|]
     \prepost block_statep |-> BlockState.Rfrag preBlockState qf g
     \arg{block_hash_bufferp: ptr} "block_hash_buffer" (Vptr block_hash_bufferp)
     \prepost{buf qbuf} block_hash_bufferp |-> BlockHashBufferR qbuf buf
@@ -475,7 +475,7 @@ Section with_Sigma.
           (* [| ¬ txsFeesUB preBlockState (transactions block) |]  this conjunct can be derived as a lemma about stateAfterBlockV *)
            retp |-> ResultFailureR
            ** Exists garbage, block_statep |-> BlockState.Rauth preBlockState g garbage
-       end.
+       end. (
   
 Import namemap.
 Import translation_unit.

@@ -285,14 +285,22 @@ Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=
     | None => True
     end.
 
-Lemma noLowBalAbort bheader s lt :
-  txsFeesUB s lt ->
-  match stateAfterTransactionsV bheader s lt with
-  | None => False
-  | Some _ => True
+Definition isEOA (s: evm.GlobalState) (t: evm.address) : Prop. Proof. Admitted.
+
+Fixpoint txSendersAreEOA (s: evm.GlobalState) (lt: list Transaction) : Prop:=
+  match lt with
+  | t::tl => isEOA s (sender t) /\ txSendersAreEOA s tl
+  | [] => True
   end.
-Proof using.
-Abort.
+
+Lemma positiveFeesForEOAOnly s lt:
+  forall (addr:evm.address),
+    match (totalTxFees lt) !! addr with
+    | Some total => isEOA s addr
+    | None => True
+    end.
+Proof. Admitted. (* easy *)
+
 
 Lemma noLowBalAbort bheader s lt :
   txsFeesUB s lt ->
@@ -306,22 +314,54 @@ Abort.
 Require Import bluerock.auto.rwdb.
 Require Import bluerock.auto.miscPure.
 Require Import bluerock.hw_models.utils.
+Require Import monad.proofs.bigauto.
 
 Open Scope N_scope.
-  Require Import monad.proofs.bigauto.
+Definition noAccountAbs: Prop :=
+  forall bheader s index tx,
+  let '(sf, rct) := execTxAfterValidation bheader s index tx in
+  forall addr, isEOA s addr
+               -> isEOA sf addr
+                  /\ if (decide (addr =  sender tx))
+                     then (balanceOfAc sf addr >= balanceOfAc s addr - txMaxFee tx)
+                     else (balanceOfAc sf addr >= balanceOfAc s addr).
+
+Lemma eoaPres: noAccountAbs ->
+  forall bheader s index tx,
+  let '(sf, rct) := execTxAfterValidation bheader s index tx in
+  forall lt, txSendersAreEOA s lt -> txSendersAreEOA sf lt.
+Proof. Admitted.
+
+
+    Lemma txFeesAreEoa s lt :
+      txSendersAreEOA s lt-> forall addr,
+      match totalTxFees lt !! addr with
+      | Some _ => isEOA s addr
+      | None => True
+      end.
+    Proof. Admitted.
+
 Lemma noLowBalAbort' bheader s lt res index:
+  noAccountAbs ->
+  txSendersAreEOA s lt ->
   txsFeesUB s lt ->
   match stateAfterTransactionsV' bheader s lt index res with
   | None => False
   | Some _ => True
   end.
 Proof using.
+  intros Hnabs Hts.
+  revert Hts.
   revert res index s.
   induction lt;[ simpl; auto; fail|].
   simpl.
-  intros ? ? ? Htx.
+  intros ? ? ? ? Htx.
+  pose proof (eoaPres Hnabs bheader s index a) as Hpres.
+  specialize (Hnabs bheader s index a).
   unfold txsFeesUB in *.
   simpl in *.
+  forward_reason.
+  pose proof (txFeesAreEoa s lt ltac:(auto)) as Hfeoa.
   pose proof (Htx (sender a)) as Htxs.
   Hint Rewrite @gmap.lookup_insert_iff : syntactic.
   rewrite  @gmap.lookup_insert_iff in Htxs;[| exact 0%N].
@@ -334,26 +374,31 @@ Proof using.
   simpl.
   remember (execTxAfterValidation bheader s index a) as sf.
   destruct sf as [sf rcpt].
-  apply IHlt.
+  apply IHlt; eauto;[].
+  clear IHlt.
   intros addr.
   specialize (Htx addr).
+  specialize (Hnabs addr).
+  specialize (Hfeoa addr).
   destruct (decide (addr= evmopsem.sender a)).
   {
     subst.
     unfold lookup_total in *.
+    specialize (Hnabs ltac:(auto)).
     simpl in *.
     unfold map_lookup_total in *.
     remember (totalTxFees lt !! evmopsem.sender a) as ltfeesa.
     destruct ltfeesa as [ltfeesa |]; auto;[].
     simpl in *.
-    assert (N.ge (balanceOfAc sf (sender a))  ((balanceOfAc s (sender a)) - txMaxFee a)) as Heq by admit.
+    resolveDecide tauto.
+    forward_reason.
     lia.
   }
   {
     rewrite  @gmap.lookup_insert_iff in Htx;[| exact 0%N].
     resolveDecide congruence.
     destruct (totalTxFees lt !! addr); auto;[].
-    assert (N.ge (balanceOfAc sf addr) (balanceOfAc s addr)) as Heq by admit.
+    forward_reason.
     lia.
   }
-Abort.
+Qed.

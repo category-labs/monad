@@ -475,7 +475,7 @@ Section with_Sigma.
           (* [| ¬ txsFeesUB preBlockState (transactions block) |]  this conjunct can be derived as a lemma about stateAfterBlockV *)
            retp |-> ResultFailureR
            ** Exists garbage, block_statep |-> BlockState.Rauth preBlockState g garbage
-       end. (
+       end. 
   
 Import namemap.
 Import translation_unit.

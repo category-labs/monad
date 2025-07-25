@@ -231,7 +231,7 @@ Definition balanceOfAc (s: evm.GlobalState) (a: evm.address) : N (* 0 if account
     
 
 Definition validateTx (preTxState: StateOfAccounts) (t: Transaction): bool :=
-   bool_decide (txMaxFee t <= balanceOfAc preTxState (sender t))%N.
+   bool_decide (txMaxFee t (* max_gas fee + value (* TO be removed *) *) <= balanceOfAc preTxState (sender t))%N.
 
 Definition execTxAfterValidation hdr s txindex t:=
     let (si, r) := stateAfterTransactionAux hdr s txindex t in
@@ -341,7 +341,7 @@ Proof. Admitted.
       end.
     Proof. Admitted.
 
-Lemma noLowBalAbort' bheader s lt res index:
+Lemma noLowBalAbort' bheader s (lt: list Transaction) res index:
   noAccountAbs ->
   txSendersAreEOA s lt ->
   txsFeesUB s lt ->
@@ -409,21 +409,31 @@ Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. 
 
 Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N -> N) : evm.GlobalState. Proof. Admitted.
 
-Definition txDelegatedEOAs (tx: Transaction) : list evm.address. Proof. Admitted.
+(* every tx has a field: list DelegationAuth.  *)
+Definition txDelegatedEOAs (*s: evm.GlobalState*) (tx: Transaction) : list evm.address. Proof. Admitted.
 
 
-Existing Instance list_forall_dec.
-Definition execTxAfterValidationV2 hdr s txindex t:=
+Definition accountDelegatedInState (s: evm.GlobalState) (a:evm.address) : bool. Proof. Admitted.
+Definition accountDelegatedInTx (a:evm.address) : bool. Proof. Admitted.
+
+Definition sendersInLastKBlocks (s: evm.GlobalState) : list evm.address . Proof. Admitted.
+
+
+Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult). Proof. Admitted.
+(*
   let (si, r) := stateAfterTransactionAux hdr s txindex t in
-  if (bool_decide (ReserveBal - txMaxFee t <= balanceOfAc si (sender t) (* debit gas fee from paymaster account?*)
-                   /\ forall dac, dac ∈ txDelegatedEOAs t -> ReserveBal <= balanceOfAc si dac))
+  if (bool_decide (ReserveBal - txMaxFee t <= balanceOfAc si (sender t) (* debit gas fee from paymaster account?*)))
   then (applyGasRefundsAndRewards hdr si r, r)
-  else 
-    (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
-
+      else if (accountDelegatedInState s (sender t) || accountDelegatedInTx (sender t))
+           then (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t)
+           else if (bool_decide (sender t ∈ (sendersInLastKBlocks)))
+                       then 
+                         (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t)
+                       else (applyGasRefundsAndRewards hdr si r, r).
+*)
 (* txindex can be used to store incarnation numbers *)
 Definition stateAfterTransactionV2 (hdr: BlockHeader) (txindex: nat) (s: StateOfAccounts) (t: Transaction): option (StateOfAccounts * TransactionResult) :=
-  if (negb (validateTx s t))
+  if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
   else Some (execTxAfterValidationV2 hdr s txindex t).
 
@@ -450,6 +460,11 @@ Lemma balanceOfUpd s ac f acp:
   balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
 Proof. Admitted.
 
+(*
+- other failure modes.
+- simpler&more user-friendly impl: just pass the txMaxFees counts down the tx
+ *)
+
 Definition evmTxDebits: Prop :=
   forall bheader s index tx,
   let '(sf, rct) := execTxAfterValidationV2 bheader s index tx in
@@ -459,9 +474,21 @@ Definition evmTxDebits: Prop :=
                      then (balanceOfAc sf addr >= balanceOfAc s addr - txMaxFee tx)
                      else (balanceOfAc sf addr >= balanceOfAc s addr).
 
-Lemma noLowBalAbortV2' bheader s lt res index:
-  txSendersAreEOA s lt ->
-  txsFeesUB s lt ->
+Definition consensusChecks (kpreState: evm.GlobalState) (intermediateTxs: list Transaction) (tx: Transaction) : Prop. Proof. Admitted.
+
+(*
+B1:
+  t1
+    t2
+
+B2: 
+    t3
+    t4
+*)
+
+Lemma noLowBalAbortV2' skre intermediateTxs bheader s lt res index:
+  consensusChecks skpre intermediateTxs  ->
+  stateAfterTransactionsV2' bheader intermediateTxs lt index res = Some s ->
   match stateAfterTransactionsV2' bheader s lt index res with
   | None => False
   | Some _ => True

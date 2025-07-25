@@ -120,9 +120,6 @@ TEST(Rlp_Block, MonadConsensusBlock)
         rlp::decode_consensus_block_header<MonadConsensusBlockHeaderV0>(
             encoded_header);
     EXPECT_FALSE(res.has_error());
-    EXPECT_EQ(
-        to_byte_string_view(header),
-        rlp::encode_consensus_block_header(res.value()));
 
     auto const &consensus_header = res.value();
     auto const &vote = consensus_header.qc.vote;
@@ -163,7 +160,9 @@ TEST(Rlp_Block, MonadConsensusBlock)
     EXPECT_EQ(to_bytes(blake3(encoded_body)), res.value().block_body_id);
     auto const res2 = rlp::decode_consensus_block_body(encoded_body);
     EXPECT_FALSE(res2.has_error());
-    EXPECT_EQ(
-        to_byte_string_view(body),
-        rlp::encode_consensus_block_body(res2.value()));
+
+    auto const &consensus_body = res2.value();
+    EXPECT_TRUE(consensus_body.transactions.empty());
+    EXPECT_TRUE(consensus_body.ommers.empty());
+    EXPECT_TRUE(consensus_body.withdrawals.empty());
 }

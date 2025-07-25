@@ -176,16 +176,13 @@ Result<BlockExecOutput> propose_block(
         block.header.number - 1,
         is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
-    size_t const transaction_count = block.transactions.size();
-
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
         recover_senders(block.transactions, priority_pool);
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
-
-    std::vector<Address> senders(transaction_count);
+    std::vector<Address> senders(block.transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
             senders[i] = recovered_senders[i].value();
@@ -447,7 +444,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &chain,
              &vm,
              &priority_pool,
-             &finalized_block_num,
+             &last_finalized_block_number,
              chain_id,
              start_block_num](
                 bytes32_t const &block_id,
@@ -461,7 +458,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(header.parent_id());
 
-            record_monad_block_qc(header, finalized_block_num);
+            record_monad_block_qc(header, last_finalized_block_number);
             record_block_exec_start(
                 block_id,
                 chain_id,

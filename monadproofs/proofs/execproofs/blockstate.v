@@ -98,11 +98,11 @@ Definition is_empty_model (oas: option AccountM) : bool :=
   match oas with
   | None => true
   | Some (ba,_) =>
-      let ch := monad.proofs.exec_specs.code_hash_of_program
+      let ch := code_hash_of_program
                   (monad.EVMOpSem.block.block_account_code ba) in
-      let zn := monad.proofs.exec_specs.w256_to_Z
+      let zn := w256_to_Z
                   (monad.EVMOpSem.block.block_account_nonce ba) in
-      let bn := monad.proofs.exec_specs.w256_to_N
+      let bn := w256_to_N
                   (monad.EVMOpSem.block.block_account_balance ba) in
       (N.eqb ch 0%N)
       && (Z.eqb zn 0)

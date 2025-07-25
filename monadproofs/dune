@@ -4,7 +4,7 @@
  (theories
   Lens Lens.Elpi Equations Equations.Prop Equations.Type
   bluerock iris stdpp elpi ExtLib Ltac2 AAC_tactics
-  bluerock.ltac2.llm)
+  bluerock.ltac2.llm bluerock.hw_models)
  (coqdoc_flags (--utf8))
 )
 

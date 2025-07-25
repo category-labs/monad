@@ -694,7 +694,7 @@ Arguments pairOffsets/.
     Remove Hints foldedLv2Lear2 : typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
     Set Printing Depth 999999999.
-
+    slauto.
     (* assumedBal ~ original.balance
        updatedBal ~ local.balance
 

@@ -1,5 +1,8 @@
 Require Import monad.EVMOpSem.block.
 Require Import stdpp.gmap.
+Require Import Lens.Elpi.Elpi.
+Require Import Lens.Lens.
+#[local] Open Scope lens_scope.
 
 
 (* delete and inline? *)
@@ -173,6 +176,12 @@ Definition Z_to_w256 wnz : monad.EVMOpSem.keccak.w256 := Zdigits.Z_to_binary _ w
 
 Opaque Zdigits.binary_value Zdigits.Z_to_binary.
 
+Definition zbvfun (fz: Z -> Z) (w: keccak.w256): keccak.w256:=
+  let wnz := fz (w256_to_Z w) in
+  Z_to_w256 wnz.
+
+Import LensNotations.
+Require Import bluerock.prelude.lens.
 
 Opaque w256_to_Z.
 Opaque Z_to_w256.
@@ -214,19 +223,25 @@ Opaque Z_to_w256.
     return success();
  *)
 
-Definition validateTx (preTxState: StateOfAccounts) (t: Transaction): bool :=
-  match preTxState !! (sender t) with
-  | None => false
-  | Some (ac,_) => bool_decide (txMaxFee t <= w256_to_N (block.block_account_balance ac))%N
+Definition balanceOfAc (s: evm.GlobalState) (a: evm.address) : N (* 0 if account does not exist *) :=
+  match s !! a with
+  | Some (ac, _) => w256_to_N (block.block_account_balance ac)
+  | None => 0
   end.
-  
+    
+
+Definition validateTx (preTxState: StateOfAccounts) (t: Transaction): bool :=
+   bool_decide (txMaxFee t <= balanceOfAc preTxState (sender t))%N.
+
+Definition execTxAfterValidation hdr s txindex t:=
+    let (si, r) := stateAfterTransactionAux hdr s txindex t in
+    (applyGasRefundsAndRewards hdr si r, r).
+
 (* txindex can be used to store incarnation numbers *)
 Definition stateAfterTransactionV (hdr: BlockHeader) (txindex: nat) (s: StateOfAccounts) (t: Transaction): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t))
   then None
-  else
-    let (si, r) := stateAfterTransactionAux hdr s txindex t in
-    Some (applyGasRefundsAndRewards hdr si r, r).
+  else Some (execTxAfterValidation hdr s txindex t).
 
 Fixpoint stateAfterTransactionsV' (hdr: BlockHeader) (s: StateOfAccounts) (ts: list Transaction) (start:nat) (prevResults: list TransactionResult): option (StateOfAccounts * list TransactionResult) :=
   match ts with
@@ -263,19 +278,12 @@ Fixpoint totalTxFees (lt: list Transaction): gmap evm.address N :=
 
 Definition ReserveBal : N. Proof. Admitted. (* TODO: make it per/account and possibly dynamic *)
 
-
 Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=
   forall addr,
     match (totalTxFees lt) !! addr with
-    | Some total =>
-        match s !! addr with
-        | None => False
-        | Some (f,_) => total <= w256_to_N (block.block_account_balance f)
-                    /\ total <= ReserveBal
-        end
+    | Some total => total <= balanceOfAc s addr /\ total <= ReserveBal
     | None => True
     end.
-
 
 Lemma noLowBalAbort bheader s lt :
   txsFeesUB s lt ->
@@ -300,6 +308,7 @@ Require Import bluerock.auto.miscPure.
 Require Import bluerock.hw_models.utils.
 
 Open Scope N_scope.
+  Require Import monad.proofs.bigauto.
 Lemma noLowBalAbort' bheader s lt res index:
   txsFeesUB s lt ->
   match stateAfterTransactionsV' bheader s lt index res with
@@ -320,16 +329,11 @@ Proof using.
   GC.
   unfold stateAfterTransactionV.
   unfold validateTx.
-  remember (s !! sender a) as sa.
-  destruct sa as [sender|]; simpl in *;[| contradiction].
-  destruct sender as [sender inc].
-  simpl in *.
-  Require Import monad.proofs.bigauto.
   forward_reason.
   resolveDecide lia.
   simpl.
-  remember ( stateAfterTransactionAux bheader s index a) as sa.
-  destruct sa.
+  remember (execTxAfterValidation bheader s index a) as sf.
+  destruct sf as [sf rcpt].
   apply IHlt.
   intros addr.
   specialize (Htx addr).
@@ -342,32 +346,14 @@ Proof using.
     remember (totalTxFees lt !! evmopsem.sender a) as ltfeesa.
     destruct ltfeesa as [ltfeesa |]; auto;[].
     simpl in *.
-    remember (applyGasRefundsAndRewards bheader g t !! evmopsem.sender a) as agrr.
-    destruct agrr.
-    2:{ admit. (* not possible due to Heqsa and Heqsa0 *) }
-    destruct p as [pa i].
-    assert (N.ge (w256_to_N (block_account_balance pa))  (w256_to_N (block_account_balance sender) - txMaxFee a)%N) as Heq by admit.
+    assert (N.ge (balanceOfAc sf (sender a))  ((balanceOfAc s (sender a)) - txMaxFee a)) as Heq by admit.
     lia.
   }
   {
     rewrite  @gmap.lookup_insert_iff in Htx;[| exact 0%N].
     resolveDecide congruence.
-    remember (applyGasRefundsAndRewards bheader g t !! addr) as agrr.
-    destruct agrr as [pp |].
-    2:{ admit. (* not possible due to Heqsa and Heqsa0 *) }
-    destruct pp as [pa i].
-    destruct (totalTxFees lt !! addr); auto.
-    remember (s!!addr) as saddr.
-    destruct saddr as [saddr|]; auto.
-    {
-      destruct saddr as [saddr inds].
-      simpl in *.
-      assert (N.ge (w256_to_N (block_account_balance pa))  (w256_to_N (block_account_balance saddr))) as Heq by admit.
-      lia.
-    }
-    {
-      (* similar as above *)
-      admit.
-    }
+    destruct (totalTxFees lt !! addr); auto;[].
+    assert (N.ge (balanceOfAc sf addr) (balanceOfAc s addr)) as Heq by admit.
+    lia.
   }
 Abort.

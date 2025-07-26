@@ -1513,7 +1513,6 @@ namespace monad::vm::compiler::native
     {
         insert_avx_reg_without_reserv(*elem);
         auto x = avx_reg_to_xmm(*elem->avx_reg());
-        as_.mov(x86::eax, 0); // Preserve eflags
         switch (comp) {
         case Comparison::Below:
             as_.setb(x86::al);
@@ -1546,6 +1545,7 @@ namespace monad::vm::compiler::native
             as_.setne(x86::al);
             break;
         }
+        as_.movzx(x86::eax, x86::al);
         as_.vmovd(x, x86::eax);
     }
 
@@ -6343,12 +6343,12 @@ namespace monad::vm::compiler::native
                 Cases{
                     [&](x86::Gp const &dst) {
                         if ((exp & 63) == 8) {
-                            as_.movzx(dst.r64(), dst.r8Lo());
+                            as_.movzx(dst.r32(), dst.r8Lo());
                             return;
                         }
 
                         if ((exp & 63) == 16) {
-                            as_.movzx(dst.r64(), dst.r16());
+                            as_.movzx(dst.r32(), dst.r16());
                             return;
                         }
 

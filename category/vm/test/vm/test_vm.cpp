@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <utility>
@@ -225,6 +226,12 @@ evmc::Result BlockchainTestVM::execute_compiler(
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &[icode, ncode] =
         get_intercode_nativecode(rev, code_hash, code, code_size);
+
+    if (base_config.runtime_debug_trace) {
+        std::cout << "Address " << vm::utils::hex_string(msg->code_address)
+                  << " => Hash " << vm::utils::hex_string(code_hash)
+                  << std::endl;
+    }
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
     return monad_vm_.execute_native_entrypoint(

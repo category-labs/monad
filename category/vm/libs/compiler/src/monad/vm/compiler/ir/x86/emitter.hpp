@@ -237,6 +237,11 @@ namespace monad::vm::compiler::native
         template <typename... LiveSet>
         void release_volatile_general_reg(std::tuple<LiveSet...> const &);
 
+        template <typename... LiveSet>
+        [[nodiscard]] std::pair<StackElemRef, GeneralRegReserv>
+        alloc_or_release_general_reg(
+            StackElemRef, std::tuple<LiveSet...> const &);
+
         void discharge_deferred_comparison(); // Leaves eflags unchanged
 
         ////////// Move functionality //////////
@@ -626,6 +631,8 @@ namespace monad::vm::compiler::native
         template <bool remember_intermediate>
         void mov_stack_elem_to_gpq256(StackElemRef, Gpq256 const &);
 
+        void mov_stack_elem_low64_to_gpq(StackElemRef, asmjit::x86::Gpq);
+
         void mov_literal_to_ymm(Literal const &, asmjit::x86::Ymm const &);
 
         void mov_stack_elem_to_avx_reg(StackElemRef);
@@ -712,6 +719,9 @@ namespace monad::vm::compiler::native
 
         StackElemRef negate_by_sub(StackElemRef);
         void negate_gpq256(Gpq256 const &);
+
+        template <typename... LiveSet>
+        void test_high_bits192(StackElemRef, std::tuple<LiveSet...> const &);
 
         template <uint8_t bits, typename... LiveSet>
         std::variant<std::monostate, asmjit::x86::Gpq, uint64_t>
@@ -873,7 +883,15 @@ namespace monad::vm::compiler::native
             std::tuple<LiveSet...> const &);
 
         template <ShiftType shift_type, typename... LiveSet>
-        StackElemRef shift_by_general_reg_or_stack_offset(
+        StackElemRef shift_by_non_literal(
+            StackElemRef shift, StackElemRef, std::tuple<LiveSet...> const &);
+
+        template <ShiftType shift_type, typename... LiveSet>
+        StackElemRef shift_general_reg_by_non_literal(
+            StackElemRef shift, StackElemRef, std::tuple<LiveSet...> const &);
+
+        template <ShiftType shift_type, typename... LiveSet>
+        StackElemRef shift_avx_reg_by_non_literal(
             StackElemRef shift, StackElemRef, std::tuple<LiveSet...> const &);
 
         template <typename... LiveSet>

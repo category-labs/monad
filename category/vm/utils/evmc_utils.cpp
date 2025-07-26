@@ -1,6 +1,7 @@
 #include <category/vm/utils/evmc_utils.hpp>
 
 #include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
 
 #include <cstdint>
 #include <format>
@@ -11,10 +12,11 @@ namespace monad::vm::utils
 {
     std::string hex_string(evmc::bytes32 const &x)
     {
-        std::ostringstream ss(std::ostringstream::ate);
-        for (uint8_t const byte : x.bytes) {
-            ss << std::format("{:02x}", static_cast<unsigned>(byte));
-        }
-        return ss.str();
+        return evmc::hex({x.bytes, sizeof(x.bytes)});
+    }
+
+    std::string hex_string(evmc::address const &x)
+    {
+        return evmc::hex({x.bytes, sizeof(x.bytes)});
     }
 }

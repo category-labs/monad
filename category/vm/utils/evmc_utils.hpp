@@ -49,4 +49,5 @@ namespace monad::vm::utils
     };
 
     std::string hex_string(evmc::bytes32 const &);
+    std::string hex_string(evmc::address const &);
 }

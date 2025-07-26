@@ -2491,6 +2491,23 @@ TEST(Emitter, shl)
         rt, SHL, &Emitter::shl, 256, std::numeric_limits<uint256_t>::max(), 0);
     pure_bin_instr_test(
         rt, SHL, &Emitter::shl, 257, std::numeric_limits<uint256_t>::max(), 0);
+
+    uint256_t value{
+        0x0807060504030201,
+        0x100f0e0d0c0b0a09,
+        0x8887868584838281,
+        0x908f8e8d8c8b8a89};
+    for (uint64_t i = 0; i <= 256; i += 4) {
+        uint256_t shifts[5] = {
+            i,
+            i | (uint256_t{1} << 65),
+            i | (uint256_t{1} << 128),
+            i | (uint256_t{1} << 224),
+            i | (uint256_t{1} << 255)};
+        for (auto const &s : shifts) {
+            pure_bin_instr_test(rt, SHL, &Emitter::shl, s, value, value << s);
+        }
+    }
 }
 
 TEST(Emitter, shl_identity)
@@ -2543,6 +2560,23 @@ TEST(Emitter, shr)
         rt, SHR, &Emitter::shr, 256, std::numeric_limits<uint256_t>::max(), 0);
     pure_bin_instr_test(
         rt, SHR, &Emitter::shr, 257, std::numeric_limits<uint256_t>::max(), 0);
+
+    uint256_t value{
+        0x0807060504030201,
+        0x100f0e0d0c0b0a09,
+        0x8887868584838281,
+        0x908f8e8d8c8b8a89};
+    for (uint64_t i = 0; i <= 256; i += 4) {
+        uint256_t shifts[5] = {
+            i,
+            i | (uint256_t{1} << 65),
+            i | (uint256_t{1} << 128),
+            i | (uint256_t{1} << 224),
+            i | (uint256_t{1} << 255)};
+        for (auto const &s : shifts) {
+            pure_bin_instr_test(rt, SHR, &Emitter::shr, s, value, value >> s);
+        }
+    }
 }
 
 TEST(Emitter, shr_identity)
@@ -2629,6 +2663,26 @@ TEST(Emitter, sar)
         257,
         {0, 0, 0, ~(static_cast<uint64_t>(1) << 63)},
         0);
+
+    uint256_t value{
+        0x0807060504030201,
+        0x100f0e0d0c0b0a09,
+        0x8887868584838281,
+        0x908f8e8d8c8b8a89};
+    for (uint64_t i = 0; i <= 256; i += 4) {
+        uint256_t shifts[5] = {
+            i,
+            i | (uint256_t{1} << 65),
+            i | (uint256_t{1} << 128),
+            i | (uint256_t{1} << 224),
+            i | (uint256_t{1} << 255)};
+        for (auto const &s : shifts) {
+            pure_bin_instr_test(
+                rt, SAR, &Emitter::sar, s, value, sar(s, value));
+            pure_bin_instr_test(
+                rt, SAR, &Emitter::sar, s, ~value, sar(s, ~value));
+        }
+    }
 }
 
 TEST(Emitter, sar_identity)

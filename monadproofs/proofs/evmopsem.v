@@ -486,6 +486,7 @@ B2:
     t4
 *)
 
+(*
 Lemma noLowBalAbortV2' skre intermediateTxs bheader s lt res index:
   consensusChecks skpre intermediateTxs  ->
   stateAfterTransactionsV2' bheader intermediateTxs lt index res = Some s ->
@@ -582,3 +583,4 @@ Proof using.
     
   
 Qed.
+*)

@@ -290,12 +290,7 @@ bool BlockState::fix_account_mismatch(
         if (balance_mismatch) {
             if (original.balance > actual.balance) {
                 auto const diff = original.balance - actual.balance;
-//                MONAD_ASSERT(local.balance >= diff); // local->balance >= diff <-> local->balance - diff >= 0 <-> local->balance - (original->balance - actual->balance) >= 0 <-> local->balance - assumed->balance + actual->balance >= 0 <- local->balance - assumed->balance >= 0 <- min_balance >= 0
-                // local->balance >= diff 
-                // <-> local->balance >= (original->balance - actual->balance)  
-                
-                // original > min_balance 
-                // <-> local->balance - assumed->balance + actual->balance >= 0 <- local->balance - assumed->balance >= 0 <- min_balance >= 0
+                MONAD_ASSERT(local.balance >= diff);
                 local.balance -= diff;
             }
             else {

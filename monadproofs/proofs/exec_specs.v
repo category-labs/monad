@@ -429,7 +429,9 @@ Section with_Sigma.
     BheaderR q b -|- BheaderR (q/(N_to_Qp (1+ lengthN l))) b ** 
     ([∗ list] _ ∈ (drop i l),  (BheaderR (q*/(N_to_Qp (1+ lengthN l))) b)).
   Proof using. Admitted.
-  
+
+
+                   
   Definition execute_block_simpler : WpSpec mpredI val val :=
     \arg{chainp :ptr} "chain" (Vptr chainp)
     \prepost{(qchain:Qp) (chain: Chain)} chainp |-> ChainR qchain chain
@@ -476,7 +478,8 @@ Section with_Sigma.
            retp |-> ResultFailureR
            ** Exists garbage, block_statep |-> BlockState.Rauth preBlockState g garbage
        end. 
-  
+
+
 Import namemap.
 Import translation_unit.
 Require Import List.

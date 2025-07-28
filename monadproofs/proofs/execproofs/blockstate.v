@@ -704,6 +704,7 @@ Arguments pairOffsets/.
 
     assert(bal assumed.1 - bal current.1  <= minBal) as Haddpre by admit.
     go.
+    
   }
   { (* fixee (address) NOT found in state.current *)
     Remove Hints foldedLv2Lear : typeclass_instances.

@@ -19,6 +19,8 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/switch_evmc_revision.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
@@ -108,15 +110,27 @@ size_t MonadChain::get_max_initcode_size(
     }
 }
 
-bool MonadChain::get_create_inside_delegated() const
+std::optional<evmc::Result> MonadChain::check_call_precompile(
+    uint64_t const block_number, uint64_t const timestamp,
+    evmc_message const &msg) const
 {
-    return false;
+    auto const rev = get_revision(block_number, timestamp);
+    bool const enable_p256_verify =
+        get_p256_verify_enabled(block_number, timestamp);
+    SWITCH_EVMC_REVISION(
+        ::monad::check_call_precompile, msg, enable_p256_verify);
+    return std::nullopt;
 }
 
 bool MonadChain::get_p256_verify_enabled(
     uint64_t /*block_number*/, uint64_t const timestamp) const
 {
     return get_monad_revision(timestamp) >= MONAD_FOUR;
+}
+
+bool MonadChain::get_create_inside_delegated() const
+{
+    return false;
 }
 
 bool MonadChain::is_system_sender(Address const &sender) const

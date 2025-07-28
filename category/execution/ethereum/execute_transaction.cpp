@@ -334,14 +334,14 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<rev> host{
+        chain_,
         call_tracer_,
         tx_context,
         block_hash_buffer_,
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
         chain_.get_max_initcode_size(header_.number, header_.timestamp),
-        chain_.get_create_inside_delegated(),
-        chain_.get_p256_verify_enabled(header_.number, header_.timestamp)};
+        chain_.get_create_inside_delegated()};
 
     return ExecuteTransactionNoValidation<rev>::operator()(state, host);
 }

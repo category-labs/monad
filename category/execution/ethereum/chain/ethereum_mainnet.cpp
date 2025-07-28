@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/switch_evmc_revision.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <evmc/evmc.h>
@@ -165,6 +167,18 @@ size_t EthereumMainnet::get_max_initcode_size(
     return get_revision(block_number, timestamp) >= EVMC_SHANGHAI
                ? MAX_INITCODE_SIZE_EIP3860
                : std::numeric_limits<size_t>::max();
+}
+
+std::optional<evmc::Result> EthereumMainnet::check_call_precompile(
+    uint64_t const block_number, uint64_t const timestamp,
+    evmc_message const &msg) const
+{
+    evmc_revision const rev = get_revision(block_number, timestamp);
+    bool const enable_p256_verify =
+        get_p256_verify_enabled(block_number, timestamp);
+    SWITCH_EVMC_REVISION(
+        ::monad::check_call_precompile, msg, enable_p256_verify);
+    return std::nullopt;
 }
 
 GenesisState EthereumMainnet::get_genesis_state() const

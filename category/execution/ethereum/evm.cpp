@@ -275,6 +275,11 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
         msg.kind == EVMC_CALL);
 
+    auto const &chain = host->get_chain();
+    auto const &tx_context = host->get_tx_context();
+    auto const number = static_cast<uint64_t>(tx_context.block_number);
+    auto const timestamp = static_cast<uint64_t>(tx_context.block_timestamp);
+
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
@@ -284,8 +289,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<rev>(msg, host->enable_p256_verify());
+    if (auto maybe_result = chain.check_call_precompile(number, timestamp, msg);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

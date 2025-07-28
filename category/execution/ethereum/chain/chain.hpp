@@ -22,6 +22,9 @@
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -52,6 +55,10 @@ struct Chain
 
     virtual size_t
     get_max_initcode_size(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual std::optional<evmc::Result> check_call_precompile(
+        uint64_t block_number, uint64_t timestamp,
+        evmc_message const &) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;
 

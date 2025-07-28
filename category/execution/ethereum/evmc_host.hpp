@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -44,22 +45,22 @@ class BlockHashBuffer;
 
 class EvmcHostBase : public evmc::Host
 {
-    evmc_tx_context const &tx_context_;
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
+    evmc_tx_context const &tx_context_;
+    Chain const &chain_;
     State &state_;
     CallTracerBase &call_tracer_;
     size_t const max_code_size_;
     size_t const max_initcode_size_;
     bool const create_inside_delegated_;
-    bool const enable_p256_verify_;
 
 public:
     EvmcHostBase(
-        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, size_t max_code_size, size_t max_initcode_size,
-        bool create_inside_delegated, bool enable_p256_verify) noexcept;
+        Chain const &, CallTracerBase &, evmc_tx_context const &,
+        BlockHashBuffer const &, State &, size_t max_code_size,
+        size_t max_init_code_size, bool create_inside_delegated) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -100,7 +101,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 64);
+static_assert(sizeof(EvmcHostBase) == 72);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <evmc_revision rev>
@@ -151,7 +152,16 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(Address const &address) noexcept override
     {
-        if (is_precompile<rev>(address, enable_p256_verify())) {
+        auto const number = static_cast<uint64_t>(tx_context_.block_number);
+        auto const timestamp =
+            static_cast<uint64_t>(tx_context_.block_timestamp);
+        bool const enable_p256_verify =
+            chain_.get_p256_verify_enabled(number, timestamp);
+
+        // NOTE: we deliberately do not check the monad precompiles here. They
+        // are stateful and stateful precompiles should pay the COLD account
+        // access like any other contract.
+        if (is_precompile<rev>(address, enable_p256_verify)) {
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
@@ -169,13 +179,13 @@ struct EvmcHost final : public EvmcHostBase
         return call_tracer_;
     }
 
-    bool enable_p256_verify() const noexcept
+    Chain const &get_chain() const noexcept
     {
-        return enable_p256_verify_;
+        return chain_;
     }
 };
 
-static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 64);
+static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 72);
 static_assert(alignof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 8);
 
 MONAD_NAMESPACE_END

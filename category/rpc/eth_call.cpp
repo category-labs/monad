@@ -216,14 +216,14 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
 
         EvmcHost<rev> host{
+            chain,
             call_tracer,
             tx_context,
             buffer,
             state,
             max_code_size,
             chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated(),
-            chain.get_p256_verify_enabled(header.number, header.timestamp)};
+            chain.get_create_inside_delegated()};
         auto execution_result = ExecuteTransactionNoValidation<rev>{
             chain, enriched_txn, sender, authorities, header}(state, host);
 

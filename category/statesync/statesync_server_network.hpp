@@ -1,7 +1,7 @@
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/statesync/statesync_messages.h>
 
 #include <quill/Quill.h>
@@ -16,16 +16,32 @@ struct monad_statesync_server_network
 {
     int fd;
     monad::byte_string obuf;
+    std::string path;
 
-    monad_statesync_server_network(char const *const path)
-        : fd{socket(AF_UNIX, SOCK_STREAM, 0)}
+    void connect()
     {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        MONAD_ASSERT_PRINTF(
+            fd >= 0, "failed to create socket: %s", strerror(errno));
         struct sockaddr_un addr;
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
-        while (connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
+        strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+        while (::connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    monad_statesync_server_network(char const *const path)
+        : path{path}
+    {
+        connect();
+    }
+
+    ~monad_statesync_server_network()
+    {
+        if (fd >= 0) {
+            close(fd);
         }
     }
 };
@@ -43,7 +59,18 @@ namespace
             ssize_t const res =
                 ::send(fd, buf.data() + nsent, buf.size() - nsent, 0);
             if (res == -1) {
-                continue;
+                if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                    LOG_ERROR(
+                        "send error: {}, fd={}, nsent={}, size={}",
+                        strerror(errno),
+                        fd,
+                        nsent,
+                        buf.size());
+                    break;
+                }
+                else {
+                    continue;
+                }
             }
             nsent += static_cast<size_t>(res);
         }
@@ -53,7 +80,27 @@ namespace
 ssize_t statesync_server_recv(
     monad_statesync_server_network *const net, unsigned char *buf, size_t n)
 {
-    return recv(net->fd, buf, n, MSG_DONTWAIT);
+    while (true) {
+        ssize_t ret = recv(net->fd, buf, n, MSG_DONTWAIT);
+        if (ret == 0 ||
+            (ret < 0 && (errno == ECONNRESET || errno == ENOTCONN))) {
+            LOG_WARNING("connection closed, reconnecting");
+            if (close(net->fd) < 0) {
+                LOG_ERROR("failed to close socket: {}", strerror(errno));
+            }
+            net->fd = -1;
+            net->connect();
+        }
+        else if (
+            ret < 0 &&
+            (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+            LOG_ERROR("recv error: {}", strerror(errno));
+            return -1;
+        }
+        else {
+            return ret;
+        }
+    }
 }
 
 void statesync_server_send_upsert(

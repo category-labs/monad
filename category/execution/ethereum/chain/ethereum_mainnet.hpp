@@ -58,7 +58,7 @@ struct EthereumMainnet : Chain
         uint64_t block_number, uint64_t timestamp) const override;
 
     virtual std::optional<evmc::Result> check_call_precompile(
-        uint64_t block_number, uint64_t timestamp,
+        uint64_t block_number, uint64_t timestamp, State &,
         evmc_message const &) const override;
 
     virtual GenesisState get_genesis_state() const override;

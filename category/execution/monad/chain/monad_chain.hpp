@@ -52,7 +52,7 @@ struct MonadChain : Chain
         uint64_t block_number, uint64_t timestamp) const override;
 
     virtual std::optional<evmc::Result> check_call_precompile(
-        uint64_t block_number, uint64_t timestamp,
+        uint64_t block_number, uint64_t timestamp, State &,
         evmc_message const &) const override;
 
     virtual bool get_create_inside_delegated() const override;

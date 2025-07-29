@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/switch_evmc_revision.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -111,15 +112,24 @@ size_t MonadChain::get_max_initcode_size(
 }
 
 std::optional<evmc::Result> MonadChain::check_call_precompile(
-    uint64_t const block_number, uint64_t const timestamp,
+    uint64_t const block_number, uint64_t const timestamp, State &state,
     evmc_message const &msg) const
 {
     auto const rev = get_revision(block_number, timestamp);
+    auto const monad_rev = get_monad_revision(timestamp);
     bool const enable_p256_verify =
         get_p256_verify_enabled(block_number, timestamp);
-    SWITCH_EVMC_REVISION(
-        ::monad::check_call_precompile, msg, enable_p256_verify);
-    return std::nullopt;
+
+    auto maybe_result =
+        [rev, &msg, enable_p256_verify]() -> std::optional<evmc::Result> {
+        SWITCH_EVMC_REVISION(
+            ::monad::check_call_precompile, msg, enable_p256_verify);
+        return std::nullopt;
+    }();
+    if (!maybe_result.has_value()) {
+        maybe_result = check_call_monad_precompile(monad_rev, state, msg);
+    }
+    return maybe_result;
 }
 
 bool MonadChain::get_p256_verify_enabled(

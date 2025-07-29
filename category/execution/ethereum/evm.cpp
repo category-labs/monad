@@ -289,7 +289,8 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     evmc::Result result;
-    if (auto maybe_result = chain.check_call_precompile(number, timestamp, msg);
+    if (auto maybe_result =
+            chain.check_call_precompile(number, timestamp, state, msg);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

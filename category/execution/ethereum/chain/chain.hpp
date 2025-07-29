@@ -28,6 +28,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
 struct BlockHeader;
 struct Receipt;
 struct Transaction;
@@ -57,7 +58,7 @@ struct Chain
     get_max_initcode_size(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual std::optional<evmc::Result> check_call_precompile(
-        uint64_t block_number, uint64_t timestamp,
+        uint64_t block_number, uint64_t timestamp, State &,
         evmc_message const &) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;

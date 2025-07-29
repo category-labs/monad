@@ -170,7 +170,7 @@ size_t EthereumMainnet::get_max_initcode_size(
 }
 
 std::optional<evmc::Result> EthereumMainnet::check_call_precompile(
-    uint64_t const block_number, uint64_t const timestamp,
+    uint64_t const block_number, uint64_t const timestamp, State &,
     evmc_message const &msg) const
 {
     evmc_revision const rev = get_revision(block_number, timestamp);

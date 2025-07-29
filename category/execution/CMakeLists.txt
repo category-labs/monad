@@ -201,6 +201,8 @@ add_library(
   "monad/validate_system_transaction.hpp"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
+  "monad/monad_precompiles.cpp"
+  "monad/monad_precompiles.hpp"
   # monad/staking
   "monad/staking/config.hpp"
   "monad/staking/staking_contract.cpp"

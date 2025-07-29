@@ -77,14 +77,8 @@ namespace
     struct TwoOnDisk : public ::testing::Test
     {
         OnDiskMachine machine;
-        mpt::Db db1{
-            machine,
-            mpt::OnDiskDbConfig{
-                .dbname_paths = {"/tmp/db1"}, .file_size_db = 8}};
-        mpt::Db db2{
-            machine,
-            mpt::OnDiskDbConfig{
-                .dbname_paths = {"/tmp/db2"}, .file_size_db = 8}};
+        mpt::Db db1{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
+        mpt::Db db2{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
         TrieDb tdb1{db1};
         TrieDb tdb2{db2};
         vm::VM vm;

@@ -208,7 +208,7 @@ private:
         {
             return (int64_t)
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
+                       std::chrono::steady_clock::now().time_since_epoch())
                     .count();
         }
     }; /// ListNode

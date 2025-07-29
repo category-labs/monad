@@ -14,7 +14,14 @@ Record Indices :=
     tx_index: N;
   }.
 
-Definition AccountM : Type := (block.block_account * Indices).
+Record AccountM : Type :=
+  {
+    coreAc: block.block_account;
+    incarnation: Indices; (* the blocknumber, tx number when this "incarnation" of the account was created. the EVM semantics does not really track this but we do to help reason about concurrent execution of transactions. This seems to be useful mainly in caching to avoid confusing different incarnations of the same address *)
+    relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
+    must be [] if coreState is []*)
+
+  }.
 
 Module evm.
   Definition log_entry: Type := EVMOpSem.evm.log_entry.
@@ -225,7 +232,7 @@ Opaque Z_to_w256.
 
 Definition balanceOfAc (s: evm.GlobalState) (a: evm.address) : N (* 0 if account does not exist *) :=
   match s !! a with
-  | Some (ac, _) => w256_to_N (block.block_account_balance ac)
+  | Some ac => w256_to_N (block.block_account_balance (coreAc ac))
   | None => 0
   end.
     
@@ -403,7 +410,7 @@ Proof using.
   }
 Qed.
 
-Definition dummyAc : AccountM := (block_account_default, Build_Indices 0 0).
+Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Indices 0 0) [].
 
 Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
 

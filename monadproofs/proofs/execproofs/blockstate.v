@@ -15,7 +15,6 @@ Require Import Lens.Elpi.Elpi.
 #[local] Open Scope lens_scope.
 
 #[only(lazy_unfold)] derive AccountR.
-#[only(lazy_unfold)] derive AccountStateR.
 #[only(lazy_unfold)] derive OriginalAccountStateR.
 #[only(lazy_unfold)] derive StateR.
 

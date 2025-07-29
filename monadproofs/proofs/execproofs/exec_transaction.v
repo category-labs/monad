@@ -157,7 +157,7 @@ Require Import bluerock.prelude.lens.
           {|
             relaxedValidation:= true;
             newStates:= [];
-            preTxAssumedState := [(sender_addr, (loc,( {| coreState := Some senderAc; relevantKeys :=[]; substateModel := Build_AccountSubstateModel false false false [] |},  {| min_balance := Some min_sender_balance  ; nonce_exact :=false |})))];
+            preTxAssumedState := [(sender_addr, (loc,( {| preTxState := Some senderAc; assumExactness := {| min_balance := Some min_sender_balance  ; nonce_exact :=false |}|})))];
             blockStatePtr := bsp;
             indices:= ind;
           |}.

@@ -39,8 +39,11 @@ Proof using.
   - Arith.mod_simpl. reflexivity.
 Qed.
   
+(*
+Print Assumptions changeIsEquivalentToOrig.
+Closed under the global context
 
-
+*)
 
 Require Import ZArith Lia.
 Open Scope Z_scope.

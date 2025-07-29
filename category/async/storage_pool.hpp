@@ -410,6 +410,12 @@ public:
     //! \brief Constructs a storage pool from a temporary anonymous inode.
     //! Useful for test code.
     explicit storage_pool(use_anonymous_inode_tag, creation_flags flags = {});
+
+    //! \brief Constructs a storage pool from a temporary anonymous inode with a
+    //! specific size. Useful for test code.
+    explicit storage_pool(
+        use_anonymous_sized_inode_tag, off_t len, creation_flags flags = {});
+
     ~storage_pool();
 
     //! \brief True if the storage pool was opened read only

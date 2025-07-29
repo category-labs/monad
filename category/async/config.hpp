@@ -156,6 +156,10 @@ struct use_anonymous_inode_tag
 {
 };
 
+struct use_anonymous_sized_inode_tag
+{
+};
+
 //! The invalid file offset
 static constexpr chunk_offset_t INVALID_OFFSET =
     chunk_offset_t::invalid_value();

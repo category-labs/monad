@@ -504,10 +504,11 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
             if (devicechunks < 4) {
-                throw std::runtime_error(std::format(
-                    "Device {} has {} chunks the minimum allowed is four.",
-                    device.current_path().c_str(),
-                    devicechunks));
+                throw std::runtime_error(
+                    std::format(
+                        "Device {} has {} chunks the minimum allowed is four.",
+                        device.current_path().c_str(),
+                        devicechunks));
             }
             MONAD_DEBUG_ASSERT(
                 devicechunks <= std::numeric_limits<uint32_t>::max());
@@ -722,14 +723,21 @@ storage_pool::storage_pool(
 }
 
 storage_pool::storage_pool(use_anonymous_inode_tag, creation_flags flags)
+    : storage_pool::storage_pool(
+          use_anonymous_sized_inode_tag{},
+          1ULL * 1024 * 1024 * 1024 * 1024 + 24576, flags)
+{
+}
+
+storage_pool::storage_pool(
+    use_anonymous_sized_inode_tag, off_t len, creation_flags flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
     , is_newly_truncated_(false)
 {
     int const fd = make_temporary_inode();
     auto unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
-    if (-1 ==
-        ::ftruncate(fd, 1ULL * 1024 * 1024 * 1024 * 1024 + 24576 /* 1Tb */)) {
+    if (-1 == ::ftruncate(fd, len)) {
         throw std::system_error(errno, std::system_category());
     }
     devices_.push_back(make_device_(

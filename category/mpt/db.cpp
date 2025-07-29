@@ -11,9 +11,9 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/result.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/result.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
@@ -122,8 +122,10 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
 
 AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
+        auto len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
-            return async::storage_pool{async::use_anonymous_inode_tag{}};
+            return async::storage_pool{
+                async::use_anonymous_sized_inode_tag{}, len};
         }
         // initialize db file on disk
         for (auto const &dbname_path : options.dbname_paths) {
@@ -135,10 +137,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
                 }
                 auto unfd =
                     monad::make_scope_exit([fd]() noexcept { ::close(fd); });
-                if (-1 ==
-                    ::ftruncate(
-                        fd,
-                        options.file_size_db * 1024 * 1024 * 1024 + 24576)) {
+                if (-1 == ::ftruncate(fd, len)) {
                     throw std::system_error(errno, std::system_category());
                 }
             }
@@ -886,15 +885,16 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberUpsertRequest{
-            .promise = &promise,
-            .prev_root = std::move(root_),
-            .sm = machine_,
-            .updates = std::move(updates),
-            .version = version,
-            .enable_compaction = enable_compaction && compaction_,
-            .can_write_to_fast = can_write_to_fast,
-            .write_root = write_root});
+        comms_.enqueue(
+            FiberUpsertRequest{
+                .promise = &promise,
+                .prev_root = std::move(root_),
+                .sm = machine_,
+                .updates = std::move(updates),
+                .version = version,
+                .enable_compaction = enable_compaction && compaction_,
+                .can_write_to_fast = can_write_to_fast,
+                .write_root = write_root});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -929,8 +929,9 @@ public:
         MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberLoadAllFromBlockRequest{
-            .promise = &promise, .root = *root(), .sm = machine_});
+        comms_.enqueue(
+            FiberLoadAllFromBlockRequest{
+                .promise = &promise, .root = *root(), .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -952,12 +953,13 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberTraverseRequest{
-            .promise = &promise,
-            .root = node,
-            .machine = machine,
-            .version = version,
-            .concurrency_limit = concurrency_limit});
+        comms_.enqueue(
+            FiberTraverseRequest{
+                .promise = &promise,
+                .root = node,
+                .machine = machine,
+                .version = version,
+                .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -976,8 +978,9 @@ public:
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
             auto fut = promise.get_future();
-            comms_.enqueue(FiberLoadRootVersionRequest{
-                .promise = &promise, .version = version});
+            comms_.enqueue(
+                FiberLoadRootVersionRequest{
+                    .promise = &promise, .version = version});
             // promise is racily emptied after this point
             if (worker_->sleeping.load(std::memory_order_acquire)) {
                 std::unique_lock const g(lock_);
@@ -1014,15 +1017,16 @@ public:
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberCopyTrieRequest{
-            .promise = &promise,
-            .src_root = src_root,
-            .src = src,
-            .src_version = src_version,
-            .dest_root = std::move(dest_root),
-            .dest = dest,
-            .dest_version = dest_version,
-            .blocked_by_write = blocked_by_write});
+        comms_.enqueue(
+            FiberCopyTrieRequest{
+                .promise = &promise,
+                .src_root = src_root,
+                .src = src,
+                .src_version = src_version,
+                .dest_root = std::move(dest_root),
+                .dest = dest,
+                .dest_version = dest_version,
+                .blocked_by_write = blocked_by_write});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);

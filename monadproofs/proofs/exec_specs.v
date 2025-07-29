@@ -1187,7 +1187,21 @@ Definition pairR {K V:Type} (tykey tyval: type)
                      (cQp.mut q)
                      (h::tl)
                      \post [Vptr  h] emp).
-    
+
+  Definition sliceInvariants (au: AssumptionAndUpdate) : Prop :=
+    let '(assumedPreTxState, assumEx) := preTxAcStateAssumptions au in
+    match  min_balance assumEx, txUpdates au   with
+    | _, None => True
+    | None , _ => True
+    | Some minbal, Some (_, (_,txUpds)) =>
+        match coreState txUpds, coreState assumedPreTxState  with
+        | None, _ => True
+        | _, None => True
+        | Some csUpdated, Some assumedPre =>
+            csUpdated.2 = assumedPre.2 (* indices equal *)
+            -> (assumedPre .^ _balance - csUpdated .^ _balance <= minbal) 
+        end
+    end.
 End with_Sigma.
 (*
 Module Generalized1.

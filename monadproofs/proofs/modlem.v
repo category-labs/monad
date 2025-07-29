@@ -1,42 +1,37 @@
 (* some lemmas proving the obligations in the proof of fix_account_mismatch and sender_has_balance *)
 Require Import ZArith.
 Require Import stdpp.decidable.
-(* 2²⁵⁶ as a Z constant — the EVM balance modulus                     *)
-Definition mod256 : Z := 2 ^ 256.
-
-(* Reduce any integer modulo 2²⁵⁶ into the canonical range [0,mod256)  *)
-Definition mod256z (x : Z) : Z := Z.modulo x mod256.
-
-(* ------------------------------------------------------------------ *)
-(* Direct translation of the C++ balance-patch logic                   *)
-(* ------------------------------------------------------------------ *)
-
 Require Import bluerock.auto.cpp.specs.
 Require Import bluerock.auto.cpp.tactics4.
+Definition mod256 : Z := 2 ^ 256.
 
+Definition mod256z (x : Z) : Z := Z.modulo x mod256.
 
 Open Scope Z_scope.
+
+(* model of the current code for updating recent->balance. the output of this fn is stored there *)
 Definition update_balance
-           (original actual local : Z) : Z :=
+           (original actual recent : Z) : Z :=
   if bool_decide (original > actual) then
-    (* original.balance > actual.balance branch *)
     let diff   := mod256z (original - actual) in
-    let local' := mod256z (local - diff)      in
-    local'
+    mod256z (recent - diff)
   else
-    (* original.balance ≤ actual.balance branch *)
     let diff   := mod256z (actual - original) in
-    let local' := mod256z (local + diff)      in
-    local'.
+    mod256z (recent + diff).
 
 
+(* model of the proposed change to the logic for  updating recent->balance. the output of this fn is stored there *)
 Definition update_balance_mod
-           (original actual local : Z) : Z :=
-  mod256z (local + (actual - original)).
+           (original actual recent : Z) : Z := 
+  mod256z (recent + (actual - original)).
 
+Require Import bluerock.auto.cpp.tactics4.
 
-Lemma ff original actual local: update_balance original actual local = update_balance_mod original actual local.
+Lemma changeIsEquivalentToOrig: forall original actual recent,
+    update_balance original actual recent
+    = update_balance_mod original actual recent.
 Proof using.
+  intros.
   unfold update_balance, update_balance_mod.
   simpl. unfold mod256z.
   case_bool_decide.
@@ -44,6 +39,8 @@ Proof using.
   - Arith.mod_simpl. reflexivity.
 Qed.
   
+
+
 
 Require Import ZArith Lia.
 Open Scope Z_scope.

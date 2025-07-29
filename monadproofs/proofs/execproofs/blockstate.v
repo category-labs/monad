@@ -86,7 +86,7 @@ Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (rela
       if (negb satisfiesAssumptionsb)
       then statep |-> StateAccountSliceR fixeeAddr fixeeStateSlice relaxedVal
       else
-        Exists fixeeStateSliceFinal,
+        Exists (f: AssumptionAndUpdate-> option AccountM -> AssumptionAndUpdate), let fixeeStateSliceFinal := f fixeeStateSlice (actualPreTxState !! fixeeAddr) in
           statep |-> StateAccountSliceR fixeeAddr fixeeStateSliceFinal relaxedVal
           ** [| accountFinalVal false fixeeStateSliceFinal (actualPreTxState !! fixeeAddr)  = accountFinalVal relaxedVal fixeeStateSlice (actualPreTxState !! fixeeAddr) |] ).
 
@@ -704,6 +704,33 @@ Arguments pairOffsets/.
 
     assert(bal assumed.1 - bal current.1  <= minBal) as Haddpre by admit.
     go.
+    iExists (fun auOrig (actualPreTxState: option AccountM) =>
+      let '(assumedPreTxState, assumEx) := preTxAcStateAssumptions auOrig in
+      let          
+    match  txUpdates au   with
+    | None => actualPreTxState
+    | Some (_, (_,txUpds)) =>
+        match coreState txUpds  with
+        | None => None (* account did suicide if it existed *)
+        | Some csUpdated =>
+            let base := csUpdated &: lens._fst .@ _block_account_storage .= updateStorage (option_map (block.block_account_storage ∘ fst) actualPreTxState) txUpds in
+            if relaxedValidation then Some base else
+              match coreState assumedPreTxState, actualPreTxState  with 
+              | Some csAssumed, Some csActual => Some(
+                  let '(postTxBal, postTxNonce) := postTxActualBalNonce csAssumed assumEx csUpdated csActual in
+                  let postAcState := if (isNone (min_balance assumEx)) then base else base &: _balance .= postTxBal in
+                  if (nonce_exact assumEx) then postAcState else (postAcState &: _nonce .= postTxNonce))
+              | _ , _ => Some base (* no relexed validation if either account is dead *)
+              end
+        end
+    end.
+               
+               
+            ).
+    simpl.
+    go.
+
+        
     
   }
   { (* fixee (address) NOT found in state.current *)

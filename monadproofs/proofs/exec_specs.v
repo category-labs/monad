@@ -225,11 +225,11 @@ Proof. Admitted.
 
   Definition storageMapOf (p: option AccountM): list (N*N). Proof. Admitted.
   
-  (* TODO: make it a notation *)
-  Definition AccountStateRcore
-             (q: Qp)
-             (origp: option AccountM) : Rep :=
-    _field "monad::AccountState::account_"
+  Notation AccountStateRcore q origp
+       (*      (q: Qp)
+             (origp: option AccountM) : Rep *)
+    :=
+    (_field "monad::AccountState::account_"
          |-> libspecs.optionR
               "monad::Account"%cpp_type
               (fun ba => AccountR q ba)
@@ -239,8 +239,11 @@ Proof. Admitted.
               |-> StorageMapR q (storageMapOf origp)
    ** (Exists transient_map, _field "monad::AccountState::transient_storage_"
                                           |-> StorageMapR q transient_map)
-    ** structR "monad::AccountState"%cpp_name (cQp.mut q).
-  
+    ** structR "monad::AccountState"%cpp_name (cQp.mut q)).
+
+  Definition unusedAccountSubstate : AccountSubstateModel :=
+    {| asm_destructed := false;  asm_touched := false;  asm_accessed := false;  asm_accessed_keys := [] |}.
+    
   Definition OriginalAccountStateR
     (q: Qp)
     (os: AssumedPreTxAccountState) : Rep :=
@@ -258,8 +261,8 @@ Proof. Admitted.
         | None =>
            Exists (nb: N),  u256R q nb
         end
-     ** (Exists garbage, _base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
-                           |-> AccountSubstateR q garbage) (* ideally, this should be removed from the c++ class. substate fields are not relevant for original acount state: relevant only for updated state *)
+     ** (_base "monad::AccountState"%cpp_name "monad::AccountSubstate"%cpp_name
+                           |-> AccountSubstateR q unusedAccountSubstate) (* ideally, this should be removed from the c++ class. substate fields are not relevant for original acount state: relevant only for updated state *)
     (* the struct itself 
      ** structR "monad::AccountState"%cpp_name (cQp.mut q) *).
   

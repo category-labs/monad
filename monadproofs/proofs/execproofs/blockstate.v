@@ -16,6 +16,7 @@ Require Import Lens.Elpi.Elpi.
 
 #[only(lazy_unfold)] derive AccountR.
 #[only(lazy_unfold)] derive OriginalAccountStateR.
+#[only(lazy_unfold)] derive UpdatedAccountStateR.
 #[only(lazy_unfold)] derive StateR.
 
 Open Scope N_scope.
@@ -47,20 +48,20 @@ Section with_Sigma.
   Typeclasses Transparent MapModel.
   Typeclasses Transparent ModelWithPtr.
 
-Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (relaxedVal: bool) : Rep :=
+  Definition StateAccountSliceR (addr: evm.address) (a: TxAssumptionsAndUpdates) (relaxedVal: bool) : Rep :=
   _field "monad::State::original_" |->
      AnkerMapSliceR "evmc::address" "monad::OriginalAccountState" 
            addressToN
            addressR
-           (fun q asae => let '(ast, ae) := asae in OriginalAccountStateR q ae ast)
+           OriginalAccountStateR
            addr
-           (Some (originalLoc a, preTxAcStateAssumptions a))
+           (Some (originalLoc a, preAssumption a))
          
   ** _field "monad::State::current_" |->
         AnkerMapSliceR "evmc::address" "monad::VersionStack<monad::AccountState>" 
            addressToN
            addressR
-           (VersionStackR "monad::AccountState" AccountStateR)
+           (VersionStackR "monad::AccountState" UpdatedAccountStateR)
            addr
            (match txUpdates a with None => None | Some (loc, upd) => Some (loc, [upd])  end)
   ** _field "monad::State::relaxed_validation_" |-> boolR 1$m relaxedVal
@@ -85,7 +86,7 @@ Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (rela
       if (negb satisfiesAssumptionsb)
       then statep |-> StateAccountSliceR fixeeAddr fixeeStateSlice relaxedVal
       else
-        Exists (f: AssumptionAndUpdate-> option AccountM -> AssumptionAndUpdate), let fixeeStateSliceFinal := f fixeeStateSlice (actualPreTxState !! fixeeAddr) in
+        Exists (f: TxAssumptionsAndUpdates-> option AccountM -> TxAssumptionsAndUpdates), let fixeeStateSliceFinal := f fixeeStateSlice (actualPreTxState !! fixeeAddr) in
           statep |-> StateAccountSliceR fixeeAddr fixeeStateSliceFinal relaxedVal
           ** [| accountFinalVal false fixeeStateSliceFinal (actualPreTxState !! fixeeAddr)  = accountFinalVal relaxedVal fixeeStateSlice (actualPreTxState !! fixeeAddr) |] ).
 
@@ -96,7 +97,7 @@ Definition StateAccountSliceR (addr: evm.address) (a: AssumptionAndUpdate) (rela
 Definition is_empty_model (oas: option AccountM) : bool :=
   match oas with
   | None => true
-  | Some (ba,_) =>
+  | Some am => let ba := coreAc am in
       let ch := code_hash_of_program
                   (monad.EVMOpSem.block.block_account_code ba) in
       let zn := w256_to_Z
@@ -116,21 +117,21 @@ Definition is_dead_model (oas: option AccountM) : bool :=
 cpp.spec "monad::AccountState::min_balance() const"
   as accountstate_min_balance_spec
   with (fun this:ptr =>
-    \prepost{orig_state asm} this |-> OriginalAccountStateR 1 asm orig_state
+    \prepost{orig_state} this |-> OriginalAccountStateR 1 orig_state
     \post[Vptr (this ,, _field "monad::AccountState::min_balance_")]
           emp).
 
 cpp.spec "monad::AccountState::validate_exact_balance() const"
   as accountstate_validate_exact_balance_spec
   with (fun this:ptr =>
-    \prepost{orig_state asm} this |-> OriginalAccountStateR 1  asm orig_state
-    \post[Vbool (~~ bool_decide (option.is_Some (min_balance asm)))] emp).
+    \prepost{orig_state} this |-> OriginalAccountStateR 1 orig_state
+    \post[Vbool (~~ bool_decide (option.is_Some (min_balance (assumExactness orig_state))))] emp).
 
 cpp.spec "monad::AccountState::validate_exact_nonce() const"
   as accountstate_validate_exact_nonce_spec
   with (fun this:ptr =>
-    \prepost{orig_state asm} this |-> OriginalAccountStateR 1 asm orig_state
-    \post[Vbool (nonce_exact asm)] emp).
+    \prepost{orig_state} this |-> OriginalAccountStateR 1 orig_state
+    \post[Vbool (nonce_exact (assumExactness orig_state))] emp).
 
 cpp.spec "monad::State::relaxed_validation() const"
   as state_relaxed_validation_spec inline.
@@ -168,7 +169,7 @@ cpp.spec "monad::VersionStack<monad::AccountState>::size() const"
   as versionstack_size_spec
   with (fun this:ptr =>
     \prepost{ls q}
-        this |-> VersionStackR "monad::AccountState" AccountStateR (cQp.mut q) ls
+        this |-> VersionStackR "monad::AccountState" UpdatedAccountStateR (cQp.mut q) ls
     \post[Vint (Z.of_nat (length ls))] emp
   ).
 
@@ -437,24 +438,25 @@ cpp.spec "intx::uint<256u>::~uint()" as uint256dtor with (λ this : ptr, \pre{w}
                         \post    emp).
 #[global] Instance : LearnEq2 u256R := ltac:(solve_learnable).
 
-  Lemma observeOrigState (state_addr:ptr) q t ae:
+  Lemma observeOrigState (state_addr:ptr) q t:
     Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> OriginalAccountStateR q t ae).
+            (state_addr |-> OriginalAccountStateR q t).
   Proof using. Admitted.
 
   Lemma observeState (state_addr:ptr) q t:
     Observe (reference_to "monad::AccountState" state_addr)
-            (state_addr |-> AccountStateR q t).
+            (state_addr |-> UpdatedAccountStateR q t).
   Proof using. Admitted.
   
   Definition observeStateF r q t:= @observe_fwd _ _ _ (observeState r q t).
-  Definition observeOrigStateF r q t a:= @observe_fwd _ _ _ (observeOrigState r q t a).
+  Definition observeOrigStateF r q t:= @observe_fwd _ _ _ (observeOrigState r q t).
   Hint Resolve observeStateF observeOrigStateF : br_opacity.
   
 Require Import monad.proofs.bigauto.
 
 Hint Opaque AccountSubstateR : br_opacity.
-Hint Opaque AccountStateR : br_opacity.
+Hint Opaque OriginalAccountStateR : br_opacity.
+Hint Opaque UpdatedAccountStateR : br_opacity.
 Transparent AccountR.
 Hint Opaque AccountR: br_opacity.
   Opaque w256_to_Z.
@@ -517,8 +519,8 @@ Hint Opaque AccountR: br_opacity.
       (origp ,, o_field CU "monad::AccountState::validate_exact_balance_"
   |-> primR "bool" 1$m  (Vbool (~~ bool_decide (is_Some (min_balance o2)))))
       [o1=o2] := ltac:(solve_learnable).
-    #[global] Instance ll : LearnEq2 AccountStateR := ltac:(solve_learnable).
-    #[global] Instance ll2 : LearnEq3 OriginalAccountStateR := ltac:(solve_learnable).
+    #[global] Instance ll : LearnEq2 UpdatedAccountStateR := ltac:(solve_learnable).
+    #[global] Instance ll2 : LearnEq2 OriginalAccountStateR := ltac:(solve_learnable).
     
   Ltac unifyOptionR :=
     IPM.perm_right ltac:(fun R _ =>
@@ -552,7 +554,7 @@ Hint Opaque AccountR: br_opacity.
     (origp ,, opt_somety_offset
     "monad::Account" ,, 
       o_field CU "monad::Account::balance"
-      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
+      |-> u256R qq (w256_to_N (block.block_account_balance (coreAc x))))
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
        q oas)
     [ oas = Some x;  q=1%Qp] := ltac:(solve_learnable).
@@ -587,20 +589,20 @@ Hint Opaque AccountR: br_opacity.
     (origp ,, opt_somety_offset
     "monad::Account" ,, 
       o_field CU "monad::Account::balance"
-      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
+      |-> u256R qq (w256_to_N (block.block_account_balance (coreAc x))))
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
-       q (if block.block_account_exists oas.1 then Some oas else None))
-    [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
+       q (if block.block_account_exists (coreAc oas) then Some oas else None))
+    [ oas = x;  q=1%Qp] := ltac:(solve_learnable). (* TODO: delete? *)
 
   Set Nested Proofs Allowed.
-  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState /\ block.block_account_exists assumedFixeeState.1 = true.
+(*  Lemma equationfoo (x assumedFixeeState: AccountM): (if block.block_account_exists assumedFixeeState.1 then Some assumedFixeeState else None) = Some x -> x=assumedFixeeState /\ block.block_account_exists assumedFixeeState.1 = true.
   Proof using. intros Heq.
   destruct assumedFixeeState as [assumedFixeeState inds]. simpl in *.
   remember (block.block_account_exists assumedFixeeState) as rd.
   destruct rd; simpl in *; try discriminate;[].
   destruct x as [assumedFixeeState1 inds1]; try discriminate.
   simplify_eq. auto.
-  Qed.
+  Qed. *)
 Notation LearnEq7 P :=
   (forall a a' b b' c c' d d' e e' f f' g g',
     learn_exist_interface.Learnable
@@ -622,7 +624,6 @@ Proof using.
   go.
   destruct fixeeStateSlice.
   simpl in *.
-  destruct preTxAcStateAssumptions as [pAssumed ae].
   simpl in *.
   big.
   wp_if.
@@ -648,13 +649,35 @@ Proof using.
     [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
    *)
   unfold OriginalAccountStateR. go.
-  unfold AccountR. go.
-  rwHypsP.
-  slauto.
+
+Ltac searchL t :=
+  try (IPM.perm_left ltac:(fun L _ =>
+                             match L with
+                             | context[t] => idtac L; fail
+                             end
+      )).
+  
+  searchL preAssumption.
+  Search preAssumption.
+   #[global] Instance foldedLv2Lear3 (origp:ptr) orig_state preAssumption (p:ptr) : Learnable
+    (p |-> primR "bool" 1$m (Vbool (nonce_exact (assumExactness preAssumption))))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
+        (preTxState orig_state))
+    [ orig_state = preAssumption] := ltac:(solve_learnable).
+  big.
   wp_if.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 
   big.
+   #[global] Instance foldedLv2Lear4 (origp:ptr) orig_state preAssumption (p:ptr) : Learnable
+    [|is_empty_model (preTxState preAssumption) = false|]
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
+        (preTxState orig_state))
+    [ orig_state = preAssumption] := ltac:(solve_learnable).
+
+   go.
+  is_empty_model (preTxState preAssumption) = false
+  Search preAssumption.
   repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
   eagerUnifyU.
   slauto.

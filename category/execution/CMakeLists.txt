@@ -81,6 +81,8 @@ add_library(
   # ethereum/event
   "ethereum/event/exec_event_ctypes.h"
   "ethereum/event/exec_event_ctypes_metadata.c"
+  "ethereum/event/exec_event_recorder.cpp"
+  "ethereum/event/exec_event_recorder.hpp"
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"

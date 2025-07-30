@@ -5,6 +5,7 @@
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
 #include <charconv>
 #include <concepts>
@@ -57,6 +58,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+// Links against the global object in libmonad_execution; remains uninitialized
+// if recording is disabled
+extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
+
 // Parse a configuration string, which has the form
 //
 //   <file-name>[:<descriptor-shift>:<buf-shift>]
@@ -106,6 +111,8 @@ int init_execution_event_recorder(EventRingConfig const &ring_config)
 {
     // Create with rw-rw-r--
     constexpr mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+
+    MONAD_ASSERT(!g_exec_event_recorder, "recorder initialized twice?");
     char const *ring_path = ring_config.event_ring_path.c_str();
 
     // Open the file and acquire a BSD-style exclusive lock on it; note there
@@ -204,7 +211,9 @@ int init_execution_event_recorder(EventRingConfig const &ring_config)
     }
 
     // Create the execution recorder object
-    // TODO(ken): this is part of the next event ring PR
+    g_exec_event_recorder =
+        std::make_unique<ExecutionEventRecorder>(ring_fd, ring_path, exec_ring);
+    LOG_INFO("execution event ring created: {}", ring_path);
     return 0;
 }
 

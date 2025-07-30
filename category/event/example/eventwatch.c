@@ -30,6 +30,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/mman.h>
@@ -66,7 +67,7 @@ static void usage(FILE *out)
 "Positional arguments:\n"
 "  <exec-event-ring>   path of execution event ring shared memory file\n"
 "                        [default: %s]\n",
-    MONAD_EVENT_DEFAULT_EXEC_RING_PATH);
+    MONAD_EVENT_DEFAULT_EXEC_FILE_NAME);
     exit(0);
 }
 
@@ -304,7 +305,8 @@ static void find_initial_iteration_point(
 
 int main(int argc, char **argv)
 {
-    char const *event_ring_path = MONAD_EVENT_DEFAULT_EXEC_RING_PATH;
+    char event_ring_path_buf[PATH_MAX];
+    char const *event_ring_path = MONAD_EVENT_DEFAULT_EXEC_FILE_NAME;
     int const pos_arg_idx = parse_options(argc, argv);
 
     if (argc - pos_arg_idx > 1) {
@@ -314,6 +316,29 @@ int main(int argc, char **argv)
     if (pos_arg_idx + 1 == argc) {
         event_ring_path = argv[pos_arg_idx];
     }
+
+    if (strchr(event_ring_path, '/') == nullptr) {
+        // The event ring path does not contain a '/'; we assume this is a file
+        // name relative to the default hugetlbfs-resident event ring directory,
+        // which is computed by the function `monad_event_open_ring_dir_fd`
+        if (monad_event_open_ring_dir_fd(
+                nullptr, event_ring_path_buf, sizeof event_ring_path_buf) !=
+            0) {
+            goto Error;
+        }
+        strcat(event_ring_path_buf, "/");
+        if (strlcat(
+                event_ring_path_buf,
+                event_ring_path,
+                sizeof event_ring_path_buf) >= sizeof event_ring_path_buf) {
+            errx(
+                EX_USAGE,
+                "event ring file name `%s` is too long",
+                event_ring_path);
+        }
+        event_ring_path = event_ring_path_buf;
+    }
+
     signal(SIGINT, handle_signal);
 
     // The first step is to oepn and event ring file and mmap its shared memory

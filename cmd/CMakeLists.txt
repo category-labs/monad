@@ -20,6 +20,8 @@ find_package(CLI11 REQUIRED)
 add_executable(
   monad
   monad/main.cpp
+  monad/event.cpp
+  monad/event.hpp
   monad/file_io.hpp
   monad/file_io.cpp
   monad/runloop_ethereum.cpp

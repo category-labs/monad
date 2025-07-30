@@ -36,6 +36,7 @@
 #include <alloca.h>
 #include <err.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/mman.h>
@@ -82,7 +83,7 @@ struct EventRingNameToDefaultPathEntry
         },
     [MONAD_EVENT_CONTENT_TYPE_TEST] = {
         .name = g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_TEST],
-        .default_path = MONAD_EVENT_DEFAULT_TEST_RING_PATH}};
+        .default_path = MONAD_EVENT_DEFAULT_TEST_FILE_NAME}};
 
 static char const *get_default_path_for_event_ring_name(std::string_view name)
 {
@@ -345,6 +346,21 @@ int main(int argc, char **argv)
         else {
             mr.origin_path = path;
         }
+        if (!mr.origin_path.contains('/')) {
+            char event_ring_dir_path_buf[PATH_MAX];
+            if (monad_event_open_ring_dir_fd(
+                    nullptr,
+                    event_ring_dir_path_buf,
+                    sizeof event_ring_dir_path_buf) != 0) {
+                errx(
+                    EX_SOFTWARE,
+                    "event library error -- %s",
+                    monad_event_ring_get_last_error());
+            }
+            mr.origin_path =
+                std::string{event_ring_dir_path_buf} + '/' + mr.origin_path;
+        }
+
         mr.ring_fd = open(mr.origin_path.c_str(), O_RDONLY);
         if (mr.ring_fd == -1) {
             err(EX_CONFIG,

@@ -67,6 +67,15 @@ int monad_event_ring_find_writer_pids(int ring_fd, pid_t *pids, size_t *size);
 /// associated file system supports that file being mmap'ed with MAP_HUGETLB
 int monad_check_path_supports_map_hugetlb(char const *path, bool *supported);
 
+/// Open a directory fd, for use in openat(2), to the default subdirectory on
+/// a hugetlbfs filesystem that is used to hold event ring files; also computes
+/// the full path to this directory; this is a wrapper around the generic API
+/// function `monad_hugetlbfs_open_dir_fd`
+int monad_event_open_ring_dir_fd(
+    int *dirfd, char *namebuf, size_t namebuf_size);
+
+constexpr char MONAD_EVENT_DEFAULT_RING_DIR[] = "event-rings";
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

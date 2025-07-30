@@ -211,6 +211,7 @@ target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_compile_definitions(monad_core PRIVATE MONAD_EVENT_HAS_LIBHUGETLBFS)
   target_link_libraries(monad_core PUBLIC hugetlbfs uring)
 endif()
 

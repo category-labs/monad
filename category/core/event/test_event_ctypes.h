@@ -47,7 +47,7 @@ struct monad_test_event_counter
 extern struct monad_event_metadata const g_monad_test_event_metadata[2];
 extern uint8_t const g_monad_test_event_schema_hash[32];
 
-#define MONAD_EVENT_DEFAULT_TEST_RING_PATH "/dev/hugepages/event-recorder-test"
+#define MONAD_EVENT_DEFAULT_TEST_FILE_NAME "event-recorder-test"
 
 #ifdef __cplusplus
 } // extern "C"

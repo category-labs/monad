@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <sched.h>
 #include <string.h>
@@ -68,10 +69,20 @@ static void open_event_ring_file(
         constexpr mode_t FS_MODE =
             S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
 
-        // If the environment defines EVENT_RECORDER_FILE without a value,
-        // use the default value
+        // If we have no input specification, use the default value
         *file_path =
-            strcmp(input, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_RING_PATH : input;
+            strcmp(input, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_FILE_NAME : input;
+
+        if (!file_path->contains('/')) {
+            char event_ring_dir_path_buf[PATH_MAX];
+            int const rc = monad_event_open_ring_dir_fd(
+                nullptr,
+                event_ring_dir_path_buf,
+                sizeof event_ring_dir_path_buf);
+            ASSERT_EQ(rc, 0);
+            *file_path =
+                std::string{event_ring_dir_path_buf} + '/' + *file_path;
+        }
 
         ring_fd = open(file_path->c_str(), O_RDWR | O_CREAT | O_TRUNC, FS_MODE);
         ASSERT_NE(-1, ring_fd);

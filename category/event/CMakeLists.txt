@@ -23,6 +23,8 @@ project(monad_event)
 
 add_library(
   monad_event
+  "../core/cleanup.c"
+  "../core/cleanup.h"
   "../core/format_err.c"
   "../core/format_err.h"
   "../core/srcloc.h"
@@ -43,6 +45,15 @@ target_include_directories(monad_event PUBLIC "../..")
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
+
+find_library(libhugetlbfs NAMES hugetlbfs)
+if(libhugetlbfs)
+  target_sources(monad_event PRIVATE
+    "../core/mem/hugetlb_path.c"
+    "../core/mem/hugetlb_path.h")
+  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_HAS_LIBHUGETLBFS)
+  target_link_libraries(monad_event PRIVATE hugetlbfs)
+endif()
 
 option(MONAD_EVENT_BUILD_EXAMPLE
     "Build the example program that shows how to use the API" ON)

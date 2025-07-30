@@ -84,7 +84,7 @@ enum monad_exec_flow_type : uint8_t
 /// used to track this specific block before finalization.
 ///
 /// For more information on this, see
-/// [here](https://docs.monad.xyz/monad-arch/realtime-data/spec-realtime.md) for
+/// [here](https://docs.monad.xyz/monad-arch/realtime-data/spec-realtime) for
 /// details
 struct monad_exec_block_tag
 {
@@ -265,8 +265,7 @@ struct monad_exec_evm_error
 extern struct monad_event_metadata const g_monad_exec_event_metadata[21];
 extern uint8_t const g_monad_exec_event_schema_hash[32];
 
-constexpr char MONAD_EVENT_DEFAULT_EXEC_RING_PATH[] =
-    "/dev/hugepages/monad-exec-events";
+constexpr char MONAD_EVENT_DEFAULT_EXEC_FILE_NAME[] = "monad-exec-events";
 
 #ifdef __cplusplus
 } // extern "C"

@@ -32,6 +32,10 @@
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
 
+#if MONAD_EVENT_HAS_LIBHUGETLBFS
+    #include <category/core/mem/hugetlb_path.h>
+#endif
+
 // Defined in event_ring.c, so we can share monad_event_ring_get_last_error()
 extern thread_local char _g_monad_event_ring_error_buf[1024];
 
@@ -298,3 +302,37 @@ Done:
     free(parent_path);
     return rc;
 }
+
+// libhugetlbfs is always present for Category Labs, but when this is compiled
+// by third parties using the SDK, it is optional
+#if MONAD_EVENT_HAS_LIBHUGETLBFS
+
+int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
+{
+    // Create MONAD_EVENT_DEFAULT_RING_DIR with rwxrwxr-x
+    constexpr mode_t mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
+    struct monad_hugetlbfs_resolve_params const params = {
+        .page_size = 1UL << 21,
+        .path_suffix = MONAD_EVENT_DEFAULT_RING_DIR,
+        .create_dirs = true,
+        .dir_create_mode = mode};
+    int const rc =
+        monad_hugetlbfs_open_dir_fd(&params, dirfd, namebuf, namebuf_size);
+    if (rc != 0) {
+        // Copy the error message directly, since we added nothing interesting
+        strlcpy(
+            _g_monad_event_ring_error_buf,
+            monad_hugetlbfs_get_last_error(),
+            sizeof _g_monad_event_ring_error_buf);
+    }
+    return rc;
+}
+
+#else
+
+int monad_event_open_ring_dir_fd(int *, char *, size_t)
+{
+    return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
+}
+
+#endif

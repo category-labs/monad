@@ -1689,3 +1689,11 @@ Definition splitL {A} (n: N) (l: list A) : list A * list A :=
 (** nth element of a list *)
 Definition nthElem {A: Type} (l: list A) (n: N) : option A :=
   nth_error l (N.to_nat n).
+
+
+Ltac searchL t :=
+  try (IPM.perm_left ltac:(fun L _ =>
+                             match L with
+                             | context[t] => idtac L; fail
+                             end
+      )).

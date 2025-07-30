@@ -612,7 +612,26 @@ Notation LearnEq7 P :=
   
 #[global] Instance lanker {K V} : LearnEq7 (@AnkerMapR _ _ _ K V) := ltac:(solve_learnable).
 (* #[global] Instance lmapiter : LearnEq3 mapIterR := ltac:(solve_learnable). *)
-      
+
+   #[global] Instance foldedLv2Lear3 (origp:ptr) orig_state preAssumption (p:ptr) : Learnable
+    (p |-> primR "bool" 1$m (Vbool (nonce_exact (assumExactness preAssumption))))
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
+        (preTxState orig_state))
+    [ orig_state = preAssumption] := ltac:(solve_learnable). (* TODO: delete *)
+   #[global] Instance foldedLv2Lear4 (origp:ptr) orig_state preAssumption (p:ptr) (pf: is_empty_model (preTxState preAssumption) = false) : Learnable
+    emp
+    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
+        (preTxState orig_state))
+    [ orig_state = preAssumption] := ltac:(solve_learnable).
+    #[global] Instance kjsfdjs {T} a: LearnEq3 (@VersionStackR _ _ _ T a) := ltac:(solve_learnable).
+    #[global] Instance kjfslksfdjs a: LearnEq2 (@VersionStackSpineR _ _ _ a) := ltac:(solve_learnable).
+    #[global] Instance fsdkflj {A B} (foo:A*B) ls: Refine1 false false (map fst ls = [foo.1]) [ls=[foo]] :=
+      ltac:(constructor; auto).
+Arguments pairSndOffset/.
+Arguments pairOffsets/.
+    Notation "'bal' foo " := (w256_to_N (block.block_account_balance foo)) (at level 20).
+     Set Printing Depth 99999999.
+
   Opaque Zdigits.binary_value Zdigits.Z_to_binary.
 Lemma prf: verify[module] fix_spec.
 Proof using.
@@ -624,31 +643,8 @@ Proof using.
   go.
   destruct fixeeStateSlice.
   simpl in *.
-  simpl in *.
   big.
-  wp_if.
-  2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
-  big.
-
-  (* there are 3 vars of type AccountM. 2 of them are same: x and assumedFixeestate.1  the next block unifies them. figure out why we ended up with 3 vars*)
-  (*
-  destruct x0 as [assumedFixeeState2 inds2]; try discriminate.
-  simpl in *.
-  subst. 
-  orient_rwHyps.
-  simplify_eq.*)
-
-  (*
-      #[global] Instance foldedLv2Lear3 (origp:ptr) q qq oas x: learn_exist_interface.Learnable
-    (origp ,, opt_somety_offset
-    "monad::Account" ,, 
-      o_field CU "monad::Account::balance"
-      |-> u256R qq (w256_to_N (block.block_account_balance (fst x))))
-    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR q ba)
-       q (if block.block_account_exists oas.1 then Some oas else None))
-    [ oas = x;  q=1%Qp] := ltac:(solve_learnable).
-   *)
-  unfold OriginalAccountStateR. go.
+  (* delte: *)
 
 Ltac searchL t :=
   try (IPM.perm_left ltac:(fun L _ =>
@@ -656,27 +652,22 @@ Ltac searchL t :=
                              | context[t] => idtac L; fail
                              end
       )).
-  
-  searchL preAssumption.
-  Search preAssumption.
-   #[global] Instance foldedLv2Lear3 (origp:ptr) orig_state preAssumption (p:ptr) : Learnable
-    (p |-> primR "bool" 1$m (Vbool (nonce_exact (assumExactness preAssumption))))
-    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
-        (preTxState orig_state))
-    [ orig_state = preAssumption] := ltac:(solve_learnable).
+searchL x.
+IPM.perm_left ltac:(fun L _ =>
+                      match L with 
+                   | (originalLoc ,, o_field CU "monad::AccountState::storage_" |-> StorageMapR 1 (storageMapOf (Some ?x))) =>
+                       rename x into assumed
+                      end
+                   ).
+     rename x0 into actual.
+  wp_if.
+  2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
   big.
+  unfold OriginalAccountStateR. go.
   wp_if.
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
-
   big.
-   #[global] Instance foldedLv2Lear4 (origp:ptr) orig_state preAssumption (p:ptr) (pf: is_empty_model (preTxState preAssumption) = false) : Learnable
-    emp
-    (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
-        (preTxState orig_state))
-    [ orig_state = preAssumption] := ltac:(solve_learnable).
-
-   big.
-  repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
+  repeat (iExists _). (* learning for AnkerMapR does not work. why?: TODO: add it to big. *)
   eagerUnifyU.
   slauto.
   repeat (iExists _).
@@ -690,12 +681,6 @@ Ltac searchL t :=
     unfold pairSndOffset.
     unfold pairOffsets.
     go.
-    #[global] Instance kjsfdjs {T} a: LearnEq3 (@VersionStackR _ _ _ T a) := ltac:(solve_learnable).
-    #[global] Instance kjfslksfdjs a: LearnEq2 (@VersionStackSpineR _ _ _ a) := ltac:(solve_learnable).
-    #[global] Instance fsdkflj {A B} (foo:A*B) ls: Refine1 false false (map fst ls = [foo.1]) [ls=[foo]] :=
-      ltac:(constructor; auto).
-Arguments pairSndOffset/.
-Arguments pairOffsets/.
      unfold VersionStackR.
      slauto.
      destruct txUpdates as [txUpdloc txUpd].
@@ -703,12 +688,11 @@ Arguments pairOffsets/.
      slauto.
      wp_if;[slauto|]. (* return false if the optuonal account in txUpd is None *)
      slauto. (* above, we admitted the nonce match case, so we directly go the nonce mismatch case *)
-     rename x into assumed.
-     rename x0 into actual.
+(*     rename x into assumed.
+     rename x0 into actual. *)
      assert (w256_to_Z (block.block_account_nonce (coreAc assumed)) <= w256_to_Z (block.block_account_nonce (coreAc actual))) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
      slauto.
      big.
-     Set Printing Depth 99999999.
      iAssert (uint256dtor) as "#?". admit.
      go.
      (*
@@ -717,7 +701,6 @@ Arguments pairOffsets/.
     Remove Hints foldedLv2Lear2 : typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
 *)
-    Notation "'bal' foo " := (w256_to_N (block.block_account_balance foo)) (at level 20).
     rename x2 into current.
     rename x1 into minBal.
 

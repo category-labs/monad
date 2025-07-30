@@ -347,7 +347,7 @@ Proof. Admitted.
       | None => True
       end.
     Proof. Admitted.
-
+    
 Lemma noLowBalAbort' bheader s (lt: list Transaction) res index:
   noAccountAbs ->
   txSendersAreEOA s lt ->

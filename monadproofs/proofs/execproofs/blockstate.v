@@ -669,15 +669,13 @@ Ltac searchL t :=
   2:{ (*balance match case. it is simpler than and extremely similar to the other case *)  admit. }
 
   big.
-   #[global] Instance foldedLv2Lear4 (origp:ptr) orig_state preAssumption (p:ptr) : Learnable
-    [|is_empty_model (preTxState preAssumption) = false|]
+   #[global] Instance foldedLv2Lear4 (origp:ptr) orig_state preAssumption (p:ptr) (pf: is_empty_model (preTxState preAssumption) = false) : Learnable
+    emp
     (origp |->  libspecs.optionR "monad::Account" (fun ba => AccountR 1 ba) 1
         (preTxState orig_state))
     [ orig_state = preAssumption] := ltac:(solve_learnable).
 
-   go.
-  is_empty_model (preTxState preAssumption) = false
-  Search preAssumption.
+   big.
   repeat (iExists _). (* learning for AnkerMapR does not work. why? *)
   eagerUnifyU.
   slauto.

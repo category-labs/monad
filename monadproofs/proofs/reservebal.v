@@ -33,104 +33,86 @@ Print updateBalanceofAc.
 
 *)
  Set Printing FullyQualifiedNames.
-(*=== Stub definitions for W256 arithmetic; to be filled in later ===*)
-Definition w256 := monad.EVMOpSem.keccak.w256.
-Parameter w256_zero : w256.                          (* TOFIXLATER *)
-Parameter w256_add  : w256 -> w256 -> w256.          (* TOFIXLATER *)
-Parameter w256_sub  : w256 -> w256 -> w256.          (* TOFIXLATER *)
-Parameter w256_mul  : w256 -> w256 -> w256.          (* TOFIXLATER *)
-Parameter w256_geb  : w256 -> w256 -> bool.          (* TOFIXLATER *)
-Parameter min_w256  : w256 -> w256 -> w256.          (* TOFIXLATER *)
-
-(* lookup an account’s balance at state s, defaulting to zero *)
-Definition get_balance_estimate
-           (s: monad.proofs.evmopsem.evm.GlobalState)
-           (addr: monad.proofs.evmopsem.evm.address) : w256 :=
-  match stdpp.base.lookup addr s with
-  | Some ac =>
-      let ba := monad.proofs.evmopsem.coreAc ac in
-      monad.EVMOpSem.block.block_account_balance ba
-  | None =>
-      w256_zero
-  end.                                              (* TOFIXLATER: verify coreAc usage *)
-
-(* reserve‐balance parameters *)
-Parameter default_reserve_balance
-          : w256.                                 (* TOFIXLATER *)
-Parameter user_reserve_balance
-          : monad.proofs.evmopsem.evm.GlobalState ->
-            monad.proofs.evmopsem.evm.address -> w256.
-                                                 (* TOFIXLATER *)
-
-(* transaction equality test *)
-Parameter eqb_tx
-          : monad.proofs.evmopsem.Transaction ->
-            monad.proofs.evmopsem.Transaction -> bool.
-                                                 (* TOFIXLATER *)
-
-(* sum of gas‐fee amounts in a list *)
-Fixpoint sum_gas_fees
-           (l: list monad.proofs.evmopsem.Transaction) : w256 :=
-  match l with
-  | Corelib.Init.Datatypes.nil => w256_zero
-  | Corelib.Init.Datatypes.cons tx rest =>
-      w256_add
-        (w256_mul (monad.EVMOpSem.block.tr_gas_limit tx)
-                  (monad.EVMOpSem.block.tr_gas_price tx))
-        (sum_gas_fees rest)
-  end.
-
-(* stub for the “emptying transaction” predicate *)
+(* Placeholder for the emptying‐check. *)
 Parameter is_emptying_transaction
-          : monad.proofs.evmopsem.evm.GlobalState ->
-            list monad.proofs.evmopsem.Transaction ->
-            monad.proofs.evmopsem.Transaction -> bool.
-                                                 (* TOFIXLATER *)
+  : monad.proofs.evmopsem.evm.address
+    -> monad.proofs.evmopsem.Transaction
+    -> list monad.proofs.evmopsem.Transaction
+    -> monad.proofs.evmopsem.evm.GlobalState
+    -> bool.
+(* TOFIXLATER *)
 
-Open Scope bool_scope.
+(* Placeholder for user‐configured reserve balances. *)
+Parameter user_reserve_balance
+  : monad.proofs.evmopsem.evm.address -> Corelib.Numbers.BinNums.N.
+(* TOFIXLATER *)
 
-Definition consensusAcceptableTx
-           (s: monad.proofs.evmopsem.evm.GlobalState)
-           (intermediate: list monad.proofs.evmopsem.Transaction)
-           (a: monad.proofs.evmopsem.Transaction) : bool :=
-  match intermediate with
-  | Corelib.Init.Datatypes.nil =>
-      let bal0    := get_balance_estimate s (monad.EVMOpSem.block.tr_from a) in
-      let reserve := min_w256 default_reserve_balance bal0 in
-      w256_geb reserve
-        (w256_mul (monad.EVMOpSem.block.tr_gas_limit a)
-                  (monad.EVMOpSem.block.tr_gas_price a))
-  | Corelib.Init.Datatypes.cons first rest =>
-      let bal0 := get_balance_estimate s (monad.EVMOpSem.block.tr_from a) in
-      if is_emptying_transaction s (Corelib.Init.Datatypes.cons first rest) a then
-        if eqb_tx first a then
-          (* only transaction is a itself *)
-          w256_geb bal0
-            (w256_mul (monad.EVMOpSem.block.tr_gas_limit a)
-                      (monad.EVMOpSem.block.tr_gas_price a))
-        else
-          let bal1 :=
-              w256_sub bal0
-                (w256_add (monad.EVMOpSem.block.tr_value first)
-                          (w256_mul (monad.EVMOpSem.block.tr_gas_limit first)
-                                    (monad.EVMOpSem.block.tr_gas_price first)))
-          in
-          let reserve :=
-              min_w256
-                (user_reserve_balance s (monad.EVMOpSem.block.tr_from a))
-                bal1
-          in
-          w256_geb reserve (sum_gas_fees rest)
-      else
-        let reserve :=
-            min_w256
-              (user_reserve_balance s (monad.EVMOpSem.block.tr_from a))
-              bal0
-        in
-        w256_geb reserve (sum_gas_fees (Corelib.Init.Datatypes.cons first rest))
+(* Convert w256-fields to N. *)
+Definition tx_gas_limit_N (tx : monad.proofs.evmopsem.Transaction)
+  : Corelib.Numbers.BinNums.N :=
+  monad.proofs.evmopsem.w256_to_N
+    (monad.EVMOpSem.block.tr_gas_limit tx).
+
+Definition tx_gas_bid_N (tx : monad.proofs.evmopsem.Transaction)
+  : Corelib.Numbers.BinNums.N :=
+  monad.proofs.evmopsem.w256_to_N
+    (monad.EVMOpSem.block.tr_gas_price tx).
+
+Definition tx_value_N (tx : monad.proofs.evmopsem.Transaction)
+  : Corelib.Numbers.BinNums.N :=
+  monad.proofs.evmopsem.w256_to_N
+    (monad.EVMOpSem.block.tr_value tx).
+
+(* Sum of gas_limit * gas_bid over a list of transactions *)
+Fixpoint sum_gas_fee (l : list monad.proofs.evmopsem.Transaction)
+                     : Corelib.Numbers.BinNums.N :=
+  match l with
+  | []      => Corelib.Numbers.BinNums.N0
+  | t :: ts => tx_gas_limit_N t * tx_gas_bid_N t
+               + sum_gas_fee ts
   end.
 
-
-
+(* The consensus‐side reserve‐balance check *)
+Definition consensusAcceptableTx
+           (s            : monad.proofs.evmopsem.evm.GlobalState)
+           (intermediate : list monad.proofs.evmopsem.Transaction)
+           (a            : monad.proofs.evmopsem.Transaction)
+           : bool :=
+  let sender   := monad.EVMOpSem.block.tr_from a in
+  let balance0 := monad.proofs.evmopsem.balanceOfAc s sender in
+  match intermediate with
+  | [] =>
+      (* No prior tx: require reserve ≥ 0 *)
+      let reserve :=
+        Corelib.Numbers.BinNums.N.min
+          (user_reserve_balance sender)
+          balance0 in
+      Corelib.Numbers.BinNums.leb
+        Corelib.Numbers.BinNums.N0
+        reserve
+  | h :: t =>
+      if is_emptying_transaction sender h [] s then
+        (* First tx empties: subtract its cost, then check the rest *)
+        let balance1 :=
+            balance0
+            - tx_value_N h
+            - (tx_gas_limit_N h * tx_gas_bid_N h) in
+        let reserve :=
+          Corelib.Numbers.BinNums.N.min
+            (user_reserve_balance sender)
+            balance1 in
+        Corelib.Numbers.BinNums.leb
+          (sum_gas_fee t)
+          reserve
+      else
+        (* Otherwise: all in‐window fees must fit reserve *)
+        let reserve :=
+          Corelib.Numbers.BinNums.N.min
+            (user_reserve_balance sender)
+            balance0 in
+        Corelib.Numbers.BinNums.leb
+          (sum_gas_fee (h :: t))
+          reserve
+  end.
 
 

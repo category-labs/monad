@@ -47,9 +47,10 @@ Definition user_reserve_balance
   : N := 100.
  *)
 
-(* Predicate for “emptying transaction” – currently always returns false. *)
+
+(* just a field in the Transaction record *)
 Definition tx_allowed_to_empty
- (s : StateOfAccounts) (a : Transaction) : bool :=
+ (*s : StateOfAccounts*) (a : Transaction) : bool :=
   false.
 
 (*
@@ -78,14 +79,14 @@ Definition staticReserveBal : N. Proof. Admitted.
 (* Consensus‐side acceptability check for sequencing [a], given state s = state^{n-k}
    and the list [intermediate] of prior txns from this sender after block n-k. *)
 Definition consensusAcceptableTx (stateAfterLastExecuted : StateOfAccounts) (intermediate : list Transaction) (a : Transaction) :=
-  let sender := block.tr_from a in
-  let bal0 := balanceOfAc stateAfterLastExecuted sender in
-  match intermediate with
+  let bal0 := balanceOfAc stateAfterLastExecuted (sender a) in
+  match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender a))intermediate with
   | [] =>
       let reserve := staticReserveBal `min` bal0 in
       bool_decide (maxTxFee stateAfterLastExecuted a ≤ reserve)
   | t0 :: rest =>
-      if tx_allowed_to_empty stateAfterLastExecuted t0
+      (negb (tx_allowed_to_empty a)) &&
+      if tx_allowed_to_empty (*stateAfterLastExecuted *) t0
       then
        let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateAfterLastExecuted t0 in
        let reserve := staticReserveBal `min` bal1 in
@@ -178,10 +179,22 @@ Proof using.
   assumption.
 Qed.    
         
+Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult) :=
+  let (si, r) := stateAfterTransactionAux hdr s txindex t in
+  let erb := N.min ReserveBal (balanceOfAc s (sender t)) in
+  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || tx_allowed_to_empty t)
+  then (applyGasRefundsAndRewards hdr si r, r)
+  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
+
+
+
+(* txindex can be used to store incarnation numbers *)
         
 
 (*
 Questions:
 - what is maxHeader
-- why can 
+- what is delagation. can an account be delegated beyond a tx. with delegation, which accounts can a tx debit?
+- before vs after account abstraction: how debit bounds changed: previously, debit bounded by tx.value put tx.maxGasFees, now no boung?
+*)
 

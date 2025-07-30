@@ -288,15 +288,10 @@ bool BlockState::fix_account_mismatch(
             local.nonce += diff;
         }
         if (balance_mismatch) {
-            if (original.balance > actual.balance) {
-                auto const diff = original.balance - actual.balance;
-                MONAD_ASSERT(local.balance >= diff);
-                local.balance -= diff;
-            }
-            else {
-                auto const diff = actual.balance - original.balance;
-                local.balance += diff;
-            }
+            // Modular arithmetic properly handles both cases:
+            //   whether actual->balance or original->balance
+            //   is larger than the other.
+            local.balance += (actual.balance - original.balance);
         }
     }
     // rest of the code, except the return is not needed as we dont check assumptions after the return anyway. but in case of future changes to the client code, it is good to leave the field in a logically consistent state
@@ -306,7 +301,6 @@ bool BlockState::fix_account_mismatch(
     if (balance_mismatch) {
         original.balance = actual.balance;
     }
-    //state.set_strict_validation();// not really necessary because the validation is already done.but helps in proof. else the proof will require a ghost location.
     return true;
 }
 

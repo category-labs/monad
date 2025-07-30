@@ -205,6 +205,8 @@ add_library(
   "monad/monad_precompiles.hpp"
   # monad/staking
   "monad/staking/config.hpp"
+  "monad/staking/read_valset.cpp"
+  "monad/staking/read_valset.hpp"
   "monad/staking/staking_contract.cpp"
   "monad/staking/staking_contract.hpp"
   "monad/staking/util/bls.cpp"
@@ -218,6 +220,8 @@ add_library(
   "monad/staking/util/staking_error.hpp"
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
+  "monad/staking/util/validator.cpp"
+  "monad/staking/util/validator.h"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

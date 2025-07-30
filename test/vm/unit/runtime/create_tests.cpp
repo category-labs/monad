@@ -132,3 +132,33 @@ TEST_F(RuntimeTest, Create2Constantinople)
     ASSERT_EQ(ctx_.gas_remaining, 915624);
     ASSERT_EQ(ctx_.gas_refund, 10);
 }
+
+TEST_F(RuntimeTest, CreateMaxCodeSize)
+{
+    constexpr auto rev = EVMC_CANCUN;
+    constexpr std::size_t max_initcode_size =
+        2 * 128 * 1024; // max initcode size at MONAD_FOUR
+
+    ctx_.gas_remaining = 1000000;
+    ctx_.chain_params.max_initcode_size = max_initcode_size;
+    host_.call_result = create_result(result_addr, 900000, 10);
+
+    auto const do_create = wrap(create<rev>);
+    auto const addr = do_create(0, 0, max_initcode_size);
+    ASSERT_EQ(addr, uint256_from_address(result_addr));
+}
+
+TEST_F(RuntimeTest, Create2MaxCodeSize)
+{
+    constexpr auto rev = EVMC_CANCUN;
+    constexpr std::size_t max_initcode_size =
+        2 * 128 * 1024; // max initcode size at MONAD_FOUR
+
+    ctx_.gas_remaining = 1000000;
+    ctx_.chain_params.max_initcode_size = max_initcode_size;
+    host_.call_result = create_result(result_addr, 900000, 10);
+
+    auto const do_create2 = wrap(create2<rev>);
+    auto const addr = do_create2(0, 0, max_initcode_size, 0);
+    ASSERT_EQ(addr, uint256_from_address(result_addr));
+}

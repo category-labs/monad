@@ -24,6 +24,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
+inline constexpr size_t MAX_CODE_SIZE_MONAD_TWO = 128 * 1024;
+inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
+    2 * MAX_CODE_SIZE_MONAD_TWO;
+
 struct BlockHeader;
 struct Transaction;
 
@@ -44,6 +48,9 @@ struct MonadChain : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual size_t get_max_initcode_size(
+        uint64_t block_number, uint64_t timestamp) const override;
 
     virtual bool get_create_inside_delegated() const override;
 };

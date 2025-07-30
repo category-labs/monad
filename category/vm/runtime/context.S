@@ -1,16 +1,16 @@
 .intel_syntax noprefix
 
 // offsetof(Context, gas_remaining):
-#define gas_remaining_offset 16
+#define gas_remaining_offset 24
 
 // offsetof(Context, memory) + offsetof(Memory, size):
-#define memory_size_offset (512 + 8)
+#define memory_size_offset (520 + 8)
 
 // offsetof(Context, memory) + offsetof(Memory, capacity):
-#define memory_capacity_offset (512 + 12)
+#define memory_capacity_offset (520 + 12)
 
 // offsetof(Context, memory) + offsetof(Memory, cost):
-#define memory_cost_offset (512 + 24)
+#define memory_cost_offset (520 + 24)
 
 .text
 .globl monad_vm_runtime_increase_memory_raw

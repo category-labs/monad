@@ -20,11 +20,14 @@
 
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/runtime/types.hpp>
+#include <category/vm/utils/debug.hpp>
 #include <category/vm/vm.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <evmone/baseline.hpp>
+#include <evmone/constants.hpp>
 #include <evmone/vm.hpp>
 
 #include <unordered_map>
@@ -61,6 +64,16 @@ public:
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
+
+    static constexpr monad::vm::runtime::ChainParams chain_params() noexcept
+    {
+        // If we're fuzzing, then we need to use the current Monad network
+        // parameter for maximum code size, but if we're running blockchain
+        // tests we need to use the standard EIP-3860 limit.
+        return {
+            .max_initcode_size = evmone::MAX_INITCODE_SIZE,
+        };
+    }
 
     static constexpr std::string_view
     impl_name(BlockchainTestVM::Implementation const impl) noexcept

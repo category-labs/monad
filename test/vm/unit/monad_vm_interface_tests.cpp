@@ -233,6 +233,7 @@ TEST(MonadVmInterface, execute_raw)
 
     auto result = vm.execute_raw(
         EVMC_FRONTIER,
+        {.max_initcode_size = 0xC000},
         &host.get_interface(),
         host.to_context(),
         &msg,
@@ -254,7 +255,12 @@ TEST(MonadVmInterface, execute_intercode)
     msg.gas = 10;
 
     auto result = vm.execute_intercode(
-        EVMC_FRONTIER, &host.get_interface(), host.to_context(), &msg, icode0);
+        EVMC_FRONTIER,
+        {.max_initcode_size = 0xC000},
+        &host.get_interface(),
+        host.to_context(),
+        &msg,
+        icode0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
@@ -275,7 +281,12 @@ TEST(MonadVmInterface, execute_native_entrypoint)
     msg.gas = 10;
 
     auto result = vm.execute_native_entrypoint(
-        &host.get_interface(), host.to_context(), &msg, icode0, entry0);
+        {.max_initcode_size = 0xC000},
+        &host.get_interface(),
+        host.to_context(),
+        &msg,
+        icode0,
+        entry0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
@@ -296,7 +307,13 @@ TEST(MonadVmInterface, execute)
                        evmc::bytes32 const &hash,
                        SharedVarcode const &vcode) {
         auto result = vm.execute(
-            rev, &host.get_interface(), host.to_context(), &msg, hash, vcode);
+            rev,
+            {.max_initcode_size = 0xC000},
+            &host.get_interface(),
+            host.to_context(),
+            &msg,
+            hash,
+            vcode);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     };

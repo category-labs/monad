@@ -339,6 +339,7 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
         block_hash_buffer_,
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
+        chain_.get_max_initcode_size(header_.number, header_.timestamp),
         chain_.get_create_inside_delegated()};
 
     return ExecuteTransactionNoValidation<rev>::operator()(state, host);

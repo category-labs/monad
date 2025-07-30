@@ -81,10 +81,26 @@ size_t MonadChain::get_max_code_size(
 {
     auto const monad_rev = get_monad_revision(block_number, timestamp);
     if (MONAD_LIKELY(monad_rev >= MONAD_TWO)) {
-        return 128 * 1024;
+        return MAX_CODE_SIZE_MONAD_TWO;
     }
     else if (monad_rev >= MONAD_ZERO) {
         return MAX_CODE_SIZE_EIP170;
+    }
+    else {
+        MONAD_ABORT("invalid revision");
+    }
+}
+
+size_t MonadChain::get_max_initcode_size(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    auto const monad_rev = get_monad_revision(block_number, timestamp);
+
+    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
+        return MAX_INITCODE_SIZE_MONAD_FOUR;
+    }
+    else if (monad_rev >= MONAD_ZERO) {
+        return MAX_INITCODE_SIZE_EIP3860;
     }
     else {
         MONAD_ABORT("invalid revision");

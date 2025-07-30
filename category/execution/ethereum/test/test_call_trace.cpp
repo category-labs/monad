@@ -150,7 +150,13 @@ TEST(CallTrace, execute_success)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
+        call_tracer,
+        tx_context,
+        buffer,
+        s,
+        MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
+        true);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
@@ -218,7 +224,13 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
+        call_tracer,
+        tx_context,
+        buffer,
+        s,
+        MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
+        true);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(

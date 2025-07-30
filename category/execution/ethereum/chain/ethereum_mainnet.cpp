@@ -159,6 +159,14 @@ size_t EthereumMainnet::get_max_code_size(
                : std::numeric_limits<size_t>::max();
 }
 
+size_t EthereumMainnet::get_max_initcode_size(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    return get_revision(block_number, timestamp) >= EVMC_SHANGHAI
+               ? MAX_INITCODE_SIZE_EIP3860
+               : std::numeric_limits<size_t>::max();
+}
+
 GenesisState EthereumMainnet::get_genesis_state() const
 {
     BlockHeader header;

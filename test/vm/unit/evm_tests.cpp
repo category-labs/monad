@@ -290,6 +290,7 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint(
+        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -307,6 +308,7 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint(
+        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -344,6 +346,7 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint(
+        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -361,6 +364,7 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint(
+        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -405,6 +409,7 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
     vm.execute_native_entrypoint(
+        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg,

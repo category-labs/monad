@@ -54,7 +54,8 @@ namespace monad::vm::runtime
         }
 
         if constexpr (Rev >= EVMC_SHANGHAI) {
-            if (MONAD_VM_UNLIKELY(*size > 0xC000)) {
+            if (MONAD_VM_UNLIKELY(
+                    *size > ctx->chain_params.max_initcode_size)) {
                 ctx->exit(StatusCode::OutOfGas);
             }
         }

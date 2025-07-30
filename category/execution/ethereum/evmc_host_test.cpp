@@ -143,6 +143,7 @@ TEST(EvmcHost, emit_log)
         block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
 
     host.emit_log(
@@ -177,6 +178,7 @@ TEST(EvmcHost, access_precompile)
         block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
 
     EXPECT_EQ(

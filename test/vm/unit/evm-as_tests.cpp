@@ -89,6 +89,7 @@ namespace
     runtime::Context test_context(int64_t gas_remaining = 1'000'000)
     {
         return runtime::Context{
+            .chain_params = {.max_initcode_size = 0xC000},
             .host = nullptr,
             .context = nullptr,
             .gas_remaining = gas_remaining,

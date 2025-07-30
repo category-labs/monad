@@ -73,12 +73,18 @@ namespace monad::vm::llvm
     }
 
     evmc::Result VM::execute_llvm(
-        evmc_revision rev, evmc::bytes32 const &code_hash,
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, uint8_t const *code, size_t code_size)
+        evmc_revision rev, runtime::ChainParams const &chain_params,
+        evmc::bytes32 const &code_hash, evmc_host_interface const *host,
+        evmc_host_context *context, evmc_message const *msg,
+        uint8_t const *code, size_t code_size)
     {
         auto ctx = runtime::Context::from(
-            memory_allocator_, host, context, msg, {code, code_size});
+            memory_allocator_,
+            chain_params,
+            host,
+            context,
+            msg,
+            {code, code_size});
 
         auto const stack_ptr = stack_allocator_.allocate();
         uint256_t *evm_stack = reinterpret_cast<uint256_t *>(stack_ptr.get());

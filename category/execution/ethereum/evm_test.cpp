@@ -86,6 +86,7 @@ TEST(Evm, create_with_insufficient)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
@@ -138,6 +139,7 @@ TEST(Evm, eip684_existing_code)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -165,6 +167,7 @@ TEST(Evm, create_nonce_out_of_range)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
 
     commit_sequential(
@@ -216,6 +219,7 @@ TEST(Evm, static_precompile_execution)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
 
     commit_sequential(
@@ -273,6 +277,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         true};
 
     commit_sequential(
@@ -302,6 +307,199 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+}
+
+// Checks that the CREATE opcode respects the configured max code size for the
+// current chain.
+TEST(Evm, create_op_max_initcode_size)
+{
+    static constexpr auto good_code_address{
+        0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    static constexpr auto bad_code_address{
+        0xdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdf_address};
+
+    static constexpr auto from{
+        0x5353535353535353535353535353535353535353_address};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+
+    // PUSH3 2 * 128 * 1024; PUSH0; PUSH0; CREATE
+    uint8_t const good_code[] = {0x62, 0x04, 0x00, 0x00, 0x5f, 0x5f, 0xf0};
+    auto const good_icode = vm::make_shared_intercode(good_code);
+    auto const good_code_hash = to_bytes(keccak256(good_code));
+
+    // PUSH3 (2 * 128 * 1024) + 1; PUSH0; PUSH0; CREATE
+    uint8_t const bad_code[] = {0x62, 0x04, 0x00, 0x01, 0x5f, 0x5f, 0xf0};
+    auto const bad_icode = vm::make_shared_intercode(bad_code);
+    auto const bad_code_hash = to_bytes(keccak256(bad_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {good_code_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = good_code_hash,
+                      }}}},
+            {bad_code_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = bad_code_hash,
+                      }}}},
+        },
+        Code{
+            {good_code_hash, good_icode},
+            {bad_code_hash, bad_icode},
+        },
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+
+    auto s = State{bs, Incarnation{0, 0}};
+
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        128 * 1024,
+        2 * 128 * 1024,
+        true};
+
+    // Initcode fits inside size limit
+    {
+        evmc_message m{
+            .kind = EVMC_CALL,
+            .gas = 1'000'000,
+            .recipient = good_code_address,
+            .sender = from,
+            .code_address = good_code_address};
+
+        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    }
+
+    // Initcode doesn't fit inside size limit
+    {
+        evmc_message m{
+            .kind = EVMC_CALL,
+            .gas = 1'000'000,
+            .recipient = bad_code_address,
+            .sender = from,
+            .code_address = bad_code_address};
+
+        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    }
+}
+
+// Checks that the CREATE2 opcode respects the configured max code size for the
+// current chain.
+TEST(Evm, create2_op_max_initcode_size)
+{
+    static constexpr auto good_code_address{
+        0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    static constexpr auto bad_code_address{
+        0xdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdf_address};
+
+    static constexpr auto from{
+        0x5353535353535353535353535353535353535353_address};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+
+    // PUSH0; PUSH3 2 * 128 * 1024; PUSH0; PUSH0; CREATE2
+    uint8_t const good_code[] = {
+        0x5f, 0x62, 0x04, 0x00, 0x00, 0x5f, 0x5f, 0xf5};
+    auto const good_icode = vm::make_shared_intercode(good_code);
+    auto const good_code_hash = to_bytes(keccak256(good_code));
+
+    // PUSH0; PUSH3 (2 * 128 * 1024) + 1; PUSH0; PUSH0; CREATE2
+    uint8_t const bad_code[] = {0x5f, 0x62, 0x04, 0x00, 0x01, 0x5f, 0x5f, 0xf5};
+    auto const bad_icode = vm::make_shared_intercode(bad_code);
+    auto const bad_code_hash = to_bytes(keccak256(bad_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {good_code_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = good_code_hash,
+                      }}}},
+            {bad_code_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0xba1a9ce0ba1a9ce,
+                          .code_hash = bad_code_hash,
+                      }}}},
+        },
+        Code{
+            {good_code_hash, good_icode},
+            {bad_code_hash, bad_icode},
+        },
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+
+    auto s = State{bs, Incarnation{0, 0}};
+
+    evm_host_t h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        128 * 1024,
+        2 * 128 * 1024,
+        true};
+
+    // Initcode fits inside size limit
+    {
+        evmc_message m{
+            .kind = EVMC_CALL,
+            .gas = 1'000'000,
+            .recipient = good_code_address,
+            .sender = from,
+            .code_address = good_code_address};
+
+        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    }
+
+    // Initcode doesn't fit inside size limit
+    {
+        evmc_message m{
+            .kind = EVMC_CALL,
+            .gas = 1'000'000,
+            .recipient = bad_code_address,
+            .sender = from,
+            .code_address = bad_code_address};
+
+        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    }
 }
 
 TEST(Evm, deploy_contract_code)
@@ -443,6 +641,7 @@ TEST(Evm, create_inside_delegated)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
+        MAX_INITCODE_SIZE_EIP3860,
         false};
     auto const result = h.call(m);
 

@@ -50,6 +50,9 @@ struct Chain
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const = 0;
 
+    virtual size_t
+    get_max_initcode_size(uint64_t block_number, uint64_t timestamp) const = 0;
+
     virtual GenesisState get_genesis_state() const = 0;
 
     virtual bool get_create_inside_delegated() const = 0;

@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/vm/runtime/types.hpp>
 
 #include <intx/intx.hpp>
 
@@ -44,12 +45,14 @@ protected:
     State &state_;
     CallTracerBase &call_tracer_;
     size_t const max_code_size_;
+    size_t const max_initcode_size_;
     bool const create_inside_delegated_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, size_t max_code_size, bool create_inside_delegated) noexcept;
+        State &, size_t max_code_size, size_t max_initcode_size,
+        bool create_inside_delegated) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -142,6 +145,13 @@ struct EvmcHost final : public EvmcHostBase
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
+    }
+
+    monad::vm::runtime::ChainParams get_chain_params() const noexcept
+    {
+        return {
+            .max_initcode_size = max_initcode_size_,
+        };
     }
 
     CallTracerBase &get_call_tracer() noexcept

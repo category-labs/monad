@@ -31,6 +31,8 @@ struct Receipt;
 struct Transaction;
 
 inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
+inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
+    2 * MAX_CODE_SIZE_EIP170; // 0xC000
 
 struct EthereumMainnet : Chain
 {
@@ -51,6 +53,9 @@ struct EthereumMainnet : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual size_t get_max_initcode_size(
+        uint64_t block_number, uint64_t timestamp) const override;
 
     virtual GenesisState get_genesis_state() const override;
 

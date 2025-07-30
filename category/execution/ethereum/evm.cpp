@@ -233,6 +233,7 @@ evmc::Result create(
 
     auto result = state.vm().execute_raw(
         rev,
+        host->get_chain_params(),
         &host->get_interface(),
         host->to_context(),
         &m_call,
@@ -291,7 +292,13 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         auto const hash = state.get_code_hash(msg.code_address);
         auto const &code = state.read_code(hash);
         result = state.vm().execute(
-            rev, &host->get_interface(), host->to_context(), &msg, hash, code);
+            rev,
+            host->get_chain_params(),
+            &host->get_interface(),
+            host->to_context(),
+            &msg,
+            hash,
+            code);
     }
 
     post_call(state, result);

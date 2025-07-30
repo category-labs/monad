@@ -167,14 +167,22 @@ namespace monad::vm::runtime
         }
     };
 
+    struct ChainParams
+    {
+        std::size_t max_initcode_size;
+    };
+
     struct Context
     {
         static Context from(
-            EvmMemoryAllocator mem_alloc, evmc_host_interface const *host,
-            evmc_host_context *context, evmc_message const *msg,
+            EvmMemoryAllocator mem_alloc, ChainParams const &chain_params,
+            evmc_host_interface const *host, evmc_host_context *context,
+            evmc_message const *msg,
             std::span<std::uint8_t const> code) noexcept;
 
         static Context empty() noexcept;
+
+        ChainParams chain_params;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
@@ -255,8 +263,8 @@ namespace monad::vm::runtime
     };
 
     // Update context.S accordingly if these offsets change:
-    static_assert(offsetof(Context, gas_remaining) == 16);
-    static_assert(offsetof(Context, memory) == 512);
+    static_assert(offsetof(Context, gas_remaining) == 24);
+    static_assert(offsetof(Context, memory) == 520);
     static_assert(offsetof(Memory, size) == 8);
     static_assert(offsetof(Memory, capacity) == 12);
     static_assert(offsetof(Memory, cost) == 24);

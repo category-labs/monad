@@ -51,7 +51,7 @@ TEST(MonadChain, get_max_code_size)
 {
     MonadTestnet const chain;
     EXPECT_EQ(chain.get_max_code_size(0, 1739559600), MAX_CODE_SIZE_EIP170);
-    EXPECT_EQ(chain.get_max_code_size(0, 1741978800), 128 * 1024);
+    EXPECT_EQ(chain.get_max_code_size(0, 1741978800), MAX_CODE_SIZE_MONAD_TWO);
 }
 
 TEST(MonadChain, Genesis)

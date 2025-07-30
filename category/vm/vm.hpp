@@ -156,24 +156,27 @@ namespace monad::vm
         /// the varcode if set, and otherwise start async compilation and
         /// execute the intercode with interpreter.
         evmc::Result execute(
-            evmc_revision, evmc_host_interface const *, evmc_host_context *,
+            evmc_revision, runtime::ChainParams const &,
+            evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, evmc::bytes32 const &code_hash,
             SharedVarcode const &);
 
         /// Execute the raw `code` with interpreter.
         evmc::Result execute_raw(
-            evmc_revision, evmc_host_interface const *, evmc_host_context *,
+            evmc_revision, runtime::ChainParams const &,
+            evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, std::span<uint8_t const> code);
 
         /// Execute the intercode with interpreter.
         evmc::Result execute_intercode(
-            evmc_revision, evmc_host_interface const *, evmc_host_context *,
+            evmc_revision, runtime::ChainParams const &,
+            evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, SharedIntercode const &);
 
         /// Execute the entrypoint`.
         evmc::Result execute_native_entrypoint(
-            evmc_host_interface const *, evmc_host_context *,
-            evmc_message const *, SharedIntercode const &,
+            runtime::ChainParams const &, evmc_host_interface const *,
+            evmc_host_context *, evmc_message const *, SharedIntercode const &,
             compiler::native::entrypoint_t);
 
         [[nodiscard]]

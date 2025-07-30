@@ -20,6 +20,8 @@
 #include <evmc/evmc.hpp>
 #include <evmc/mocked_host.hpp>
 
+#include <evmone/constants.hpp>
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -41,6 +43,10 @@ namespace monad::vm::compiler::test
         };
 
         EvmTest() noexcept = default;
+
+        runtime::ChainParams chain_params = {
+            .max_initcode_size = evmone::MAX_INITCODE_SIZE,
+        };
 
         monad::vm::VM vm_{};
 

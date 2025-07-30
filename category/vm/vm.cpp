@@ -44,9 +44,10 @@ namespace monad::vm
     }
 
     evmc::Result VM::execute(
-        evmc_revision rev, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_message const *msg,
-        evmc::bytes32 const &code_hash, SharedVarcode const &vcode)
+        evmc_revision rev, runtime::ChainParams const &chain_params,
+        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_message const *msg, evmc::bytes32 const &code_hash,
+        SharedVarcode const &vcode)
     {
         auto const &icode = vcode->intercode();
         auto const &ncode = vcode->nativecode();
@@ -58,27 +59,32 @@ namespace monad::vm
                 // revision. Execute with interpreter in the meantime.
                 compiler_.async_compile(
                     rev, code_hash, icode, compiler_config_);
-                return execute_intercode(rev, host, context, msg, icode);
+                return execute_intercode(
+                    rev, chain_params, host, context, msg, icode);
             }
             auto const entry = ncode->entrypoint();
             if (MONAD_VM_UNLIKELY(entry == nullptr)) {
                 // Compilation has failed in this revision, so just execute
                 // with interpreter.
-                return execute_intercode(rev, host, context, msg, icode);
+                return execute_intercode(
+                    rev, chain_params, host, context, msg, icode);
             }
             // Bytecode has been successfully compiled for the right revision.
-            return execute_native_entrypoint(host, context, msg, icode, entry);
+            return execute_native_entrypoint(
+                chain_params, host, context, msg, icode, entry);
         }
         if (!compiler_.is_varcode_cache_warm()) {
             // If cache is not warm then start async compilation immediately,
             // and execute with interpreter in the meantime.
             compiler_.async_compile(rev, code_hash, icode, compiler_config_);
-            return execute_intercode(rev, host, context, msg, icode);
+            return execute_intercode(
+                rev, chain_params, host, context, msg, icode);
         }
         // Execute with interpreter. We will start async compilation when
         // the accumulated execution gas spent by interpreter on the bytecode
         // becomes sufficiently high.
-        auto result = execute_intercode(rev, host, context, msg, icode);
+        auto result =
+            execute_intercode(rev, chain_params, host, context, msg, icode);
         auto const bound = compiler::native::max_code_size(
             compiler_config_.max_code_size_offset, icode->code_size());
         MONAD_VM_DEBUG_ASSERT(result.gas_left >= 0);
@@ -94,14 +100,19 @@ namespace monad::vm
     }
 
     evmc::Result VM::execute_raw(
-        evmc_revision rev, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_message const *msg,
-        std::span<uint8_t const> code)
+        evmc_revision rev, runtime::ChainParams const &chain_params,
+        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_message const *msg, std::span<uint8_t const> code)
     {
         stats_.event_execute_raw();
         auto const stack_ptr = stack_allocator_.allocate();
-        auto ctx =
-            runtime::Context::from(memory_allocator_, host, context, msg, code);
+        auto ctx = runtime::Context::from(
+            memory_allocator_,
+            chain_params,
+            host,
+            context,
+            msg,
+            {code.data(), code.size()});
 
         interpreter::execute(rev, ctx, Intercode{code}, stack_ptr.get());
 
@@ -109,16 +120,21 @@ namespace monad::vm
     }
 
     evmc::Result VM::execute_intercode(
-        evmc_revision rev, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_message const *msg,
-        SharedIntercode const &icode)
+        evmc_revision rev, runtime::ChainParams const &chain_params,
+        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_message const *msg, SharedIntercode const &icode)
     {
         stats_.event_execute_intercode();
         uint8_t const *const code = icode->code();
         size_t const code_size = icode->size();
         auto const stack_ptr = stack_allocator_.allocate();
         auto ctx = runtime::Context::from(
-            memory_allocator_, host, context, msg, {code, code_size});
+            memory_allocator_,
+            chain_params,
+            host,
+            context,
+            msg,
+            {code, code_size});
 
         interpreter::execute(rev, ctx, *icode, stack_ptr.get());
 
@@ -126,6 +142,7 @@ namespace monad::vm
     }
 
     evmc::Result VM::execute_native_entrypoint(
+        runtime::ChainParams const &chain_params,
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_message const *msg, SharedIntercode const &icode,
         compiler::native::entrypoint_t entry)
@@ -134,7 +151,12 @@ namespace monad::vm
         uint8_t const *const code = icode->code();
         size_t const code_size = icode->size();
         auto ctx = runtime::Context::from(
-            memory_allocator_, host, context, msg, {code, code_size});
+            memory_allocator_,
+            chain_params,
+            host,
+            context,
+            msg,
+            {code, code_size});
 
         auto const stack_ptr = stack_allocator_.allocate();
 

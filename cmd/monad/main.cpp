@@ -1,3 +1,4 @@
+#include "event.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
 
@@ -109,6 +110,7 @@ int main(int const argc, char const *argv[])
     unsigned nfibers = 256;
     bool no_compaction = false;
     bool trace_calls = false;
+    std::string exec_event_ring_config_spec;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
     std::vector<fs::path> dbname_paths;
@@ -173,6 +175,17 @@ int main(int const argc, char const *argv[])
     group->add_option(
         "--statesync", statesync, "socket for statesync communication");
     group->require_option(0, 1);
+    cli.add_option(
+           "--exec-event-ring",
+           exec_event_ring_config_spec,
+           "execution event ring configuration string")
+        ->type_name("<file-name>[:<descriptor-shift>:<buf-shift>]")
+        ->check([](std::string const &s) {
+            if (auto const r = try_parse_event_ring_config(s); !r) {
+                return r.error();
+            }
+            return std::string{};
+        });
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
@@ -200,6 +213,18 @@ int main(int const argc, char const *argv[])
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    // Initialize the event system
+    if (!empty(exec_event_ring_config_spec)) {
+        auto config = try_parse_event_ring_config(exec_event_ring_config_spec);
+        MONAD_ASSERT(config, "not validated by CLI11?");
+        if (init_execution_event_recorder(*config) != 0) {
+            LOG_ERROR(
+                "cannot continue without execution event ring `{}`",
+                exec_event_ring_config_spec);
+            return 1;
+        }
+    }
 
 #ifdef ENABLE_EVENT_TRACING
     quill::FileHandlerConfig handler_cfg;

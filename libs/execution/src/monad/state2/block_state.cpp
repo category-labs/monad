@@ -282,25 +282,17 @@ bool BlockState::fix_account_mismatch(
             return false;
         }
         auto &local=olocal.value();
-        if (nonce_mismatch) {
-            MONAD_ASSERT(original.nonce < actual.nonce);
-            auto const diff = actual.nonce - original.nonce; // this requires encoding that 1) ever tx can only increase the nonce. 2) the account read during speculation phase reads the value commited by some earlier tx.
-            local.nonce += diff;
-        }
-        if (balance_mismatch) {
-            // Modular arithmetic properly handles both cases:
-            //   whether actual->balance or original->balance
-            //   is larger than the other.
-            local.balance += (actual.balance - original.balance);
-        }
+        MONAD_ASSERT(original.nonce <= actual.nonce);
+        auto const diff = actual.nonce - original.nonce; // this requires encoding that 1) ever tx can only increase the nonce. 2) the account read during speculation phase reads the value commited by some earlier tx.
+        local.nonce += diff;
+        // Modular arithmetic properly handles both cases:
+        //   whether actual->balance or original->balance
+        //   is larger than the other.
+        local.balance += (actual.balance - original.balance);
     }
     // rest of the code, except the return is not needed as we dont check assumptions after the return anyway. but in case of future changes to the client code, it is good to leave the field in a logically consistent state
-    if (nonce_mismatch) {
-        original.nonce = actual.nonce;
-    }
-    if (balance_mismatch) {
-        original.balance = actual.balance;
-    }
+    original.nonce = actual.nonce;
+    original.balance = actual.balance;
     return true;
 }
 

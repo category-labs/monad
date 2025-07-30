@@ -707,19 +707,35 @@ Arguments pairOffsets/.
      rename x0 into actual.
      assert (w256_to_Z (block.block_account_nonce (coreAc assumed)) <= w256_to_Z (block.block_account_nonce (coreAc actual))) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
      slauto.
-     wp_if.
-     { (* assumed balance > actual balance *)
+     big.
+     Set Printing Depth 99999999.
+     iAssert (uint256dtor) as "#?". admit.
+     go.
+     (*
      
     Remove Hints foldedLv2Lear : typeclass_instances.
     Remove Hints foldedLv2Lear2 : typeclass_instances.
     Remove Hints prim.primR_aggressiveC: br_opacity.
-    Set Printing Depth 999999999.
-    slauto.
-    remove_useless_mod_a.
+*)
     Notation "'bal' foo " := (w256_to_N (block.block_account_balance foo)) (at level 20).
-    go.
     rename x2 into current.
     rename x1 into minBal.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    (* TODO: use pattern matcin
     (* need lia saturation hints to assert that the output of w256_to_N is between 0 and 2^256. alternately, we can wrap the definition by mod 2^256. but then we would still need to unfold it and then things may look ugly *)
 
     assert(bal assumed.1 - bal current.1  <= minBal) as Haddpre by admit.

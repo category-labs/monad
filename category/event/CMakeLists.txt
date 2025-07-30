@@ -17,9 +17,13 @@ add_library(
   "../core/event/event_ring.c"
   "../core/event/event_ring.h"
   "../core/event/event_ring_util.c"
-  "../core/event/event_ring_util.h")
+  "../core/event/event_ring_util.h"
+  "../execution/ethereum/core/base_ctypes.h"
+  "../execution/ethereum/core/eth_ctypes.h"
+  "../execution/ethereum/event/exec_event_ctypes.h"
+  "../execution/ethereum/event/exec_event_ctypes_metadata.c")
 
-target_include_directories(monad_event PUBLIC ${CATEGORY_MAIN_DIR})
+target_include_directories(monad_event PUBLIC "../..")
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)

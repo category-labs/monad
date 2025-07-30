@@ -705,7 +705,7 @@ Arguments pairOffsets/.
      slauto. (* above, we admitted the nonce match case, so we directly go the nonce mismatch case *)
      rename x into assumed.
      rename x0 into actual.
-     assert (w256_to_Z (block.block_account_nonce assumed.1) <= w256_to_Z (block.block_account_nonce actual.1)) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
+     assert (w256_to_Z (block.block_account_nonce (coreAc assumed)) <= w256_to_Z (block.block_account_nonce (coreAc actual))) as Hle by admit. (*TODO: add this as a precond. eventually, will need to strenghthen the BlockState::read_account Rfrag spec. *)
      slauto.
      wp_if.
      { (* assumed balance > actual balance *)

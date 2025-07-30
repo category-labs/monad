@@ -60,8 +60,9 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
     return 0;
 }
 
-inline enum monad_event_next_result monad_event_iterator_try_next(
-    struct monad_event_iterator *iter, struct monad_event_descriptor *event)
+inline enum monad_event_iter_result monad_event_iterator_try_copy(
+    struct monad_event_iterator const *iter,
+    struct monad_event_descriptor *event)
 {
     struct monad_event_descriptor const *const ring_event =
         &iter->descriptors[iter->read_last_seqno & iter->desc_capacity_mask];
@@ -73,7 +74,6 @@ inline enum monad_event_next_result monad_event_iterator_try_next(
         *event = *ring_event;
         __atomic_load(&ring_event->seqno, &event->seqno, __ATOMIC_ACQUIRE);
         if (__builtin_expect(event->seqno == seqno, 1)) {
-            ++iter->read_last_seqno;
             return MONAD_EVENT_SUCCESS;
         }
         return MONAD_EVENT_GAP;
@@ -85,9 +85,22 @@ inline enum monad_event_next_result monad_event_iterator_try_next(
                                                         : MONAD_EVENT_GAP;
 }
 
+inline enum monad_event_iter_result monad_event_iterator_try_next(
+    struct monad_event_iterator *iter, struct monad_event_descriptor *event)
+{
+    enum monad_event_iter_result const r =
+        monad_event_iterator_try_copy(iter, event);
+    if (__builtin_expect(r == MONAD_EVENT_SUCCESS, 1)) {
+        ++iter->read_last_seqno;
+    }
+    return r;
+}
+
 inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
-    return iter->read_last_seqno = monad_event_iterator_sync_wait(iter);
+    uint64_t last_available_seqno = monad_event_iterator_sync_wait(iter);
+    return iter->read_last_seqno =
+               last_available_seqno > 0 ? last_available_seqno - 1 : 0;
 }
 
 #ifdef __cplusplus

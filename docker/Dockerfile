@@ -76,3 +76,20 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DCMAKE_CXX_COMPILER=clang++-19
 
 RUN cd src && ./scripts/check-vm-clang-tidy.sh
+
+FROM base AS vm_fuzz
+
+RUN apt update && apt install -y tmux
+
+COPY . src
+
+RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build \
+  -GNinja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DMONAD_COMPILER_LLVM=Off \
+  -DMONAD_COMPILER_TESTING=On \
+  -DCMAKE_C_COMPILER=clang-19 \
+  -DCMAKE_CXX_COMPILER=clang++-19
+
+RUN cd src && cmake --build build -t monad-compiler-fuzzer
+RUN cd src && ./scripts/ci-fuzzer.sh

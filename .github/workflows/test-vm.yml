@@ -89,6 +89,48 @@ jobs:
                 target: build_and_test_vm
                 cache-from: type=gha,scope=base
 
+    fuzz:
+      name: VM Fuzz Tests
+      runs-on: ubuntu-24.04-32
+      steps:
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          permissions: >-
+            {"contents": "read"}
+
+      - name: Tell git to do submodules in parallel
+        run: |
+          git config --global submodule.fetchJobs "$(nproc)"
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `base` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      - name: Build `vm_fuzz` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: vm_fuzz
+          cache-from: type=gha,scope=base
+
     code-quality:
       name: Code quality checks
       runs-on: ubuntu-24.04-32

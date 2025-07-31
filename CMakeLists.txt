@@ -46,6 +46,10 @@ function(monad_compile_options target)
 
   target_compile_definitions(${target} PUBLIC QUILL_ROOT_LOGGER_ONLY)
 
+  if(MONAD_COMPILER_TESTING)
+      target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_TESTING=1")
+  endif()
+
   target_compile_options(
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)

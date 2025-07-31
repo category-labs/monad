@@ -1,7 +1,3 @@
-if(MONAD_COMPILER_TESTING)
-    add_definitions(-DMONAD_COMPILER_TESTING)
-endif()
-
 # Subcomponents
 
 add_subdirectory(compiler)

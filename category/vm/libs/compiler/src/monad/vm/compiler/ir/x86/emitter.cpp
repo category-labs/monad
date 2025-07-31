@@ -3757,7 +3757,7 @@ namespace monad::vm::compiler::native
                     return stack_.release_general_reg(std::move(src));
                 }
                 else {
-                    return stack_.release_general_reg(std::move(src));
+                    return src;
                 }
             }();
             auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());

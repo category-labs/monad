@@ -2,8 +2,8 @@ name: VM Tests
 
 on:
   push:
-    paths:
-      - 'category/vm/**'
+    # paths:
+    #   - 'category/vm/**'
   workflow_dispatch:
 
 concurrency:

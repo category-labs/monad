@@ -48,9 +48,10 @@ Definition user_reserve_balance
  *)
 
 
-(* not delegated *)
-Definition tx_allowed_to_empty
- (*s : StateOfAccounts*) (a : Transaction) : bool := (* a is not delegated /\ allowed_to_empty field = true *)
+(* a field in the tx *)
+Definition tx_allowed_to_empty  (a : Transaction) : bool :=
+  false.
+Definition addr_delegated  (s: evm.GlobalState) (a : evm.address) : bool :=
   false.
 
 (*
@@ -82,18 +83,31 @@ Definition staticReserveBal : N. Proof. Admitted.
 candidate: block n
 stateAfterLastExecuted : state after n-k
 
-*)
+The design below works. it has a allowed_to_empty field in each tx.
+The leader sets this flag in the manner described in the relation below: the relation constrains the value of the field for [candidate] in each case.
+
+The main problem though is that followers may have a difficult time verifying
+this field:
+Suppose k=10.
+Block 19 and 20 have pure withdrawal transactions (no smart contract) from Alice.
+The block 20 tx will be marked as allowed_to_empty if it is verifying starting block 19, but not if it
+is verifyied starting from block 18 state.
+
+Need to maintain fixed distance.
+ *)
+
 Definition consensusAcceptableTx (stateAfterLastExecuted : StateOfAccounts) (intermediate : list Transaction) (candidate : Transaction) : bool :=
   let bal0 := balanceOfAc stateAfterLastExecuted (sender candidate) in
   match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender candidate)) intermediate with
   | [] =>
       let reserve := staticReserveBal `min` bal0 in
-      if tx_allowed_to_empty candidate then 
+      if addr_delegated stateAfterLastExecuted (sender candidate) then
+        tx_allowed_to_empty candidate && (* relationally sets the value of tx_allowed_to_empty candidate *)
         bool_decide (maxTxFee stateAfterLastExecuted candidate <= balanceOfAc stateAfterLastExecuted (sender candidate))
       else bool_decide (maxTxFee stateAfterLastExecuted candidate ≤ reserve)
   | t0 :: rest =>
-      (negb (tx_allowed_to_empty candidate)) &&
-      if tx_allowed_to_empty (*stateAfterLastExecuted *) t0
+      (negb (tx_allowed_to_empty candidate)) && (* relationally sets the value of tx_allowed_to_empty candidate *)
+      if tx_allowed_to_empty  t0
       then
        let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateAfterLastExecuted t0 in
        let reserve := staticReserveBal `min` bal1 in
@@ -185,7 +199,28 @@ Proof using.
   apply soundnessAsTx.
   assumption.
 Qed.    
-        
+
+
+Lemma subchainValid (stateAfterLastExecuted : StateOfAccounts)
+  (proposedChainExtension: list Block) :
+  consensusAcceptableBlocks stateAfterLastExecuted proposedChainExtension = true
+  -> forall (subchain1 subchain2: list Block),
+      proposedChainExtension = subchain1 ++ subchain2
+      -> match (stateAfterBlocks stateAfterLastExecuted subchain1) with
+         | None => False (* cannot happen *)
+         | Some (stateAfterSubchain1, rcpts) =>
+             consensusAcceptableBlocks stateAfterSubchain1 subchain2 = true
+         end.
+Abort.           
+           
+Proof using.
+  unfold consensusAcceptableBlocks.
+  intros Hp.
+  apply execBlockAsTxs.
+  apply soundnessAsTx.
+  assumption.
+Qed.    
+
 Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult) :=
   let (si, r) := stateAfterTransactionAux hdr s txindex t in
   let erb := N.min ReserveBal (balanceOfAc s (sender t)) in

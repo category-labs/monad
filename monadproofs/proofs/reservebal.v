@@ -48,9 +48,9 @@ Definition user_reserve_balance
  *)
 
 
-(* just a field in the Transaction record *)
+(* not delegated *)
 Definition tx_allowed_to_empty
- (*s : StateOfAccounts*) (a : Transaction) : bool :=
+ (*s : StateOfAccounts*) (a : Transaction) : bool := (* a is not delegated /\ allowed_to_empty field = true *)
   false.
 
 (*
@@ -76,30 +76,37 @@ Fixpoint sum_gas_bids (s_n_minus_k: StateOfAccounts) (l : list Transaction) : N 
   end.
 
 Definition staticReserveBal : N. Proof. Admitted.
-(* Consensus‐side acceptability check for sequencing [a], given state s = state^{n-k}
-   and the list [intermediate] of prior txns from this sender after block n-k. *)
-Definition consensusAcceptableTx (stateAfterLastExecuted : StateOfAccounts) (intermediate : list Transaction) (a : Transaction) :=
-  let bal0 := balanceOfAc stateAfterLastExecuted (sender a) in
-  match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender a))intermediate with
+(* intermediate does not include [candidate] *)
+
+(*
+candidate: block n
+stateAfterLastExecuted : state after n-k
+
+*)
+Definition consensusAcceptableTx (stateAfterLastExecuted : StateOfAccounts) (intermediate : list Transaction) (candidate : Transaction) : bool :=
+  let bal0 := balanceOfAc stateAfterLastExecuted (sender candidate) in
+  match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender candidate)) intermediate with
   | [] =>
       let reserve := staticReserveBal `min` bal0 in
-      bool_decide (maxTxFee stateAfterLastExecuted a ≤ reserve)
+      if tx_allowed_to_empty candidate then 
+        bool_decide (maxTxFee stateAfterLastExecuted candidate <= balanceOfAc stateAfterLastExecuted (sender candidate))
+      else bool_decide (maxTxFee stateAfterLastExecuted candidate ≤ reserve)
   | t0 :: rest =>
-      (negb (tx_allowed_to_empty a)) &&
+      (negb (tx_allowed_to_empty candidate)) &&
       if tx_allowed_to_empty (*stateAfterLastExecuted *) t0
       then
        let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateAfterLastExecuted t0 in
        let reserve := staticReserveBal `min` bal1 in
-       bool_decide (sum_gas_bids stateAfterLastExecuted (a::rest) ≤ reserve)
+       bool_decide (sum_gas_bids stateAfterLastExecuted (candidate::rest) ≤ reserve)
       else
        let reserve := staticReserveBal `min` bal0 in
-       bool_decide (sum_gas_bids stateAfterLastExecuted (a::intermediate) ≤ reserve)
+       bool_decide (sum_gas_bids stateAfterLastExecuted (candidate::intermediate) ≤ reserve)
   end.
 
-Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (intermediateTxs ltx : list Transaction) : bool :=
+Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs ltx : list Transaction) : bool :=
   match ltx with
   | [] => true
-  | h::tl => consensusAcceptableTx s intermediateTxs h && consensusAcceptableTxs s (intermediateTxs++[h]) tl
+  | h::tl => consensusAcceptableTx s acceptedIntermediateTxs h && consensusAcceptableTxs s (acceptedIntermediateTxs++[h]) tl
   end.
     
 Definition consensusAcceptableBlocks (stateAfterLastExecuted : StateOfAccounts)
@@ -195,6 +202,7 @@ Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txin
 Questions:
 - what is maxHeader
 - what is delagation. can an account be delegated beyond a tx. with delegation, which accounts can a tx debit?
-- before vs after account abstraction: how debit bounds changed: previously, debit bounded by tx.value put tx.maxGasFees, now no boung?
+EIP 7702
+- before vs after account abstraction: how debit bounds changed: previously, debit bounded by tx.value put tx.maxGasFees, now no bound?
 *)
 

@@ -652,14 +652,18 @@ Ltac searchL t :=
                              | context[t] => idtac L; fail
                              end
       )).
-searchL x.
 IPM.perm_left ltac:(fun L _ =>
                       match L with 
                    | (originalLoc ,, o_field CU "monad::AccountState::storage_" |-> StorageMapR 1 (storageMapOf (Some ?x))) =>
                        rename x into assumed
                       end
                    ).
-     rename x0 into actual.
+IPM.perm_left ltac:(fun L _ =>
+                      match L with 
+                        (actualp ,, opt_somety_offset "monad::Account" ,, o_field CU "monad::Account::balance" |-> u256R 1 (bal coreAc ?x0)) =>
+                          rename x0 into actual
+                      end).
+
   wp_if.
   2:{ (*nonce match case. it is simpler than and extremely similar to the other case *)  admit. }
   big.

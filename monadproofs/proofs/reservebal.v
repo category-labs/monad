@@ -62,14 +62,17 @@ Definition gas_limit_of (t : monad.proofs.evmopsem.Transaction) : N :=
     (monad.EVMOpSem.block.tr_gas_limit t).
 *)
 
+
+Definition TxWithHdr : Type := BlockHeader * Transaction.
+
 (* only gas fees. does not include value transfers *)
-Definition maxTxFee (s_n_minus_k: StateOfAccounts) (t: Transaction) : N. Proof. Admitted.
+Definition maxTxFee (t: TxWithHdr) : N. Proof. Admitted.
 
 (* Sum over gas_limit * gas_bid for a list of transactions. *)
-Fixpoint sum_gas_bids (s_n_minus_k: StateOfAccounts) (l : list Transaction) : N :=
+Fixpoint sum_gas_bids (l : list TxWithHdr) : N :=
   match l with
   | [] => 0
-  | tx :: xs => maxTxFee s_n_minus_k tx + sum_gas_bids s_n_minus_k xs
+  | tx :: xs => maxTxFee tx + sum_gas_bids xs
   end.
 
 Definition staticReserveBal : N. Proof. Admitted.
@@ -92,7 +95,6 @@ is verifyied starting from block 18 state.
 Need to maintain fixed distance.
  *)
 
-Axiom _isAllowedToEmpty : Lens.Lens Transaction Transaction bool bool.
 
 (* assume:
    - all transactions in intermediate have their [isAllowedToEmpty] fields properly set. that field is garbage for [candidate]
@@ -100,34 +102,39 @@ Axiom _isAllowedToEmpty : Lens.Lens Transaction Transaction bool bool.
    - intermediate has ALL transactions between the end of block n-k and candidate
    - candidate is from block n: TODO: fix this
  *)
-
-Definition consensusAcceptableTx (stateNminusK : StateOfAccounts) (intermediate : list Transaction) (candidate : Transaction) : bool * bool :=
-  let bal0 := balanceOfAc stateNminusK (sender candidate) in
-  match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender candidate)) intermediate with
-  | [] =>
-      let reserve := staticReserveBal `min` bal0 in
-      if addr_delegated stateNminusK (sender candidate) then
-        (true,
-          bool_decide (maxTxFee stateNminusK candidate <= balanceOfAc stateNminusK (sender candidate)))
-      else (false, bool_decide (maxTxFee stateNminusK candidate ≤ reserve))
-  | t0 :: rest =>
-      (false, 
-      if tx_allowed_to_empty  t0
-      then
-       let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateNminusK t0 in
-       let reserve := staticReserveBal `min` bal1 in
-       bool_decide (sum_gas_bids stateNminusK (candidate::rest) ≤ reserve)
-      else
-       let reserve := staticReserveBal `min` bal0 in
-       bool_decide (sum_gas_bids stateNminusK (candidate::intermediate) ≤ reserve))
-  end.
-
-
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
 
-Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs ltx : list Transaction) : (bool * list Transaction) :=
+Definition sender (t: TxWithHdr): evm.address := sender (snd t).
+Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (snd t)).
+Axiom _isAllowedToEmptyC : Lens.Lens Transaction Transaction bool bool.
+
+
+Definition _isAllowedToEmpty : Lens.Lens TxWithHdr TxWithHdr bool bool := lens._snd .@ _isAllowedToEmptyC.
+
+Definition consensusAcceptableTx (stateNminusK : StateOfAccounts) (intermediate : list TxWithHdr) (candidate : TxWithHdr) : bool * bool :=
+  let bal0 := balanceOfAc stateNminusK (sender candidate) in
+  match List.filter (fun tx: TxWithHdr  => bool_decide (sender tx = sender candidate)) intermediate with
+  | [] =>
+      let reserve := staticReserveBal `min` bal0 in
+      if addr_delegated stateNminusK (sender candidate) then
+        (true,
+          bool_decide (maxTxFee candidate <= balanceOfAc stateNminusK (sender candidate)))
+      else (false, bool_decide (maxTxFee candidate ≤ reserve))
+  | t0 :: rest =>
+      (false, 
+      if (t0 .^ _isAllowedToEmpty) 
+      then
+       let bal1 := bal0 - value t0 - maxTxFee t0 in
+       let reserve := staticReserveBal `min` bal1 in
+       bool_decide (sum_gas_bids  (candidate::rest) ≤ reserve)
+      else
+       let reserve := staticReserveBal `min` bal0 in
+       bool_decide (sum_gas_bids (candidate::intermediate) ≤ reserve))
+  end.
+
+Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs ltx : list TxWithHdr) : (bool * list TxWithHdr) :=
   match ltx with
   | [] => (true, acceptedIntermediateTxs)
   | h::tl => let '(allowedToEmpty,  acceptableHead) := consensusAcceptableTx s acceptedIntermediateTxs h in 
@@ -135,22 +142,23 @@ Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs l
              (acceptableHead && acceptableTail, markedTxs)
   end.
 
-Definition consensusAcceptableBlocks (stateNminusK : StateOfAccounts)
+Definition consensusAcceptableBlocksBuggy (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) : bool :=
   let allTx := flat_map transactions proposedChainExtension in
   fst (consensusAcceptableTxs stateNminusK [] allTx).
 
-Record BundledTx :=
-  {
-    bhdr: BlockHeader;
-    btx: Transaction;
-  }.
+
+Definition consensusAcceptableBlocks (stateNminusK : N -> StateOfAccounts)
+  (proposedChainExtension: list Block) : bool :=
+  let allTx := flat_map transactions proposedChainExtension in
+  fst (consensusAcceptableTxs stateNminusK [] allTx).
+
     
 
 Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult) :=
   let (si, r) := stateAfterTransactionAux hdr s txindex t in
   let erb := N.min ReserveBal (balanceOfAc s (sender t)) in
-  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || tx_allowed_to_empty t)
+  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || (t .^ _isAllowedToEmpty))
   then (applyGasRefundsAndRewards hdr si r, r)
   else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
 
@@ -219,7 +227,7 @@ Proof using. Admitted.
 
 Lemma soundnessAsTx (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) (lt : list Transaction):
-  consensusAcceptableTxs stateNminusK [] lt = true
+  fst (consensusAcceptableTxs stateNminusK [] lt) = true
     → isSome (stateAfterTransactionsV (maxFeeHeader proposedChainExtension) stateNminusK lt).
 Proof using. Admitted.
 

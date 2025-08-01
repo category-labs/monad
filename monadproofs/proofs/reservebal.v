@@ -47,10 +47,6 @@ Definition user_reserve_balance
   : N := 100.
  *)
 
-
-(* a field in the tx *)
-Definition tx_allowed_to_empty  (a : Transaction) : bool :=
-  false.
 Definition addr_delegated  (s: evm.GlobalState) (a : evm.address) : bool :=
   false.
 
@@ -96,37 +92,76 @@ is verifyied starting from block 18 state.
 Need to maintain fixed distance.
  *)
 
-Definition consensusAcceptableTx (stateAfterLastExecuted : StateOfAccounts) (intermediate : list Transaction) (candidate : Transaction) : bool :=
-  let bal0 := balanceOfAc stateAfterLastExecuted (sender candidate) in
+Axiom _isAllowedToEmpty : Lens.Lens Transaction Transaction bool bool.
+
+(* assume:
+   - all transactions in intermediate have their [isAllowedToEmpty] fields properly set. that field is garbage for [candidate]
+   - stateNminusK: is the state after executing block n-k
+   - intermediate has ALL transactions between the end of block n-k and candidate
+   - candidate is from block n: TODO: fix this
+ *)
+
+Definition consensusAcceptableTx (stateNminusK : StateOfAccounts) (intermediate : list Transaction) (candidate : Transaction) : bool * bool :=
+  let bal0 := balanceOfAc stateNminusK (sender candidate) in
   match List.filter (fun tx: Transaction  => bool_decide (sender tx = sender candidate)) intermediate with
   | [] =>
       let reserve := staticReserveBal `min` bal0 in
-      if addr_delegated stateAfterLastExecuted (sender candidate) then
-        tx_allowed_to_empty candidate && (* relationally sets the value of tx_allowed_to_empty candidate *)
-        bool_decide (maxTxFee stateAfterLastExecuted candidate <= balanceOfAc stateAfterLastExecuted (sender candidate))
-      else bool_decide (maxTxFee stateAfterLastExecuted candidate ≤ reserve)
+      if addr_delegated stateNminusK (sender candidate) then
+        (true,
+          bool_decide (maxTxFee stateNminusK candidate <= balanceOfAc stateNminusK (sender candidate)))
+      else (false, bool_decide (maxTxFee stateNminusK candidate ≤ reserve))
   | t0 :: rest =>
-      (negb (tx_allowed_to_empty candidate)) && (* relationally sets the value of tx_allowed_to_empty candidate *)
+      (false, 
       if tx_allowed_to_empty  t0
       then
-       let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateAfterLastExecuted t0 in
+       let bal1 := bal0 - w256_to_N (block.tr_value t0) - maxTxFee stateNminusK t0 in
        let reserve := staticReserveBal `min` bal1 in
-       bool_decide (sum_gas_bids stateAfterLastExecuted (candidate::rest) ≤ reserve)
+       bool_decide (sum_gas_bids stateNminusK (candidate::rest) ≤ reserve)
       else
        let reserve := staticReserveBal `min` bal0 in
-       bool_decide (sum_gas_bids stateAfterLastExecuted (candidate::intermediate) ≤ reserve)
+       bool_decide (sum_gas_bids stateNminusK (candidate::intermediate) ≤ reserve))
   end.
 
-Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs ltx : list Transaction) : bool :=
+
+Require Import Lens.Lens.
+Import LensNotations.
+Open Scope lens_scope.
+
+Fixpoint consensusAcceptableTxs (s : StateOfAccounts) (acceptedIntermediateTxs ltx : list Transaction) : (bool * list Transaction) :=
   match ltx with
-  | [] => true
-  | h::tl => consensusAcceptableTx s acceptedIntermediateTxs h && consensusAcceptableTxs s (acceptedIntermediateTxs++[h]) tl
+  | [] => (true, acceptedIntermediateTxs)
+  | h::tl => let '(allowedToEmpty,  acceptableHead) := consensusAcceptableTx s acceptedIntermediateTxs h in 
+             let '(acceptableTail, markedTxs) := consensusAcceptableTxs s (acceptedIntermediateTxs++[h &: _isAllowedToEmpty .= allowedToEmpty]) tl in
+             (acceptableHead && acceptableTail, markedTxs)
   end.
-    
-Definition consensusAcceptableBlocks (stateAfterLastExecuted : StateOfAccounts)
+
+Definition consensusAcceptableBlocks (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) : bool :=
   let allTx := flat_map transactions proposedChainExtension in
-  consensusAcceptableTxs stateAfterLastExecuted [] allTx.
+  fst (consensusAcceptableTxs stateNminusK [] allTx).
+
+Record BundledTx :=
+  {
+    bhdr: BlockHeader;
+    btx: Transaction;
+  }.
+    
+
+Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult) :=
+  let (si, r) := stateAfterTransactionAux hdr s txindex t in
+  let erb := N.min ReserveBal (balanceOfAc s (sender t)) in
+  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || tx_allowed_to_empty t)
+  then (applyGasRefundsAndRewards hdr si r, r)
+  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
+
+Axiom _transactions : Lens.Lens Block Block (list Transaction) (list Transaction).
+
+(*
+Definition consensusAcceptableBlocksMarked (stateNminusK : StateOfAccounts)
+  (proposedChainExtension: list Block) : bool* (list Block) :=
+  let allTx := flat_map transactions proposedChainExtension in
+  fst (consensusAcceptableTxs stateNminusK [] allTx).
+ *)
 
 Definition stateAfterBlockV2 (b: Block) (s: StateOfAccounts): option (StateOfAccounts * list TransactionResult) :=
   match stateAfterTransactionsV2 (header b) s (transactions b) with
@@ -150,12 +185,12 @@ Fixpoint stateAfterBlocks (stateAfterLastExecuted : StateOfAccounts)
                  end
              end
   end.
-    
+
                
-Lemma soundness (stateAfterLastExecuted : StateOfAccounts)
+Lemma soundness (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) :
-  consensusAcceptableBlocks stateAfterLastExecuted proposedChainExtension = true
-  -> isSome (stateAfterBlocks stateAfterLastExecuted proposedChainExtension).
+  consensusAcceptableBlocks stateNminusK proposedChainExtension = true
+  -> isSome (stateAfterBlocks stateNminusK proposedChainExtension).
 Abort.
 
 Definition maxFeeHeader (lb: list Block) : BlockHeader. Proof. Admitted.
@@ -174,24 +209,24 @@ Lemma execTxsMono header (s1 s2 : StateOfAccounts) (ltx: list Transaction) :
 Proof. Admitted.
 
 
-Lemma execBlockAsTxs (stateAfterLastExecuted : StateOfAccounts)
+Lemma execBlockAsTxs (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) :
-  isSome (stateAfterTransactionsV (maxFeeHeader proposedChainExtension) stateAfterLastExecuted
+  isSome (stateAfterTransactionsV (maxFeeHeader proposedChainExtension) stateNminusK
             (flat_map transactions proposedChainExtension))
          ->
-  isSome (stateAfterBlocks stateAfterLastExecuted proposedChainExtension).
+  isSome (stateAfterBlocks stateNminusK proposedChainExtension).
 Proof using. Admitted.
 
-Lemma soundnessAsTx (stateAfterLastExecuted : StateOfAccounts)
+Lemma soundnessAsTx (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) (lt : list Transaction):
-  consensusAcceptableTxs stateAfterLastExecuted [] lt = true
-    → isSome (stateAfterTransactionsV (maxFeeHeader proposedChainExtension) stateAfterLastExecuted lt).
+  consensusAcceptableTxs stateNminusK [] lt = true
+    → isSome (stateAfterTransactionsV (maxFeeHeader proposedChainExtension) stateNminusK lt).
 Proof using. Admitted.
 
-Lemma soundness (stateAfterLastExecuted : StateOfAccounts)
+Lemma soundness (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) :
-  consensusAcceptableBlocks stateAfterLastExecuted proposedChainExtension = true
-  -> isSome (stateAfterBlocks stateAfterLastExecuted proposedChainExtension).
+  consensusAcceptableBlocks stateNminusK proposedChainExtension = true
+  -> isSome (stateAfterBlocks stateNminusK proposedChainExtension).
 Proof using.
   unfold consensusAcceptableBlocks.
   intros Hp.
@@ -201,12 +236,12 @@ Proof using.
 Qed.    
 
 
-Lemma subchainValid (stateAfterLastExecuted : StateOfAccounts)
+Lemma subchainValid (stateNminusK : StateOfAccounts)
   (proposedChainExtension: list Block) :
-  consensusAcceptableBlocks stateAfterLastExecuted proposedChainExtension = true
+  consensusAcceptableBlocks stateNminusK proposedChainExtension = true
   -> forall (subchain1 subchain2: list Block),
       proposedChainExtension = subchain1 ++ subchain2
-      -> match (stateAfterBlocks stateAfterLastExecuted subchain1) with
+      -> match (stateAfterBlocks stateNminusK subchain1) with
          | None => False (* cannot happen *)
          | Some (stateAfterSubchain1, rcpts) =>
              consensusAcceptableBlocks stateAfterSubchain1 subchain2 = true
@@ -221,12 +256,6 @@ Proof using.
   assumption.
 Qed.    
 
-Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult) :=
-  let (si, r) := stateAfterTransactionAux hdr s txindex t in
-  let erb := N.min ReserveBal (balanceOfAc s (sender t)) in
-  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || tx_allowed_to_empty t)
-  then (applyGasRefundsAndRewards hdr si r, r)
-  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee t),  DippedTooMuchIntoReserve t).
 
 
 

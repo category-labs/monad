@@ -8,9 +8,9 @@
 #include <sys/stat.h>
 #include <sys/vfs.h>
 
-#include <category/core/format_err.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
+#include <category/core/format_err.h>
 
 // Defined in event_ring.c, so we can share monad_event_ring_get_last_error()
 extern thread_local char _g_monad_event_ring_error_buf[1024];
@@ -83,26 +83,26 @@ int monad_event_ring_init_simple(
     }
     return monad_event_ring_init_file(
         &ring_size,
-        ring_config->ring_type,
+        ring_config->content_type,
         ring_config->metadata_hash,
         ring_fd,
         ring_offset,
         error_name);
 }
 
-int monad_event_ring_check_type(
+int monad_event_ring_check_content_type(
     struct monad_event_ring const *event_ring,
-    enum monad_event_ring_type ring_type, uint8_t const *metadata_hash)
+    enum monad_event_content_type content_type, uint8_t const *metadata_hash)
 {
     if (event_ring == nullptr || event_ring->header == nullptr) {
         return FORMAT_ERRC(EFAULT, "event ring is not mapped");
     }
-    if (event_ring->header->type != ring_type) {
+    if (event_ring->header->content_type != content_type) {
         return FORMAT_ERRC(
             EPROTO,
-            "required event ring type is %hu, file contains %hu",
-            ring_type,
-            event_ring->header->type);
+            "required event ring content type is %hu, file contains %hu",
+            content_type,
+            event_ring->header->content_type);
     }
     if (memcmp(
             event_ring->header->metadata_hash,

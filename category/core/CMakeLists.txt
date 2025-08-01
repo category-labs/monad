@@ -123,8 +123,8 @@ add_library(
   "event/event_ring.h"
   "event/event_ring_util.c"
   "event/event_ring_util.h"
-  "event/test_event_types.h"
-  "event/test_event_metadata.c"
+  "event/test_event_ctypes.h"
+  "event/test_event_ctypes_metadata.c"
   # fiber
   "fiber/config.hpp"
   "fiber/priority_algorithm.cpp"

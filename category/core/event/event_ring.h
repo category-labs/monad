@@ -26,7 +26,7 @@ struct monad_event_iterator;
 struct monad_event_recorder;
 struct monad_event_ring_header;
 
-enum monad_event_ring_type : uint16_t;
+enum monad_event_content_type : uint16_t;
 
 // clang-format off
 
@@ -84,21 +84,23 @@ struct monad_event_ring_control
 struct monad_event_ring_header
 {
     char magic[6];                           ///< 'RINGvv', vv = version number
-    enum monad_event_ring_type type;         ///< Kind of event ring this is
+    enum monad_event_content_type
+        content_type;                        ///< Kind of events in this ring
     uint8_t metadata_hash[32];               ///< Check that event types match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
 
-/// Describes which event ring an event is recorded to; different categories
-/// of events are recorded to different rings, this identifies the integer
-/// namespace that the descriptor's `uint16_t event_type` field is drawn from
-enum monad_event_ring_type : uint16_t
+/// Describes what kind of event content is recorded in an event ring file;
+/// different categories of events have different binary schemas, and this
+/// identifies the integer namespace that the event descriptor's
+/// `uint16_t event_type` field is drawn from
+enum monad_event_content_type : uint16_t
 {
-    MONAD_EVENT_RING_TYPE_NONE,  ///< An invalid value
-    MONAD_EVENT_RING_TYPE_TEST,  ///< Used in simple automated tests
-    MONAD_EVENT_RING_TYPE_EXEC,  ///< Core execution events
-    MONAD_EVENT_RING_TYPE_COUNT  ///< Total number of known event rings
+    MONAD_EVENT_CONTENT_TYPE_NONE,  ///< An invalid value
+    MONAD_EVENT_CONTENT_TYPE_TEST,  ///< Used in simple automated tests
+    MONAD_EVENT_CONTENT_TYPE_EXEC,  ///< Core execution events
+    MONAD_EVENT_CONTENT_TYPE_COUNT  ///< Total number of content types
 };
 
 // clang-format on
@@ -118,7 +120,7 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// processes later. Given an open file descriptor, this creates the event
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
-    struct monad_event_ring_size const *, enum monad_event_ring_type,
+    struct monad_event_ring_size const *, enum monad_event_content_type,
     uint8_t const *metadata_hash, int ring_fd, off_t ring_offset,
     char const *error_name);
 
@@ -171,12 +173,13 @@ char const *monad_event_ring_get_last_error();
 
 /// This should be changed whenever anything binary-affecting in this file
 /// changes (e.g., any structure or enumeration value that is shared memory
-/// resident, e.g., `enum monad_event_ring_type`)
+/// resident, e.g., `enum monad_event_content_type`)
 constexpr uint8_t MONAD_EVENT_RING_HEADER_VERSION[] = {
     'R', 'I', 'N', 'G', '0', '1'};
 
-/// Array of human-readable names for the event ring types
-extern char const *g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_COUNT];
+/// Array of human-readable names for the event ring content types
+extern char const
+    *g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_COUNT];
 
 /*
  * Event ring size limits

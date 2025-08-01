@@ -94,7 +94,7 @@ monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
 //  .------------------.
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *ring_size,
-    enum monad_event_ring_type ring_type, uint8_t const *metadata_hash,
+    enum monad_event_content_type content_type, uint8_t const *metadata_hash,
     int ring_fd, off_t ring_offset, char const *error_name)
 {
     size_t ring_bytes;
@@ -142,19 +142,19 @@ int monad_event_ring_init_file(
             error_name,
             ring_size->context_area_size);
     }
-    if (ring_type == MONAD_EVENT_RING_TYPE_NONE ||
-        ring_type >= MONAD_EVENT_RING_TYPE_COUNT) {
+    if (content_type == MONAD_EVENT_CONTENT_TYPE_NONE ||
+        content_type >= MONAD_EVENT_CONTENT_TYPE_COUNT) {
         return FORMAT_ERRC(
             EINVAL,
-            "event ring file `%s` has invalid ring type code %hu",
+            "event ring file `%s` has invalid content type code %hu",
             error_name,
-            ring_type);
+            content_type);
     }
 
     memset(&header, 0, sizeof header);
     memcpy(header.magic, MONAD_EVENT_RING_HEADER_VERSION, sizeof header.magic);
     memcpy(header.metadata_hash, metadata_hash, sizeof header.metadata_hash);
-    header.type = ring_type;
+    header.content_type = content_type;
     header.size = *ring_size;
     ring_bytes = monad_event_ring_calc_storage(ring_size);
 
@@ -411,8 +411,8 @@ char const *monad_event_ring_get_last_error()
     return _g_monad_event_ring_error_buf;
 }
 
-char const *g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_COUNT] = {
-    [MONAD_EVENT_RING_TYPE_NONE] = "none",
-    [MONAD_EVENT_RING_TYPE_TEST] = "test",
-    [MONAD_EVENT_RING_TYPE_EXEC] = "exec",
+char const *g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_COUNT] = {
+    [MONAD_EVENT_CONTENT_TYPE_NONE] = "none",
+    [MONAD_EVENT_CONTENT_TYPE_TEST] = "test",
+    [MONAD_EVENT_CONTENT_TYPE_EXEC] = "exec",
 };

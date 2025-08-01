@@ -34,7 +34,7 @@
 #include <category/core/event/event_metadata.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
-#include <category/core/event/test_event_types.h>
+#include <category/core/event/test_event_ctypes.h>
 
 static sig_atomic_t g_should_exit = 0;
 
@@ -43,12 +43,12 @@ struct MetadataTableEntry
     uint8_t const (*hash)[32];
     std::span<monad_event_metadata const> entries;
 } MetadataTable[] = {
-    [MONAD_EVENT_RING_TYPE_NONE] =
+    [MONAD_EVENT_CONTENT_TYPE_NONE] =
         {
             nullptr,
             {},
         },
-    [MONAD_EVENT_RING_TYPE_TEST] =
+    [MONAD_EVENT_CONTENT_TYPE_TEST] =
         {
             &g_monad_test_event_metadata_hash,
             std::span{g_monad_test_event_metadata},
@@ -60,13 +60,13 @@ struct EventRingNameToDefaultPathEntry
     std::string_view name;
     char const *default_path;
 } EventRingNameToDefaultPathTable[] = {
-    [MONAD_EVENT_RING_TYPE_NONE] =
+    [MONAD_EVENT_CONTENT_TYPE_NONE] =
         {
-            g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_NONE],
+            g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_NONE],
             {},
         },
-    [MONAD_EVENT_RING_TYPE_TEST] = {
-        .name = g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_TEST],
+    [MONAD_EVENT_CONTENT_TYPE_TEST] = {
+        .name = g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_TEST],
         .default_path = MONAD_EVENT_DEFAULT_TEST_RING_PATH}};
 
 static char const *get_default_path_for_event_ring_name(std::string_view name)
@@ -121,8 +121,8 @@ static void print_event_ring_header(
     std::fprintf(
         out,
         "%6s [%hu] %9lu %10lu %10lu %10lu %12lu %14lu %14lu\n",
-        g_monad_event_ring_type_names[h->type],
-        h->type,
+        g_monad_event_content_type_names[h->content_type],
+        h->content_type,
         h->size.descriptor_capacity,
         h->size.descriptor_capacity * sizeof(monad_event_descriptor),
         h->size.payload_buf_size,
@@ -306,7 +306,7 @@ int main(int argc, char **argv)
            event_ring_paths,
            "path to an event ring shared memory file")
         ->default_val(
-            g_monad_event_ring_type_names[MONAD_EVENT_RING_TYPE_TEST]);
+            g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_TEST]);
 
     try {
         cli.parse(argc, argv);
@@ -362,36 +362,38 @@ int main(int argc, char **argv)
                 monad_event_ring_get_last_error());
         }
 
-        // Ensure it's safe to dereference `MetadataTable[ring_type]`
-        monad_event_ring_type const ring_type = mr.event_ring.header->type;
-        if (std::to_underlying(ring_type) >= std::size(MetadataTable)) {
+        // Ensure it's safe to dereference `MetadataTable[content_type]`
+        monad_event_content_type const content_type =
+            mr.event_ring.header->content_type;
+        if (std::to_underlying(content_type) >= std::size(MetadataTable)) {
             errx(
                 EX_CONFIG,
                 "do not have the metadata mapping for event ring `%s` type %hu",
                 mr.origin_path.c_str(),
-                ring_type);
+                content_type);
         }
 
         // Get the metadata hash we're compiled with, or substitute the zero
         // hash if the command line told us to
-        if (MetadataTable[ring_type].hash == nullptr) {
+        if (MetadataTable[content_type].hash == nullptr) {
             errx(
                 EX_CONFIG,
                 "event ring `%s` has type %hu, but we don't know its metadata "
                 "hash",
                 mr.origin_path.c_str(),
-                ring_type);
+                content_type);
         }
-        uint8_t const(&hash)[32] = *MetadataTable[ring_type].hash;
+        uint8_t const(&hash)[32] = *MetadataTable[content_type].hash;
 
         // Unlike simpler tools, we should be able to work with any type
-        if (monad_event_ring_check_type(&mr.event_ring, ring_type, hash) != 0) {
+        if (monad_event_ring_check_content_type(
+                &mr.event_ring, content_type, hash) != 0) {
             errx(
                 EX_SOFTWARE,
                 "event library error -- %s",
                 monad_event_ring_get_last_error());
         }
-        mr.metadata_entries = MetadataTable[ring_type].entries;
+        mr.metadata_entries = MetadataTable[content_type].entries;
         mr.start_seqno = start_seqno;
         if (print_header) {
             print_event_ring_header(

@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include <category/core/event/event_metadata.h>
-#include <category/core/event/test_event_types.h>
+#include <category/core/event/test_event_ctypes.h>
 
 #ifdef __cplusplus
 extern "C"

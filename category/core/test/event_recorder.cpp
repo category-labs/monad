@@ -18,13 +18,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <gtest/gtest.h>
-#include <category/core/likely.h>
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
-#include <category/core/event/test_event_types.h>
+#include <category/core/event/test_event_ctypes.h>
+#include <category/core/likely.h>
+
+#include <gtest/gtest.h>
 
 static uint8_t PERF_ITER_SHIFT = 20;
 
@@ -188,7 +189,7 @@ protected:
             .descriptors_shift = DESCRIPTORS_SHIFT,
             .payload_buf_shift = PAYLOAD_BUF_SHIFT,
             .context_large_pages = 0,
-            .ring_type = MONAD_EVENT_RING_TYPE_TEST,
+            .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
             .metadata_hash = g_monad_test_event_metadata_hash};
         ASSERT_EQ(
             0,

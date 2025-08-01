@@ -237,14 +237,10 @@ Result<ExecutionResult> execute(
         State state{block_state, Incarnation{hdr.number, i + 1}};
         state.set_original_nonce(sender, tx.nonce);
 
-#ifdef ENABLE_CALL_TRACING
-        CallTracer call_tracer{tx};
-#else
-        NoopCallTracer call_tracer{};
-#endif
+        auto const call_tracer = create_call_tracer(tx);
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            *call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -264,12 +260,12 @@ Result<ExecutionResult> execute(
                 hdr.base_fee_per_gas.value_or(0),
                 result.value(),
                 hdr.beneficiary);
-            call_tracer.on_finish(receipt.gas_used);
+            call_tracer->on_finish(receipt.gas_used);
             block_state.merge(state);
 
             return ExecutionResult{
                 .receipt = receipt,
-                .call_frames = std::move(call_tracer).get_frames()};
+                .call_frames = std::move(*call_tracer).get_frames()};
         }
     }
     block_metrics.inc_retries();
@@ -278,14 +274,10 @@ Result<ExecutionResult> execute(
 
         State state{block_state, Incarnation{hdr.number, i + 1}};
 
-#ifdef ENABLE_CALL_TRACING
-        CallTracer call_tracer{tx};
-#else
-        NoopCallTracer call_tracer{};
-#endif
+        auto const call_tracer = create_call_tracer(tx);
 
         auto result = execute_impl2<rev>(
-            call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
+            *call_tracer, chain, tx, sender, hdr, block_hash_buffer, state);
 
         MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
@@ -300,12 +292,12 @@ Result<ExecutionResult> execute(
             hdr.base_fee_per_gas.value_or(0),
             result.value(),
             hdr.beneficiary);
-        call_tracer.on_finish(receipt.gas_used);
+        call_tracer->on_finish(receipt.gas_used);
         block_state.merge(state);
 
         return ExecutionResult{
             .receipt = receipt,
-            .call_frames = std::move(call_tracer).get_frames()};
+            .call_frames = std::move(*call_tracer).get_frames()};
     }
 }
 

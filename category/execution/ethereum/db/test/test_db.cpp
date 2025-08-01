@@ -870,6 +870,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 {
     using namespace intx;
 
+    enable_call_tracing(true);
     TrieDb tdb{this->db};
 
     auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
@@ -975,6 +976,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 TYPED_TEST(DBTest, call_frames_refund)
 {
     TrieDb tdb{this->db};
+    enable_call_tracing(true);
 
     auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
     auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;

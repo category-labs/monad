@@ -63,4 +63,7 @@ public:
     nlohmann::json to_json() const;
 };
 
+void enable_call_tracing(bool const enabled);
+std::unique_ptr<CallTracerBase> create_call_tracer(Transaction const &tx);
+
 MONAD_NAMESPACE_END

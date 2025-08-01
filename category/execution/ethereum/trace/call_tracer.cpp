@@ -48,6 +48,8 @@ namespace
             }
         }
     }
+
+    bool tracing_enabled = false;
 }
 
 void NoopCallTracer::on_enter(evmc_message const &) {}
@@ -195,6 +197,21 @@ nlohmann::json CallTracer::to_json() const
     res[key] = value;
 
     return res;
+}
+
+void enable_call_tracing(bool const enabled)
+{
+    tracing_enabled = enabled;
+}
+
+std::unique_ptr<CallTracerBase> create_call_tracer(Transaction const &tx)
+{
+    if (tracing_enabled) {
+        return std::make_unique<CallTracer>(tx);
+    }
+    else {
+        return std::make_unique<NoopCallTracer>();
+    }
 }
 
 MONAD_NAMESPACE_END

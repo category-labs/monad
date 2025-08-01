@@ -1,7 +1,8 @@
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 
 #include <cstdint>
 #include <deque>
@@ -83,6 +84,7 @@ bool init_block_hash_buffer_from_triedb(
     mpt::Db &, uint64_t, BlockHashBufferFinalized &);
 
 bool init_block_hash_buffer_from_blockdb(
-    BlockDb &, uint64_t block_number, BlockHashBufferFinalized &);
+    monad_chain_config const, BlockDb &, uint64_t block_number,
+    BlockHashBufferFinalized &);
 
 MONAD_NAMESPACE_END

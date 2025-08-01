@@ -163,14 +163,14 @@ bool init_block_hash_buffer_from_triedb(
 }
 
 bool init_block_hash_buffer_from_blockdb(
-    BlockDb &block_db, uint64_t const block_number,
-    BlockHashBufferFinalized &block_hash_buffer)
+    monad_chain_config const chain_config, BlockDb &block_db,
+    uint64_t const block_number, BlockHashBufferFinalized &block_hash_buffer)
 {
     for (uint64_t b = block_number < 256 ? 1 : block_number - 255;
          b <= block_number;
          ++b) {
         Block block;
-        auto const ok = block_db.get(b, block);
+        auto const ok = block_db.get(chain_config, b, block);
         if (!ok) {
             LOG_WARNING("Could not query block {} from blockdb.", b);
             return false;

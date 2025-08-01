@@ -1,4 +1,4 @@
-#include "runloop_ethereum.hpp"
+#include "runloop_replay.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
@@ -62,9 +62,10 @@ namespace
 
 }
 
-Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+Result<std::pair<uint64_t, uint64_t>> runloop_replay(
+    Chain const &chain, monad_chain_config const chain_config,
+    std::filesystem::path const &ledger_dir, Db &db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -85,7 +86,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         auto const block_begin = std::chrono::steady_clock::now();
         Block block;
         MONAD_ASSERT_PRINTF(
-            block_db.get(block_num, block),
+            block_db.get(chain_config, block_num, block),
             "Could not query %lu from blockdb",
             block_num);
 
@@ -151,6 +152,25 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         auto const output_header = db.read_eth_header();
         BOOST_OUTCOME_TRY(
             chain.validate_output_header(block.header, output_header));
+
+        // For monad chain replay, we also need to check for state and receipt
+        // roots
+        // Note: This is not ideal, but minimize changes to live runloop
+        if (chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET) {
+            if (MONAD_UNLIKELY(
+                    block.header.state_root != output_header.state_root)) {
+                LOG_ERROR(
+                    "State root mismatch at block {}", block.header.number);
+                return BlockError::WrongMerkleRoot;
+            }
+            if (MONAD_UNLIKELY(
+                    block.header.receipts_root !=
+                    output_header.receipts_root)) {
+                LOG_ERROR(
+                    "Receipt root mismatch at block {}", block.header.number);
+                return BlockError::WrongMerkleRoot;
+            }
+        }
 
         db.finalize(block.header.number, bytes32_t{block.header.number});
         db.update_verified_block(block.header.number);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/db/file_db.hpp>
 
 #include <cstdint>
@@ -21,7 +22,7 @@ public:
     explicit BlockDb(std::filesystem::path const &);
     ~BlockDb() = default;
 
-    bool get(uint64_t, Block &) const;
+    bool get(monad_chain_config const, uint64_t, Block &) const;
 
     void upsert(uint64_t, Block const &) const;
     bool remove(uint64_t) const;

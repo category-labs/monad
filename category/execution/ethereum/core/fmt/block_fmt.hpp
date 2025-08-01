@@ -31,15 +31,20 @@ struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter
             "State Root={} "
             "Transaction Root={} "
             "Receipt Root={} "
+            "Mixhash={} "
             "Logs Bloom=0x{:02x} "
             "Difficulty={} "
             "Block Number={} "
             "Gas Limit={} "
             "Gas Used={} "
             "Timestamp={} "
+            "Nonce={} "
             "Extra Data=0x{:02x} "
             "Base Fee Per Gas={} "
-            "Withdrawal Root={}"
+            "Withdrawal Root={} "
+            "Blob Gas Used={} "
+            "Excess Blob Gas={} "
+            "Parent Beacon Block Root={}"
             "}}",
             bh.parent_hash,
             bh.ommers_hash,
@@ -47,15 +52,20 @@ struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter
             bh.state_root,
             bh.transactions_root,
             bh.receipts_root,
+            bh.prev_randao,
             fmt::join(std::as_bytes(std::span(bh.logs_bloom)), ""),
             bh.difficulty,
             bh.number,
             bh.gas_limit,
             bh.gas_used,
             bh.timestamp,
+            fmt::join(std::as_bytes(std::span(bh.nonce)), ""),
             fmt::join(std::as_bytes(std::span(bh.extra_data)), ""),
             bh.base_fee_per_gas,
-            bh.withdrawals_root);
+            bh.withdrawals_root,
+            bh.blob_gas_used,
+            bh.excess_blob_gas,
+            bh.parent_beacon_block_root);
         return ctx.out();
     }
 };

@@ -1,5 +1,13 @@
 include(GoogleTest)
 
+if(MONAD_COMPILER_TESTING)
+    find_package(GTest REQUIRED)
+endif()
+
+if(MONAD_COMPILER_BENCHMARKS)
+    find_package(benchmark REQUIRED)
+endif()
+
 if(MONAD_COMPILER_BENCHMARKS)
   add_subdirectory(compile_benchmarks)
   add_subdirectory(execution_benchmarks)

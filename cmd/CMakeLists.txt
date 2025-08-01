@@ -40,3 +40,10 @@ monad_compile_options(eventcap)
 target_compile_options(eventcap PRIVATE -Wno-c99-designator)
 target_link_libraries(eventcap PRIVATE monad_core CLI11::CLI11)
 target_compile_options(eventcap PRIVATE -Wno-missing-field-initializers)
+
+add_subdirectory(vm/parser)
+
+if(MONAD_COMPILER_BENCHMARKS)
+    add_subdirectory(vm/mce)
+    add_subdirectory(vm/kernel-generator)
+endif()

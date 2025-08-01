@@ -8,8 +8,6 @@
 #include <span>
 #include <vector>
 
-using namespace evmone::state;
-
 namespace monad::test
 {
     struct UnsupportedTestFeature : std::runtime_error
@@ -19,7 +17,7 @@ namespace monad::test
 
     struct TestBlock
     {
-        std::vector<Transaction> transactions;
+        std::vector<evmone::state::Transaction> transactions;
     };
 
     struct BenchmarkTest

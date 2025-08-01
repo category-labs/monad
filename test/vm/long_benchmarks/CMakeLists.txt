@@ -9,23 +9,20 @@ target_sources(long-benchmarks
         code_snailtracer.hpp
 )
 target_include_directories(long-benchmarks
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TEST_DATA_DIR}/unit/common/include"
 )
 monad_compile_options(long-benchmarks)
 
-target_include_directories(long-benchmarks
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
-)
-
 target_link_libraries(long-benchmarks
-    benchmark::benchmark
-    blockchain-test-vm
-    evmone::state
-    evmone::statetestutils
-    evmone-blockchaintest-lib
-    nlohmann_json::nlohmann_json
+    PRIVATE benchmark::benchmark
+    PRIVATE blockchain-test-vm
+    PRIVATE evmone::state
+    PRIVATE evmone::statetestutils
+    PRIVATE evmone-blockchaintest-lib
+    PRIVATE nlohmann_json::nlohmann_json
+    PRIVATE monad_execution
+    PRIVATE monad_core
 )
 
 # TODO(BSC): fix this via evmone

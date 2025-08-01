@@ -8,18 +8,15 @@
   # Run `scripts/apply-clang-tidy-fixes.sh` to have clang-tidy fix up
   # your code for you.
   Checks:          '-*,
-                    bugprone-argument-comment,
-                    bugprone-assert-side-effect,
-                    bugprone-dangling-handle,
-                    bugprone-inaccurate-erase,
-                    bugprone-string-constructor,
-                    bugprone-string-integer-assignment,
-                    bugprone-undefined-memory-manipulation,
-                    bugprone-unused-raii,
-                    bugprone-use-after-move,
+                    bugprone-*,
+                    -bugprone-branch-clone,
+                    -bugprone-easily-swappable-parameters,
+                    -bugprone-unchecked-optional-access,
+                    -bugprone-unhandled-self-assignment,
                     clang-analyzer*,
                     google-build-explicit-make-pair,
                     google-explicit-constructor,
+                    llvm-include-order,
                     misc-const-correctness,
                     misc-definitions-in-headers,
                     misc-include-cleaner,
@@ -44,8 +41,8 @@
                     modernize-use-nullptr,
                     modernize-use-transparent-functors,
                     readability-isolate-declaration,
-                    readability-qualified-auto,
-                    readability-redundant-member-init'
+                    readability-qualified-auto'
+  WarningsAsErrors: '*'
   CheckOptions:
     - key:          bugprone-assert-side-effect.AssertMacros
       value:        assert,MONAD_DEBUG_ASSERT
@@ -54,7 +51,7 @@
     - key:          bugprone-string-constructor.StringNames
       value:        ::std::basic_string;::std::basic_string_view;::absl::string_view
     - key:          misc-include-cleaner.IgnoreHeaders
-      value:        gtest/|gmock/|sys/|CLI/|boost/
+      value:        gtest/|gmock/|sys/|CLI/|boost/|llvm/
     - key:          modernize-use-default-member-init.UseAssignment
       value:        1
     - key:          modernize-use-transparent-functors.SafeMode

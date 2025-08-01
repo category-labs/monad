@@ -16,11 +16,15 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif()
 endif()
 
-option(HUNTER_ENABLED OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_CALL_TRACING "Enable call tracer" ON)
-option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-option(BUILD_SHARED_LIBS OFF)
+
+option(MONAD_COMPILER_LLVM "Build llvm backend" OFF)
+option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
+option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
+option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
+option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 
 include(cmake/test.cmake)
 
@@ -81,15 +85,22 @@ add_subdirectory("third_party/ethash")
 # intx
 add_subdirectory("third_party/intx")
 
-# compiler
-add_subdirectory("category/vm")
-# TODO
-target_compile_options(evmone PRIVATE "-Wno-attributes")
-target_compile_options(evmone_precompiles PRIVATE "-Wno-attributes")
+# evmone
+include(cmake/evmone.cmake)
 
 # komihash
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
+
+# LLVM
+if(MONAD_COMPILER_LLVM)
+    # Because LLVM is a large dependency, we only try to find it if it's
+    # explicitly enabled as part of the VM build: regular client builds don't
+    # need to use it.
+    include(cmake/LinkLLVM.cmake)
+    find_package(LLVM 19.1.7 REQUIRED CONFIG)
+    add_definitions(-DMONAD_COMPILER_LLVM)
+endif()
 
 # quill
 add_subdirectory("third_party/quill")
@@ -122,6 +133,7 @@ target_include_directories(thread_safe_lru
 
 set(TEST_DATA_DIR "${PROJECT_SOURCE_DIR}/test")
 set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
+set(VM_DATA_DIR "${PROJECT_SOURCE_DIR}/test/vm/data")
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -203,6 +215,7 @@ add_subdirectory("category/event")
 add_subdirectory("category/execution")
 add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
+add_subdirectory("category/vm")
 
 # ##############################################################################
 # cmds
@@ -216,3 +229,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
+
+if(MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
+endif()

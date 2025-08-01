@@ -38,7 +38,7 @@ namespace fs = std::filesystem;
 namespace json = nlohmann;
 
 using namespace evmone::state;
-using namespace test_resource;
+using namespace monad::test_resource;
 
 using enum BlockchainTestVM::Implementation;
 
@@ -66,7 +66,7 @@ struct benchmark_case
 
 namespace
 {
-    auto vm_performance_dir = test_resource::ethereum_tests_dir /
+    auto vm_performance_dir = monad::test_resource::ethereum_tests_dir /
                               "BlockchainTests" / "GeneralStateTests" /
                               "VMTests" / "vmPerformance";
 

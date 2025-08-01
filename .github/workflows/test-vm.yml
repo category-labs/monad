@@ -154,8 +154,8 @@ jobs:
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
-                python-version-file: category/vm/scripts/benchmark-analysis/.python-version
+                python-version-file: scripts/vm-benchmark-analysis/.python-version
 
             - name: Check Python code
-              working-directory: category/vm/scripts/benchmark-analysis
+              working-directory: scripts/vm-benchmark-analysis
               run: make check

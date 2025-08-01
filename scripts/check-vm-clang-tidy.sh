@@ -44,7 +44,7 @@ mapfile -t inputs < <(\
 
 "${RUN_CLANG_TIDY}"                               \
   "${inputs[@]}"                                  \
-  -header-filter ".*/src/monad/.*"                \
+  -header-filter "category/vm/.*"                \
   -j "$(nproc)"                                   \
   -p "${BUILD_DIR}" "$@"                          \
   -extra-arg='-Wno-unknown-warning-option'        \

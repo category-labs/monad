@@ -6,17 +6,20 @@ target_sources(compiler-blockchain-tests
         compiler_blockchain_tests.cpp
 )
 target_include_directories(compiler-blockchain-tests
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TEST_DATA_DIR}/unit/common/include"
 )
 monad_compile_options(compiler-blockchain-tests)
 
 target_link_libraries(compiler-blockchain-tests
-    blockchain-test-vm
-    monad-vm::monad-vm
-    monad-vm::monad-vm-compiler
-    monad-vm::monad-vm-utils
-    evmone-blockchaintest-lib)
+    PRIVATE blockchain-test-vm
+    PRIVATE monad-vm::monad-vm
+    PRIVATE monad-vm::monad-vm-compiler
+    PRIVATE monad-vm::monad-vm-utils
+    PRIVATE evmone-blockchaintest-lib
+    PRIVATE monad_execution
+    PRIVATE monad_core
+)
 
 # Interpreter Blockchain Tests
 
@@ -26,16 +29,19 @@ target_sources(interpreter-blockchain-tests
         interpreter_blockchain_tests.cpp
 )
 target_include_directories(interpreter-blockchain-tests
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TEST_DATA_DIR}/unit/common/include"
 )
 monad_compile_options(interpreter-blockchain-tests)
 
 target_link_libraries(interpreter-blockchain-tests
-    blockchain-test-vm
-    monad-vm::monad-vm-utils
-    monad-vm::monad-vm-interpreter
-    evmone-blockchaintest-lib)
+    PRIVATE blockchain-test-vm
+    PRIVATE monad-vm::monad-vm-utils
+    PRIVATE monad-vm::monad-vm-interpreter
+    PRIVATE evmone-blockchaintest-lib
+    PRIVATE monad_execution
+    PRIVATE monad_core
+)
 
 # LLVM Blockchain Tests
 
@@ -48,8 +54,8 @@ if(MONAD_COMPILER_LLVM)
     )
 
     target_include_directories(llvm-blockchain-tests
-        PRIVATE
-            "${TOP_CURRENT_BINARY_DIR}/test"
+        PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
+        PRIVATE "${TEST_DATA_DIR}/unit/common/include"
     )
 
     monad_compile_options(llvm-blockchain-tests)
@@ -58,6 +64,8 @@ if(MONAD_COMPILER_LLVM)
         PRIVATE blockchain-test-vm
         PRIVATE monad-vm::monad-vm-llvm
         PRIVATE evmone-blockchaintest-lib
+        PRIVATE monad_execution
+        PRIVATE monad_core
     )
 endif()
 

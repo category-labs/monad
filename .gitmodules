@@ -42,5 +42,5 @@
 	path = third_party/asmjit
 	url = git@github.com:asmjit/asmjit.git
 [submodule "libs/vm/third_party/evmone"]
-	path = category/vm/third_party/evmone
+	path = third_party/evmone
 	url = git@github.com:category-labs/evmone.git

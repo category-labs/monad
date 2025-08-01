@@ -14,7 +14,8 @@ using namespace evmone::test;
 
 int main(int argc, char **argv)
 {
-    auto const root = test_resource::ethereum_tests_dir / "BlockchainTests";
+    auto const root =
+        monad::test_resource::ethereum_tests_dir / "BlockchainTests";
 
     init_llvm();
 

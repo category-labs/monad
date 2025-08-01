@@ -6,15 +6,10 @@ target_sources(execution-benchmarks
         benchmarktest_loader.cpp
 )
 target_include_directories(execution-benchmarks
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
+    PRIVATE "${TEST_DATA_DIR}/unit/common/include"
 )
 monad_compile_options(execution-benchmarks)
-
-target_include_directories(execution-benchmarks
-    PRIVATE
-        "${TOP_CURRENT_BINARY_DIR}/test"
-)
 
 target_link_libraries(execution-benchmarks
     PRIVATE benchmark::benchmark
@@ -23,10 +18,12 @@ target_link_libraries(execution-benchmarks
     PRIVATE evmone::statetestutils
     PRIVATE evmone-blockchaintest-lib
     PRIVATE nlohmann_json::nlohmann_json
+    PRIVATE monad_execution
+    PRIVATE monad_core
 )
 
 # TODO(BSC): fix this via evmone
 target_include_directories(execution-benchmarks
-  PRIVATE "${ROOT_DIRECTORY}/third_party/evmone/test/state"
-  PRIVATE "${ROOT_DIRECTORY}/third_party/evmone/test/statetest"
+  PRIVATE "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
+  PRIVATE "${CATEGORY_MAIN_DIR}/third_party/evmone/test/statetest"
 )

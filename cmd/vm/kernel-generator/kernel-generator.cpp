@@ -446,7 +446,7 @@ void emit_kernel(
     std::string_view parent_dir, std::string_view name)
 {
     auto const dirname =
-        test_resource::execution_benchmarks_dir / parent_dir / name;
+        monad::test_resource::execution_benchmarks_dir / parent_dir / name;
 
     if (config.validate && !evm_as::validate(eb)) {
         std::cerr << "validation error: " << dirname << std::endl;

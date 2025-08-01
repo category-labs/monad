@@ -11,9 +11,9 @@ target_sources(mce PRIVATE
 
 target_include_directories(mce
   PUBLIC src/
-  PUBLIC "${ROOT_DIRECTORY}/third_party/evmone/test/state"
-  PUBLIC "${ROOT_DIRECTORY}/third_party/valgrind/cachegrind"
-  PUBLIC "${ROOT_DIRECTORY}/third_party/valgrind/include"
+  PUBLIC "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
+  PUBLIC "${CATEGORY_MAIN_DIR}/third_party/valgrind/cachegrind"
+  PUBLIC "${CATEGORY_MAIN_DIR}/third_party/valgrind/include"
 )
 
 target_link_libraries(mce

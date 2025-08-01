@@ -107,10 +107,10 @@ namespace
     auto benchmark_tests()
     {
         return std::array{
-            test_resource::compile_benchmarks_dir / "usdt",
-            test_resource::compile_benchmarks_dir / "stop",
-            test_resource::compile_benchmarks_dir / "uniswap",
-            test_resource::compile_benchmarks_dir / "uniswap_v3",
+            monad::test_resource::compile_benchmarks_dir / "usdt",
+            monad::test_resource::compile_benchmarks_dir / "stop",
+            monad::test_resource::compile_benchmarks_dir / "uniswap",
+            monad::test_resource::compile_benchmarks_dir / "uniswap_v3",
         };
     }
 

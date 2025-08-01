@@ -474,5 +474,6 @@ TEST_F(EvmTest, EthCallOutOfGas)
 INSTANTIATE_TEST_SUITE_P(
     EvmTest, EvmFile,
     ::testing::ValuesIn(std::vector<fs::directory_entry>{
-        fs::directory_iterator(test_resource::regression_tests_dir), {}}),
+        fs::directory_iterator(monad::test_resource::regression_tests_dir),
+        {}}),
     [](auto const &info) { return info.param.path().stem().string(); });

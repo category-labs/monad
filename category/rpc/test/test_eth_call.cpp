@@ -9,6 +9,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/eth_call.h>
@@ -160,14 +161,14 @@ namespace
             state_override,
             complete_callback,
             (void *)&ctx,
-            true,
+            CALL_TRACER,
             gas_specified);
         f.get();
 
         EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
 
         byte_string const rlp_call_frames(
-            ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+            ctx.result->encoded_trace, ctx.result->encoded_trace_len);
         CallFrame expected{
             .type = CallType::CALL,
             .flags = 0,
@@ -245,12 +246,12 @@ TEST_F(EthCallFixture, simple_success_call)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
-    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
@@ -305,13 +306,13 @@ TEST_F(EthCallFixture, insufficient_balance)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
-    EXPECT_TRUE(ctx.result->rlp_call_frames_len == 0);
+    EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 0);
 
@@ -364,12 +365,12 @@ TEST_F(EthCallFixture, on_proposed_block)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
@@ -424,7 +425,7 @@ TEST_F(EthCallFixture, failed_to_read)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
@@ -433,7 +434,7 @@ TEST_F(EthCallFixture, failed_to_read)
         std::strcmp(
             ctx.result->message, "failure to initialize block hash buffer") ==
         0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 0);
 
@@ -486,7 +487,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
@@ -506,7 +507,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         ctx.result->output_data,
         ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 68137);
 
@@ -563,13 +564,13 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 100000u);
 
@@ -688,13 +689,13 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 30'000'000u);
 
@@ -757,13 +758,13 @@ TEST_F(EthCallFixture, from_contract_account)
         state_override,
         complete_callback,
         (void *)&ctx,
-        false,
+        NOOP_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
-    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 32094);
 
@@ -849,7 +850,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             state_override,
             complete_callback,
             (void *)ctx.get(),
-            false,
+            NOOP_TRACER,
             true);
     }
 
@@ -859,7 +860,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
 
         EXPECT_TRUE(ctx->result->status_code == EVMC_SUCCESS);
         EXPECT_EQ(ctx->result->output_data_len, 0);
-        EXPECT_EQ(ctx->result->rlp_call_frames_len, 0);
+        EXPECT_EQ(ctx->result->encoded_trace_len, 0);
         EXPECT_EQ(ctx->result->gas_refund, 0);
         EXPECT_EQ(ctx->result->gas_used, 32094);
 
@@ -946,14 +947,14 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
         state_override,
         complete_callback,
         (void *)&ctx,
-        true,
+        CALL_TRACER,
         true);
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
 
     byte_string const rlp_call_frames(
-        ctx.result->rlp_call_frames, ctx.result->rlp_call_frames_len);
+        ctx.result->encoded_trace, ctx.result->encoded_trace_len);
 
     CallFrame expected{
         .type = CallType::CALL,

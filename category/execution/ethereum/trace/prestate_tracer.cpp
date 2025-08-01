@@ -1,14 +1,14 @@
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -31,6 +31,22 @@ std::string bytes_to_hex(uint8_t const (&input)[N])
     out[1] = 'x';
     for (std::size_t i = 0; i < N; ++i) {
         uint8_t byte = input[i];
+        out[2 + 2 * i] = hex_chars[(byte >> 4) & 0xF];
+        out[2 + 2 * i + 1] = hex_chars[byte & 0xF];
+    }
+    return out;
+}
+
+std::string byte_string_to_hex(byte_string_view view)
+{
+    auto const N = view.length();
+    // Reserve exactly 2*N + 2 chars
+    std::string out;
+    out.resize(2 * N + 2);
+    out[0] = '0';
+    out[1] = 'x';
+    for (std::size_t i = 0; i < N; ++i) {
+        uint8_t byte = view[i];
         out[2 + 2 * i] = hex_chars[(byte >> 4) & 0xF];
         out[2 + 2 * i + 1] = hex_chars[byte & 0xF];
     }
@@ -65,7 +81,8 @@ json storage_to_json(
     return res;
 }
 
-json account_to_json(std::optional<Account> const &account)
+json account_to_json(
+    std::optional<Account> const &account, State *state = nullptr)
 {
     json res = json::object();
     if (MONAD_UNLIKELY(!account.has_value())) {
@@ -79,7 +96,19 @@ json account_to_json(std::optional<Account> const &account)
         auto const nonce = account.value().nonce;
 
         res["balance"] = "0x" + intx::to_string(balance, 16);
-        res["code_hash"] = bytes_to_hex(code_hash.bytes);
+        if (state != nullptr && code_hash != NULL_HASH) {
+            auto const icode = state->read_code(code_hash)->intercode();
+            res["code"] = byte_string_to_hex(
+                byte_string_view(icode->code(), icode->code_size()));
+        }
+        else {
+            // TODO(dhil): This is a hack to make the db tests pass for now.
+            // Some slight architectural redesign is necessary if we want to
+            // embed bytecodes in traces stored in the database. Moreover, we
+            // should decide whether to always include the code hash in the
+            // trace.
+            res["code_hash"] = bytes_to_hex(code_hash.bytes);
+        }
         if (nonce != 0) {
             res["nonce"] = nonce; // nonce is kept in integer format
         }
@@ -87,12 +116,12 @@ json account_to_json(std::optional<Account> const &account)
     return res;
 }
 
-json account_state_to_json(AccountState const &as)
+json account_state_to_json(AccountState const &as, State *state = nullptr)
 {
     auto const &account = as.account_;
     auto const &storage = as.storage_;
 
-    json res = account_to_json(account);
+    json res = account_to_json(account, state);
     if (!storage.empty() && account.has_value()) {
         res["storage"] = storage_to_json(storage);
     }
@@ -190,22 +219,22 @@ StateDeltas &&PrestateTracer::get_state_deltas()
     return std::move(state_deltas_);
 }
 
-json state_to_json(PreState const &state)
+json state_to_json(PreState const &pre_state, State *state)
 {
     json res = json::object();
-    for (auto const &[address, as] : state) {
+    for (auto const &[address, as] : pre_state) {
         // TODO: Because this address is "touched". Should we keep this for
         // monad?
         if (MONAD_UNLIKELY(address == ripemd_address)) {
             continue;
         }
         auto const key = bytes_to_hex(address.bytes);
-        res[key] = account_state_to_json(as);
+        res[key] = account_state_to_json(as, state);
     }
     return res;
 }
 
-json state_deltas_to_json(StateDeltas const &state_deltas)
+json state_deltas_to_json(StateDeltas const &state_deltas, State *state)
 {
     json pre = json::object();
     json post = json::object();
@@ -219,12 +248,12 @@ json state_deltas_to_json(StateDeltas const &state_deltas)
             // The accounts in the pre object will still contain all of their
             // basic fields—nonce, balance, and code—even if those fields have
             // not been modified
-            pre[address_key] = account_to_json(original_account);
+            pre[address_key] = account_to_json(original_account, state);
             // The post object is more selective - it only contains the specific
             // fields that were actually modified during the transaction
             if (!(original_account.has_value() &&
                   current_account.has_value())) {
-                post[address_key] = account_to_json(current_account);
+                post[address_key] = account_to_json(current_account, state);
             }
             else {
                 if (original_account->balance != current_account->balance) {
@@ -271,22 +300,23 @@ json state_deltas_to_json(StateDeltas const &state_deltas)
     return res;
 }
 
-json state_to_json_with_tx_hash(PreState const &state, Transaction const &tx)
+json state_to_json_with_tx_hash(
+    PreState const &pre_state, Transaction const &tx, State *state)
 {
     json res = json::object();
     auto const hash = keccak256(rlp::encode_transaction(tx));
     auto const key = bytes_to_hex(hash.bytes);
-    res[key] = state_to_json(state);
+    res[key] = state_to_json(pre_state, state);
     return res;
 }
 
 json state_deltas_to_json_with_tx_hash(
-    StateDeltas const &state_deltas, Transaction const &tx)
+    StateDeltas const &state_deltas, Transaction const &tx, State *state)
 {
     json res = json::object();
     auto const hash = keccak256(rlp::encode_transaction(tx));
     auto const key = bytes_to_hex(hash.bytes);
-    res[key] = state_deltas_to_json(state_deltas);
+    res[key] = state_deltas_to_json(state_deltas, state);
     return res;
 }
 

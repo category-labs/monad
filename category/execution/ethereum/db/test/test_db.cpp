@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
@@ -934,7 +935,10 @@ TYPED_TEST(DBTest, commit_call_frames)
 TYPED_TEST(DBTest, commit_prestate_traces)
 {
     TrieDb tdb{this->db};
+    vm::VM vm{};
 
+    BlockState bs(tdb, vm);
+    
     PreState pre_state;
     {
         Account a{.balance = 0x20000, .nonce = 1};
@@ -989,7 +993,10 @@ TYPED_TEST(DBTest, commit_prestate_traces)
 TYPED_TEST(DBTest, commit_state_deltas_traces)
 {
     TrieDb tdb{this->db};
+    vm::VM vm{};
 
+    BlockState bs(tdb, vm);
+    
     auto const state_deltas = StateDeltas{
         {ADDR_A,
          StateDelta{

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/trace/tracer_config.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -55,9 +56,9 @@ typedef struct monad_eth_call_result
 
     char *message;
 
-    // for trace
-    uint8_t *rlp_call_frames;
-    size_t rlp_call_frames_len;
+    // for traces, i.e. call, prestate, or statediff
+    uint8_t *encoded_trace;
+    size_t encoded_trace_len;
 } monad_eth_call_result;
 
 void monad_eth_call_result_release(monad_eth_call_result *);
@@ -76,7 +77,7 @@ void monad_eth_call_executor_submit(
     uint64_t block_number, uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
-    bool trace, bool gas_specified);
+    enum tracer_config tracer_config, bool gas_specified);
 
 #ifdef __cplusplus
 }

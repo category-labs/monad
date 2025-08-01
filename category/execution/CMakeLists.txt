@@ -110,6 +110,7 @@ add_library(
   "ethereum/trace/prestate_tracer.hpp"
   "ethereum/trace/rlp/call_frame_rlp.cpp"
   "ethereum/trace/rlp/call_frame_rlp.hpp"
+  "ethereum/trace/tracer_config.h"
   "ethereum/transaction_gas.cpp"
   "ethereum/transaction_gas.hpp"
   "ethereum/tx_context.cpp"

@@ -7,7 +7,9 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <boost/fiber/future/promise.hpp>
@@ -47,11 +49,26 @@ TEST(PrestateTracer, pre_state_to_json)
     PreState prestate;
     prestate.emplace(ADDR_A, as);
 
+    // The State setup is only used to get code
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State st(bs, Incarnation{0, 0});
+
     auto const json_str = R"(
     {
         "0x0000000000000000000000000000000000000100":{
             "balance":"0x3e8",
-            "code_hash":"0x15b81cad95d9a1bc40708726211eb3d63023f8e6e14fd7459d4c383fc75d2eef",
+            "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
             "nonce":1,
             "storage":{
                 "0x00000000000000000000000000000000000000000000000000000000cafebabe":"0x0000000000000000000000000000000000000000000000000000000000000003",
@@ -62,7 +79,54 @@ TEST(PrestateTracer, pre_state_to_json)
         
     })";
 
-    EXPECT_EQ(state_to_json(prestate), nlohmann::json::parse(json_str));
+    EXPECT_EQ(state_to_json(prestate, &st), nlohmann::json::parse(json_str));
+}
+
+TEST(PrestateTracer, state_deltas_to_json)
+{
+    Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    StateDeltas state_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, a},
+             .storage = {
+                 {key1, {bytes32_t{}, value1}},
+                 {key2, {bytes32_t{}, value1}},
+             }}}};
+
+    commit_sequential(
+        tdb,
+        state_deltas,
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State st(bs, Incarnation{0, 0});
+
+    auto const json_str = R"(
+    {
+        "post":{
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x1f4",
+                "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+                "nonce":1,
+                "storage":{
+                    "0x00000000000000000000000000000000000000000000000000000000cafebabe":"0x0000000000000000000000000000000000000000000000000000000000000003",
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c":"0x0000000000000000000000000000000000000000000000000000000000000003"
+                }
+            }
+        },
+        "pre":{"0x0000000000000000000000000000000000000100":{"balance":"0x0"}}
+    })";
+
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, &st), nlohmann::json::parse(json_str));
 }
 
 /*

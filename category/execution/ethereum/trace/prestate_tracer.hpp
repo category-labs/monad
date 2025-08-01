@@ -24,6 +24,8 @@ struct PrestateTracerBase
 
     virtual Map<Address, AccountState> &&get_pre_state() = 0;
     virtual StateDeltas &&get_state_deltas() = 0;
+
+    virtual ~PrestateTracerBase() = default;
 };
 
 struct NoopPrestateTracer final : public PrestateTracerBase
@@ -53,12 +55,12 @@ public:
 using PreState = PrestateTracerBase::Map<Address, AccountState>;
 
 // debug methods
-nlohmann::json state_to_json(PreState const &);
-nlohmann::json state_deltas_to_json(StateDeltas const &);
+nlohmann::json state_to_json(PreState const &, State *state = nullptr);
+nlohmann::json state_deltas_to_json(StateDeltas const &, State *state = nullptr);
 
 nlohmann::json
-state_to_json_with_tx_hash(PreState const &, Transaction const &);
+state_to_json_with_tx_hash(PreState const &, Transaction const &, State *state = nullptr);
 nlohmann::json
-state_deltas_to_json_with_tx_hash(StateDeltas const &, Transaction const &);
+state_deltas_to_json_with_tx_hash(StateDeltas const &, Transaction const &, State *state = nullptr);
 
 MONAD_NAMESPACE_END

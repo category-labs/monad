@@ -78,30 +78,6 @@ Fixpoint sum_gas_bids (l : list TxWithHdr) : N :=
 Definition staticReserveBal : N. Proof. Admitted.
 (* intermediate does not include [candidate] *)
 
-(*
-candidate: block n
-stateAfterLastExecuted : state after n-k
-
-The design below works. it has a allowed_to_empty field in each tx.
-The leader sets this flag in the manner described in the relation below: the relation constrains the value of the field for [candidate] in each case.
-
-The main problem though is that followers may have a difficult time verifying
-this field:
-Suppose k=10.
-Block 19 and 20 have pure withdrawal transactions (no smart contract) from Alice.
-The block 20 tx will be marked as allowed_to_empty if it is verifying starting block 19, but not if it
-is verifyied starting from block 18 state.
-
-Need to maintain fixed distance.
- *)
-
-
-(* assume:
-   - all transactions in intermediate have their [isAllowedToEmpty] fields properly set. that field is garbage for [candidate]
-   - stateNminusK: is the state after executing block n-k
-   - intermediate has ALL transactions between the end of block n-k and candidate
-   - candidate is from block n: TODO: fix this
- *)
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
@@ -183,26 +159,23 @@ Definition isAllowedToEmptyLatestState (knownBlocks: gmap N Block)
     List.filter (fun t => bool_decide (sender t = sender tx)) (emptyingCheckRange knownBlocks tx)
                 in bool_decide (lengthN prevTxsFromSameSender = 0).
 
+Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
+
 Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalState) (t: TxWithHdr) : (evm.GlobalState * TransactionResult) :=
   let '(hdr, (tx, txindex)) := t in 
   let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
-  let erb := N.min ReserveBal (balanceOfAc s (sender t)) in
-  if (bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si (sender t)) || (isAllowedToEmptyLatestState knownBlocks s t))
+  let balCheck (a: evm.address) :=
+    let erb := N.min ReserveBal (balanceOfAc s a) in
+    bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si a) in
+  let allBalCheck := (forallb balCheck allAccounts) in
+  if (isAllowedToEmptyLatestState knownBlocks s t || allBalCheck)
   then (applyGasRefundsAndRewards hdr si r, r)
-  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee (fst (snd t))),  DippedTooMuchIntoReserve (fst (snd t))).
+  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee (fst (snd t))),  DippedTooMuchIntoReserve (fst (snd t))) (* revert tx *).
 
-
-(*
-Definition consensusAcceptableBlocksMarked (stateNminusK : StateOfAccounts)
-  (proposedChainExtension: list Block) : bool* (list Block) :=
-  let allTx := flat_map transactions proposedChainExtension in
-  fst (consensusAcceptableTxs stateNminusK [] allTx).
- *)
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
-(* txindex can be used to store incarnation numbers *)
 Definition stateAfterTransactionV2 (knownBlocks: gmap N Block) (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
@@ -303,15 +276,7 @@ Proof using.
   simpl in *.
   clear IHn.
   
-  Ltac rdestruct := 
-  rewrite IHn.
-  
-      
-  Search take None.
-  destruct 
-  simpl in *.
-  - simpl.
-Abort.
+Abort. (* TODO: finish this proof *)
 
 Lemma execTxMono header (s1 s2 : StateOfAccounts) i (tx: Transaction) :
   (forall addr, balanceOfAc s1 addr <= balanceOfAc s2 addr)

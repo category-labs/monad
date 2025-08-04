@@ -133,10 +133,23 @@ int init_execution_event_recorder(EventRingConfig const &ring_config)
     if (flock(ring_fd, LOCK_EX | LOCK_NB) == -1) {
         int const saved_errno = errno;
         if (saved_errno == EWOULDBLOCK) {
-            // TODO(ken): we report who this is later in PR4, when the utility
-            //    function `monad_event_ring_find_writer_pids` is added
-            LOG_ERROR(
-                "event ring file `{}` is owned by another process", ring_path);
+            pid_t owner_pid = 0;
+            size_t owner_pid_size = 1;
+
+            // Another process has the exclusive lock; find out who it is
+            (void)monad_event_ring_find_writer_pids(
+                ring_fd, &owner_pid, &owner_pid_size);
+            if (owner_pid == 0) {
+                LOG_ERROR(
+                    "event ring file `{}` is owned by an unknown other process",
+                    ring_path);
+            }
+            else {
+                LOG_ERROR(
+                    "event ring file `{}` is owned by pid {}",
+                    ring_path,
+                    owner_pid);
+            }
             return saved_errno;
         }
         LOG_ERROR(

@@ -297,6 +297,7 @@ Result<Receipt> ExecuteTransaction<rev>::operator()()
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
             block_state_.merge(state);
+            captured_state_ = std::make_unique<State>(std::move(state));
             return receipt;
         }
     }
@@ -317,8 +318,17 @@ Result<Receipt> ExecuteTransaction<rev>::operator()()
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
         block_state_.merge(state);
+        captured_state_ = std::make_unique<State>(std::move(state));
         return receipt;
     }
+}
+
+template <evmc_revision rev>
+std::unique_ptr<State> ExecuteTransaction<rev>::get_captured_state()
+{
+    std::unique_ptr<State> current{};
+    std::swap(current, captured_state_);
+    return current;
 }
 
 template class ExecuteTransaction<EVMC_FRONTIER>;

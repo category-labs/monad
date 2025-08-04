@@ -30,12 +30,15 @@
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -72,6 +75,190 @@ std::span<std::byte const> init_txn_start(
     return as_bytes(std::span{txn.data});
 }
 
+// Tracks information about an accessed account, including (1) the prestate and
+// the (2) the modified state if a write access modified anything, with helper
+// functions to determine what was modified
+struct AccountAccessInfo
+{
+    Address const *address;
+    AccountState const *prestate; // State as it existed in original_
+    AccountState const *modified_state; // Last state as it existed in current_
+
+    bool is_read_only_access() const
+    {
+        return modified_state == nullptr;
+    }
+
+    std::pair<uint64_t, bool> get_nonce_modification() const
+    {
+        if (is_read_only_access()) {
+            return {0, false};
+        }
+        uint64_t const prestate_nonce =
+            is_dead(prestate->account_) ? 0 : prestate->account_->nonce;
+        uint64_t const modified_nonce = is_dead(modified_state->account_)
+                                            ? 0
+                                            : modified_state->account_->nonce;
+        return {modified_nonce, prestate_nonce != modified_nonce};
+    }
+
+    std::pair<uint256_t, bool> get_balance_modification() const
+    {
+        if (is_read_only_access()) {
+            return {0, false};
+        }
+
+        uint256_t const prestate_balance =
+            is_dead(prestate->account_) ? 0 : prestate->account_->balance;
+        uint256_t const modified_balance =
+            is_dead(modified_state->account_)
+                ? 0
+                : modified_state->account_->balance;
+        return {modified_balance, prestate_balance != modified_balance};
+    }
+};
+
+// Records a MONAD_EXEC_STORAGE_ACCESS event for all reads and writes in the
+// AccountState prestate and modified maps
+void record_storage_events(
+    ExecutionEventRecorder *exec_recorder,
+    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
+    uint32_t account_index, Address const *address,
+    AccountState::Map<bytes32_t, bytes32_t> const *prestate_storage,
+    AccountState::Map<bytes32_t, bytes32_t> const *modified_storage,
+    bool is_transient)
+{
+    for (size_t index = 0; auto const &[key, value] : *prestate_storage) {
+        bool is_modified = false;
+        bytes32_t end_value = {};
+
+        if (modified_storage) {
+            if (auto const i = modified_storage->find(key);
+                i != end(*modified_storage)) {
+                end_value = i->second;
+                is_modified = end_value != value;
+            }
+        }
+
+        monad_exec_storage_access const storage_event = {
+            .address = *address,
+            .index = static_cast<uint32_t>(index++),
+            .access_context = ctx,
+            .modified = is_modified,
+            .transient = is_transient,
+            .key = key,
+            .start_value = value,
+            .end_value = end_value,
+        };
+
+        uint64_t seqno;
+        uint8_t *payload;
+        monad_event_descriptor *const event = exec_recorder->record_reserve(
+            MONAD_EXEC_STORAGE_ACCESS, sizeof storage_event, &seqno, &payload);
+
+        event->user[MONAD_FLOW_BLOCK_SEQNO] =
+            exec_recorder->get_block_start_seqno();
+        event->user[MONAD_FLOW_TXN_ID] = opt_txn_num.value_or(-1) + 1;
+        event->user[MONAD_FLOW_ACCOUNT_INDEX] = account_index;
+        memcpy(payload, &storage_event, sizeof storage_event);
+        monad_event_recorder_commit(event, seqno);
+    }
+}
+
+// Records an MONAD_EXEC_ACCOUNT_ACCESS event, and delegates to
+// record_storage_events to record both the ordinary and transient storage
+// accesses
+void record_account_events(
+    ExecutionEventRecorder *exec_recorder,
+    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
+    uint32_t index, AccountAccessInfo const &account_info)
+{
+    MONAD_ASSERT(account_info.prestate);
+    monad_c_eth_account_state initial_state;
+    Account const &account = is_dead(account_info.prestate->account_)
+                                 ? Account{}
+                                 : *account_info.prestate->account_;
+
+    initial_state.nonce = account.nonce;
+    initial_state.balance = account.balance;
+    initial_state.code_hash = account.code_hash;
+
+    auto const [modified_balance, is_balance_modified] =
+        account_info.get_balance_modification();
+    auto const [modified_nonce, is_nonce_modified] =
+        account_info.get_nonce_modification();
+
+    monad_exec_account_access const access_event = {
+        .index = index,
+        .address = *account_info.address,
+        .access_context = ctx,
+        .is_balance_modified = is_balance_modified,
+        .is_nonce_modified = is_nonce_modified,
+        .prestate = initial_state,
+        .modified_balance = modified_balance,
+        .modified_nonce = modified_nonce,
+        .storage_key_count =
+            static_cast<uint32_t>(size(account_info.prestate->storage_)),
+        .transient_count = static_cast<uint32_t>(
+            size(account_info.prestate->transient_storage_))};
+    exec_recorder->record(opt_txn_num, MONAD_EXEC_ACCOUNT_ACCESS, access_event);
+
+    auto const *const post_state_storage_map =
+        account_info.is_read_only_access()
+            ? nullptr
+            : &account_info.modified_state->storage_;
+    record_storage_events(
+        exec_recorder,
+        ctx,
+        opt_txn_num,
+        index,
+        account_info.address,
+        &account_info.prestate->storage_,
+        post_state_storage_map,
+        false);
+
+    auto const *const post_state_transient_map =
+        account_info.is_read_only_access()
+            ? nullptr
+            : &account_info.modified_state->transient_storage_;
+    record_storage_events(
+        exec_recorder,
+        ctx,
+        opt_txn_num,
+        index,
+        account_info.address,
+        &account_info.prestate->transient_storage_,
+        post_state_transient_map,
+        true);
+}
+
+// Function that records all state accesses and changes that occurred in some
+// scope, either the block prologue, block epilogue, or in the scope of some
+// transaction
+void record_account_access_events_internal(
+    ExecutionEventRecorder *exec_recorder,
+    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
+    State const &state)
+{
+    monad_exec_account_access_list_header const list_header = {
+        .entry_count = static_cast<uint32_t>(state.get_account_size()),
+        .access_context = ctx};
+    exec_recorder->record(
+        opt_txn_num, MONAD_EXEC_ACCOUNT_ACCESS_LIST_HEADER, list_header);
+    uint32_t index = 0;
+    state.visit_accounts([exec_recorder, opt_txn_num, ctx, &index](
+                             Address const *address,
+                             AccountState const *prestate,
+                             AccountState const *modified_state) {
+        record_account_events(
+            exec_recorder,
+            ctx,
+            opt_txn_num,
+            index++,
+            AccountAccessInfo{address, prestate, modified_state});
+    });
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -79,7 +266,7 @@ MONAD_NAMESPACE_BEGIN
 void record_txn_events(
     uint32_t txn_num, Transaction const &transaction, Address const &sender,
     Result<Receipt> const &receipt_result,
-    std::span<CallFrame const> call_frames)
+    std::span<CallFrame const> call_frames, State const *txn_state)
 {
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
@@ -165,7 +352,22 @@ void record_txn_events(
             as_bytes(input_bytes),
             as_bytes(return_bytes));
     }
+    MONAD_ASSERT(txn_state != nullptr, "state was nullptr in non-error case");
+    record_account_access_events_internal(
+        exec_recorder, MONAD_ACCT_ACCESS_TRANSACTION, txn_num, *txn_state);
     exec_recorder->record(txn_num, MONAD_EXEC_TXN_END);
+}
+
+// The externally-visible wrapper of the account-access-recording function that
+// is called from execute_block.cpp, to record prologue and epilogue accesses;
+// transaction-scope state accesses use record_txn_exec_result_events instead
+void record_account_access_events(
+    monad_exec_account_access_context ctx, State const &state)
+{
+    if (ExecutionEventRecorder *const e = g_exec_event_recorder.get()) {
+        return record_account_access_events_internal(
+            e, ctx, std::nullopt, state);
+    }
 }
 
 MONAD_NAMESPACE_END

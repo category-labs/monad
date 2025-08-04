@@ -141,8 +141,6 @@ Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownS
   end.
 
 Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
-  let bal0 := balanceOfAc latestKnownState (sender candidate) in
-  let NminusK := (txBlockNum candidate - K) in
   if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState candidate
   then bool_decide (maxTxFee candidate <= balanceOfAc latestKnownState (sender candidate))
   else
@@ -153,8 +151,6 @@ Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : Sta
   let NminusK := (txBlockNum candidate - K) in
   let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
   consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
-
-  
 
 Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (block: Block) : bool :=
   forallb  (consensusAcceptableTx knownBlocks stateNminusK) (transactions block).
@@ -270,9 +266,10 @@ addrDelegated : StateOfAccounts → evm.address → bool
 evm.RelDecision_instance_0 : EqDecision evm.address
 K : N
 evm.Countable_instance_0 : Countable evm.address
-
  *)
 
+Hint Rewrite -> bool_decide_eq_true : iff.
+Require Import monad.proofs.bigauto.
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) (candidate : TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl) candidate = true
   -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
@@ -284,7 +281,26 @@ Proof.
   intros Hc.
   unfold consensusAcceptableTxG in Hc.
   case_match.
+  2:{ (* not allowed to empty *)
+    unfold stateAfterTransactionV2.
+    simpl in Hc.
+    autorewrite with iff in Hc.
+    miscPure.forward_reason.
+    case_bool_decide.
+    { (* sender intermediateHd = sender candidate *)
+      unfold maxTotalReserveDippableDebit in Hc.
+      unfold validateTx.
+      rwHypsP.
+      case_bool_decide; simpl in *; try lia;[].
+      unfold execTxAfterValidationV2.
+      simpl.
+      
+    
+    rewrite 
+      
   {
+    unfold stateAfterTransactionV2.
+    
     
 
   here

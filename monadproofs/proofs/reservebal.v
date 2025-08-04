@@ -216,6 +216,20 @@ Proof using.
   reflexivity.
 Qed.
 
+Set Nested Proofs Allowed.
+
+Lemma maxTotalReserveDippableDebitEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
+  (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
+  ->   maxTotalReserveDippableDebit knownBlocks s1 accountedSuffix candidate =
+         maxTotalReserveDippableDebit knownBlocks s2 accountedSuffix candidate.
+Proof using.
+  intros Hd.
+  unfold maxTotalReserveDippableDebit.
+  symmetry.
+  rewrite -> isEmptyingEq with (s2:=s1) by auto.
+  reflexivity.
+Qed.
+
 Lemma maxTotalReserveDippableDebitLeq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix unaccountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
   (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
   -> maxTotalReserveDippableDebitL knownBlocks s1 accountedSuffix unaccountedSuffix (sender candidate)
@@ -227,16 +241,10 @@ Proof using.
   rewrite IHunaccountedSuffix.
   f_equal.
   case_bool_decide; auto.
-Set Nested Proofs Allowed.
-Lemma maxTotalReserveDippableDebitEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
-  (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
-  -> maxTotalReserveDippableDebitL knownBlocks s1 accountedSuffix accountedSuffix (sender candidate)
-   = maxTotalReserveDippableDebitL knownBlocks s2 accountedSuffix accountedSuffix (sender candidate).
-Proof using.
-  maxTotalReserveDippableDebit knownBlocks s1 accountedSuffix a =
-  maxTotalReserveDippableDebit knownBlocks s2 accountedSuffix a
-  
-  go.
+  apply maxTotalReserveDippableDebitEq; auto.
+Qed.
+
+
 Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
   (forall a, balanceOfAc s1 a <= balanceOfAc s2 a)
   -> (forall a, addrDelegated s1 a = addrDelegated s2 a)
@@ -248,17 +256,22 @@ Proof.
   specialize (Hb (sender candidate)).
   rewrite -> isEmptyingEq with (s2:=s1) by auto.
   case_match; rewrite -> bool_decide_eq_true in *; try lia;[].
-  {
-    
-    rewrite <- Hd.
-    destruct (addrDelegated s1 (sender candidate)); rewrite -> bool_decide_eq_true in *; lia.
-  }
-  {
-    destruct (isAllowedToEmpty knownBlocks s1 (txBlockNum candidate - K) t);
-      rewrite -> bool_decide_eq_true in *; try lia.
-  }
+  rewrite -> maxTotalReserveDippableDebitLeq with (s2:=s1) by auto.
+  lia.
 Qed.
+Print Assumptions consensusAcceptableTxGmono.
 
+(*
+Axioms:
+txDelegatesAddr : evm.address → TxWithHdr → bool
+maxTxFee : TxWithHdr → N
+inhBlock : Inhabited Block
+addrDelegated : StateOfAccounts → evm.address → bool
+evm.RelDecision_instance_0 : EqDecision evm.address
+K : N
+evm.Countable_instance_0 : Countable evm.address
+
+ *)
 
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) (candidate : TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl) candidate = true

@@ -168,16 +168,23 @@ Definition isAllowedToEmptyLatestState (knownBlocks: gmap N Block)
 
 Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
 
-Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalState) (t: TxWithHdr) : (evm.GlobalState * TransactionResult) :=
+Definition stateAfterTransaction s (t: TxWithHdr) :=
   let '(hdr, (tx, txindex)) := t in 
   let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
+  (applyGasRefundsAndRewards hdr si r, r).
+
+Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Admitted.
+
+Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalState) (t: TxWithHdr)
+  : (evm.GlobalState * TransactionResult) :=
+  let (si, r) := stateAfterTransaction s t in
   let balCheck (a: evm.address) :=
-    let erb := N.min ReserveBal (balanceOfAc s a) in
+    let erb:N := ReserveBal `min` (balanceOfAc s a) in
     bool_decide (erb  - (if bool_decide (sender t =a ) then maxTxFee t else 0) <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
   if (isAllowedToEmptyLatestState knownBlocks s t || allBalCheck)
-  then (applyGasRefundsAndRewards hdr si r, r) (* this cannot debit any account. move such steps to stateAfterTransactionAux *)
-  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - txMaxFee (fst (snd t))),  DippedTooMuchIntoReserve (fst (snd t))) (* revert tx *).
+  then (si, r)
+  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - maxTxFee t),  DippedTooMuchIntoReserve t) (* revert tx *).
 
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
@@ -281,7 +288,7 @@ Proof.
   intros Hc.
   unfold consensusAcceptableTxG in Hc.
   case_match.
-  2:{ (* not allowed to empty *)
+  2:{ (*candidate not allowed to empty *)
     unfold stateAfterTransactionV2.
     simpl in Hc.
     autorewrite with iff in Hc.
@@ -293,9 +300,50 @@ Proof.
       rwHypsP.
       case_bool_decide; simpl in *; try lia;[].
       unfold execTxAfterValidationV2.
+      remember (stateAfterTransaction latestState intermediateHd) as ss.
+      destruct ss as [si  res].
+      simpl in *.
+      match goal with
+        [|- context[ ?l || ?r ]] =>
+          remember (l || r) as lr
+      end.
+      destruct lr.
+      { (* no revert *)
+        unfold consensusAcceptableTxG.
+        
+        
+       
+                       
+      remember (isAllowedToEmptyLatestState knownBlocks latestState intermediateHd) as allow.
+      destruct allow; simpl in *.
+      {
+        unfold consensusAcceptableTxG.
+        orient_rwHyps.
+        assert (isAllowedToEmpty knownBlocks si intermediateTl candidate = false)as Heq.
+        {
+          revert Heqallow Heqss H.
+          intros.
+          unfold isAllowedToEmpty in *.
+          unfold isAllowedToEmptyLatestState in *.
+          revert Heqallow.
+          orient_rwHyps.
+          intros.
+          Locate btauto.
+          Btauto.btauto.
+        Forward.rwHyps.
+        Locate rwHyps.
+
+        unfold isAllowedToEmptyLatestState in *.
+        unfold isAllowedToEmpty in *.
+        
+      case_match.
+      {
+        
+      remember_destruct
       simpl.
-      
-    
+      Lemma allowedEmptyEq:
+    isAllowedToEmptyLatestState knownBlocks latestState intermediateHd 
+        isAllowedToEmpty knownBlocks latestState (intermediateHd :: intermediateTl) candidate
     rewrite 
       
   {

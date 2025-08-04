@@ -1,18 +1,22 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet_alloc.hpp>
 #include <category/execution/monad/chain/monad_revision.h>
-#include <category/execution/ethereum/core/block.hpp>
 
 #include <evmc/evmc.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 monad_revision MonadMainnet::get_monad_revision(
-    uint64_t /* block_number */, uint64_t /* timstamp */) const
+    uint64_t /* block_number */, uint64_t const timestamp) const
 {
+    if (MONAD_LIKELY(timestamp >= 1755091800)) { // 2025-08-13T13:30:00.000Z
+        return MONAD_THREE;
+    }
     return MONAD_TWO;
 }
 

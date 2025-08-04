@@ -173,7 +173,7 @@ Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalSta
   let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
   let balCheck (a: evm.address) :=
     let erb := N.min ReserveBal (balanceOfAc s a) in
-    bool_decide (erb (* - txMaxFee t *) <= balanceOfAc si a) in
+    bool_decide (erb  - (if bool_decide (sender t =a ) then maxTxFee t else 0) <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
   if (isAllowedToEmptyLatestState knownBlocks s t || allBalCheck)
   then (applyGasRefundsAndRewards hdr si r, r)
@@ -219,7 +219,7 @@ Lemma inductiveSteps (knownBlocks: gmap N Block) (latestState : StateOfAccounts)
      | Some (si, tr) =>
          consensusAcceptableTxG knownBlocks si intermediate2 candidate = true
      end.
-Proof. 
+Proof. Abort.
 
 Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
   consensusAcceptableTxG knownBlocks s1 intermediate candidate = true

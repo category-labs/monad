@@ -47,8 +47,7 @@ Definition user_reserve_balance
   : N := 100.
  *)
 
-Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool :=
-  false.
+Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool. Proof. Admitted.
 
 (*
 (* Interpret the legacy gas_price field as our gas_bid. *)
@@ -122,7 +121,7 @@ Definition isAllowedToEmpty (knownBlocks: gmap N Block)
     forallb (fun txx => negb (txDelegatesAddr (sender tx) txx)) (intermediateTxs knownBlocks stateBlockIndex tx) in
   let prevTxsFromSameSender := 
     List.filter (fun t => bool_decide (sender t = sender tx)) (emptyingCheckRange knownBlocks tx)
-                in bool_decide (lengthN prevTxsFromSameSender = 0).
+                in notDelegated && bool_decide (lengthN prevTxsFromSameSender = 0).
   
 
 Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) : bool :=
@@ -202,6 +201,35 @@ Fixpoint stateAfterTransactionsV2 (knownBlocks: gmap N Block)  (s: StateOfAccoun
       end
   end.
 
+Lemma isEmptyingEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) n tx :
+  (forall a, addrDelegated s1 a = addrDelegated s2 a)
+  -> isAllowedToEmpty knownBlocks s1 n tx =  isAllowedToEmpty knownBlocks s2 n tx.
+Proof using.
+  
+Admitted.
+
+Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
+  (forall a, balanceOfAc s1 a <= balanceOfAc s2 a)
+  -> (forall a, addrDelegated s1 a = addrDelegated s2 a)
+  -> consensusAcceptableTxG knownBlocks s1 intermediate candidate = true
+  -> consensusAcceptableTxG knownBlocks s2 intermediate candidate = true.
+Proof.
+  intros Hb Hd Hc.
+  unfold consensusAcceptableTxG in *.
+  specialize (Hb (sender candidate)).
+  case_match. (* filter nil *)
+  {
+    rewrite <- Hd.
+    destruct (addrDelegated s1 (sender candidate)); rewrite -> bool_decide_eq_true in *; lia.
+  }
+  {
+    rewrite -> isEmptyingEq with (s2:=s1) by auto.
+    destruct (isAllowedToEmpty knownBlocks s1 (txBlockNum candidate - K) t);
+      rewrite -> bool_decide_eq_true in *; try lia.
+  }
+Qed.
+
+
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) (candidate : TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl) candidate = true
   -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
@@ -209,7 +237,10 @@ Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) 
      | Some (si, tr) =>
          consensusAcceptableTxG knownBlocks si intermediateTl candidate = true
      end.
-Proof. Admitted.
+Proof.
+
+  here
+Abort.
 
 
 Lemma inductiveSteps (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediate1 intermediate2: list TxWithHdr) (candidate : TxWithHdr) :
@@ -220,12 +251,6 @@ Lemma inductiveSteps (knownBlocks: gmap N Block) (latestState : StateOfAccounts)
          consensusAcceptableTxG knownBlocks si intermediate2 candidate = true
      end.
 Proof. Abort.
-
-Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
-  consensusAcceptableTxG knownBlocks s1 intermediate candidate = true
-  -> consensusAcceptableTxG knownBlocks s2 intermediate candidate = true.
-Proof. Admitted.
-
 
 Definition stateAfterBlockV2 (knownBlocks: gmap N Block) (s: StateOfAccounts) (b: Block): option (StateOfAccounts * list TransactionResult) :=
   match stateAfterTransactionsV2 knownBlocks s (transactions b) with

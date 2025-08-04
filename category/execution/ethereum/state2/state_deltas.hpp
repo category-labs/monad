@@ -6,7 +6,7 @@
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"

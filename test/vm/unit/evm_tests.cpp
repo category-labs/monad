@@ -1,9 +1,9 @@
 #include "evm_fixture.hpp"
 
-#include <monad/vm/code.hpp>
-#include <monad/vm/compiler.hpp>
-#include <monad/vm/compiler/types.hpp>
-#include <monad/vm/evm/opcodes.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/compiler.hpp>
+#include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/opcodes.hpp>
 
 #include <test_resource_data.h>
 

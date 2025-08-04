@@ -14,9 +14,9 @@
 #include "test_state.hpp"
 
 #include <benchmark/benchmark.h>
+#include <category/vm/core/assert.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <monad/vm/core/assert.h>
 
 #include <cstdint>
 #include <format>

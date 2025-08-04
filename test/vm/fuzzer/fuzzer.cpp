@@ -10,12 +10,12 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
-#include <monad/vm/compiler/ir/x86/types.hpp>
-#include <monad/vm/core/assert.h>
-#include <monad/vm/evm/opcodes.hpp>
-#include <monad/vm/fuzzing/generator/choice.hpp>
-#include <monad/vm/fuzzing/generator/generator.hpp>
-#include <monad/vm/utils/debug.hpp>
+#include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/evm/opcodes.hpp>
+#include <category/vm/fuzzing/generator/choice.hpp>
+#include <category/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/utils/debug.hpp>
 
 #include <evmone/constants.hpp>
 #include <evmone/evmone.h>

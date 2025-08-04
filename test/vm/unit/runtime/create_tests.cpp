@@ -1,9 +1,9 @@
 #include "fixture.hpp"
 
-#include <monad/vm/runtime/create.hpp>
-#include <monad/vm/runtime/memory.hpp>
-#include <monad/vm/runtime/transmute.hpp>
-#include <monad/vm/runtime/uint256.hpp>
+#include <category/vm/runtime/create.hpp>
+#include <category/vm/runtime/memory.hpp>
+#include <category/vm/runtime/transmute.hpp>
+#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
 

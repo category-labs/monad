@@ -15,7 +15,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #include <evmc/evmc.h>
 

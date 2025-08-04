@@ -1,5 +1,5 @@
-#include <monad/vm/compiler/ir/poly_typed/kind.hpp>
-#include <monad/vm/compiler/ir/poly_typed/subst_map.hpp>
+#include <category/vm/compiler/ir/poly_typed/kind.hpp>
+#include <category/vm/compiler/ir/poly_typed/subst_map.hpp>
 
 #include <gtest/gtest.h>
 

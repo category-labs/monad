@@ -3,9 +3,9 @@
 #include "state.hpp"
 #include "test_state.hpp"
 
-#include <monad/vm/compiler/ir/x86.hpp>
-#include <monad/vm/core/assert.h>
-#include <monad/vm/vm.hpp>
+#include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/vm.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -15,7 +15,7 @@
 #include <unordered_map>
 
 #ifdef MONAD_COMPILER_LLVM
-    #include <monad/vm/llvm/llvm.hpp>
+    #include <category/vm/llvm/llvm.hpp>
 void init_llvm();
 #endif
 

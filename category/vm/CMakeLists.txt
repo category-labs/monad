@@ -1,21 +1,56 @@
-cmake_minimum_required(VERSION 3.20)
-
-include(CTest)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 if(MONAD_COMPILER_TESTING)
     add_definitions(-DMONAD_COMPILER_TESTING)
 endif()
 
-add_subdirectory(libs/compiler)
-add_subdirectory(libs/core)
-add_subdirectory(libs/evm)
-add_subdirectory(libs/fuzzing)
-add_subdirectory(libs/interpreter)
+# Subcomponents
+
+add_subdirectory(compiler)
+add_subdirectory(core)
+add_subdirectory(evm)
+add_subdirectory(fuzzing)
+add_subdirectory(interpreter)
+add_subdirectory(runtime)
+add_subdirectory(utils)
+
 if(MONAD_COMPILER_LLVM)
-    add_subdirectory(libs/llvm)
+    add_subdirectory(llvm)
 endif()
-add_subdirectory(libs/runtime)
-add_subdirectory(libs/utils)
-add_subdirectory(libs/vm)
+
+# Main VM library (execution's entry point)
+
+add_library(monad-vm STATIC)
+
+target_sources(monad-vm PRIVATE
+    "code.hpp"
+    "compiler.cpp"
+    "compiler.hpp"
+    "varcode_cache.cpp"
+    "varcode_cache.hpp"
+    "vm.cpp"
+    "vm.hpp"
+    # evmone wrappers
+    "evmone/baseline_execute.cpp"
+    "evmone/baseline_execute.hpp"
+    "evmone/code_analysis.hpp"
+)
+
+monad_compile_options(monad-vm)
+
+target_include_directories(monad-vm
+    PUBLIC ${CATEGORY_MAIN_DIR}
+)
+
+target_link_libraries(monad-vm
+    PUBLIC TBB::tbb
+    PUBLIC intx::intx
+    PUBLIC evmc::evmc
+    PUBLIC asmjit::asmjit
+    PUBLIC monad-vm::monad-vm-compiler
+    PUBLIC monad-vm::monad-vm-interpreter
+    PRIVATE monad-vm::monad-vm-core
+    PRIVATE monad-vm::monad-vm-runtime
+    PRIVATE monad-vm::monad-vm-utils
+)
+
+add_library(monad-vm::monad-vm ALIAS monad-vm)
+

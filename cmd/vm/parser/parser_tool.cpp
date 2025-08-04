@@ -23,8 +23,8 @@
 
 #include <evmc/evmc.h>
 
-#include <monad/vm/compiler/ir/x86.hpp>
-#include <monad/vm/utils/parser.hpp>
+#include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/utils/parser.hpp>
 
 using namespace monad::vm::utils;
 

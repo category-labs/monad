@@ -1,8 +1,8 @@
 #include "fixture.hpp"
 
-#include <monad/vm/runtime/call.hpp>
-#include <monad/vm/runtime/keccak.hpp>
-#include <monad/vm/runtime/transmute.hpp>
+#include <category/vm/runtime/call.hpp>
+#include <category/vm/runtime/keccak.hpp>
+#include <category/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.h>
 

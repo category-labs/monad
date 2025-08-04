@@ -13,7 +13,7 @@
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #include <nlohmann/json.hpp>
 

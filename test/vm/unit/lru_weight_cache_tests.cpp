@@ -1,5 +1,5 @@
-#include <monad/vm/core/assert.h>
-#include <monad/vm/utils/lru_weight_cache.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <gtest/gtest.h>
 

@@ -5,7 +5,7 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #include <evmc/hex.hpp>
 

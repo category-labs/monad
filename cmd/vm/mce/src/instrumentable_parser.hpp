@@ -3,8 +3,8 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
-#include <monad/vm/compiler/ir/basic_blocks.hpp>
-#include <monad/vm/core/assert.h>
+#include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/core/assert.h>
 
 #include <evmc/evmc.h>
 #include <valgrind/cachegrind.h>

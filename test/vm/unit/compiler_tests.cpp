@@ -1,8 +1,8 @@
-#include <monad/vm/compiler/ir/basic_blocks.hpp>
-#include <monad/vm/compiler/ir/instruction.hpp>
-#include <monad/vm/compiler/ir/local_stacks.hpp>
-#include <monad/vm/compiler/types.hpp>
-#include <monad/vm/evm/opcodes.hpp>
+#include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/instruction.hpp>
+#include <category/vm/compiler/ir/local_stacks.hpp>
+#include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/opcodes.hpp>
 
 #include <evmc/evmc.h>
 

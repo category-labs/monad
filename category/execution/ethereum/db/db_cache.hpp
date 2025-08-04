@@ -10,7 +10,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #include <evmc/evmc.hpp>
 

@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'category/vm/**'
+      - 'cmd/vm/**'
+      - 'test/vm/**'
   workflow_dispatch:
 
 concurrency:

@@ -1,7 +1,7 @@
-#include <monad/vm/compiler/ir/poly_typed/exceptions.hpp>
-#include <monad/vm/compiler/ir/poly_typed/kind.hpp>
-#include <monad/vm/compiler/ir/poly_typed/subst_map.hpp>
-#include <monad/vm/compiler/ir/poly_typed/unify.hpp>
+#include <category/vm/compiler/ir/poly_typed/exceptions.hpp>
+#include <category/vm/compiler/ir/poly_typed/kind.hpp>
+#include <category/vm/compiler/ir/poly_typed/subst_map.hpp>
+#include <category/vm/compiler/ir/poly_typed/unify.hpp>
 
 #include <gtest/gtest.h>
 

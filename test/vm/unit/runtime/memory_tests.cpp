@@ -1,9 +1,9 @@
 #include "fixture.hpp"
 
-#include <monad/vm/runtime/allocator.hpp>
-#include <monad/vm/runtime/memory.hpp>
-#include <monad/vm/runtime/types.hpp>
-#include <monad/vm/runtime/uint256.hpp>
+#include <category/vm/runtime/allocator.hpp>
+#include <category/vm/runtime/memory.hpp>
+#include <category/vm/runtime/types.hpp>
+#include <category/vm/runtime/uint256.hpp>
 
 #include <algorithm>
 #include <cstdint>

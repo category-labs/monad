@@ -1,4 +1,4 @@
-#include <monad/vm/utils/load_program.hpp>
+#include <category/vm/utils/load_program.hpp>
 
 #include <gtest/gtest.h>
 

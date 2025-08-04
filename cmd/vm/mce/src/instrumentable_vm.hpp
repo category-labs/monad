@@ -1,9 +1,9 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
-#include <monad/vm/compiler/ir/x86.hpp>
-#include <monad/vm/core/assert.h>
-#include <monad/vm/runtime/allocator.hpp>
+#include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/runtime/allocator.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>

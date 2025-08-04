@@ -6,7 +6,7 @@
 #include <category/core/result.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <monad/test/config.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/vm.hpp>
 
 #include <evmc/evmc.hpp>
 

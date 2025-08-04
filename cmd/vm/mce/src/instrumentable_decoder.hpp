@@ -1,8 +1,8 @@
 #pragma once
 
-#include <monad/vm/core/assert.h>
-#include <monad/vm/utils/load_program.hpp>
-#include <monad/vm/utils/parser.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/utils/load_program.hpp>
+#include <category/vm/utils/parser.hpp>
 #include <stopwatch.hpp>
 
 #include <valgrind/cachegrind.h>

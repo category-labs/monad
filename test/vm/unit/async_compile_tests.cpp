@@ -1,8 +1,8 @@
-#include <monad/vm/code.hpp>
-#include <monad/vm/compiler.hpp>
-#include <monad/vm/compiler/types.hpp>
-#include <monad/vm/evm/opcodes.hpp>
-#include <monad/vm/runtime/types.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/compiler.hpp>
+#include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/opcodes.hpp>
+#include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

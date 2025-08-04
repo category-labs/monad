@@ -1,8 +1,8 @@
 #include "fixture.hpp"
 
-#include <monad/vm/runtime/keccak.hpp>
-#include <monad/vm/runtime/memory.hpp>
-#include <monad/vm/runtime/uint256.hpp>
+#include <category/vm/runtime/keccak.hpp>
+#include <category/vm/runtime/memory.hpp>
+#include <category/vm/runtime/uint256.hpp>
 
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;

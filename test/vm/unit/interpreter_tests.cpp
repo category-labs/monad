@@ -1,5 +1,5 @@
-#include <monad/vm/evm/opcodes.hpp>
-#include <monad/vm/interpreter/intercode.hpp>
+#include <category/vm/evm/opcodes.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 
 #include <gtest/gtest.h>
 

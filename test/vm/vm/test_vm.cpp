@@ -2,16 +2,16 @@
 #include "hash_utils.hpp"
 #include "test_state.hpp"
 
-#include <monad/vm/code.hpp>
-#include <monad/vm/compiler/ir/x86/types.hpp>
-#include <monad/vm/core/assert.h>
+#include <category/vm/code.hpp>
+#include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/core/assert.h>
 
-#include <monad/vm/utils/evmc_utils.hpp>
-#include <monad/vm/vm.hpp>
+#include <category/vm/utils/evmc_utils.hpp>
+#include <category/vm/vm.hpp>
 
 #ifdef MONAD_COMPILER_LLVM
+    #include <category/vm/llvm/llvm.hpp>
     #include <llvm-c/Target.h>
-    #include <monad/vm/llvm/llvm.hpp>
 #endif
 
 #include <evmc/evmc.h>

@@ -1,10 +1,10 @@
 #include "evm_fixture.hpp"
 
-#include <monad/vm/code.hpp>
-#include <monad/vm/compiler/types.hpp>
-#include <monad/vm/core/assert.h>
-#include <monad/vm/evmone/baseline_execute.hpp>
-#include <monad/vm/evmone/code_analysis.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/compiler/types.hpp>
+#include <category/vm/core/assert.h>
+#include <category/vm/evmone/baseline_execute.hpp>
+#include <category/vm/evmone/code_analysis.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>

@@ -1,4 +1,4 @@
-#include <monad/vm/core/assert.h>
+#include <category/vm/core/assert.h>
 
 #include <test_resource_data.h>
 

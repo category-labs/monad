@@ -1,9 +1,9 @@
 #pragma once
 
-#include <monad/vm/compiler/ir/x86/emitter.hpp>
-#include <monad/vm/compiler/ir/x86/virtual_stack.hpp>
-#include <monad/vm/fuzzing/generator/choice.hpp>
-#include <monad/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/compiler/ir/x86/emitter.hpp>
+#include <category/vm/compiler/ir/x86/virtual_stack.hpp>
+#include <category/vm/fuzzing/generator/choice.hpp>
+#include <category/vm/fuzzing/generator/generator.hpp>
 
 #include <array>
 #include <cstdint>

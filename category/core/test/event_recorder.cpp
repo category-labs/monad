@@ -190,7 +190,7 @@ protected:
             .payload_buf_shift = PAYLOAD_BUF_SHIFT,
             .context_large_pages = 0,
             .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
-            .metadata_hash = g_monad_test_event_metadata_hash};
+            .schema_hash = g_monad_test_event_schema_hash};
         ASSERT_EQ(
             0,
             monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));

@@ -86,7 +86,7 @@ struct monad_event_ring_header
     char magic[6];                           ///< 'RINGvv', vv = version number
     enum monad_event_content_type
         content_type;                        ///< Kind of events in this ring
-    uint8_t metadata_hash[32];               ///< Check that event types match
+    uint8_t schema_hash[32];                 ///< Ensure event definitons match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
@@ -121,7 +121,7 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *, enum monad_event_content_type,
-    uint8_t const *metadata_hash, int ring_fd, off_t ring_offset,
+    uint8_t const *schema_hash, int ring_fd, off_t ring_offset,
     char const *error_name);
 
 /// Given an open file descriptor which contains an initialized event ring at

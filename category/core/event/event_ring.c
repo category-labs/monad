@@ -94,7 +94,7 @@ monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
 //  .------------------.
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *ring_size,
-    enum monad_event_content_type content_type, uint8_t const *metadata_hash,
+    enum monad_event_content_type content_type, uint8_t const *schema_hash,
     int ring_fd, off_t ring_offset, char const *error_name)
 {
     size_t ring_bytes;
@@ -153,7 +153,7 @@ int monad_event_ring_init_file(
 
     memset(&header, 0, sizeof header);
     memcpy(header.magic, MONAD_EVENT_RING_HEADER_VERSION, sizeof header.magic);
-    memcpy(header.metadata_hash, metadata_hash, sizeof header.metadata_hash);
+    memcpy(header.schema_hash, schema_hash, sizeof header.schema_hash);
     header.content_type = content_type;
     header.size = *ring_size;
     ring_bytes = monad_event_ring_calc_storage(ring_size);

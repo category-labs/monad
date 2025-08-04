@@ -84,7 +84,7 @@ int monad_event_ring_init_simple(
     return monad_event_ring_init_file(
         &ring_size,
         ring_config->content_type,
-        ring_config->metadata_hash,
+        ring_config->schema_hash,
         ring_fd,
         ring_offset,
         error_name);
@@ -92,7 +92,7 @@ int monad_event_ring_init_simple(
 
 int monad_event_ring_check_content_type(
     struct monad_event_ring const *event_ring,
-    enum monad_event_content_type content_type, uint8_t const *metadata_hash)
+    enum monad_event_content_type content_type, uint8_t const *schema_hash)
 {
     if (event_ring == nullptr || event_ring->header == nullptr) {
         return FORMAT_ERRC(EFAULT, "event ring is not mapped");
@@ -105,10 +105,10 @@ int monad_event_ring_check_content_type(
             event_ring->header->content_type);
     }
     if (memcmp(
-            event_ring->header->metadata_hash,
-            metadata_hash,
-            sizeof event_ring->header->metadata_hash) != 0) {
-        return FORMAT_ERRC(EPROTO, "event ring metadata does not match");
+            event_ring->header->schema_hash,
+            schema_hash,
+            sizeof event_ring->header->schema_hash) != 0) {
+        return FORMAT_ERRC(EPROTO, "event ring schema hash does not match");
     }
     return 0;
 }

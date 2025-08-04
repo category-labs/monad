@@ -40,7 +40,7 @@ static sig_atomic_t g_should_exit = 0;
 
 struct MetadataTableEntry
 {
-    uint8_t const (*hash)[32];
+    uint8_t const (*schema_hash)[32];
     std::span<monad_event_metadata const> entries;
 } MetadataTable[] = {
     [MONAD_EVENT_CONTENT_TYPE_NONE] =
@@ -50,7 +50,7 @@ struct MetadataTableEntry
         },
     [MONAD_EVENT_CONTENT_TYPE_TEST] =
         {
-            &g_monad_test_event_metadata_hash,
+            &g_monad_test_event_schema_hash,
             std::span{g_monad_test_event_metadata},
         },
 };
@@ -373,21 +373,22 @@ int main(int argc, char **argv)
                 content_type);
         }
 
-        // Get the metadata hash we're compiled with, or substitute the zero
+        // Get the schema hash we're compiled with, or substitute the zero
         // hash if the command line told us to
-        if (MetadataTable[content_type].hash == nullptr) {
+        if (MetadataTable[content_type].schema_hash == nullptr) {
             errx(
                 EX_CONFIG,
-                "event ring `%s` has type %hu, but we don't know its metadata "
+                "event ring `%s` has type %hu, but we don't know its schema "
                 "hash",
                 mr.origin_path.c_str(),
                 content_type);
         }
-        uint8_t const(&hash)[32] = *MetadataTable[content_type].hash;
+        uint8_t const(&schema_hash)[32] =
+            *MetadataTable[content_type].schema_hash;
 
         // Unlike simpler tools, we should be able to work with any type
         if (monad_event_ring_check_content_type(
-                &mr.event_ring, content_type, hash) != 0) {
+                &mr.event_ring, content_type, schema_hash) != 0) {
             errx(
                 EX_SOFTWARE,
                 "event library error -- %s",

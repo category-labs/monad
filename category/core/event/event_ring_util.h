@@ -26,7 +26,7 @@ struct monad_event_ring_simple_config
     uint8_t payload_buf_shift;
     uint16_t context_large_pages;
     enum monad_event_content_type content_type;
-    uint8_t const *metadata_hash;
+    uint8_t const *schema_hash;
 };
 
 /// "All in one" convenience event ring file init for simple cases: given an
@@ -37,11 +37,11 @@ int monad_event_ring_init_simple(
     struct monad_event_ring_simple_config const *, int ring_fd,
     off_t ring_offset, char const *error_name);
 
-/// Check that the event ring content type and metadata hash match the assumed
+/// Check that the event ring content type and schema hash match the assumed
 /// values
 int monad_event_ring_check_content_type(
     struct monad_event_ring const *, enum monad_event_content_type,
-    uint8_t const *metadata_hash);
+    uint8_t const *schema_hash);
 
 /// Find the pid of every process that has opened the given event ring file
 /// descriptor for writing; this is slow, and somewhat brittle (it crawls

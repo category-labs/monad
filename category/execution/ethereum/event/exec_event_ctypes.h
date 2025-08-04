@@ -247,7 +247,7 @@ struct monad_exec_evm_error
 // clang-format on
 
 extern struct monad_event_metadata const g_monad_exec_event_metadata[21];
-extern uint8_t const g_monad_exec_event_metadata_hash[32];
+extern uint8_t const g_monad_exec_event_schema_hash[32];
 
 constexpr char MONAD_EVENT_DEFAULT_EXEC_RING_PATH[] =
     "/dev/hugepages/monad-exec-events";

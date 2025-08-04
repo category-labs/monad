@@ -23,7 +23,7 @@ struct monad_event_metadata const g_monad_test_event_metadata[2] = {
 
 };
 
-uint8_t const g_monad_test_event_metadata_hash[32] = {};
+uint8_t const g_monad_test_event_schema_hash[32] = {};
 
 #ifdef __cplusplus
 } // extern "C"

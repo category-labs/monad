@@ -18,8 +18,6 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(ENABLE_CALL_TRACING "Enable call tracer" ON)
-
 option(MONAD_COMPILER_LLVM "Build llvm backend" OFF)
 option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
 option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
@@ -59,10 +57,6 @@ function(monad_compile_options target)
   # currently available to us
   # https://gcc.gnu.org/bugzilla//show_bug.cgi?id=109647
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
-
-  if(ENABLE_CALL_TRACING)
-    target_compile_definitions(${target} PUBLIC "ENABLE_CALL_TRACING=1")
-  endif()
 endfunction()
 
 find_package(Boost REQUIRED COMPONENTS fiber json)

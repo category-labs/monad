@@ -964,19 +964,15 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
-#ifdef ENABLE_CALL_TRACING
     EXPECT_EQ(actual_call_frames.size(), 35799);
-#else
-    EXPECT_EQ(actual_call_frames.size(), 0);
-#endif
 }
 
 // test referenced from :
 // https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
 TYPED_TEST(DBTest, call_frames_refund)
 {
-    TrieDb tdb{this->db};
     enable_call_tracing(true);
+    TrieDb tdb{this->db};
 
     auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
     auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
@@ -1080,7 +1076,6 @@ TYPED_TEST(DBTest, call_frames_refund)
     auto const actual_call_frames =
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
-#ifdef ENABLE_CALL_TRACING
     ASSERT_EQ(actual_call_frames.size(), 1);
     CallFrame expected{
         .type = CallType::CALL,
@@ -1094,7 +1089,4 @@ TYPED_TEST(DBTest, call_frames_refund)
         .depth = 0};
 
     EXPECT_EQ(actual_call_frames[0], expected);
-#else
-    EXPECT_EQ(actual_call_frames.size(), 0);
-#endif
 }

@@ -125,18 +125,17 @@ Definition isAllowedToEmpty (knownBlocks: gmap N Block)
                 in bool_decide (lengthN prevTxsFromSameSender = 0).
   
 
-Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
-  let bal0 := balanceOfAc stateNminusK (sender candidate) in
+Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) : bool :=
+  let bal0 := balanceOfAc latestState (sender candidate) in
   let NminusK := (txBlockNum candidate - K) in
-  let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
   match List.filter (fun tx: TxWithHdr  => bool_decide (sender tx = sender candidate)) intermediate with
   | [] =>
       let reserve := staticReserveBal `min` bal0 in
-      if addrDelegated stateNminusK (sender candidate) then
-          bool_decide (maxTxFee candidate <= balanceOfAc stateNminusK (sender candidate))
+      if addrDelegated latestState (sender candidate) then
+          bool_decide (maxTxFee candidate <= balanceOfAc latestState (sender candidate))
       else bool_decide (maxTxFee candidate ≤ reserve)
   | t0 :: rest =>
-      if (isAllowedToEmpty knownBlocks stateNminusK NminusK t0) 
+      if (isAllowedToEmpty knownBlocks latestState NminusK t0) 
       then
        let bal1 := bal0 - value t0 - maxTxFee t0 in
        let reserve := staticReserveBal `min` bal1 in
@@ -145,6 +144,14 @@ Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : Sta
        let reserve := staticReserveBal `min` bal0 in
        bool_decide (sum_gas_bids (candidate::intermediate) ≤ reserve)
   end.
+
+Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
+  let NminusK := (txBlockNum candidate - K) in
+  let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
+  consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
+
+  
+
 Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (block: Block) : bool :=
   forallb  (consensusAcceptableTx knownBlocks stateNminusK) (transactions block).
 
@@ -194,7 +201,32 @@ Fixpoint stateAfterTransactionsV2 (knownBlocks: gmap N Block)  (s: StateOfAccoun
       | None => None
       end
   end.
-    
+
+Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) (candidate : TxWithHdr) :
+  consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl) candidate = true
+  -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
+     | None =>  False
+     | Some (si, tr) =>
+         consensusAcceptableTxG knownBlocks si intermediateTl candidate = true
+     end.
+Proof. Admitted.
+
+
+Lemma inductiveSteps (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediate1 intermediate2: list TxWithHdr) (candidate : TxWithHdr) :
+  consensusAcceptableTxG knownBlocks latestState (intermediate1++intermediate2) candidate = true
+  -> match stateAfterTransactionsV2 knownBlocks latestState intermediate1 with
+     | None =>  False
+     | Some (si, tr) =>
+         consensusAcceptableTxG knownBlocks si intermediate2 candidate = true
+     end.
+Proof. 
+
+Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
+  consensusAcceptableTxG knownBlocks s1 intermediate candidate = true
+  -> consensusAcceptableTxG knownBlocks s2 intermediate candidate = true.
+Proof. Admitted.
+
+
 Definition stateAfterBlockV2 (knownBlocks: gmap N Block) (s: StateOfAccounts) (b: Block): option (StateOfAccounts * list TransactionResult) :=
   match stateAfterTransactionsV2 knownBlocks s (transactions b) with
   | None => None

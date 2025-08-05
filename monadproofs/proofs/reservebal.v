@@ -175,10 +175,7 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
 
 Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL knownBlocks latestKnownState [] postStateSuffix in
-  forall ac, match totDebits !! ac with
-             | None => True
-             | Some v => v <= balanceOfAc latestKnownState ac
-             end.
+  forall ac, lookupN totDebits ac <= balanceOfAc latestKnownState ac.
 
 Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
@@ -310,6 +307,21 @@ evm.Countable_instance_0 : Countable evm.address
 
 Hint Rewrite -> bool_decide_eq_true : iff.
 Require Import monad.proofs.bigauto.
+Lemma updateKeyLkp2  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) :
+  lookupN (updateKey m a f) a =  (f (lookupN m a)).
+Proof using.
+  unfold lookupN.
+  rewrite updateKeyLkp.
+  reflexivity.
+Qed.
+
+Lemma execL knownBlocks tx extension s:
+  let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
+  consensusAcceptableTxG knownBlocks s
+    (tx::extension)
+  ->     consensusAcceptableTxG knownBlocks sf extension.
+Proof using. Admitted.
+
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl)
   -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
@@ -321,17 +333,38 @@ Proof.
   intros Hc.
   pose proof  (Hc (sender intermediateHd)) as Hcs.
   simpl in Hcs.
-  rewrite updateKeyLkp in Hcs.
+  rewrite updateKeyLkp2 in Hcs.
   unfold stateAfterTransactionV2.
   unfold validateTx.
   unfold maxTotalReserveDippableDebit in Hcs.
   case_bool_decide; simpl in *; try lia;[].
   unfold consensusAcceptableTxG.
+  pose proof (execL knownBlocks intermediateHd intermediateTl latestState) as Hp.
+  remember (execTxAfterValidationV2 knownBlocks latestState intermediateHd) as ss.
+  destruct ss as [si  res].
+  simpl in *.
+  apply Hp.
+  assumption.
+Qed.
+  
+  
+  
   unfold execTxAfterValidationV2.
   remember (stateAfterTransaction latestState intermediateHd) as ss.
-  destruct ss as [si  res].
   simpl.
-  
+  match goal with
+    [|- context[ ?l || ?r ]] =>
+      remember (l || r) as lr
+  end.
+  destruct lr.
+  { (* no revert *)
+    unfold consensusAcceptableTxG.
+    intros ac.
+    pose proof (Hc ac) as Hca.
+    simpl in Hca.
+    max
+    
+    up
   
 
       

@@ -19,6 +19,7 @@
 #include <category/vm/core/cases.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/instruction_data.hpp>
+#include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
@@ -286,7 +287,7 @@ namespace monad::vm::fuzzing
         auto ret = evmc::address{};
         auto const value = random_constant<192>(eng);
 
-        auto const *bytes = intx::as_bytes(value.value);
+        auto const *bytes = value.value.as_bytes();
         std::copy_n(bytes, 20, &ret.bytes[0]);
 
         return ret;
@@ -691,7 +692,7 @@ namespace monad::vm::fuzzing
     {
         program.push_back(PUSH32);
 
-        auto const *bs = intx::as_bytes(c.value);
+        auto const *bs = c.value.as_bytes();
         for (auto i = 31; i >= 0; --i) {
             program.push_back(bs[i]);
         }
@@ -823,7 +824,7 @@ namespace monad::vm::fuzzing
                 [&](Constant const &c) {
                     program.push_back(PUSH32);
 
-                    auto const *bs = intx::as_bytes(c.value);
+                    auto const *bs = c.value.as_bytes();
                     for (auto i = 31; i >= 0; --i) {
                         program.push_back(bs[i]);
                     }
@@ -867,7 +868,7 @@ namespace monad::vm::fuzzing
                     program.push_back(
                         PUSH0 + static_cast<std::uint8_t>(byte_size));
 
-                    auto const *bs = intx::as_bytes(safe_value.value);
+                    auto const *bs = safe_value.value.as_bytes();
                     for (auto i = 0u; i < byte_size; ++i) {
                         program.push_back(bs[byte_size - 1 - i]);
                     }
@@ -951,7 +952,7 @@ namespace monad::vm::fuzzing
                         g, forward_jds_begin, forward_jds_end);
                 }));
 
-            auto const *bs = intx::as_bytes(jd);
+            auto const *bs = reinterpret_cast<uint8_t const *>(&jd);
             for (auto i = 0u; i < 4; ++i) {
                 auto &dest = program[patch + i + 1];
                 MONAD_VM_DEBUG_ASSERT(dest == 0xFF);

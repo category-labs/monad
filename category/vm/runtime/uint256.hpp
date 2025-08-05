@@ -17,11 +17,13 @@
 
 #include <category/vm/core/assert.h>
 
+#include <algorithm>
 #include <bit>
+#include <climits>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <immintrin.h>
-#include <intx/intx.hpp>
 #include <limits>
 #include <stdexcept>
 
@@ -29,17 +31,11 @@
     #error "Target architecture must support AVX2"
 #endif
 
-namespace monad::vm::runtime
-{
-    struct uint256_t;
-}
-
-// It is assumed that if the `result` pointer overlaps with `left` and/or
-// `right`, then `result` pointer is equal to `left` and/or `right`.
-extern "C" void monad_vm_runtime_mul(
-    monad::vm::runtime::uint256_t *result,
-    monad::vm::runtime::uint256_t const *left,
-    monad::vm::runtime::uint256_t const *right) noexcept;
+#if defined(__GNUC__) && !defined(__clang__)
+    #define MONAD_VM_NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
+#else
+    #define MONAD_VM_NO_VECTORIZE
+#endif
 
 namespace monad::vm::runtime
 {
@@ -282,25 +278,6 @@ namespace monad::vm::runtime
         {
         }
 
-        template <typename... T>
-        [[gnu::always_inline]]
-        constexpr explicit(true) uint256_t(::intx::uint256 const &x) noexcept
-            : words_{x[0], x[1], x[2], x[3]}
-        {
-        }
-
-        [[gnu::always_inline]]
-        inline ::intx::uint256 const &as_intx() const noexcept
-        {
-            return *reinterpret_cast<::intx::uint256 const *>(this);
-        }
-
-        [[gnu::always_inline]]
-        inline constexpr ::intx::uint256 to_intx() const noexcept
-        {
-            return ::intx::uint256{words_[0], words_[1], words_[2], words_[3]};
-        }
-
         [[gnu::always_inline]]
         explicit(true) uint256_t(__m256i x) noexcept
         {
@@ -416,30 +393,14 @@ namespace monad::vm::runtime
             return subb(lhs, rhs).value;
         }
 
-        [[gnu::always_inline]]
         friend inline constexpr uint256_t
-        operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
-        {
-            if consteval {
-                return uint256_t(lhs.to_intx() * rhs.to_intx());
-            }
-            else {
-                uint256_t result;
-                monad_vm_runtime_mul(&result, &lhs, &rhs);
-                return result;
-            }
-        }
+        operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept;
 
+        MONAD_VM_NO_VECTORIZE
         [[gnu::always_inline]]
         inline constexpr uint256_t &operator*=(uint256_t const &rhs) noexcept
         {
-            if consteval {
-                return *this = *this * rhs;
-            }
-            else {
-                monad_vm_runtime_mul(this, this, &rhs);
-                return *this;
-            }
+            return *this = rhs * (*this);
         }
 
         [[gnu::always_inline]]
@@ -723,13 +684,6 @@ namespace monad::vm::runtime
         }
     };
 
-    static_assert(
-        alignof(uint256_t) == alignof(::intx::uint256),
-        "Alignment of uint256_t is incompatible with intx");
-    static_assert(
-        sizeof(uint256_t) == sizeof(::intx::uint256),
-        "Size of uint256_t is incompatible with intx");
-
     uint256_t signextend(uint256_t const &byte_index, uint256_t const &x);
     uint256_t byte(uint256_t const &byte_index, uint256_t const &x);
 
@@ -775,6 +729,265 @@ namespace monad::vm::runtime
                 (64 - std::countl_zero(leading_word) + 7) / 8);
             return leading_significant_bytes + (significant_words - 1) * 8;
         }
+    }
+
+    [[gnu::always_inline]]
+    inline constexpr std::pair<uint64_t, uint64_t>
+    mulx_constexpr(uint64_t const x, uint64_t const y) noexcept
+    {
+        auto const prod = static_cast<uint128_t>(x) * y;
+        auto const hi = static_cast<uint64_t>(prod >> 64);
+        auto const lo = static_cast<uint64_t>(prod);
+        return {hi, lo};
+    }
+
+    [[gnu::always_inline]]
+    inline std::pair<uint64_t, uint64_t>
+    mulx_intrinsic(uint64_t const x, uint64_t const y) noexcept
+    {
+        uint64_t hi;
+        uint64_t lo;
+        asm("mulx %[x], %[lo], %[hi]"
+            : [hi] "=r"(hi), [lo] "=r"(lo)
+            : [x] "r"(x), [y] "d"(y));
+        return {hi, lo};
+    }
+
+    [[gnu::always_inline]]
+    inline constexpr std::pair<uint64_t, uint64_t>
+    mulx(uint64_t const x, uint64_t const y) noexcept
+    {
+        if consteval {
+            return mulx_constexpr(x, y);
+        }
+        else {
+            return mulx_intrinsic(x, y);
+        }
+    }
+
+    template <size_t M>
+    using words_t = std::array<uint64_t, M>;
+
+    [[gnu::always_inline]]
+    inline std::tuple<uint64_t, uint64_t, uint64_t> adc_3(
+        std::tuple<uint64_t, uint64_t, uint64_t> const x,
+        std::tuple<uint64_t, uint64_t> const y) noexcept
+    {
+        auto [x_2, x_1, x_0] = x;
+        auto [y_1, y_0] = y;
+        asm("addq %[y_0], %[x_0]\n"
+            "adcq %[y_1], %[x_1]\n"
+            "adcq $0, %[x_2]"
+            : [x_0] "+r"(x_0), [x_1] "+r"(x_1), [x_2] "+r"(x_2)
+            : [y_0] "r"(y_0), [y_1] "r"(y_1)
+            : "cc");
+        return {x_2, x_1, x_0};
+    }
+
+    [[gnu::always_inline]]
+    inline std::pair<uint64_t, uint64_t>
+    adc_2(std::pair<uint64_t, uint64_t> const x, uint64_t const y_0) noexcept
+    {
+        auto [x_1, x_0] = x;
+        asm("addq %[y_0], %[x_0]\n"
+            "adcq $0, %[x_1]"
+            : [x_0] "+r"(x_0), [x_1] "+r"(x_1)
+            : [y_0] "r"(y_0)
+            : "cc");
+        return {x_1, x_0};
+    }
+
+    [[gnu::always_inline]]
+    inline std::pair<uint64_t, uint64_t> adc_2(
+        std::pair<uint64_t, uint64_t> const x,
+        std::pair<uint64_t, uint64_t> const y) noexcept
+    {
+        auto [x_1, x_0] = x;
+        auto [y_1, y_0] = y;
+        asm("addq %[y_0], %[x_0]\n"
+            "adcq %[y_1], %[x_1]"
+            : [x_0] "+r"(x_0), [x_1] "+r"(x_1)
+            : [y_0] "r"(y_0), [y_1] "r"(y_1)
+            : "cc");
+        return {x_1, x_0};
+    }
+
+    template <size_t I, size_t R, size_t M>
+    [[gnu::always_inline]]
+    inline void mul_line_recur(
+        words_t<M> const &x, uint64_t const y, words_t<R> &__restrict__ result,
+        uint64_t carry) noexcept
+    {
+        if constexpr (I < std::min(R, M)) {
+            if constexpr (I + 1 < R) {
+                auto const [hi, lo] = mulx(x[I], y);
+                std::tie(carry, result[I]) = adc_2({hi, lo}, carry);
+                mul_line_recur<I + 1, R, M>(x, y, result, carry);
+            }
+            else {
+                result[I] = y * x[I] + carry;
+            }
+        }
+        else if constexpr (M < R) {
+            result[M] = carry;
+        }
+    }
+
+    // result[0 .. min(M + 1, R)) = y * x[0 .. M)
+    template <size_t R, size_t M>
+    [[gnu::always_inline]]
+    inline void mul_line(
+        words_t<M> const &x, uint64_t const y,
+        words_t<R> &__restrict__ result) noexcept
+    {
+        uint64_t carry;
+        std::tie(carry, result[0]) = mulx(y, x[0]);
+
+        mul_line_recur<1, R, M>(x, y, result, carry);
+    }
+
+    template <size_t J, size_t I, size_t R, size_t M>
+    [[gnu::always_inline]]
+    inline void mul_add_line_recur(
+        words_t<M> const &x, uint64_t const y_i,
+        words_t<R> &__restrict__ result, uint64_t c_hi, uint64_t c_lo) noexcept
+    {
+        if constexpr (J + 1 < M && I + J < R) {
+            if constexpr (I + J + 2 < R) {
+                // We need c_lo, c_hi
+                auto const [hi, lo] = mulx(x[J + 1], y_i);
+                std::tie(c_hi, c_lo, result[I + J]) =
+                    adc_3({hi, lo, result[I + J]}, {c_hi, c_lo});
+            }
+            else if constexpr (I + J + 1 < R) {
+                // We only need c_lo
+                uint64_t const lo = x[J + 1] * y_i;
+                std::tie(c_lo, result[I + J]) =
+                    adc_2({lo, result[I + J]}, {c_hi, c_lo});
+            }
+            else {
+                // We're done, we don't need subsequent results
+                result[I + J] += c_lo;
+            }
+            mul_add_line_recur<J + 1, I, R, M>(x, y_i, result, c_hi, c_lo);
+        }
+        else {
+            if constexpr (I + M < R) {
+                auto [hi, lo] = adc_2({c_hi, c_lo}, result[I + M - 1]);
+                result[I + M - 1] = lo;
+                result[I + M] = hi;
+            }
+            else if constexpr (I + M < R + 1) {
+                result[I + M - 1] += c_lo;
+            }
+        }
+    }
+
+    // result[i .. min(i + M + 1, R)) += y_i * x[0 .. M)
+    template <size_t I, size_t R, size_t M>
+    [[gnu::always_inline]]
+    inline void mul_add_line(
+        words_t<M> const &x, uint64_t const y_i,
+        words_t<R> &__restrict__ result) noexcept
+    {
+        // A naive implementation would use a single carry variable. However
+        // this means on every iteration we compute
+        //     result[i+j] = result[i+j] + prod_lo + carry
+        // which needs to propagate two carry bits. This causes a slew of
+        // setb/xor/movxz instructions to be inserted.
+        // Instead, we widen the carry and skew the loop so that every iteration
+        // computes
+        //     result[i+j] = result[i+j] + c_lo
+        //     c_lo = prod_lo + c_hi (+ carry)
+        //     c_hi = prod_hi (+ carry)
+        uint64_t c_hi;
+        uint64_t c_lo;
+
+        if constexpr (I + 1 < R) {
+            std::tie(c_hi, c_lo) = mulx(x[0], y_i);
+        }
+        else {
+            c_hi = 0;
+            c_lo = x[0] * y_i;
+        }
+        mul_add_line_recur<0, I, R, M>(x, y_i, result, c_hi, c_lo);
+    }
+
+    template <size_t I, size_t R, size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline void truncating_mul_runtime_recur(
+        words_t<M> const &x, words_t<N> const &y,
+        words_t<R> &__restrict__ result) noexcept
+    {
+        if constexpr (I < N) {
+            mul_add_line<I, R, M>(x, y[I], result);
+            truncating_mul_runtime_recur<I + 1, R, M>(x, y, result);
+        }
+    }
+
+    template <size_t R, size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline words_t<R>
+    truncating_mul_runtime(words_t<M> const &x, words_t<N> const &y) noexcept
+        requires(0 < R && R <= M + N)
+    {
+        words_t<R> result;
+        mul_line<R>(x, y[0], result);
+        truncating_mul_runtime_recur<1, R, M, N>(x, y, result);
+        return result;
+    }
+
+    template <size_t R, size_t M, size_t N>
+    [[gnu::always_inline]]
+    inline constexpr words_t<R>
+    truncating_mul_constexpr(words_t<M> const &x, words_t<N> const &y) noexcept
+        requires(0 < R && R <= M + N)
+    {
+        words_t<R> result{0};
+        for (size_t j = 0; j < N; j++) {
+            uint64_t carry = 0;
+            for (size_t i = 0; i < M && i + j < R; i++) {
+                auto const [hi, lo] = mulx(x[i], y[j]);
+
+                auto const [s0, c0] = addc(lo, result[i + j], false);
+                auto const [s1, c1] = addc(s0, carry, false);
+                result[i + j] = s1;
+                auto const [s2, c2] = addc(hi, c0, c1);
+                carry = s2;
+            }
+            if (j + M < R) {
+                result[j + M] = carry;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Truncating multi-word multiplication. Multiply a M-word number by a
+     * N-word number, discarding the M+N-R higher words. When R = M+N, this
+     * corresponds to full precision multiplication
+     */
+    template <size_t R, size_t M, size_t N>
+    MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
+    inline constexpr words_t<R>
+    truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
+        requires(0 < R && R <= M + N)
+    {
+        if consteval {
+            return truncating_mul_constexpr<R>(x, y);
+        }
+        else {
+            return truncating_mul_runtime<R>(x, y);
+        }
+    }
+
+    MONAD_VM_NO_VECTORIZE
+    [[gnu::always_inline]]
+    inline constexpr uint256_t
+    operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
+    {
+        return uint256_t{truncating_mul<uint256_t::num_words>(
+            lhs.as_words(), rhs.as_words())};
     }
 
     [[gnu::always_inline]]
@@ -897,9 +1110,6 @@ namespace monad::vm::runtime
         }
     }
 
-    template <size_t M>
-    using words_t = std::array<uint64_t, M>;
-
     template <size_t M, size_t N>
     inline constexpr div_result<words_t<M>, words_t<N>>
     udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
@@ -1011,17 +1221,8 @@ namespace monad::vm::runtime
     inline constexpr uint256_t mulmod(
         uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
     {
-        words_t<2 * uint256_t::num_words> prod{0};
-        for (size_t j = 0; j < uint256_t::num_words; j++) {
-            uint64_t carry = 0;
-            for (size_t i = 0; i < uint256_t::num_words; i++) {
-                auto p =
-                    static_cast<uint128_t>(u[i]) * v[j] + carry + prod[i + j];
-                prod[i + j] = static_cast<uint64_t>(p);
-                carry = static_cast<uint64_t>(p >> 64);
-            }
-            prod[j + uint256_t::num_words] = carry;
-        }
+        auto const prod = truncating_mul<2 * uint256_t::num_words>(
+            u.as_words(), v.as_words());
         return uint256_t{udivrem(prod, mod.as_words()).rem};
     }
 

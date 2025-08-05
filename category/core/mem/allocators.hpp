@@ -200,26 +200,40 @@ namespace allocators
         }
     }
 
+    template <class T>
+    detail::type_raw_alloc_pair<
+        std::allocator<T>, malloc_free_allocator<std::byte>>
+    aliasing_allocator_pair()
+    {
+        static std::allocator<T> a;
+        static malloc_free_allocator<std::byte> b;
+        return {a, b};
+    }
+
     //! \brief A unique ptr deleter for a STL allocator where underlying storage
     //! exceeds type
     template <
-        allocator TypeAlloc, allocator RawAlloc,
-        detail::type_raw_alloc_pair<TypeAlloc, RawAlloc> (*GetAllocator)(),
-        size_t (*GetSize)(typename TypeAlloc::value_type *)>
+        auto GetAllocator,
+        size_t (*GetSize)(
+            typename decltype(GetAllocator())::type_allocator::value_type *) =
+            nullptr>
     struct unique_ptr_aliasing_allocator_deleter
     {
-        using allocator_type = TypeAlloc;
-        using value_type = typename TypeAlloc::value_type;
+        using allocator_type =
+            typename decltype(GetAllocator())::type_allocator;
+        using value_type = typename allocator_type::value_type;
 
         constexpr unique_ptr_aliasing_allocator_deleter() {}
 
         constexpr void operator()(value_type *const p1) const
         {
             using allocator1_traits = std::allocator_traits<allocator_type>;
+            using RawAlloc =
+                typename decltype(GetAllocator())::raw_bytes_allocator;
             using allocator2_traits = std::allocator_traits<RawAlloc>;
             // Use all bits one for the number of items to deallocate in
             // order to trap use of unsuitable user supplied allocators
-            using size_type2 = allocator2_traits::size_type;
+            using size_type2 = typename allocator2_traits::size_type;
             auto no = static_cast<size_type2>(-1);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored                                                 \
@@ -268,55 +282,65 @@ namespace allocators
     //! type. Useful for variably lengthed types. Needs a raw storage allocator
     //! capable of deallocating without being told how many bytes to deallocate.
     template <
-        allocator TypeAlloc, allocator RawAlloc,
-        detail::type_raw_alloc_pair<TypeAlloc, RawAlloc> (*GetAllocator)(),
-        size_t (*GetSize)(typename TypeAlloc::value_type *) = nullptr,
+        auto GetAllocator,
+        size_t (*GetSize)(
+            typename decltype(GetAllocator())::type_allocator::value_type *) =
+            nullptr,
         class... Args>
         requires(
-            std::is_same_v<typename RawAlloc::value_type, std::byte> &&
-            std::is_constructible_v<typename TypeAlloc::value_type, Args...>)
+            std::is_same_v<
+                typename decltype(GetAllocator())::raw_bytes_allocator::
+                    value_type,
+                std::byte> &&
+            std::is_constructible_v<
+                typename decltype(GetAllocator())::type_allocator::value_type,
+                Args...>)
     inline constexpr std::unique_ptr<
-        typename TypeAlloc::value_type,
-        unique_ptr_aliasing_allocator_deleter<
-            TypeAlloc, RawAlloc, GetAllocator, GetSize>>
+        typename decltype(GetAllocator())::type_allocator::value_type,
+        unique_ptr_aliasing_allocator_deleter<GetAllocator, GetSize>>
     allocate_aliasing_unique(size_t const storagebytes, Args &&...args)
     {
-        MONAD_ASSERT(storagebytes >= sizeof(typename TypeAlloc::value_type));
-        using allocator1_traits = std::allocator_traits<TypeAlloc>;
-        using allocator2_traits = std::allocator_traits<RawAlloc>;
+        using type_allocator =
+            typename decltype(GetAllocator())::type_allocator;
+        using raw_bytes_allocator =
+            typename decltype(GetAllocator())::raw_bytes_allocator;
+        using allocator1_traits = std::allocator_traits<type_allocator>;
+        using allocator2_traits = std::allocator_traits<raw_bytes_allocator>;
+        MONAD_ASSERT(
+            storagebytes >= sizeof(typename type_allocator::value_type));
         auto [alloc1, alloc2] = GetAllocator();
         std::byte *p2;
         if constexpr (
-            alignof(typename TypeAlloc::value_type) > alignof(max_align_t)) {
+            alignof(typename type_allocator::value_type) >
+            alignof(max_align_t)) {
             p2 = alloc2.template allocate_overaligned<
-                typename TypeAlloc::value_type>(storagebytes);
+                typename type_allocator::value_type>(storagebytes);
         }
         else {
             p2 = allocator2_traits::allocate(alloc2, storagebytes);
         }
 #ifndef NDEBUG
         if constexpr (!construction_equals_all_bits_zero<
-                          typename TypeAlloc::value_type>::value) {
+                          typename type_allocator::value_type>::value) {
             // Trap use of region after end of type
             cmemset(p2, std::byte{0xff}, storagebytes);
         }
 #endif
         try {
-            auto *p1 = reinterpret_cast<typename TypeAlloc::value_type *>(p2);
+            auto *p1 =
+                reinterpret_cast<typename type_allocator::value_type *>(p2);
             if constexpr (
                 sizeof...(args) > 0 ||
                 !construction_equals_all_bits_zero<
-                    typename TypeAlloc::value_type>::value) {
+                    typename type_allocator::value_type>::value) {
                 allocator1_traits::construct(
                     alloc1, p1, static_cast<Args &&>(args)...);
             }
-            using deleter_type = unique_ptr_aliasing_allocator_deleter<
-                TypeAlloc,
-                RawAlloc,
-                GetAllocator,
-                GetSize>;
+            using deleter_type =
+                unique_ptr_aliasing_allocator_deleter<GetAllocator, GetSize>;
             return std::
-                unique_ptr<typename TypeAlloc::value_type, deleter_type>(p1);
+                unique_ptr<typename type_allocator::value_type, deleter_type>(
+                    p1);
         }
         catch (...) {
             allocator2_traits::deallocate(alloc2, p2, storagebytes);

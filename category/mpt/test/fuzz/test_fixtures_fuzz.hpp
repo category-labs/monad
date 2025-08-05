@@ -30,7 +30,8 @@ namespace monad::test
 {
     // Used to force Node's pool to be instanced now, not after the test fixture
     // exits
-    static auto force_node_pool_instance_now = Node::pool();
+    static auto force_node_pool_instance_now =
+        allocators::aliasing_allocator_pair<Node>();
 
     namespace detail
     {

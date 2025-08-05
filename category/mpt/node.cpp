@@ -20,8 +20,8 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
-#include <category/core/unaligned.hpp>
 #include <category/core/mem/allocators.hpp>
+#include <category/core/unaligned.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -46,20 +46,6 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-allocators::detail::type_raw_alloc_pair<
-    std::allocator<Node>, Node::BytesAllocator>
-Node::pool()
-{
-    static std::allocator<Node> a;
-    static BytesAllocator b;
-    return {a, b};
-}
-
-size_t Node::get_deallocate_count(Node *node)
-{
-    return node->get_mem_size();
-}
-
 Node::Node(prevent_public_construction_tag) {}
 
 Node::Node(
@@ -68,8 +54,9 @@ Node::Node(
     NibblesView const path, int64_t const version)
     : mask(mask)
     , path_nibble_index_end(path.end_nibble_)
-    , value_len(static_cast<decltype(value_len)>(
-          value.transform(&byte_string_view::size).value_or(0)))
+    , value_len(
+          static_cast<decltype(value_len)>(
+              value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_DEBUG_ASSERT(

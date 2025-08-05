@@ -127,10 +127,7 @@ namespace
     {
         using namespace MONAD_NAMESPACE::allocators;
         reset();
-        allocate_aliasing_unique<
-            custom_allocator,
-            raw_allocator,
-            &get_type_raw_alloc_pair>(16);
+        allocate_aliasing_unique<&get_type_raw_alloc_pair>(16);
         EXPECT_EQ(allocated, 1);
         EXPECT_EQ(constructed, 1);
         EXPECT_EQ(destructed, 1);

@@ -135,16 +135,9 @@ public:
     static constexpr unsigned disk_size_bytes = sizeof(uint32_t);
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
-    using BytesAllocator = allocators::malloc_free_allocator<std::byte>;
-
-    static allocators::detail::type_raw_alloc_pair<
-        std::allocator<Node>, BytesAllocator>
-    pool();
-    static size_t get_deallocate_count(Node *);
 
     using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
-        std::allocator<Node>, BytesAllocator, &Node::pool,
-        &Node::get_deallocate_count>;
+        &allocators::aliasing_allocator_pair<Node>>;
     using UniquePtr = std::unique_ptr<Node, Deleter>;
 
     /* 16-bit mask for children */
@@ -208,10 +201,7 @@ public:
     {
         MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
         return allocators::allocate_aliasing_unique<
-            std::allocator<Node>,
-            BytesAllocator,
-            &pool,
-            &get_deallocate_count>(
+            &allocators::aliasing_allocator_pair<Node>>(
             bytes,
             prevent_public_construction_tag{},
             std::forward<Args>(args)...);

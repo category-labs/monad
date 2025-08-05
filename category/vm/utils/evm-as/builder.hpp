@@ -24,7 +24,6 @@
 #include <category/vm/utils/evm-as/utils.hpp>
 
 #include <evmc/evmc.h>
-#include <intx/intx.hpp>
 
 #include <concepts>
 #include <cstdint>

@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <gtest/gtest.h>
+#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <test_resource_data.h>
@@ -477,7 +478,7 @@ TEST(PrestateTracer, geth_example_prestate) {
 
     Account const b{.balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
     OriginalAccountState bs{b};
-    Account const c{.balance = monad::vm::runtime::uint256_t::from_string("0x2638035a26d133809").as_intx(), .code_hash = NULL_HASH, .nonce = 0};
+    Account const c{.balance = intx::from_string<intx::uint256>("0x2638035a26d133809"), .code_hash = NULL_HASH, .nonce = 0};
     OriginalAccountState cs{c};
     Account const d{.balance = 0x0, .code_hash = NULL_HASH, .nonce = 0};
     OriginalAccountState ds{d};

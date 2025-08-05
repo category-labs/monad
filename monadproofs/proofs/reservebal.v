@@ -315,12 +315,51 @@ Proof using.
   reflexivity.
 Qed.
 
+
+Lemma updateKeyLkp3  {T} `{c: Countable T} (m: gmap T N) (a b: T) (f: N -> N) :
+  lookupN (updateKey m a f) b = if (bool_decide (a=b)) then (f (lookupN m a)) else lookupN m b.
+Proof using.
+  unfold lookupN.
+  unfold updateKey.
+  autorewrite with syntactic;[| exact 0%N].
+  case_bool_decide; auto.
+Qed.
+
+Lemma execLcore knownBlocks tx s:
+  let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
+  forall ac,
+    ReserveBal `min` (balanceOfAc s ac)  <= (balanceOfAc sf ac) + (if bool_decide (sender tx = ac) then maxTotalReserveDippableDebit knownBlocks s [] tx else 0).
+Proof using.
+Admitted.
+
 Lemma execL knownBlocks tx extension s:
   let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
   consensusAcceptableTxG knownBlocks s
     (tx::extension)
   ->     consensusAcceptableTxG knownBlocks sf extension.
-Proof using. Admitted.
+Proof using.
+  pose proof (execLcore knownBlocks tx s) as Hcore.
+  remember (execTxAfterValidationV2 knownBlocks s tx) as ss.
+  destruct ss as [sf  res].
+  intros Hc.
+  unfold consensusAcceptableTxG in *.
+  simpl in *.
+  intros ac.
+  specialize (Hc ac).
+  specialize (Hcore ac).
+  rewrite updateKeyLkp3 in Hc.
+  assert (forall acc, lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) acc
+                      >= lookupN (maxTotalReserveDippableDebitL knownBlocks sf [] extension) acc) as Hass by admit.
+  specialize (Hass ac).
+  case_bool_decide; simpl in *;  try lia.
+  { (* sender is ac *)
+    
+    subst.
+    assert ( ReserveBal `min` balanceOfAc s (sender tx) ≤ maxTotalReserveDippableDebit knownBlocks s [] tx) as Hle by admit.
+    Fail lia.
+  
+Admitted.
+
 
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl)

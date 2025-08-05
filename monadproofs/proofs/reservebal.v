@@ -189,12 +189,6 @@ Definition consensusAcceptableBlocks (knownBlocks: gmap N Block) (knownStates: g
   (proposedChainExtension: list Block) : bool :=
   forallb (fun b => consensusAcceptableBlock knownBlocks (knownStates !!! (number (header b) - K)) b) proposedChainExtension.
 
-Definition isAllowedToEmptyLatestState (knownBlocks: gmap N Block)
-  (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  let notDelegated := negb (addrDelegated state (sender tx)) in
-  let prevTxsFromSameSender := 
-    List.filter (fun t => bool_decide (sender t = sender tx)) (emptyingCheckRange knownBlocks tx)
-                in bool_decide (lengthN prevTxsFromSameSender = 0).
 
 Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
 
@@ -212,7 +206,7 @@ Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalSta
     let erb:N := ReserveBal `min` (balanceOfAc s a) in
     bool_decide (erb  - (if bool_decide (sender t =a ) then maxTxFee t else 0) <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
-  if (isAllowedToEmptyLatestState knownBlocks s t || allBalCheck)
+  if (isAllowedToEmpty knownBlocks s [] t || allBalCheck)
   then (si, r)
   else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - maxTxFee t),  DippedTooMuchIntoReserve t) (* revert tx *).
 
@@ -324,13 +318,23 @@ Proof using.
   autorewrite with syntactic;[| exact 0%N].
   case_bool_decide; auto.
 Qed.
+Open Scope N_scope.
 
 Lemma execLcore knownBlocks tx s:
   let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
-  forall ac,
-    ReserveBal `min` (balanceOfAc s ac)  <= (balanceOfAc sf ac) + (if bool_decide (sender tx = ac) then maxTotalReserveDippableDebit knownBlocks s [] tx else 0).
+  (forall ac, (ac <> sender tx) ->
+             ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
+  /\
+  if isAllowedToEmpty knownBlocks s [] tx
+  then True
+  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)).
 Proof using.
 Admitted.
+
+Hint Rewrite Z.min_l  using lia: syntactic.      
+Hint Rewrite Z.min_r  using lia: syntactic.      
+Hint Rewrite N.min_l  using lia: syntactic.      
+Hint Rewrite N.min_r  using lia: syntactic.      
 
 Lemma execL knownBlocks tx extension s:
   let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
@@ -346,17 +350,48 @@ Proof using.
   simpl in *.
   intros ac.
   specialize (Hc ac).
-  specialize (Hcore ac).
+  forward_reason.
   rewrite updateKeyLkp3 in Hc.
-  assert (forall acc, lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) acc
-                      >= lookupN (maxTotalReserveDippableDebitL knownBlocks sf [] extension) acc) as Hass by admit.
+  assert (forall acc, lookupN (maxTotalReserveDippableDebitL knownBlocks sf [] extension) acc = lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) acc
+                     ) as Hass by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
   specialize (Hass ac).
   case_bool_decide; simpl in *;  try lia.
-  { (* sender is ac *)
-    
+  2:{ (* non-sender account *)
+    specialize (Hcorel ac ltac:(auto)).
+    clear Hcorer.
+    rewrite Hass.
+    clear Hass.
+    remember (addrDelegated sf ac) as dg.
+    destruct dg.
+    2:{ (* ac is not delegated *)
+      assert (balanceOfAc sf ac = balanceOfAc s ac) as Heq by admit.
+      rewrite Heq.
+      assumption.
+    }
+    { (* ac is delegated => isEmpgying false for the ENTIRE extension, even if some tx in it undelegates *)
+      assert (lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) ac <= ReserveBal) as Hle by admit.
+      lia.
+    }
+  }
+  { (* sender's account *)
     subst.
-    assert ( ReserveBal `min` balanceOfAc s (sender tx) ≤ maxTotalReserveDippableDebit knownBlocks s [] tx) as Hle by admit.
-    Fail lia.
+    rewrite Hass.
+    clear Hass.
+    unfold maxTotalReserveDippableDebit in Hc.
+    remember (isAllowedToEmpty knownBlocks s [] tx) as ae.
+    destruct ae; simpl in *; try lia;[|].
+    {
+      (* meaning sender tx is not delegated, so this tx can only decrement the balance by ( maxTxFee tx + value tx) *)
+      assert (balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)) as Hle by admit.
+      lia.
+    }
+    {
+      (* later txs cannot be isEmptying *)
+      assert (lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) (sender tx) <= ReserveBal - maxTxFee tx) as Hle by admit.
+      simpl.
+      lia.
+    }
+  }
   
 Admitted.
 

@@ -4167,62 +4167,228 @@ namespace monad::vm::compiler::native
             std::move(shift), std::move(value), live);
     }
 
-    // TODO: remove this when the shift by literal algos are re-implemented
     template <Emitter::ShiftType shift_type, typename... LiveSet>
-    void Emitter::setup_shift_stack(
-        StackElemRef value, int32_t additional_byte_count,
-        std::tuple<LiveSet...> const &live)
+    StackElemRef Emitter::shift_general_reg_or_stack_offset_by_literal(
+        unsigned shift, StackElemRef value, std::tuple<LiveSet...> const &live)
     {
-        MONAD_VM_DEBUG_ASSERT(additional_byte_count <= 32);
+        MONAD_VM_DEBUG_ASSERT(!stack_.has_deferred_comparison());
+        MONAD_VM_DEBUG_ASSERT(shift <= 256);
+        MONAD_VM_DEBUG_ASSERT(
+            value->general_reg().has_value() ||
+            value->stack_offset().has_value());
 
-        static constexpr int32_t base_offset = sp_offset_temp_word2 + 32;
+        unsigned const dword_shift = shift >> 6;
+        unsigned const bit_shift = shift & 63;
 
-        if constexpr (shift_type == ShiftType::SHL) {
-            if (additional_byte_count <= 8) {
-                as_.mov(qword_ptr(x86::rsp, base_offset - 40), 0);
-            }
-            else {
-                mov_literal_to_mem<false>(
-                    Literal{0}, qword_ptr(x86::rsp, base_offset - 64));
-            }
-            mov_stack_elem_to_unaligned_mem<true>(
-                value, qword_ptr(x86::rsp, base_offset - 32));
+        std::variant<Gpq256 const *, x86::Mem> value_op;
+        StackElemRef dst;
+        if (value->general_reg()) {
+            value_op = &general_reg_to_gpq256(*value->general_reg());
+            auto [tmp, _] =
+                alloc_or_release_general_reg(std::move(value), live);
+            dst = std::move(tmp);
         }
-        else if constexpr (shift_type == ShiftType::SHR) {
-            mov_stack_elem_to_unaligned_mem<true>(
-                value, qword_ptr(x86::rsp, base_offset - 64));
-            if (additional_byte_count <= 8) {
-                as_.mov(qword_ptr(x86::rsp, base_offset - 32), 0);
+        else {
+            value_op = stack_offset_to_mem(*value->stack_offset());
+            auto [tmp, _] = alloc_general_reg();
+            dst = std::move(tmp);
+        }
+        Gpq256 &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        if (shift == 256) {
+            MONAD_VM_DEBUG_ASSERT(shift_type == ShiftType::SAR);
+            if (std::holds_alternative<Gpq256 const *>(value_op)) {
+                Gpq256 const &value_gpq = *std::get<Gpq256 const *>(value_op);
+                if (&dst_gpq != &value_gpq) {
+                    as_.mov(dst_gpq[3], value_gpq[3]);
+                }
             }
             else {
-                mov_literal_to_mem<false>(
-                    Literal{0}, qword_ptr(x86::rsp, base_offset - 32));
+                x86::Mem value_mem = std::get<x86::Mem>(value_op);
+                value_mem.addOffset(24);
+                as_.mov(dst_gpq[3], value_mem);
+            }
+            as_.sar(dst_gpq[3], 63);
+            as_.mov(dst_gpq[0], dst_gpq[3]);
+            as_.mov(dst_gpq[1], dst_gpq[3]);
+            as_.mov(dst_gpq[2], dst_gpq[3]);
+            return dst;
+        }
+
+        if (std::holds_alternative<Gpq256 const *>(value_op)) {
+            Gpq256 const &value_gpq = *std::get<Gpq256 const *>(value_op);
+            if constexpr (shift_type == ShiftType::SAR) {
+                if (dword_shift != 0) {
+                    as_.mov(x86::rax, value_gpq[3]);
+                    as_.sar(x86::rax, 63);
+                }
+            }
+            if (&dst_gpq == &value_gpq) {
+                for (unsigned i = 0; i < 4 - dword_shift; ++i) {
+                    if constexpr (shift_type == ShiftType::SHL) {
+                        std::swap(dst_gpq[3 - i], dst_gpq[3 - dword_shift - i]);
+                    }
+                    else {
+                        std::swap(dst_gpq[i], dst_gpq[dword_shift + i]);
+                    }
+                }
+            }
+            else {
+                for (unsigned i = 0; i < 4 - dword_shift; ++i) {
+                    if constexpr (shift_type == ShiftType::SHL) {
+                        as_.mov(dst_gpq[3 - i], value_gpq[3 - dword_shift - i]);
+                    }
+                    else {
+                        as_.mov(dst_gpq[i], value_gpq[dword_shift + i]);
+                    }
+                }
             }
         }
         else {
-            static_assert(shift_type == ShiftType::SAR);
-            mov_stack_elem_to_unaligned_mem<true>(
-                value, qword_ptr(x86::rsp, base_offset - 64));
-            auto reg = x86::rax;
-            if (value->general_reg()) {
-                if (is_live(value, live)) {
-                    as_.mov(
-                        reg, general_reg_to_gpq256(*value->general_reg())[3]);
+            if constexpr (shift_type == ShiftType::SAR) {
+                if (dword_shift != 0) {
+                    x86::Mem tmp = std::get<x86::Mem>(value_op);
+                    tmp.addOffset(24);
+                    as_.mov(x86::rax, tmp);
+                    as_.sar(x86::rax, 63);
+                }
+            }
+            for (unsigned i = 0; i < 4 - dword_shift; ++i) {
+                x86::Mem tmp = std::get<x86::Mem>(value_op);
+                if constexpr (shift_type == ShiftType::SHL) {
+                    tmp.addOffset((3 - dword_shift - i) << 3);
+                    as_.mov(dst_gpq[3 - i], tmp);
                 }
                 else {
-                    reg = general_reg_to_gpq256(*value->general_reg())[3];
+                    tmp.addOffset((dword_shift + i) << 3);
+                    as_.mov(dst_gpq[i], tmp);
                 }
             }
-            else {
-                as_.mov(reg, qword_ptr(x86::rsp, base_offset - 40));
+        }
+
+        for (unsigned i = 4 - dword_shift; i < 4; ++i) {
+            if constexpr (shift_type == ShiftType::SHL) {
+                as_.xor_(dst_gpq[3 - i].r32(), dst_gpq[3 - i].r32());
             }
-            as_.sar(reg, 63);
-            auto temp = x86::qword_ptr(x86::rsp, base_offset - 32);
-            for (int32_t i = 0; i < additional_byte_count; i += 8) {
-                as_.mov(temp, reg);
-                temp.addOffset(8);
+            else if constexpr (shift_type == ShiftType::SHR) {
+                as_.xor_(dst_gpq[i].r32(), dst_gpq[i].r32());
+            }
+            else {
+                as_.mov(dst_gpq[i], x86::rax);
             }
         }
+
+        if (bit_shift != 0) {
+            for (unsigned i = 0; i < 3 - dword_shift; ++i) {
+                if constexpr (shift_type == ShiftType::SHL) {
+                    as_.shld(dst_gpq[3 - i], dst_gpq[3 - i - 1], bit_shift);
+                }
+                else {
+                    as_.shrd(dst_gpq[i], dst_gpq[i + 1], bit_shift);
+                }
+            }
+            if constexpr (shift_type == ShiftType::SHL) {
+                as_.shl(dst_gpq[dword_shift], bit_shift);
+            }
+            else if constexpr (shift_type == ShiftType::SHR) {
+                as_.shr(dst_gpq[3 - dword_shift], bit_shift);
+            }
+            else if (dword_shift == 0) {
+                as_.sar(dst_gpq[3], bit_shift);
+            }
+            else {
+                as_.shrd(dst_gpq[3 - dword_shift], x86::rax, bit_shift);
+            }
+        }
+
+        return dst;
+    }
+
+    template <Emitter::ShiftType shift_type, typename... LiveSet>
+    StackElemRef
+    Emitter::shift_avx_reg_by_literal(unsigned shift, StackElemRef value)
+    {
+        // See `shift_avx_reg_by_non_literal` for the general algorithm.
+
+        MONAD_VM_DEBUG_ASSERT(!stack_.has_deferred_comparison());
+        MONAD_VM_DEBUG_ASSERT(shift <= 256);
+        MONAD_VM_DEBUG_ASSERT(value->avx_reg().has_value());
+
+        unsigned const dword_shift = shift >> 6;
+        unsigned const bit_shift = shift & 63;
+
+        AvxRegReserv const value_reserv{value};
+        auto const in = avx_reg_to_ymm(*value->avx_reg());
+
+        auto [result, result_reserv] = alloc_avx_reg();
+        auto const out = avx_reg_to_ymm(*result->avx_reg());
+
+        if (shift == 256) {
+            MONAD_VM_DEBUG_ASSERT(shift_type == ShiftType::SAR);
+            as_.vpxor(out, out, out);
+            as_.vpcmpgtq(out, out, in);
+            as_.vpermq(out, out, 0xff);
+            return result;
+        }
+
+        auto [tmp1_elem, tmp1_reserv] = alloc_avx_reg();
+        auto const tmp1 = avx_reg_to_ymm(*tmp1_elem->avx_reg());
+
+        auto [zero_elem, zero_reserv] = alloc_avx_reg();
+        auto const zero = avx_reg_to_ymm(*zero_elem->avx_reg());
+
+        as_.vpxor(zero, zero, zero);
+
+        if constexpr (shift_type == ShiftType::SHL) {
+            uint8_t const perm1 =
+                static_cast<uint8_t>(0b11100100 << dword_shift * 2);
+            uint8_t const mask1 = static_cast<uint8_t>(0xff << dword_shift * 2);
+            as_.vpermq(out, in, perm1);
+            as_.vblendps(out, zero, out, mask1);
+            as_.vpsllq(out, out, bit_shift);
+            if (dword_shift < 3) {
+                uint8_t const perm2 = static_cast<uint8_t>(perm1 << 2);
+                uint8_t const mask2 = static_cast<uint8_t>(mask1 << 2);
+                as_.vpermq(tmp1, in, perm2);
+                as_.vblendps(tmp1, zero, tmp1, mask2);
+                as_.vpsrlq(tmp1, tmp1, 64 - bit_shift);
+                as_.vpor(out, out, tmp1);
+            }
+        }
+        else {
+            uint8_t const perm1 =
+                static_cast<uint8_t>(0b11100100 >> dword_shift * 2);
+            uint8_t const mask1 = static_cast<uint8_t>(0xff >> dword_shift * 2);
+            as_.vpermq(out, in, perm1);
+            as_.vblendps(out, zero, out, mask1);
+            as_.vpsrlq(out, out, bit_shift);
+            uint8_t const mask2 = static_cast<uint8_t>(mask1 >> 2);
+            if (dword_shift < 3) {
+                uint8_t const perm2 = static_cast<uint8_t>(perm1 >> 2);
+                as_.vpermq(tmp1, in, perm2);
+                as_.vblendps(tmp1, zero, tmp1, mask2);
+                as_.vpsllq(tmp1, tmp1, 64 - bit_shift);
+                as_.vpor(out, out, tmp1);
+            }
+            if constexpr (shift_type == ShiftType::SAR) {
+                auto [tmp2_elem, tmp2_reserv] = alloc_avx_reg();
+                auto const tmp2 = avx_reg_to_ymm(*tmp2_elem->avx_reg());
+                as_.vpcmpgtq(tmp1, zero, in);
+                as_.vpermq(tmp1, tmp1, 0xff);
+                if (dword_shift < 3) {
+                    as_.vblendps(tmp2, tmp1, zero, mask2);
+                    as_.vpsllq(tmp2, tmp2, 64 - bit_shift);
+                }
+                else {
+                    as_.vpsllq(tmp2, tmp1, 64 - bit_shift);
+                }
+                as_.vblendps(tmp1, tmp1, zero, mask1);
+                as_.vpor(tmp1, tmp2, tmp1);
+                as_.vpor(out, out, tmp1);
+            }
+        }
+
+        return result;
     }
 
     // Discharge
@@ -4233,10 +4399,8 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!value->literal().has_value());
 
-        RegReserv const value_reserv{value};
-
-        auto shift = shift_literal;
-        if (shift >= 256) {
+        auto shift = static_cast<unsigned>(shift_literal);
+        if (shift_literal >= 256) {
             if constexpr (
                 shift_type == ShiftType::SHL || shift_type == ShiftType::SHR) {
                 return stack_.alloc_literal({0});
@@ -4245,107 +4409,21 @@ namespace monad::vm::compiler::native
                 shift = 256;
             }
         }
-        else if (shift == 0) {
+        else if (shift_literal == 0) {
             return value;
         }
 
-        discharge_deferred_comparison();
-
-        static constexpr int32_t base_offset = sp_offset_temp_word2 + 32;
-
-        int32_t const s = static_cast<int32_t>(shift[0]);
-        int8_t const c = static_cast<int8_t>(s & 7);
-        int32_t const d = s >> 3;
-
-        // We do not need the register reservation for `dst`, because
-        // we do not allocate any registers below.
-        auto dst = [&] {
-            if (d > 0) {
-                setup_shift_stack<shift_type>(std::move(value), d, live);
-
-                if (c > 0) {
-                    auto [r, _] = alloc_general_reg();
-                    return r;
-                }
-                else {
-                    auto [r, _] = alloc_avx_reg();
-                    return r;
-                }
-            }
-            else {
-                MONAD_VM_DEBUG_ASSERT(c > 0);
-                if (!is_live(value, live) && value->general_reg()) {
-                    auto r = stack_.release_general_reg(std::move(value));
-                    return r;
-                }
-                else {
-                    auto [r, _] = alloc_general_reg();
-                    mov_stack_elem_to_gpq256<true>(
-                        std::move(value),
-                        general_reg_to_gpq256(*r->general_reg()));
-                    return r;
-                }
-            }
-        }();
-
-        if (c == 0) {
-            MONAD_VM_DEBUG_ASSERT(d > 0);
-            MONAD_VM_DEBUG_ASSERT(dst->avx_reg().has_value());
-            x86::Ymm const dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
-            if constexpr (shift_type == ShiftType::SHL) {
-                as_.vmovups(
-                    dst_ymm, x86::byte_ptr(x86::rsp, base_offset - 32 - d));
-            }
-            else {
-                as_.vmovups(
-                    dst_ymm, x86::qword_ptr(x86::rsp, base_offset + d - 64));
-            }
-            return dst;
+        {
+            RegReserv const value_reserv{value};
+            discharge_deferred_comparison();
         }
 
-        MONAD_VM_DEBUG_ASSERT(dst->general_reg().has_value());
-
-        Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
-        if constexpr (shift_type == ShiftType::SHL) {
-            if (d > 0) {
-                as_.mov(
-                    dst_gpq[3], x86::qword_ptr(x86::rsp, base_offset - 8 - d));
-                as_.mov(
-                    dst_gpq[2], x86::qword_ptr(x86::rsp, base_offset - 16 - d));
-                as_.mov(
-                    dst_gpq[1], x86::qword_ptr(x86::rsp, base_offset - 24 - d));
-                as_.mov(
-                    dst_gpq[0], x86::qword_ptr(x86::rsp, base_offset - 32 - d));
-            }
-            as_.shld(dst_gpq[3], dst_gpq[2], c);
-            as_.shld(dst_gpq[2], dst_gpq[1], c);
-            as_.shld(dst_gpq[1], dst_gpq[0], c);
-            as_.shl(dst_gpq[0], c);
+        if (value->avx_reg()) {
+            return shift_avx_reg_by_literal<shift_type>(
+                static_cast<unsigned>(shift), std::move(value));
         }
-        else {
-            if (d > 0) {
-                as_.mov(
-                    dst_gpq[3], x86::qword_ptr(x86::rsp, base_offset + d - 40));
-                as_.mov(
-                    dst_gpq[2], x86::qword_ptr(x86::rsp, base_offset + d - 48));
-                as_.mov(
-                    dst_gpq[1], x86::qword_ptr(x86::rsp, base_offset + d - 56));
-                as_.mov(
-                    dst_gpq[0], x86::qword_ptr(x86::rsp, base_offset + d - 64));
-            }
-            as_.shrd(dst_gpq[0], dst_gpq[1], c);
-            as_.shrd(dst_gpq[1], dst_gpq[2], c);
-            as_.shrd(dst_gpq[2], dst_gpq[3], c);
-            if constexpr (shift_type == ShiftType::SHR) {
-                as_.shr(dst_gpq[3], c);
-            }
-            else {
-                static_assert(shift_type == ShiftType::SAR);
-                as_.sar(dst_gpq[3], c);
-            }
-        }
-
-        return dst;
+        return shift_general_reg_or_stack_offset_by_literal<shift_type>(
+            static_cast<unsigned>(shift), std::move(value), live);
     }
 
     // Discharge
@@ -4371,7 +4449,11 @@ namespace monad::vm::compiler::native
             }
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const shift_reserv{value};
+            RegReserv const value_reserv{value};
+            discharge_deferred_comparison();
+        }
 
         if (value->avx_reg()) {
             return shift_avx_reg_by_non_literal<shift_type>(
@@ -4617,7 +4699,7 @@ namespace monad::vm::compiler::native
             as_.add(x86::eax, 32);
             // eax = 29
             as_.vmovd(tmp1.xmm(), x86::eax);
-            // tmp1_ = 29
+            // tmp1 = 29
             as_.vpsrld(out, out, tmp1.xmm());
             // out = {0, 0, 0, v0>>29, v1>>29, v2>>29, v3>>29, v4>>29}
 

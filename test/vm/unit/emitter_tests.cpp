@@ -2535,7 +2535,7 @@ TEST(Emitter, shl)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 256; i += 4) {
+    for (uint64_t i = 0; i <= 260; i += 4) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),
@@ -2604,7 +2604,7 @@ TEST(Emitter, shr)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 256; i += 4) {
+    for (uint64_t i = 0; i <= 260; i += 4) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),
@@ -2707,7 +2707,7 @@ TEST(Emitter, sar)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 256; i += 4) {
+    for (uint64_t i = 0; i <= 260; i += 4) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),

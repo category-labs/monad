@@ -883,14 +883,16 @@ namespace monad::vm::compiler::native
             StackElemRef shift, StackElemRef, std::tuple<LiveSet...> const &);
 
         template <ShiftType shift_type, typename... LiveSet>
-        void setup_shift_stack(
-            StackElemRef, int32_t additional_byte_count,
-            std::tuple<LiveSet...> const &);
-
-        template <ShiftType shift_type, typename... LiveSet>
         StackElemRef shift_by_literal(
             uint256_t const &shift, StackElemRef,
             std::tuple<LiveSet...> const &);
+
+        template <ShiftType shift_type, typename... LiveSet>
+        StackElemRef shift_general_reg_or_stack_offset_by_literal(
+            unsigned shift, StackElemRef, std::tuple<LiveSet...> const &);
+
+        template <ShiftType shift_type, typename... LiveSet>
+        StackElemRef shift_avx_reg_by_literal(unsigned shift, StackElemRef);
 
         template <ShiftType shift_type, typename... LiveSet>
         StackElemRef shift_by_non_literal(

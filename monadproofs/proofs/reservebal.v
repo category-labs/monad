@@ -130,27 +130,60 @@ Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnown
   then value tx 
    else 0).
 
-Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
-  match rest with
+Definition lookupN {T} `{cc: Countable T} (m: gmap T N) (a: T) : N :=
+  match m !! a with
+  | Some v => v
+  | None => 0
+  end.
+      
+
+Definition updateKey  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) : gmap T N :=
+  <[ a :=  f (lookupN m a) ]> m.
+
+Lemma updateKeyLkp  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) :
+  updateKey m a f !! a = Some (f (lookupN m a)).
+Proof using.
+  unfold updateKey.
+  autorewrite with syntactic; [| exact 0].
+  case_bool_decide; try congruence.
+Qed.
+
+Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
+   match rest with
   | [] => 0
-  | h::tl =>
-      (maxTotalReserveDippableDebitL knownBlocks latestKnownState (postStateAccountedSuffix++[h]) tl a)
+   | h::tl =>
+      (maxTotalReserveDippableDebitLold knownBlocks latestKnownState (postStateAccountedSuffix++[h]) tl a)
       + (if bool_decide (sender h = a)
          then (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h)
          else 0)
+   end.
+
+Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address N :=
+  match rest with
+  | [] => ∅
+  | h::tl =>
+      let r := maxTotalReserveDippableDebitL knownBlocks latestKnownState (postStateAccountedSuffix++[h]) tl in
+      updateKey r (sender h) (N.add (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h))
   end.
 
-Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
+Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
   if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState candidate
   then bool_decide (maxTxFee candidate <= balanceOfAc latestKnownState (sender candidate))
   else
-    bool_decide (maxTotalReserveDippableDebitL knownBlocks latestKnownState [] intermediateTxsSinceState (sender candidate)
+    bool_decide (maxTotalReserveDippableDebitLold knownBlocks latestKnownState [] intermediateTxsSinceState (sender candidate)
                  <= balanceOfAc latestKnownState (sender candidate)).
+
+Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+  let totDebits := maxTotalReserveDippableDebitL knownBlocks latestKnownState [] postStateSuffix in
+  forall ac, match totDebits !! ac with
+             | None => True
+             | Some v => v <= balanceOfAc latestKnownState ac
+             end.
 
 Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
   let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
-  consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
+  consensusAcceptableTxGold knownBlocks stateNminusK intermediate candidate.
 
 Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (block: Block) : bool :=
   forallb  (consensusAcceptableTx knownBlocks stateNminusK) (transactions block).
@@ -235,8 +268,8 @@ Qed.
 
 Lemma maxTotalReserveDippableDebitLeq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix unaccountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
   (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
-  -> maxTotalReserveDippableDebitL knownBlocks s1 accountedSuffix unaccountedSuffix (sender candidate)
-     = maxTotalReserveDippableDebitL knownBlocks s2 accountedSuffix unaccountedSuffix (sender candidate).
+  -> maxTotalReserveDippableDebitLold knownBlocks s1 accountedSuffix unaccountedSuffix (sender candidate)
+     = maxTotalReserveDippableDebitLold knownBlocks s2 accountedSuffix unaccountedSuffix (sender candidate).
 Proof using.
   intros Hd. revert accountedSuffix.
   induction unaccountedSuffix; simpl in *; auto;[].
@@ -251,11 +284,11 @@ Qed.
 Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
   (forall a, balanceOfAc s1 a <= balanceOfAc s2 a)
   -> (forall a, addrDelegated s1 a = addrDelegated s2 a)
-  -> consensusAcceptableTxG knownBlocks s1 intermediate candidate = true
-  -> consensusAcceptableTxG knownBlocks s2 intermediate candidate = true.
+  -> consensusAcceptableTxGold knownBlocks s1 intermediate candidate = true
+  -> consensusAcceptableTxGold knownBlocks s2 intermediate candidate = true.
 Proof.
   intros Hb Hd Hc.
-  unfold consensusAcceptableTxG in *.
+  unfold consensusAcceptableTxGold in *.
   specialize (Hb (sender candidate)).
   rewrite -> isEmptyingEq with (s2:=s1) by auto.
   case_match; rewrite -> bool_decide_eq_true in *; try lia;[].
@@ -277,16 +310,33 @@ evm.Countable_instance_0 : Countable evm.address
 
 Hint Rewrite -> bool_decide_eq_true : iff.
 Require Import monad.proofs.bigauto.
-Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) (candidate : TxWithHdr) :
-  consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl) candidate = true
+Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) :
+  consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl)
   -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
      | None =>  False
      | Some (si, tr) =>
-         consensusAcceptableTxG knownBlocks si intermediateTl candidate = true
+         consensusAcceptableTxG knownBlocks si intermediateTl
      end.
 Proof.
   intros Hc.
-  unfold consensusAcceptableTxG in Hc.
+  pose proof  (Hc (sender intermediateHd)) as Hcs.
+  simpl in Hcs.
+  rewrite updateKeyLkp in Hcs.
+  unfold stateAfterTransactionV2.
+  unfold validateTx.
+  unfold maxTotalReserveDippableDebit in Hcs.
+  case_bool_decide; simpl in *; try lia;[].
+  unfold consensusAcceptableTxG.
+  unfold execTxAfterValidationV2.
+  remember (stateAfterTransaction latestState intermediateHd) as ss.
+  destruct ss as [si  res].
+  simpl.
+  
+  
+
+      
+  
+  updateKey
   case_match.
   2:{ (*candidate not allowed to empty *)
     unfold stateAfterTransactionV2.

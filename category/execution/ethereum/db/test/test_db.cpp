@@ -51,6 +51,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <iostream>
+#include <memory>
+
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -885,7 +888,6 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 {
     using namespace intx;
 
-    enable_call_tracing(true);
     TrieDb tdb{this->db};
 
     auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
@@ -942,32 +944,35 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
-    auto const results = execute_block<EVMC_SHANGHAI>(
+    std::vector<std::vector<CallFrame>> call_frames(
+        block.value().transactions.size());
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_tracers.emplace_back(std::make_unique<CallTracer>(
+            block.value().transactions[i], call_frames[i]));
+    }
+
+    auto const receipts = execute_block<EVMC_SHANGHAI>(
         EthereumMainnet{},
         block.value(),
         senders,
         bs,
         block_hash_buffer,
         pool,
-        metrics);
+        metrics,
+        call_tracers);
 
-    ASSERT_TRUE(!results.has_error());
+    ASSERT_TRUE(!receipts.has_error());
 
     bs.log_debug();
 
-    std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
-    for (auto &result : results.value()) {
-        receipts.emplace_back(std::move(result.receipt));
-        call_frames.emplace_back(std::move(result.call_frames));
-    }
     auto const &transactions = block.value().transactions;
     BlockHeader const header{.number = 1};
     bytes32_t const block_id{header.number};
     bs.commit(
         block_id,
         header,
-        receipts,
+        receipts.value(),
         call_frames,
         recover_senders(transactions),
         transactions,
@@ -986,7 +991,6 @@ TYPED_TEST(DBTest, call_frames_stress_test)
 // https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
 TYPED_TEST(DBTest, call_frames_refund)
 {
-    enable_call_tracing(true);
     TrieDb tdb{this->db};
 
     auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
@@ -1053,25 +1057,27 @@ TYPED_TEST(DBTest, call_frames_refund)
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
-    auto const results = execute_block<EVMC_SHANGHAI>(
+    std::vector<std::vector<CallFrame>> call_frames(
+        block.value().transactions.size());
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_tracers.emplace_back(std::make_unique<CallTracer>(
+            block.value().transactions[i], call_frames[i]));
+    }
+
+    auto const receipts = execute_block<EVMC_SHANGHAI>(
         ShanghaiEthereumMainnet{},
         block.value(),
         senders,
         bs,
         block_hash_buffer,
         pool,
-        metrics);
+        metrics,
+        call_tracers);
 
-    ASSERT_TRUE(!results.has_error());
+    ASSERT_TRUE(!receipts.has_error());
 
     bs.log_debug();
-
-    std::vector<Receipt> receipts;
-    std::vector<std::vector<CallFrame>> call_frames;
-    for (auto &result : results.value()) {
-        receipts.emplace_back(std::move(result.receipt));
-        call_frames.emplace_back(std::move(result.call_frames));
-    }
 
     auto const &transactions = block.value().transactions;
     BlockHeader const header = block.value().header;
@@ -1079,7 +1085,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     bs.commit(
         block_id,
         header,
-        receipts,
+        receipts.value(),
         call_frames,
         recover_senders(transactions),
         transactions,

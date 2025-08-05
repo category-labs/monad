@@ -25,6 +25,7 @@
 
 #include <evmc/evmc.h>
 
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -34,17 +35,17 @@ struct Block;
 class BlockHashBuffer;
 class BlockState;
 struct Chain;
-struct ExecutionResult;
 
 template <evmc_revision rev>
-Result<std::vector<ExecutionResult>> execute_block(
+Result<std::vector<Receipt>> execute_block(
     Chain const &, Block &, std::vector<Address> const &senders, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &);
+    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &,
+    std::vector<std::unique_ptr<CallTracerBase>> &);
 
-Result<std::vector<ExecutionResult>> execute_block(
+Result<std::vector<Receipt>> execute_block(
     Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &);
+    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &);
 
 std::vector<std::optional<Address>>
 recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);

@@ -34,15 +34,14 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
-#include <evmc/evmc.h>
-
-#include <intx/intx.hpp>
-
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
+#include <evmc/evmc.h>
+#include <intx/intx.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -159,14 +158,16 @@ std::vector<std::optional<Address>> recover_senders(
 }
 
 template <evmc_revision rev>
-Result<std::vector<ExecutionResult>> execute_block(
+Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block &block, std::vector<Address> const &senders,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
+    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
     MONAD_ASSERT(senders.size() == block.transactions.size());
+    MONAD_ASSERT(senders.size() == call_tracers.size());
 
     if constexpr (rev >= EVMC_PRAGUE) {
         set_block_hash_history(block_state, block.header);
@@ -187,8 +188,8 @@ Result<std::vector<ExecutionResult>> execute_block(
         new boost::fibers::promise<void>[block.transactions.size() + 1]};
     promises[0].set_value();
 
-    std::shared_ptr<std::optional<Result<ExecutionResult>>[]> const results{
-        new std::optional<Result<ExecutionResult>>[block.transactions.size()]};
+    std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
+        new std::optional<Result<Receipt>>[block.transactions.size()]};
 
     auto const tx_exec_begin = std::chrono::steady_clock::now();
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
@@ -203,7 +204,8 @@ Result<std::vector<ExecutionResult>> execute_block(
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state,
-             &block_metrics] {
+             &block_metrics,
+             &call_tracer = *call_tracers[i]] {
                 results[i] = ExecuteTransaction<rev>{
                     chain,
                     i,
@@ -213,7 +215,8 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_hash_buffer,
                     block_state,
                     block_metrics,
-                    promises[i]}();
+                    promises[i],
+                    call_tracer}();
                 promises[i + 1].set_value();
             });
     }
@@ -224,7 +227,7 @@ Result<std::vector<ExecutionResult>> execute_block(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin));
 
-    std::vector<ExecutionResult> retvals;
+    std::vector<Receipt> retvals;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         MONAD_ASSERT(results[i].has_value());
         if (MONAD_UNLIKELY(results[i].value().has_error())) {
@@ -240,7 +243,7 @@ Result<std::vector<ExecutionResult>> execute_block(
 
     // YP eq. 22
     uint64_t cumulative_gas_used = 0;
-    for (auto &[receipt, call_frame] : retvals) {
+    for (auto &receipt : retvals) {
         cumulative_gas_used += receipt.gas_used;
         receipt.gas_used = cumulative_gas_used;
     }
@@ -266,11 +269,12 @@ Result<std::vector<ExecutionResult>> execute_block(
 
 EXPLICIT_EVMC_REVISION(execute_block);
 
-Result<std::vector<ExecutionResult>> execute_block(
+Result<std::vector<Receipt>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
     std::vector<Address> const &senders, BlockState &block_state,
     BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics)
+    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
+    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
     SWITCH_EVMC_REVISION(
         execute_block,
@@ -280,7 +284,8 @@ Result<std::vector<ExecutionResult>> execute_block(
         block_state,
         block_hash_buffer,
         priority_pool,
-        block_metrics);
+        block_metrics,
+        call_tracers);
     MONAD_ASSERT(false);
 }
 

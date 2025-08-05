@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 
 #include <evmc/evmc.h>
@@ -35,6 +36,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <optional>
 
 using namespace monad;
@@ -81,7 +83,9 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
-    auto const result = ExecuteTransaction<EVMC_SHANGHAI>(
+    NoopCallTracer noop_call_tracer;
+
+    auto const receipt = ExecuteTransaction<EVMC_SHANGHAI>(
         EthereumMainnet{},
         0,
         tx,
@@ -90,13 +94,12 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         block_hash_buffer,
         bs,
         metrics,
-        prev)();
+        prev,
+        noop_call_tracer)();
 
-    ASSERT_TRUE(!result.has_error());
+    ASSERT_TRUE(!receipt.has_error());
 
-    auto const &receipt = result.value().receipt;
-
-    EXPECT_EQ(receipt.status, 1u);
+    EXPECT_EQ(receipt.value().status, 1u);
     {
         State state{bs, Incarnation{0, 0}};
         EXPECT_EQ(
@@ -106,5 +109,5 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     }
 
     // check if miner gets the right reward
-    EXPECT_EQ(receipt.gas_used * 10u, uint256_t{530'000});
+    EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
 }

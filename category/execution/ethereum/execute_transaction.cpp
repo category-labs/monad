@@ -179,19 +179,20 @@ ExecuteTransaction<rev>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header,
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev)
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    CallTracerBase &call_tracer)
     : ExecuteTransactionNoValidation<rev>{chain, tx, sender, header}
     , i_{i}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
+    , call_tracer_{call_tracer}
 {
 }
 
 template <evmc_revision rev>
-Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(
-    State &state, CallTracerBase &call_tracer)
+Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
     BOOST_OUTCOME_TRY(validate_transaction(tx_, sender_account));
@@ -199,7 +200,7 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<rev> host{
-        call_tracer,
+        call_tracer_,
         tx_context,
         block_hash_buffer_,
         state,
@@ -263,7 +264,7 @@ ExecuteTransaction<rev>::execute_final(State &state, evmc::Result const &result)
 }
 
 template <evmc_revision rev>
-Result<ExecutionResult> ExecuteTransaction<rev>::operator()()
+Result<Receipt> ExecuteTransaction<rev>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
@@ -280,10 +281,9 @@ Result<ExecutionResult> ExecuteTransaction<rev>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
-        std::unique_ptr<CallTracerBase> call_tracer =
-            std::make_unique<CallTracer>(tx_);
+        call_tracer_.reset();
 
-        auto result = execute_impl2(state, *call_tracer);
+        auto result = execute_impl2(state);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -295,12 +295,9 @@ Result<ExecutionResult> ExecuteTransaction<rev>::operator()()
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
-            call_tracer->on_finish(receipt.gas_used);
+            call_tracer_.on_finish(receipt.gas_used);
             block_state_.merge(state);
-
-            return ExecutionResult{
-                .receipt = receipt,
-                .call_frames = std::move(*call_tracer).get_frames()};
+            return receipt;
         }
     }
     block_metrics_.inc_retries();
@@ -309,22 +306,18 @@ Result<ExecutionResult> ExecuteTransaction<rev>::operator()()
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
-        std::unique_ptr<CallTracerBase> call_tracer =
-            std::make_unique<CallTracer>(tx_);
+        call_tracer_.reset();
 
-        auto result = execute_impl2(state, *call_tracer);
+        auto result = execute_impl2(state);
 
         MONAD_ASSERT(block_state_.can_merge(state));
         if (result.has_error()) {
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
-        call_tracer->on_finish(receipt.gas_used);
+        call_tracer_.on_finish(receipt.gas_used);
         block_state_.merge(state);
-
-        return ExecutionResult{
-            .receipt = receipt,
-            .call_frames = std::move(*call_tracer).get_frames()};
+        return receipt;
     }
 }
 

@@ -224,8 +224,6 @@ int main(int const argc, char const *argv[])
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
-    enable_call_tracing(trace_calls);
-
     MONAD_ASSERT(init_trusted_setup());
 
     auto const db_in_memory = dbname_paths.empty();
@@ -396,7 +394,8 @@ int main(int const argc, char const *argv[])
                 priority_pool,
                 block_num,
                 end_block_num,
-                stop);
+                stop,
+                trace_calls);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
@@ -411,7 +410,8 @@ int main(int const argc, char const *argv[])
                 priority_pool,
                 block_num,
                 end_block_num,
-                stop);
+                stop,
+                trace_calls);
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();

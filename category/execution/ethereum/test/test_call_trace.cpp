@@ -87,7 +87,8 @@ TEST(CallTrace, enter_and_exit)
     evmc::Result res{};
     res.output_data = output;
 
-    CallTracer call_tracer{tx};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
     {
         msg.depth = 0;
         call_tracer.on_enter(msg);
@@ -99,7 +100,6 @@ TEST(CallTrace, enter_and_exit)
         call_tracer.on_exit(res);
     }
 
-    auto const call_frames = std::move(call_tracer).get_frames();
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
@@ -147,7 +147,8 @@ TEST(CallTrace, execute_success)
 
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
-    CallTracer call_tracer{tx};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
     EvmcHost<EVMC_SHANGHAI> host(
         call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
 
@@ -155,9 +156,6 @@ TEST(CallTrace, execute_success)
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
         s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
-
-    auto const call_frames = std::move(call_tracer).get_frames();
-
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
@@ -217,7 +215,8 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
 
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
-    CallTracer call_tracer{tx};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
     EvmcHost<EVMC_SHANGHAI> host(
         call_tracer, tx_context, buffer, s, MAX_CODE_SIZE_EIP170, true);
 
@@ -225,9 +224,6 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
         s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
-
-    auto const call_frames = std::move(call_tracer).get_frames();
-
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{

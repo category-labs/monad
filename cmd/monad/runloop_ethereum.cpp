@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
@@ -38,6 +39,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -81,7 +83,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    uint64_t const end_block_num, sig_atomic_t const volatile &stop,
+    bool const enable_tracing)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -129,8 +132,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         db.set_block_and_prefix(block.header.number - 1, parent_block_id);
         BlockState block_state(db, vm);
         BlockMetrics block_metrics;
+
+        std::vector<std::vector<CallFrame>> call_frames{
+            block.transactions.size()};
+        std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
+            block.transactions.size()};
+        for (unsigned i = 0; i < block.transactions.size(); ++i) {
+            call_tracers[i] =
+                enable_tracing
+                    ? std::unique_ptr<CallTracerBase>{std::make_unique<
+                          CallTracer>(block.transactions[i], call_frames[i])}
+                    : std::unique_ptr<CallTracerBase>{
+                          std::make_unique<NoopCallTracer>()};
+        }
+
         BOOST_OUTCOME_TRY(
-            auto results,
+            auto const receipts,
             execute_block(
                 chain,
                 rev,
@@ -139,15 +156,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block_state,
                 block_hash_buffer,
                 priority_pool,
-                block_metrics));
-
-        std::vector<Receipt> receipts(results.size());
-        std::vector<std::vector<CallFrame>> call_frames(results.size());
-        for (unsigned i = 0; i < results.size(); ++i) {
-            auto &result = results[i];
-            receipts[i] = std::move(result.receipt);
-            call_frames[i] = (std::move(result.call_frames));
-        }
+                block_metrics,
+                call_tracers));
 
         block_state.log_debug();
         auto const commit_begin = std::chrono::steady_clock::now();

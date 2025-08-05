@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -133,7 +134,8 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
-    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block)
+    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
+    bool const enable_tracing)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -168,10 +170,24 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             return TransactionError::MissingSender;
         }
     }
+
+    // Create call frames vectors for tracers
+    std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
+        block.transactions.size()};
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_tracers[i] =
+            enable_tracing
+                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
+                      block.transactions[i], call_frames[i])}
+                : std::unique_ptr<CallTracerBase>{
+                      std::make_unique<NoopCallTracer>()};
+    }
+
     BlockState block_state(db, vm);
     BlockMetrics block_metrics;
     BOOST_OUTCOME_TRY(
-        auto results,
+        auto const results,
         execute_block(
             chain,
             rev,
@@ -180,22 +196,16 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
             block_state,
             block_hash_buffer,
             priority_pool,
-            block_metrics));
-
-    std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
-    for (unsigned i = 0; i < results.size(); ++i) {
-        auto &result = results[i];
-        receipts[i] = std::move(result.receipt);
-        call_frames[i] = (std::move(result.call_frames));
-    }
+            block_metrics,
+            call_tracers));
 
     block_state.log_debug();
+
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
         block_id,
         consensus_header.execution_inputs,
-        receipts,
+        results,
         call_frames,
         senders,
         block.transactions,
@@ -314,7 +324,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     mpt::Db &raw_db, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
-    uint64_t const end_block_num, sig_atomic_t const volatile &stop)
+    uint64_t const end_block_num, sig_atomic_t const volatile &stop,
+    bool const enable_tracing)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = finalized_block_num;
@@ -417,7 +428,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &chain,
              &vm,
              &priority_pool,
-             start_block_num](
+             start_block_num,
+             enable_tracing](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -447,7 +459,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     db,
                     vm,
                     priority_pool,
-                    block_number == start_block_num));
+                    block_number == start_block_num,
+                    enable_tracing));
             auto const &[block_hash, gas_used] = propose_result;
             block_hash_chain.propose(
                 block_hash, block_number, block_id, header.parent_id());

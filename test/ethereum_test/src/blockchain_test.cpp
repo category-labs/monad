@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -61,6 +62,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <test_resource_data.h>
 
 #include <algorithm>
@@ -236,8 +238,14 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             return TransactionError::MissingSender;
         }
     }
+
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    for (size_t i = 0; i < block.transactions.size(); ++i) {
+        call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
+    }
+
     BOOST_OUTCOME_TRY(
-        auto const results,
+        auto const receipts,
         execute_block<rev>(
             chain,
             block,
@@ -245,20 +253,15 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             block_state,
             block_hash_buffer,
             *pool_,
-            metrics));
-    std::vector<Receipt> receipts(results.size());
-    std::vector<std::vector<CallFrame>> call_frames(results.size());
-    for (unsigned i = 0; i < results.size(); ++i) {
-        receipts[i] = std::move(results[i].receipt);
-        call_frames[i] = std::move(results[i].call_frames);
-    }
+            metrics,
+            call_tracers));
 
     block_state.log_debug();
     block_state.commit(
         bytes32_t{block.header.number},
         block.header,
         receipts,
-        call_frames,
+        std::vector<std::vector<CallFrame>>{block.transactions.size()},
         senders,
         block.transactions,
         block.ommers,

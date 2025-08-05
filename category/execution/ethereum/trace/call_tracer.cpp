@@ -63,8 +63,6 @@ namespace
             }
         }
     }
-
-    bool tracing_enabled = false;
 }
 
 void NoopCallTracer::on_enter(evmc_message const &) {}
@@ -75,13 +73,10 @@ void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
 void NoopCallTracer::on_finish(uint64_t const) {}
 
-std::vector<CallFrame> &&NoopCallTracer::get_frames() &&
-{
-    return std::move(frames_);
-}
+void NoopCallTracer::reset() {}
 
-CallTracer::CallTracer(Transaction const &tx)
-    : frames_{}
+CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
+    : frames_(frames)
     , depth_{0}
     , tx_(tx)
 {
@@ -191,9 +186,11 @@ void CallTracer::on_finish(uint64_t const gas_used)
     frames_.front().gas_used = gas_used;
 }
 
-std::vector<CallFrame> &&CallTracer::get_frames() &&
+void CallTracer::reset()
 {
-    return std::move(frames_);
+    frames_.clear();
+    last_ = std::stack<size_t>{};
+    depth_ = 0;
 }
 
 nlohmann::json CallTracer::to_json() const
@@ -212,21 +209,6 @@ nlohmann::json CallTracer::to_json() const
     res[key] = value;
 
     return res;
-}
-
-void enable_call_tracing(bool const enabled)
-{
-    tracing_enabled = enabled;
-}
-
-std::unique_ptr<CallTracerBase> create_call_tracer(Transaction const &tx)
-{
-    if (tracing_enabled) {
-        return std::make_unique<CallTracer>(tx);
-    }
-    else {
-        return std::make_unique<NoopCallTracer>();
-    }
 }
 
 MONAD_NAMESPACE_END

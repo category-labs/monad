@@ -6,6 +6,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -65,7 +66,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
-    auto const result = execute<EVMC_SHANGHAI>(
+    auto const result = ExecuteTransaction<EVMC_SHANGHAI>(
         EthereumMainnet{},
         0,
         tx,
@@ -74,7 +75,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         block_hash_buffer,
         bs,
         metrics,
-        prev);
+        prev)();
 
     ASSERT_TRUE(!result.has_error());
 

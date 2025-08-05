@@ -1,31 +1,29 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/fiber/future/promise.hpp>
+#include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
+class BlockMetrics;
 struct BlockHeader;
 class BlockState;
+struct CallTracerBase;
 struct Chain;
-struct Receipt;
-class State;
-struct Transaction;
-
 template <evmc_revision rev>
 struct EvmcHost;
+class State;
+struct Transaction;
 
 struct ExecutionResult
 {
@@ -33,20 +31,55 @@ struct ExecutionResult
     std::vector<CallFrame> call_frames;
 };
 
+template <evmc_revision rev>
+class ExecuteTransactionNoValidation
+{
+    evmc_message to_message() const;
+
+protected:
+    Chain const &chain_;
+    Transaction const &tx_;
+    Address const &sender_;
+    BlockHeader const &header_;
+
+public:
+    ExecuteTransactionNoValidation(
+        Chain const &, Transaction const &, Address const &,
+        BlockHeader const &);
+
+    evmc::Result operator()(State &, EvmcHost<rev> &);
+};
+
+template <evmc_revision rev>
+class ExecuteTransaction : public ExecuteTransactionNoValidation<rev>
+{
+    using ExecuteTransactionNoValidation<rev>::chain_;
+    using ExecuteTransactionNoValidation<rev>::tx_;
+    using ExecuteTransactionNoValidation<rev>::sender_;
+    using ExecuteTransactionNoValidation<rev>::header_;
+
+    uint64_t i_;
+    BlockHashBuffer const &block_hash_buffer_;
+    BlockState &block_state_;
+    BlockMetrics &block_metrics_;
+    boost::fibers::promise<void> &prev_;
+
+    Result<evmc::Result> execute_impl2(State &, CallTracerBase &);
+
+    Receipt execute_final(State &, evmc::Result const &);
+
+public:
+    ExecuteTransaction(
+        Chain const &, uint64_t i, Transaction const &, Address const &,
+        BlockHeader const &, BlockHashBuffer const &, BlockState &,
+        BlockMetrics &, boost::fibers::promise<void> &prev);
+    ~ExecuteTransaction() = default;
+
+    Result<ExecutionResult> operator()();
+};
+
 uint64_t g_star(
     evmc_revision, Transaction const &, uint64_t gas_remaining,
-    uint64_t refund);
-
-template <evmc_revision rev>
-evmc::Result execute_impl_no_validation(
-    State &state, EvmcHost<rev> &host, Transaction const &tx,
-    Address const &sender, uint256_t const &base_fee_per_gas,
-    Address const &beneficiary, uint64_t max_code_size);
-
-template <evmc_revision rev>
-Result<ExecutionResult> execute(
-    Chain const &, uint64_t i, Transaction const &, Address const &,
-    BlockHeader const &, BlockHashBuffer const &, BlockState &, BlockMetrics &,
-    boost::fibers::promise<void> &prev);
+    uint64_t gas_refund);
 
 MONAD_NAMESPACE_END

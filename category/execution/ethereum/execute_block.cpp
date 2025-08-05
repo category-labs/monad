@@ -189,7 +189,7 @@ Result<std::vector<ExecutionResult>> execute_block(
              &block_hash_buffer = block_hash_buffer,
              &block_state,
              &block_metrics] {
-                results[i] = execute<rev>(
+                results[i] = ExecuteTransaction<rev>{
                     chain,
                     i,
                     transaction,
@@ -198,7 +198,7 @@ Result<std::vector<ExecutionResult>> execute_block(
                     block_hash_buffer,
                     block_state,
                     block_metrics,
-                    promises[i]);
+                    promises[i]}();
                 promises[i + 1].set_value();
             });
     }

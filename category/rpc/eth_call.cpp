@@ -26,10 +26,10 @@
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/chain/monad_testnet2.hpp>
-#include <category/rpc/eth_call.h>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
+#include <category/rpc/eth_call.h>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -210,14 +210,8 @@ namespace
 
         EvmcHost<rev> host{
             *call_tracer, tx_context, buffer, state, max_code_size};
-        auto execution_result = execute_impl_no_validation<rev>(
-            state,
-            host,
-            enriched_txn,
-            sender,
-            header.base_fee_per_gas.value_or(0),
-            header.beneficiary,
-            max_code_size);
+        auto execution_result = ExecuteTransactionNoValidation<rev>{
+            chain, enriched_txn, sender, header}(state, host);
 
         // compute gas_refund and gas_used
         auto const gas_refund = chain.compute_gas_refund(

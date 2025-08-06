@@ -123,49 +123,20 @@ Definition isAllowedToEmpty (knownBlocks: gmap N Block)
     List.filter (fun t => bool_decide (sender t = sender tx)) (emptyingCheckRange knownBlocks tx)
                 in notDelegated && bool_decide (lengthN prevTxsFromSameSender = 0).
 
+(* duplicate instance. the upstream one picks 1 *)
+#[global] Instance inhacc: Inhabited N := populate 0.
 
-Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : AccountTots :=
-  let allowedToEmpty := isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState tx in
-  {|
-    fees := if allowedToEmpty then 0 else maxTxFee tx;
-    hist :=
-      {| emptyingValue :=
-          if allowedToEmoty
-          then Some (maxTxFee tx + value tx)
-          else None
-          everDelegated := txDelegatesAddr (sender tx)
-      |}
-  |}.
+
+Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
+  if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
+  else (maxTxFee tx, false).
+
     
-  
       
-  if isAllowedToEmpty then
-    {|
-    |}
-  (maxTxFee tx +
-  (if allowedToEmpty
-  then value tx 
-   else 0), allowedToEmpty).
-
-Record AcHist :=
-  {
-    emptyingValue : option N;
-    everDelegated: bool; (* delegated in NminusK block's final state or ever delegated since that *)
-  }.
-    
-    
-Record AccountTots :=
-  {
-    fees: N;
-    hist: AcHist;
-  }.
-
-#[global] Instance inhacc: Inhabited AccountTots :=  populate {| fees := 0; hist := {| emptyingValue := None; everDelegated := false |} |}.
-      
-Definition updateKey  {T} `{c: Countable T} (m: gmap T AccountTots) (a: T) (f: AccountTots -> AccountTots) : gmap T AccountTots :=
+Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
   <[ a :=  f (m !!! a) ]> m.
 
-Lemma updateKeyLkp  {T} `{c: Countable T} (m: gmap T AccountTots) (a: T) (f: AccountTots -> AccountTots) :
+Lemma updateKeyLkp  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) :
   updateKey m a f !! a = Some (f (m !!! a)).
 Proof using.
   unfold updateKey.
@@ -173,14 +144,6 @@ Proof using.
   case_bool_decide; try congruence.
 Qed.
 
-Search (option ?T -> option ?T -> option ?T).
-Definition mergeP (a b: AccountTots) : AccountTots :=
-  {| fees := fees a + fees b;
-    hist := 
-      {| emptyingValue := liftM2 N.add (emptyingValue (hist a)) (emptyingValue (hist b))
-      ; everDelegated := everDelegated (hist a) || everDelegated (hist b)
-      |} |}.
-    
 
 (*
 Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
@@ -195,7 +158,7 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
  *)
 
 
-Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address AccountTots :=
+Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (preStateDelegatedAccounts: list evm.address) (preState) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address TotDebits :=
   match rest with
   | [] => ∅
   | h::tl =>

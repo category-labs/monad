@@ -262,13 +262,13 @@ Definition stateAfterTransaction s (t: TxWithHdr) :=
 
 Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Admitted.
 
+Definition addrConsideredDelegated  (state: evm.GlobalState) (tx : TxWithHdr) : bool :=
+  (addrDelegated state (sender tx))
+                   || (bool_decide (sender tx ∈ addrsDelegatedByTx tx))
+                   || existsDelegatingTxWithinK state tx.
 Definition isAllowedToEmptyExec
   (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  let delegated := (addrDelegated state (sender tx))
-                   || (bool_decide (sender tx ∈ addrsDelegatedByTx tx))
-                   || existsDelegatingTxWithinK state tx
-  in
-  (negb delegated) && (negb (existsTxWithinK state tx)).
+  (negb (addrConsideredDelegated state tx)) && (negb (existsTxWithinK state tx)).
 
 Definition execTxAfterValidationV2  (s: evm.GlobalState) (t: TxWithHdr)
   : (evm.GlobalState * TransactionResult) :=
@@ -390,6 +390,7 @@ Hint Rewrite Z.min_r  using lia: syntactic.
 Hint Rewrite N.min_l  using lia: syntactic.      
 Hint Rewrite N.min_r  using lia: syntactic.      
 
+
 (* TODO: add validateTx = true in conclusion *)
 Lemma execL dOverrides tx extension s:
   let '(sf, r) :=  execTxAfterValidationV2  s tx in
@@ -397,17 +398,17 @@ Lemma execL dOverrides tx extension s:
     (tx::extension)
   ->     consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) sf extension.
 Proof using.
-  pose proof (execLcore knownBlocks tx s) as Hcore.
-  remember (execTxAfterValidationV2 knownBlocks s tx) as ss.
+  pose proof (execLcore dOverrides tx s) as Hcore.
+  remember (execTxAfterValidationV2 s tx) as ss.
   destruct ss as [sf  res].
   intros Hc.
-  unfold consensusAcceptableTxG in *.
+  unfold consensusAcceptableTxs in *.
   simpl in *.
   intros ac.
   specialize (Hc ac).
   forward_reason.
   rewrite updateKeyLkp3 in Hc.
-  assert (forall acc, lookupN (maxTotalReserveDippableDebitL knownBlocks sf [] extension) acc = lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) acc
+  assert (forall acc, (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) sf [] extension) !!! acc = (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension) !!! acc
                      ) as Hass by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
   specialize (Hass ac).
   case_bool_decide; simpl in *;  try lia.
@@ -423,8 +424,15 @@ Proof using.
       rewrite Heq.
       assumption.
     }
-    { (* ac is delegated => isEmpgying false for the ENTIRE extension, even if some tx in it undelegates *)
-      assert (lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) ac <= ReserveBal) as Hle by admit.
+    {
+      remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! ac) as rd.
+      destruct rd as [nonEmptyingDebits emptyingDebits].
+      simpl in *.
+      (* ac is delegated => isEmpgying false for the ENTIRE extension, even if some tx in it undelegates: *)
+      assert (emptyingDebits = None) as Heq by admit.
+      revert Hc.
+      rwHypsP.
+      intros.
       lia.
     }
   }

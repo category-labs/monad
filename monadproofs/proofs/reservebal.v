@@ -375,14 +375,23 @@ Qed.
 
 Open Scope N_scope.
 
+
 Lemma execLcore knownBlocks tx s:
   let '(sf, r) :=  execTxAfterValidationV2 s tx in
   (forall ac, (ac <> sender tx) ->
              ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
   /\
-  if isAllowedToEmpty knownBlocks s [] tx
+  (if isAllowedToEmpty knownBlocks s [] tx
   then True
-  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)).
+  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)))
+  /\
+  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
+  /\
+  (forall ac, ac <> sender tx
+                             
+              -> if (addrDelegated sf ac)
+                 then True
+                 else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using.
 Admitted.
 
@@ -455,21 +464,22 @@ Proof using.
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
     specialize (Hcorel ac ltac:(auto)).
-    clear Hcorer.
+    specialize (Hcorerrr ac ltac:(auto)).
     rewrite Hass.
     clear Hass.
     remember (addrDelegated sf ac) as dg.
     destruct dg.
     2:{ (* ac is not delegated *)
-      assert (balanceOfAc sf ac = balanceOfAc s ac) as Heq by admit.
-      rewrite Heq. assumption.
-      
+       revert Hc.
+       rwHypsP.
+       utils.case_match_concl.
+       destruct o; try lia.
     }
     {
       remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! ac) as rd.
       destruct rd as [nonEmptyingDebits emptyingDebits].
       simpl in *.
-      (* ac is delegated => isEmpgying false for the ENTIRE extension, even if some tx in it undelegates: *)
+      (* ac is delegated => isEmptying false for the ENTIRE extension, even if some tx in it undelegates: *)
       assert (emptyingDebits = None) as Heq by admit.
       revert Hc.
       rwHypsP.
@@ -485,6 +495,7 @@ Proof using.
     remember (isAllowedToEmpty dOverrides s [] tx) as ae.
     remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! (sender tx)) as rd.
     destruct rd as [nonEmptyingDebits emptyingDebits].
+    (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
     assert (emptyingDebits = None) as Heq by admit.
     rwHypsP.
     destruct ae; simpl in *; try lia;[|].

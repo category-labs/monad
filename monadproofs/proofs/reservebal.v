@@ -399,7 +399,6 @@ Proof using.
 Qed.
   Hint Rewrite bool_decide_spec: iff.
 
-(* TODO: add validateTx = true in conclusion *)
 Lemma execL dOverrides tx extension s:
   consensusAcceptableTxs dOverrides s
     (tx::extension)
@@ -474,6 +473,29 @@ Proof using.
   
 Admitted.
 
+
+Lemma execValidate dOverrides tx extension s:
+  consensusAcceptableTxs dOverrides s
+    (tx::extension)
+  -> validateTx s tx = true.
+Proof using.
+  intros Hc.
+  unfold consensusAcceptableTxs in *.
+  specialize (Hc (sender tx)).
+  simpl in *.
+  unfold maxTotalReserveDippableDebit in Hc. (* rename [ maxTotalReserveDippableDebit] to reserveBal decrement *)
+  simpl.
+  unfold updateTots in Hc.
+  simpl.
+  autorewrite with syntactic in Hc.
+  rewrite updateKeyLkp3 in Hc.
+  resolveDecide ltac:(congruence).
+  unfold validateTx.
+  autorewrite with iff.
+  destruct (isAllowedToEmpty dOverrides s [] tx); simpl in *; try lia;[].
+  case_match; try lia.
+Qed.
+  
 
 Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) :
   consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl)

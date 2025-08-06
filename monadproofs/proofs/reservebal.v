@@ -390,18 +390,25 @@ Hint Rewrite Z.min_r  using lia: syntactic.
 Hint Rewrite N.min_l  using lia: syntactic.      
 Hint Rewrite N.min_r  using lia: syntactic.      
 
+#[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
+Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
+  (forall x, P /\ Q x)  -> P /\ forall x, Q x.
+Proof using.
+  intros Hp.
+  firstorder.
+Qed.
 
 (* TODO: add validateTx = true in conclusion *)
 Lemma execL dOverrides tx extension s:
-  let '(sf, r) :=  execTxAfterValidationV2  s tx in
   consensusAcceptableTxs dOverrides s
     (tx::extension)
-  ->     consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) sf extension.
+  -> validateTx s tx /\  consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) (fst (execTxAfterValidationV2  s tx)) extension.
 Proof using.
   pose proof (execLcore dOverrides tx s) as Hcore.
   remember (execTxAfterValidationV2 s tx) as ss.
   destruct ss as [sf  res].
   intros Hc.
+  apply moveForallIn.
   unfold consensusAcceptableTxs in *.
   simpl in *.
   intros ac.
@@ -411,6 +418,9 @@ Proof using.
   assert (forall acc, (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) sf [] extension) !!! acc = (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension) !!! acc
                      ) as Hass by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
   specialize (Hass ac).
+  unfold validateTx.
+  Hint Rewrite bool_decide_spec: iff.
+  autorewrite with iff.
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
     specialize (Hcorel ac ltac:(auto)).
@@ -422,7 +432,8 @@ Proof using.
     2:{ (* ac is not delegated *)
       assert (balanceOfAc sf ac = balanceOfAc s ac) as Heq by admit.
       rewrite Heq.
-      assumption.
+      split; try assumption;[].
+      
     }
     {
       remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! ac) as rd.

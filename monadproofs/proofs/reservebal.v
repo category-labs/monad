@@ -441,17 +441,25 @@ Proof using.
     rewrite Hass.
     clear Hass.
     unfold maxTotalReserveDippableDebit in Hc.
-    remember (isAllowedToEmpty knownBlocks s [] tx) as ae.
+    remember (isAllowedToEmpty dOverrides s [] tx) as ae.
+    remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! (sender tx)) as rd.
+    destruct rd as [nonEmptyingDebits emptyingDebits].
+    assert (emptyingDebits = None) as Heq by admit.
+    rwHypsP.
     destruct ae; simpl in *; try lia;[|].
     {
       (* meaning sender tx is not delegated, so this tx can only decrement the balance by ( maxTxFee tx + value tx) *)
       assert (balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)) as Hle by admit.
+      revert Hc.
+      rwHypsP.
+      intros.
+      simpl in *.
       lia.
     }
+    
     {
-      (* later txs cannot be isEmptying *)
-      assert (lookupN (maxTotalReserveDippableDebitL knownBlocks s [tx] extension) (sender tx) <= ReserveBal - maxTxFee tx) as Hle by admit.
-      simpl.
+      revert Hc.
+      rwHypsP.
       lia.
     }
   }

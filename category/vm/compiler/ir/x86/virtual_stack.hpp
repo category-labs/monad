@@ -150,8 +150,6 @@ namespace monad::vm::compiler::native
     class StackElem
     {
         friend class Stack;
-        friend class AvxRegReserv;
-        friend class GeneralRegReserv;
         friend struct StackElemDeleter;
 
     public:
@@ -192,6 +190,28 @@ namespace monad::vm::compiler::native
             return !stack_indices_.empty();
         }
 
+        // Remember to match this with a call to `unreserve_avx_reg`.
+        void reserve_avx_reg()
+        {
+            ++reserve_avx_reg_count_;
+        }
+
+        // Remember to match this with a call to `unreserve_general_reg`.
+        void reserve_general_reg()
+        {
+            ++reserve_general_reg_count_;
+        }
+
+        void unreserve_avx_reg()
+        {
+            --reserve_avx_reg_count_;
+        }
+
+        void unreserve_general_reg()
+        {
+            --reserve_general_reg_count_;
+        }
+
     private:
         void deferred_comparison(Comparison);
         void deferred_comparison();
@@ -212,26 +232,6 @@ namespace monad::vm::compiler::native
         void remove_general_reg();
         void remove_stack_offset();
         void remove_literal();
-
-        void reserve_avx_reg()
-        {
-            ++reserve_avx_reg_count_;
-        }
-
-        void reserve_general_reg()
-        {
-            ++reserve_general_reg_count_;
-        }
-
-        void unreserve_avx_reg()
-        {
-            --reserve_avx_reg_count_;
-        }
-
-        void unreserve_general_reg()
-        {
-            --reserve_general_reg_count_;
-        }
 
         Stack &stack_;
         std::set<std::int32_t> stack_indices_;

@@ -1076,7 +1076,9 @@ namespace monad::vm::compiler::native
         if (is_live(elem, live) && !elem.stack_offset() && !elem.literal() &&
             !elem.avx_reg()) {
             if (stack_.has_free_general_reg()) {
+                elem.reserve_general_reg();
                 auto [new_elem, reserv] = alloc_general_reg();
+                elem.unreserve_general_reg();
                 mov_general_reg_to_gpq256(
                     *elem.general_reg(),
                     general_reg_to_gpq256(*new_elem->general_reg()));
@@ -1118,6 +1120,7 @@ namespace monad::vm::compiler::native
             if (stack_.has_free_general_reg() ||
                 (!elem->stack_offset() && !elem->avx_reg() &&
                  !elem->literal())) {
+                GeneralRegReserv const reserv{elem};
                 return alloc_general_reg();
             }
         }
@@ -1133,6 +1136,7 @@ namespace monad::vm::compiler::native
             if (stack_.has_free_avx_reg() ||
                 (!elem->stack_offset() && !elem->general_reg() &&
                  !elem->literal())) {
+                AvxRegReserv const reserv{elem};
                 return alloc_avx_reg();
             }
         }
@@ -2256,7 +2260,11 @@ namespace monad::vm::compiler::native
             return pre_dst;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
@@ -2298,7 +2306,11 @@ namespace monad::vm::compiler::native
             return pre_dst;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
@@ -2331,10 +2343,11 @@ namespace monad::vm::compiler::native
             }
         }
 
-        RegReserv const ix_reserv{ix};
-        RegReserv const src_reserv{src};
-
-        discharge_deferred_comparison();
+        {
+            RegReserv const ix_reserv{ix};
+            RegReserv const src_reserv{src};
+            discharge_deferred_comparison();
+        }
 
         if (src->general_reg()) {
             if (ix->literal()) {
@@ -2378,23 +2391,26 @@ namespace monad::vm::compiler::native
             return;
         }
 
-        RegReserv const ix_reserv{ix};
-        RegReserv const src_reserv{src};
-
-        discharge_deferred_comparison();
+        {
+            RegReserv const ix_reserv{ix};
+            RegReserv const src_reserv{src};
+            discharge_deferred_comparison();
+        }
 
         if (ix->literal()) {
-            signextend_literal_ix(ix->literal()->value, src);
+            auto const lit = ix->literal()->value;
+            ix.reset(); // Potentially Clear locations
+            signextend_literal_ix(lit, std::move(src));
             return;
         }
         if (ix->general_reg()) {
-            signextend_stack_elem_ix(std::move(ix), src, {});
+            signextend_stack_elem_ix(std::move(ix), std::move(src), {});
             return;
         }
         if (!ix->stack_offset()) {
             mov_avx_reg_to_stack_offset(ix);
         }
-        signextend_stack_elem_ix(std::move(ix), src, {});
+        signextend_stack_elem_ix(std::move(ix), std::move(src), {});
     }
 
     // Discharge through `shl` overload
@@ -2510,7 +2526,11 @@ namespace monad::vm::compiler::native
             }
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
@@ -2569,7 +2589,11 @@ namespace monad::vm::compiler::native
             }
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
@@ -2615,7 +2639,11 @@ namespace monad::vm::compiler::native
             return pre_dst;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
@@ -2655,7 +2683,11 @@ namespace monad::vm::compiler::native
             return;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
@@ -2698,7 +2730,10 @@ namespace monad::vm::compiler::native
             return neg;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const elem_reserv{elem};
+            discharge_deferred_comparison();
+        }
 
         auto [left, right, loc] = get_una_arguments(false, elem, {});
         MONAD_VM_DEBUG_ASSERT(left == right);
@@ -2751,7 +2786,10 @@ namespace monad::vm::compiler::native
             return std::nullopt;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const e_reserv{e};
+            discharge_deferred_comparison();
+        }
 
         if (e->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*e->general_reg());
@@ -2781,7 +2819,10 @@ namespace monad::vm::compiler::native
             return;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const elem_reserv{elem};
+            discharge_deferred_comparison();
+        }
 
         auto [left, right, loc] = get_una_arguments(true, elem, {});
         if (loc == LocationType::AvxReg) {
@@ -2945,7 +2986,10 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::calldataload()
     {
-        discharge_deferred_comparison();
+        {
+            RegReserv const offset_reserv{stack_.get(stack_.top_index())};
+            discharge_deferred_comparison();
+        }
         spill_avx_reg_range(14);
 
         auto *const volatile_elem =
@@ -2975,7 +3019,9 @@ namespace monad::vm::compiler::native
 
         auto done_label = as_.newLabel();
 
+        offset->reserve_avx_reg();
         auto [result, reserv] = alloc_avx_reg();
+        offset->unreserve_avx_reg();
         auto const result_y = avx_reg_to_ymm(*result->avx_reg());
         as_.vpxor(result_y, result_y, result_y);
 
@@ -3114,8 +3160,12 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::jump()
     {
-        discharge_deferred_comparison();
-        jump_stack_elem_dest(stack_.pop(), {});
+        auto e = stack_.pop();
+        {
+            RegReserv const e_reserv{e};
+            discharge_deferred_comparison();
+        }
+        jump_stack_elem_dest(std::move(e), {});
     }
 
     // Discharge indirectly with `jumpi_comparison`
@@ -3194,11 +3244,11 @@ namespace monad::vm::compiler::native
 
     void Emitter::return_with_status_code(runtime::StatusCode status)
     {
-        discharge_deferred_comparison();
         auto offset = stack_.pop();
         RegReserv const offset_avx_reserv{offset};
         auto size = stack_.pop();
         RegReserv const size_avx_reserv{size};
+        discharge_deferred_comparison();
         status_code(status);
         mov_stack_elem_to_unaligned_mem<true>(
             offset,
@@ -3388,11 +3438,15 @@ namespace monad::vm::compiler::native
         auto dc = stack_.discharge_deferred_comparison();
         if (dc.stack_elem && (dc.stack_elem == dest.get() ||
                               !dc.stack_elem->stack_indices().empty())) {
+            RegReserv const cond_reserv{cond};
+            RegReserv const dest_reserv{dest};
             discharge_deferred_comparison(dc.stack_elem, dc.comparison());
         }
         if (dc.negated_stack_elem &&
             (dc.negated_stack_elem == dest.get() ||
              !dc.negated_stack_elem->stack_indices().empty())) {
+            RegReserv const cond_reserv{cond};
+            RegReserv const dest_reserv{dest};
             discharge_deferred_comparison(
                 dc.negated_stack_elem, negate_comparison(dc.comparison()));
         }
@@ -3407,6 +3461,7 @@ namespace monad::vm::compiler::native
         else {
             comp = Comparison::NotEqual;
             if (cond->stack_offset() && !cond->avx_reg()) {
+                AvxRegReserv const dest_reserv{dest};
                 mov_stack_offset_to_avx_reg(cond);
             }
             if (cond->avx_reg()) {
@@ -3437,7 +3492,10 @@ namespace monad::vm::compiler::native
         auto dest = stack_.pop();
         auto cond = stack_.pop();
         if (cond->literal()) {
-            discharge_deferred_comparison();
+            {
+                RegReserv const dest_reserv{dest};
+                discharge_deferred_comparison();
+            }
             if (cond->literal()->value == 0) {
                 // Clear to remove locations, if not on stack:
                 cond = nullptr;
@@ -3468,7 +3526,7 @@ namespace monad::vm::compiler::native
             write_to_final_stack_offsets();
             conditional_jmp(fallthrough_lbl, negate_comparison(comp));
             adjust_by_stack_delta<false>();
-            jump_non_literal_dest(dest, op, spill_elem);
+            jump_non_literal_dest(std::move(dest), op, spill_elem);
             as_.bind(fallthrough_lbl);
             adjust_by_stack_delta<false>();
         }
@@ -3482,7 +3540,10 @@ namespace monad::vm::compiler::native
         auto cond = stack_.pop();
 
         if (cond->literal()) {
-            discharge_deferred_comparison();
+            {
+                RegReserv const dest_reserv{dest};
+                discharge_deferred_comparison();
+            }
             if (cond->literal()->value != 0) {
                 // Clear to remove locations, if not on stack:
                 cond = nullptr;
@@ -3584,7 +3645,11 @@ namespace monad::vm::compiler::native
             push(x < y);
             return;
         }
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         bool negate = false;
         if (pre_dst->literal()) {
@@ -3660,7 +3725,11 @@ namespace monad::vm::compiler::native
             return;
         }
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const pre_dst_reserv{pre_dst};
+            RegReserv const pre_src_reserv{pre_src};
+            discharge_deferred_comparison();
+        }
 
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
@@ -3701,6 +3770,7 @@ namespace monad::vm::compiler::native
             }
         }
         else if (e->avx_reg()) {
+            AvxRegReserv const e_reserv{e};
             auto const y = avx_reg_to_ymm(*e->avx_reg());
             auto const [tmp_e, reserv] = alloc_avx_reg();
             auto const tmp_y = avx_reg_to_ymm(*tmp_e->avx_reg());
@@ -3729,6 +3799,10 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(src->stack_offset().has_value());
 
+        auto const i = ix->literal()->value;
+        ix.reset(); // Potentially release locations
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+
         auto [dst, dst_reserv] = alloc_general_reg();
         Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
 
@@ -3742,8 +3816,6 @@ namespace monad::vm::compiler::native
         as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
         as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
 
-        auto const &i = ix->literal()->value;
-        MONAD_VM_DEBUG_ASSERT(i < 32);
         src_mem.addOffset(31 - static_cast<int64_t>(i[0]));
         as_.movzx(dst_gpq[0].r32(), src_mem);
 
@@ -3756,6 +3828,8 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(
             src->literal().has_value() || src->stack_offset().has_value());
+
+        RegReserv const ix_reserv{ix};
 
         auto [dst, dst_reserv] = alloc_general_reg();
         Gpq256 const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
@@ -3820,13 +3894,15 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(src->general_reg().has_value());
 
+        auto const i = ix->literal()->value;
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+        ix.reset(); // Potentially release locations
+
         Gpq256 const &src_gpq = general_reg_to_gpq256(*src->general_reg());
         auto [dst, dst_reserv] =
-            alloc_or_release_general_reg(std::move(src), std::make_tuple(ix));
+            alloc_or_release_general_reg(std::move(src), {});
         Gpq256 &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
 
-        auto const &i = ix->literal()->value;
-        MONAD_VM_DEBUG_ASSERT(i < 32);
         uint64_t const byte_index = 31 - i[0];
         uint64_t const word_index = byte_index >> 3;
         if (&src_gpq == &dst_gpq) {
@@ -3863,6 +3939,8 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(src->general_reg().has_value());
+
+        RegReserv const ix_reserv{ix};
 
         Gpq256 const &src_gpq = general_reg_to_gpq256(*src->general_reg());
         auto [dst, dst_reserv] =
@@ -3923,16 +4001,20 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(src->avx_reg().has_value());
+
+        auto const i = ix->literal()->value;
+        ix.reset(); // Potentially release locations
+        MONAD_VM_DEBUG_ASSERT(i < 32);
+
+        AvxRegReserv const src_reserv{src};
+
         auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
-        auto [dst, dst_reserv] =
-            alloc_or_release_avx_reg(std::move(src), std::make_tuple(ix));
+        auto [dst, dst_reserv] = alloc_or_release_avx_reg(src, {});
         auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
         auto [scratch, scratch_reserv] = alloc_avx_reg();
         auto scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
         auto const mask = rodata_.add16(0xff, 0);
 
-        auto const &i = ix->literal()->value;
-        MONAD_VM_DEBUG_ASSERT(i < 32);
         uint64_t const byte_index = 31 - i[0];
         uint64_t const dword_index = byte_index >> 2;
         // equivalent to sub_byte_index = (byte_index % 4) * 8
@@ -3957,6 +4039,10 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(src->avx_reg().has_value());
+
+        RegReserv const ix_reserv{ix};
+        AvxRegReserv const src_reserv{src};
+
         auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
         test_high_bits192(ix, std::make_tuple(src));
 
@@ -4106,6 +4192,9 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
 
+        RegReserv const ix_reserv{src};
+        RegReserv const src_reserv{src};
+
         cmp_stack_elem_to_uint16(ix, 32, std::make_tuple(src));
 
         static constexpr int32_t byte_off = sp_offset_temp_word2 - 1;
@@ -4159,7 +4248,8 @@ namespace monad::vm::compiler::native
         std::tuple<LiveSet...> const &live)
     {
         if (shift->literal()) {
-            auto shift_value = std::move(shift)->literal()->value;
+            auto shift_value = shift->literal()->value;
+            shift.reset(); // Potentially clear locations
             return shift_by_literal<shift_type>(
                 shift_value, std::move(value), live);
         }
@@ -4450,7 +4540,7 @@ namespace monad::vm::compiler::native
         }
 
         {
-            RegReserv const shift_reserv{value};
+            RegReserv const shift_reserv{shift};
             RegReserv const value_reserv{value};
             discharge_deferred_comparison();
         }
@@ -5400,7 +5490,10 @@ namespace monad::vm::compiler::native
         StackElemRef offset, int32_t read_size,
         std::tuple<LiveSet...> const &live)
     {
-        discharge_deferred_comparison();
+        {
+            RegReserv const offset_reserv{offset};
+            discharge_deferred_comparison();
+        }
 
         MONAD_VM_DEBUG_ASSERT(read_size <= 32);
 
@@ -5525,7 +5618,10 @@ namespace monad::vm::compiler::native
             auto const &v = elem->literal()->value;
             return stack_.alloc_literal({-v});
         }
-        discharge_deferred_comparison();
+        {
+            RegReserv const elem_reserv{elem};
+            discharge_deferred_comparison();
+        }
         if (!elem->general_reg() ||
             (is_live(elem, live) && !elem->stack_offset() &&
              !elem->avx_reg())) {
@@ -5949,7 +6045,10 @@ namespace monad::vm::compiler::native
 
         MONAD_VM_DEBUG_ASSERT(!left->literal().has_value());
 
-        discharge_deferred_comparison();
+        {
+            GeneralRegReserv const left_reserv{left};
+            discharge_deferred_comparison();
+        }
 
         size_t required_reg_count = 0;
         bool needs_mulx = true;
@@ -6487,7 +6586,10 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!elem->literal().has_value());
 
-        discharge_deferred_comparison();
+        {
+            RegReserv const elem_reserv{elem};
+            discharge_deferred_comparison();
+        }
 
         StackElemRef dst;
         if (elem->general_reg() && !is_live(elem, live)) {
@@ -6898,7 +7000,11 @@ namespace monad::vm::compiler::native
 
     void Emitter::add_mod2(StackElemRef a_elem, StackElemRef b_elem, size_t exp)
     {
-        discharge_deferred_comparison();
+        {
+            RegReserv const a_reserv{a_elem};
+            RegReserv const b_reserv{b_elem};
+            discharge_deferred_comparison();
+        }
 
         auto [left, left_loc, right, right_loc] =
             get_mod2_bin_dest_and_source(a_elem, b_elem, exp, {});
@@ -7193,7 +7299,11 @@ namespace monad::vm::compiler::native
 
     void Emitter::mul_mod2(StackElemRef a_elem, StackElemRef b_elem, size_t exp)
     {
-        discharge_deferred_comparison();
+        {
+            RegReserv const a_reserv{a_elem};
+            RegReserv const b_reserv{b_elem};
+            discharge_deferred_comparison();
+        }
 
         MONAD_VM_DEBUG_ASSERT(exp >= 1 && exp < 256);
         if (a_elem->literal()) {

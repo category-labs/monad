@@ -1,7 +1,7 @@
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
 #include <blst.h>
@@ -50,6 +50,30 @@ namespace bls12
     template <typename Group>
     PrecompileResult map_fp_to_g(byte_string_view);
 
+    // The BLST library is implemented as an internal C static library with
+    // language-specific bindings applied on top. The implementation and
+    // bindings for C are not actually coupled: both the bindings and
+    // implementations define separate types representing points (though they
+    // share the same representation). This means that calling (e.g.)
+    // `blst_p1_add` through the function pointer `&blst_p1_add` is undefined
+    // behaviour, because the function pointer type is a
+    // different-but-compatible type to the actual type of the function
+    // implementation.
+    //
+    // This means that directly using the bindings-supplied function pointers in
+    // these trait classes is UB, and we need to introduce a layer of
+    // indirection via a function for each of them to avoid the UB case. Doing
+    // so means that the BLST functions are never called through a function
+    // pointer. The UB in question is unlikely to matter in practice, but doing
+    // this allows us to run the code in a well-defined manner and without
+    // adding UBSan suppressions.
+#define DECLARE_GROUP_FN(name, impl)                                           \
+    [[gnu::always_inline]]                                                     \
+    static inline auto name(auto &&...args)                                    \
+    {                                                                          \
+        return impl(std::forward<decltype(args)>(args)...);                    \
+    }
+
     struct G1
     {
         using FieldElement = blst_fp;
@@ -59,20 +83,20 @@ namespace bls12
         static constexpr auto element_encoded_size = 64;
         static constexpr auto encoded_size = 2 * element_encoded_size;
 
-        static constexpr auto read = read_g1;
-        static constexpr auto read_element = read_fp;
-        static constexpr auto write = write_g1;
-        static constexpr auto add = blst_p1_add_or_double_affine;
-        static constexpr auto map_to_group = blst_map_to_g1;
-        static constexpr auto point_in_group = blst_p1_in_g1;
-        static constexpr auto affine_point_in_group = blst_p1_affine_in_g1;
-        static constexpr auto affine_point_is_inf = blst_p1_affine_is_inf;
-        static constexpr auto mul = blst_p1_mult;
-        static constexpr auto msm_scratch_size =
-            blst_p1s_mult_pippenger_scratch_sizeof;
-        static constexpr auto msm = blst_p1s_mult_pippenger;
-        static constexpr auto to_affine = blst_p1_to_affine;
-        static constexpr auto from_affine = blst_p1_from_affine;
+        DECLARE_GROUP_FN(read, read_g1);
+        DECLARE_GROUP_FN(read_element, read_fp);
+        DECLARE_GROUP_FN(write, write_g1);
+        DECLARE_GROUP_FN(add, blst_p1_add_or_double_affine);
+        DECLARE_GROUP_FN(map_to_group, blst_map_to_g1);
+        DECLARE_GROUP_FN(point_in_group, blst_p1_in_g1);
+        DECLARE_GROUP_FN(affine_point_in_group, blst_p1_affine_in_g1);
+        DECLARE_GROUP_FN(affine_point_is_inf, blst_p1_affine_is_inf);
+        DECLARE_GROUP_FN(mul, blst_p1_mult);
+        DECLARE_GROUP_FN(
+            msm_scratch_size, blst_p1s_mult_pippenger_scratch_sizeof);
+        DECLARE_GROUP_FN(msm, blst_p1s_mult_pippenger);
+        DECLARE_GROUP_FN(to_affine, blst_p1_to_affine);
+        DECLARE_GROUP_FN(from_affine, blst_p1_from_affine);
     };
 
     struct G2
@@ -85,21 +109,23 @@ namespace bls12
             2 * G1::element_encoded_size;
         static constexpr auto encoded_size = 2 * element_encoded_size;
 
-        static constexpr auto read = read_g2;
-        static constexpr auto read_element = read_fp2;
-        static constexpr auto write = write_g2;
-        static constexpr auto add = blst_p2_add_or_double_affine;
-        static constexpr auto map_to_group = blst_map_to_g2;
-        static constexpr auto point_in_group = blst_p2_in_g2;
-        static constexpr auto affine_point_in_group = blst_p2_affine_in_g2;
-        static constexpr auto affine_point_is_inf = blst_p2_affine_is_inf;
-        static constexpr auto mul = blst_p2_mult;
-        static constexpr auto msm_scratch_size =
-            blst_p2s_mult_pippenger_scratch_sizeof;
-        static constexpr auto msm = blst_p2s_mult_pippenger;
-        static constexpr auto to_affine = blst_p2_to_affine;
-        static constexpr auto from_affine = blst_p2_from_affine;
+        DECLARE_GROUP_FN(read, read_g2);
+        DECLARE_GROUP_FN(read_element, read_fp2);
+        DECLARE_GROUP_FN(write, write_g2);
+        DECLARE_GROUP_FN(add, blst_p2_add_or_double_affine);
+        DECLARE_GROUP_FN(map_to_group, blst_map_to_g2);
+        DECLARE_GROUP_FN(point_in_group, blst_p2_in_g2);
+        DECLARE_GROUP_FN(affine_point_in_group, blst_p2_affine_in_g2);
+        DECLARE_GROUP_FN(affine_point_is_inf, blst_p2_affine_is_inf);
+        DECLARE_GROUP_FN(mul, blst_p2_mult);
+        DECLARE_GROUP_FN(
+            msm_scratch_size, blst_p2s_mult_pippenger_scratch_sizeof);
+        DECLARE_GROUP_FN(msm, blst_p2s_mult_pippenger);
+        DECLARE_GROUP_FN(to_affine, blst_p2_to_affine);
+        DECLARE_GROUP_FN(from_affine, blst_p2_from_affine);
     };
+
+#undef DECLARE_GROUP_FN
 } // namespace bls12
 
 MONAD_NAMESPACE_END

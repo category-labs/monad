@@ -1,5 +1,5 @@
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
 #include <array>
@@ -250,7 +250,7 @@ namespace bls12
         }
 
         typename Group::Point result;
-        Group::mul(&result, &point, scalar.b, 256);
+        Group::mul(&result, &point, scalar.b, 256u);
 
         typename Group::AffinePoint affine_result;
         Group::to_affine(&affine_result, &result);
@@ -334,7 +334,7 @@ namespace bls12
                 affine_point_ptrs.data(),
                 n_points,
                 scalar_ptrs.data(),
-                256,
+                256u,
                 reinterpret_cast<limb_t *>(scratch.get()));
 
             typename Group::AffinePoint affine_result;

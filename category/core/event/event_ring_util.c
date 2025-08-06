@@ -13,15 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <ctype.h>
 #include <errno.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <linux/magic.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/vfs.h>
+#include <unistd.h>
 
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
@@ -73,6 +78,130 @@ StatAgain:
         }
     }
     return 0;
+}
+
+/*
+ * The next three functions perform the following task:
+ *
+ * Given an inode number for a file, find the pids of all processes that have
+ * opened this file with open(2) mode O_WRONLY or O_RDWR. The responsibility
+ * is divided as follows:
+ *
+ * is_writer_fd - knows how to parse the format a single /proc/<pid>/fdinfo/<fd>
+ *     entry, extracting the descriptor's inode number and open(2) flags
+ *
+ * scan_file_table_for_writer - given a pid for a single candidate process and
+ *     the inode number of a file, walk the /proc/<pid>/fdinfo directory entries
+ *     (the open file table) and call is_writer_fd on each one
+ *
+ * find_writer_pids_by_ino - given an inode number of a file, scan the file
+ *     table of all processes we have access to by iterating through the /proc
+ *     directory and calling scan_file_table_for_writer for each process
+ */
+
+static bool is_writer_fd(ino_t ring_ino, int fdinfo_entry)
+{
+    char const FDINFO_DELIM[] = "\t :";
+    char read_buf[256];
+    char *scan = read_buf;
+    char *line;
+    if (read(fdinfo_entry, read_buf, sizeof read_buf) == -1) {
+        return false;
+    }
+    bool is_write = false;
+    bool is_ino = false;
+
+    while ((line = strsep(&scan, "\n"))) {
+        char *key, *value = nullptr;
+        key = strsep(&line, FDINFO_DELIM);
+        while (line != nullptr) {
+            value = strsep(&line, FDINFO_DELIM);
+        }
+
+        if (key != nullptr && strcmp(key, "flags") == 0 && value != nullptr) {
+            unsigned long const flags = strtoul(value, nullptr, 0);
+            is_write = flags & O_WRONLY || flags & O_RDWR;
+        }
+        if (key != nullptr && strcmp(key, "ino") == 0 && value != nullptr) {
+            unsigned long const ino = strtoul(value, nullptr, 10);
+            is_ino = ino == ring_ino;
+        }
+    }
+
+    return is_write && is_ino;
+}
+
+static int
+scan_file_table_for_writer(ino_t ring_ino, pid_t pid, bool *writer_found)
+{
+    char fdinfo_dir_name[32];
+    struct dirent *fdinfo_dir_ent;
+    int rc = 0;
+    *writer_found = false;
+
+    snprintf(fdinfo_dir_name, sizeof fdinfo_dir_name, "/proc/%d/fdinfo", pid);
+    DIR *fdinfo_dir = opendir(fdinfo_dir_name);
+    if (fdinfo_dir == nullptr) {
+        return FORMAT_ERRC(errno, "opendir failed for %s", fdinfo_dir_name);
+    }
+    int const fdinfo_dir_fd = dirfd(fdinfo_dir);
+    if (fdinfo_dir_fd == -1) {
+        rc = FORMAT_ERRC(errno, "dirfd failed");
+        goto Done;
+    }
+    errno = 0;
+    while ((fdinfo_dir_ent = readdir(fdinfo_dir)) != nullptr &&
+           *writer_found == false) {
+        int entry = openat(fdinfo_dir_fd, fdinfo_dir_ent->d_name, O_RDONLY);
+        if (entry != -1) {
+            *writer_found = is_writer_fd(ring_ino, entry);
+        }
+        (void)close(entry);
+        errno = 0;
+    }
+    if (errno != 0) {
+        rc = FORMAT_ERRC(errno, "readdir(3) failed");
+    }
+Done:
+    (void)closedir(fdinfo_dir);
+    return rc;
+}
+
+static int find_writer_pids_by_ino(
+    ino_t const ring_ino, pid_t *pids, size_t const pid_in_size,
+    size_t *pid_out_size)
+{
+    struct dirent *proc_dir_ent;
+    DIR *proc_dir;
+    int rc = 0;
+
+    *pid_out_size = 0;
+    proc_dir = opendir("/proc");
+    if (proc_dir == nullptr) {
+        return FORMAT_ERRC(errno, "opendir(\"/proc\") failed");
+    }
+    errno = 0;
+    while ((proc_dir_ent = readdir(proc_dir)) != nullptr &&
+           *pid_out_size < pid_in_size) {
+        char *end_ptr;
+        pid_t const pid = (pid_t)strtol(proc_dir_ent->d_name, &end_ptr, 10);
+        if (*end_ptr != '\0') {
+            // The file name does not consistent entirely of numbers; this is
+            // not a process entry
+            continue;
+        }
+        bool writer_found;
+        (void)scan_file_table_for_writer(ring_ino, pid, &writer_found);
+        if (writer_found) {
+            pids[(*pid_out_size)++] = pid;
+        }
+        errno = 0;
+    }
+    if (errno != 0) {
+        rc = FORMAT_ERRC(errno, "readdir(3) failed");
+    }
+    (void)closedir(proc_dir);
+    return rc;
 }
 
 int monad_event_ring_init_simple(
@@ -131,9 +260,18 @@ int monad_event_ring_check_content_type(
 int monad_event_ring_find_writer_pids(
     int ring_fd, pid_t *pids, size_t *pids_size)
 {
-    (void)ring_fd, (void)pids, (void)pids_size;
-    return FORMAT_ERRC(
-        ENOSYS, "implementation deferred to another PR, for length");
+    struct stat ring_stat;
+    if (pids == nullptr) {
+        return FORMAT_ERRC(EFAULT, "pids cannot be nullptr");
+    }
+    if (pids_size == nullptr) {
+        return FORMAT_ERRC(EFAULT, "pids_size cannot be nullptr");
+    }
+    if (fstat(ring_fd, &ring_stat) == -1) {
+        return FORMAT_ERRC(errno, "fstat of ring_fd %d failed", ring_fd);
+    }
+    return find_writer_pids_by_ino(
+        ring_stat.st_ino, pids, *pids_size, pids_size);
 }
 
 int monad_check_path_supports_map_hugetlb(char const *path, bool *supported)

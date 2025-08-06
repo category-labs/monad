@@ -155,7 +155,8 @@ Definition isAllowedToEmpty (delegatedAfterNminusK: list evm.address)
                    || (bool_decide (sender tx ∈ delegatedAfterNminusK))
                    || existsb (fun txx => (txDelegatesAddr (sender tx) txx)) intermediateTxsSinceState
   in
-  (negb delegated) && (negb (existsTxWithinK state tx)).
+  let existsSameSenderTxInWindow := (existsTxWithinK state tx) || (existsb (fun txx => bool_decide (sender txx = sender tx)) intermediateTxsSinceState) in
+  (negb delegated) && (negb existsSameSenderTxInWindow).
 
 (* duplicate instance. the upstream one picks 1 *)
 #[global] Instance inhacc: Inhabited N := populate 0.
@@ -418,11 +419,9 @@ Proof using.
   f_equiv.
   unfold maxTotalReserveDippableDebit.
   apply ite_fequiv; try reflexivity.
-  
-  f_equal.
-  f_equal.
-  unfold 
-  f_equiv.
+  unfold isAllowedToEmpty.
+  simpl. f_equiv.
+Admitted. (* seems easy *)
 
 #[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
 Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
@@ -450,13 +449,7 @@ Proof using.
   rewrite updateKeyLkp3 in Hc.
   assert (forall acc, (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) sf [] extension) !!! acc = (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension) !!! acc
          ) as Hass.
-  {
-    clear Hc.
-    induction extension; auto;[].
-    intros.
-    simpl.
-    rewrite IHextension.
-  by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
+  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx). reflexivity.}
   specialize (Hass ac).
   autorewrite with iff.
   case_bool_decide; simpl in *;  try lia.

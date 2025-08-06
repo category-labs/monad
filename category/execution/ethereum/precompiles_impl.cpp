@@ -157,6 +157,14 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
 
 PrecompileResult sha256_execute(byte_string_view const input)
 {
+    if (MONAD_UNLIKELY(input.data() == nullptr)) {
+        // Passing a null pointer to the Silkpre sha256 implementation invokes
+        // undefined behaviour. We sidestep the UB here by passing a pointer to
+        // the empty string instead.
+        byte_string_view const nonnull{
+            reinterpret_cast<unsigned char const *>(""), 0UL};
+        return silkpre_execute<silkpre_sha256_run>(nonnull);
+    }
     return silkpre_execute<silkpre_sha256_run>(input);
 }
 

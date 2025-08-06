@@ -50,14 +50,15 @@ class BlockchainTest : public testing::Test
 
     std::filesystem::path const file_;
     std::optional<evmc_revision> const revision_;
+    bool enable_tracing_;
 
     template <Traits traits>
     static Result<std::vector<Receipt>>
-    execute(Block &, test::db_t &, vm::VM &, BlockHashBuffer const &);
+    execute(Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool);
 
     static Result<std::vector<Receipt>> execute_dispatch(
         evmc_revision, Block &, test::db_t &, vm::VM &,
-        BlockHashBuffer const &);
+        BlockHashBuffer const &, bool);
 
     static void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
@@ -68,15 +69,16 @@ public:
 
     BlockchainTest(
         std::filesystem::path const &file,
-        std::optional<evmc_revision> const &revision) noexcept
+        std::optional<evmc_revision> const &revision, bool enable_tracing) noexcept
         : file_{file}
         , revision_{revision}
+        , enable_tracing_{enable_tracing}
     {
     }
 
     void TestBody() override;
 };
 
-void register_blockchain_tests(std::optional<evmc_revision> const &);
+void register_blockchain_tests(std::optional<evmc_revision> const &, bool);
 
 MONAD_TEST_NAMESPACE_END

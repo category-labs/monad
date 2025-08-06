@@ -186,7 +186,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 
 void register_tests(
     std::filesystem::path const &root,
-    std::optional<evmc_revision> const &revision)
+    std::optional<evmc_revision> const &revision, bool enable_tracing)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root) && fs::is_directory(root));
@@ -208,7 +208,7 @@ void register_tests(
                 nullptr,
                 path.string().c_str(),
                 0,
-                [=] { return new test::BlockchainTest(path, revision); });
+                [=] { return new test::BlockchainTest(path, revision, enable_tracing); });
         }
     }
 }
@@ -220,7 +220,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 template <Traits traits>
 Result<std::vector<Receipt>> BlockchainTest::execute(
     Block &block, test::db_t &db, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer)
+    BlockHashBuffer const &block_hash_buffer, bool enable_tracing)
 {
     using namespace monad::test;
 
@@ -242,9 +242,17 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         }
     }
 
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
-    for (size_t i = 0; i < block.transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
+    std::vector<std::vector<CallFrame>> call_frames{
+        block.transactions.size()};
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
+        block.transactions.size()};
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_tracers[i] =
+            enable_tracing
+                ? std::unique_ptr<CallTracerBase>{std::make_unique<
+                        CallTracer>(block.transactions[i], call_frames[i])}
+                : std::unique_ptr<CallTracerBase>{
+                        std::make_unique<NoopCallTracer>()};
     }
 
     BOOST_OUTCOME_TRY(
@@ -281,10 +289,10 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
 Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
     evmc_revision const rev, Block &block, test::db_t &db, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer)
+    BlockHashBuffer const &block_hash_buffer, bool enable_tracing)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVM_CHAIN(execute, block, db, vm, block_hash_buffer);
+    SWITCH_EVM_CHAIN(execute, block, db, vm, block_hash_buffer, enable_tracing);
     MONAD_ASSERT(false);
 }
 
@@ -462,7 +470,7 @@ void BlockchainTest::TestBody()
 
             uint64_t const curr_block_number = block.value().header.number;
             auto const result = execute_dispatch(
-                rev, block.value(), tdb, vm, block_hash_buffer);
+                rev, block.value(), tdb, vm, block_hash_buffer, enable_tracing_);
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));
@@ -564,7 +572,7 @@ void BlockchainTest::TestBody()
     }
 }
 
-void register_blockchain_tests(std::optional<evmc_revision> const &revision)
+void register_blockchain_tests(std::optional<evmc_revision> const &revision, bool enable_tracing)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -575,15 +583,17 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
     register_tests(
-        test_resource::ethereum_tests_dir / "BlockchainTests", revision);
+        test_resource::ethereum_tests_dir / "BlockchainTests", revision, enable_tracing);
+    register_tests(
+        test_resource::internal_blockchain_tests_dir, revision, enable_tracing);
     register_tests(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
-        revision);
+        revision, enable_tracing);
     register_tests(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixturesFusakaDevnet/blockchain_tests",
-        revision);
+        revision, enable_tracing);
 }
 
 MONAD_TEST_NAMESPACE_END

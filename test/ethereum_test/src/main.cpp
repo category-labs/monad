@@ -15,6 +15,7 @@
 
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 
 #include <blockchain_test.hpp>
@@ -50,6 +51,7 @@ int main(int argc, char *argv[])
     auto log_level = quill::LogLevel::None;
     std::optional<evmc_revision> revision = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
+    bool trace_calls = false;
 
     CLI::App app{"monad ethereum tests runner"};
     app.add_option("--log_level", log_level, "Logging level")
@@ -58,6 +60,7 @@ int main(int argc, char *argv[])
         ->transform(
             CLI::CheckedTransformer(test::revision_map, CLI::ignore_case));
     app.add_option("--txn", txn_index, "Index of transaction to run");
+    app.add_flag("--trace_calls", trace_calls, "Enable call tracing");
     CLI11_PARSE(app, argc, argv);
 
     quill::start(true);
@@ -66,7 +69,7 @@ int main(int argc, char *argv[])
     event_tracer = quill::create_logger("event_trace", quill::null_handler());
 #endif
 
-    test::register_blockchain_tests(revision);
+    test::register_blockchain_tests(revision, trace_calls);
     test::register_transaction_tests(revision);
 
     int return_code = RUN_ALL_TESTS();

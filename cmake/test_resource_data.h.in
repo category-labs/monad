@@ -24,18 +24,19 @@ namespace test_resource
 
     // blocks
     inline auto const correct_block_data_dir =
-        test_data_dir / "common" / "blocks" / "compressed_blocks";
+        test_data_dir / "data" / "blocks" / "compressed_blocks";
     inline auto const bad_decompress_block_data_dir =
-        test_data_dir / "common" / "blocks" / "bad_decompress_blocks";
+        test_data_dir / "data" / "blocks" / "bad_decompress_blocks";
     inline auto const bad_decode_block_data_dir =
-        test_data_dir / "common" / "blocks" / "bad_decode_blocks";
+        test_data_dir / "data" / "blocks" / "bad_decode_blocks";
     inline auto const self_compressed_block_data_dir =
-        test_data_dir / "common" / "blocks" / "self_compressed_blocks";
+        test_data_dir / "data" / "blocks" / "self_compressed_blocks";
 
     // ethereum tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
+    inline auto const internal_blockchain_tests_dir = test_data_dir / "data" / "shared";
 
-    inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
+    inline auto const checkpoint_dir = test_data_dir / "data" / "checkpoint";
 
     // geth vectors
     inline auto const geth_vectors_dir = third_party_dir / "go-ethereum" /

@@ -397,18 +397,18 @@ Proof using.
   intros Hp.
   firstorder.
 Qed.
+  Hint Rewrite bool_decide_spec: iff.
 
 (* TODO: add validateTx = true in conclusion *)
 Lemma execL dOverrides tx extension s:
   consensusAcceptableTxs dOverrides s
     (tx::extension)
-  -> validateTx s tx /\  consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) (fst (execTxAfterValidationV2  s tx)) extension.
+  -> consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) (fst (execTxAfterValidationV2  s tx)) extension.
 Proof using.
   pose proof (execLcore dOverrides tx s) as Hcore.
   remember (execTxAfterValidationV2 s tx) as ss.
   destruct ss as [sf  res].
   intros Hc.
-  apply moveForallIn.
   unfold consensusAcceptableTxs in *.
   simpl in *.
   intros ac.
@@ -418,8 +418,6 @@ Proof using.
   assert (forall acc, (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) sf [] extension) !!! acc = (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension) !!! acc
                      ) as Hass by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
   specialize (Hass ac).
-  unfold validateTx.
-  Hint Rewrite bool_decide_spec: iff.
   autorewrite with iff.
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
@@ -431,8 +429,7 @@ Proof using.
     destruct dg.
     2:{ (* ac is not delegated *)
       assert (balanceOfAc sf ac = balanceOfAc s ac) as Heq by admit.
-      rewrite Heq.
-      split; try assumption;[].
+      rewrite Heq. assumption.
       
     }
     {

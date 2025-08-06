@@ -20,7 +20,8 @@ Record AccountM : Type :=
     incarnation: Indices; (* the blocknumber, tx number when this "incarnation" of the account was created. the EVM semantics does not really track this but we do to help reason about concurrent execution of transactions. This seems to be useful mainly in caching to avoid confusing different incarnations of the same address *)
     relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
     must be [] if coreState is []*)
-
+    lastDelegatedInBlockIndex : option Indices;
+    lastTxInBlockIndex : option Indices
   }.
 
 Module evm.
@@ -410,7 +411,7 @@ Proof using.
   }
 Qed.
 
-Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Indices 0 0) [].
+Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Indices 0 0) [] None None.
 
 Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
 

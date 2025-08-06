@@ -86,8 +86,13 @@ Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
 
 Definition K : N. Proof. Admitted.
 
+Definition addrsDelegatedByTx  (tx: TxWithHdr) : list evm.address. Proof. Admitted.
 
-Definition txDelegatesAddr (addr: evm.address) (tx: TxWithHdr) : bool. Proof. Admitted.
+Definition txDelegatesAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
+  bool_decide (addr ∈ addrsDelegatedByTx tx).
+
+Opaque txDelegatesAddr.
+  
 
 (*
 #[global] Instance inhAddr: Inhabited evm.address. Proof. Admitted.
@@ -115,26 +120,66 @@ Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
   ((flat_map transactions (blocksInRange knownBlocks (txBlockNum tx - K) (K-1)))
                                                                  ++  prevTxsInSameBlock).
 
-Definition isAllowedToEmpty (knownBlocks: gmap N Block)
+Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := number (fst tx); tx_index := snd (snd tx) |}.
+
+Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r.
+Definition indexWithinK (proj: AccountM -> option Indices) (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  let startIndex := {| block_index := number (fst tx) -K ; tx_index := 0 |} in
+  match option_bind _ _ proj (state !! (sender tx))  with
+  | Some lastSameSenderTx =>
+      bool_decide (indLe startIndex lastSameSenderTx /\ indLe lastSameSenderTx (indicesOfTx tx))
+  | None => false
+  end.
+
+Definition existsTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  indexWithinK lastTxInBlockIndex state tx.
+
+Definition existsDelegatingTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  indexWithinK  lastDelegatedInBlockIndex state tx.
+
+(*
+[StateOfAccounts] already stores the [Indices] (block index, tx index) of the the last tx from an account.
+[StateOfAccounts] also stores whether an account is delegated: but this is not enough.
+[state] may not be the state after the N-K block: it may be a later block in the intermediate stages of the proof.
+delegatedAfterNminusK is the set of addresses which have ever been delegated since the N-K block: they will
+be treated as delegated even if they got undelegated after that but before [state].
+
+
+N-K -......- State - intermediateTxsSinceState - tx
+
+delegatedAfterNminus is the txs delegated in ......
+*)
+Definition isAllowedToEmpty (delegatedAfterNminusK: list evm.address)
   (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
-  let notDelegated := negb (addrDelegated state (sender tx)) &&
-                        forallb (fun txx => negb (txDelegatesAddr (sender tx) txx)) intermediateTxsSinceState in
-  let prevTxsFromSameSender := 
-    List.filter (fun t => bool_decide (sender t = sender tx)) (emptyingCheckRange knownBlocks tx)
-                in notDelegated && bool_decide (lengthN prevTxsFromSameSender = 0).
+  let delegated := (addrDelegated state (sender tx))
+                   || (bool_decide (sender tx ∈ delegatedAfterNminusK))
+                   || existsb (fun txx => (txDelegatesAddr (sender tx) txx)) intermediateTxsSinceState
+  in
+  (negb delegated) && (negb (existsTxWithinK state tx)).
 
 (* duplicate instance. the upstream one picks 1 *)
 #[global] Instance inhacc: Inhabited N := populate 0.
 
-
-Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
-  if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
+(* latestState may be ahread of N-K block in the intermediate stages of the proof *)
+Definition maxTotalReserveDippableDebit (delegatedAfterNminusK: list evm.address) (latestState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
+  if isAllowedToEmpty delegatedAfterNminusK latestState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
   else (maxTxFee tx, false).
 
     
       
 Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
   <[ a :=  f (m !!! a) ]> m.
+
+Lemma updateKeyLkp3  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a b: T) (f: V -> V) :
+  (updateKey m a f) !!! b = if (bool_decide (a=b)) then (f (m !!! a)) else m !!! b.
+Proof using.
+  unfold lookup_total.
+  unfold map_lookup_total.
+  unfold default.
+  unfold updateKey.
+  autorewrite with syntactic;[| exact inhabitant].
+  case_bool_decide; auto.
+Qed.
 
 Lemma updateKeyLkp  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) :
   updateKey m a f !! a = Some (f (m !!! a)).
@@ -157,13 +202,19 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
    end.
  *)
 
+Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
+  let '(fees, allowedToEmpty) := upd in
+  if allowedToEmpty then
+    (fst old, Some fees)
+  else (fst old+fees, snd old).
 
-Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (preStateDelegatedAccounts: list evm.address) (preState) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address TotDebits :=
+Fixpoint maxTotalReserveDippableDebitL (delegatedAfterNminusK: list evm.address) (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address (N*option N) :=
   match rest with
   | [] => ∅
   | h::tl =>
-      let r := maxTotalReserveDippableDebitL knownBlocks latestKnownState (postStateAccountedSuffix++[h]) tl in
-      updateKey r (sender h) (mergeP (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h))
+      let r := maxTotalReserveDippableDebitL (delegatedAfterNminusK ++ addrsDelegatedByTx h) latestState (postStateAccountedSuffix++[h]) tl in
+      updateKey r (sender h) (updateTots
+                                (maxTotalReserveDippableDebit delegatedAfterNminusK latestState postStateAccountedSuffix h))
   end.
 
 (*
@@ -175,28 +226,32 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
                  <= balanceOfAc latestKnownState (sender candidate)).
 *)
 
-Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
-  let totDebits := maxTotalReserveDippableDebitL knownBlocks latestKnownState [] postStateSuffix in
+Definition consensusAcceptableTxs (delegatedAfterNminusKBeforeLatestState: list evm.address) (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+  let totDebits := maxTotalReserveDippableDebitL delegatedAfterNminusKBeforeLatestState latestState [] postStateSuffix in
   forall ac,
-    let (totAcDebits, someAcEmptyingTxExists) := lookupN totDebits ac in
-    (totAcDebits <= balanceOfAc latestKnownState ac) /\
-    if someAcEmptyingTxExists
-    then True
-    else totAcDebits <= ReserveBal.
-Search (_ <= N.min _ _).      
+    let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
+    match emptyingDebits with
+    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
+    | Some emptyingDebit =>
+        emptyingDebit <= balanceOfAc latestState ac  /\
+          nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - emptyingDebit))
+    end.
 
-Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
+(*
+Definition consensusAcceptableTx  (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
   let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
-  consensusAcceptableTxGold knownBlocks stateNminusK intermediate candidate.
+  consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
+*)
+Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (blockIndex : N) : Prop :=
+  let extension := (flat_map transactions (blocksInRange knownBlocks (blockIndex - K) K)) in
+  consensusAcceptableTxs [] stateNminusK  extension.
 
-Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (block: Block) : bool :=
-  forallb  (consensusAcceptableTx knownBlocks stateNminusK) (transactions block).
-
+(*
 Definition consensusAcceptableBlocks (knownBlocks: gmap N Block) (knownStates: gmap N StateOfAccounts)
   (proposedChainExtension: list Block) : bool :=
   forallb (fun b => consensusAcceptableBlock knownBlocks (knownStates !!! (number (header b) - K)) b) proposedChainExtension.
-
+*)
 
 Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
 
@@ -207,33 +262,40 @@ Definition stateAfterTransaction s (t: TxWithHdr) :=
 
 Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Admitted.
 
-Definition execTxAfterValidationV2 (knownBlocks: gmap N Block) (s: evm.GlobalState) (t: TxWithHdr)
+Definition isAllowedToEmptyExec
+  (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  let delegated := (addrDelegated state (sender tx))
+                   || (bool_decide (sender tx ∈ addrsDelegatedByTx tx))
+                   || existsDelegatingTxWithinK state tx
+  in
+  (negb delegated) && (negb (existsTxWithinK state tx)).
+
+Definition execTxAfterValidationV2  (s: evm.GlobalState) (t: TxWithHdr)
   : (evm.GlobalState * TransactionResult) :=
   let (si, r) := stateAfterTransaction s t in
   let balCheck (a: evm.address) :=
     let erb:N := ReserveBal `min` (balanceOfAc s a) in
     bool_decide (erb  - (if bool_decide (sender t =a ) then maxTxFee t else 0) <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
-  if (isAllowedToEmpty knownBlocks s [] t || allBalCheck)
+  if (isAllowedToEmptyExec s t || allBalCheck)
   then (si, r)
   else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - maxTxFee t),  DippedTooMuchIntoReserve t) (* revert tx *).
-
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
-Definition stateAfterTransactionV2 (knownBlocks: gmap N Block) (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
+Definition stateAfterTransactionV2 (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
-  else Some (execTxAfterValidationV2 knownBlocks  s t).
+  else Some (execTxAfterValidationV2  s t).
 
-Fixpoint stateAfterTransactionsV2 (knownBlocks: gmap N Block)  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
+Fixpoint stateAfterTransactionsV2  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
   match ts with
   | [] => Some (s, [])
   | t::tls =>
-      match stateAfterTransactionV2 knownBlocks s t with
+      match stateAfterTransactionV2 s t with
       | Some (si, r)=>
-          match stateAfterTransactionsV2 knownBlocks si tls with
+          match stateAfterTransactionsV2 si tls with
           | Some (sf, lr)=> Some (sf, r::lr)
           | None => None
           end
@@ -241,9 +303,10 @@ Fixpoint stateAfterTransactionsV2 (knownBlocks: gmap N Block)  (s: StateOfAccoun
       end
   end.
 
+(*
 Lemma isEmptyingEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) n tx :
   (forall a, addrDelegated s1 a = addrDelegated s2 a)
-  -> isAllowedToEmpty knownBlocks s1 n tx =  isAllowedToEmpty knownBlocks s2 n tx.
+  -> isAllowedToEmpty s1 n tx =  isAllowedToEmpty knownBlocks s2 n tx.
 Proof using.
   intros Hd.
   unfold isAllowedToEmpty.
@@ -295,20 +358,11 @@ Proof.
   lia.
 Qed.
 Print Assumptions consensusAcceptableTxGmono.
-
-(*
-Axioms:
-txDelegatesAddr : evm.address → TxWithHdr → bool
-maxTxFee : TxWithHdr → N
-inhBlock : Inhabited Block
-addrDelegated : StateOfAccounts → evm.address → bool
-evm.RelDecision_instance_0 : EqDecision evm.address
-K : N
-evm.Countable_instance_0 : Countable evm.address
- *)
+*)
 
 Hint Rewrite -> bool_decide_eq_true : iff.
 Require Import monad.proofs.bigauto.
+(*
 Lemma updateKeyLkp2  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) :
   lookupN (updateKey m a f) a =  (f (lookupN m a)).
 Proof using.
@@ -316,20 +370,12 @@ Proof using.
   rewrite updateKeyLkp.
   reflexivity.
 Qed.
+*)
 
-
-Lemma updateKeyLkp3  {T} `{c: Countable T} (m: gmap T N) (a b: T) (f: N -> N) :
-  lookupN (updateKey m a f) b = if (bool_decide (a=b)) then (f (lookupN m a)) else lookupN m b.
-Proof using.
-  unfold lookupN.
-  unfold updateKey.
-  autorewrite with syntactic;[| exact 0%N].
-  case_bool_decide; auto.
-Qed.
 Open Scope N_scope.
 
 Lemma execLcore knownBlocks tx s:
-  let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
+  let '(sf, r) :=  execTxAfterValidationV2 s tx in
   (forall ac, (ac <> sender tx) ->
              ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
   /\
@@ -344,11 +390,12 @@ Hint Rewrite Z.min_r  using lia: syntactic.
 Hint Rewrite N.min_l  using lia: syntactic.      
 Hint Rewrite N.min_r  using lia: syntactic.      
 
-Lemma execL knownBlocks tx extension s:
-  let '(sf, r) :=  execTxAfterValidationV2 knownBlocks s tx in
-  consensusAcceptableTxG knownBlocks s
+(* TODO: add validateTx = true in conclusion *)
+Lemma execL dOverrides tx extension s:
+  let '(sf, r) :=  execTxAfterValidationV2  s tx in
+  consensusAcceptableTxs dOverrides s
     (tx::extension)
-  ->     consensusAcceptableTxG knownBlocks sf extension.
+  ->     consensusAcceptableTxs (dOverrides ++ (addrsDelegatedByTx tx)) sf extension.
 Proof using.
   pose proof (execLcore knownBlocks tx s) as Hcore.
   remember (execTxAfterValidationV2 knownBlocks s tx) as ss.

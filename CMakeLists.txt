@@ -70,6 +70,10 @@ add_subdirectory(third_party/asmjit)
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
 
+# blst
+set(DOWNLOAD_BLST OFF)
+include(cmake/blst.cmake)
+
 # cli11
 find_package(CLI11 REQUIRED)
 

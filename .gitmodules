@@ -1,3 +1,6 @@
+[submodule "third_party/blst"]
+	path = third_party/blst
+	url = https://github.com/supranational/blst.git
 [submodule "third_party/concurrentqueue"]
 	path = third_party/concurrentqueue
 	url = https://github.com/cameron314/concurrentqueue

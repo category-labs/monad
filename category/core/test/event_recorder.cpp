@@ -13,14 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <format>
 #include <latch>
+#include <memory>
 #include <print>
+#include <span>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -47,7 +49,72 @@ static uint8_t PERF_ITER_SHIFT = 20;
 // Running the tests with the reader disabled is a good measure of how
 // expensive the multithreaded lock-free recording in the writer is, without
 // any potential synchronization effects of a reader.
-constexpr bool ENABLE_READER = true;
+constexpr bool BULK_TEST_ENABLE_READER = true;
+
+constexpr uint8_t DEFAULT_DESCRIPTORS_SHIFT = 20;
+constexpr uint8_t DEFAULT_PAYLOAD_BUF_SHIFT = 28;
+
+static void open_event_ring_file(
+    char const *input, uint8_t descriptors_shift, uint8_t payload_buf_shift,
+    monad_event_ring *event_ring, std::string *file_path)
+{
+    int ring_fd;
+    char const *error_name;
+    int mmap_extra_flags = MAP_POPULATE;
+
+    if (input) {
+        // When given an explicit file for an event ring via an environment
+        // variable, use that instead of memfd_create
+        constexpr mode_t FS_MODE =
+            S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+
+        // If the environment defines EVENT_RECORDER_FILE without a value,
+        // use the default value
+        *file_path =
+            strcmp(input, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_RING_PATH : input;
+
+        ring_fd = open(file_path->c_str(), O_RDWR | O_CREAT | O_TRUNC, FS_MODE);
+        ASSERT_NE(-1, ring_fd);
+        error_name = file_path->c_str();
+
+        // Use MAP_HUGETLB only if the file is on a filesystem that
+        // supports it
+        bool fs_supports_hugetlb;
+        ASSERT_EQ(
+            0,
+            monad_check_path_supports_map_hugetlb(
+                file_path->c_str(), &fs_supports_hugetlb));
+        mmap_extra_flags |= fs_supports_hugetlb ? MAP_HUGETLB : 0;
+    }
+    else {
+        // EVENT_RING_FILE is not defined in the environment;
+        // use memfd_create
+        constexpr char TEST_MEM_FD_NAME[] = "memfd:event_recorder_test";
+        ring_fd = memfd_create(TEST_MEM_FD_NAME, MFD_CLOEXEC | MFD_HUGETLB);
+        ASSERT_NE(-1, ring_fd);
+        error_name = TEST_MEM_FD_NAME;
+        mmap_extra_flags |= MAP_HUGETLB;
+    }
+
+    monad_event_ring_simple_config const ring_config = {
+        .descriptors_shift = descriptors_shift,
+        .payload_buf_shift = payload_buf_shift,
+        .context_large_pages = 0,
+        .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
+        .schema_hash = g_monad_test_event_schema_hash};
+    ASSERT_EQ(
+        0, monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));
+    ASSERT_EQ(
+        0,
+        monad_event_ring_mmap(
+            event_ring,
+            PROT_READ | PROT_WRITE,
+            mmap_extra_flags,
+            ring_fd,
+            0,
+            error_name));
+    (void)close(ring_fd);
+}
 
 static bool alloc_cpu(cpu_set_t *avail_cpus, cpu_set_t *out)
 {
@@ -79,7 +146,7 @@ static void writer_main(
     uint64_t const writer_iterations =
         (1UL << PERF_ITER_SHIFT) / writer_thread_count;
     auto *const test_counter =
-        std::bit_cast<monad_test_event_counter *>(&local_payload_buf[0]);
+        reinterpret_cast<monad_test_event_counter *>(&local_payload_buf[0]);
     test_counter->writer_id = writer_id;
     latch->arrive_and_wait();
     sleep(1);
@@ -152,81 +219,17 @@ static void writer_main(
     }
 }
 
-class EventRecorderBulkTest
-    : public testing::TestWithParam<std::tuple<uint8_t, uint32_t>>
+class EventRecorderDefaultFixture : public testing::Test
 {
 protected:
     void SetUp() override
     {
-        constexpr uint8_t DESCRIPTORS_SHIFT = 20;
-        constexpr uint8_t PAYLOAD_BUF_SHIFT = 28;
-
-        int ring_fd;
-        char const *error_name;
-        int mmap_extra_flags = MAP_POPULATE;
-
-        if (char const *f = std::getenv("EVENT_RECORDER_FILE")) {
-            // When given an explicit file for an event ring via an environment
-            // variable, use that instead of memfd_create
-            constexpr mode_t FS_MODE =
-                S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
-
-            // If the environment defines EVENT_RECORDER_FILE without a value,
-            // use the default value
-            fs_path_ =
-                strcmp(f, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_RING_PATH : f;
-
-            ring_fd =
-                open(fs_path_.c_str(), O_RDWR | O_CREAT | O_TRUNC, FS_MODE);
-            ASSERT_NE(-1, ring_fd);
-            error_name = fs_path_.c_str();
-
-            // Use MAP_HUGETLB only if the file is on a filesystem that
-            // supports it
-            bool fs_supports_hugetlb;
-            ASSERT_EQ(
-                0,
-                monad_check_path_supports_map_hugetlb(
-                    fs_path_.c_str(), &fs_supports_hugetlb));
-            mmap_extra_flags |= fs_supports_hugetlb ? MAP_HUGETLB : 0;
-        }
-        else {
-            // EVENT_RECORDER_FILE is not defined in the environment;
-            // use memfd_create
-            constexpr char TEST_MEM_FD_NAME[] = "memfd:event_recorder_test";
-            ring_fd = memfd_create(TEST_MEM_FD_NAME, MFD_CLOEXEC | MFD_HUGETLB);
-            ASSERT_NE(-1, ring_fd);
-            error_name = TEST_MEM_FD_NAME;
-            mmap_extra_flags |= MAP_HUGETLB;
-        }
-
-        monad_event_ring_simple_config const ring_config = {
-            .descriptors_shift = DESCRIPTORS_SHIFT,
-            .payload_buf_shift = PAYLOAD_BUF_SHIFT,
-            .context_large_pages = 0,
-            .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
-            .schema_hash = g_monad_test_event_schema_hash};
-        ASSERT_EQ(
-            0,
-            monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));
-        ASSERT_EQ(
-            0,
-            monad_event_ring_mmap(
-                &event_ring_,
-                PROT_READ | PROT_WRITE,
-                mmap_extra_flags,
-                ring_fd,
-                0,
-                error_name));
-        (void)close(ring_fd);
-
-        if (char const *s = std::getenv("EVENT_RECORDER_ITER_SHIFT")) {
-            char *end;
-            unsigned long const u = strtoul(s, &end, 0);
-            ASSERT_EQ('\0', *end);
-            ASSERT_LT(u, 50);
-            PERF_ITER_SHIFT = static_cast<uint8_t>(u);
-        }
+        open_event_ring_file(
+            std::getenv("EVENT_RING_FILE"),
+            DEFAULT_DESCRIPTORS_SHIFT,
+            DEFAULT_PAYLOAD_BUF_SHIFT,
+            &event_ring_,
+            &fs_path_);
     }
 
     void TearDown() override
@@ -238,14 +241,28 @@ protected:
         }
     }
 
-    monad_event_ring event_ring_ = {};
+    alignas(64) monad_event_ring event_ring_ = {};
     std::string fs_path_;
 };
 
-TEST_P(EventRecorderBulkTest, )
+class EventRecorderMultithreadedParametric
+    : public EventRecorderDefaultFixture
+    , public testing::WithParamInterface<std::tuple<uint8_t, uint32_t>>
+{
+};
+
+// This is the primary correctness test of the event reader and writer: it is
+// multithreaded and therefore checks that the lock-free atomic synchronization
+// is working appropriately. The test is parametric in the number of threads
+// and the payload size, although only one combination is run automatically in
+// the CI. When manually compiled with the macro `RUN_FULL_EVENT_RECORDER_TEST`
+// defined, it will run with a variety of writer thread and payload size
+// parameters, see the comment below.
+TEST_P(EventRecorderMultithreadedParametric, ReadWriteBasic)
 {
     auto const [writer_thread_count, payload_size] = GetParam();
-    std::latch sync_latch{writer_thread_count + (ENABLE_READER ? 2 : 1)};
+    std::latch sync_latch{
+        writer_thread_count + (BULK_TEST_ENABLE_READER ? 2 : 1)};
     std::vector<std::thread> writer_threads;
     cpu_set_t avail_cpus;
     cpu_set_t thr_cpu;
@@ -275,7 +292,7 @@ TEST_P(EventRecorderBulkTest, )
     }
     std::thread reader_thread;
 
-    if constexpr (ENABLE_READER) {
+    if constexpr (BULK_TEST_ENABLE_READER) {
         ASSERT_TRUE(alloc_cpu(&avail_cpus, &thr_cpu));
         reader_thread = std::thread{
             reader_main,
@@ -304,12 +321,150 @@ TEST_P(EventRecorderBulkTest, )
 
 #if RUN_FULL_EVENT_RECORDER_TEST
 INSTANTIATE_TEST_SUITE_P(
-    perf_test_bulk, EventRecorderBulkTest,
+    basic_read_write_test, EventRecorderMultithreadedParametric,
     testing::Combine(
         testing::Values(1, 2, 4),
         testing::Values(16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192)));
 #else
 INSTANTIATE_TEST_SUITE_P(
-    perf_test_bulk, EventRecorderBulkTest,
+    basic_read_write_test, EventRecorderMultithreadedParametric,
     testing::Combine(testing::Values(4), testing::Values(128)));
 #endif
+
+class EventRecorderPayloadBufShiftParametric
+    : public EventRecorderDefaultFixture
+    , public testing::WithParamInterface<uint8_t>
+{
+protected:
+    void SetUp() override
+    {
+        open_event_ring_file(
+            "/tmp/event_ring_test_file",
+            DEFAULT_DESCRIPTORS_SHIFT,
+            GetParam(),
+            &event_ring_,
+            &fs_path_);
+    }
+};
+
+// This test checks that exceeding the maximum payload size returns sentinel
+// values during the `monad_event_recorder_reserve` step
+TEST_P(EventRecorderPayloadBufShiftParametric, PayloadOverflowTest)
+{
+    alignas(64) monad_event_recorder recorder;
+    monad_event_descriptor *event;
+    uint64_t seqno;
+    uint8_t *payload_buf;
+
+    ASSERT_EQ(0, monad_event_ring_init_recorder(&event_ring_, &recorder));
+
+    constexpr size_t PayloadSizes[] = {
+        1UL << 20,
+        1UL << 27,
+        (1UL << 28) - 2 * MONAD_EVENT_WINDOW_INCR,
+        (1UL << 28) - MONAD_EVENT_WINDOW_INCR,
+        1UL << 28,
+        UINT32_MAX,
+        1UL << 32,
+        1UL << 33};
+    for (size_t const payload_size : PayloadSizes) {
+        event = monad_event_recorder_reserve(
+            &recorder, payload_size, &seqno, &payload_buf);
+        if (payload_size > INT32_MAX) {
+            ASSERT_EQ(event, nullptr);
+            ASSERT_EQ(seqno, 0);
+            ASSERT_EQ(payload_buf, nullptr);
+            continue;
+        }
+
+        ASSERT_NE(event, nullptr);
+        ASSERT_NE(seqno, 0);
+        ASSERT_NE(payload_buf, nullptr);
+        monad_event_recorder_commit(event, seqno);
+
+        // In the case where we allocated more than the buffer can actually
+        // hold, the payload will be expired immediately
+        bool const should_be_expired =
+            payload_size > ((1UL << GetParam()) - 2 * MONAD_EVENT_WINDOW_INCR);
+        ASSERT_EQ(
+            should_be_expired,
+            !monad_event_ring_payload_check(&event_ring_, event));
+    }
+}
+
+#if RUN_FULL_PAYLOAD_TEST
+INSTANTIATE_TEST_SUITE_P(
+    payload_overflow_test, EventRecorderPayloadBufShiftParametric,
+    testing::Values(28, 31, 32, 33));
+#else
+INSTANTIATE_TEST_SUITE_P(
+    payload_overflow_test, EventRecorderPayloadBufShiftParametric,
+    testing::Values(28));
+#endif
+
+// This test checks that payloads larger than WINDOW_INCR are recorded without
+// error
+TEST_F(EventRecorderDefaultFixture, LargePayloads)
+{
+    alignas(64) monad_event_recorder recorder;
+    alignas(64) monad_event_iterator iter;
+    monad_event_descriptor *event;
+    monad_event_descriptor first_event;
+    monad_event_descriptor second_event;
+    uint64_t seqno;
+    uint8_t *payload_buf;
+
+    ASSERT_EQ(0, monad_event_ring_init_recorder(&event_ring_, &recorder));
+    ASSERT_EQ(0, monad_event_ring_init_iterator(&event_ring_, &iter));
+
+    // Make a large buffer, 4 times larger than WINDOW_INCR
+    auto big_buffer =
+        std::make_unique<std::uint32_t[]>(MONAD_EVENT_WINDOW_INCR);
+    auto const big_buffer_bytes =
+        std::as_bytes(std::span{big_buffer.get(), MONAD_EVENT_WINDOW_INCR});
+    for (uint32_t i = 0; i < MONAD_EVENT_WINDOW_INCR; ++i) {
+        big_buffer[i] = i;
+    }
+
+    // Wrap around once
+    for (uint64_t i = 0;
+         i < (1UL << DEFAULT_PAYLOAD_BUF_SHIFT) / MONAD_EVENT_WINDOW_INCR;
+         ++i) {
+        event = monad_event_recorder_reserve(
+            &recorder, size(big_buffer_bytes), &seqno, &payload_buf);
+        ASSERT_NE(event, nullptr);
+        // We don't actually need to memcpy here, we're just trying to fill up
+        // the ring; it's better that we _don't_ copy, so that buffer contents
+        // remain zero and our memcmp(3) check will catch errors
+        monad_event_recorder_commit(event, seqno);
+        ASSERT_EQ(
+            MONAD_EVENT_SUCCESS,
+            monad_event_iterator_try_next(&iter, &first_event));
+    }
+
+    for (monad_event_descriptor *output : {&first_event, &second_event}) {
+        event = monad_event_recorder_reserve(
+            &recorder, size(big_buffer_bytes), &seqno, &payload_buf);
+        ASSERT_NE(event, nullptr);
+        memcpy(payload_buf, data(big_buffer_bytes), size(big_buffer_bytes));
+        monad_event_recorder_commit(event, seqno);
+        ASSERT_EQ(
+            MONAD_EVENT_SUCCESS, monad_event_iterator_try_next(&iter, output));
+    }
+
+    ASSERT_TRUE(monad_event_ring_payload_check(&event_ring_, &first_event));
+    ASSERT_TRUE(monad_event_ring_payload_check(&event_ring_, &second_event));
+
+    ASSERT_EQ(
+        0,
+        memcmp(
+            monad_event_ring_payload_peek(&event_ring_, &first_event),
+            data(big_buffer_bytes),
+            size(big_buffer_bytes)));
+    ASSERT_EQ(
+        0,
+        memcmp(
+            monad_event_ring_payload_peek(&event_ring_, &second_event),
+            data(big_buffer_bytes),
+            size(big_buffer_bytes)));
+}

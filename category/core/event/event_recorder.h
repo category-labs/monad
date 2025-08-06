@@ -35,9 +35,11 @@ extern "C"
 #endif
 
 /// Reserve resources to record an event; this returns an allocated event
-/// descriptor with all fields populated except `seqno` and `event_type`. It
-/// sets `ptr` to the start of a payload buffer large enough to hold the
-/// `payload_size`. To finish recording, call monad_event_recorder_commit
+/// descriptor with all fields populated except `seqno` and `event_type`.
+/// It sets `payload` to the start of a payload buffer large enough to hold
+/// `payload_size`. If `payload_size` is larger than UINT32_MAX, this returns
+/// nullptr and sets *seqno == 0 and *payload == nullptr. When successful,
+/// call monad_event_recorder_commit to finish recording.
 static struct monad_event_descriptor *monad_event_recorder_reserve(
     struct monad_event_recorder *, size_t payload_size, uint64_t *seqno,
     uint8_t **payload);

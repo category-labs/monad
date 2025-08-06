@@ -32,8 +32,8 @@
 
 #include <sys/types.h>
 
-#include <category/core/likely.h>
 #include <category/core/event/event_ring.h>
+#include <category/core/likely.h>
 #include <category/core/mem/align.h>
 
 #ifdef __cplusplus
@@ -77,11 +77,19 @@ static inline struct monad_event_descriptor *monad_event_recorder_reserve(
     uint64_t buffer_window_start;
     uint64_t payload_begin;
     uint64_t payload_end;
-    uint64_t const WINDOW_INCR = 1UL << 24;
 
     uint64_t const start_record_timestamp = monad_event_get_epoch_nanos();
+    uint64_t const payload_buf_size = recorder->payload_buf_mask + 1;
+    uint64_t const sliding_window_width =
+        payload_buf_size - MONAD_EVENT_WINDOW_INCR;
     struct monad_event_ring_control *const rctl = recorder->control;
     size_t const alloc_size = monad_round_size_to_align(payload_size, 8);
+
+    if (MONAD_UNLIKELY(alloc_size > UINT32_MAX)) {
+        *seqno = 0;
+        *payload = nullptr;
+        return nullptr;
+    }
 
     // Allocate the sequence number and payload buffer bytes
     uint64_t const last_seqno =
@@ -101,21 +109,22 @@ static inline struct monad_event_descriptor *monad_event_recorder_reserve(
     buffer_window_start =
         __atomic_load_n(&rctl->buffer_window_start, __ATOMIC_RELAXED);
     if (MONAD_UNLIKELY(
-            payload_end - buffer_window_start >
-            recorder->payload_buf_mask + 1 - WINDOW_INCR)) {
-        // Slide the buffer window over by the payload size, rounded up to the
-        // nearest `WINDOW_INCR`, see the "Sliding buffer window" section in
-        // `event_recorder.md`
+            payload_end - buffer_window_start > sliding_window_width)) {
+        // Slide the buffer window over to the end of the payload rounded up to
+        // the nearest `WINDOW_INCR`; see the "Sliding buffer window" section
+        // in `event_recorder.md`
         __atomic_compare_exchange_n(
             &rctl->buffer_window_start,
             &buffer_window_start,
-            buffer_window_start +
-                monad_round_size_to_align(payload_size, WINDOW_INCR),
+            monad_round_size_to_align(payload_end, MONAD_EVENT_WINDOW_INCR) -
+                sliding_window_width,
             false,
             __ATOMIC_RELAXED,
             __ATOMIC_RELAXED);
     }
 
+    // 32-bit truncation of `payload_size` is safe because of the earlier
+    // UINT32_MAX overflow check
     event->payload_size = (uint32_t)payload_size;
     event->payload_buf_offset = payload_begin;
     event->record_epoch_nanos = start_record_timestamp;

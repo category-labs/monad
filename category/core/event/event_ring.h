@@ -101,7 +101,7 @@ struct monad_event_ring_header
     char magic[6];                           ///< 'RINGvv', vv = version number
     enum monad_event_content_type
         content_type;                        ///< Kind of events in this ring
-    uint8_t schema_hash[32];                 ///< Ensure event definitons match
+    uint8_t schema_hash[32];                 ///< Ensure event definitions match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
@@ -205,6 +205,8 @@ constexpr uint8_t MONAD_EVENT_MAX_DESCRIPTORS_SHIFT = 32;
 
 constexpr uint8_t MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT = 27;
 constexpr uint8_t MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT = 40;
+
+constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
 
 /*
  * Event ring inline function definitions

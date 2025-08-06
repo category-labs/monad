@@ -124,30 +124,36 @@ Definition isAllowedToEmpty (knownBlocks: gmap N Block)
                 in notDelegated && bool_decide (lengthN prevTxsFromSameSender = 0).
 
 
-Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx :=
-  maxTxFee tx +
-  (if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState tx
+Definition maxTotalReserveDippableDebit (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : N*bool :=
+  let allowedToEmpty := isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState tx in 
+  (maxTxFee tx +
+  (if allowedToEmpty
   then value tx 
-   else 0).
+   else 0), allowedToEmpty).
 
-Definition lookupN {T} `{cc: Countable T} (m: gmap T N) (a: T) : N :=
+Definition lookupN {T} `{cc: Countable T} (m: gmap T (N*bool)) (a: T) : (N*bool) :=
   match m !! a with
   | Some v => v
-  | None => 0
+  | None => (0, false)
   end.
       
-
-Definition updateKey  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) : gmap T N :=
+Definition updateKey  {T} `{c: Countable T} (m: gmap T (N*bool)) (a: T) (f: (N*bool) -> (N*bool)) : gmap T (N*bool) :=
   <[ a :=  f (lookupN m a) ]> m.
 
-Lemma updateKeyLkp  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) :
+Lemma updateKeyLkp  {T} `{c: Countable T} (m: gmap T (N*bool)) (a: T) (f: (N*bool) -> (N*bool)) :
   updateKey m a f !! a = Some (f (lookupN m a)).
 Proof using.
   unfold updateKey.
-  autorewrite with syntactic; [| exact 0].
+  autorewrite with syntactic; [| exact (0, false)].
   case_bool_decide; try congruence.
 Qed.
 
+Definition mergeP (a b: N*bool) : N*bool :=
+  let '(al, ar) := a in 
+  let '(bl, br) := a in 
+    (al+bl, ar || br).
+
+(*
 Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
    match rest with
   | [] => 0
@@ -157,25 +163,34 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
          then (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h)
          else 0)
    end.
+ *)
 
-Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address N :=
+
+Fixpoint maxTotalReserveDippableDebitL (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address (N*bool) :=
   match rest with
   | [] => ∅
   | h::tl =>
       let r := maxTotalReserveDippableDebitL knownBlocks latestKnownState (postStateAccountedSuffix++[h]) tl in
-      updateKey r (sender h) (N.add (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h))
+      updateKey r (sender h) (mergeP (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h))
   end.
 
+(*
 Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
   if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState candidate
   then bool_decide (maxTxFee candidate <= balanceOfAc latestKnownState (sender candidate))
   else
     bool_decide (maxTotalReserveDippableDebitLold knownBlocks latestKnownState [] intermediateTxsSinceState (sender candidate)
                  <= balanceOfAc latestKnownState (sender candidate)).
+*)
 
 Definition consensusAcceptableTxG (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL knownBlocks latestKnownState [] postStateSuffix in
-  forall ac, lookupN totDebits ac <= balanceOfAc latestKnownState ac.
+  forall ac,
+    let (totAcDebits, someAcEmptyingTxExists) := lookupN totDebits ac in
+    if someAcEmptyingTxExists
+    then totAcDebits <= balanceOfAc latestKnownState ac
+    else
+      
 
 Definition consensusAcceptableTx (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in

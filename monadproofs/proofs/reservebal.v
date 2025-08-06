@@ -390,6 +390,40 @@ Hint Rewrite Z.min_r  using lia: syntactic.
 Hint Rewrite N.min_l  using lia: syntactic.      
 Hint Rewrite N.min_r  using lia: syntactic.      
 
+Lemma debitLeq dOverrides acc extension s sf tx rest: (maxTotalReserveDippableDebitL dOverrides sf rest extension) !!! acc = (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension) !!! acc.
+Proof using.
+  revert dOverrides.
+  induction extension; auto;[].
+  intros.
+  simpl.
+Abort.
+
+Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
+  b1=b2 -> t1=t2 -> e1=e2 -> (if b1 then t1 else e1) = if b2 then t2 else e2.
+Proof using.
+  intros. subst. reflexivity.
+Qed.
+
+Lemma debitLeq dOverrides extension s sf tx rest:
+  (maxTotalReserveDippableDebitL dOverrides sf rest extension)
+  = (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension).
+Proof using.
+  revert dOverrides.
+  revert rest.
+  induction extension; auto;[].
+  intros.
+  simpl.
+  rewrite IHextension.
+  f_equiv.
+  f_equiv.
+  unfold maxTotalReserveDippableDebit.
+  apply ite_fequiv; try reflexivity.
+  
+  f_equal.
+  f_equal.
+  unfold 
+  f_equiv.
+
 #[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
 Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
   (forall x, P /\ Q x)  -> P /\ forall x, Q x.
@@ -415,7 +449,14 @@ Proof using.
   forward_reason.
   rewrite updateKeyLkp3 in Hc.
   assert (forall acc, (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) sf [] extension) !!! acc = (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension) !!! acc
-                     ) as Hass by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
+         ) as Hass.
+  {
+    clear Hc.
+    induction extension; auto;[].
+    intros.
+    simpl.
+    rewrite IHextension.
+  by admit. (* because the only state relevant for maxTotalReserveDippableDebitL that execution can change is the delegation status: the tx can revert in actual execution and thus the delegations may not happen? *)
   specialize (Hass ac).
   autorewrite with iff.
   case_bool_decide; simpl in *;  try lia.

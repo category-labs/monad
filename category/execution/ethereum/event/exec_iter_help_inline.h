@@ -359,8 +359,9 @@ inline bool monad_exec_iter_rewind_for_simple_replay(
 
     if (found_finalized_block_start) {
         iter->read_last_seqno = prev_read;
-        return monad_event_iterator_try_copy(iter, event) ==
-               MONAD_EVENT_SUCCESS;
+        if (monad_event_iterator_try_copy(iter, event) == MONAD_EVENT_SUCCESS) {
+            return true;
+        }
     }
 
     iter->read_last_seqno = iter_save;

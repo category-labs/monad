@@ -83,8 +83,9 @@ enum monad_exec_flow_type : uint8_t
 /// proposals of different blocks to become the same `block_number`. `id` can be
 /// used to track this specific block before finalization.
 ///
-/// For more information on this, see [here](https://docs.monad.xyz/monad-
-/// arch/realtime-data/spec-realtime.md) for details
+/// For more information on this, see
+/// [here](https://docs.monad.xyz/monad-arch/realtime-data/spec-realtime.md) for
+/// details
 struct monad_exec_block_tag
 {
     monad_c_bytes32 id;    ///< Monad consensus unique ID for block

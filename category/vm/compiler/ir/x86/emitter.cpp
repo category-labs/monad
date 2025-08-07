@@ -3854,13 +3854,7 @@ namespace monad::vm::compiler::native
             as_.vmovq(x86::rax, ix_ymm.xmm());
             as_.sub(dst_gpq[0], x86::rax);
         }
-
-        cmp_stack_elem_to_uint16(ix, 32, std::make_tuple(src));
-
-        // in case idx >= 31, we need to constrain the value of ix_temp_reg
-        // to a known valid offset, in this case 0, even if we discard the
-        // value in the end due to the second cmov below
-        as_.cmovnz(dst_gpq[0], zero_reg);
+        as_.cmovb(dst_gpq[0], zero_reg);
 
         if (src->stack_offset()) {
             auto src_mem = stack_offset_to_mem(*src->stack_offset());
@@ -3880,14 +3874,14 @@ namespace monad::vm::compiler::native
             as_.lea(x86::rax, rodata_.add32(src->literal()->value));
             as_.movzx(dst_gpq[0], x86::byte_ptr(x86::rax, dst_gpq[0]));
         }
-        // if ix > 31 (i.e. byte_check_bounds_compute_idx set ZF=0), we copy
-        // 0 into the dst[0] register
+
+        as_.cmovb(dst_gpq[0], zero_reg); // Clear when 31 < ix[0]
+        test_high_bits192(std::move(ix), std::make_tuple(dst));
         as_.cmovnz(dst_gpq[0], zero_reg);
 
         stack_.push(std::move(dst));
     }
 
-    // TODO: remove when this implementation is benchmarked and optimized
     void
     Emitter::byte_literal_ix_general_reg_src(StackElemRef ix, StackElemRef src)
     {
@@ -3905,26 +3899,23 @@ namespace monad::vm::compiler::native
 
         uint64_t const byte_index = 31 - i[0];
         uint64_t const word_index = byte_index >> 3;
+        x86::Gpq const s = src_gpq[word_index];
         if (&src_gpq == &dst_gpq) {
             std::swap(dst_gpq[0], dst_gpq[word_index]);
         }
-        else {
-            as_.mov(dst_gpq[0], src_gpq[word_index]);
-        }
 
-        uint64_t const byte_index_in_word = (byte_index & 7) << 3;
-        if (byte_index_in_word) {
-            as_.shr(dst_gpq[0], byte_index_in_word);
-        }
-
-        if (byte_index_in_word < 56) {
-            as_.movzx(dst_gpq[0].r32(), dst_gpq[0].r8Lo());
+        uint64_t const shift = (byte_index & 7) << 3;
+        if (shift) {
+            if (s != dst_gpq[0]) {
+                as_.mov(dst_gpq[0], s);
+            }
+            as_.shr(dst_gpq[0], shift);
+            if (shift < 56) {
+                as_.movzx(dst_gpq[0].r32(), dst_gpq[0].r8Lo());
+            }
         }
         else {
-            // if byte_index & 7 == 7 we only have to zero out the upper 32 bits
-            // because the preceeding shift zeroed out everything but the lowest
-            // byte
-            as_.mov(dst_gpq[0].r32(), dst_gpq[0].r32());
+            as_.movzx(dst_gpq[0].r32(), s.r8Lo());
         }
 
         as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
@@ -3996,7 +3987,6 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    // TODO: remove when this implementation is benchmarked and optimized
     void Emitter::byte_literal_ix_avx_reg_src(StackElemRef ix, StackElemRef src)
     {
         MONAD_VM_DEBUG_ASSERT(ix->literal().has_value());
@@ -4007,29 +3997,28 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(i < 32);
 
         AvxRegReserv const src_reserv{src};
-
         auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
-        auto [dst, dst_reserv] = alloc_or_release_avx_reg(src, {});
+        auto [dst, dst_reserv] = alloc_avx_reg();
         auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
-        auto [scratch, scratch_reserv] = alloc_avx_reg();
-        auto scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
-        auto const mask = rodata_.add16(0xff, 0);
 
         uint64_t const byte_index = 31 - i[0];
-        uint64_t const dword_index = byte_index >> 2;
-        // equivalent to sub_byte_index = (byte_index % 4) * 8
-        uint64_t const sub_byte_index = (byte_index & 3) << 3;
-        as_.mov(x86::rax, dword_index);
-        as_.vmovq(scratch_ymm.xmm(), x86::rax);
-        // select double word from src based on dword_index
-        as_.vpermps(dst_ymm, scratch_ymm, src_ymm);
+        uint64_t const yword_index = byte_index >> 4;
+        uint64_t const sub_byte_index = byte_index & 15;
 
-        as_.mov(x86::rax, sub_byte_index);
-        as_.vmovq(scratch_ymm.xmm(), x86::rax);
-        // shift right by sub_byte_index bytes
-        as_.vpsrlq(dst_ymm.xmm(), dst_ymm.xmm(), scratch_ymm.xmm());
-        // clear everything but the lowest byte
-        as_.vpand(dst_ymm.xmm(), dst_ymm.xmm(), mask);
+        auto shuf_ymm = src_ymm;
+        if (yword_index) {
+            // Put upper yword of src in lower yword of dst:
+            as_.vperm2i128(dst_ymm, src_ymm, src_ymm, 0x81);
+            shuf_ymm = dst_ymm;
+        }
+        if (sub_byte_index) {
+            constexpr uint64_t hi = std::numeric_limits<uint64_t>::max();
+            uint64_t const lo = (hi << 8) | sub_byte_index;
+            as_.vpshufb(dst_ymm.xmm(), shuf_ymm.xmm(), rodata_.add16(lo, hi));
+        }
+        else {
+            as_.vpand(dst_ymm.xmm(), shuf_ymm.xmm(), rodata_.add16(0xff, 0));
+        }
 
         stack_.push(std::move(dst));
     }

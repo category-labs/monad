@@ -47,6 +47,7 @@ Definition user_reserve_balance
   : N := 100.
  *)
 
+(* rename it to addrDelegated or contract *)
 Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool. Proof. Admitted.
 
 (*
@@ -389,7 +390,7 @@ Lemma execLcore knownBlocks tx s:
   /\
   (forall ac, ac <> sender tx
                              
-              -> if (addrDelegated sf ac)
+              -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
                  then True
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using.
@@ -439,8 +440,57 @@ Proof using.
   intros Hp.
   firstorder.
 Qed.
-  Hint Rewrite bool_decide_spec: iff.
+Hint Rewrite bool_decide_spec: iff.
 
+Lemma debLsnd dOverrides rest extension ac s tx:
+  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
+  -> snd (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension !!! ac) = None.
+Proof using.
+  intros Hyp.
+  revert rest dOverrides.
+  induction extension; auto;[].
+  intros.
+  simpl.
+  unfold maxTotalReserveDippableDebit.
+  rewrite updateKeyLkp3.
+  rewrite bool_decide_decide.
+  case_decide_inner; simpl in *; subst; auto;[].
+  unfold updateTots, updateKey.
+  simpl.
+  assert (isAllowedToEmpty dOverrides s (tx :: rest) a = false) as Heq;
+    [| rwHypsP;  simpl; auto].
+  unfold isAllowedToEmpty.
+Abort.  
+
+Hint Resolve list_subseteq_app_r : listset.
+Hint Resolve list_subseteq_app_l : listset.
+
+Lemma debLsnd dOverrides rest extension ac s tx:
+  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
+  -> (addrsDelegatedByTx tx) ⊆ dOverrides
+  -> snd (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension !!! ac) = None.
+Proof using.
+  intros Hyp Hs.
+  revert Hs.
+  revert rest dOverrides.
+  induction extension; auto;[].
+  intros.
+  simpl.
+  unfold maxTotalReserveDippableDebit.
+  rewrite updateKeyLkp3.
+  rewrite bool_decide_decide.
+  case_decide_inner; simpl in *; subst; eauto with listset;[].
+  unfold updateTots, updateKey.
+  simpl.
+  assert (isAllowedToEmpty dOverrides s (tx :: rest) a = false) as Heq;
+    [| rwHypsP;  simpl; eauto with listset; fail].
+  unfold isAllowedToEmpty.
+  destruct (addrDelegated s (sender a)); auto;[].
+  simpl in *.
+  rewrite bool_decide_true; auto;[].
+  set_solver.
+Qed.
+  
 Lemma execL dOverrides tx extension s:
   consensusAcceptableTxs dOverrides s
     (tx::extension)
@@ -476,11 +526,15 @@ Proof using.
        destruct o; try lia.
     }
     {
+      pose proof (debLsnd (dOverrides ++ addrsDelegatedByTx tx) [] extension ac s tx) as Hsnd.
       remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! ac) as rd.
       destruct rd as [nonEmptyingDebits emptyingDebits].
+      specialize (Hcorerrl ac).
       simpl in *.
-      (* ac is delegated => isEmptying false for the ENTIRE extension, even if some tx in it undelegates: *)
-      assert (emptyingDebits = None) as Heq by admit.
+      repeat rewrite -> bool.Is_true_eq in *.
+      orient_eqs.
+      apply Hcorerrl in Heqdg.
+      specialize (Hsnd ltac:(congruence) ltac:(set_solver)).
       revert Hc.
       rwHypsP.
       intros.

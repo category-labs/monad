@@ -442,26 +442,6 @@ Proof using.
 Qed.
 Hint Rewrite bool_decide_spec: iff.
 
-Lemma debLsnd dOverrides rest extension ac s tx:
-  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
-  -> snd (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension !!! ac) = None.
-Proof using.
-  intros Hyp.
-  revert rest dOverrides.
-  induction extension; auto;[].
-  intros.
-  simpl.
-  unfold maxTotalReserveDippableDebit.
-  rewrite updateKeyLkp3.
-  rewrite bool_decide_decide.
-  case_decide_inner; simpl in *; subst; auto;[].
-  unfold updateTots, updateKey.
-  simpl.
-  assert (isAllowedToEmpty dOverrides s (tx :: rest) a = false) as Heq;
-    [| rwHypsP;  simpl; auto].
-  unfold isAllowedToEmpty.
-Abort.  
-
 Hint Resolve list_subseteq_app_r : listset.
 Hint Resolve list_subseteq_app_l : listset.
 
@@ -490,7 +470,29 @@ Proof using.
   rewrite bool_decide_true; auto;[].
   set_solver.
 Qed.
-  
+
+Lemma debLsnd2 dOverrides rest extension s tx:
+  snd (maxTotalReserveDippableDebitL dOverrides s (tx::rest) extension !!! (sender tx)) = None.
+Proof using.
+  revert rest dOverrides.
+  induction extension; auto;[].
+  intros.
+  simpl.
+  unfold maxTotalReserveDippableDebit.
+  rewrite updateKeyLkp3.
+  rewrite bool_decide_decide.
+  case_decide_inner; simpl in *; subst; eauto with listset;[].
+  unfold updateTots, updateKey.
+  simpl.
+  assert (isAllowedToEmpty dOverrides s (tx :: rest) a = false) as Heq;
+    [| rwHypsP;  simpl; eauto with listset; fail].
+  unfold isAllowedToEmpty.
+  simpl.
+  resolveDecide congruence.
+  simpl.
+  Btauto.btauto.
+Qed.
+
 Lemma execL dOverrides tx extension s:
   consensusAcceptableTxs dOverrides s
     (tx::extension)
@@ -547,10 +549,11 @@ Proof using.
     clear Hass.
     unfold maxTotalReserveDippableDebit in Hc.
     remember (isAllowedToEmpty dOverrides s [] tx) as ae.
+    pose proof (debLsnd2 (dOverrides ++ addrsDelegatedByTx tx) [] extension s tx) as Hsnd.
     remember (maxTotalReserveDippableDebitL (dOverrides ++ addrsDelegatedByTx tx) s [tx] extension !!! (sender tx)) as rd.
     destruct rd as [nonEmptyingDebits emptyingDebits].
     (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
-    assert (emptyingDebits = None) as Heq by admit.
+    simpl in *.
     rwHypsP.
     destruct ae; simpl in *; try lia;[|].
     {

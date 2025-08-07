@@ -16,7 +16,7 @@ find_package(Boost 1.83 # 1.83 really is the minimum
 # ##############################################################################
 
 add_library(
-  monad_async STATIC
+  monad_async
   "concepts.hpp"
   "config.hpp"
   "connected_operation.hpp"

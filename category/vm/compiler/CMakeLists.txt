@@ -1,4 +1,4 @@
-add_library(monad-vm-compiler STATIC)
+add_library(monad-vm-compiler)
 
 target_sources(monad-vm-compiler PRIVATE
     "transactional_unordered_map.hpp"

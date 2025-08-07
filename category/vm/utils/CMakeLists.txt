@@ -1,6 +1,6 @@
 enable_language(C)
 
-add_library(monad-vm-utils STATIC)
+add_library(monad-vm-utils)
 
 target_sources(monad-vm-utils PRIVATE
     "debug.cpp"

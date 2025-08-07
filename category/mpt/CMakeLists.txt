@@ -25,7 +25,7 @@ pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 # ##############################################################################
 
 add_library(
-  monad_trie STATIC
+  monad_trie
   "compute.cpp"
   "compute.hpp"
   "config.hpp"

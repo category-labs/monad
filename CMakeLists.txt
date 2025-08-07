@@ -16,6 +16,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif()
 endif()
 
+if (BUILD_SHARED_LIBS)
+  # BUILD_SHARED_LIBS=ON does not automatically set -fPIC, leading to
+  # relocations being emitted in object files that can't be patched
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MONAD_COMPILER_LLVM "Build llvm backend" OFF)
@@ -23,6 +29,14 @@ option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
 option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
 option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
+
+if (NOT DEFINED BUILD_SHARED_LIBS)
+  # If this isn't defined, evmone has the audacity to define it itself (to ON)
+  # whereas the ordinary default is for static libraries; if it's not specified,
+  # we explicitly set it to OFF, agreeing with the expected default and
+  # preventing evmone from doing something different
+  option(BUILD_SHARED_LIBS "Build monad with shared libraries" OFF)
+endif()
 
 include(cmake/test.cmake)
 

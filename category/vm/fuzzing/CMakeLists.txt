@@ -1,4 +1,4 @@
-add_library(monad-vm-fuzzing STATIC)
+add_library(monad-vm-fuzzing)
 
 target_sources(monad-vm-fuzzing PRIVATE
   "generator/choice.hpp"

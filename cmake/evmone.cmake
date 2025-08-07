@@ -1,5 +1,4 @@
 # evmone
-set(BUILD_SHARED_LIBS OFF)
 set(HUNTER_ENABLED OFF)
 
 # Both the test suite and the benchmark executables rely on the evmone state

@@ -7,7 +7,7 @@
 project(monad_event)
 
 add_library(
-  monad_event STATIC
+  monad_event
   "../core/format_err.c"
   "../core/format_err.h"
   "../core/srcloc.h"

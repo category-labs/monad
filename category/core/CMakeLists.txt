@@ -68,7 +68,7 @@ endif()
 # ##############################################################################
 
 add_library(
-  monad_core STATIC
+  monad_core
   # config
   "config.hpp"
   # core

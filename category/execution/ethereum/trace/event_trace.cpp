@@ -12,6 +12,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+quill::Logger *event_tracer = nullptr;
+
 TraceTimer::TraceTimer(TraceEvent const &event)
     : orig{event}
 {

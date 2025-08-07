@@ -13,7 +13,7 @@ project(monad_execution)
 # ##############################################################################
 
 add_library(
-  monad_execution STATIC
+  monad_execution
   # ethereum/chain
   "ethereum/chain/chain_config.h"
   "ethereum/chain/chain.cpp"

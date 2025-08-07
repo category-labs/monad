@@ -236,7 +236,7 @@ Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuff
     match emptyingDebits with
     | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
     | Some emptyingDebit =>
-        emptyingDebit <= balanceOfAc latestState ac  /\
+        emptyingDebit <= balanceOfAc latestState ac (* can weaken this to just include fee *)  /\
           nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - emptyingDebit))
     end.
 
@@ -273,7 +273,7 @@ Definition isAllowedToEmptyExec
   (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
   (negb (addrConsideredDelegated state tx)) && (negb (existsTxWithinK state tx)).
 
-Definition execTxAfterValidationV2  (s: evm.GlobalState) (t: TxWithHdr)
+Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
   : (evm.GlobalState * TransactionResult) :=
   let (si, r) := stateAfterTransaction s t in
   let balCheck (a: evm.address) :=
@@ -290,7 +290,7 @@ Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
 Definition stateAfterTransactionV2 (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
-  else Some (execTxAfterValidationV2  s t).
+  else Some (execValidatedTx  s t).
 
 Fixpoint stateAfterTransactionsV2  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
   match ts with
@@ -377,25 +377,33 @@ Qed.
 
 Open Scope N_scope.
 
-
-Lemma execLcore tx s:
-  let '(sf, r) :=  execTxAfterValidationV2 s tx in
+(** execution assumptions *)
+Lemma execTxOtherBalanceLB tx s:
+  let '(sf, r) :=  execValidatedTx s tx in
   (forall ac, (ac <> sender tx) ->
-             ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
-  /\
+              ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
+Proof. Admitted.
+
+Lemma execTxSenderBal tx s:
+  let '(sf, r) :=  execValidatedTx s tx in
   (if isAllowedToEmpty s [] tx
-  then True
-  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)))
-  /\
-  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
-  /\
+  then balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
+   else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
+Proof. Admitted.
+ 
+Lemma execTxDelegationUpd tx s:
+  let '(sf, r) :=  execValidatedTx s tx in
+  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx))).
+Proof. Admitted.
+  
+Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
+  let '(sf, r) :=  execValidatedTx s tx in
   (forall ac, ac <> sender tx
                              
               -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
                  then True
                  else balanceOfAc s ac <= balanceOfAc sf ac).
-Proof using.
-Admitted.
+Proof using. Admitted.
 
 Hint Rewrite Z.min_l  using lia: syntactic.      
 Hint Rewrite Z.min_r  using lia: syntactic.      
@@ -496,13 +504,37 @@ Proof using.
   f_equiv. Btauto.btauto.
 Qed.
 
+Lemma execLcore tx s:
+  let '(sf, r) :=  execValidatedTx s tx in
+  (forall ac, (ac <> sender tx) ->
+             ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
+  /\
+  (if isAllowedToEmpty s [] tx
+  then True
+  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)))
+  /\
+  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
+  /\
+  (forall ac, ac <> sender tx
+
+              -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
+                 then True
+                 else balanceOfAc s ac <= balanceOfAc sf ac).
+Proof using.
+Admitted.
+
+(*
+Hcorel : forall ac : evm.address, ac ≠ sender tx -> ReserveBal `min` balanceOfAc s ac ≤ balanceOfAc sf ac
+  Hcorerl : if isAllowedToEmpty s [] tx then True else ReserveBal `min` balanceOfAc s (sender tx) - maxTxFee tx ≤ balanceOfAc sf (sender tx)
+  Hcorerrl : forall ac : evm.address, addrDelegated sf ac ↔ addrDelegated s ac || bool_decide (ac ∈ addrsDelegatedByTx tx)
+  Hcorerrr : forall ac : evm.address, ac ≠ sender tx -> if addrDelegated sf ac then True else balanceOfAc s ac ≤ balanceOfAc sf ac
+*)
 Lemma execL tx extension s:
   consensusAcceptableTxs s
     (tx::extension)
-  -> consensusAcceptableTxs (fst (execTxAfterValidationV2  s tx)) extension.
+  -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
-  pose proof (execLcore tx s) as Hcore.
-  remember (execTxAfterValidationV2 s tx) as ss.
+  remember (execValidatedTx s tx) as ss.
   destruct ss as [sf  res].
   intros Hc.
   unfold consensusAcceptableTxs in *.
@@ -516,10 +548,15 @@ Proof using.
   { intros. rewrite -> debitLeq with (s:=s) (tx:=tx). reflexivity.}
   specialize (Hass ac).
   autorewrite with iff.
+  symmetry in Heqss.
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
-    specialize (Hcorel ac ltac:(auto)).
-    specialize (Hcorerrr ac ltac:(auto)).
+    pose proof (execTxOtherBalanceLB tx s) as Hot.
+    pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
+    rewrite -> Heqss in Hot.
+    rewrite -> Heqss in Hdeb.
+    specialize (Hot ac ltac:(auto)).
+    specialize (Hdeb ac ltac:(auto)).
     rewrite Hass.
     clear Hass.
     remember (addrDelegated sf ac) as dg.
@@ -534,11 +571,13 @@ Proof using.
       pose proof (debLsnd [] extension ac s tx) as Hsnd.
       remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
       destruct rd as [nonEmptyingDebits emptyingDebits].
-      specialize (Hcorerrl ac).
+      pose proof (execTxDelegationUpd tx s) as Hdel.
+      rewrite -> Heqss in Hdel.
+      specialize (Hdel ac).
       simpl in *.
       repeat rewrite -> bool.Is_true_eq in *.
       orient_eqs.
-      apply Hcorerrl in Heqdg.
+      apply Hdel in Heqdg.
       specialize (Hsnd ltac:(auto)).
       revert Hc.
       rwHypsP.
@@ -558,10 +597,13 @@ Proof using.
     (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
     simpl in *.
     rwHypsP.
+    pose proof (execTxSenderBal tx s) as Hsender.
+    rewrite -> Heqss in Hsender.
     destruct ae; simpl in *; try lia;[|].
     {
-      (* meaning sender tx is not delegated, so this tx can only decrement the balance by ( maxTxFee tx + value tx) *)
-      assert (balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)) as Hle by admit.
+      revert Hsender.
+      orient_rwHyps.
+      intros.
       revert Hc.
       rwHypsP.
       intros.
@@ -571,12 +613,12 @@ Proof using.
     
     {
       revert Hc.
-      rwHypsP.
+      revert Hsender.
+      orient_rwHyps.
       lia.
     }
   }
-  
-Admitted.
+Qed.
 
 
 Lemma execValidate dOverrides tx extension s:
@@ -620,7 +662,7 @@ Proof.
   case_bool_decide; simpl in *; try lia;[].
   unfold consensusAcceptableTxG.
   pose proof (execL knownBlocks intermediateHd intermediateTl latestState) as Hp.
-  remember (execTxAfterValidationV2 knownBlocks latestState intermediateHd) as ss.
+  remember (execValidatedTx knownBlocks latestState intermediateHd) as ss.
   destruct ss as [si  res].
   simpl in *.
   apply Hp.
@@ -629,7 +671,7 @@ Qed.
   
   
   
-  unfold execTxAfterValidationV2.
+  unfold execValidatedTx.
   remember (stateAfterTransaction latestState intermediateHd) as ss.
   simpl.
   match goal with
@@ -662,7 +704,7 @@ Qed.
       unfold validateTx.
       rwHypsP.
       case_bool_decide; simpl in *; try lia;[].
-      unfold execTxAfterValidationV2.
+      unfold execValidatedTx.
       remember (stateAfterTransaction latestState intermediateHd) as ss.
       destruct ss as [si  res].
       simpl in *.

@@ -154,9 +154,9 @@ Definition isAllowedToEmpty (delegatedAfterNminusK: list evm.address)
   (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
   let delegated := (addrDelegated state (sender tx))
                    || (bool_decide (sender tx ∈ delegatedAfterNminusK))
-                   || existsb (fun txx => (txDelegatesAddr (sender tx) txx)) intermediateTxsSinceState
+                   || bool_decide  ((sender tx) ∈ flat_map addrsDelegatedByTx (tx::intermediateTxsSinceState))
   in
-  let existsSameSenderTxInWindow := (existsTxWithinK state tx) || (existsb (fun txx => bool_decide (sender txx = sender tx)) intermediateTxsSinceState) in
+  let existsSameSenderTxInWindow := (existsTxWithinK state tx) || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
   (negb delegated) && (negb existsSameSenderTxInWindow).
 
 (* duplicate instance. the upstream one picks 1 *)
@@ -492,6 +492,16 @@ Proof using.
   simpl.
   Btauto.btauto.
 Qed.
+
+Lemma isAllowedToEmptyEquiv tx s dOverrides:
+  isAllowedToEmptyExec s tx = isAllowedToEmpty dOverrides s [] tx.
+Proof using.
+  unfold isAllowedToEmptyExec, isAllowedToEmpty.
+  simpl.
+  autorewrite with syntactic.
+  unfold addrConsideredDelegated.
+  f_equiv.
+Abort.
 
 Lemma execL dOverrides tx extension s:
   consensusAcceptableTxs dOverrides s

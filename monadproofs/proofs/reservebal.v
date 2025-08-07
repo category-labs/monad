@@ -287,18 +287,18 @@ Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
-Definition stateAfterTransactionV2 (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
+Definition execTx (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
   else Some (execValidatedTx  s t).
 
-Fixpoint stateAfterTransactionsV2  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
+Fixpoint execTxs  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
   match ts with
   | [] => Some (s, [])
   | t::tls =>
-      match stateAfterTransactionV2 s t with
+      match execTx s t with
       | Some (si, r)=>
-          match stateAfterTransactionsV2 si tls with
+          match execTxs si tls with
           | Some (sf, lr)=> Some (sf, r::lr)
           | None => None
           end
@@ -621,8 +621,8 @@ Proof using.
 Qed.
 
 
-Lemma execValidate dOverrides tx extension s:
-  consensusAcceptableTxs dOverrides s
+Lemma execValidate tx extension s:
+  consensusAcceptableTxs s
     (tx::extension)
   -> validateTx s tx = true.
 Proof using.
@@ -639,36 +639,100 @@ Proof using.
   resolveDecide ltac:(congruence).
   unfold validateTx.
   autorewrite with iff.
-  destruct (isAllowedToEmpty dOverrides s [] tx); simpl in *; try lia;[].
+  destruct (isAllowedToEmpty s [] tx); simpl in *; try lia;[].
   case_match; try lia.
 Qed.
-  
 
-Lemma inductiveStep (knownBlocks: gmap N Block) (latestState : StateOfAccounts) (intermediateHd: TxWithHdr) (intermediateTl: list TxWithHdr) :
-  consensusAcceptableTxG knownBlocks latestState (intermediateHd::intermediateTl)
-  -> match stateAfterTransactionV2 knownBlocks latestState intermediateHd with
+
+Lemma inductiveStep  (latestState : StateOfAccounts) (extensionHd: TxWithHdr) (extensionTl: list TxWithHdr) :
+  consensusAcceptableTxs latestState (extensionHd::extensionTl)
+  -> match execTx latestState extensionHd with
      | None =>  False
      | Some (si, tr) =>
-         consensusAcceptableTxG knownBlocks si intermediateTl
+         consensusAcceptableTxs si extensionTl
      end.
 Proof.
   intros Hc.
-  pose proof  (Hc (sender intermediateHd)) as Hcs.
-  simpl in Hcs.
-  rewrite updateKeyLkp2 in Hcs.
-  unfold stateAfterTransactionV2.
-  unfold validateTx.
-  unfold maxTotalReserveDippableDebit in Hcs.
-  case_bool_decide; simpl in *; try lia;[].
-  unfold consensusAcceptableTxG.
-  pose proof (execL knownBlocks intermediateHd intermediateTl latestState) as Hp.
-  remember (execValidatedTx knownBlocks latestState intermediateHd) as ss.
-  destruct ss as [si  res].
-  simpl in *.
-  apply Hp.
-  assumption.
+  unfold execTx.
+  rewrite -> (execValidate extensionHd extensionTl) by assumption.
+  simpl.
+  apply execL in Hc.
+  case_match; auto.
 Qed.
   
+  
+Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+  consensusAcceptableTxs latestState (block1++block2)
+  -> match execTxs latestState block1 with
+     | None =>  False
+     | Some (si, tr) =>
+         consensusAcceptableTxs si block2
+     end.
+Proof. Admitted.
+
+Definition concatL {T} (l: list (list T)) := flat_map id l.
+Definition consensusAcceptableBlocks (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)) :=
+  consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).
+
+Lemma acceptableNil lastConsensedState:
+  consensusAcceptableTxs lastConsensedState [].
+Proof using.
+  unfold consensusAcceptableTxs.
+  intros.
+  simpl.
+  unfold lookup_total.
+  unfold map_lookup_total. simpl.
+  unfold default. simpl.
+  autorewrite with syntactic.
+  rewrite lookup_empty.
+  lia.
+Qed.
+
+Lemma fullBlockStep2  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+  consensusAcceptableBlocks latestState [block1;block2]
+  -> match execTxs latestState block1 with
+     | None =>  False
+     | Some (si, tr) =>
+         consensusAcceptableBlocks si [block2]
+     end.
+Proof. Admitted.
+
+
+Section use.
+  Variable b0: list TxWithHdr.
+  Variable sb0 : StateOfAccounts. (* state after b0 *)
+  
+  Hypothesis nextBlockPicker:
+    forall (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)),
+      lengthN proposedBlocks < K
+      -> consensusAcceptableBlocks lastConsensedState proposedBlocks
+      -> exists nextBlock, consensusAcceptableBlocks lastConsensedState (proposedBlocks++[nextBlock]).
+
+  
+  Lemma operation  : (K=2) -> False.
+    intros.
+    revert nextBlockPicker.
+    rwHypsP.
+    intros.
+    pose proof (nextBlockPicker sb0 [] ltac:(reflexivity) (acceptableNil _)) as b1.
+    destruct b1 as [b1 b1ok].
+    simpl in b1ok.
+    pose proof (nextBlockPicker sb0 [b1] ltac:(reflexivity) b1ok) as b2.
+    destruct b2 as [b2 b2ok].
+    apply fullBlockStep2 in b2ok.
+    case_match; auto.
+    destruct p as [sb1 ?].
+    pose proof (nextBlockPicker sb1 [b2] ltac:(reflexivity) b2ok) as b3.
+    destruct b3 as [b3 b3ok].
+    apply fullBlockStep2 in b3ok.
+    case_match; auto.
+    destruct p as [sb2 ?].
+    pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
+ Abort.
+    
+    
+    
+    
   
   
   unfold execValidatedTx.

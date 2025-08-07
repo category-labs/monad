@@ -3,9 +3,15 @@ name: VM Tests
 on:
   push:
     paths:
+      - '.github/workflows/test-vm.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
       - 'category/vm/**'
       - 'cmd/vm/**'
+      - 'scripts/vm/**'
       - 'test/vm/**'
+      - 'third_party/evmone'
+      - 'docker/Dockerfile'
   workflow_dispatch:
 
 concurrency:
@@ -161,7 +167,6 @@ jobs:
             uses: jidicula/clang-format-action@v4.13.0
             with:
               check-path: category/vm
-              exclude-regex: '(build|third_party)'
               clang-format-version: 19
 
           - name: Setup Docker Buildx
@@ -198,8 +203,8 @@ jobs:
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
-                python-version-file: scripts/vm-benchmark-analysis/.python-version
+                python-version-file: scripts/vm/benchmark-analysis/.python-version
 
             - name: Check Python code
-              working-directory: scripts/vm-benchmark-analysis
+              working-directory: scripts/vm/benchmark-analysis
               run: make check

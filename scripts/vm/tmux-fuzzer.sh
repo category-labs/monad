@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 script_dir=`dirname "$0"`
-root_dir="$script_dir"/..
+root_dir="$script_dir"/../..
 log_dir="$root_dir/tmux-fuzzer-log"
 
 if [ $# -lt 1 ]; then

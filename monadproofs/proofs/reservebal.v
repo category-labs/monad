@@ -164,7 +164,7 @@ Definition isAllowedToEmpty
 #[global] Instance inhacc: Inhabited N := populate 0.
 
 (* latestState may be ahread of N-K block in the intermediate stages of the proof *)
-Definition maxTotalReserveDippableDebit (latestState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
+Definition maxTotalReserveDippableDebitDelete (latestState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
   if isAllowedToEmpty latestState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
   else (maxTxFee tx, false).
 
@@ -211,14 +211,29 @@ Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
     (fst old, Some fees)
   else (fst old+fees, snd old).
 
+
+Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option N)) : N*option N :=
+  if isAllowedToEmpty latestState intermediates next
+  then (old.1, Some (maxTxFee next + value next))
+  else (old.1 + maxTxFee next, old.2).
+
 Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address (N*option N) :=
   match rest with
   | [] => ∅
   | h::tl =>
       let r := maxTotalReserveDippableDebitL latestState (postStateAccountedSuffix++[h]) tl in
-      updateKey r (sender h) (updateTots
-                                (maxTotalReserveDippableDebit latestState postStateAccountedSuffix h))
+      updateKey r (sender h) (updateTotals latestState postStateAccountedSuffix h)
   end.
+
+
+(*
+Lemma foo a l s r:
+  maxTotalReserveDippableDebitL l s (a::r) = ∅.
+Proof using.
+  simpl.
+  unfold maxTotalReserveDippableDebit.
+  unfold updateTots. 
+*)
 
 (*
 Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
@@ -426,14 +441,17 @@ Proof using.
   intros.
   simpl.
   rewrite IHextension.
+  (*
   f_equiv.
+  unfold updateTotals.
+  simpl.
   f_equiv.
   unfold maxTotalReserveDippableDebit.
   apply ite_fequiv; try reflexivity.
   unfold isAllowedToEmpty.
   simpl. f_equiv.
   - admit. (* existsDelegatingTxWithinK sf a <-> (existsDelegatingTxWithinK s a) ||  addrsDelegatedByTx tx *)
-  - admit. (* similar prop for [existsTxWithinK] *)
+  - admit. (* similar prop for [existsTxWithinK] *) *)
 Admitted. (* seems easy *)
 
 #[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
@@ -457,11 +475,11 @@ Proof using.
   induction extension; auto;[].
   intros.
   simpl.
-  unfold maxTotalReserveDippableDebit.
+  unfold updateTotals.
   rewrite updateKeyLkp3.
   rewrite bool_decide_decide.
   case_decide_inner; simpl in *; subst; eauto with listset;[].
-  unfold updateTots, updateKey.
+  unfold updateTotals, updateKey.
   simpl.
   assert (isAllowedToEmpty s (tx :: rest) a = false) as Heq;
     [| rwHypsP;  simpl; eauto with listset; fail].
@@ -479,11 +497,11 @@ Proof using.
   induction extension; auto;[].
   intros.
   simpl.
-  unfold maxTotalReserveDippableDebit.
+  unfold updateTotals.
   rewrite updateKeyLkp3.
   rewrite bool_decide_decide.
   case_decide_inner; simpl in *; subst; eauto with listset;[].
-  unfold updateTots, updateKey.
+  unfold updateTotals, updateKey.
   simpl.
   assert (isAllowedToEmpty s (tx :: rest) a = false) as Heq;
     [| rwHypsP;  simpl; eauto with listset; fail].
@@ -589,7 +607,7 @@ Proof using.
     subst.
     rewrite Hass.
     clear Hass.
-    unfold maxTotalReserveDippableDebit in Hc.
+    unfold updateTotals in Hc.
     remember (isAllowedToEmpty s [] tx) as ae.
     pose proof (debLsnd2 [] extension s tx) as Hsnd.
     remember (maxTotalReserveDippableDebitL s [tx] extension !!! (sender tx)) as rd.
@@ -630,7 +648,7 @@ Proof using.
   unfold consensusAcceptableTxs in *.
   specialize (Hc (sender tx)).
   simpl in *.
-  unfold maxTotalReserveDippableDebit in Hc. (* rename [ maxTotalReserveDippableDebit] to reserveBal decrement *)
+  unfold updateTotals in Hc. (* rename [ maxTotalReserveDippableDebit] to reserveBal decrement *)
   simpl.
   unfold updateTots in Hc.
   simpl.

@@ -44,6 +44,8 @@ option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
 option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
 option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
+option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
+option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 
 if(NOT DEFINED BUILD_SHARED_LIBS)
   # If this isn't defined, evmone has the audacity to define it itself (to ON)
@@ -75,6 +77,14 @@ function(monad_compile_options target)
 
   if(MONAD_COMPILER_TESTING)
     target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_TESTING=1")
+  endif()
+
+  if(MONAD_COMPILER_STATS)
+      target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_STATS=1")
+  endif()
+
+  if(MONAD_COMPILER_HOT_PATH_STATS)
+      target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_HOT_PATH_STATS=1")
   endif()
 
   target_compile_options(

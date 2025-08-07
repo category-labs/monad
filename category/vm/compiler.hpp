@@ -17,6 +17,8 @@
 
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/utils/debug.hpp>
+#include <category/vm/utils/log_utils.hpp>
 #include <category/vm/varcode_cache.hpp>
 
 #include <evmc/evmc.h>
@@ -28,12 +30,110 @@
 #include <asmjit/x86.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <thread>
 
 namespace monad::vm
 {
     using CompilerConfig = compiler::native::CompilerConfig;
+
+    struct CompilerStats
+    {
+        EuclidMean<uint64_t> avg_native_code_size_;
+        EuclidMean<uint64_t> avg_compiled_bytecode_size_;
+        GeoMean<double> avg_native_code_ratio_;
+        EuclidMean<int64_t> avg_compile_time_;
+        std::atomic<uint64_t> max_native_code_size_{0};
+        std::atomic<uint64_t> max_compiled_bytecode_size_{0};
+        std::atomic<uint64_t> num_compiled_contracts_{0};
+        std::atomic<int64_t> max_compile_time_{0};
+        std::atomic<uint64_t> num_unexpected_compilation_errors_{0};
+        std::atomic<uint64_t> num_size_out_of_bound_compilation_errors_{0};
+
+        // must be called non-concurrently
+        void event_new_compiled_code_cached(
+            SharedIntercode const &icode, SharedNativecode const &ncode,
+            auto compile_start, auto compile_end) noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_stats) {
+                switch (ncode->error_code()) {
+                case Nativecode::ErrorCode::Unexpected:
+                    num_unexpected_compilation_errors_.fetch_add(
+                        1, std::memory_order_release);
+                    break;
+
+                case Nativecode::ErrorCode::SizeOutOfBound:
+                    num_size_out_of_bound_compilation_errors_.fetch_add(
+                        1, std::memory_order_release);
+                    break;
+
+                case Nativecode::ErrorCode::NoError:
+                    auto native_code_size_estimate =
+                        ncode->code_size_estimate();
+                    auto bytecode_size = icode->code_size();
+                    avg_native_code_size_.update(native_code_size_estimate);
+                    avg_compiled_bytecode_size_.update(bytecode_size);
+                    if (bytecode_size > 0) {
+                        avg_native_code_ratio_.update(
+                            static_cast<double>(native_code_size_estimate) /
+                            static_cast<double>(bytecode_size));
+                    }
+                    num_compiled_contracts_.fetch_add(
+                        1, std::memory_order_release);
+                    max_native_code_size_ = std::max(
+                        max_native_code_size_.load(std::memory_order_acquire),
+                        native_code_size_estimate);
+                    max_compiled_bytecode_size_ = std::max(
+                        max_compiled_bytecode_size_.load(
+                            std::memory_order_acquire),
+                        bytecode_size);
+                    break;
+                }
+                auto compile_time =
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        compile_end - compile_start)
+                        .count();
+                avg_compile_time_.update(compile_time);
+                max_compile_time_ = std::max(
+                    max_compile_time_.load(std::memory_order_acquire),
+                    compile_time);
+            }
+        }
+
+        std::string
+        print_stats(uint64_t cache_size, uint64_t cache_weight) const
+        {
+            if constexpr (utils::collect_monad_compiler_stats) {
+                return std::format(
+                    ",avg_native_code_size={}B,avg_compiled_bytecode_size={}B"
+                    ",avg_native_code_ratio={:.2f}"
+                    ",max_native_code_size={}B,max_compiled_bytecode_size={}B"
+                    ",num_compiled_contracts={}"
+                    ",avg_compile_time={}µs,max_compile_time={}µs"
+                    ",num_unexpected_compilation_errors={},num_size_out_of_"
+                    "bound_compilation_errors={}"
+                    ",varcode_cache_size={},varcode_cache_weight={}kB",
+                    avg_native_code_size_.get(),
+                    avg_compiled_bytecode_size_.get(),
+                    avg_native_code_ratio_.get(),
+                    max_native_code_size_.load(std::memory_order_acquire),
+                    max_compiled_bytecode_size_.load(std::memory_order_acquire),
+                    num_compiled_contracts_.load(std::memory_order_acquire),
+                    avg_compile_time_.get(),
+                    max_compile_time_.load(std::memory_order_acquire),
+                    num_unexpected_compilation_errors_.load(
+                        std::memory_order_acquire),
+                    num_size_out_of_bound_compilation_errors_.load(
+                        std::memory_order_acquire),
+                    cache_size,
+                    cache_weight);
+            }
+            else {
+                return "";
+            }
+        }
+    };
 
     class Compiler
     {
@@ -91,6 +191,12 @@ namespace monad::vm
             return varcode_cache_.set_warm_cache_kb(warm_kb);
         }
 
+        std::string print_stats() const
+        {
+            return stats_.print_stats(
+                varcode_cache_.size(), varcode_cache_.approx_weight());
+        }
+
         // For testing: wait for compile job queue to become empty.
         void debug_wait_for_empty_queue();
 
@@ -116,5 +222,7 @@ namespace monad::vm
         std::atomic_flag stop_flag_;
         size_t compile_job_soft_limit_;
         bool enable_async_compilation_;
+
+        CompilerStats stats_;
     };
 }

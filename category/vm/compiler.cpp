@@ -22,6 +22,7 @@
 #include <evmc/evmc.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <thread>
@@ -73,8 +74,11 @@ namespace monad::vm
                 return ncode;
             }
         }
+        auto const start = std::chrono::steady_clock::now();
         auto ncode = compile(rev, icode, config);
+        auto const end = std::chrono::steady_clock::now();
         varcode_cache_.set(code_hash, icode, ncode);
+        stats_.event_new_compiled_code_cached(icode, ncode, start, end);
         return ncode;
     }
 

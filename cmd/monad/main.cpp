@@ -427,7 +427,8 @@ int main(int const argc, char const *argv[])
             "Finish running, finish(stopped) block number = {}, "
             "number of blocks run = {}, time_elapsed = {}, num transactions = "
             "{}, "
-            "tps = {}, gps = {} M",
+            "tps = {}, gps = {} M"
+            "{}{}",
             block_num,
             nblocks,
             elapsed,
@@ -436,7 +437,9 @@ int main(int const argc, char const *argv[])
                 std::max(1UL, static_cast<uint64_t>(elapsed.count())),
             result.assume_value().second /
                 (1'000'000 *
-                 std::max(1UL, static_cast<uint64_t>(elapsed.count()))));
+                 std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
+            vm.print_compiler_stats(),
+            vm.print_total_counts());
     }
 
     if (sync != nullptr) {

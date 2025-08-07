@@ -98,6 +98,7 @@ namespace monad::vm
         evmc_host_context *context, evmc_message const *msg,
         std::span<uint8_t const> code)
     {
+        stats_.event_execute_raw();
         auto const stack_ptr = stack_allocator_.allocate();
         auto ctx = runtime::Context::from(
             memory_allocator_, host, context, msg, {code.data(), code.size()});
@@ -112,6 +113,7 @@ namespace monad::vm
         evmc_host_context *context, evmc_message const *msg,
         SharedIntercode const &icode)
     {
+        stats_.event_execute_intercode();
         uint8_t const *const code = icode->code();
         size_t const code_size = icode->code_size();
         auto const stack_ptr = stack_allocator_.allocate();
@@ -128,6 +130,7 @@ namespace monad::vm
         evmc_message const *msg, SharedIntercode const &icode,
         compiler::native::entrypoint_t entry)
     {
+        stats_.event_execute_native_entrypoint();
         uint8_t const *const code = icode->code();
         size_t const code_size = icode->code_size();
         auto ctx = runtime::Context::from(

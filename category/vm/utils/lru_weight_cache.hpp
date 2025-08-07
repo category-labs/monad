@@ -117,10 +117,16 @@ namespace monad::vm::utils
         }
 
         /// Get approximate total weight of the cached elements.
-        uint64_t approx_weight()
+        uint64_t approx_weight() const
         {
             return static_cast<uint64_t>(
                 weight_.load(std::memory_order_acquire));
+        }
+
+        /// Return the number of cached elements.
+        size_t size() const noexcept
+        {
+            return hmap_.size();
         }
 
         // For testing: to check internal invariants. Not safe with

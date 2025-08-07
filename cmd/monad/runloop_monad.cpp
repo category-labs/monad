@@ -218,7 +218,7 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         "__exec_block,bl={:8},id={},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}",
+        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
         block.header.number,
         block_id,
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -240,7 +240,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         output_header.gas_used /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
         output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
-        db.print_stats());
+        db.print_stats(),
+        vm.print_and_reset_block_counts(),
+        vm.print_compiler_stats());
 
     return std::make_pair(block_hash, output_header.gas_used);
 }

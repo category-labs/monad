@@ -25,10 +25,12 @@
 
 #include <asmjit/core/jitruntime.h>
 
+#include <quill/detail/LogMacros.h>
+// clang-tidy incorrectly views this macro as unused
+#include <quill/Quill.h> // IWYU pragma: keep
+
 #include <cstddef>
 #include <cstdint>
-#include <format>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <span>
@@ -483,19 +485,13 @@ namespace monad::vm::compiler::native
             }
         }
         catch (Emitter::Error const &e) {
-            std::cerr << std::format(
-                             "ERROR: X86 emitter: failed compile: {}", e.what())
-                      << std::endl;
+            LOG_ERROR("ERROR: X86 emitter: failed compile: {}", e.what());
             return std::make_shared<Nativecode>(rt, rev, nullptr, 0);
         }
         catch (SizeEstimateOutOfBounds const &e) {
-            if (config.verbose) {
-                std::cerr
-                    << std::format(
-                           "WARNING: X86 emitter: native code out of bound: {}",
-                           e.size_estimate)
-                    << std::endl;
-            }
+            LOG_WARNING(
+                "WARNING: X86 emitter: native code out of bound: {}",
+                e.size_estimate);
             return std::make_shared<Nativecode>(
                 rt, rev, nullptr, e.size_estimate);
         }

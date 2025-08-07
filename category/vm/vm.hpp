@@ -19,9 +19,101 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/runtime/allocator.hpp>
+#include <category/vm/utils/debug.hpp>
 
 namespace monad::vm
 {
+    constexpr auto counts_format_string =
+        ",execute_intercode_calls={},execute_native_entrypoint_"
+        "calls={},execute_raw_calls={}";
+
+    struct VmStats
+    {
+        std::atomic<uint64_t> execute_intercode_call_count_per_block_{0};
+        std::atomic<uint64_t> execute_native_entrypoint_call_count_per_block_{
+            0};
+        std::atomic<uint64_t> execute_raw_call_count_per_block_{0};
+        std::atomic<uint64_t> execute_intercode_call_count_{0};
+        std::atomic<uint64_t> execute_native_entrypoint_call_count_{0};
+        std::atomic<uint64_t> execute_raw_call_count_{0};
+
+        void event_execute_intercode() noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                execute_intercode_call_count_.fetch_add(
+                    1, std::memory_order_release);
+                execute_intercode_call_count_per_block_.fetch_add(
+                    1, std::memory_order_release);
+            }
+        }
+
+        void event_execute_native_entrypoint() noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                execute_native_entrypoint_call_count_.fetch_add(
+                    1, std::memory_order_release);
+                execute_native_entrypoint_call_count_per_block_.fetch_add(
+                    1, std::memory_order_release);
+            }
+        }
+
+        void event_execute_raw() noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                execute_raw_call_count_.fetch_add(1, std::memory_order_release);
+                execute_raw_call_count_per_block_.fetch_add(
+                    1, std::memory_order_release);
+            }
+        }
+
+        void reset_block_counts() noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                execute_intercode_call_count_per_block_.store(
+                    0, std::memory_order_release);
+                execute_native_entrypoint_call_count_per_block_.store(
+                    0, std::memory_order_release);
+                execute_raw_call_count_per_block_.store(
+                    0, std::memory_order_release);
+            }
+        }
+
+        [[nodiscard]]
+        std::string print_and_reset_block_counts()
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                std::string str = std::format(
+                    counts_format_string,
+                    execute_intercode_call_count_per_block_.load(
+                        std::memory_order_acquire),
+                    execute_native_entrypoint_call_count_per_block_.load(
+                        std::memory_order_acquire),
+                    execute_raw_call_count_per_block_.load(
+                        std::memory_order_acquire));
+                reset_block_counts();
+                return str;
+            }
+            else {
+                return "";
+            }
+        }
+
+        std::string print_total_counts() const
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                return std::format(
+                    counts_format_string,
+                    execute_intercode_call_count_.load(
+                        std::memory_order_acquire),
+                    execute_native_entrypoint_call_count_.load(
+                        std::memory_order_acquire),
+                    execute_raw_call_count_.load(std::memory_order_acquire));
+            }
+            else {
+                return "";
+            }
+        }
+    };
 
     class VM
     {
@@ -83,5 +175,24 @@ namespace monad::vm
             evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, SharedIntercode const &,
             compiler::native::entrypoint_t);
+
+        [[nodiscard]]
+        std::string print_and_reset_block_counts()
+        {
+            return stats_.print_and_reset_block_counts();
+        }
+
+        std::string print_total_counts() const
+        {
+            return stats_.print_total_counts();
+        }
+
+        std::string print_compiler_stats() const
+        {
+            return compiler_.print_stats();
+        }
+
+    private:
+        VmStats stats_;
     };
 }

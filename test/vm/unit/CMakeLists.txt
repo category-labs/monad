@@ -14,6 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 add_executable(vm-unit-tests
+    "${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp"
     async_compile_tests.cpp
     bin_tests.cpp
     compiler_tests.cpp
@@ -59,6 +60,8 @@ target_link_libraries(vm-unit-tests
     PRIVATE GTest::gtest_main
     PRIVATE evmc::mocked_host
     PRIVATE monad_execution
+    PRIVATE monad_core
+    PRIVATE quill::quill
 )
 
 target_include_directories(vm-unit-tests

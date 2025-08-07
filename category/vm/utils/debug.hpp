@@ -22,4 +22,16 @@ namespace monad::vm::utils
 #else
     static constexpr bool is_fuzzing_monad_vm = false;
 #endif
+
+#ifdef MONAD_COMPILER_STATS
+    static constexpr bool collect_monad_compiler_stats = true;
+#else
+    static constexpr bool collect_monad_compiler_stats = false;
+#endif
+
+#ifdef MONAD_COMPILER_HOT_PATH_STATS
+    static constexpr bool collect_monad_compiler_hot_path_stats = true;
+#else
+    static constexpr bool collect_monad_compiler_hot_path_stats = false;
+#endif
 }

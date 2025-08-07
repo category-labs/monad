@@ -111,7 +111,6 @@ namespace monad::vm::compiler::native
     {
         char const *asm_log_path{};
         bool runtime_debug_trace{};
-        bool verbose{};
         uint32_t max_code_size_offset{10 * 1024};
         EmitterHook post_instruction_emit_hook{};
     };

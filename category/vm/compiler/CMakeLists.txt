@@ -65,6 +65,7 @@ target_link_libraries(monad-vm-compiler
     PUBLIC monad-vm::monad-vm-evm
     PUBLIC monad-vm::monad-vm-runtime
     PUBLIC monad-vm::monad-vm-utils
+    PUBLIC quill::quill
 )
 
 add_library(monad-vm::monad-vm-compiler ALIAS monad-vm-compiler)

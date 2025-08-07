@@ -52,6 +52,7 @@ target_link_libraries(monad-vm
     PUBLIC intx::intx
     PUBLIC evmc::evmc
     PUBLIC asmjit::asmjit
+    PUBLIC quill::quill
     PUBLIC monad-vm::monad-vm-compiler
     PUBLIC monad-vm::monad-vm-interpreter
     PRIVATE monad-vm::monad-vm-core

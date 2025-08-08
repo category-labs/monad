@@ -193,6 +193,10 @@ add_library(
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
   # monad/execution
+  "monad/execute_system_transaction.cpp"
+  "monad/execute_system_transaction.hpp"
+  "monad/validate_system_transaction.cpp"
+  "monad/validate_system_transaction.hpp"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
   # monad/staking

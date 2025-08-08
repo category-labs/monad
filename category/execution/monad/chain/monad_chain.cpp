@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/validate_system_transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -116,6 +117,11 @@ bool MonadChain::get_p256_verify_enabled(
     uint64_t /*block_number*/, uint64_t const timestamp) const
 {
     return get_monad_revision(timestamp) >= MONAD_FOUR;
+}
+
+bool MonadChain::is_system_sender(Address const &sender) const
+{
+    return sender == SYSTEM_TRANSACTION_SENDER;
 }
 
 MONAD_NAMESPACE_END

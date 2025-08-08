@@ -190,4 +190,9 @@ bool EthereumMainnet::get_p256_verify_enabled(
     return get_revision(block_number, timestamp) >= EVMC_OSAKA;
 }
 
+bool EthereumMainnet::is_system_sender(Address const &) const
+{
+    return false;
+}
+
 MONAD_NAMESPACE_END

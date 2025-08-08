@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/execute_system_transaction.hpp> // TODO: remove when execute block is a functor
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -246,18 +247,32 @@ Result<std::vector<Receipt>> execute_block(
              &block_state,
              &block_metrics,
              &call_tracer = *call_tracers[i]] {
-                results[i] = ExecuteTransaction<rev>{
-                    chain,
-                    i,
-                    transaction,
-                    sender,
-                    authorities,
-                    header,
-                    block_hash_buffer,
-                    block_state,
-                    block_metrics,
-                    promises[i],
-                    call_tracer}();
+                if (chain.is_system_sender(sender)) {
+                    results[i] = ExecuteSystemTransaction<rev>{
+                        chain,
+                        i,
+                        transaction,
+                        sender,
+                        header,
+                        block_state,
+                        block_metrics,
+                        promises[i],
+                        call_tracer}();
+                }
+                else {
+                    results[i] = ExecuteTransaction<rev>{
+                        chain,
+                        i,
+                        transaction,
+                        sender,
+                        authorities,
+                        header,
+                        block_hash_buffer,
+                        block_state,
+                        block_metrics,
+                        promises[i],
+                        call_tracer}();
+                }
                 promises[i + 1].set_value();
             });
     }

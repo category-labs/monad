@@ -63,6 +63,8 @@ struct EthereumMainnet : Chain
 
     virtual bool get_p256_verify_enabled(
         uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual bool is_system_sender(Address const &) const override;
 };
 
 MONAD_NAMESPACE_END

@@ -1,0 +1,193 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include <boost/fiber/future/promise.hpp>
+#include <boost/outcome/try.hpp>
+#include <category/core/assert.h>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/execute_system_transaction.hpp>
+#include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/validate_system_transaction.hpp>
+
+#include <optional>
+
+MONAD_NAMESPACE_BEGIN
+
+using BOOST_OUTCOME_V2_NAMESPACE::success;
+
+template <evmc_revision rev>
+ExecuteSystemTransaction<rev>::ExecuteSystemTransaction(
+    Chain const &chain, uint64_t const i, Transaction const &tx,
+    Address const &sender, BlockHeader const &header, BlockState &block_state,
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    CallTracerBase &call_tracer)
+    : chain_{chain}
+    , i_{i}
+    , tx_{tx}
+    , sender_{sender}
+    , header_{header}
+    , block_state_{block_state}
+    , block_metrics_{block_metrics}
+    , prev_{prev}
+    , call_tracer_{call_tracer}
+{
+}
+
+template <evmc_revision rev>
+Result<Receipt> ExecuteSystemTransaction<rev>::operator()()
+{
+    TRACE_TXN_EVENT(StartTxn);
+
+    BOOST_OUTCOME_TRY(static_validate_system_transaction(tx_, sender_));
+
+    {
+        Transaction tx = tx_;
+        tx.gas_limit =
+            2'000'000; // required to pass intrinsic gas validation check
+        BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
+            tx,
+            std::nullopt /* 0 base fee to pass validation */,
+            std::nullopt /* 0 blob fee to pass validation */,
+            chain_.get_chain_id(),
+            chain_.get_max_code_size(header_.number, header_.timestamp)));
+    }
+
+    {
+        TRACE_TXN_EVENT(StartExecution);
+
+        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        state.set_original_nonce(sender_, tx_.nonce);
+
+        call_tracer_.reset();
+
+        auto result = execute(state);
+
+        {
+            TRACE_TXN_EVENT(StartStall);
+            prev_.get_future().wait();
+        }
+
+        if (block_state_.can_merge(state)) {
+            if (result.has_error()) {
+                return std::move(result.error());
+            }
+            auto const receipt = execute_final(state);
+            block_state_.merge(state);
+            return receipt;
+        }
+    }
+    block_metrics_.inc_retries();
+    {
+        TRACE_TXN_EVENT(StartRetry);
+
+        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+
+        call_tracer_.reset();
+
+        auto result = execute(state);
+
+        MONAD_ASSERT(block_state_.can_merge(state));
+        if (result.has_error()) {
+            return std::move(result.error());
+        }
+        auto const receipt = execute_final(state);
+        block_state_.merge(state);
+        return receipt;
+    }
+}
+
+template <evmc_revision rev>
+evmc_message ExecuteSystemTransaction<rev>::to_message() const
+{
+    return evmc_message{
+        .kind = EVMC_CALL,
+        .flags = 0,
+        .depth = 0,
+        .gas = 0,
+        .recipient = *tx_.to,
+        .sender = sender_,
+        .input_data = tx_.data.data(),
+        .input_size = tx_.data.size(),
+        .value = {},
+        .create2_salt = {},
+        .code_address = *tx_.to,
+        .code = nullptr,
+        .code_size = 0,
+    };
+}
+
+template <evmc_revision rev>
+Result<void> ExecuteSystemTransaction<rev>::execute(State &state)
+{
+    auto const sender_account = state.recent_account(sender_);
+    BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_account));
+
+    auto const nonce = state.get_nonce(sender_);
+    state.set_nonce(sender_, nonce + 1);
+
+    state.push();
+    call_tracer_.on_enter(to_message());
+    BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
+    call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
+    state.pop_accept();
+
+    return success();
+}
+
+template <evmc_revision rev>
+Receipt ExecuteSystemTransaction<rev>::execute_final(State &state)
+{
+    // always return success because these transactions can't revert.
+    Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
+    for (auto const &log : state.logs()) {
+        receipt.add_log(std::move(log));
+    }
+    call_tracer_.on_finish(receipt.gas_used);
+    return receipt;
+}
+
+template <evmc_revision rev>
+Result<void> ExecuteSystemTransaction<rev>::execute_staking_syscall(
+    State &, byte_string_view const, uint256_t const &)
+{
+    // TODO: Add staking invocation here.
+    return TransactionError::TypeNotSupported;
+}
+
+template class ExecuteSystemTransaction<EVMC_FRONTIER>;
+template class ExecuteSystemTransaction<EVMC_HOMESTEAD>;
+template class ExecuteSystemTransaction<EVMC_TANGERINE_WHISTLE>;
+template class ExecuteSystemTransaction<EVMC_SPURIOUS_DRAGON>;
+template class ExecuteSystemTransaction<EVMC_BYZANTIUM>;
+template class ExecuteSystemTransaction<EVMC_CONSTANTINOPLE>;
+template class ExecuteSystemTransaction<EVMC_PETERSBURG>;
+template class ExecuteSystemTransaction<EVMC_ISTANBUL>;
+template class ExecuteSystemTransaction<EVMC_BERLIN>;
+template class ExecuteSystemTransaction<EVMC_LONDON>;
+template class ExecuteSystemTransaction<EVMC_PARIS>;
+template class ExecuteSystemTransaction<EVMC_SHANGHAI>;
+template class ExecuteSystemTransaction<EVMC_CANCUN>;
+template class ExecuteSystemTransaction<EVMC_PRAGUE>;
+template class ExecuteSystemTransaction<EVMC_OSAKA>;
+
+MONAD_NAMESPACE_END

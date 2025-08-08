@@ -150,14 +150,23 @@ be treated as delegated even if they got undelegated after that but before [stat
 State - intermediateTxsSinceState - tx
 
 delegatedAfterNminus is the txs delegated in ......
+ *)
+
+(*
+S : n-k
+t n-k+1
 *)
+
+(* external assumption: tx::intermediateTxsSinceState does not span more than K blocks *)
 Definition isAllowedToEmpty
   (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
   let delegated := (addrDelegated state (sender tx))
-                   || existsDelegatingTxWithinK state tx
+                   || existsDelegatingTxWithinK state tx 
                    || bool_decide  ((sender tx) ∈ flat_map addrsDelegatedByTx (tx::intermediateTxsSinceState))
   in
-  let existsSameSenderTxInWindow := (existsTxWithinK state tx) || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
+  let existsSameSenderTxInWindow :=
+    (existsTxWithinK state tx)
+    || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
   (negb delegated) && (negb existsSameSenderTxInWindow).
 
 (* duplicate instance. the upstream one picks 1 *)
@@ -211,17 +220,21 @@ Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
     (fst old, Some fees)
   else (fst old+fees, snd old).
 
+(* weakening to 1 tx *)
 
-Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option N)) : N*option N :=
+Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option N))
+  : N*option N :=
   if isAllowedToEmpty latestState intermediates next
   then (old.1, Some (maxTxFee next + value next))
   else (old.1 + maxTxFee next, old.2).
 
-Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) : gmap evm.address (N*option N) :=
+Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr)
+  : gmap evm.address (N*option N) :=
   match rest with
   | [] => ∅
   | h::tl =>
-      let r := maxTotalReserveDippableDebitL latestState (postStateAccountedSuffix++[h]) tl in
+      let r : gmap evm.address (N*option N)
+        := maxTotalReserveDippableDebitL latestState (postStateAccountedSuffix++[h]) tl in
       updateKey r (sender h) (updateTotals latestState postStateAccountedSuffix h)
   end.
 
@@ -246,7 +259,7 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
 
 Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
-  forall ac,
+  forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
     match emptyingDebits with
     | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
@@ -399,13 +412,15 @@ Lemma execTxOtherBalanceLB tx s:
               ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
 Proof. Admitted.
 
+(* TODO: do the more liberal check and then weaken the then case to inequality *)
 Lemma execTxSenderBal tx s:
   let '(sf, r) :=  execValidatedTx s tx in
   (if isAllowedToEmpty s [] tx
   then balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
-   else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
+  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
 Proof. Admitted.
- 
+
+(* what happens if the tx undelegates something. maybe weaken it *)
 Lemma execTxDelegationUpd tx s:
   let '(sf, r) :=  execValidatedTx s tx in
   (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx))).
@@ -522,25 +537,6 @@ Proof using.
   f_equiv. Btauto.btauto.
 Qed.
 
-Lemma execLcore tx s:
-  let '(sf, r) :=  execValidatedTx s tx in
-  (forall ac, (ac <> sender tx) ->
-             ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac))
-  /\
-  (if isAllowedToEmpty s [] tx
-  then True
-  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx)))
-  /\
-  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
-  /\
-  (forall ac, ac <> sender tx
-
-              -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
-                 then True
-                 else balanceOfAc s ac <= balanceOfAc sf ac).
-Proof using.
-Admitted.
-
 (*
 Hcorel : forall ac : evm.address, ac ≠ sender tx -> ReserveBal `min` balanceOfAc s ac ≤ balanceOfAc sf ac
   Hcorerl : if isAllowedToEmpty s [] tx then True else ReserveBal `min` balanceOfAc s (sender tx) - maxTxFee tx ≤ balanceOfAc sf (sender tx)
@@ -548,8 +544,7 @@ Hcorel : forall ac : evm.address, ac ≠ sender tx -> ReserveBal `min` balanceOf
   Hcorerrr : forall ac : evm.address, ac ≠ sender tx -> if addrDelegated sf ac then True else balanceOfAc s ac ≤ balanceOfAc sf ac
 *)
 Lemma execL tx extension s:
-  consensusAcceptableTxs s
-    (tx::extension)
+  consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
   remember (execValidatedTx s tx) as ss.
@@ -638,10 +633,12 @@ Proof using.
   }
 Qed.
 
+(* TODO: delegation strictness: why needed:
+in execution checks: treat recently undelegated accounts as delegated
+ *)
 
 Lemma execValidate tx extension s:
-  consensusAcceptableTxs s
-    (tx::extension)
+  consensusAcceptableTxs s (tx::extension)
   -> validateTx s tx = true.
 Proof using.
   intros Hc.
@@ -683,10 +680,31 @@ Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (b
   consensusAcceptableTxs latestState (block1++block2)
   -> match execTxs latestState block1 with
      | None =>  False
-     | Some (si, tr) =>
+     | Some (si, _) =>
          consensusAcceptableTxs si block2
      end.
 Proof. Admitted.
+
+
+(*
+Lemma fullBlockStep  (latestState : StateOfAccounts) (blocks: list (list TxWithHdr)) (block2: list TxWithHdr) :
+  consensusAcceptableTxs latestState (block1++block2)
+  -> match execTxs latestState block1 with
+     | None =>  False
+     | Some (si, _) =>
+         consensusAcceptableTxs si block2
+     end.
+Proof. Admitted.
+
+Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+  consensusAcceptableTxs latestState (block1++block2)
+  -> match execTxs latestState block1 with
+     | None =>  False
+     | Some (si, _) =>
+         consensusAcceptableTxs si block2
+     end.
+Proof. Admitted.
+ *)
 
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)) :=
@@ -737,6 +755,12 @@ Section use.
     simpl in b1ok.
     pose proof (nextBlockPicker sb0 [b1] ltac:(reflexivity) b1ok) as b2.
     destruct b2 as [b2 b2ok].
+    evar (sb1: StateOfAccounts).
+
+ad definition consensusAcceptableBlocks that conse
+    (consensusAcceptableBlocks sb0 [b1; b2]) ->
+    (consensusAcceptableBlocks sb1 [b2])
+                                                                                         
     apply fullBlockStep2 in b2ok.
     case_match; auto.
     destruct p as [sb1 ?].

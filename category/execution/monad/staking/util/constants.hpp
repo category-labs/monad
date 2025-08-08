@@ -45,6 +45,13 @@ inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
 // get_validators_for_delegator are paginated
 inline constexpr uint64_t PAGINATED_RESULTS_SIZE{500};
 
+enum class SyscallSelector : uint32_t
+{
+    REWARD = 100,
+    SNAPSHOT = 101,
+    EPOCH_CHANGE = 102,
+};
+
 enum
 {
     ValidatorFlagsOk = 0,

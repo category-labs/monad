@@ -197,12 +197,12 @@ add_library(
   # monad/execution
   "monad/execute_system_transaction.cpp"
   "monad/execute_system_transaction.hpp"
-  "monad/validate_system_transaction.cpp"
-  "monad/validate_system_transaction.hpp"
-  "monad/validate_monad_block.cpp"
-  "monad/validate_monad_block.hpp"
   "monad/monad_precompiles.cpp"
   "monad/monad_precompiles.hpp"
+  "monad/validate_monad_block.cpp"
+  "monad/validate_monad_block.hpp"
+  "monad/validate_system_transaction.cpp"
+  "monad/validate_system_transaction.hpp"
   # monad/staking
   "monad/staking/config.hpp"
   "monad/staking/read_valset.cpp"

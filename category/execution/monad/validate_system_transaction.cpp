@@ -16,8 +16,8 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
-
 #include <silkpre/secp256k1n.hpp>
 
 #include <boost/outcome/config.hpp>
@@ -45,6 +45,10 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
         return SystemTransactionError::MissingTo;
     }
 
+    if (MONAD_UNLIKELY(tx.to != staking::STAKING_CA)) {
+        return SystemTransactionError::InvalidSystemContract;
+    }
+
     if (MONAD_UNLIKELY(tx.gas_limit != 0)) {
         return SystemTransactionError::GasNonZero;
     }
@@ -57,8 +61,7 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
         return SystemTransactionError::GasNonZero;
     }
 
-    // TODO: change when staking is merged
-    return SystemTransactionError::InvalidSystemContract;
+    return success();
 }
 
 Result<void> validate_system_transaction(
@@ -76,7 +79,6 @@ Result<void> validate_system_transaction(
     if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
         return TransactionError::BadNonce;
     }
-
     return success();
 }
 

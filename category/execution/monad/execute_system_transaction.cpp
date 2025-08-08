@@ -27,6 +27,7 @@
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 
 #include <optional>
@@ -168,10 +169,29 @@ Receipt ExecuteSystemTransaction<rev>::execute_final(State &state)
 
 template <evmc_revision rev>
 Result<void> ExecuteSystemTransaction<rev>::execute_staking_syscall(
-    State &, byte_string_view const, uint256_t const &)
+    State &state, byte_string_view calldata, uint256_t const &value)
 {
-    // TODO: Add staking invocation here.
-    return TransactionError::TypeNotSupported;
+    // creates staking account in state if it doesn't exist
+    state.add_to_balance(staking::STAKING_CA, 0);
+
+    staking::StakingContract contract(state);
+    if (MONAD_UNLIKELY(calldata.size() < 4)) {
+        return staking::StakingError::InvalidInput;
+    }
+
+    auto const signature =
+        intx::be::unsafe::load<uint32_t>(calldata.substr(0, 4).data());
+    calldata.remove_prefix(4);
+
+    switch (static_cast<staking::SyscallSelector>(signature)) {
+    case staking::SyscallSelector::REWARD:
+        return contract.syscall_reward(calldata, value);
+    case staking::SyscallSelector::SNAPSHOT:
+        return contract.syscall_snapshot(calldata);
+    case staking::SyscallSelector::EPOCH_CHANGE:
+        return contract.syscall_on_epoch_change(calldata);
+    }
+    return staking::StakingError::MethodNotSupported;
 }
 
 template class ExecuteSystemTransaction<EVMC_FRONTIER>;

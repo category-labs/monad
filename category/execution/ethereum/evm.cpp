@@ -227,9 +227,14 @@ template class Create<EVMC_CANCUN>;
 template class Create<EVMC_PRAGUE>;
 
 template <evmc_revision rev>
-Call<rev>::Call(State &state, CallTracerBase &call_tracer)
+Call<rev>::Call(
+    State &state, CallTracerBase &call_tracer, Chain const &chain, uint64_t i,
+    void *chain_context)
     : state_(state)
     , call_tracer_(call_tracer)
+    , chain_(chain)
+    , i_(i)
+    , chain_context_(chain_context)
 {
 }
 
@@ -308,6 +313,17 @@ Call<rev>::operator()(EvmcHostBase &host, evmc_message const &msg) noexcept
             rev, &host.get_interface(), host.to_context(), &msg, hash, code);
     }
 
+    evmc_tx_context const tx_context = host.get_tx_context();
+    if (msg.depth == 0 && chain_.revert_transaction(
+                              static_cast<uint64_t>(tx_context.block_number),
+                              static_cast<uint64_t>(tx_context.block_timestamp),
+                              i_,
+                              msg.sender,
+                              state_,
+                              chain_context_)) {
+        result.status_code = EVMC_REVERT;
+        result.gas_refund = 0;
+    }
     post_call(result);
     call_tracer_.on_exit(result);
     return result;

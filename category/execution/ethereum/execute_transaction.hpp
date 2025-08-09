@@ -34,11 +34,13 @@ protected:
     Transaction const &tx_;
     Address const &sender_;
     BlockHeader const &header_;
+    uint64_t i_;
+    void *chain_context_;
 
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        BlockHeader const &);
+        BlockHeader const &, uint64_t i, void *chain_context);
 
     evmc::Result operator()(State &, EvmcHost<rev> &, CallTracerBase &);
 };
@@ -50,14 +52,14 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<rev>
     using ExecuteTransactionNoValidation<rev>::tx_;
     using ExecuteTransactionNoValidation<rev>::sender_;
     using ExecuteTransactionNoValidation<rev>::header_;
+    using ExecuteTransactionNoValidation<rev>::i_;
+    using ExecuteTransactionNoValidation<rev>::chain_context_;
 
-    uint64_t i_;
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
-    void *chain_context_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);

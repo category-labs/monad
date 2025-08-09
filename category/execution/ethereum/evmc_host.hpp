@@ -31,9 +31,6 @@ protected:
     CallTracerBase &call_tracer_;
     std::function<evmc::Result(EvmcHostBase &, evmc_message const &)> call_;
     std::function<evmc::Result(EvmcHostBase &, evmc_message const &)> create_;
-    uint64_t i_;
-    Chain const &chain_;
-    void *chain_context_;
 
 public:
     EvmcHostBase(
@@ -41,8 +38,7 @@ public:
         State &,
         std::function<evmc::Result(EvmcHostBase &, evmc_message const &)> call,
         std::function<evmc::Result(EvmcHostBase &, evmc_message const &)>
-            create,
-        uint64_t i, Chain const &, void *chain_context) noexcept;
+            create) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 

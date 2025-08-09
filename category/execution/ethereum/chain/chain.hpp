@@ -38,14 +38,14 @@ struct Chain
 
     virtual GenesisState get_genesis_state() const = 0;
 
-    virtual uint256_t get_balance(
-        uint64_t block_number, uint64_t timestamp, uint64_t i, Address const &,
-        State &, void *chain_context) const = 0;
-
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, uint64_t i,
         Transaction const &, Address const &sender, State &,
         void *chain_context) const = 0;
+
+    virtual bool revert_transaction(
+        uint64_t block_number, uint64_t timestamp, uint64_t i, Address const &,
+        State const &, void *chain_context) const;
 };
 
 MONAD_NAMESPACE_END

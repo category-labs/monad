@@ -108,7 +108,7 @@ namespace
                      .account =
                          {std::nullopt,
                           Account{
-                              .balance = 0x200000,
+                              .balance = 0x1BC16D674EC80000ULL, // 2 MON in wei (2 * 10^18)
                               .code_hash = NULL_HASH,
                               .nonce = 0x0}}}},
                 {ADDR_B,
@@ -900,7 +900,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_trace)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = 22000,
+                          .balance = 0x1BC16D674EC80000ULL, // 2 MON in wei (2 * 10^18)
                           .code_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {precompile_address,

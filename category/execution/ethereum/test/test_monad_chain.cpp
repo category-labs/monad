@@ -111,54 +111,6 @@ TEST(MonadChain, Genesis)
     }
 }
 
-TEST(MonadChain, get_balance)
-{
-    constexpr Address ADDRESS{1};
-    // TODO: other chains
-    {
-        MonadDevnet const chain;
-        InMemoryMachine machine;
-        mpt::Db db{machine};
-        vm::VM vm;
-        TrieDb tdb{db};
-        BlockState bs{tdb, vm};
-        State state{bs, Incarnation{0, 0}};
-        auto const max_reserve =
-            get_max_reserve(chain.get_monad_revision(0, 0), ADDRESS, state);
-        state.add_to_balance(ADDRESS, max_reserve);
-        FeeBuffer fee_buffer;
-        MonadChainContext context{.fee_buffer = fee_buffer};
-
-        // entire balance is available (special case)
-        fee_buffer.set(0, bytes32_t{0}, bytes32_t{0});
-        fee_buffer.note(0, ADDRESS, max_reserve / 2);
-        fee_buffer.propose();
-        EXPECT_EQ(
-            chain.get_balance(0, 0, 0, ADDRESS, state, &context), max_reserve);
-
-        // entire reserve is depleted
-        fee_buffer.set(1, bytes32_t{1}, bytes32_t{0});
-        fee_buffer.note(0, ADDRESS, max_reserve / 2);
-        fee_buffer.propose();
-        EXPECT_EQ(
-            chain.get_balance(0, 0, 0, ADDRESS, state, &context), max_reserve);
-
-        // half of balance is reserved
-        fee_buffer.set(2, bytes32_t{2}, bytes32_t{1});
-        fee_buffer.propose();
-        fee_buffer.set(3, bytes32_t{3}, bytes32_t{2});
-        fee_buffer.note(0, ADDRESS, 0);
-        fee_buffer.propose();
-        EXPECT_EQ(
-            chain.get_balance(0, 0, 0, ADDRESS, state, &context),
-            max_reserve / 2);
-
-        // entire balance is reserved
-        state.subtract_from_balance(ADDRESS, max_reserve / 2);
-        EXPECT_EQ(chain.get_balance(0, 0, 0, ADDRESS, state, &context), 0);
-    }
-}
-
 TEST(MonadChain, validate_transaction)
 {
     constexpr Address SENDER{1};
@@ -183,7 +135,7 @@ TEST(MonadChain, validate_transaction)
 
         // 2. InsufficentReserveBalance
         auto const max_reserve =
-            get_max_reserve(chain.get_monad_revision(0, 0), SENDER, state);
+            get_max_reserve(chain.get_monad_revision(0, 0), SENDER);
         Transaction const tx1{
             .nonce = 10,
             .max_fee_per_gas = 1500000000000,
@@ -225,5 +177,119 @@ TEST(MonadChain, validate_transaction)
             SENDER, max_reserve); // Add full reserve amount instead of half
         res = chain.validate_transaction(0, 0, 0, tx2, SENDER, state, &context);
         ASSERT_TRUE(res.has_value());
+    }
+}
+
+TEST(MonadChain, revert_transaction)
+{
+    constexpr Address SENDER{1};
+    // TODO: other chains
+    {
+        MonadDevnet const chain;
+        InMemoryMachine machine;
+        mpt::Db db{machine};
+        TrieDb tdb{db};
+        vm::VM vm;
+        BlockState bs{tdb, vm};
+        FeeBuffer fee_buffer;
+        MonadChainContext context{.fee_buffer = fee_buffer};
+
+        {
+            State state{bs, Incarnation{0, 0}};
+            state.add_to_balance(SENDER, 100);
+            ASSERT_TRUE(bs.can_merge(state));
+            bs.merge(state);
+        }
+
+        // Test case 1: Small balance - should revert when spending
+        {
+            State state{bs, Incarnation{1, 0}};
+            state.subtract_from_balance(SENDER, 50);
+
+            // Set up fee buffer properly - need to note a transaction for index
+            // 0
+            fee_buffer.set(1, bytes32_t{1}, bytes32_t{0});
+            fee_buffer.note(
+                0,
+                SENDER,
+                50); // Fee of 50 wei (less than original balance 100)
+            fee_buffer.propose();
+
+            // Should revert because:
+            // - Original balance: 100 wei (way below 1 MON reserve)
+            // - Current balance: 50 wei (after spending 50)
+            // - Protected balance: min(1e18 - 50, 100) = 100
+            // - Since 50 < 100, transaction should be reverted
+            EXPECT_TRUE(
+                chain.revert_transaction(1, 0, 0, SENDER, state, &context));
+        }
+
+        // Test case 2: Large balance - should not revert
+        constexpr Address SENDER2{2};
+        {
+            State state{bs, Incarnation{2, 0}};
+            // Give SENDER2 more than 1 MON (reserve amount)
+            uint256_t large_balance =
+                uint256_t{2} * 1000000000000000000ULL; // 2 MON
+            state.add_to_balance(SENDER2, large_balance);
+            ASSERT_TRUE(bs.can_merge(state));
+            bs.merge(state);
+        }
+
+        { // txn no reversion - sufficient balance
+            State state{bs, Incarnation{3, 0}};
+            // Spend a small amount, still well above reserve
+            state.subtract_from_balance(
+                SENDER2, 1000000000000000000ULL / 2); // 0.5 MON
+
+            fee_buffer.set(3, bytes32_t{3}, bytes32_t{2});
+            fee_buffer.note(
+                0,
+                SENDER2,
+                1000000000000000000ULL); // 1 MON fee (less than 2 MON original)
+            fee_buffer.propose();
+
+            // Should not revert because:
+            // - Original balance: 2 MON
+            // - Current balance: 1.5 MON (after spending 0.5 MON)
+            // - Protected balance: min(1 MON - 1 MON, 2 MON) = 0 MON
+            // - Since 1.5 MON > 0 MON, transaction should not be reverted
+            EXPECT_FALSE(
+                chain.revert_transaction(3, 0, 0, SENDER2, state, &context));
+        }
+
+        // Test case 3: Large balance but spending into reserve - should revert
+        constexpr Address SENDER3{3};
+        {
+            State state{bs, Incarnation{4, 0}};
+            // Give SENDER3 a large balance (2 MON)
+            uint256_t large_balance =
+                uint256_t{2} * 1000000000000000000ULL; // 2 MON
+            state.add_to_balance(SENDER3, large_balance);
+            ASSERT_TRUE(bs.can_merge(state));
+            bs.merge(state);
+        }
+
+        { // txn should revert - spending too much into reserve
+            State state{bs, Incarnation{5, 0}};
+            // Spend a large amount that goes into the reserve balance
+            state.subtract_from_balance(
+                SENDER3,
+                1800000000000000000ULL); // 1.8 MON (leaving only 0.2 MON)
+
+            fee_buffer.set(5, bytes32_t{5}, bytes32_t{4});
+            fee_buffer.note(
+                0, SENDER3, 500000000000000000ULL); // 0.5 MON fee (less than 2
+                                                    // MON original)
+            fee_buffer.propose();
+
+            // Should revert because:
+            // - Original balance: 2 MON
+            // - Current balance: 0.2 MON (after spending 1.8 MON)
+            // - Protected balance: min(1 MON - 0.5 MON, 2 MON) = 0.5 MON
+            // - Since 0.2 MON < 0.5 MON, transaction should be reverted
+            EXPECT_TRUE(
+                chain.revert_transaction(5, 0, 0, SENDER3, state, &context));
+        }
     }
 }

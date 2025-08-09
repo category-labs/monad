@@ -75,35 +75,6 @@ size_t MonadChain::get_max_code_size(
     }
 }
 
-uint256_t MonadChain::get_balance(
-    uint64_t const block_number, uint64_t const timestamp, uint64_t const i,
-    Address const &sender, State &state, void *const chain_context) const
-{
-    auto const acct = state.recent_account(sender);
-    if (!acct.has_value()) {
-        return 0;
-    }
-    auto const balance = acct.value().balance;
-    auto const monad_rev = get_monad_revision(block_number, timestamp);
-    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
-        auto const &context = *static_cast<MonadChainContext *>(chain_context);
-        auto const [cum_fee, _, num_fees] = context.fee_buffer.get(i, sender);
-        if (acct.value().code_hash == NULL_HASH && num_fees == 1) {
-            return balance;
-        }
-        auto const max_reserve = get_max_reserve(monad_rev, sender, state);
-        MONAD_ASSERT(cum_fee <= max_reserve);
-        auto const effective_reserve = max_reserve - uint256_t{cum_fee};
-        return balance - std::min(balance, effective_reserve);
-    }
-    else if (monad_rev >= MONAD_ZERO) {
-        return balance;
-    }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-}
-
 Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp, uint64_t const i,
     Transaction const &tx, Address const &sender, State &state,
@@ -121,7 +92,7 @@ Result<void> MonadChain::validate_transaction(
         auto const [cum_fee, tx_fee, _] = context.fee_buffer.get(i, sender);
         MONAD_ASSERT(cum_fee >= tx_fee);
         uint512_t const cum_fees_without_tx = cum_fee - tx_fee;
-        uint512_t const max_reserve = get_max_reserve(monad_rev, sender, state);
+        uint512_t const max_reserve = get_max_reserve(monad_rev, sender);
         uint512_t const balance = acct.has_value() ? acct.value().balance : 0;
         uint512_t const reserve = std::min(
             balance, max_reserve - std::min(max_reserve, cum_fees_without_tx));
@@ -138,9 +109,46 @@ Result<void> MonadChain::validate_transaction(
     return success();
 }
 
-uint256_t get_max_reserve(monad_revision const rev, Address const &, State &)
+bool MonadChain::revert_transaction(
+    uint64_t const block_number, uint64_t const timestamp, uint64_t const i,
+    Address const &sender, State const &state, void *const chain_context) const
 {
-    // TODO: read from precompile
+    auto const monad_rev = get_monad_revision(block_number, timestamp);
+    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
+        auto const &orig = state.original();
+        MONAD_ASSERT(orig.contains(sender));
+        uint256_t const max_reserve = get_max_reserve(monad_rev, sender);
+        MONAD_ASSERT(chain_context);
+        auto const &ctx = *static_cast<MonadChainContext *>(chain_context);
+        uint512_t const cum_fee = ctx.fee_buffer.get(i, sender).cumulative_fee;
+        std::optional<Account> const &orig_account = orig.at(sender).account_;
+        uint256_t const orig_balance =
+            orig_account.has_value() ? orig_account.value().balance : 0;
+        MONAD_ASSERT(cum_fee <= max_reserve);
+        MONAD_ASSERT(cum_fee <= orig_balance);
+        uint256_t const protected_balance = std::min(
+            max_reserve - static_cast<uint256_t>(cum_fee), orig_balance);
+
+        auto const &curr = state.current();
+        MONAD_ASSERT(curr.contains(sender));
+        auto const &stack = curr.at(sender);
+        std::optional<Account> const &curr_account = stack.recent().account_;
+        uint256_t const &curr_balance =
+            curr_account.has_value() ? curr_account.value().balance : 0;
+
+        return curr_balance < protected_balance;
+    }
+    else if (monad_rev >= MONAD_ZERO) {
+        return false;
+    }
+    else {
+        MONAD_ABORT("invalid revision for revert");
+    }
+}
+
+uint256_t get_max_reserve(monad_revision const rev, Address const &)
+{
+    // TODO: implement precompile (support reading from orig)
     return monad_default_max_reserve_balance(rev);
 }
 

@@ -39,10 +39,6 @@ struct EthereumMainnet : Chain
 
     virtual GenesisState get_genesis_state() const override;
 
-    virtual uint256_t get_balance(
-        uint64_t block_number, uint64_t timestamp, uint64_t i, Address const &,
-        State &, void *chain_context) const override;
-
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, uint64_t i,
         Transaction const &, Address const &sender, State &,

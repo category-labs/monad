@@ -206,20 +206,14 @@ namespace
             max_gas_cost(enriched_txn.gas_limit, enriched_txn.max_fee_per_gas));
         fee_buffer.propose();
         MonadChainContext chain_context{.fee_buffer = fee_buffer};
-        Call<rev> call{state, call_tracer};
+        Call<rev> call{state, call_tracer, chain, 0, &chain_context};
         Create<rev> create{chain, state, header, call_tracer};
         EvmcHost<rev> host{
-            call_tracer,
-            tx_context,
-            buffer,
-            state,
-            call,
-            create,
-            0,
-            chain,
-            &chain_context};
-        auto execution_result = ExecuteTransactionNoValidation<rev>{
-            chain, enriched_txn, sender, header}(state, host, call_tracer);
+            call_tracer, tx_context, buffer, state, call, create};
+        auto execution_result =
+            ExecuteTransactionNoValidation<rev>{
+                chain, enriched_txn, sender, header, 0, &chain_context}(
+                state, host, call_tracer);
 
         // compute gas_refund and gas_used
         auto const gas_refund = chain.compute_gas_refund(

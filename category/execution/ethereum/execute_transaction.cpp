@@ -63,11 +63,13 @@ MONAD_NAMESPACE_BEGIN
 template <evmc_revision rev>
 ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &header)
+    BlockHeader const &header, uint64_t i, void *chain_context)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , header_{header}
+    , i_{i}
+    , chain_context_{chain_context}
 {
 }
 
@@ -126,7 +128,8 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
     auto const msg = to_message();
     return (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
                ? Create<rev>{chain_, state, header_, call_tracer}(host, msg)
-               : Call<rev>{state, call_tracer}(host, msg);
+               : Call<rev>{state, call_tracer, chain_, i_, chain_context_}(
+                     host, msg);
 }
 
 template class ExecuteTransactionNoValidation<EVMC_FRONTIER>;
@@ -151,14 +154,13 @@ ExecuteTransaction<rev>::ExecuteTransaction(
     BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
     CallTracerBase &call_tracer, void *const chain_context)
-    : ExecuteTransactionNoValidation<rev>{chain, tx, sender, header}
-    , i_{i}
+    : ExecuteTransactionNoValidation<
+          rev>{chain, tx, sender, header, i, chain_context}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
     , call_tracer_{call_tracer}
-    , chain_context_{chain_context}
 {
 }
 
@@ -179,18 +181,10 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
-    Call<rev> call{state, call_tracer_};
+    Call<rev> call{state, call_tracer_, chain_, i_, chain_context_};
     Create<rev> create{chain_, state, header_, call_tracer_};
     EvmcHost<rev> host{
-        call_tracer_,
-        tx_context,
-        block_hash_buffer_,
-        state,
-        call,
-        create,
-        i_,
-        chain_,
-        chain_context_};
+        call_tracer_, tx_context, block_hash_buffer_, state, call, create};
 
     return ExecuteTransactionNoValidation<rev>::operator()(
         state, host, call_tracer_);

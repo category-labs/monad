@@ -15,4 +15,10 @@ Result<void> Chain::static_validate_header(BlockHeader const &) const
     return success();
 }
 
+bool Chain::revert_transaction(
+    uint64_t, uint64_t, uint64_t, Address const &, State const &, void *) const
+{
+    return false;
+}
+
 MONAD_NAMESPACE_END

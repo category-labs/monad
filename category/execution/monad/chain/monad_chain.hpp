@@ -1,9 +1,9 @@
 #pragma once
 
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/monad/chain/monad_revision.h>
-#include <category/core/config.hpp>
-#include <category/core/bytes.hpp>
 
 #include <evmc/evmc.h>
 
@@ -11,6 +11,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
 struct Transaction;
+class AccountState;
 class FeeBuffer;
 
 struct MonadChainContext
@@ -36,16 +37,17 @@ struct MonadChain : Chain
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 
-    virtual uint256_t get_balance(
-        uint64_t block_number, uint64_t timestamp, uint64_t i, Address const &,
-        State &, void *chain_context) const override;
-
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, uint64_t i,
         Transaction const &, Address const &sender, State &,
         void *chain_context) const override;
+
+    virtual bool revert_transaction(
+        uint64_t block_number, uint64_t timestamp, uint64_t i,
+        Address const &sender, State const &,
+        void *chain_context) const override;
 };
 
-uint256_t get_max_reserve(monad_revision, Address const &, State &);
+uint256_t get_max_reserve(monad_revision, Address const &);
 
 MONAD_NAMESPACE_END

@@ -1,5 +1,5 @@
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/explicit_evmc_revision.hpp>

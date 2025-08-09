@@ -152,6 +152,16 @@ public:
         return block_state_.vm();
     }
 
+    Map<Address, AccountState> const &original() const
+    {
+        return original_;
+    }
+
+    Map<Address, VersionStack<AccountState>> const &current() const
+    {
+        return current_;
+    }
+
     std::optional<Account> const &recent_account(Address const &address)
     {
         return recent_account_state(address).account_;

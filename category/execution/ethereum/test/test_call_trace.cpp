@@ -137,25 +137,21 @@ TEST(CallTrace, execute_success)
     CallTracer call_tracer{tx, call_frames};
 
     // Create Call and Create executors for the host
-    Call<EVMC_SHANGHAI> call_executor{s, call_tracer};
     EthereumMainnet chain;
+    Call<EVMC_SHANGHAI> call_executor{s, call_tracer, chain, 0, nullptr};
     BlockHeader header{.beneficiary = beneficiary};
     Create<EVMC_SHANGHAI> create_executor{chain, s, header, call_tracer};
 
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer,
-        tx_context,
-        buffer,
-        s,
-        call_executor,
-        create_executor,
-        0,
-        chain,
-        nullptr);
+        call_tracer, tx_context, buffer, s, call_executor, create_executor);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
-        EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
-        s, host, call_tracer);
+        EthereumMainnet{},
+        tx,
+        sender,
+        BlockHeader{.beneficiary = beneficiary},
+        0,
+        nullptr)(s, host, call_tracer);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -220,25 +216,21 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     CallTracer call_tracer{tx, call_frames};
 
     // Create Call and Create executors for the host
-    Call<EVMC_SHANGHAI> call_executor{s, call_tracer};
     EthereumMainnet chain;
+    Call<EVMC_SHANGHAI> call_executor{s, call_tracer, chain, 0, nullptr};
     BlockHeader header{.beneficiary = beneficiary};
     Create<EVMC_SHANGHAI> create_executor{chain, s, header, call_tracer};
 
     EvmcHost<EVMC_SHANGHAI> host(
-        call_tracer,
-        tx_context,
-        buffer,
-        s,
-        call_executor,
-        create_executor,
-        0,
-        chain,
-        nullptr);
+        call_tracer, tx_context, buffer, s, call_executor, create_executor);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
-        EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
-        s, host, call_tracer);
+        EthereumMainnet{},
+        tx,
+        sender,
+        BlockHeader{.beneficiary = beneficiary},
+        0,
+        nullptr)(s, host, call_tracer);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 

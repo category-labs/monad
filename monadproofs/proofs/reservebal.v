@@ -3,9 +3,20 @@
 - what consensus assumes execution guarantees
 - how those guarantees ensure execution will never run into a chase when an account has insufficient balance to pay gas fees
  *)
-Require Import bluerock.auto.cpp.tactics4.
 Require Import monad.proofs.evmopsem.
+Require Import monad.proofs.misc.
+Require Import bluerock.hw_models.utils.
+(*
+Require Import bluerock.auto.rwdb.
+Require Import bluerock.auto.miscPure.
+*)
+Require Import monad.proofs.bigauto.
+Require Import Lens.Lens.
+Import LensNotations.
+Open Scope lens_scope.
 
+Require Import bluerock.auto.cpp.tactics4.
+Open Scope N_scope.
 
 (* rename it to addrDelegated or contract *)
 Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool. Proof. Admitted.
@@ -38,9 +49,6 @@ Fixpoint sum_gas_bids (l : list TxWithHdr) : N :=
 Definition staticReserveBal : N. Proof. Admitted.
 (* intermediate does not include [candidate] *)
 
-Require Import Lens.Lens.
-Import LensNotations.
-Open Scope lens_scope.
 
 Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
 Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
@@ -151,7 +159,7 @@ Lemma updateKeyLkp  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) 
 Proof using.
   unfold updateKey.
   autorewrite with syntactic; [| exact inhabitant].
-  case_bool_decide; try congruence.
+  reflexivity.
 Qed.
 
 
@@ -345,7 +353,6 @@ Print Assumptions consensusAcceptableTxGmono.
 *)
 
 Hint Rewrite -> bool_decide_eq_true : iff.
-Require Import monad.proofs.bigauto.
 (*
 Lemma updateKeyLkp2  {T} `{c: Countable T} (m: gmap T N) (a: T) (f: N -> N) :
   lookupN (updateKey m a f) a =  (f (lookupN m a)).
@@ -356,7 +363,6 @@ Proof using.
 Qed.
 *)
 
-Open Scope N_scope.
 
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
@@ -709,7 +715,7 @@ Section use.
     pose proof (nextBlockPicker sb0 [b1] ltac:(reflexivity) b1ok) as b2.
     destruct b2 as [b2 b2ok].
     evar (sb1: StateOfAccounts).
-
+(*
 ad definition consensusAcceptableBlocks that conse
     (consensusAcceptableBlocks sb0 [b1; b2]) ->
     (consensusAcceptableBlocks sb1 [b2])
@@ -723,6 +729,7 @@ ad definition consensusAcceptableBlocks that conse
     case_match; auto.
     destruct p as [sb2 ?].
     pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
+*)
  Abort.
     
     

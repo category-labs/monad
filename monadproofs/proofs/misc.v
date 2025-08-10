@@ -1697,3 +1697,6 @@ Ltac searchL t :=
                              | context[t] => idtac L; fail
                              end
       )).
+
+
+Hint Rewrite @gmap.lookup_insert_iff : syntactic.

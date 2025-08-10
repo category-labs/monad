@@ -1,9 +1,10 @@
 Require Import monad.EVMOpSem.block.
 Require Import stdpp.gmap.
+(*
 Require Import Lens.Elpi.Elpi.
 Require Import Lens.Lens.
 #[local] Open Scope lens_scope.
-
+*)
 
 (* delete and inline? *)
 Definition Transaction := transaction.
@@ -188,9 +189,10 @@ Definition zbvfun (fz: Z -> Z) (w: keccak.w256): keccak.w256:=
   let wnz := fz (w256_to_Z w) in
   Z_to_w256 wnz.
 
+(*
 Import LensNotations.
 Require Import bluerock.prelude.lens.
-
+*)
 Opaque w256_to_Z.
 Opaque Z_to_w256.
 (* TODO: add other checks:
@@ -286,6 +288,7 @@ Fixpoint totalTxFees (lt: list Transaction): gmap evm.address N :=
 
 Definition ReserveBal : N. Proof. Admitted. (* TODO: make it per/account and possibly dynamic *)
 
+(*
 Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=
   forall addr,
     match (totalTxFees lt) !! addr with
@@ -318,13 +321,17 @@ Lemma noLowBalAbort bheader s lt :
   end.
 Proof using.
 Abort.
+ *)
 
+(*
 Require Import bluerock.auto.rwdb.
 Require Import bluerock.auto.miscPure.
 Require Import bluerock.hw_models.utils.
 Require Import monad.proofs.bigauto.
+ *)
 
 Open Scope N_scope.
+(*
 Definition noAccountAbs: Prop :=
   forall bheader s index tx,
   let '(sf, rct) := execTxAfterValidation bheader s index tx in
@@ -410,6 +417,7 @@ Proof using.
     lia.
   }
 Qed.
+ *)
 
 Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Indices 0 0) [] None None.
 
@@ -417,17 +425,21 @@ Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. 
 
 Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N -> N) : evm.GlobalState. Proof. Admitted.
 
-(* every tx has a field: list DelegationAuth.  *)
+(*
+every tx has a field: list DelegationAuth.  
 Definition txDelegatedEOAs (*s: evm.GlobalState*) (tx: Transaction) : list evm.address. Proof. Admitted.
-
 
 Definition accountDelegatedInState (s: evm.GlobalState) (a:evm.address) : bool. Proof. Admitted.
 Definition accountDelegatedInTx (a:evm.address) : bool. Proof. Admitted.
+*)
 
+(*
 Definition sendersInLastKBlocks (s: evm.GlobalState) : list evm.address . Proof. Admitted.
+ *)
 
-
+(*
 Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txindex: nat) (t: Transaction) : (evm.GlobalState * TransactionResult). Proof. Admitted.
+*)
 (*
   let (si, r) := stateAfterTransactionAux hdr s txindex t in
   if (bool_decide (ReserveBal - txMaxFee t <= balanceOfAc si (sender t) (* debit gas fee from paymaster account?*)))
@@ -440,6 +452,8 @@ Definition execTxAfterValidationV2 (hdr: BlockHeader) (s: evm.GlobalState) (txin
                        else (applyGasRefundsAndRewards hdr si r, r).
 *)
 (* txindex can be used to store incarnation numbers *)
+
+(*
 Definition stateAfterTransactionV2 (hdr: BlockHeader) (txindex: nat) (s: StateOfAccounts) (t: Transaction): option (StateOfAccounts * TransactionResult) :=
   if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
   then None
@@ -463,7 +477,7 @@ Lemma eoaPresV2:
   let '(sf, rct) := execTxAfterValidationV2 bheader s index tx in
   forall lt, txSendersAreEOA s lt -> txSendersAreEOA sf lt.
 Proof. Admitted.
-
+*)
 Lemma balanceOfUpd s ac f acp:
   balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
 Proof. Admitted.
@@ -473,6 +487,7 @@ Proof. Admitted.
 - simpler&more user-friendly impl: just pass the txMaxFees counts down the tx
  *)
 
+(*
 Definition evmTxDebits: Prop :=
   forall bheader s index tx,
   let '(sf, rct) := execTxAfterValidationV2 bheader s index tx in
@@ -483,7 +498,7 @@ Definition evmTxDebits: Prop :=
                      else (balanceOfAc sf addr >= balanceOfAc s addr).
 
 Definition consensusChecks (kpreState: evm.GlobalState) (intermediateTxs: list Transaction) (tx: Transaction) : Prop. Proof. Admitted.
-
+*)
 (*
 B1:
   t1
@@ -515,7 +530,6 @@ Proof using.
   forward_reason.
   pose proof (txFeesAreEoa s lt ltac:(auto)) as Hfeoa.
   pose proof (Htx (sender a)) as Htxs.
-  Hint Rewrite @gmap.lookup_insert_iff : syntactic.
   rewrite  @gmap.lookup_insert_iff in Htxs;[| exact 0%N].
   miscPure.resolveDecide tauto.
   GC.

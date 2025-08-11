@@ -8,5 +8,5 @@
  (coqdoc_flags (--utf8))
 )
 
-(subdir tutorials
- (include dune.inc))
+;(subdir tutorials
+; (include dune.inc))

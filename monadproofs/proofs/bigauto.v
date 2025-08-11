@@ -67,7 +67,7 @@ Section Spec.
     (P -* Forall x, (Qs x-* Q x))
       |-- (Forall x, ((P ** Qs x)-* Q x)).
   Proof. Admitted.
-  
+
 End Spec.
 
   Ltac gpt_rewrite foo :=
@@ -641,9 +641,12 @@ Ltac2 extractLoopInvFromResp := extractLastCoqCodeBlockFromResp.
   Axiom Func_printer: nat -> sym_info -> Func -> String.string.
   Import String.
   Open Scope string_scope.
-  Locate string.
-Definition newline := String Char.chr_newline EmptyString.
-  
+
+  Definition chr_newline : ascii :=
+    Eval compute in ascii_of_nat 10.
+
+  Definition newline := String chr_newline EmptyString.
+
   Definition pprint (s: sym_info) (c: genv_tu.CodeType) : String.string :=
     match c with
     | genv_tu.CTfunction f =>
@@ -728,7 +731,7 @@ Ltac2 promptGptForLoopinv currentProofScript : string :=
   | Some s => s
   | None => "" (*FIX: prompt GPT again, include old response and ask to fix formatting *)
   end.
-  
+
   (* proofScriptPostEntry accumulates proof script after entry. it will be a suffix of proofScriptAtEntry in the actual current proof script, which is only needed for preparing the prompt for GPT *)
   Ltac2 rec god  (proofScriptAtEntry: string) (emacsExitCount: int)  (branchid: (int * int) list) (backtrackingNum: int) (proofScriptPostEntry: message list) : result :=
     printf "running god on goal %t" (Control.goal ());
@@ -911,7 +914,7 @@ Ltac2 promptGptForLoopinv currentProofScript : string :=
     printEmacsRequest er.
 
   Ltac2 stepp () := stepUntilEmacsInteract false "" 0 [] 0.
-  
+
   Ltac2 continueWithExistInst exitCnt inst proofScriptAtEntry branchid backtrackingNum :=
     ltac1:(einst |- iExists einst) (Ltac1.of_constr inst);
     let pstep := indentS branchid (Message.to_string (fprintf "iExists %t." inst)) in

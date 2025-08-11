@@ -28,7 +28,7 @@ Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
     BOOST_OUTCOME_TRY(header.prev_randao, decode_bytes32(payload));
     BOOST_OUTCOME_TRY(header.nonce, decode_byte_string_fixed<8>(payload));
     BOOST_OUTCOME_TRY(
-        header.base_fee_per_gas, decode_unsigned<uint64_t>(payload));
+        header.base_fee_per_gas, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(header.withdrawals_root, decode_bytes32(payload));
     BOOST_OUTCOME_TRY(header.blob_gas_used, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(

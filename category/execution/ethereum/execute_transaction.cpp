@@ -36,6 +36,7 @@ constexpr void irrevocable_change(
 {
     if (tx.to) { // EVM will increment if new contract
         auto const nonce = state.get_nonce(sender);
+        MONAD_ASSERT(nonce < std::numeric_limits<uint64_t>::max());
         state.set_nonce(sender, nonce + 1);
     }
 

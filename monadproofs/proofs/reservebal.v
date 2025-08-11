@@ -61,7 +61,7 @@ Definition txDelegatesAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
   bool_decide (addr ∈ addrsDelegatedByTx tx).
 
 Opaque txDelegatesAddr.
-  
+
 
 (*
 #[global] Instance inhAddr: Inhabited evm.address. Proof. Admitted.
@@ -80,7 +80,7 @@ Definition txBlockNum (t: TxWithHdr) : N := number (fst t).
 
 Definition intermediateTxs (knownBlocks: gmap N Block) (stateBlockIndex: N) (tx: TxWithHdr) :=
   let txBlock := knownBlocks !!! (txBlockNum tx) in
-  let prevTxsInSameBlock := (firstn (N.to_nat (txIndexInBlock tx)) (transactions txBlock)) in 
+  let prevTxsInSameBlock := (firstn (N.to_nat (txIndexInBlock tx)) (transactions txBlock)) in
    prevTxsInSameBlock ++ (flat_map transactions (blocksInRange knownBlocks (txBlockNum tx - K) (K-1))).
 
 Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
@@ -122,7 +122,7 @@ t n-k+1
 Definition isAllowedToEmpty
   (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
   let delegated := (addrDelegated state (sender tx))
-                   || existsDelegatingTxWithinK state tx 
+                   || existsDelegatingTxWithinK state tx
                    || bool_decide  ((sender tx) ∈ flat_map addrsDelegatedByTx (tx::intermediateTxsSinceState))
   in
   let existsSameSenderTxInWindow :=
@@ -138,8 +138,8 @@ Definition maxTotalReserveDippableDebitDelete (latestState : StateOfAccounts) (i
   if isAllowedToEmpty latestState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
   else (maxTxFee tx, false).
 
-    
-      
+
+
 Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
   <[ a :=  f (m !!! a) ]> m.
 
@@ -206,7 +206,7 @@ Lemma foo a l s r:
 Proof using.
   simpl.
   unfold maxTotalReserveDippableDebit.
-  unfold updateTots. 
+  unfold updateTots.
 *)
 
 (*
@@ -232,7 +232,7 @@ Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuff
 (*
 Definition consensusAcceptableTx  (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
-  let intermediate := (intermediateTxs knownBlocks NminusK candidate) in 
+  let intermediate := (intermediateTxs knownBlocks NminusK candidate) in
   consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
 *)
 Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (blockIndex : N) : Prop :=
@@ -248,7 +248,7 @@ Definition consensusAcceptableBlocks (knownBlocks: gmap N Block) (knownStates: g
 Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
 
 Definition stateAfterTransaction s (t: TxWithHdr) :=
-  let '(hdr, (tx, txindex)) := t in 
+  let '(hdr, (tx, txindex)) := t in
   let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
   (applyGasRefundsAndRewards hdr si r, r).
 
@@ -384,20 +384,20 @@ Lemma execTxDelegationUpd tx s:
   let '(sf, r) :=  execValidatedTx s tx in
   (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx))).
 Proof. Admitted.
-  
+
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let '(sf, r) :=  execValidatedTx s tx in
   (forall ac, ac <> sender tx
-                             
+
               -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
                  then True
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using. Admitted.
 
-Hint Rewrite Z.min_l  using lia: syntactic.      
-Hint Rewrite Z.min_r  using lia: syntactic.      
-Hint Rewrite N.min_l  using lia: syntactic.      
-Hint Rewrite N.min_r  using lia: syntactic.      
+Hint Rewrite Z.min_l  using lia: syntactic.
+Hint Rewrite Z.min_r  using lia: syntactic.
+Hint Rewrite N.min_l  using lia: syntactic.
+Hint Rewrite N.min_r  using lia: syntactic.
 
 
 Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
@@ -517,7 +517,7 @@ Proof using.
   rewrite updateKeyLkp3 in Hc.
   assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
          ) as Hass.
-  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx). reflexivity.}
+  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx). reflexivity. }
   specialize (Hass ac).
   autorewrite with iff.
   symmetry in Heqss.
@@ -582,7 +582,7 @@ Proof using.
       simpl in *.
       lia.
     }
-    
+
     {
       revert Hc.
       revert Hsender.
@@ -633,8 +633,8 @@ Proof.
   apply execL in Hc.
   case_match; auto.
 Qed.
-  
-  
+
+
 Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
   consensusAcceptableTxs latestState (block1++block2)
   -> match execTxs latestState block1 with
@@ -696,14 +696,14 @@ Proof. Admitted.
 Section use.
   Variable b0: list TxWithHdr.
   Variable sb0 : StateOfAccounts. (* state after b0 *)
-  
+
   Hypothesis nextBlockPicker:
     forall (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)),
       lengthN proposedBlocks < K
       -> consensusAcceptableBlocks lastConsensedState proposedBlocks
       -> exists nextBlock, consensusAcceptableBlocks lastConsensedState (proposedBlocks++[nextBlock]).
 
-  
+
   Lemma operation  : (K=2) -> False.
     intros.
     revert nextBlockPicker.
@@ -719,7 +719,7 @@ Section use.
 ad definition consensusAcceptableBlocks that conse
     (consensusAcceptableBlocks sb0 [b1; b2]) ->
     (consensusAcceptableBlocks sb1 [b2])
-                                                                                         
+
     apply fullBlockStep2 in b2ok.
     case_match; auto.
     destruct p as [sb1 ?].
@@ -731,7 +731,4 @@ ad definition consensusAcceptableBlocks that conse
     pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
 *)
  Abort.
-    
-    
-    
-    
+End use.

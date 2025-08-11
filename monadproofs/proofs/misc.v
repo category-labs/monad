@@ -42,7 +42,7 @@ Proof.
   destruct l; simpl;  auto.
   intros. discriminate.
 Qed.
-    
+
 Lemma skipnaddle {T} (def: T) (l: list T) (a:nat):
   (1+a <= length l) -> skipn a l = (nth a l def)::(skipn (1+a) l).
 Proof using.
@@ -147,7 +147,7 @@ Proof. intros. reflexivity. Qed.
       end;
       unfold cQpc, cQp.scale; simpl in *;
       repeat rewrite <- mut_mut_add;
-       f_equal;              
+       f_equal;
         solveQpeq;
         solveQeq.
 
@@ -186,16 +186,16 @@ Ltac nat2ZNLdup :=
   match goal with
   | H : (?l <= ?r)%nat |- _ =>
       let tac :=
-        let Hf := fresh H "_nat2Z" in 
+        let Hf := fresh H "_nat2Z" in
         pose proof (@inj_le _ _ H) as Hf;
         repeat rewrite Nat2Z.inj_div  in Hf;
                                          repeat rewrite Nat2Z.inj_mul  in Hf in
 
                                              match l with
-                                             | context[Nat.div]  => tac 
+                                             | context[Nat.div]  => tac
                                              | context[Nat.mul]  => tac
-                                             | _ => match r with 
-                                                    | context[Nat.div]  => tac 
+                                             | _ => match r with
+                                                    | context[Nat.div]  => tac
                                                     | context[Nat.mul]  => tac
                                                     end
                                              end
@@ -304,7 +304,7 @@ Ltac wapplyObserve lemma:=
   ].
 Section tacLemmas.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI algebra.frac.fracR}. (* some standard assumptions about the c++ logic *)
-  
+
   Lemma observe_elim_rep (Q P : Rep) (p:ptr): Observe Q P → p |-> P ⊢ p|->(P ∗ Q).
   Proof using.
     intros Ho.
@@ -312,7 +312,7 @@ Section tacLemmas.
     wapplyObserve Ho.
     go.
   Qed.
-  
+
   Lemma observe_2_elim_rep Q P1 P2 (p:ptr) {O : Observe2 Q P1 P2} : p|->P1 ⊢ p|-> P2 -∗ p|->P1 ∗ p|->P2 ∗ p|->Q.
   Proof.
     iIntros. iStopProof.
@@ -333,20 +333,20 @@ Ltac wapplyObserveRep lemma:=
     || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _)) || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _ _))
     || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _)) || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _))
     || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _ _)) || wapply (@observe_elim_rep _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _ _ _))
-    
+
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _))
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _))
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _))
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _ _))
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _))
     || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _ _)) || wapply (@observe_2_elim_rep _ _ _ _ _ _ _ (lemma _ _ _ _ _ _ _ _ _ _ _))
-    
+
   ].
 Opaque coPset_difference.
 
 Section cp.
   Context `{Sigma:cpp_logic} {CU: genv} {hh: HasOwn mpredI algebra.frac.fracR}. (* some standard assumptions about the c++ logic *)
-  
+
   Definition parrayR  {T:Type} ty (Rs : nat -> T -> Rep) (l: list T) : Rep :=
   .[ ty ! length l ] |-> validR ** [| is_Some (size_of _ ty) |] **
   (* ^ both of these are only relevant for empty arrays, otherwise, they are implied by the
@@ -496,7 +496,7 @@ Section cp.
     autorewrite with syntactic.
     reflexivity.
   Qed.
-    
+
   Lemma generalize_parrayR_loopinv_produce (i : nat) (p:ptr) {X : Type} (R : nat -> X → Rep) (ty : type) xs (Heq: i=length xs):
     p |-> parrayR ty R xs
     -|- (p |-> parrayR ty R (take i xs)).
@@ -548,7 +548,7 @@ Section cp.
      go.
    Qed.
    Transparent parrayR.
-    
+
   Lemma parrayR_app {X} ty xs ys : forall (R:nat -> X->Rep),
     parrayR ty R (xs ++ ys) -|- parrayR ty R xs ** .[ ty ! length xs ] |-> parrayR ty (fun ii => R (length xs +ii)) ys.
   Proof.
@@ -600,7 +600,7 @@ Section cp.
     normalize_ptrs.
     go.
   Qed.
-  
+
   Lemma parrayR_cell i {X} ty (R:nat -> X->Rep) xs x iZ :
     iZ = Z.of_nat i →	(** Ease [eapply] *)
     xs !! i = Some x →	(** We have an [i]th element *)
@@ -626,7 +626,7 @@ Section cp.
 
   Lemma parrayR_cell2 i {X} ty (R:nat -> X->Rep) xs:
     (Z.of_nat i < Z.of_nat (length xs))%Z ->
-          exists x, 
+          exists x,
             xs !! i = Some x /\	(** We have an [i]th element *)
     (parrayR ty R xs -|-
            parrayR ty R (take i xs) **
@@ -660,13 +660,13 @@ Section cp.
     | Nscoped nm (Nfunction _ i _) => containsDep nm
     | _ => false
     end.
-  
+
   Definition findBodyOfFnNamed2 module filter :=
     List.filter (fun p => let '(nm, body):=p in filter nm) (NM.elements (symbols module)).
 
   Definition lookupSymbolByFullName module (n: name) : option sym_info :=
     let el:= NM.find n (symbols module) in
-    (option_map (fun x => {| info_name := n; info_type := fst (tu_find.INFO.okind_of_value x) |}) el).
+    (option_map (fun x => {| info_name := n; info_type := fst (okind_of_value x) |}) el).
 
   Definition firstEntryName (l :list (name * ObjValue)) :=
     (List.nth 0 (map fst l) (Nunsupported "impossible")).
@@ -724,7 +724,7 @@ Section cp.
     autorewrite with syntactic.
     reflexivity.
   Qed.
-    
+
   Lemma generalize_parrayR_loopinv (i : nat) (p:ptr) {X : Type} (R : nat -> X → Rep) (ty : type) xs (Heq: i=0):
     p |-> parrayR ty R xs
     -|- (p  .[ty ! i]) |-> parrayR ty (fun ii => R (i+ii)) (drop i xs).
@@ -736,7 +736,7 @@ Section cp.
     reflexivity.
   Qed.
 
-  
+
   Lemma drop_S2: ∀ {A : Type} (l : list A) (n : nat),
       (Z.of_nat n < lengthZ l)%Z→
         exists x,  l !! n = Some x /\ drop n l = x :: drop (S n) l.
@@ -779,7 +779,7 @@ Section cp.
 
     Lemma arrayR_cell2 i {X} ty (R:X->Rep) xs:
     (Z.of_nat i < Z.of_nat (length xs))%Z ->
-          exists x, 
+          exists x,
             xs !! i = Some x /\	(** We have an [i]th element *)
     (arrayR ty R xs -|-
            arrayR ty R (take i xs) **
@@ -796,7 +796,7 @@ Section cp.
     eexists; split; eauto.
     apply arrayR_cell; auto.
   Qed.
-      
+
   Lemma fold_id {A:Type} (f: A->A->A) (c: Commutative (=) f) (asoc: Associative (=) f)
     (start id: A) (lid: LeftId (=) id f) (l: list A):
     fold_left f l start = f (fold_left f l id) start.
@@ -811,7 +811,7 @@ Section cp.
     rewrite IHl.
     aac_reflexivity.
   Qed.
-  
+
   Lemma fold_split {A:Type} (f: A->A->A) (c: Commutative (=) f) (asoc: Associative (=) f)
     (id: A) (lid: LeftId (=) id f) (l: list A) (lSplitSize: nat):
     fold_left f l id =
@@ -840,7 +840,7 @@ Section cp.
     simpl.
     auto.
   Qed.
-  
+
   #[global] Instance liftfAssoc {A:Type} (f: A->A->A) (P:A->Prop) {hdec: forall a, Decision (P a)} (fpres: forall a b, P a -> P b -> P (f a b))
     (c: Associative (=) f) : Associative (=) (liftf f P fpres).
   Proof using.
@@ -863,7 +863,7 @@ Section cp.
       simpl.
       reflexivity.
     Qed.
-  
+
   Lemma fold_split_condid1 {A:Type} (f: A->A->A) (P:A->Prop) {hdec: forall a, Decision (P a)} (c: Commutative (=) f) (asoc: Associative (=) f)
     (id: A) (lid: forall a, P a -> f id a = a) (ld: list (dsig P)) (lSplitSize: nat) (pid: P id)
     (fpres: forall a b, P a -> P b -> P (f a b)):
@@ -909,7 +909,7 @@ Section cp.
          rewrite IHl.
          reflexivity.
     Qed.
-  
+
   Lemma fold_split_condid {A:Type} (f: A->A->A) (P:A->Prop) {hdec: forall a, Decision (P a)} (c: Commutative (=) f) (asoc: Associative (=) f)
     (id: A) (lid: forall a, P a -> f id a = a) (l: list A) (pl: forall a, In a l -> P a) (lSplitSize: nat) (pid: P id)
     (fpres: forall a b, P a -> P b -> P (f a b)):
@@ -957,7 +957,7 @@ Section cp.
     iExists (@inhabitant T _).
     work.
   Qed.
-  
+
   Lemma arrayR_combinep {T} ty (R: T->Rep) i xs (p:ptr):
     p |-> arrayR ty R (take i xs) **
       p .[ ty ! i ] |-> arrayR ty R (drop i xs)
@@ -970,12 +970,12 @@ Section cp.
     go.
   Qed.
   Definition arrayR_combineC := [CANCEL] @arrayR_combinep. (* this hint will apply once we state everything in Z terms *)
-    
+
   Lemma primR2_anyR : ∀ t (q:Qp) (v:val) (p:ptr),
       p|-> primR t (q/2) v ** p|->primR t (q/2) v  |-- p|->anyR t q.
   Proof. intros. setoid_rewrite <- primr_split.  go.  Admitted.
   Definition primR2_anyRC := [CANCEL] primR2_anyR.
-  
+
   #[global] Instance learnArrUnsafe e t: LearnEq2 (@arrayR _ _ _ e _ t) := ltac:(solve_learnable).
 
   Definition atomic_core_field_offset : offset. Proof. Admitted.
@@ -1005,7 +1005,7 @@ Section atomicR.
     unhideAllFromWork.
     go.
   Qed.
-  
+
   #[global] Instance atomic_agree ty v1 v2 q1 q2
     : Observe2 [| v1 = v2 |] (atomicR ty q1 v1) (atomicR ty q2 v2) := _.
 
@@ -1048,7 +1048,7 @@ Section atomicR.
     solveCqpeq.
   Qed.
   Definition atomicR_combineF := [FWD] atomicR_combine.
-  
+
 End atomicR.
 
   Definition fwd_later_exist := [FWD] (@bi.later_exist).
@@ -1065,11 +1065,11 @@ End atomicR.
     solveCqpeq.
   Qed.
   Definition cinvqC := [CANCEL] splitcinvq.
-  
+
     Opaque coPset_difference.
 
     Lemma peek_cinvq a b c P (C:mpred) learn:
-      ▷ P |-- bupd (▷ P ** learn) 
+      ▷ P |-- bupd (▷ P ** learn)
       -> (learn -* cinvq a b c P -*  |={⊤}=> C) |-- cinvq a b c P -*  |={⊤}=> C.
     Proof using.
       intros hl.
@@ -1105,7 +1105,7 @@ End atomicR.
     Context {T:Type} {ff : fracG T _}. (* {fff: fracG T   _Σ} *)
   (* Move and generalize colocate with [fgptsto_update]*)
   Lemma half_combine  (m1 m2:T) g q:
-((g |--> logicalR (q / 2) m1):mpred) ∗ g |--> logicalR (q / 2) m2 ⊢ (g |--> logicalR q m1) ∗ [| m2 = m1 |].    
+((g |--> logicalR (q / 2) m1):mpred) ∗ g |--> logicalR (q / 2) m2 ⊢ (g |--> logicalR q m1) ∗ [| m2 = m1 |].
   Proof.
   Admitted.
   Lemma half_split  (m:T) g q:
@@ -1116,13 +1116,13 @@ End atomicR.
     l |--> logicalR 1 v |-- |==>
     l |--> logicalR 1 v'.
   Proof. apply @own_update; try exact _. apply cmra_update_exclusive. done. Qed.
-  
+
   #[global] Instance learn_logicalR (l : gname) (v1 v2 : T) q q1 :
     Learnable (l |--> logicalR q1 v1)  (l |--> logicalR q v2) [v1=v2] := ltac:(solve_learnable).
 
   Definition  learn_logicalR_unsafe (l : gname) (v1 v2 : T) q1 q2 :
     Learnable (l |--> logicalR q1 v1)  (l |--> logicalR q2 v2) [v1=v2; q1=q2] := ltac:(solve_learnable).
-  
+
 
   Definition ownhalf_combineF := [FWD->] half_combine.
   Definition ownhalf_splitC := [CANCEL] half_split.
@@ -1152,7 +1152,7 @@ End atomicR.
       forward_reason.
       hnf in Hrr.
       inverts Hrr.
-      hnf in Hl. 
+      hnf in Hl.
       forward_reason.
       rewrite sts_op_auth_fragg; auto.
     }
@@ -1176,7 +1176,7 @@ End atomicR.
     set_solver.
   Qed.
 
-  
+
   Example auth_frag_together3 (g: gname) s S:
   (g |--> sts_auth s ∅) ** (g |--> sts_frag S ∅)
    -|- (g |--> sts_auth s ∅) ** [| s ∈ S /\ closed S ∅|].
@@ -1188,7 +1188,7 @@ End atomicR.
     split; auto.
     set_solver.
   Qed.
-  
+
   Lemma auth_frag_together_dupl (g: gname) s S Tf:
   (g |--> sts_auth s Tf) ** (g |--> sts_frag S ∅)
    -|- (g |--> sts_auth s Tf) ** [| s ∈ S /\ closed S ∅|].
@@ -1211,9 +1211,9 @@ End atomicR.
     eagerUnifyU.
     go.
   Qed.
-  
+
   (* sts_frag S ∅ is like knowledge: can be freely duplicated *)
-    
+
   Lemma frag_frag_combine (g: gname) S1 S2 T1 T2:
   (g |--> sts_frag S1 T1) ** (g |--> sts_frag S2 T2)
     -|- (g |--> sts_frag (S1 ∩ S2) (T1 ∪ T2))
@@ -1240,7 +1240,7 @@ End atomicR.
     }
   Qed.
 
-      
+
   Example frag_frag_combine2 (g: gname) S:
   (g |--> sts_frag S ∅) ** (g |--> sts_frag S ∅)
     -|- (g |--> sts_frag S ∅) ** [| closed S ∅  |].
@@ -1255,15 +1255,15 @@ End atomicR.
     split_and !; auto.
     set_solver +.
   Qed.
-  
+
   Lemma observePure g (a: (stsR sts)) : Observe [| ✓ a |] (own g a).
   Proof.  apply observe_intro. exact _. go. Qed.
-  
+
   Lemma stable_frag (g: gname) (S: states sts) (T: tokens sts):
     (g |--> sts_frag S T)
 |-- (g |--> sts_frag S T) ** [|valid (sts_frag S T) |].
   Proof using. go. Qed.
-  
+
   Example frag_dupl (g: gname) S:
   (g |--> sts_frag S ∅) |-- (g |--> sts_frag S ∅) ** (g |--> sts_frag S ∅).
   Proof using.
@@ -1299,7 +1299,7 @@ End atomicR.
     assumption.
   Qed.
 
-  
+
 #[global] Instance ll g s1 s2 t1 t2: Learnable (g |--> sts_auth s1 t1) (g |--> sts_auth s2 t2) [s1=s2]
                                                    := ltac:(solve_learnable).
 Lemma hideWandL (L C: mpred) E:
@@ -1325,9 +1325,9 @@ Qed.
 Lemma forget_empty_frag (g: gname) S:
   (g |--> sts_frag S ∅) |-- (emp:mpred).
 Proof using Sigma. apply lose_resources. Qed.
-  
+
   End stsg.
-  
+
 End cp.
 
 Ltac hideEmptyTokenFrag :=
@@ -1429,7 +1429,7 @@ Ltac instWithPEvar name :=
   end.
 
 Lemma cqpp2 q: (cQp.scale (1 / 2) (cQp.mut q)) = (cQp.mut (q / 2)).
-Proof using.    
+Proof using.
       rewrite cQp.scale_mut;
       f_equiv;
       destruct q; simpl in *.
@@ -1495,7 +1495,7 @@ Lemma cinvq_alloc_no_shared_pages `{Σ : cpp_logic} (E : coPset) (N : namespace)
     intros.
     apply cinvq_alloc.
   Admitted. (* when there are no shared pages between processes, all C++ memory locations (ptr) are objective, else one has to look at the underlying physical address on the host machine *)
-  
+
 Notation uint := "unsigned int"%cpp_type.
 
 (* this is currently needed at some method calls. it admits some reference_to obligations which can be proven with more bookkeeping. but the plan is anyway to tweak the method call derived rules to make it not produce these obligations *)
@@ -1531,7 +1531,7 @@ Qed.
 
 #[global] Hint Resolve primR2_anyRC: br_opacity.
 
-(* uncomment if it doesnt break proofs 
+(* uncomment if it doesnt break proofs
 #[global] Hint Resolve offsetR_only_fwd: br_opacity.
 *)
 
@@ -1539,14 +1539,14 @@ Qed.
 uncomment if there is no significant performance regression:
 
 Import ZifyClasses.
-      
+
 Lemma zifyModNat: ∀ x y : nat, True →  y ≠ 0%nat → (x `mod` y < y)%nat.
 Proof using.
   intros.
   apply Nat.mod_upper_bound.
   assumption.
 Qed.
-        
+
 #[global]
 Instance SatMod : Saturate Nat.modulo :=
   {|
@@ -1656,7 +1656,7 @@ Import Ltac2.Printf.
 From Ltac2 Require Import Ltac2 String.
   Ltac2 newlines () : string := String.concat (string.String.newline ()) [string.String.newline (); string.String.newline ()].
 
-Ltac2 missingSpecs tu s := 
+Ltac2 missingSpecs tu s :=
   match cpp_proof.parse_fn_spec s with
   | (sp_parsed, nm, sp) =>
       let (missing, deps) := cpp_proof.bundle_deps tu nm sp in

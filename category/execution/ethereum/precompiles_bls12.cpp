@@ -102,11 +102,8 @@ namespace bls12
 
         auto const point = blst_p1_affine{*maybe_x, *maybe_y};
 
-        auto const on_curve = blst_p1_affine_on_curve(&point);
-        auto const is_infinity = blst_p1_affine_is_inf(&point);
-
-        auto const valid = on_curve || is_infinity;
-        if (MONAD_UNLIKELY(!valid)) {
+        auto const on_curve_or_inf = blst_p1_affine_on_curve(&point);
+        if (MONAD_UNLIKELY(!on_curve_or_inf)) {
             return std::nullopt;
         }
 
@@ -127,11 +124,8 @@ namespace bls12
 
         auto const point = blst_p2_affine{*maybe_x, *maybe_y};
 
-        auto const on_curve = blst_p2_affine_on_curve(&point);
-        auto const is_infinity = blst_p2_affine_is_inf(&point);
-
-        auto const valid = on_curve || is_infinity;
-        if (MONAD_UNLIKELY(!valid)) {
+        auto const on_curve_or_inf = blst_p2_affine_on_curve(&point);
+        if (MONAD_UNLIKELY(!on_curve_or_inf)) {
             return std::nullopt;
         }
 

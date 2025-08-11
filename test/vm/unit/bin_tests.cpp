@@ -253,6 +253,35 @@ namespace
             bin_max_test<0, N + 8>();
         }
     }
+
+    // bin_min_test<0, 0>
+    // ...
+    // bin_min_test<32, 0>
+    // bin_min_test<0, 8>
+    // ...
+    // bin_min_test<32, 8>
+    // ...
+    template <size_t M, size_t N>
+    void bin_min_test()
+    {
+        constexpr auto R = std::min(M, N);
+        if constexpr (R <= 32) {
+            auto const left = bin<Bin<M>::upper>;
+            auto const right = bin<Bin<N>::upper>;
+            auto const expected = std::min(*left, *right);
+            auto const actual = min(left, right);
+
+            static_assert(std::is_same_v<decltype(actual), Bin<R> const>);
+            ASSERT_EQ(*actual, expected);
+            ASSERT_LE(expected, Bin<R>::upper);
+        }
+        if constexpr (M < 32) {
+            bin_min_test<M + 8, N>();
+        }
+        else if constexpr (N < 32) {
+            bin_min_test<0, N + 8>();
+        }
+    }
 }
 
 TEST(Bin, construction)
@@ -288,4 +317,9 @@ TEST(Bin, shr_ceil)
 TEST(Bin, max)
 {
     bin_max_test<0, 0>();
+}
+
+TEST(Bin, min)
+{
+    bin_min_test<0, 0>();
 }

@@ -52,21 +52,23 @@ public:
             if constexpr (device == InstrumentationDevice::Cachegrind) {
                 CACHEGRIND_START_INSTRUMENTATION;
                 auto ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                    monad::vm::compiler::basic_blocks::make_ir<Rev>(code));
+                    monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(
+                        code));
                 CACHEGRIND_STOP_INSTRUMENTATION;
                 return ir;
             }
             else {
                 timer.start();
                 auto ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                    monad::vm::compiler::basic_blocks::make_ir<Rev>(code));
+                    monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(
+                        code));
                 timer.pause();
                 return ir;
             }
         }
         else {
             return monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                monad::vm::compiler::basic_blocks::make_ir<Rev>(code));
+                monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(code));
         }
     }
 };

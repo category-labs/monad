@@ -21,8 +21,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <span>
-
 namespace monad::vm::interpreter
 {
     void execute(

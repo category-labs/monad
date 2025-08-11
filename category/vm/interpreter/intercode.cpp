@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
@@ -26,7 +27,8 @@ namespace monad::vm::interpreter
 {
     Intercode::Intercode(std::span<std::uint8_t const> const code)
         : padded_code_(pad(code))
-        , code_size_(code.size())
+        , code_size_(
+              code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
         , jumpdest_map_(find_jumpdests(code))
     {
     }
@@ -38,6 +40,7 @@ namespace monad::vm::interpreter
 
     std::uint8_t const *Intercode::pad(std::span<std::uint8_t const> const code)
     {
+        MONAD_VM_ASSERT(code.size() <= *code_size_t::max());
         auto *buffer = new std::uint8_t
             [start_padding_size + code.size() + end_padding_size];
 

@@ -36,13 +36,13 @@ auto make_intercode(Args... args)
 TEST(Intercode, CodeSizeEmpty)
 {
     auto const code = make_intercode();
-    ASSERT_EQ(code.code_size(), 0);
+    ASSERT_EQ(code.size(), 0);
 }
 
 TEST(Intercode, CodeSizeNonEmpty)
 {
     auto const code = make_intercode(PUSH1, 0x01, PUSH0, ADD);
-    ASSERT_EQ(code.code_size(), 4);
+    ASSERT_EQ(code.size(), 4);
 }
 
 TEST(Intercode, Code)

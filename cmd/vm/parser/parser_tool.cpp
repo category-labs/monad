@@ -39,9 +39,11 @@
 #include <evmc/evmc.h>
 
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/parser.hpp>
 
 using namespace monad::vm::utils;
+using namespace monad::vm::interpreter;
 
 struct arguments
 {
@@ -136,12 +138,13 @@ int main(int argc, char **argv)
         if (args.binary) {
             do_binary(config, "<stdin>", opcodes);
         }
-
+        MONAD_VM_ASSERT(opcodes.size() <= *code_size_t::max());
         if (args.compile) {
             auto rt = asmjit::JitRuntime{};
             monad::vm::compiler::native::compile(
                 rt,
-                opcodes,
+                opcodes.data(),
+                code_size_t::unsafe_from(static_cast<uint32_t>(opcodes.size())),
                 EVMC_LATEST_STABLE_REVISION,
                 {.asm_log_path = "out.asm"});
         }
@@ -167,7 +170,9 @@ int main(int argc, char **argv)
                 auto rt = asmjit::JitRuntime{};
                 monad::vm::compiler::native::compile(
                     rt,
-                    opcodes,
+                    opcodes.data(),
+                    code_size_t::unsafe_from(
+                        static_cast<uint32_t>(opcodes.size())),
                     EVMC_LATEST_STABLE_REVISION,
                     {.asm_log_path = outfile_asm.c_str()});
             }

@@ -60,7 +60,7 @@ namespace monad::vm::compiler::local_stacks
 
         std::unordered_map<byte_offset, block_id> jumpdests;
         std::vector<Block> blocks;
-        uint64_t codesize;
+        interpreter::code_size_t codesize;
     };
 
     Block convert_block(basic_blocks::Block block, uint64_t codesize);

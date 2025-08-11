@@ -15,19 +15,31 @@
 
 #pragma once
 
+#include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/runtime.hpp>
 
 #include <asmjit/x86.h>
 
 #include <functional>
+#include <optional>
+#include <variant>
 
 namespace monad::vm::compiler::native
 {
+    /// Native code size should be smaller than 2GB to avoid overflowing
+    /// relative offsets of type `int32_t`.
+    using native_code_size_t = runtime::Bin<26>;
     using entrypoint_t = void (*)(runtime::Context *, uint8_t *);
 
     class Nativecode
     {
     public:
+        struct SizeEstimateOutOfBounds
+        {
+            size_t size_estimate;
+        };
+
         enum ErrorCode
         {
             NoError,
@@ -35,15 +47,21 @@ namespace monad::vm::compiler::native
             SizeOutOfBound
         };
 
+        using CodeSizeEstimate =
+            std::variant<std::monostate, size_t, native_code_size_t>;
+
         /// If compilation failed, then `entrypoint` is `nullptr`.
         Nativecode(
             asmjit::JitRuntime &asmjit_rt, evmc_revision rev,
-            entrypoint_t entry, size_t code_size_estimate)
+            entrypoint_t entry, CodeSizeEstimate code_size_estimate)
             : asmjit_rt_{asmjit_rt}
             , revision_{rev}
             , entrypoint_{entry}
             , code_size_estimate_{code_size_estimate}
         {
+            MONAD_VM_DEBUG_ASSERT(
+                !!entrypoint_ ==
+                std::holds_alternative<native_code_size_t>(code_size_estimate));
         }
 
         Nativecode(Nativecode const &) = delete;
@@ -60,24 +78,39 @@ namespace monad::vm::compiler::native
             return revision_;
         }
 
-        size_t code_size_estimate() const
+        native_code_size_t code_size_estimate() const
         {
-            return entrypoint_ ? code_size_estimate_ : 0;
+            return std::holds_alternative<native_code_size_t>(
+                       code_size_estimate_)
+                       ? std::get<native_code_size_t>(code_size_estimate_)
+                       : native_code_size_t{};
         }
 
         size_t code_size_estimate_before_error() const
         {
-            return code_size_estimate_;
+            if (std::holds_alternative<size_t>(code_size_estimate_)) {
+                return std::get<size_t>(code_size_estimate_);
+            }
+            if (std::holds_alternative<native_code_size_t>(
+                    code_size_estimate_)) {
+                return *std::get<native_code_size_t>(code_size_estimate_);
+            }
+            return 0;
         }
 
         ErrorCode error_code() const
         {
             if (entrypoint_) {
+                MONAD_VM_DEBUG_ASSERT(
+                    std::holds_alternative<native_code_size_t>(
+                        code_size_estimate_));
                 return NoError;
             }
-            if (code_size_estimate_ > 0) {
+            if (std::holds_alternative<size_t>(code_size_estimate_)) {
                 return SizeOutOfBound;
             }
+            MONAD_VM_DEBUG_ASSERT(
+                std::holds_alternative<std::monostate>(code_size_estimate_));
             return Unexpected;
         }
 
@@ -92,26 +125,19 @@ namespace monad::vm::compiler::native
         asmjit::JitRuntime &asmjit_rt_;
         evmc_revision revision_;
         entrypoint_t entrypoint_;
-        size_t code_size_estimate_;
+        CodeSizeEstimate code_size_estimate_;
     };
 
     class Emitter;
 
     using EmitterHook = std::function<void(Emitter &)>;
 
-    /// Hard upper bound of native code size in bytes, for respecting
-    /// size invariants of read-only data section, and to ensure that
-    /// relative x86 memory addressing offsets will not overflow. It
-    /// is possible to relax this hard upper bound, but native code
-    /// size should be smaller than 2GB to avoid overflowing relative
-    /// offsets of type `int32_t`.
-    constexpr uint64_t code_size_hard_upper_bound = 1 << 30; // 1GB
-
     struct CompilerConfig
     {
         char const *asm_log_path{};
         bool runtime_debug_trace{};
-        uint32_t max_code_size_offset{10 * 1024};
+        interpreter::code_size_t max_code_size_offset =
+            monad::vm::runtime::bin<10 * 1024>;
         EmitterHook post_instruction_emit_hook{};
     };
 }

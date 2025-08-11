@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/compiler/ir/poly_typed/block.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 
 namespace monad::vm::compiler::poly_typed
 {
@@ -26,7 +27,7 @@ namespace monad::vm::compiler::poly_typed
         void type_check_or_throw();
         bool type_check();
 
-        uint64_t codesize;
+        interpreter::code_size_t codesize;
         std::unordered_map<byte_offset, block_id> jumpdests;
         std::vector<Block> blocks;
     };

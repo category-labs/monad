@@ -1032,11 +1032,11 @@ TYPED_TEST(StateTest, get_code)
     {
         s.access_account(a);
         auto const c = s.get_code(a)->intercode();
-        EXPECT_EQ(byte_string_view(c->code(), c->code_size()), contract);
+        EXPECT_EQ(byte_string_view(c->code(), c->size()), contract);
     }
     { // non-existant account
         auto const c = s.get_code(b)->intercode();
-        EXPECT_EQ(byte_string_view(c->code(), c->code_size()), byte_string{});
+        EXPECT_EQ(byte_string_view(c->code(), c->size()), byte_string{});
     }
 }
 
@@ -1051,10 +1051,10 @@ TYPED_TEST(StateTest, set_code)
     s.set_code(b, byte_string{});
 
     auto const a_icode = s.get_code(a)->intercode();
-    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), code2);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->size()), code2);
     auto const b_icode = s.get_code(b)->intercode();
     EXPECT_EQ(
-        byte_string_view(b_icode->code(), b_icode->code_size()), byte_string{});
+        byte_string_view(b_icode->code(), b_icode->size()), byte_string{});
 }
 
 TYPED_TEST(StateTest, can_merge_same_account_different_storage)

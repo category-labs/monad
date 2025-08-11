@@ -19,6 +19,7 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/runtime/bin.hpp>
 
 #include <test_resource_data.h>
 
@@ -254,7 +255,7 @@ TEST_F(EvmTest, DupStackOverflow)
 TEST_F(EvmTest, NativeCodeSizeOutOfBound)
 {
     std::vector<uint8_t> bytecode;
-    CompilerConfig const config{.max_code_size_offset = 1024};
+    CompilerConfig const config{.max_code_size_offset = runtime::bin<1024>};
     uint32_t n_jumpi = 20;
     for (size_t i = 0; i < n_jumpi; ++i) {
         bytecode.push_back(JUMPI);
@@ -264,13 +265,14 @@ TEST_F(EvmTest, NativeCodeSizeOutOfBound)
     auto ncode = vm_.compiler().compile(EVMC_CANCUN, icode, config);
     ASSERT_GT(
         ncode->code_size_estimate_before_error(),
-        config.max_code_size_offset + n_jumpi * 32);
+        *config.max_code_size_offset + n_jumpi * 32);
     ASSERT_EQ(ncode->error_code(), Nativecode::ErrorCode::SizeOutOfBound);
 }
 
 TEST_F(EvmTest, MaxDeltaOutOfBound)
 {
-    CompilerConfig const config{.max_code_size_offset = 32 * 1024};
+    CompilerConfig const config{
+        .max_code_size_offset = runtime::bin<32 * 1024>};
 
     std::vector<uint8_t> base_bytecode;
     for (size_t i = 0; i < 1024; ++i) {
@@ -318,12 +320,14 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     // to the error label, without block prologue/epilogue and without the
     // pushes to the evm stack inside the basic block.
     ASSERT_LT(
-        ncode2->code_size_estimate() + 32 * 1024, ncode1->code_size_estimate());
+        *ncode2->code_size_estimate() + 32 * 1024,
+        *ncode1->code_size_estimate());
 }
 
 TEST_F(EvmTest, MinDeltaOutOfBound)
 {
-    CompilerConfig const config{.max_code_size_offset = 32 * 1024};
+    CompilerConfig const config{
+        .max_code_size_offset = runtime::bin<32 * 1024>};
 
     std::vector<uint8_t> base_bytecode;
     for (size_t i = 0; i < 1024; ++i) {
@@ -368,7 +372,7 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     // We expect native code size of `ncode2` to be smaller, because the last
     // basic block has min_delta < -1024, so will just jump to error label,
     // without basic block prologue/epilogue.
-    ASSERT_LT(ncode2->code_size_estimate(), ncode1->code_size_estimate());
+    ASSERT_LT(*ncode2->code_size_estimate(), *ncode1->code_size_estimate());
 }
 
 // Asserts that the compiler and interpreter can have differing behaviour when

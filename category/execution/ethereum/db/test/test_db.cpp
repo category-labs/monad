@@ -321,7 +321,7 @@ TYPED_TEST(DBTest, read_code)
         BlockHeader{.number = 0});
 
     auto const a_icode = tdb.read_code(A_CODE_HASH);
-    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->size()), A_CODE);
 
     Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
     commit_sequential(
@@ -331,7 +331,7 @@ TYPED_TEST(DBTest, read_code)
         BlockHeader{.number = 1});
 
     auto const b_icode = tdb.read_code(B_CODE_HASH);
-    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->size()), B_CODE);
 }
 
 TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
@@ -788,28 +788,28 @@ TYPED_TEST(DBTest, load_from_binary)
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
     auto const a_icode = tdb.read_code(A_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(a_icode->code(), a_icode->code_size()),
-        byte_string_view(A_ICODE->code(), A_ICODE->code_size()));
+        byte_string_view(a_icode->code(), a_icode->size()),
+        byte_string_view(A_ICODE->code(), A_ICODE->size()));
     auto const b_icode = tdb.read_code(B_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(b_icode->code(), b_icode->code_size()),
-        byte_string_view(B_ICODE->code(), B_ICODE->code_size()));
+        byte_string_view(b_icode->code(), b_icode->size()),
+        byte_string_view(B_ICODE->code(), B_ICODE->size()));
     auto const c_icode = tdb.read_code(C_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(c_icode->code(), c_icode->code_size()),
-        byte_string_view(C_ICODE->code(), C_ICODE->code_size()));
+        byte_string_view(c_icode->code(), c_icode->size()),
+        byte_string_view(C_ICODE->code(), C_ICODE->size()));
     auto const d_icode = tdb.read_code(D_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(d_icode->code(), d_icode->code_size()),
-        byte_string_view(D_ICODE->code(), D_ICODE->code_size()));
+        byte_string_view(d_icode->code(), d_icode->size()),
+        byte_string_view(D_ICODE->code(), D_ICODE->size()));
     auto const e_icode = tdb.read_code(E_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(e_icode->code(), e_icode->code_size()),
-        byte_string_view(E_ICODE->code(), E_ICODE->code_size()));
+        byte_string_view(e_icode->code(), e_icode->size()),
+        byte_string_view(E_ICODE->code(), E_ICODE->size()));
     auto const h_icode = tdb.read_code(H_CODE_HASH);
     EXPECT_EQ(
-        byte_string_view(h_icode->code(), h_icode->code_size()),
-        byte_string_view(H_ICODE->code(), H_ICODE->code_size()));
+        byte_string_view(h_icode->code(), h_icode->size()),
+        byte_string_view(H_ICODE->code(), H_ICODE->size()));
 }
 
 TYPED_TEST(DBTest, commit_call_frames)

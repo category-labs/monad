@@ -130,7 +130,7 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     {
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
-        MONAD_ASSERT(code_hash == NULL_HASH || result->code_size() != 0);
+        MONAD_ASSERT(code_hash == NULL_HASH || result->size() != 0);
         return vm_.try_insert_varcode(code_hash, result);
     }
 }

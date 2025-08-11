@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#pragma once
+
 #include <category/vm/core/assert.h>
 
 #include <algorithm>
@@ -35,6 +37,12 @@ namespace monad::vm::runtime
 
         static constexpr std::uint32_t upper =
             static_cast<std::uint32_t>(1ULL << N) - 1;
+
+        [[gnu::always_inline]]
+        static constexpr Bin max() noexcept
+        {
+            return Bin(upper);
+        }
 
         [[gnu::always_inline]]
         constexpr Bin() noexcept
@@ -123,5 +131,12 @@ namespace monad::vm::runtime
     constexpr Bin<std::max(M, N)> max(Bin<M> x, Bin<N> y) noexcept
     {
         return Bin<std::max(M, N)>::unsafe_from(std::max(*x, *y));
+    }
+
+    template <std::size_t M, std::size_t N>
+    [[gnu::always_inline]]
+    constexpr Bin<std::min(M, N)> min(Bin<M> x, Bin<N> y) noexcept
+    {
+        return Bin<std::min(M, N)>::unsafe_from(std::min(*x, *y));
     }
 };

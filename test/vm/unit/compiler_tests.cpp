@@ -54,7 +54,8 @@ void blocks_eq(
     std::unordered_map<byte_offset, block_id> const &expected_jumpdests,
     std::vector<basic_blocks::Block> const &expected_blocks)
 {
-    basic_blocks::BasicBlocksIR const actual(in);
+    basic_blocks::BasicBlocksIR const actual =
+        basic_blocks::BasicBlocksIR::unsafe_from(in);
 
     EXPECT_EQ(actual.jump_dests(), expected_jumpdests);
     EXPECT_EQ(actual.blocks(), expected_blocks);
@@ -263,12 +264,12 @@ TEST(BlockTest, Formatter)
         "  0x00:\n      ADD\n    JumpI 0\n");
 }
 
-auto const instrIR0 = basic_blocks::BasicBlocksIR({});
+auto const instrIR0 = basic_blocks::BasicBlocksIR::unsafe_from({});
 auto const instrIR1 =
-    basic_blocks::BasicBlocksIR({JUMPDEST, SUB, SUB, JUMPDEST});
-auto const instrIR2 =
-    basic_blocks::BasicBlocksIR({JUMPDEST, JUMPDEST, SUB, JUMPDEST});
-auto const instrIR3 = basic_blocks::BasicBlocksIR(
+    basic_blocks::BasicBlocksIR::unsafe_from({JUMPDEST, SUB, SUB, JUMPDEST});
+auto const instrIR2 = basic_blocks::BasicBlocksIR::unsafe_from(
+    {JUMPDEST, JUMPDEST, SUB, JUMPDEST});
+auto const instrIR3 = basic_blocks::BasicBlocksIR::unsafe_from(
     {PUSH1,    255,      PUSH1, 14,    SWAP2, PUSH1, 17,       JUMPI,
      JUMPDEST, PUSH1,    1,     ADD,   SWAP1, JUMP,  JUMPDEST, POP,
      STOP,     JUMPDEST, SWAP1, PUSH1, 8,     JUMP});
@@ -463,21 +464,22 @@ TEST(LocalStacksIR, Formatter)
     EXPECT_EQ(
         std::format(
             "{}",
-            local_stacks::LocalStacksIR(basic_blocks::BasicBlocksIR(
-                {PUSH0,
-                 PUSH1,
-                 0xa,
-                 PC,
-                 ADDRESS,
-                 ADD,
-                 PC,
-                 DUP1,
-                 DUP3,
-                 SWAP1,
-                 POP,
-                 SWAP4,
-                 DUP6,
-                 SWAP7}))),
+            local_stacks::LocalStacksIR(
+                basic_blocks::BasicBlocksIR::unsafe_from(
+                    {PUSH0,
+                     PUSH1,
+                     0xa,
+                     PC,
+                     ADDRESS,
+                     ADD,
+                     PC,
+                     DUP1,
+                     DUP3,
+                     SWAP1,
+                     POP,
+                     SWAP4,
+                     DUP6,
+                     SWAP7}))),
         R"(local_stacks:
   block 0 - 0x0:
     min_params: 2
@@ -504,7 +506,8 @@ TEST(LocalStacksIR, Formatter)
         std::format(
             "{}",
             local_stacks::LocalStacksIR(
-                basic_blocks::BasicBlocksIR({PUSH1, 0xb, CODESIZE, ADD}))),
+                basic_blocks::BasicBlocksIR::unsafe_from(
+                    {PUSH1, 0xb, CODESIZE, ADD}))),
         R"(local_stacks:
   block 0 - 0x0:
     min_params: 0
@@ -521,7 +524,7 @@ TEST(LocalStacksIR, Formatter)
         std::format(
             "{}",
             local_stacks::LocalStacksIR(
-                basic_blocks::BasicBlocksIR({PUSH0, ISZERO}))),
+                basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, ISZERO}))),
         R"(local_stacks:
   block 0 - 0x0:
     min_params: 0
@@ -537,7 +540,8 @@ TEST(LocalStacksIR, Formatter)
         std::format(
             "{}",
             local_stacks::LocalStacksIR(
-                basic_blocks::BasicBlocksIR({PUSH1, 0x2, PUSH1, 0x1, LT}))),
+                basic_blocks::BasicBlocksIR::unsafe_from(
+                    {PUSH1, 0x2, PUSH1, 0x1, LT}))),
         R"(local_stacks:
   block 0 - 0x0:
     min_params: 0
@@ -554,7 +558,8 @@ TEST(LocalStacksIR, Formatter)
         std::format(
             "{}",
             local_stacks::LocalStacksIR(
-                basic_blocks::BasicBlocksIR({PUSH1, 0x2, PUSH1, 0x1, GT}))),
+                basic_blocks::BasicBlocksIR::unsafe_from(
+                    {PUSH1, 0x2, PUSH1, 0x1, GT}))),
         R"(local_stacks:
   block 0 - 0x0:
     min_params: 0

@@ -255,7 +255,7 @@ namespace monad::vm::compiler::local_stacks
         , codesize(ir.codesize)
     {
         for (auto &blk : ir.blocks()) {
-            blocks.push_back(convert_block(std::move(blk), codesize));
+            blocks.push_back(convert_block(std::move(blk), *codesize));
         }
     }
 

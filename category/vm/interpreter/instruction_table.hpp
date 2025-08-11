@@ -1718,7 +1718,7 @@ namespace monad::vm::interpreter
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
         std::int64_t gas_remaining, std::uint8_t const *)
     {
-        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.code_size());
+        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         check_requirements<RETURN, Rev>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         return_impl(Success, ctx, stack_top, gas_remaining);
@@ -1741,7 +1741,7 @@ namespace monad::vm::interpreter
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
-        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.code_size());
+        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         checked_runtime_call<SELFDESTRUCT, Rev>(
             runtime::selfdestruct<Rev>,
             ctx,
@@ -1757,7 +1757,7 @@ namespace monad::vm::interpreter
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
         std::int64_t gas_remaining, std::uint8_t const *)
     {
-        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.code_size());
+        fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         ctx.gas_remaining = gas_remaining;
         ctx.exit(Success);
     }

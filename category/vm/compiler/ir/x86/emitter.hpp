@@ -18,6 +18,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -92,6 +93,8 @@ namespace monad::vm::compiler::native
             asmjit::x86::Mem add16(uint64_t, uint64_t);
             asmjit::x86::Mem add8(uint64_t);
             asmjit::x86::Mem add4(uint32_t);
+
+            size_t estimate_size();
 
         private:
             template <size_t N>
@@ -201,7 +204,7 @@ namespace monad::vm::compiler::native
         ////////// Initialization and de-initialization //////////
 
         Emitter(
-            asmjit::JitRuntime const &, uint64_t bytecode_size,
+            asmjit::JitRuntime const &, interpreter::code_size_t bytecode_size,
             CompilerConfig const & = {});
 
         ~Emitter();
@@ -560,7 +563,7 @@ namespace monad::vm::compiler::native
         template <evmc_revision rev>
         void selfdestruct(int32_t remaining_base_gas)
         {
-            runtime_store_input_stack(bytecode_size_);
+            runtime_store_input_stack(*bytecode_size_);
             call_runtime(remaining_base_gas, true, runtime::selfdestruct<rev>);
         }
 
@@ -1020,7 +1023,7 @@ namespace monad::vm::compiler::native
         Stack stack_;
         bool keep_stack_in_next_block_;
         std::array<Gpq256, 3> gpq256_regs_;
-        uint64_t bytecode_size_;
+        interpreter::code_size_t bytecode_size_;
         std::unordered_map<byte_offset, asmjit::Label> jump_dests_;
         RoData rodata_;
         std::vector<std::tuple<asmjit::Label, asmjit::x86::Mem, asmjit::Label>>

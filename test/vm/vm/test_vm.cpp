@@ -46,6 +46,7 @@
 
 using namespace monad;
 using namespace monad::vm::compiler;
+using namespace monad::vm::interpreter;
 
 using namespace evmc::literals;
 
@@ -120,7 +121,7 @@ BlockchainTestVM::BlockchainTestVM(
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
     , base_config{
           .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
-          .max_code_size_offset = std::numeric_limits<uint32_t>::max(),
+          .max_code_size_offset = code_size_t::max(),
           .post_instruction_emit_hook = post_hook}
 {
     MONAD_VM_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));

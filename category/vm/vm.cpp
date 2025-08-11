@@ -87,7 +87,7 @@ namespace monad::vm
             static_cast<uint64_t>(msg->gas - result.gas_left);
         // Note that execution gas is counted for the second time via the
         // intercode_gas_used function if this is a re-execution.
-        if (vcode->intercode_gas_used(gas_used) >= bound) {
+        if (vcode->intercode_gas_used(gas_used) >= *bound) {
             compiler_.async_compile(rev, code_hash, icode, compiler_config_);
         }
         return result;
@@ -100,8 +100,8 @@ namespace monad::vm
     {
         stats_.event_execute_raw();
         auto const stack_ptr = stack_allocator_.allocate();
-        auto ctx = runtime::Context::from(
-            memory_allocator_, host, context, msg, {code.data(), code.size()});
+        auto ctx =
+            runtime::Context::from(memory_allocator_, host, context, msg, code);
 
         interpreter::execute(rev, ctx, Intercode{code}, stack_ptr.get());
 
@@ -115,7 +115,7 @@ namespace monad::vm
     {
         stats_.event_execute_intercode();
         uint8_t const *const code = icode->code();
-        size_t const code_size = icode->code_size();
+        size_t const code_size = icode->size();
         auto const stack_ptr = stack_allocator_.allocate();
         auto ctx = runtime::Context::from(
             memory_allocator_, host, context, msg, {code, code_size});
@@ -132,7 +132,7 @@ namespace monad::vm
     {
         stats_.event_execute_native_entrypoint();
         uint8_t const *const code = icode->code();
-        size_t const code_size = icode->code_size();
+        size_t const code_size = icode->size();
         auto ctx = runtime::Context::from(
             memory_allocator_, host, context, msg, {code, code_size});
 

@@ -244,7 +244,7 @@ void TrieDb::commit(
         MONAD_ASSERT(icode);
         code_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{to_byte_string_view(hash.bytes)},
-            .value = {{icode->code(), icode->code_size()}},
+            .value = {{icode->code(), icode->size()}},
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
@@ -664,7 +664,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto const icode = db.read_code(acct.value().second.code_hash);
             MONAD_ASSERT(icode);
             json[key]["code"] =
-                "0x" + evmc::hex({icode->code(), icode->code_size()});
+                "0x" + evmc::hex({icode->code(), icode->size()});
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();

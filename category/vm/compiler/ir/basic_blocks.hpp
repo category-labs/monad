@@ -20,6 +20,7 @@
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 
 #include <evmc/evmc.h>
 
@@ -220,12 +221,36 @@ namespace monad::vm::compiler::basic_blocks
          * Construct basic blocks from a bytecode program.
          */
         template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
-        explicit BasicBlocksIR(
-            std::span<std::uint8_t const>, RevisionMarker<Rev> = {});
+        BasicBlocksIR(
+            std::uint8_t const *, interpreter::code_size_t,
+            RevisionMarker<Rev> = {});
 
         template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
-        BasicBlocksIR(
-            std::initializer_list<std::uint8_t>, RevisionMarker<Rev> = {});
+        [[gnu::always_inline]]
+        static constexpr BasicBlocksIR unsafe_from(
+            std::initializer_list<std::uint8_t const> bytes,
+            RevisionMarker<Rev> rm = {})
+        {
+            MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
+            return BasicBlocksIR(
+                std::data(bytes),
+                interpreter::code_size_t::unsafe_from(
+                    static_cast<uint32_t>(bytes.size())),
+                rm);
+        }
+
+        template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
+        [[gnu::always_inline]]
+        static constexpr BasicBlocksIR unsafe_from(
+            std::span<std::uint8_t const> bytes, RevisionMarker<Rev> rm = {})
+        {
+            MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
+            return BasicBlocksIR(
+                bytes.data(),
+                interpreter::code_size_t::unsafe_from(
+                    static_cast<uint32_t>(bytes.size())),
+                rm);
+        }
 
         /**
          * The basic blocks in the program.
@@ -244,7 +269,7 @@ namespace monad::vm::compiler::basic_blocks
         }
 
         /// Size of bytecode
-        uint64_t codesize;
+        interpreter::code_size_t codesize;
 
         /**
          * Retrieve a block by its identifier.
@@ -332,6 +357,9 @@ namespace monad::vm::compiler::basic_blocks
     template <evmc_revision Rev, typename... Args>
     BasicBlocksIR make_ir(Args &&...);
 
+    template <evmc_revision Rev, typename... Args>
+    BasicBlocksIR unsafe_make_ir(Args &&...);
+
     template <evmc_revision Rev>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<std::uint8_t const> bytes, std::uint32_t &current_offset)
@@ -405,8 +433,9 @@ namespace monad::vm::compiler::basic_blocks
 
     template <evmc_revision Rev>
     BasicBlocksIR::BasicBlocksIR(
-        std::span<std::uint8_t const> bytes, RevisionMarker<Rev>)
-        : codesize(bytes.size())
+        std::uint8_t const *bytes, interpreter::code_size_t byte_count,
+        RevisionMarker<Rev>)
+        : codesize(byte_count)
     {
         using monad::vm::Cases;
 
@@ -423,9 +452,8 @@ namespace monad::vm::compiler::basic_blocks
         auto current_offset = std::uint32_t{0};
         auto first = true;
 
-        auto const byte_count = bytes.size();
-        while (current_offset < byte_count) {
-            auto inst = scan_from<Rev>(bytes, current_offset);
+        while (current_offset < *byte_count) {
+            auto inst = scan_from<Rev>({bytes, *byte_count}, current_offset);
 
             if (first && std::holds_alternative<JumpDest>(inst)) {
                 add_jump_dest();
@@ -455,9 +483,10 @@ namespace monad::vm::compiler::basic_blocks
                         // case we don't want to immediately FallThrough
                         // again, but instead just advance tok and mark
                         // the block as being a jumpdest
-                        if (current_offset < byte_count) {
+                        if (current_offset < *byte_count) {
                             auto next_offset = current_offset;
-                            auto next_inst = scan_from<Rev>(bytes, next_offset);
+                            auto next_inst = scan_from<Rev>(
+                                {bytes, *byte_count}, next_offset);
                             if (std::holds_alternative<JumpDest>(next_inst)) {
                                 current_offset += 1;
                                 add_jump_dest();
@@ -490,17 +519,17 @@ namespace monad::vm::compiler::basic_blocks
         }
     }
 
-    template <evmc_revision Rev>
-    BasicBlocksIR::BasicBlocksIR(
-        std::initializer_list<std::uint8_t> bytes, RevisionMarker<Rev> rm)
-        : BasicBlocksIR(std::span(bytes), rm)
-    {
-    }
-
     template <evmc_revision Rev, typename... Args>
     BasicBlocksIR make_ir(Args &&...args)
     {
         return BasicBlocksIR(
+            std::forward<Args>(args)..., RevisionMarker<Rev>{});
+    }
+
+    template <evmc_revision Rev, typename... Args>
+    BasicBlocksIR unsafe_make_ir(Args &&...args)
+    {
+        return BasicBlocksIR::unsafe_from(
             std::forward<Args>(args)..., RevisionMarker<Rev>{});
     }
 }

@@ -17,6 +17,8 @@
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/runtime/bin.hpp>
 
 #include <asmjit/x86.h>
 
@@ -31,8 +33,9 @@ namespace monad::vm::compiler::native
      * Compile the given contract and add it to JitRuntime.
      */
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, std::span<uint8_t const> contract,
-        evmc_revision rev, CompilerConfig const & = {});
+        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        interpreter::code_size_t contract_code_size, evmc_revision rev,
+        CompilerConfig const & = {});
 
     /**
      * Compile given IR and add it to the JitRuntime.
@@ -44,8 +47,9 @@ namespace monad::vm::compiler::native
     /**
      * Upper bound on (estimated) native contract size in bytes.
      */
-    constexpr uint64_t
-    max_code_size(uint32_t offset, size_t bytecode_size) noexcept
+    constexpr native_code_size_t max_code_size(
+        interpreter::code_size_t offset,
+        interpreter::code_size_t bytecode_size) noexcept
     {
         // A contract will be compiled asynchronously after the accumulated
         // execution gas cost of interpretation reaches this threshold. If
@@ -54,7 +58,6 @@ namespace monad::vm::compiler::native
         // compiled, when `offset` is zero. There is a theoretical hard
         // upper bound on native code size to ensure that the emitter
         // will not overflow relative x86 memory addressing offsets.
-        return std::min(
-            offset + 32 * uint64_t{bytecode_size}, code_size_hard_upper_bound);
+        return offset + shl<5>(bytecode_size);
     }
 }

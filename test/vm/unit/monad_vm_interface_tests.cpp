@@ -80,12 +80,13 @@ TEST(MonadVmInterface, VarcodeCache)
     VarcodeCache cache{max_cache_kb, warm_cache_kb};
     auto [bytecode0, hash0] = make_bytecode(0);
     ASSERT_EQ(
-        VarcodeCache::code_size_to_cache_weight(bytecode0.size()),
+        VarcodeCache::code_size_to_cache_weight(
+            static_cast<uint32_t>(bytecode0.size())),
         bytecode_cache_weight);
     auto icode0 = make_shared_intercode(bytecode0);
     asmjit::JitRuntime asmjit_rt;
-    auto ncode0 =
-        std::make_shared<Nativecode>(asmjit_rt, EVMC_FRONTIER, nullptr, 0);
+    auto ncode0 = std::make_shared<Nativecode>(
+        asmjit_rt, EVMC_FRONTIER, nullptr, std::monostate{});
 
     ASSERT_FALSE(cache.get(hash0).has_value());
     cache.set(hash0, icode0, ncode0);
@@ -101,7 +102,8 @@ TEST(MonadVmInterface, VarcodeCache)
 
     auto [bytecode1, hash1] = make_bytecode(1);
     ASSERT_EQ(
-        VarcodeCache::code_size_to_cache_weight(bytecode1.size()),
+        VarcodeCache::code_size_to_cache_weight(
+            static_cast<uint32_t>(bytecode1.size())),
         bytecode_cache_weight);
     auto icode1 = make_shared_intercode(bytecode1);
 
@@ -117,7 +119,8 @@ TEST(MonadVmInterface, VarcodeCache)
 
     auto [bytecode2, hash2] = make_bytecode(2);
     ASSERT_EQ(
-        VarcodeCache::code_size_to_cache_weight(bytecode2.size()),
+        VarcodeCache::code_size_to_cache_weight(
+            static_cast<uint32_t>(bytecode2.size())),
         bytecode_cache_weight);
     auto icode2 = make_shared_intercode(bytecode2);
 
@@ -403,7 +406,7 @@ TEST(MonadVmInterface, execute)
         execute(EVMC_SHANGHAI, warm_hash, warm_vcode);
         vm.compiler().debug_wait_for_empty_queue();
     }
-    while (warm_vcode->get_intercode_gas_used() < compile_threshold);
+    while (warm_vcode->get_intercode_gas_used() < *compile_threshold);
 
     vm.compiler().debug_wait_for_empty_queue();
 

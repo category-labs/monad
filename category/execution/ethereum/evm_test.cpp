@@ -329,7 +329,7 @@ TEST(Evm, deploy_contract_code)
             EXPECT_EQ(r2.create_address, a);
             auto const icode = s.get_code(a)->intercode();
             EXPECT_EQ(
-                byte_string_view(icode->code(), icode->code_size()),
+                byte_string_view(icode->code(), icode->size()),
                 byte_string_view(code, sizeof(code)));
         }
 
@@ -362,7 +362,7 @@ TEST(Evm, deploy_contract_code)
                       gas - 800); // G_codedeposit * size(code)
             auto const icode = s.get_code(a)->intercode();
             EXPECT_EQ(
-                byte_string_view(icode->code(), icode->code_size()),
+                byte_string_view(icode->code(), icode->size()),
                 byte_string_view(code, sizeof(code)));
         }
 

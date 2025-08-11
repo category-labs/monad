@@ -44,6 +44,7 @@
 using namespace monad;
 using namespace monad::vm::fuzzing;
 using namespace monad::vm::compiler;
+using namespace monad::vm::interpreter;
 
 using random_engine_t = std::mt19937_64;
 
@@ -128,7 +129,9 @@ static arguments parse_args(int const argc, char **const argv)
 static void
 fuzz_iteration(std::vector<uint8_t> const &contract, evmc_revision const)
 {
-    basic_blocks::BasicBlocksIR const ir2{contract};
+    MONAD_VM_ASSERT(contract.size() <= *code_size_t::max());
+    basic_blocks::BasicBlocksIR const ir2 =
+        basic_blocks::BasicBlocksIR::unsafe_from(contract);
     local_stacks::LocalStacksIR ir3{ir2};
     poly_typed::PolyTypedIR ir{std::move(ir3)};
 

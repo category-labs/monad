@@ -483,12 +483,12 @@ public:
             if (it != code_.end()) {
                 auto const &vcode = it->second;
                 MONAD_ASSERT(vcode);
-                return vcode->intercode()->code_size();
+                return vcode->intercode()->size();
             }
         }
         auto const vcode = block_state_.read_code(code_hash);
         MONAD_ASSERT(vcode);
-        return vcode->intercode()->code_size();
+        return vcode->intercode()->size();
     }
 
     size_t copy_code(
@@ -512,7 +512,7 @@ public:
         }
         MONAD_ASSERT(vcode);
         auto const &icode = vcode->intercode();
-        auto const code_size = icode->code_size();
+        auto const code_size = icode->size();
         if (offset > code_size) {
             return 0;
         }

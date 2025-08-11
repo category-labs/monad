@@ -274,17 +274,17 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
     EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
     auto const a_icode = ctdb.read_code(A_CODE_HASH);
-    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->code_size()), A_CODE);
+    EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->size()), A_CODE);
     auto const b_icode = ctdb.read_code(B_CODE_HASH);
-    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->code_size()), B_CODE);
+    EXPECT_EQ(byte_string_view(b_icode->code(), b_icode->size()), B_CODE);
     auto const c_icode = ctdb.read_code(C_CODE_HASH);
-    EXPECT_EQ(byte_string_view(c_icode->code(), c_icode->code_size()), C_CODE);
+    EXPECT_EQ(byte_string_view(c_icode->code(), c_icode->size()), C_CODE);
     auto const d_icode = ctdb.read_code(D_CODE_HASH);
-    EXPECT_EQ(byte_string_view(d_icode->code(), d_icode->code_size()), D_CODE);
+    EXPECT_EQ(byte_string_view(d_icode->code(), d_icode->size()), D_CODE);
     auto const e_icode = ctdb.read_code(E_CODE_HASH);
-    EXPECT_EQ(byte_string_view(e_icode->code(), e_icode->code_size()), E_CODE);
+    EXPECT_EQ(byte_string_view(e_icode->code(), e_icode->size()), E_CODE);
     auto const h_icode = ctdb.read_code(H_CODE_HASH);
-    EXPECT_EQ(byte_string_view(h_icode->code(), h_icode->code_size()), H_CODE);
+    EXPECT_EQ(byte_string_view(h_icode->code(), h_icode->size()), H_CODE);
 
     auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
     ASSERT_TRUE(raw.has_value());

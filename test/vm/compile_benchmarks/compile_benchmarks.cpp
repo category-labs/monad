@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/load_program.hpp>
 
 #include <test_resource_data.h>
@@ -70,11 +71,17 @@ namespace
             return random_byte();
         });
 
+        MONAD_VM_ASSERT(
+            program.size() <= *monad::vm::interpreter::code_size_t::max());
         auto rt = asmjit::JitRuntime{};
 
         for (auto _ : state) {
             auto fn = monad::vm::compiler::native::compile(
-                rt, program, EVMC_LATEST_STABLE_REVISION);
+                rt,
+                program.data(),
+                monad::vm::interpreter::code_size_t::unsafe_from(
+                    static_cast<uint32_t>(program.size())),
+                EVMC_LATEST_STABLE_REVISION);
 
             if (!fn) {
                 return state.SkipWithError("Failed to compile contract");
@@ -104,12 +111,18 @@ namespace
         file.read(buffer.data(), size);
 
         auto program = monad::vm::utils::parse_hex_program(buffer);
+        MONAD_VM_ASSERT(
+            program.size() <= *monad::vm::interpreter::code_size_t::max());
 
         auto rt = asmjit::JitRuntime{};
 
         for (auto _ : state) {
             auto ncode = monad::vm::compiler::native::compile(
-                rt, program, EVMC_LATEST_STABLE_REVISION);
+                rt,
+                program.data(),
+                monad::vm::interpreter::code_size_t::unsafe_from(
+                    static_cast<uint32_t>(program.size())),
+                EVMC_LATEST_STABLE_REVISION);
 
             if (!ncode->entrypoint()) {
                 return state.SkipWithError("Failed to compile contract");

@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <memory>
 #include <thread>
+#include <variant>
 
 namespace monad::vm
 {
@@ -61,7 +62,7 @@ namespace monad::vm
         CompilerConfig const &config)
     {
         return compiler::native::compile(
-            asmjit_rt_, {icode->code(), icode->code_size()}, rev, config);
+            asmjit_rt_, icode->code(), icode->code_size(), rev, config);
     }
 
     SharedNativecode Compiler::cached_compile(
@@ -146,7 +147,7 @@ namespace monad::vm
                     code_hash,
                     icode,
                     std::make_shared<Nativecode>(
-                        asmjit_rt_, revision, nullptr, 0));
+                        asmjit_rt_, revision, nullptr, std::monostate{}));
             }
 
             bool const erase_ok = compile_job_map_.erase(acc);

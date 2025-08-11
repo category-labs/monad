@@ -24,6 +24,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstddef>
+#include <span>
 #include <type_traits>
 #include <variant>
 #include <vector>

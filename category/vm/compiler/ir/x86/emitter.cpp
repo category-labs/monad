@@ -19,6 +19,7 @@
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -319,11 +320,11 @@ namespace monad::vm::compiler::native
 
     asmjit::x86::Mem Emitter::RoData::add32(uint256_t const &x)
     {
-        // The total byte size of the `data_` vector is bounded via
-        // `code_size_hard_upper_bound`. We need `data_` size upper
-        // bounded to not overflow `int32_t` below.
-        static_assert(code_size_hard_upper_bound <= (uint64_t{1} << 31));
-        MONAD_VM_ASSERT(data_.size() < (code_size_hard_upper_bound >> 4));
+        // We need `data_` size upper bounded to not overflow `int32_t`,
+        // i.e. estimate_size() < std::numeric_limits<int32_t>::max()
+        if (MONAD_VM_UNLIKELY(data_.size() >= (1 << 26))) {
+            throw Nativecode::SizeEstimateOutOfBounds{estimate_size()};
+        }
 
         std::array<uint8_t, 32> a;
         x.store_le(a.data());
@@ -363,11 +364,11 @@ namespace monad::vm::compiler::native
     template <size_t N>
     asmjit::x86::Mem Emitter::RoData::add(std::array<uint8_t, N> const &x)
     {
-        // The total byte size of the `data_` vector is bounded via
-        // `code_size_hard_upper_bound`. We need `data_` size upper
-        // bounded to not overflow `int32_t` below.
-        static_assert(code_size_hard_upper_bound <= (uint64_t{1} << 31));
-        MONAD_VM_ASSERT(data_.size() < (code_size_hard_upper_bound >> 4));
+        // We need `data_` size upper bounded to not overflow `int32_t`
+        // i.e. estimate_size() < std::numeric_limits<int32_t>::max()
+        if (MONAD_VM_UNLIKELY(data_.size() >= (1 << 26))) {
+            throw Nativecode::SizeEstimateOutOfBounds{estimate_size()};
+        }
 
         static_assert(4 <= N && N <= 16);
         static_assert(std::popcount(N) == 1);
@@ -413,6 +414,11 @@ namespace monad::vm::compiler::native
         }
         int32_t const offset = it->second;
         return x86::qword_ptr(label_, offset);
+    }
+
+    size_t Emitter::RoData::estimate_size()
+    {
+        return data_.size() << 5;
     }
 
     Emitter::RuntimeImpl &Emitter::RuntimeImpl::pass(StackElemRef &&elem)
@@ -570,7 +576,7 @@ namespace monad::vm::compiler::native
     }
 
     Emitter::Emitter(
-        asmjit::JitRuntime const &rt, uint64_t codesize,
+        asmjit::JitRuntime const &rt, interpreter::code_size_t codesize,
         CompilerConfig const &config)
         : runtime_debug_trace_{config.runtime_debug_trace}
         , as_{init_code_holder(rt, config.asm_log_path)}
@@ -628,7 +634,7 @@ namespace monad::vm::compiler::native
             return static_cast<int32_t>(x);
         }();
         size_t error_offset_repeat_count = 0;
-        for (size_t bid = 0; bid < bytecode_size_; ++bid) {
+        for (size_t bid = 0; bid < *bytecode_size_; ++bid) {
             auto lbl = jump_dests_.find(bid);
             if (lbl != jump_dests_.end()) {
                 as_.embedInt32(error_offset, error_offset_repeat_count);
@@ -957,7 +963,7 @@ namespace monad::vm::compiler::native
         // size of jump table
         return code_holder_.textSection()->realSize() +
                (load_bounded_le_handlers_.size() << 5) +
-               (rodata_.data().size() << 5) + (bytecode_size_ << 2);
+               rodata_.estimate_size() + (*bytecode_size_ << 2);
     }
 
     void Emitter::add_jump_dest(byte_offset d)
@@ -2929,7 +2935,7 @@ namespace monad::vm::compiler::native
     // No discharge
     void Emitter::codesize()
     {
-        stack_.push_literal(bytecode_size_);
+        stack_.push_literal(*bytecode_size_);
     }
 
     // No discharge
@@ -3186,7 +3192,7 @@ namespace monad::vm::compiler::native
     // Discharge indirectly with `jumpi_comparison`
     void Emitter::jumpi(basic_blocks::Block const &ft)
     {
-        MONAD_VM_DEBUG_ASSERT(ft.offset <= bytecode_size_);
+        MONAD_VM_DEBUG_ASSERT(ft.offset <= *bytecode_size_);
         // We spill the stack if the fall through block is a jumpdest, but also
         // in case the number of spills is not proportional to the number of
         // instructions in the fall through block and the fallthrough block
@@ -3217,7 +3223,7 @@ namespace monad::vm::compiler::native
     // No discharge
     void Emitter::stop()
     {
-        runtime_store_input_stack(bytecode_size_);
+        runtime_store_input_stack(*bytecode_size_);
         status_code(runtime::StatusCode::Success);
         as_.jmp(epilogue_label_);
     }
@@ -3231,7 +3237,7 @@ namespace monad::vm::compiler::native
     // Discharge through `return_with_status_code`
     void Emitter::return_()
     {
-        runtime_store_input_stack(bytecode_size_);
+        runtime_store_input_stack(*bytecode_size_);
         return_with_status_code(runtime::StatusCode::Success);
     }
 
@@ -3298,7 +3304,7 @@ namespace monad::vm::compiler::native
 
     asmjit::Label const &Emitter::jump_dest_label(uint256_t const &dest)
     {
-        if (dest >= bytecode_size_) {
+        if (dest >= *bytecode_size_) {
             return error_label_;
         }
         else {
@@ -3373,7 +3379,7 @@ namespace monad::vm::compiler::native
         }
         if (std::holds_alternative<Gpq256>(dest_op)) {
             Gpq256 const &gpq = std::get<Gpq256>(dest_op);
-            as_.cmp(gpq[0], bytecode_size_);
+            as_.cmp(gpq[0], *bytecode_size_);
             as_.jnb(error_label_);
             as_.or_(gpq[1], gpq[2]);
             as_.or_(gpq[1], gpq[3]);
@@ -3395,7 +3401,7 @@ namespace monad::vm::compiler::native
             // Registers rcx and rdx are available, because `block_prologue` has
             // already written stack elements to their final stack offsets.
             as_.mov(x86::rcx, m);
-            as_.cmp(x86::rcx, bytecode_size_);
+            as_.cmp(x86::rcx, *bytecode_size_);
             as_.jnb(error_label_);
             m.addOffset(8);
             as_.mov(x86::rdx, m);

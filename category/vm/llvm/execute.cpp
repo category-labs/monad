@@ -54,7 +54,7 @@ namespace monad::vm::llvm
         auto ptr = std::make_shared<LLVMState>();
         LLVMState &llvm = *ptr;
 
-        auto ir = BasicBlocksIR(make_ir<Rev>(code));
+        auto ir = unsafe_make_ir<Rev>(code);
 
         if (dbg_nm != "") {
             std::ofstream out(std::format("{}.ir", dbg_nm));

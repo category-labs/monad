@@ -143,8 +143,8 @@ TEST(DbBinarySnapshot, Basic)
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);
             EXPECT_EQ(
-                byte_string_view(from_db->code(), from_db->code_size()),
-                byte_string_view(icode->code(), icode->code_size()));
+                byte_string_view(from_db->code(), from_db->size()),
+                byte_string_view(icode->code(), icode->size()));
         }
     }
 

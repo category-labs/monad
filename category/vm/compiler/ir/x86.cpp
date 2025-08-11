@@ -20,6 +20,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/runtime/bin.hpp>
 
 #include <evmc/evmc.h>
 
@@ -33,11 +34,12 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <span>
+#include <variant>
 
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::basic_blocks;
 using namespace monad::vm::compiler::native;
+using namespace monad::vm::interpreter;
 
 namespace
 {
@@ -293,18 +295,13 @@ namespace
         }
     }
 
-    struct SizeEstimateOutOfBounds
-    {
-        size_t size_estimate;
-    };
-
     [[gnu::always_inline]]
-    inline void
-    require_code_size_in_bound(Emitter &emit, size_t max_native_size)
+    inline void require_code_size_in_bound(
+        Emitter &emit, native_code_size_t max_native_size)
     {
         size_t const size_estimate = emit.estimate_size();
-        if (MONAD_VM_UNLIKELY(size_estimate > max_native_size)) {
-            throw SizeEstimateOutOfBounds{size_estimate};
+        if (MONAD_VM_UNLIKELY(size_estimate > *max_native_size)) {
+            throw Nativecode::SizeEstimateOutOfBounds{size_estimate};
         }
     }
 
@@ -324,7 +321,7 @@ namespace
     template <evmc_revision rev>
     void emit_instrs(
         Emitter &emit, Block const &block, int32_t instr_gas,
-        size_t max_native_size, CompilerConfig const &config)
+        native_code_size_t max_native_size, CompilerConfig const &config)
     {
         MONAD_VM_ASSERT(instr_gas <= std::numeric_limits<int32_t>::max());
         int32_t remaining_base_gas = instr_gas;
@@ -410,7 +407,7 @@ namespace
         for (auto const &[d, _] : ir.jump_dests()) {
             emit.add_jump_dest(d);
         }
-        size_t const max_native_size =
+        native_code_size_t const max_native_size =
             max_code_size(config.max_code_size_offset, ir.codesize);
         int32_t accumulated_base_gas = 0;
         for (Block const &block : ir.blocks()) {
@@ -427,15 +424,21 @@ namespace
         }
         size_t const size_estimate = emit.estimate_size();
         auto entry = emit.finish_contract(rt);
-        return std::make_shared<Nativecode>(rt, rev, entry, size_estimate);
+        MONAD_VM_DEBUG_ASSERT(size_estimate <= *max_native_size);
+        return std::make_shared<Nativecode>(
+            rt,
+            rev,
+            entry,
+            native_code_size_t::unsafe_from(
+                static_cast<uint32_t>(size_estimate)));
     }
 
     template <evmc_revision Rev>
     std::shared_ptr<Nativecode> compile_contract(
-        asmjit::JitRuntime &rt, std::span<uint8_t const> contract,
-        CompilerConfig const &config)
+        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        code_size_t contract_code_size, CompilerConfig const &config)
     {
-        auto ir = BasicBlocksIR(basic_blocks::make_ir<Rev>(contract));
+        auto ir = basic_blocks::make_ir<Rev>(contract_code, contract_code_size);
         return compile_basic_blocks<Rev>(rt, ir, config);
     }
 }
@@ -443,52 +446,64 @@ namespace
 namespace monad::vm::compiler::native
 {
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, std::span<uint8_t const> contract,
-        evmc_revision rev, CompilerConfig const &config)
+        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        code_size_t contract_code_size, evmc_revision rev,
+        CompilerConfig const &config)
     {
         try {
             switch (rev) {
             case EVMC_FRONTIER:
-                return ::compile_contract<EVMC_FRONTIER>(rt, contract, config);
+                return ::compile_contract<EVMC_FRONTIER>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_HOMESTEAD:
-                return ::compile_contract<EVMC_HOMESTEAD>(rt, contract, config);
+                return ::compile_contract<EVMC_HOMESTEAD>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_TANGERINE_WHISTLE:
                 return ::compile_contract<EVMC_TANGERINE_WHISTLE>(
-                    rt, contract, config);
+                    rt, contract_code, contract_code_size, config);
             case EVMC_SPURIOUS_DRAGON:
                 return ::compile_contract<EVMC_SPURIOUS_DRAGON>(
-                    rt, contract, config);
+                    rt, contract_code, contract_code_size, config);
             case EVMC_BYZANTIUM:
-                return ::compile_contract<EVMC_BYZANTIUM>(rt, contract, config);
+                return ::compile_contract<EVMC_BYZANTIUM>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_CONSTANTINOPLE:
                 return ::compile_contract<EVMC_CONSTANTINOPLE>(
-                    rt, contract, config);
+                    rt, contract_code, contract_code_size, config);
             case EVMC_PETERSBURG:
                 return ::compile_contract<EVMC_PETERSBURG>(
-                    rt, contract, config);
+                    rt, contract_code, contract_code_size, config);
             case EVMC_ISTANBUL:
-                return ::compile_contract<EVMC_ISTANBUL>(rt, contract, config);
+                return ::compile_contract<EVMC_ISTANBUL>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_BERLIN:
-                return ::compile_contract<EVMC_BERLIN>(rt, contract, config);
+                return ::compile_contract<EVMC_BERLIN>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_LONDON:
-                return ::compile_contract<EVMC_LONDON>(rt, contract, config);
+                return ::compile_contract<EVMC_LONDON>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_PARIS:
-                return ::compile_contract<EVMC_PARIS>(rt, contract, config);
+                return ::compile_contract<EVMC_PARIS>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_SHANGHAI:
-                return ::compile_contract<EVMC_SHANGHAI>(rt, contract, config);
+                return ::compile_contract<EVMC_SHANGHAI>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_CANCUN:
-                return ::compile_contract<EVMC_CANCUN>(rt, contract, config);
+                return ::compile_contract<EVMC_CANCUN>(
+                    rt, contract_code, contract_code_size, config);
             case EVMC_PRAGUE:
-                return ::compile_contract<EVMC_PRAGUE>(rt, contract, config);
+                return ::compile_contract<EVMC_PRAGUE>(
+                    rt, contract_code, contract_code_size, config);
             default:
                 MONAD_VM_ASSERT(false);
             }
         }
         catch (Emitter::Error const &e) {
             LOG_ERROR("ERROR: X86 emitter: failed compile: {}", e.what());
-            return std::make_shared<Nativecode>(rt, rev, nullptr, 0);
+            return std::make_shared<Nativecode>(
+                rt, rev, nullptr, std::monostate{});
         }
-        catch (SizeEstimateOutOfBounds const &e) {
+        catch (Nativecode::SizeEstimateOutOfBounds const &e) {
             LOG_WARNING(
                 "WARNING: X86 emitter: native code out of bound: {}",
                 e.size_estimate);

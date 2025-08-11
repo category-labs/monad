@@ -19,6 +19,7 @@
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -45,6 +46,7 @@
 namespace runtime = monad::vm::runtime;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::native;
+using namespace monad::vm::interpreter;
 using namespace monad::vm::runtime;
 
 namespace
@@ -316,7 +318,8 @@ namespace
         uint256_t const &left, uint256_t const &right, uint256_t const &result)
     {
         std::vector<uint8_t> bytecode1{PUSH0, PUSH0, opcode, PUSH0, RETURN};
-        auto ir1 = basic_blocks::BasicBlocksIR(std::move(bytecode1));
+        auto ir1 =
+            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode1));
         for (auto left_loc : all_locations) {
             for (auto right_loc : all_locations) {
                 pure_bin_instr_test_instance(
@@ -344,7 +347,8 @@ namespace
             POP,
             opcode,
             RETURN};
-        auto ir2 = basic_blocks::BasicBlocksIR(std::move(bytecode2));
+        auto ir2 =
+            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode2));
         for (auto left_loc : all_locations) {
             for (auto right_loc : all_locations) {
                 pure_bin_instr_test_instance(
@@ -374,7 +378,8 @@ namespace
         uint256_t const &input, uint256_t const &result)
     {
         std::vector<uint8_t> bytecode1{PUSH0, opcode, PUSH0, RETURN};
-        auto ir1 = basic_blocks::BasicBlocksIR(std::move(bytecode1));
+        auto ir1 =
+            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode1));
         for (auto loc : all_locations) {
             pure_una_instr_test_instance(
                 rt, instr, input, loc, result, ir1, false);
@@ -382,7 +387,8 @@ namespace
 
         std::vector<uint8_t> bytecode2{
             PUSH0, DUP1, opcode, SWAP1, opcode, RETURN};
-        auto ir2 = basic_blocks::BasicBlocksIR(std::move(bytecode2));
+        auto ir2 =
+            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode2));
         for (auto loc : all_locations) {
             pure_una_instr_test_instance(
                 rt, instr, input, loc, result, ir1, true);
@@ -415,9 +421,9 @@ namespace
 #endif
 
         auto ir =
-            swap ? basic_blocks::BasicBlocksIR(
+            swap ? basic_blocks::BasicBlocksIR::unsafe_from(
                        {PUSH0, PUSH0, PUSH0, SWAP1, JUMP, JUMPDEST, RETURN})
-                 : basic_blocks::BasicBlocksIR(
+                 : basic_blocks::BasicBlocksIR::unsafe_from(
                        {PUSH0, PUSH0, PUSH0, JUMP, JUMPDEST, RETURN});
 
         asmjit::JitRuntime rt;
@@ -502,7 +508,7 @@ namespace
         bytecode.push_back(JUMPDEST);
         bytecode.push_back(REVERT);
 
-        return basic_blocks::BasicBlocksIR(std::move(bytecode));
+        return basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode));
     }
 
     void jumpi_test(
@@ -627,7 +633,7 @@ namespace
                     Emitter::location_type_to_string(loc5)) << std::endl;
 #endif
 
-        auto ir = basic_blocks::BasicBlocksIR(
+        auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
             {PUSH0,
              PUSH0,
              JUMPDEST,
@@ -718,7 +724,7 @@ namespace
 TEST(Emitter, empty)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
 
     entrypoint_t entry = emit.finish_contract(rt);
     auto ctx = test_context();
@@ -734,7 +740,7 @@ TEST(Emitter, empty)
 TEST(Emitter, stop)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 1};
+    Emitter emit{rt, bin<1>};
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
@@ -749,7 +755,7 @@ TEST(Emitter, stop)
 TEST(Emitter, fail_with_error)
 {
     asmjit::JitRuntime const rt;
-    Emitter emit{rt, 1};
+    Emitter emit{rt, bin<1>};
     // Test that asmjit error handler is in place:
     EXPECT_THROW(emit.fail_with_error(asmjit::kErrorOk), Emitter::Error);
 }
@@ -757,7 +763,7 @@ TEST(Emitter, fail_with_error)
 TEST(Emitter, invalid_instruction)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 1};
+    Emitter emit{rt, bin<1>};
     emit.invalid_instruction();
 
     entrypoint_t entry = emit.finish_contract(rt);
@@ -772,7 +778,7 @@ TEST(Emitter, invalid_instruction)
 TEST(Emitter, gas_decrement_no_check_1)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
     emit.gas_decrement_no_check(2);
 
     entrypoint_t entry = emit.finish_contract(rt);
@@ -786,7 +792,7 @@ TEST(Emitter, gas_decrement_no_check_1)
 TEST(Emitter, gas_decrement_no_check_2)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
     emit.gas_decrement_no_check(7);
 
     entrypoint_t entry = emit.finish_contract(rt);
@@ -800,7 +806,7 @@ TEST(Emitter, gas_decrement_no_check_2)
 TEST(Emitter, gas_decrement_check_non_negative_1)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
     emit.gas_decrement_check_non_negative(6);
     emit.stop();
 
@@ -817,7 +823,7 @@ TEST(Emitter, gas_decrement_check_non_negative_1)
 TEST(Emitter, gas_decrement_check_non_negative_2)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
     emit.gas_decrement_check_non_negative(5);
     emit.stop();
 
@@ -834,7 +840,7 @@ TEST(Emitter, gas_decrement_check_non_negative_2)
 TEST(Emitter, gas_decrement_check_non_negative_3)
 {
     asmjit::JitRuntime rt;
-    Emitter emit{rt, 0};
+    Emitter emit{rt, code_size_t{}};
     emit.gas_decrement_check_non_negative(4);
     emit.stop();
 
@@ -850,7 +856,7 @@ TEST(Emitter, gas_decrement_check_non_negative_3)
 
 TEST(Emitter, return_)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH1, 1, PUSH1, 2});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 1, PUSH1, 2});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -875,7 +881,7 @@ TEST(Emitter, return_)
 
 TEST(Emitter, revert)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH1, 1, PUSH1, 2});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 1, PUSH1, 2});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -899,7 +905,7 @@ TEST(Emitter, revert)
 
 TEST(Emitter, mov_stack_index_to_avx_reg)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH1, 1, PUSH1, 2});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 1, PUSH1, 2});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -971,7 +977,8 @@ TEST(Emitter, mov_literal_to_ymm)
 
     for (auto const &lit0 : literals) {
         for (auto const &lit1 : literals) {
-            auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, RETURN});
+            auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+                {PUSH0, PUSH0, RETURN});
 
             asmjit::JitRuntime rt;
             Emitter emit{rt, ir.codesize};
@@ -1012,7 +1019,7 @@ TEST(Emitter, mov_literal_to_ymm)
 
 TEST(Emitter, mov_stack_index_to_general_reg)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH1, 1, PUSH1, 2});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 1, PUSH1, 2});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -1072,7 +1079,7 @@ TEST(Emitter, mov_stack_index_to_general_reg)
 
 TEST(Emitter, mov_stack_index_to_stack_offset)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH1, 1, PUSH1, 2});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 1, PUSH1, 2});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -1144,7 +1151,7 @@ TEST(Emitter, mov_stack_index_to_stack_offset)
 
 TEST(Emitter, discharge_deferred_comparison)
 {
-    auto ir = basic_blocks::BasicBlocksIR(
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
         {PUSH0, PUSH0, LT, DUP1, DUP1, PUSH0, SWAP1, POP, LT, RETURN});
 
     asmjit::JitRuntime rt;
@@ -1195,7 +1202,7 @@ TEST(Emitter, discharge_deferred_comparison)
 
 TEST(Emitter, discharge_negated_deferred_comparison)
 {
-    auto ir = basic_blocks::BasicBlocksIR(
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
         {PUSH0,
          PUSH0,
          LT,
@@ -1311,7 +1318,7 @@ TEST(Emitter, lt)
 
 TEST(Emitter, lt_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, LT});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, LT});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1353,7 +1360,7 @@ TEST(Emitter, gt)
 
 TEST(Emitter, gt_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, GT});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, GT});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1411,7 +1418,7 @@ TEST(Emitter, slt)
 
 TEST(Emitter, slt_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, SLT});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, SLT});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1469,7 +1476,7 @@ TEST(Emitter, sgt)
 
 TEST(Emitter, sgt_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, SGT});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, SGT});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1527,7 +1534,7 @@ TEST(Emitter, sub_with_elim_operation)
 
 TEST(Emitter, sub_identity)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SUB});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SUB});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1588,7 +1595,7 @@ TEST(Emitter, add_with_elim_operation)
 
 TEST(Emitter, add_identity_right)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, ADD});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, ADD});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -1602,7 +1609,7 @@ TEST(Emitter, add_identity_right)
 
 TEST(Emitter, add_identity_left)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, ADD});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, ADD});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2211,7 +2218,7 @@ TEST(Emitter, and_with_elim_operation)
 
 TEST(Emitter, and_identity_left)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, AND});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, AND});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2225,7 +2232,7 @@ TEST(Emitter, and_identity_left)
 
 TEST(Emitter, and_identity_right)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, AND});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, AND});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2271,7 +2278,7 @@ TEST(Emitter, or_with_elim_operation)
 
 TEST(Emitter, or_identity_left)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, OR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, OR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2285,7 +2292,7 @@ TEST(Emitter, or_identity_left)
 
 TEST(Emitter, or_identity_right)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, AND});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, AND});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2340,7 +2347,7 @@ TEST(Emitter, xor_)
 
 TEST(Emitter, xor_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, XOR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, XOR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2393,7 +2400,7 @@ TEST(Emitter, eq)
 
 TEST(Emitter, eq_same)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, DUP1, EQ});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, DUP1, EQ});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2565,7 +2572,7 @@ TEST(Emitter, shl)
 
 TEST(Emitter, shl_identity)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SHL});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SHL});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2579,7 +2586,7 @@ TEST(Emitter, shl_identity)
 
 TEST(Emitter, shl_0)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SHL});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SHL});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2634,7 +2641,7 @@ TEST(Emitter, shr)
 
 TEST(Emitter, shr_identity)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SHR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SHR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2648,7 +2655,7 @@ TEST(Emitter, shr_identity)
 
 TEST(Emitter, shr_0)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SHR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SHR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2740,7 +2747,7 @@ TEST(Emitter, sar)
 
 TEST(Emitter, sar_identity)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SAR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SAR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2754,7 +2761,7 @@ TEST(Emitter, sar_identity)
 
 TEST(Emitter, sar_0)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SAR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SAR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2768,7 +2775,7 @@ TEST(Emitter, sar_0)
 
 TEST(Emitter, sar_max)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, SAR});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, SAR});
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
     (void)emit.begin_new_block(ir.blocks()[0]);
@@ -2807,7 +2814,7 @@ TEST(Emitter, call_runtime_impl)
 TEST(Emitter, call_runtime_12_arg_fun)
 {
     static_assert(Emitter::MAX_RUNTIME_ARGS == 12);
-    auto ir = basic_blocks::BasicBlocksIR(
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
         {PUSH0,
          PUSH0,
          PUSH0,
@@ -2845,7 +2852,7 @@ TEST(Emitter, call_runtime_12_arg_fun)
 TEST(Emitter, call_runtime_11_arg_fun)
 {
     static_assert(Emitter::MAX_RUNTIME_ARGS == 12);
-    auto ir = basic_blocks::BasicBlocksIR(
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
         {PUSH0,
          PUSH0,
          PUSH0,
@@ -2881,7 +2888,8 @@ TEST(Emitter, call_runtime_11_arg_fun)
 
 TEST(Emitter, runtime_exit)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, PUSH0, EXP, RETURN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {PUSH0, PUSH0, PUSH0, EXP, RETURN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -2904,7 +2912,7 @@ TEST(Emitter, runtime_exit)
 
 TEST(Emitter, address)
 {
-    auto ir = basic_blocks::BasicBlocksIR({ADDRESS, ADDRESS});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({ADDRESS, ADDRESS});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -2934,7 +2942,7 @@ TEST(Emitter, address)
 
 TEST(Emitter, origin)
 {
-    auto ir = basic_blocks::BasicBlocksIR({ORIGIN, ORIGIN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({ORIGIN, ORIGIN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -2957,7 +2965,7 @@ TEST(Emitter, origin)
 
 TEST(Emitter, gasprice)
 {
-    auto ir = basic_blocks::BasicBlocksIR({GASPRICE, GASPRICE});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({GASPRICE, GASPRICE});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -2980,7 +2988,7 @@ TEST(Emitter, gasprice)
 
 TEST(Emitter, gaslimit)
 {
-    auto ir = basic_blocks::BasicBlocksIR({GASLIMIT, GASLIMIT});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({GASLIMIT, GASLIMIT});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3003,7 +3011,7 @@ TEST(Emitter, gaslimit)
 
 TEST(Emitter, coinbase)
 {
-    auto ir = basic_blocks::BasicBlocksIR({COINBASE, COINBASE});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({COINBASE, COINBASE});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3026,7 +3034,7 @@ TEST(Emitter, coinbase)
 
 TEST(Emitter, timestamp)
 {
-    auto ir = basic_blocks::BasicBlocksIR({TIMESTAMP, TIMESTAMP});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({TIMESTAMP, TIMESTAMP});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3049,7 +3057,7 @@ TEST(Emitter, timestamp)
 
 TEST(Emitter, number)
 {
-    auto ir = basic_blocks::BasicBlocksIR({NUMBER, NUMBER});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({NUMBER, NUMBER});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3072,7 +3080,8 @@ TEST(Emitter, number)
 
 TEST(Emitter, prevrandao)
 {
-    auto ir = basic_blocks::BasicBlocksIR({DIFFICULTY, DIFFICULTY});
+    auto ir =
+        basic_blocks::BasicBlocksIR::unsafe_from({DIFFICULTY, DIFFICULTY});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3095,7 +3104,7 @@ TEST(Emitter, prevrandao)
 
 TEST(Emitter, chainid)
 {
-    auto ir = basic_blocks::BasicBlocksIR({CHAINID, CHAINID});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({CHAINID, CHAINID});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3118,7 +3127,7 @@ TEST(Emitter, chainid)
 
 TEST(Emitter, basefee)
 {
-    auto ir = basic_blocks::BasicBlocksIR({BASEFEE, BASEFEE});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({BASEFEE, BASEFEE});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3141,7 +3150,8 @@ TEST(Emitter, basefee)
 
 TEST(Emitter, blobbasefee)
 {
-    auto ir = basic_blocks::BasicBlocksIR({BLOBBASEFEE, BLOBBASEFEE});
+    auto ir =
+        basic_blocks::BasicBlocksIR::unsafe_from({BLOBBASEFEE, BLOBBASEFEE});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3164,7 +3174,7 @@ TEST(Emitter, blobbasefee)
 
 TEST(Emitter, caller)
 {
-    auto ir = basic_blocks::BasicBlocksIR({CALLER, CALLER});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({CALLER, CALLER});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3194,7 +3204,8 @@ TEST(Emitter, caller)
 
 TEST(Emitter, calldatasize)
 {
-    auto ir = basic_blocks::BasicBlocksIR({CALLDATASIZE, CALLDATASIZE, RETURN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {CALLDATASIZE, CALLDATASIZE, RETURN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3216,8 +3227,8 @@ TEST(Emitter, calldatasize)
 
 TEST(Emitter, returndatasize)
 {
-    auto ir =
-        basic_blocks::BasicBlocksIR({RETURNDATASIZE, RETURNDATASIZE, RETURN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {RETURNDATASIZE, RETURNDATASIZE, RETURN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3239,7 +3250,7 @@ TEST(Emitter, returndatasize)
 
 TEST(Emitter, msize)
 {
-    auto ir = basic_blocks::BasicBlocksIR({MSIZE, MSIZE, RETURN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({MSIZE, MSIZE, RETURN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3386,7 +3397,7 @@ TEST(Emitter, MemoryInstructions)
                 DUP1,
                 RETURN};
         }
-        auto ir = basic_blocks::BasicBlocksIR(bytecode);
+        auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
         for (auto sloc1 : all_locations) {
             for (auto sloc2 : all_locations) {
@@ -3403,7 +3414,7 @@ TEST(Emitter, mstore_not_bounded_by_bits)
 {
     std::vector<uint8_t> bytecode{PUSH0, PUSH0, MSTORE};
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     for (auto loc : all_locations) {
         asmjit::JitRuntime rt;
@@ -3452,7 +3463,7 @@ TEST(Emitter, mload_not_bounded_by_bits)
 {
     std::vector<uint8_t> bytecode{PUSH0, MLOAD};
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     for (auto loc : all_locations) {
         asmjit::JitRuntime rt;
@@ -3519,7 +3530,8 @@ TEST(Emitter, calldataload)
                 bytecode.push_back(CALLDATALOAD);
                 bytecode.push_back(RETURN);
 
-                auto const ir = basic_blocks::BasicBlocksIR(bytecode);
+                auto const ir =
+                    basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
                 asmjit::JitRuntime rt;
                 Emitter emit{rt, ir.codesize, {.asm_log_path = "/tmp/file.s"}};
@@ -3569,7 +3581,7 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
 {
     std::vector<uint8_t> bytecode{PUSH0, CALLDATALOAD, DUP1, RETURN};
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     static constexpr uint32_t input_data_size = (uint64_t{1} << 32) - 1;
     std::unique_ptr<uint8_t[]> input_data{new uint8_t[input_data_size]};
@@ -3653,7 +3665,7 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
 
 TEST(Emitter, gas)
 {
-    auto ir = basic_blocks::BasicBlocksIR({GAS, GAS, RETURN});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({GAS, GAS, RETURN});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3674,7 +3686,7 @@ TEST(Emitter, gas)
 
 TEST(Emitter, callvalue)
 {
-    auto ir = basic_blocks::BasicBlocksIR({CALLVALUE, CALLVALUE});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({CALLVALUE, CALLVALUE});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3738,7 +3750,7 @@ TEST(Emitter, jump)
 
 TEST(Emitter, jump_bad_jumpdest)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, JUMP});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, JUMP});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3783,7 +3795,7 @@ TEST(Emitter, jumpi)
 
 TEST(Emitter, jumpi_bad_jumpdest)
 {
-    auto ir = basic_blocks::BasicBlocksIR({PUSH0, PUSH0, JUMPI});
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0, PUSH0, JUMPI});
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3828,7 +3840,7 @@ TEST(Emitter, SpillGeneralRegister)
     for (size_t i = 0; i <= GENERAL_REG_COUNT; ++i) {
         bytecode.push_back(ADDRESS);
     }
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
@@ -3860,7 +3872,7 @@ TEST(Emitter, SpillAvxRegister)
     for (size_t i = 0; i <= 3 + AVX_REG_COUNT; ++i) {
         bytecode.push_back(CALLVALUE);
     }
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
@@ -3903,7 +3915,7 @@ TEST(Emitter, QuadraticCompileTimeRegression)
         bytecode.push_back(JUMPI);
     }
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime const rt;
     Emitter emit{rt, ir.codesize};
@@ -3930,7 +3942,7 @@ TEST(Emitter, SpillInMovGeneralRegToAvxRegRegression)
         bytecode.push_back(PUSH0);
     }
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};
@@ -3967,7 +3979,7 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
 {
     std::vector<uint8_t> bytecode{ADDRESS, DUP1, AND, STOP};
 
-    auto ir = basic_blocks::BasicBlocksIR(bytecode);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime rt;
     Emitter emit{rt, ir.codesize};

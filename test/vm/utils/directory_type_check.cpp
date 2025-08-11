@@ -62,7 +62,8 @@ bool read_contract(fs::path const &path, std::vector<uint8_t> &result)
 void type_check_contract(
     fs::path const &path, std::vector<uint8_t> const &contract)
 {
-    basic_blocks::BasicBlocksIR ir2{std::move(contract)};
+    basic_blocks::BasicBlocksIR ir2 =
+        basic_blocks::BasicBlocksIR::unsafe_from(std::move(contract));
     local_stacks::LocalStacksIR ir3{std::move(ir2)};
 
     auto start_time = std::chrono::high_resolution_clock::now();

@@ -44,8 +44,8 @@ namespace monad::vm
         utils::EuclidMean<uint64_t> avg_compiled_bytecode_size_;
         utils::GeoMean<double> avg_native_code_ratio_;
         utils::EuclidMean<int64_t> avg_compile_time_;
-        std::atomic<uint64_t> max_native_code_size_{0};
-        std::atomic<uint64_t> max_compiled_bytecode_size_{0};
+        std::atomic<uint32_t> max_native_code_size_{0};
+        std::atomic<uint32_t> max_compiled_bytecode_size_{0};
         std::atomic<uint64_t> num_compiled_contracts_{0};
         std::atomic<int64_t> max_compile_time_{0};
         std::atomic<uint64_t> num_unexpected_compilation_errors_{0};
@@ -70,8 +70,8 @@ namespace monad::vm
 
                 case Nativecode::ErrorCode::NoError:
                     auto native_code_size_estimate =
-                        ncode->code_size_estimate();
-                    auto bytecode_size = icode->code_size();
+                        *ncode->code_size_estimate();
+                    auto bytecode_size = *icode->code_size();
                     avg_native_code_size_.update(native_code_size_estimate);
                     avg_compiled_bytecode_size_.update(bytecode_size);
                     if (bytecode_size > 0) {

@@ -22,6 +22,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
@@ -54,7 +55,7 @@ namespace
         constexpr evmc_revision Rev = EVMC_LATEST_STABLE_REVISION;
         monad::vm::compiler::native::CompilerConfig const config{};
         auto const ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
-            monad::vm::compiler::basic_blocks::make_ir<Rev>(bytecode));
+            monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(bytecode));
         return monad::vm::compiler::native::compile_basic_blocks(
             Rev, rt, ir, config);
     }

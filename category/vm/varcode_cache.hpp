@@ -61,7 +61,7 @@ namespace monad::vm
         }
 
         // Cache weight of the given code size.
-        static std::uint32_t code_size_to_cache_weight(std::size_t code_size);
+        static std::uint32_t code_size_to_cache_weight(std::uint32_t code_size);
 
         /// Get approximate total weight of the cached elements.
         uint64_t approx_weight() const

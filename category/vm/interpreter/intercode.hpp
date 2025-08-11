@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/vm/runtime/bin.hpp>
+
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -22,6 +24,8 @@
 
 namespace monad::vm::interpreter
 {
+    using code_size_t = runtime::Bin<20>;
+
     class Intercode
     {
         // 30 bytes of initial padding ensures that we can implement all
@@ -51,19 +55,24 @@ namespace monad::vm::interpreter
             return padded_code_;
         }
 
-        std::size_t code_size() const noexcept
+        code_size_t code_size() const noexcept
         {
             return code_size_;
         }
 
+        size_t size() const noexcept
+        {
+            return *code_size_;
+        }
+
         bool is_jumpdest(std::size_t const pc) const noexcept
         {
-            return pc < code_size_ && jumpdest_map_[pc];
+            return pc < *code_size_ && jumpdest_map_[pc];
         }
 
     private:
         std::uint8_t const *padded_code_;
-        std::size_t code_size_;
+        code_size_t code_size_;
         JumpdestMap jumpdest_map_;
 
         static std::uint8_t const *

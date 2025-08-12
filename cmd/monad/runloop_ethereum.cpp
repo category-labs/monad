@@ -27,6 +27,9 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
+#include <category/execution/ethereum/event/record_block_events.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -73,14 +76,6 @@ void log_tps(
 };
 
 #pragma GCC diagnostic pop
-
-// Named pair holding the Ethereum block execution outputs
-// TODO(ken): in a later event PR this moves to record_block_events.hpp
-struct BlockExecOutput
-{
-    BlockHeader eth_header;
-    bytes32_t eth_block_hash;
-};
 
 // Processing a historical Ethereum block encompasses all the following
 // actions:
@@ -145,6 +140,7 @@ Result<BlockExecOutput> process_ethereum_block(
                       std::make_unique<NoopCallTracer>()};
     }
 
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto receipts,
         execute_block(
@@ -157,6 +153,7 @@ Result<BlockExecOutput> process_ethereum_block(
             priority_pool,
             block_metrics,
             call_tracers));
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
@@ -221,6 +218,29 @@ Result<BlockExecOutput> process_ethereum_block(
     return exec_output;
 }
 
+// Historical Ethereum replay does not have consensus events like the Monad
+// chain, but we emit dummy versions because it reduces the difference for
+// event consuming code that waits to see a particular commitment state (e.g.,
+// finalized) before acting; the "blockcap" helper library (which only records
+// finalized blocks) is an example. This does not try to imitate the pipelined
+// operation of the Monad chain's consensus events
+void emit_consensus_events(bytes32_t const &block_id, uint64_t block_number)
+{
+    monad_exec_block_qc const qc = {
+        .block_tag = {.id = block_id, .block_number = block_number},
+        .round = block_number + 1,
+        .epoch = 0};
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_QC, qc);
+
+    monad_exec_block_finalized const finalized_info = {
+        .id = block_id, .block_number = block_number};
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_FINALIZED, finalized_info);
+
+    monad_exec_block_verified const verified_info = {
+        .block_number = block_number};
+    record_exec_event(std::nullopt, MONAD_EXEC_BLOCK_VERIFIED, verified_info);
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -240,9 +260,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
-
+    uint256_t const chain_id = chain.get_chain_id();
     BlockDb block_db(ledger_dir);
     bytes32_t parent_block_id{};
+
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -251,9 +272,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             block_num);
 
         bytes32_t const block_id = bytes32_t{block_num};
+        record_block_exec_start(
+            block_id,
+            chain_id,
+            block.header.parent_hash,
+            block.header,
+            block.header.number,
+            0,
+            size(block.transactions));
+
         BOOST_OUTCOME_TRY(
             BlockExecOutput const exec_output,
-            process_ethereum_block(
+            record_block_exec_result(process_ethereum_block(
                 chain,
                 db,
                 vm,
@@ -262,8 +292,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block,
                 block_id,
                 parent_block_id,
-                enable_tracing));
+                enable_tracing)));
 
+        emit_consensus_events(block_id, block_num);
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();
         total_gas += block.header.gas_used;

@@ -101,6 +101,10 @@ add_library(
   "ethereum/event/exec_event_recorder.cpp"
   "ethereum/event/exec_event_recorder.hpp"
   "ethereum/event/exec_iter_help.h"
+  "ethereum/event/record_block_events.cpp"
+  "ethereum/event/record_block_events.hpp"
+  "ethereum/event/record_txn_events.cpp"
+  "ethereum/event/record_txn_events.hpp"
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"

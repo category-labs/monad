@@ -380,14 +380,14 @@ Qed.
 
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
-  let '(sf, r) :=  execValidatedTx s tx in
+  let sf :=  (execValidatedTx s tx).1 in
   (forall ac, (ac <> sender tx) ->
               ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
 Proof. Admitted.
 
 (* TODO: do the more liberal check and then weaken the then case to inequality *)
 Lemma execTxSenderBal tx s:
-  let '(sf, r) :=  execValidatedTx s tx in
+  let sf :=  (execValidatedTx s tx).1 in
   (if isAllowedToEmpty s [] tx
   then balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
   else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
@@ -395,12 +395,12 @@ Proof. Admitted.
 
 (* what happens if the tx undelegates something. maybe weaken it *)
 Lemma execTxDelegationUpd tx s:
-  let '(sf, r) :=  execValidatedTx s tx in
+  let sf :=  (execValidatedTx s tx).1 in
   (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof. Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
-  let '(sf, r) :=  execValidatedTx s tx in
+  let sf :=  (execValidatedTx s tx).1 in
   (forall ac, ac <> sender tx
 
               -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
@@ -540,17 +540,35 @@ Proof using.
   }
 Qed.
 
+Lemma forallCons {T} (P : T -> Prop) (l: list T) (h:T):
+  (forall t, t ∈ (h::l) -> P t)
+  -> (P h  /\ forall t, t ∈ l -> P t).
+Proof using.
+  intros Hp.
+  pose proof (Hp h) as Hd.
+  autorewrite with iff in *.
+  split.
+  - apply Hd. left. reflexivity.
+  - intros. apply Hp. autorewrite with iff. right. assumption.
+Qed.
+  
+  
+  
+  
 Lemma debitLeq extension s tx rest:
   let sf :=  fst (execValidatedTx s tx) in 
-  Forall (fun txr => txBlockNum txr - K ≤ txBlockNum txlast ≤ txBlockNum txr) rest 
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (maxTotalReserveDippableDebitL  sf rest extension)
   = (maxTotalReserveDippableDebitL  s (tx::rest) extension).
 Proof using.
+  hnf.
   revert rest.
   induction extension; auto;[].
-  intros.
+  intros ? Hr.
+  apply forallCons in Hr.
+  forward_reason.
   simpl.
-  rewrite IHextension.
+  rewrite IHextension; try assumption;[].
   apply gmapEquiv.
   intros ad.
   repeat rewrite updateKeyLkp3.
@@ -558,22 +576,10 @@ Proof using.
   unfold updateTotals.
   simpl.
   apply ite_fequiv; try reflexivity.
-  unfold isAllowedToEmpty.
-  simpl. f_equiv.
-  2:{
-    simpl.
-    
-    Lemma existsTxWithinKUpd s tx a:
-      let sf :=  fst (execValidatedTx s tx) in 
-      existsTxWithinK sf a = existsTxWithinK s a.
-  - admit. (* existsDelegatingTxWithinK sf a <-> (existsDelegatingTxWithinK s a) ||  addrsDelegatedByTx tx *)
-  - admit. (* similar prop for [existsTxWithinK] *) *)
-Admitted. (* seems easy *)
+  apply isAllowedToEmpty2.
+  split; try lia.
+Qed.
 
-  Search (gmap _ _) (_ = _).
-  Search  gmap Proper.
-  Search updateKey.
-  f_equiv.
 #[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
 Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
   (forall x, P /\ Q x)  -> P /\ forall x, Q x.
@@ -587,7 +593,7 @@ Hint Resolve list_subseteq_app_r : listset.
 Hint Resolve list_subseteq_app_l : listset.
 
 Lemma debLsnd rest extension ac s tx:
-  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx)))
+  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx)))
   -> snd (maxTotalReserveDippableDebitL s (tx::rest) extension !!! ac) = None.
 Proof using.
   intros Hyp.
@@ -649,11 +655,12 @@ Hcorel : forall ac : evm.address, ac ≠ sender tx -> ReserveBal `min` balanceOf
   Hcorerrr : forall ac : evm.address, ac ≠ sender tx -> if addrDelegated sf ac then True else balanceOfAc s ac ≤ balanceOfAc sf ac
 *)
 Lemma execL tx extension s:
-  consensusAcceptableTxs s (tx::extension)
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
-  remember (execValidatedTx s tx) as ss.
-  destruct ss as [sf  res].
+  intros Hext.
+  set (sf:=(execValidatedTx s tx).1).
   intros Hc.
   unfold consensusAcceptableTxs in *.
   simpl in *.
@@ -663,34 +670,33 @@ Proof using.
   rewrite updateKeyLkp3 in Hc.
   assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
          ) as Hass.
-  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx). reflexivity. }
+  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
   specialize (Hass ac).
   autorewrite with iff.
-  symmetry in Heqss.
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
     pose proof (execTxOtherBalanceLB tx s) as Hot.
     pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
-    rewrite -> Heqss in Hot.
-    rewrite -> Heqss in Hdeb.
+    simpl in *.
     specialize (Hot ac ltac:(auto)).
     specialize (Hdeb ac ltac:(auto)).
     rewrite Hass.
     clear Hass.
+    fold sf in Hdeb.
     remember (addrDelegated sf ac) as dg.
     destruct dg.
     2:{ (* ac is not delegated *)
        revert Hc.
        rwHypsP.
        utils.case_match_concl.
-       destruct o; try lia.
+       destruct o; subst sf; try lia.
     }
     {
       pose proof (debLsnd [] extension ac s tx) as Hsnd.
       remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
       destruct rd as [nonEmptyingDebits emptyingDebits].
       pose proof (execTxDelegationUpd tx s) as Hdel.
-      rewrite -> Heqss in Hdel.
+      simpl in Hdel. fold sf in Hdel.
       specialize (Hdel ac).
       simpl in *.
       repeat rewrite -> bool.Is_true_eq in *.
@@ -700,6 +706,7 @@ Proof using.
       revert Hc.
       rwHypsP.
       intros.
+      subst sf.
       lia.
     }
   }
@@ -716,7 +723,7 @@ Proof using.
     simpl in *.
     rwHypsP.
     pose proof (execTxSenderBal tx s) as Hsender.
-    rewrite -> Heqss in Hsender.
+    simpl in Hsender. fold sf in Hsender.
     destruct ae; simpl in *; try lia;[|].
     {
       revert Hsender.

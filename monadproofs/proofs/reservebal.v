@@ -442,6 +442,24 @@ Lemma otherTxLstSenderLkp s addr txlast :
 Proof. Admitted.
 
 
+Lemma delgUndelgUpdTx txlast s addr:
+  addr ∈  addrsDelUndelByTx txlast
+  -> option_bind _ _ lastDelUndelInBlockIndex ((execValidatedTx s txlast).1 !! addr) = Some (txBlockNum txlast).
+Proof using. Admitted.
+
+Lemma otherDelUndelLkp s addr txlast :
+  addr ∉ addrsDelUndelByTx txlast
+  ->
+    option_bind _ _ lastDelUndelInBlockIndex ((execValidatedTx s txlast).1 !! addr)
+    = option_bind _ _ lastDelUndelInBlockIndex (s !! addr).
+Proof. Admitted.
+Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
+  addr ∉ addrsDelUndelByTx txlast
+  ->
+    addrDelegated (execValidatedTx s txlast).1 addr
+    = addrDelegated s addr.
+Proof using. Admitted.
+
 Lemma isAllowedToEmpty2 s txlast rest txnext:
   let sf :=  fst (execValidatedTx s txlast) in 
   txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
@@ -491,32 +509,41 @@ Proof using.
       }
     }
     {
+      destruct (decide (sender txnext ∈ addrsDelUndelByTx txlast)).
+      {
+        symmetry.
+          Hint Rewrite @elem_of_app: iff.
+        rewrite bool_decide_true;
+          [ | autorewrite with iff; tauto].
+        autorewrite with syntactic; simpl.
+        unfold existsDelUndelTxWithinK.
+        unfold indexWithinK.
+        rewrite delgUndelgUpdTx; auto;[].
+        resolveDecide lia.
+        autorewrite with syntactic.
+        reflexivity.
+      }
+      {
+        f_equiv.
+        f_equiv;[
+            |apply bool_decide_ext;
+             autorewrite with iff; tauto].
+        unfold existsDelUndelTxWithinK.
+        unfold indexWithinK.
+        rewrite otherDelUndelLkp; auto.
+        f_equiv.
       
-      
-        Search bool_decide iff.
+        apply otherDelUndelDelegationStatusUnchanged; auto.
+      }
 
-(*
-  number txnext.1 - K ≤ number txlast.1
-
-goal 2 (ID 904) is:
- number txlast.1 ≤ number txnext.1
-goal 3 (ID 905) is:
- txlast.2.2 ≤ txnext.2.2
-*)    
-    lia.
-
-    rewrite bool_decide_decide.
-    resolveDecide congruence.
-    symmetry.
-    rwHyps.
-  Search bool_decide iff.
-  
-  simpl. f_equiv.
-Abort.
+    }
+  }
+Qed.
 
 Lemma debitLeq extension s tx rest:
   let sf :=  fst (execValidatedTx s tx) in 
-  (maxTotalReserveDippableDebitL  sf rest extension)
+  Forall (fun txr => txBlockNum txr - K ≤ txBlockNum txlast ≤ txBlockNum txr) rest 
+  -> (maxTotalReserveDippableDebitL  sf rest extension)
   = (maxTotalReserveDippableDebitL  s (tx::rest) extension).
 Proof using.
   revert rest.

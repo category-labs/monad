@@ -90,14 +90,14 @@ Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
   ((flat_map transactions (blocksInRange knownBlocks (txBlockNum tx - K) (K-1)))
                                                                  ++  prevTxsInSameBlock).
 
-Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := number (fst tx); tx_index := snd (snd tx) |}.
+Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
 Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r.
-Definition indexWithinK (proj: AccountM -> option Indices) (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  let startIndex := {| block_index := number (fst tx) -K ; tx_index := 0 |} in
+Definition indexWithinK (proj: AccountM -> option N) (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  let startIndex :=  txBlockNum tx -K  in
   match option_bind _ _ proj (state !! (sender tx))  with
   | Some lastSameSenderTx =>
-      bool_decide (indLe startIndex lastSameSenderTx /\ indLe lastSameSenderTx (indicesOfTx tx))
+      bool_decide (startIndex <= lastSameSenderTx /\  lastSameSenderTx <= txBlockNum tx)
   | None => false
   end.
 
@@ -429,15 +429,25 @@ Hint Rewrite @elem_of_cons: syntactic.
 
 Set Nested Proofs Allowed.
 
-    Lemma lastTxInBlockIndexUpd s txlast:
-      option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! sender txlast)
-      = Some (indicesOfTx txlast).
-    Proof using. Admitted.
+Lemma lastTxInBlockIndexUpd s txlast:
+  option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! sender txlast)
+  = Some (txBlockNum txlast).
+Proof using. Admitted.
+
+Lemma otherTxLstSenderLkp s addr txlast :
+  addr <> sender txlast
+  ->
+    option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! addr)
+    = option_bind _ _ lastTxInBlockIndex (s !! addr).
+Proof. Admitted.
+
 
 Lemma isAllowedToEmpty2 s txlast rest txnext:
   let sf :=  fst (execValidatedTx s txlast) in 
-  isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
+  txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
+  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
 Proof using.
+  intros ? Hr.
   unfold isAllowedToEmpty.
   simpl.
   autorewrite with syntactic.
@@ -460,11 +470,30 @@ Proof using.
     unfold indexWithinK.
     rwHypsP.
     rewrite lastTxInBlockIndexUpd.
-    simpl.
-    unfold indLe. simpl.
-    simpl.
     rewrite bool_decide_true;[reflexivity|].
     split_and !; try lia.
+  }
+  {
+    f_equiv.
+    2:{
+      f_equiv.
+      f_equiv.
+      2:{
+        apply bool_decide_ext.
+        autorewrite with syntactic.
+        tauto.
+      }
+      {
+        unfold existsTxWithinK.
+        unfold indexWithinK.
+        subst sf.
+        rewrite otherTxLstSenderLkp; auto.
+      }
+    }
+    {
+      
+      
+        Search bool_decide iff.
 
 (*
   number txnext.1 - K ≤ number txlast.1

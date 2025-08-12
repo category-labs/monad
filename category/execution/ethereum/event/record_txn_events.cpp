@@ -13,15 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/event/event_recorder.h>
-#include <category/core/event/event_ring.h>
-#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -30,16 +25,14 @@
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <bit>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
 #include <utility>
-
-#include <string.h>
 
 using namespace monad;
 
@@ -65,12 +58,12 @@ void init_txn_header_start(
     header.s = txn.sc.s;
     header.y_parity = txn.sc.y_parity == 1;
     header.chain_id = txn.sc.chain_id.value_or(0);
-    header.data_length = static_cast<uint32_t>(size(txn.data));
+    header.data_length = static_cast<uint32_t>(txn.data.size());
     header.blob_versioned_hash_length =
-        static_cast<uint32_t>(size(txn.blob_versioned_hashes));
-    header.access_list_count = static_cast<uint32_t>(size(txn.access_list));
+        static_cast<uint32_t>(txn.blob_versioned_hashes.size());
+    header.access_list_count = static_cast<uint32_t>(txn.access_list.size());
     header.auth_list_count =
-        static_cast<uint32_t>(size(txn.authorization_list));
+        static_cast<uint32_t>(txn.authorization_list.size());
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -80,7 +73,8 @@ MONAD_NAMESPACE_BEGIN
 void record_txn_events(
     uint32_t txn_num, Transaction const &transaction, Address const &sender,
     std::span<std::optional<Address> const> authorities,
-    Result<Receipt> const &receipt_result)
+    Result<Receipt> const &receipt_result,
+    std::span<CallFrame const> const call_frames)
 {
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
@@ -108,7 +102,7 @@ void record_txn_events(
             .index = index,
             .entry = {
                 .address = e.a,
-                .storage_key_count = static_cast<uint32_t>(size(e.keys))}};
+                .storage_key_count = static_cast<uint32_t>(e.keys.size())}};
         exec_recorder->commit(access_list_entry);
         ++index;
     }
@@ -176,9 +170,9 @@ void record_txn_events(
     *txn_evm_output.payload = monad_exec_txn_evm_output{
         .receipt =
             {.status = receipt.status == 1,
-             .log_count = static_cast<uint32_t>(size(receipt.logs)),
+             .log_count = static_cast<uint32_t>(receipt.logs.size()),
              .gas_used = receipt.gas_used},
-        .call_frame_count = 0};
+        .call_frame_count = static_cast<uint32_t>(call_frames.size())};
     exec_recorder->commit(txn_evm_output);
 
     // TXN_LOG
@@ -192,9 +186,40 @@ void record_txn_events(
         *txn_log.payload = monad_exec_txn_log{
             .index = index,
             .address = log.address,
-            .topic_count = static_cast<uint8_t>(size(log.topics)),
-            .data_length = static_cast<uint32_t>(size(log.data))};
+            .topic_count = static_cast<uint8_t>(log.topics.size()),
+            .data_length = static_cast<uint32_t>(log.data.size())};
         exec_recorder->commit(txn_log);
+        ++index;
+    }
+
+    // TXN_CALL_FRAME
+    for (uint32_t index = 0; auto const &call_frame : call_frames) {
+        std::span const input_bytes{
+            call_frame.input.data(), call_frame.input.size()};
+        std::span const return_bytes{
+            call_frame.output.data(), call_frame.output.size()};
+
+        ReservedExecEvent const txn_call_frame =
+            exec_recorder->reserve_txn_event<monad_exec_txn_call_frame>(
+                MONAD_EXEC_TXN_CALL_FRAME,
+                txn_num,
+                as_bytes(input_bytes),
+                as_bytes(return_bytes));
+        *txn_call_frame.payload = monad_exec_txn_call_frame{
+            .index = index,
+            .caller = call_frame.from,
+            .call_target = call_frame.to.value_or(Address{}),
+            .opcode = std::to_underlying(
+                get_call_frame_opcode(call_frame.type, call_frame.flags)),
+            .value = call_frame.value,
+            .gas = call_frame.gas,
+            .gas_used = call_frame.gas_used,
+            .evmc_status = std::to_underlying(call_frame.status),
+            .depth = call_frame.depth,
+            .input_length = call_frame.input.size(),
+            .return_length = call_frame.output.size(),
+        };
+        exec_recorder->commit(txn_call_frame);
         ++index;
     }
 

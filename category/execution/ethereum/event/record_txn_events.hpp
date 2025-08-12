@@ -25,6 +25,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct CallFrame;
 struct Receipt;
 struct Transaction;
 
@@ -32,10 +33,10 @@ struct Transaction;
 /// and EIP-7702 events, and TXN_HEADER_END), followed by the TXN_EVM_OUTPUT,
 /// TXN_REJECT, or EVM_ERROR events, depending on what happened during
 /// transaction execution; in the TXN_EVM_OUTPUT case, also record other
-/// execution output events (TXN_LOG, etc.)
+/// execution output events (TXN_LOG, TXN_CALL_FRAME, etc.)
 void record_txn_events(
     uint32_t txn_num, Transaction const &, Address const &sender,
     std::span<std::optional<Address> const> authorities,
-    Result<Receipt> const &);
+    Result<Receipt> const &, std::span<CallFrame const>);
 
 MONAD_NAMESPACE_END

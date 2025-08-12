@@ -42,6 +42,7 @@ struct CallTracerBase
     virtual void on_self_destruct(Address const &from, Address const &to) = 0;
     virtual void on_finish(uint64_t const) = 0;
     virtual void reset() = 0;
+    virtual std::span<CallFrame const> get_call_frames() const = 0;
 };
 
 struct NoopCallTracer final : public CallTracerBase
@@ -52,6 +53,7 @@ struct NoopCallTracer final : public CallTracerBase
     virtual void on_self_destruct(Address const &, Address const &) override;
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
+    virtual std::span<CallFrame const> get_call_frames() const override;
 };
 
 class CallTracer final : public CallTracerBase
@@ -75,6 +77,7 @@ public:
     on_self_destruct(Address const &from, Address const &to) override;
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
+    virtual std::span<CallFrame const> get_call_frames() const override;
 
     nlohmann::json to_json() const;
 };

@@ -77,6 +77,11 @@ void NoopCallTracer::on_finish(uint64_t const) {}
 
 void NoopCallTracer::reset() {}
 
+std::span<CallFrame const> NoopCallTracer::get_call_frames() const
+{
+    return {};
+}
+
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     : frames_(frames)
     , tx_(tx)
@@ -219,6 +224,11 @@ void CallTracer::reset()
 
     positions_ = std::stack<size_t>{};
     positions_.push(0);
+}
+
+std::span<CallFrame const> CallTracer::get_call_frames() const
+{
+    return frames_;
 }
 
 nlohmann::json CallTracer::to_json() const

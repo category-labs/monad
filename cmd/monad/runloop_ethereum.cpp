@@ -27,6 +27,9 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
+#include <category/execution/ethereum/event/record_block_events.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -88,6 +91,18 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
 
+    record_block_start(
+        block_id,
+        chain.get_chain_id(),
+        block.header,
+        block.header.parent_hash,
+        block.header.number,
+        0,
+        block.header.timestamp * 1'000'000'000UL,
+        size(block.transactions),
+        std::nullopt,
+        std::nullopt);
+
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
@@ -133,6 +148,7 @@ Result<void> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -146,6 +162,7 @@ Result<void> process_ethereum_block(
             block_metrics,
             call_tracers,
             state_tracers));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -164,17 +181,20 @@ Result<void> process_ethereum_block(
             std::chrono::steady_clock::now() - commit_begin);
 
     // Post-commit validation of header, with Merkle root fields filled in
-    auto const output_header = db.read_eth_header();
+    BlockExecOutput exec_output;
+    exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    auto const eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(output_header)));
-    block_hash_buffer.set(block.header.number, eth_block_hash);
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    block_hash_buffer.set(
+        exec_output.eth_header.number, exec_output.eth_block_hash);
+    (void)record_block_result(exec_output);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -201,15 +221,50 @@ Result<void> process_ethereum_block(
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
-        output_header.gas_used,
-        output_header.gas_used /
+        exec_output.eth_header.gas_used,
+        exec_output.eth_header.gas_used /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-        output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
+        exec_output.eth_header.gas_used /
+            (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
 
     return outcome_e::success();
+}
+
+// Historical Ethereum replay does not have consensus events like the Monad
+// chain, but we emit dummy versions because it reduces the difference for
+// event consuming code that waits to see a particular commitment state (e.g.,
+// finalized) before acting; the "blockcap" helper library (which only records
+// finalized blocks) is an example. This does not try to imitate the pipelined
+// operation of the Monad chain's consensus events
+void emit_consensus_events(bytes32_t const &block_id, uint64_t block_number)
+{
+    if (auto *exec_recorder = g_exec_event_recorder.get()) {
+        ReservedExecEvent const block_qc =
+            exec_recorder->reserve_block_event<monad_exec_block_qc>(
+                MONAD_EXEC_BLOCK_QC);
+        *block_qc.payload = monad_exec_block_qc{
+            .block_tag = {.id = block_id, .block_number = block_number},
+            .round = block_number + 1,
+            .epoch = 0};
+        exec_recorder->commit(block_qc);
+
+        ReservedExecEvent const block_finalized =
+            exec_recorder->reserve_block_event<monad_exec_block_finalized>(
+                MONAD_EXEC_BLOCK_FINALIZED);
+        *block_finalized.payload = monad_exec_block_finalized{
+            .id = block_id, .block_number = block_number};
+        exec_recorder->commit(block_finalized);
+
+        ReservedExecEvent const block_verified =
+            exec_recorder->reserve_block_event<monad_exec_block_verified>(
+                MONAD_EXEC_BLOCK_VERIFIED);
+        *block_verified.payload =
+            monad_exec_block_verified{.block_number = block_number};
+        exec_recorder->commit(block_verified);
+    }
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -231,9 +286,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
-
     BlockDb block_db(ledger_dir);
     bytes32_t parent_block_id{};
+
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -260,6 +315,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
+        emit_consensus_events(block_id, block_num);
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();
         total_gas += block.header.gas_used;

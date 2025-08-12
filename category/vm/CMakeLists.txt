@@ -24,10 +24,6 @@ target_sources(monad-vm PRIVATE
     "varcode_cache.hpp"
     "vm.cpp"
     "vm.hpp"
-    # evmone wrappers
-    "evmone/baseline_execute.cpp"
-    "evmone/baseline_execute.hpp"
-    "evmone/code_analysis.hpp"
 )
 
 monad_compile_options(monad-vm)

@@ -13,8 +13,6 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
-#include <evmone/baseline.hpp>
-
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 

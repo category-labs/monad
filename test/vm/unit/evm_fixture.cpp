@@ -3,12 +3,14 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evmone/baseline_execute.hpp>
-#include <category/vm/evmone/code_analysis.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
+
+#include <evmone/baseline.hpp>
+#include <evmone/evmone.h>
+#include <evmone/vm.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -67,12 +69,15 @@ namespace monad::vm::compiler::test
         }
         else {
             MONAD_VM_ASSERT(impl == Evmone);
+            evmc::VM const evmone_vm{evmc_create_evmone()};
 
-            result_ = monad::vm::evmone::baseline_execute(
-                msg_,
+            result_ = evmc::Result{::evmone::baseline::execute(
+                *static_cast<::evmone::VM *>(evmone_vm.get_raw_pointer()),
+                host_.get_interface(),
+                host_.to_context(),
                 rev_,
-                &host_,
-                monad::vm::evmone::analyze(evmc::bytes_view(code)));
+                msg_,
+                evmone::baseline::analyze(evmc::bytes_view(code), false))};
         }
     }
 

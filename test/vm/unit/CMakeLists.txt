@@ -39,6 +39,7 @@ endif()
 
 monad_compile_options(vm-unit-tests)
 target_link_libraries(vm-unit-tests
+    PRIVATE evmone
     PRIVATE monad-vm::monad-vm
     PRIVATE monad-vm::monad-vm-compiler
     PRIVATE monad-vm::monad-vm-fuzzing

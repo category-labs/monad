@@ -46,7 +46,6 @@ target_link_libraries(monad-vm-compiler
     PUBLIC intx::intx
     PUBLIC asmjit::asmjit
     PUBLIC evmc::evmc
-    PUBLIC evmone
     PUBLIC monad-vm::monad-vm-core
     PUBLIC monad-vm::monad-vm-evm
     PUBLIC monad-vm::monad-vm-runtime

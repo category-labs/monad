@@ -13,6 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/basic_formatter.hpp>
+#include <category/core/keccak.hpp>
+// #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -29,12 +33,31 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <iostream>
 #include <memory>
 #include <span>
+#include <tbb/concurrent_hash_map.h>
+
+namespace fs = std::filesystem;
 
 namespace monad::vm
 {
     using namespace monad::vm::utils;
+
+    // Copied fmt::formatter for evmc::address from address_fmt.hpp to avoid
+    // circular dependency.
+    auto format_address(evmc::address const &value) {
+        return fmt::format(
+            "0x{:02x}",
+            fmt::join(std::as_bytes(std::span(value.bytes)), ""));
+    }
+
+    typedef tbb::concurrent_hash_map<evmc::address, int, tbb::tbb_hash_compare<evmc::address>> ContractTable;
+    typedef ContractTable::accessor Accessor;
+
+    ContractTable call_counter;
+    const int CONTRACT_CALL_THRESHOLD = 5;
 
     VM::VM(
         bool enable_async, std::size_t max_stack_cache,
@@ -43,6 +66,58 @@ namespace monad::vm
         , stack_allocator_{max_stack_cache}
         , memory_allocator_{max_memory_cache}
     {
+    }
+
+    void log_contract(int64_t block_id, evmc_address const &code_address, evmc::bytes32 const &code_hash, SharedVarcode const& vcode) {
+        ContractTable::accessor accessor;
+        const auto itemIsNew = call_counter.insert(accessor, code_address);
+        if (itemIsNew) {
+            accessor->second = 1;
+        }
+        else {
+            const int call_count = accessor->second;
+            if (call_count != -1) {
+                if (call_count > CONTRACT_CALL_THRESHOLD) {
+
+                    // mark for insertion into the contracts dump
+                    accessor->second = -1;
+                    auto contracts_dir_var = std::getenv("CONTRACTS_DIR");
+                    MONAD_ASSERT(contracts_dir_var);
+
+                    // content addressable path for the contract using keccak of the actual code
+                    auto const code_buf = vcode->intercode().get()->code();
+                    auto const code_len = *(vcode->intercode().get()->code_size());
+
+                    auto code_hash_dir = fs::path(contracts_dir_var) / "code_hash";
+                    fs::create_directories(code_hash_dir);
+
+                    auto contract_path = code_hash_dir / fmt::format("{}", intx::hex(intx::be::load<intx::uint256>(code_hash.bytes)));
+
+                    auto os = std::ofstream(contract_path);
+                    os.write(
+                        reinterpret_cast<char const *>(code_buf),
+                        static_cast<std::streamsize>(code_len));
+
+                    auto block_prefix =
+                        fmt::format("{}M", block_id / 1'000'000);
+
+                    auto code_address_dir = fs::path(contracts_dir_var) / "code_address" / block_prefix /
+                            fmt::format("{:02x}", code_address.bytes[0]) /
+                            fmt::format("{:02x}", code_address.bytes[1]);
+
+                    fs::create_directories(code_address_dir);
+
+                    const evmc::address& addr = code_address;
+                    auto contract_address_path = code_address_dir / format_address(addr);
+
+                    fs::create_symlink(contract_path, contract_address_path);
+                }
+                else {
+                    accessor->second = call_count + 1;
+                }
+            }
+        }
+        accessor.release();
     }
 
     template <Traits traits>
@@ -63,6 +138,10 @@ namespace monad::vm
 
         // Re-install previous runtime context:
         (void)host.set_runtime_context(prev_rt_ctx);
+
+        if (result.status_code == EVMC_SUCCESS) {
+            log_contract(host.get_tx_context().block_number, msg->code_address, code_hash, vcode);
+        }
 
         host.rethrow_on_active_exception();
 

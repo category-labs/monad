@@ -58,6 +58,7 @@ target_link_libraries(monad-vm
     PRIVATE monad-vm::monad-vm-core
     PRIVATE monad-vm::monad-vm-runtime
     PRIVATE monad-vm::monad-vm-utils
+    PRIVATE monad_core
 )
 
 add_library(monad-vm::monad-vm ALIAS monad-vm)

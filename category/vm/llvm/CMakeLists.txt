@@ -8,7 +8,7 @@ option(MONAD_VM_LLVM_DEBUG "Trace instructions executed by llvm backend" OFF)
 # contexts, never in production.
 option(MONAD_VM_LLVM_STATS "Print opcode statistics on program exit" OFF)
 
-add_library(monad-vm-llvm)
+add_library(monad-vm-llvm OBJECT)
 
 monad_link_llvm(monad-vm-llvm)
 

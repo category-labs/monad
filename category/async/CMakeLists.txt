@@ -17,6 +17,7 @@ find_package(Boost 1.83 # 1.83 really is the minimum
 
 add_library(
   monad_async
+  OBJECT
   "concepts.hpp"
   "config.hpp"
   "connected_operation.hpp"
@@ -50,7 +51,7 @@ function(add_async_test)
   add_executable(${ADD_TRIE_TEST_TARGET} ${ADD_TRIE_TEST_SOURCES})
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
-    ${ADD_TRIE_TEST_TARGET} PUBLIC monad_async GTest::gtest_main
+    ${ADD_TRIE_TEST_TARGET} PUBLIC monad_execution GTest::gtest_main
                                    ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}

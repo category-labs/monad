@@ -54,21 +54,13 @@ add_subdirectory("third_party/nlohmann_json" SYSTEM)
 
 add_subdirectory("third_party/unordered_dense")
 
-add_library(openssl_sha3 OBJECT)
-target_include_directories(openssl_sha3 PRIVATE "third_party/openssl")
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-  target_sources(openssl_sha3 PRIVATE "keccak_impl.S")
-else()
-  target_sources(openssl_sha3
-                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
-endif()
-
 # ##############################################################################
 # libs
 # ##############################################################################
 
 add_library(
   monad_core
+  OBJECT
   # config
   "config.hpp"
   # core
@@ -171,6 +163,14 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "procfs/statm.h")
 endif()
 
+target_include_directories(monad_core PRIVATE "third_party/openssl")
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+  target_sources(monad_core PRIVATE "keccak_impl.S")
+else()
+  target_sources(monad_core
+                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
+endif()
+
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
 
@@ -188,7 +188,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
-target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

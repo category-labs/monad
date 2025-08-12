@@ -19,7 +19,6 @@ target_link_libraries(execution-benchmarks
     PRIVATE evmone-blockchaintest-lib
     PRIVATE nlohmann_json::nlohmann_json
     PRIVATE monad_execution
-    PRIVATE monad_core
 )
 
 # TODO(BSC): fix this via evmone

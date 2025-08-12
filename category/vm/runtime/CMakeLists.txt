@@ -1,6 +1,6 @@
 enable_language(ASM)
 
-add_library(monad-vm-runtime)
+add_library(monad-vm-runtime OBJECT)
 
 target_sources(monad-vm-runtime PRIVATE
     "allocator.hpp"

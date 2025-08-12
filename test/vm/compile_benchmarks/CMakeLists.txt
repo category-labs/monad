@@ -7,9 +7,7 @@ monad_compile_options(compile-benchmarks)
 
 target_link_libraries(compile-benchmarks
     PRIVATE benchmark::benchmark
-    PRIVATE monad-vm::monad-vm-compiler
     PRIVATE monad_execution
-    PRIVATE monad_core
 )
 
 target_include_directories(compile-benchmarks

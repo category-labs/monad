@@ -8,7 +8,7 @@ option(MONAD_VM_INTERPRETER_DEBUG "Trace instructions executed by interpreter" O
 # contexts, never in production.
 option(MONAD_VM_INTERPRETER_STATS "Print opcode statistics on program exit" OFF)
 
-add_library(monad-vm-interpreter)
+add_library(monad-vm-interpreter OBJECT)
 
 target_sources(monad-vm-interpreter PRIVATE
   "call_runtime.hpp"

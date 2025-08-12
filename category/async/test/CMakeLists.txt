@@ -10,6 +10,7 @@ monad_add_test_death(
   "io_death_write_buffer_exhaustion_causes_death.cpp"
   LINK_LIBRARIES
   monad_async
+  monad_core
   FAIL_REGEX
   ".*Must fail after this:\nFATAL: no i/o buffers remaining.*")
 monad_add_test_death(
@@ -18,6 +19,7 @@ monad_add_test_death(
   "io_death_read_buffer_exhaustion_causes_death.cpp"
   LINK_LIBRARIES
   monad_async
+  monad_core
   FAIL_REGEX
   ".*Must fail after this:\nFATAL: no i/o buffers remaining.*")
 

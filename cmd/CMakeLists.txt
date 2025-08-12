@@ -14,8 +14,7 @@ add_executable(
 
 monad_compile_options(monad)
 
-target_link_libraries(monad PRIVATE monad_execution monad_statesync
-                                    CLI11::CLI11)
+target_link_libraries(monad PRIVATE monad_execution CLI11::CLI11)
 
 add_executable(monad_cli monad_cli.cpp)
 monad_compile_options(monad_cli)

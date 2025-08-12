@@ -26,6 +26,7 @@ pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 add_library(
   monad_trie
+  OBJECT
   "compute.cpp"
   "compute.hpp"
   "config.hpp"
@@ -61,7 +62,7 @@ target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
 add_executable(monad_mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
 monad_compile_options(monad_mpt)
-target_link_libraries(monad_mpt PUBLIC monad_trie PkgConfig::zstd
+target_link_libraries(monad_mpt PUBLIC monad_execution PkgConfig::zstd
                                        PkgConfig::archive CLI11::CLI11)
 
 function(add_trie_test)
@@ -77,7 +78,7 @@ function(add_trie_test)
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
     ${ADD_TRIE_TEST_TARGET}
-    PUBLIC monad_trie GTest::GTest monad_unit_test_common
+    PUBLIC monad_execution GTest::GTest monad_unit_test_common
            ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}

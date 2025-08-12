@@ -6,12 +6,13 @@ project(monad_rpc)
 
 add_library(
   monad_rpc
+  OBJECT
   # rpc
   "eth_call.cpp" "eth_call.h")
 
 target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})
 
 monad_compile_options(monad_rpc)
-target_link_libraries(monad_rpc PRIVATE monad_execution)
+target_link_libraries(monad_rpc PRIVATE monad_execution_native)
 
 monad_add_test_folder(".")

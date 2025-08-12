@@ -13,12 +13,8 @@ monad_compile_options(compiler-blockchain-tests)
 
 target_link_libraries(compiler-blockchain-tests
     PRIVATE blockchain-test-vm
-    PRIVATE monad-vm::monad-vm
-    PRIVATE monad-vm::monad-vm-compiler
-    PRIVATE monad-vm::monad-vm-utils
     PRIVATE evmone-blockchaintest-lib
     PRIVATE monad_execution
-    PRIVATE monad_core
 )
 
 # Interpreter Blockchain Tests
@@ -36,11 +32,8 @@ monad_compile_options(interpreter-blockchain-tests)
 
 target_link_libraries(interpreter-blockchain-tests
     PRIVATE blockchain-test-vm
-    PRIVATE monad-vm::monad-vm-utils
-    PRIVATE monad-vm::monad-vm-interpreter
     PRIVATE evmone-blockchaintest-lib
     PRIVATE monad_execution
-    PRIVATE monad_core
 )
 
 # LLVM Blockchain Tests
@@ -65,7 +58,6 @@ if(MONAD_COMPILER_LLVM)
         PRIVATE monad-vm::monad-vm-llvm
         PRIVATE evmone-blockchaintest-lib
         PRIVATE monad_execution
-        PRIVATE monad_core
     )
 endif()
 

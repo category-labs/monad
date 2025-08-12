@@ -6,6 +6,7 @@ project(monad_statesync)
 
 add_library(
   monad_statesync
+  OBJECT
   # server
   "statesync_client.cpp"
   "statesync_client.h"
@@ -25,7 +26,7 @@ add_library(
 target_include_directories(monad_statesync PUBLIC ${CATEGORY_MAIN_DIR})
 
 monad_compile_options(monad_statesync)
-target_link_libraries(monad_statesync PUBLIC monad_execution)
+target_link_libraries(monad_statesync PUBLIC monad_execution_ethereum)
 
 monad_add_test_folder(".")
 
@@ -34,5 +35,5 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   target_compile_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
   target_link_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
   monad_compile_options(fuzz_statesync)
-  target_link_libraries(fuzz_statesync PUBLIC monad_statesync)
+  target_link_libraries(fuzz_statesync PUBLIC monad_execution)
 endif()

@@ -9,11 +9,8 @@ target_include_directories(kernel-generator
 )
 
 target_link_libraries(kernel-generator
-  PRIVATE monad-vm::monad-vm-utils
-  PRIVATE monad-vm::monad-vm-compiler
-  PRIVATE CLI11::CLI11
   PRIVATE monad_execution
-  PRIVATE monad_core
+  PRIVATE CLI11::CLI11
 )
 
 monad_compile_options(kernel-generator)

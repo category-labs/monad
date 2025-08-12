@@ -10,7 +10,7 @@ function(add_trie_fuzztest name)
       PRIVATE "MONAD_TRIE_FUZZTEST_FIXTURE=monad::test::${fixture_type}")
     target_link_options(${target} PRIVATE "-fsanitize=fuzzer")
     monad_compile_options(${target})
-    target_link_libraries(${target} PUBLIC monad_trie)
+    target_link_libraries(${target} PUBLIC monad_execution)
     # Set by the clang-fuzz.cmake toolchain file
     if(CMAKE_CXX_FLAGS MATCHES "-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION")
       # Run sixteen parallel cooperating fuzzers for ten seconds

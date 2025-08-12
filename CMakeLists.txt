@@ -165,8 +165,7 @@ function(monad_add_test2 target)
     ${target}
     PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution monad_statesync monad_rpc
-                        GTest::GTest GTest::Main)
+  target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
   if("${target}" MATCHES "test_statesync")
     gtest_discover_tests(
       ${target} DISCOVERY_MODE PRE_TEST
@@ -232,6 +231,14 @@ add_subdirectory("category/execution")
 add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
 add_subdirectory("category/vm")
+
+# Assemble all the object libraries into complete monad runtime library,
+# monad_execution
+add_library(monad_execution)
+target_link_libraries(monad_execution PUBLIC
+    monad_core monad_async monad_trie monad_execution_ethereum
+    monad_execution_native monad_rpc monad_statesync monad-vm monad-vm-core
+    monad-vm-compiler monad-vm-interpreter monad-vm-runtime monad-vm-utils)
 
 # ##############################################################################
 # cmds

@@ -40,15 +40,10 @@ endif()
 monad_compile_options(vm-unit-tests)
 target_link_libraries(vm-unit-tests
     PRIVATE evmone
-    PRIVATE monad-vm::monad-vm
-    PRIVATE monad-vm::monad-vm-compiler
     PRIVATE monad-vm::monad-vm-fuzzing
-    PRIVATE monad-vm::monad-vm-interpreter
-    PRIVATE monad-vm::monad-vm-utils
     PRIVATE GTest::gtest_main
     PRIVATE evmc::mocked_host
     PRIVATE monad_execution
-    PRIVATE monad_core
 )
 
 target_include_directories(vm-unit-tests

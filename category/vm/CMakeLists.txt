@@ -14,7 +14,7 @@ endif()
 
 # Main VM library (execution's entry point)
 
-add_library(monad-vm)
+add_library(monad-vm OBJECT)
 
 target_sources(monad-vm PRIVATE
     "code.hpp"

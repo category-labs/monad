@@ -46,8 +46,8 @@ add_executable(monad_trie_test "monad_trie_test.cpp")
 monad_compile_options(monad_trie_test)
 target_include_directories(monad_trie_test
                            PRIVATE "${PROJECT_SOURCE_DIR}/third_party")
-target_link_libraries(monad_trie_test PUBLIC monad_core CLI11::CLI11 monad_trie
-                                             quill::quill)
+target_link_libraries(monad_trie_test PUBLIC monad_execution CLI11::CLI11
+                      quill::quill)
 
 add_executable(monad_trie_test_statistical_generation_test
                "monad_trie_test_statistical_generation_test.cpp")
@@ -59,7 +59,6 @@ target_link_libraries(monad_trie_test_statistical_generation_test
 add_executable(read_only_db_stress_test "read_only_db_stress_test.cpp")
 monad_compile_options(read_only_db_stress_test)
 target_link_libraries(
-  read_only_db_stress_test PUBLIC monad_trie monad_async monad_core
-                                  CLI11::CLI11 quill::quill)
+  read_only_db_stress_test PUBLIC monad_execution CLI11::CLI11 quill::quill)
 
 add_subdirectory("geth_freezer_db_analyzer")

@@ -1,6 +1,6 @@
 enable_language(C)
 
-add_library(monad-vm-core)
+add_library(monad-vm-core OBJECT)
 
 target_sources(monad-vm-core PRIVATE
     "assert.cpp"

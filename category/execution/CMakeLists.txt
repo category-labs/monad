@@ -13,7 +13,8 @@ project(monad_execution)
 # ##############################################################################
 
 add_library(
-  monad_execution
+  monad_execution_ethereum
+  OBJECT
   # ethereum/chain
   "ethereum/chain/chain_config.h"
   "ethereum/chain/chain.cpp"
@@ -144,7 +145,11 @@ add_library(
   "ethereum/state3/version_stack.hpp"
   # ethereum/types
   "ethereum/types/incarnation.hpp"
-  "ethereum/types/fmt/incarnation_fmt.hpp"
+  "ethereum/types/fmt/incarnation_fmt.hpp")
+
+add_library(
+  monad_execution_native
+  OBJECT
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
@@ -172,14 +177,20 @@ add_library(
   "monad/state2/proposal_state.hpp")
 
 target_include_directories(
-  monad_execution
+  monad_execution_ethereum
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS}
   PUBLIC ${silkpre_SOURCE_DIR}/lib)
 
+target_include_directories(
+  monad_execution_native
+  PUBLIC ${CATEGORY_MAIN_DIR}
+  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
+  PRIVATE ${Boost_INCLUDE_DIRS})
+
 target_link_libraries(
-  monad_execution
+  monad_execution_ethereum
   PUBLIC monad-vm
   PUBLIC monad_core
   PUBLIC monad_trie
@@ -195,9 +206,19 @@ target_link_libraries(
   PUBLIC silkpre
   PUBLIC unordered_dense
   PUBLIC TBB::tbb)
-monad_compile_options(monad_execution)
+monad_compile_options(monad_execution_ethereum)
 
-target_link_options(monad_execution PRIVATE LINKER:-z,defs)
+target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)
+
+target_link_libraries(
+  monad_execution_native
+  PUBLIC monad_execution_ethereum
+  PUBLIC monad_core
+  PUBLIC monad_trie
+  PUBLIC evmc
+  PUBLIC intx::intx
+  PUBLIC quill::quill)
+monad_compile_options(monad_execution_native)
 
 # ##############################################################################
 # unit tests

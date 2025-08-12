@@ -1,4 +1,4 @@
-add_library(monad-vm-evm)
+add_library(monad-vm-evm OBJECT)
 
 set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 

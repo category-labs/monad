@@ -17,11 +17,9 @@ target_include_directories(mce
 )
 
 target_link_libraries(mce
+  PRIVATE monad_execution
   PRIVATE evmone
   PRIVATE evmone::state
-  PRIVATE monad-vm::monad-vm-utils
-  PRIVATE monad-vm::monad-vm-compiler
-  PRIVATE monad-vm::monad-vm
   PRIVATE CLI11::CLI11
   PRIVATE nlohmann_json::nlohmann_json
 )

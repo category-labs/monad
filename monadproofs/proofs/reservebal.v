@@ -55,12 +55,13 @@ Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
 
 Definition K : N. Proof. Admitted.
 
-Definition addrsDelegatedByTx  (tx: TxWithHdr) : list evm.address. Proof. Admitted.
+Definition addrsDelUndelByTx  (tx: TxWithHdr) : list evm.address. Proof. Admitted.
 
-Definition txDelegatesAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
-  bool_decide (addr ∈ addrsDelegatedByTx tx).
+Definition txDelUndelAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
+  bool_decide (addr ∈ addrsDelUndelByTx tx).
 
-Opaque txDelegatesAddr.
+
+Opaque txDelUndelAddr.
 
 
 (*
@@ -103,8 +104,8 @@ Definition indexWithinK (proj: AccountM -> option Indices) (state : StateOfAccou
 Definition existsTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
   indexWithinK lastTxInBlockIndex state tx.
 
-Definition existsDelegatingTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  indexWithinK  lastDelegatedInBlockIndex state tx.
+Definition existsDelUndelTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  indexWithinK  lastDelUndelInBlockIndex state tx.
 
 (*
 [StateOfAccounts] already stores the [Indices] (block index, tx index) of the the last tx from an account.
@@ -122,8 +123,8 @@ t n-k+1
 Definition isAllowedToEmpty
   (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
   let delegated := (addrDelegated state (sender tx))
-                   || existsDelegatingTxWithinK state tx
-                   || bool_decide  ((sender tx) ∈ flat_map addrsDelegatedByTx (tx::intermediateTxsSinceState))
+                   || existsDelUndelTxWithinK state tx
+                   || bool_decide  ((sender tx) ∈ flat_map addrsDelUndelByTx (tx::intermediateTxsSinceState))
   in
   let existsSameSenderTxInWindow :=
     (existsTxWithinK state tx)
@@ -154,6 +155,18 @@ Proof using.
   case_bool_decide; auto.
 Qed.
 
+(*
+Lemma updateKeyLkp4  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a b: T) (f: V -> V) :
+  (updateKey m a f) !! b = if (bool_decide (a=b)) then option_map f  (m !! a) else m !! b.
+Proof using.
+  unfold updateKey.
+  autorewrite with syntactic;[| exact inhabitant].
+  case_bool_decide; auto.
+  reflexivity.
+Qed.
+ *)
+
+(*
 Lemma updateKeyLkp  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) :
   updateKey m a f !! a = Some (f (m !!! a)).
 Proof using.
@@ -162,6 +175,7 @@ Proof using.
   reflexivity.
 Qed.
 
+ *)
 
 (*
 Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
@@ -256,8 +270,8 @@ Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Ad
 
 Definition addrConsideredDelegated  (state: evm.GlobalState) (tx : TxWithHdr) : bool :=
   (addrDelegated state (sender tx))
-                   || (bool_decide (sender tx ∈ addrsDelegatedByTx tx))
-                   || existsDelegatingTxWithinK state tx.
+                   || (bool_decide (sender tx ∈ addrsDelUndelByTx tx))
+                   || existsDelUndelTxWithinK state tx.
 Definition isAllowedToEmptyExec
   (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
   (negb (addrConsideredDelegated state tx)) && (negb (existsTxWithinK state tx)).
@@ -382,7 +396,7 @@ Proof. Admitted.
 (* what happens if the tx undelegates something. maybe weaken it *)
 Lemma execTxDelegationUpd tx s:
   let '(sf, r) :=  execValidatedTx s tx in
-  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelegatedByTx tx))).
+  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof. Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
@@ -406,7 +420,73 @@ Proof using.
   intros. subst. reflexivity.
 Qed.
 
-Lemma debitLeq extension s sf tx rest:
+(* technically, the lemma is unprobable, however, we can prove a Proper lemma about the context *)
+Lemma gmapEquiv {T} `{c: Countable T} {V} {inhv: Inhabited V} (m1 m2: gmap T V) :
+  (forall a, m1 !!! a = m2 !!! a) -> m1 =m2.
+Proof. Admitted.
+
+Hint Rewrite @elem_of_cons: syntactic.
+
+Set Nested Proofs Allowed.
+
+    Lemma lastTxInBlockIndexUpd s txlast:
+      option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! sender txlast)
+      = Some (indicesOfTx txlast).
+    Proof using. Admitted.
+
+Lemma isAllowedToEmpty2 s txlast rest txnext:
+  let sf :=  fst (execValidatedTx s txlast) in 
+  isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
+Proof using.
+  unfold isAllowedToEmpty.
+  simpl.
+  autorewrite with syntactic.
+  destruct (decide (sender txnext = sender txlast)).
+  {
+    assert ((bool_decide (sender txnext ∈ sender txlast :: map sender rest)) = true) as Hf.
+    {
+      rewrite bool_decide_true; auto.
+      set_solver.
+    }
+
+    rewrite Hf.
+    autorewrite with syntactic.
+    match goal with
+    |  |-  _ && ?r = false =>
+         assert (r=false) as Hrf
+    end;
+    [|  rewrite Hrf; autorewrite with syntactic; reflexivity].
+    unfold existsTxWithinK.
+    unfold indexWithinK.
+    rwHypsP.
+    rewrite lastTxInBlockIndexUpd.
+    simpl.
+    unfold indLe. simpl.
+    simpl.
+    rewrite bool_decide_true;[reflexivity|].
+    split_and !; try lia.
+
+(*
+  number txnext.1 - K ≤ number txlast.1
+
+goal 2 (ID 904) is:
+ number txlast.1 ≤ number txnext.1
+goal 3 (ID 905) is:
+ txlast.2.2 ≤ txnext.2.2
+*)    
+    lia.
+
+    rewrite bool_decide_decide.
+    resolveDecide congruence.
+    symmetry.
+    rwHyps.
+  Search bool_decide iff.
+  
+  simpl. f_equiv.
+Abort.
+
+Lemma debitLeq extension s tx rest:
+  let sf :=  fst (execValidatedTx s tx) in 
   (maxTotalReserveDippableDebitL  sf rest extension)
   = (maxTotalReserveDippableDebitL  s (tx::rest) extension).
 Proof using.
@@ -415,19 +495,29 @@ Proof using.
   intros.
   simpl.
   rewrite IHextension.
-  (*
-  f_equiv.
+  apply gmapEquiv.
+  intros ad.
+  repeat rewrite updateKeyLkp3.
+  case_bool_decide; auto;[].
   unfold updateTotals.
   simpl.
-  f_equiv.
-  unfold maxTotalReserveDippableDebit.
   apply ite_fequiv; try reflexivity.
   unfold isAllowedToEmpty.
   simpl. f_equiv.
+  2:{
+    simpl.
+    
+    Lemma existsTxWithinKUpd s tx a:
+      let sf :=  fst (execValidatedTx s tx) in 
+      existsTxWithinK sf a = existsTxWithinK s a.
   - admit. (* existsDelegatingTxWithinK sf a <-> (existsDelegatingTxWithinK s a) ||  addrsDelegatedByTx tx *)
   - admit. (* similar prop for [existsTxWithinK] *) *)
 Admitted. (* seems easy *)
 
+  Search (gmap _ _) (_ = _).
+  Search  gmap Proper.
+  Search updateKey.
+  f_equiv.
 #[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
 Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
   (forall x, P /\ Q x)  -> P /\ forall x, Q x.

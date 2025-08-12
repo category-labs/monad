@@ -76,7 +76,11 @@ constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
         BOOST_OUTCOME_TRY(
             auto const length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
-        end = i + length;
+
+        auto const end_overflow = __builtin_add_overflow(i, length, &end);
+        if (MONAD_UNLIKELY(end_overflow)) {
+            return DecodeError::InputTooShort;
+        }
     }
 
     if (MONAD_UNLIKELY(end > enc.size())) {
@@ -116,7 +120,12 @@ constexpr Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
             length, decode_length(enc.substr(i, length_of_length)));
         i += length_of_length;
     }
-    auto const end = i + length;
+
+    size_t end = 0;
+    auto const end_overflow = __builtin_add_overflow(i, length, &end);
+    if (MONAD_UNLIKELY(end_overflow)) {
+        return DecodeError::InputTooShort;
+    }
 
     if (MONAD_UNLIKELY(end > enc.size())) {
         return DecodeError::InputTooShort;

@@ -45,3 +45,25 @@ TEST(Rlp, DecodeAfterEncodeString)
         EXPECT_EQ(decoded_string.value(), to_byte_string_view(long_string));
     }
 }
+
+TEST(Rlp, DecodeStringOverflow)
+{
+    std::string const encoded = "\xBF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
+                                "abcd";
+
+    byte_string_view encoded_string_view = to_byte_string_view(encoded);
+    auto const decoded_string = decode_string(encoded_string_view);
+
+    ASSERT_TRUE(decoded_string.has_error());
+}
+
+TEST(Rlp, DecodeListOverflow)
+{
+    std::string const encoded = "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
+                                "abcd";
+
+    byte_string_view encoded_string_view = to_byte_string_view(encoded);
+    auto const payload = parse_list_metadata(encoded_string_view);
+
+    ASSERT_TRUE(payload.has_error());
+}

@@ -215,6 +215,59 @@ Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuff
           nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - (emptyingValue+emptyingFee)))
     end.
 
+Definition consensusAcceptableTxsNoSubtraction (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+  let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
+  forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
+    let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
+    match emptyingDebits with
+    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
+    | Some (emptyingFee, emptyingValue) =>
+        let willRevert := bool_decide (balanceOfAc latestState ac < emptyingValue+emptyingFee) in
+          emptyingFee <= balanceOfAc latestState ac 
+          /\ nonEmptyingDebits <= ReserveBal
+          /\ nonEmptyingDebits + (emptyingFee + if willRevert then 0 else emptyingValue)
+             <= (balanceOfAc latestState ac)
+    end.
+
+
+Lemma catxEquiv (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
+  consensusAcceptableTxs latestState postStateSuffix
+  -> consensusAcceptableTxsNoSubtraction latestState postStateSuffix.
+Proof using.
+  unfold consensusAcceptableTxsNoSubtraction ,consensusAcceptableTxs.
+  intros Hp ac.
+  specialize (Hp ac).
+  case_match.
+  destruct o; auto.
+  destruct p as [emptyingFee emptyingValue]; auto.
+  forward_reason.
+  split_and; try lia.
+  forward_reason.
+  case_bool_decide; try
+  lia.
+Qed.
+
+
+Lemma catxEquiv2 (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
+  consensusAcceptableTxsNoSubtraction latestState postStateSuffix
+  -> consensusAcceptableTxs latestState postStateSuffix.
+Proof using.
+  unfold consensusAcceptableTxsNoSubtraction ,consensusAcceptableTxs.
+  intros Hp ac.
+  specialize (Hp ac).
+  case_match.
+  destruct o; auto.
+  destruct p as [emptyingFee emptyingValue]; auto.
+  forward_reason.
+  split_and; try lia.
+  rewrite N.min_glb_iff.
+  forward_reason.
+  case_bool_decide; try
+                      lia.
+  split_and; try lia.
+  (* not provable: consensusAcceptableTxs is too strong, unnecessarily *)
+Abort.
+
 (*
 Definition consensusAcceptableTx  (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
@@ -246,7 +299,7 @@ Definition addrConsideredDelegated  (state: evm.GlobalState) (tx : TxWithHdr) : 
                    || existsDelUndelTxWithinK state tx.
 Definition isAllowedToEmptyExec
   (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  (negb (addrConsideredDelegated state tx)) && (negb (existsTxWithinK state tx)).
+  isAllowedToEmpty state [] tx.
 
 Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
   : (evm.GlobalState * TransactionResult) :=
@@ -614,11 +667,7 @@ Qed.
 Lemma isAllowedToEmptyEquiv tx s:
   isAllowedToEmptyExec s tx = isAllowedToEmpty s [] tx.
 Proof using.
-  unfold isAllowedToEmptyExec, isAllowedToEmpty.
-  simpl.
-  autorewrite with syntactic.
-  unfold addrConsideredDelegated.
-  f_equiv. Btauto.btauto.
+  reflexivity.
 Qed.
 
 Lemma execL tx extension s:

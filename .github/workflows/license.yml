@@ -1,0 +1,26 @@
+name: License
+
+on:
+  merge_group:
+    branches: ["main"]
+    paths-ignore:
+      - 'third_party/**'
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - 'third_party/**'
+  pull_request:
+    branches: ["main"]
+    types: [ opened, synchronize, reopened, edited ]
+    paths-ignore:
+      - 'third_party/**'
+
+jobs:
+  check-license:
+    runs-on: ubuntu-24.04-32
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check licenses
+        run: .github/workflows/license.sh

@@ -647,12 +647,6 @@ Proof using.
   f_equiv. Btauto.btauto.
 Qed.
 
-(*
-Hcorel : forall ac : evm.address, ac ≠ sender tx -> ReserveBal `min` balanceOfAc s ac ≤ balanceOfAc sf ac
-  Hcorerl : if isAllowedToEmpty s [] tx then True else ReserveBal `min` balanceOfAc s (sender tx) - maxTxFee tx ≤ balanceOfAc sf (sender tx)
-  Hcorerrl : forall ac : evm.address, addrDelegated sf ac ↔ addrDelegated s ac || bool_decide (ac ∈ addrsDelegatedByTx tx)
-  Hcorerrr : forall ac : evm.address, ac ≠ sender tx -> if addrDelegated sf ac then True else balanceOfAc s ac ≤ balanceOfAc sf ac
-*)
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> consensusAcceptableTxs s (tx::extension)
@@ -771,32 +765,116 @@ Qed.
 
 
 Lemma inductiveStep  (latestState : StateOfAccounts) (extensionHd: TxWithHdr) (extensionTl: list TxWithHdr) :
-  consensusAcceptableTxs latestState (extensionHd::extensionTl)
+  (forall txext, txext ∈ extensionTl ->  txBlockNum txext - K ≤ txBlockNum extensionHd ≤ txBlockNum txext)
+ ->  consensusAcceptableTxs latestState (extensionHd::extensionTl)
   -> match execTx latestState extensionHd with
      | None =>  False
      | Some (si, tr) =>
          consensusAcceptableTxs si extensionTl
      end.
 Proof.
-  intros Hc.
+  intros Hext Hc.
   unfold execTx.
   rewrite -> (execValidate extensionHd extensionTl) by assumption.
   simpl.
-  apply execL in Hc.
+  apply execL in Hc; auto.
   case_match; auto.
 Qed.
 
 
-Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
-  consensusAcceptableTxs latestState (block1++block2)
-  -> match execTxs latestState block1 with
+(*
+Lemma fullBlockStep  (latestState : StateOfAccounts) hb1 (block1: list TxWithHdr) (block2: list TxWithHdr) :
+  (forall txext, txext ∈ block1++block2 ->  txBlockNum txext - K ≤ txBlockNum hb1 ≤ txBlockNum txext)
+    ->
+  consensusAcceptableTxs latestState ((hb1::block1)++block2)
+  -> match execTxs latestState (hb1::block1) with
      | None =>  False
      | Some (si, _) =>
          consensusAcceptableTxs si block2
      end.
-Proof. Admitted.
+Proof.
+  intros Hrange Hacc.
+  simpl.
+  eapply inductiveStep in Hacc; [|exact Hrange].
+  destruct (execTx latestState hb1) as [(si, tr)|]; try contradiction;[].
+  assumption.
+  induction block1 as [|hb2 block1 IH] in latestState, Hrange, Hacc |- *; auto.
+  {
+  }
+  {
+    
+    
+  change  ((hb1 :: block1) ++ block2) with (hb1::(block1++block2)) in Hacc.
+  eapply inductiveStep in Hacc; [|exact Hrange].
+  simpl.
+  destruct (execTx latestState hb1) as [(si, tr)|]; try contradiction;[].
+  specialize (IH si).
+  lapply IH.
+  2:{
+    destruct block1; auto.
+    intros.
+    pose proof (Hrange t ltac:(set_solver)).
+    pose proof (Hrange txext ltac:(set_solver)).
+    assert (txBlockNum t>= K) by admit.
+    assert (txBlockNum txext>= K) by admit.
+    Search hb1.
+ *)
 
+Fixpoint blockNumsInRange (ltx: list TxWithHdr) : Prop :=
+  match ltx with
+  | [] => True
+  | htx::ttx =>
+      (forall txext, txext ∈ ttx ->  txBlockNum txext - K ≤ txBlockNum htx ≤ txBlockNum txext)
+      /\ blockNumsInRange ttx
+  end.
+    
+    
+Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+  blockNumsInRange (block1++block2)
+  -> consensusAcceptableTxs latestState (block1++block2)
+  -> match execTxs latestState block1 with
+     | None =>  False
+     | Some (si, _) =>
+         consensusAcceptableTxs si block2
+         /\ blockNumsInRange block2
+     end.
+Proof.
+  intros Hrange Hacc.
+  induction block1 as [|hb1 block1 IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
+  change  ((hb1 :: block1) ++ block2) with (hb1::(block1++block2)) in Hacc.
+  forward_reason.
+  eapply inductiveStep in Hacc; [| auto; fail].
+  destruct (execTx latestState hb1) as [(si, tr)|]; try contradiction;[].
+  specialize (IH si ltac:(auto) ltac:(auto)).
+  destruct (execTxs si block1) as [|p]; try auto;[].
+  destruct p as [si2 ?].
+  assumption.
+Qed.
 
+Proof.
+  intros Hrange Hacc.
+  induction block1 as [|hb1 block1' IH] in latestState, Hrange, Hacc |- *.
+  - simpl. exact Hacc.
+  - simpl.
+    eapply inductiveStep in Hacc; [|exact Hrange].
+    destruct (execTx latestState hb1) as [(si, tr)|].
+    + simpl. apply IH.
+      * destruct block1' as [|h r].
+        -- trivial.
+        -- intros txext Hin.
+           specialize (Hrange txext).
+           assert (txext_in : txext ∈ (h :: r) ++ block2) by set_solver.
+           specialize (Hrange txext_in).
+           split.
+           -- eapply N.le_trans; [exact (proj1 Hrange)|].
+              specialize (Hrange h).
+              assert (h_in : h ∈ (h :: r) ++ block2) by set_solver.
+              specialize (Hrange h_in).
+              exact (proj2 Hrange).
+           -- admit.  (* Follows from non-decreasing txBlockNum in the list *)
+      * exact Hacc.
+    + contradiction.
+Qed.
 (*
 Lemma fullBlockStep  (latestState : StateOfAccounts) (blocks: list (list TxWithHdr)) (block2: list TxWithHdr) :
   consensusAcceptableTxs latestState (block1++block2)

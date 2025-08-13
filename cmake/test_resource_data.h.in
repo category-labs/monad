@@ -37,6 +37,9 @@ namespace test_resource
 
     inline auto const checkpoint_dir = test_data_dir / "common" / "checkpoint";
 
+    // geth vectors
+    inline auto const geth_vectors_dir = third_party_dir / "geth-test-vectors";
+
     // VM data
     inline auto const compile_benchmarks_dir =
         vm_data_dir / "compile_benchmarks";

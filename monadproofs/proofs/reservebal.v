@@ -18,36 +18,14 @@ Open Scope lens_scope.
 Require Import bluerock.auto.cpp.tactics4.
 Open Scope N_scope.
 
-(* rename it to addrDelegated or contract *)
 Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool. Proof. Admitted.
-
-(*
-(* Interpret the legacy gas_price field as our gas_bid. *)
-Definition gas_bid_of (t : monad.proofs.evmopsem.Transaction) : N :=
-  monad.proofs.evmopsem.w256_to_N
-    (monad.EVMOpSem.block.tr_gas_price t).
-
-(* Convert the w256‐typed gas_limit to N. *)
-Definition gas_limit_of (t : monad.proofs.evmopsem.Transaction) : N :=
-  monad.proofs.evmopsem.w256_to_N
-    (monad.EVMOpSem.block.tr_gas_limit t).
-*)
-
 
 Definition TxWithHdr : Type := BlockHeader * (Transaction * N).
 
 (* only gas fees. does not include value transfers *)
 Definition maxTxFee (t: TxWithHdr) : N. Proof. Admitted.
 
-(* Sum over gas_limit * gas_bid for a list of transactions. *)
-Fixpoint sum_gas_bids (l : list TxWithHdr) : N :=
-  match l with
-  | [] => 0
-  | tx :: xs => maxTxFee tx + sum_gas_bids xs
-  end.
-
 Definition staticReserveBal : N. Proof. Admitted.
-(* intermediate does not include [candidate] *)
 
 
 Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
@@ -62,7 +40,6 @@ Definition txDelUndelAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
 
 
 Opaque txDelUndelAddr.
-
 
 (*
 #[global] Instance inhAddr: Inhabited evm.address. Proof. Admitted.
@@ -79,6 +56,7 @@ Definition transactions (b: Block) : list TxWithHdr :=
 
 Definition txBlockNum (t: TxWithHdr) : N := number (fst t).
 
+(*
 Definition intermediateTxs (knownBlocks: gmap N Block) (stateBlockIndex: N) (tx: TxWithHdr) :=
   let txBlock := knownBlocks !!! (txBlockNum tx) in
   let prevTxsInSameBlock := (firstn (N.to_nat (txIndexInBlock tx)) (transactions txBlock)) in
@@ -89,7 +67,7 @@ Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
   let prevTxsInSameBlock := (firstn (N.to_nat (txIndexInBlock tx)) (transactions txBlock)) in
   ((flat_map transactions (blocksInRange knownBlocks (txBlockNum tx - K) (K-1)))
                                                                  ++  prevTxsInSameBlock).
-
+*)
 Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
 Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r.
@@ -133,12 +111,6 @@ Definition isAllowedToEmpty
 
 (* duplicate instance. the upstream one picks 1 *)
 #[global] Instance inhacc: Inhabited N := populate 0.
-
-(* latestState may be ahread of N-K block in the intermediate stages of the proof *)
-Definition maxTotalReserveDippableDebitDelete (latestState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) tx : (N*bool) :=
-  if isAllowedToEmpty latestState intermediateTxsSinceState tx   then (maxTxFee tx + value tx, true)
-  else (maxTxFee tx, false).
-
 
 
 Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
@@ -187,13 +159,13 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
          then (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h)
          else 0)
    end.
- *)
-
 Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
   let '(fees, allowedToEmpty) := upd in
   if allowedToEmpty then
     (fst old, Some fees)
   else (fst old+fees, snd old).
+ *)
+
 
 (* weakening to 1 tx *)
 
@@ -407,27 +379,6 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using. Admitted.
 
-Hint Rewrite Z.min_l  using lia: syntactic.
-Hint Rewrite Z.min_r  using lia: syntactic.
-Hint Rewrite N.min_l  using lia: syntactic.
-Hint Rewrite N.min_r  using lia: syntactic.
-
-
-Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
-  b1=b2 -> t1=t2 -> e1=e2 -> (if b1 then t1 else e1) = if b2 then t2 else e2.
-Proof using.
-  intros. subst. reflexivity.
-Qed.
-
-(* technically, the lemma is unprobable, however, we can prove a Proper lemma about the context *)
-Lemma gmapEquiv {T} `{c: Countable T} {V} {inhv: Inhabited V} (m1 m2: gmap T V) :
-  (forall a, m1 !!! a = m2 !!! a) -> m1 =m2.
-Proof. Admitted.
-
-Hint Rewrite @elem_of_cons: syntactic.
-
-Set Nested Proofs Allowed.
-
 Lemma lastTxInBlockIndexUpd s txlast:
   option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! sender txlast)
   = Some (txBlockNum txlast).
@@ -452,12 +403,35 @@ Lemma otherDelUndelLkp s addr txlast :
     option_bind _ _ lastDelUndelInBlockIndex ((execValidatedTx s txlast).1 !! addr)
     = option_bind _ _ lastDelUndelInBlockIndex (s !! addr).
 Proof. Admitted.
+
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
     addrDelegated (execValidatedTx s txlast).1 addr
     = addrDelegated s addr.
 Proof using. Admitted.
+
+Hint Rewrite Z.min_l  using lia: syntactic.
+Hint Rewrite Z.min_r  using lia: syntactic.
+Hint Rewrite N.min_l  using lia: syntactic.
+Hint Rewrite N.min_r  using lia: syntactic.
+
+
+Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
+  b1=b2 -> t1=t2 -> e1=e2 -> (if b1 then t1 else e1) = if b2 then t2 else e2.
+Proof using.
+  intros. subst. reflexivity.
+Qed.
+
+(* technically, the lemma is unprobable, however, we can prove a Proper lemma about the context *)
+Lemma gmapEquiv {T} `{c: Countable T} {V} {inhv: Inhabited V} (m1 m2: gmap T V) :
+  (forall a, m1 !!! a = m2 !!! a) -> m1 =m2.
+Proof. Admitted.
+
+Hint Rewrite @elem_of_cons: syntactic.
+
+Set Nested Proofs Allowed.
+
 
 Lemma isAllowedToEmpty2 s txlast rest txnext:
   let sf :=  fst (execValidatedTx s txlast) in 
@@ -752,8 +726,6 @@ Proof using.
   simpl in *.
   unfold updateTotals in Hc. (* rename [ maxTotalReserveDippableDebit] to reserveBal decrement *)
   simpl.
-  unfold updateTots in Hc.
-  simpl.
   autorewrite with syntactic in Hc.
   rewrite updateKeyLkp3 in Hc.
   resolveDecide ltac:(congruence).
@@ -820,6 +792,7 @@ Proof.
     Search hb1.
  *)
 
+Set Printing Coercions.
 Fixpoint blockNumsInRange (ltx: list TxWithHdr) : Prop :=
   match ltx with
   | [] => True
@@ -828,7 +801,38 @@ Fixpoint blockNumsInRange (ltx: list TxWithHdr) : Prop :=
       /\ blockNumsInRange ttx
   end.
     
-    
+Fixpoint blockNumsInRange2 (ltx: list TxWithHdr) : Prop :=
+  match ltx with
+  | [] => True
+  | htx::ttx =>
+      (forall txext, txext ∈ ttx ->  txBlockNum txext ≤ txBlockNum htx + K  /\ txBlockNum htx ≤ txBlockNum txext)
+      /\ blockNumsInRange ttx
+  end.
+
+Lemma bnequiv ltx: blockNumsInRange2 ltx -> blockNumsInRange ltx .
+Proof using.
+  induction ltx; auto;[].
+  simpl.
+  intros Hyp.
+  forward_reason.
+  split_and; auto.
+  intros.
+  pose proof (Hypl txext ltac:(assumption)).
+  lia.
+Qed.
+
+Lemma bnequiv2 ltx: blockNumsInRange ltx -> blockNumsInRange2 ltx .
+Proof using.
+  induction ltx; auto;[].
+  simpl.
+  intros Hyp.
+  forward_reason.
+  split_and; auto.
+  intros.
+  pose proof (Hypl txext ltac:(assumption)).
+  lia.
+Qed.
+
 Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
   blockNumsInRange (block1++block2)
   -> consensusAcceptableTxs latestState (block1++block2)
@@ -851,49 +855,6 @@ Proof.
   assumption.
 Qed.
 
-Proof.
-  intros Hrange Hacc.
-  induction block1 as [|hb1 block1' IH] in latestState, Hrange, Hacc |- *.
-  - simpl. exact Hacc.
-  - simpl.
-    eapply inductiveStep in Hacc; [|exact Hrange].
-    destruct (execTx latestState hb1) as [(si, tr)|].
-    + simpl. apply IH.
-      * destruct block1' as [|h r].
-        -- trivial.
-        -- intros txext Hin.
-           specialize (Hrange txext).
-           assert (txext_in : txext ∈ (h :: r) ++ block2) by set_solver.
-           specialize (Hrange txext_in).
-           split.
-           -- eapply N.le_trans; [exact (proj1 Hrange)|].
-              specialize (Hrange h).
-              assert (h_in : h ∈ (h :: r) ++ block2) by set_solver.
-              specialize (Hrange h_in).
-              exact (proj2 Hrange).
-           -- admit.  (* Follows from non-decreasing txBlockNum in the list *)
-      * exact Hacc.
-    + contradiction.
-Qed.
-(*
-Lemma fullBlockStep  (latestState : StateOfAccounts) (blocks: list (list TxWithHdr)) (block2: list TxWithHdr) :
-  consensusAcceptableTxs latestState (block1++block2)
-  -> match execTxs latestState block1 with
-     | None =>  False
-     | Some (si, _) =>
-         consensusAcceptableTxs si block2
-     end.
-Proof. Admitted.
-
-Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
-  consensusAcceptableTxs latestState (block1++block2)
-  -> match execTxs latestState block1 with
-     | None =>  False
-     | Some (si, _) =>
-         consensusAcceptableTxs si block2
-     end.
-Proof. Admitted.
- *)
 
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)) :=

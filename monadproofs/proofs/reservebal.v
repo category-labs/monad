@@ -393,10 +393,9 @@ Lemma execTxSenderBal tx s:
   else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
 Proof. Admitted.
 
-(* what happens if the tx undelegates something. maybe weaken it *)
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
-  (forall ac, addrDelegated sf ac <-> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof. Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
@@ -695,7 +694,7 @@ Proof using.
       pose proof (debLsnd [] extension ac s tx) as Hsnd.
       remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
       destruct rd as [nonEmptyingDebits emptyingDebits].
-      pose proof (execTxDelegationUpd tx s) as Hdel.
+      pose proof (execTxDelegationUpd tx s) as Hdel. 
       simpl in Hdel. fold sf in Hdel.
       specialize (Hdel ac).
       simpl in *.

@@ -159,7 +159,7 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
          then (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h)
          else 0)
    end.
-Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
+Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
   let '(fees, allowedToEmpty) := upd in
   if allowedToEmpty then
     (fst old, Some fees)
@@ -169,18 +169,18 @@ Definition updateTots (upd: N*bool) (old: (N*option N)) : N*option N :=
 
 (* weakening to 1 tx *)
 
-Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option N))
-  : N*option N :=
+Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option (N*N)))
+  : N*option (N*N) :=
   if isAllowedToEmpty latestState intermediates next
-  then (old.1, Some (maxTxFee next + value next))
+  then (old.1, Some (maxTxFee next,  value next))
   else (old.1 + maxTxFee next, old.2).
 
 Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr)
-  : gmap evm.address (N*option N) :=
+  : gmap evm.address (N*option (N*N)) :=
   match rest with
   | [] => ∅
   | h::tl =>
-      let r : gmap evm.address (N*option N)
+      let r : gmap evm.address (N*option (N*N))
         := maxTotalReserveDippableDebitL latestState (postStateAccountedSuffix++[h]) tl in
       updateKey r (sender h) (updateTotals latestState postStateAccountedSuffix h)
   end.
@@ -210,9 +210,9 @@ Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuff
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
     match emptyingDebits with
     | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
-    | Some emptyingDebit =>
-        emptyingDebit <= balanceOfAc latestState ac (* can weaken this to just include fee *)  /\
-          nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - emptyingDebit))
+    | Some (emptyingFee, emptyingValue) =>
+          emptyingFee <= balanceOfAc latestState ac  /\
+          nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - (emptyingValue+emptyingFee)))
     end.
 
 (*
@@ -657,6 +657,7 @@ Proof using.
        rwHypsP.
        utils.case_match_concl.
        destruct o; subst sf; try lia.
+       destruct p; try lia.
     }
     {
       pose proof (debLsnd [] extension ac s tx) as Hsnd.
@@ -731,8 +732,10 @@ Proof using.
   resolveDecide ltac:(congruence).
   unfold validateTx.
   autorewrite with iff.
-  destruct (isAllowedToEmpty s [] tx); simpl in *; try lia;[].
+  destruct (isAllowedToEmpty s [] tx); simpl in *; try lia.
+  forward_reason.
   case_match; try lia.
+  destruct p; try lia.
 Qed.
 
 

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 

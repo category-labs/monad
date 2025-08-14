@@ -36,6 +36,7 @@ target_sources(monad-vm-utils PRIVATE
     "evm-as/compiler.cpp"
     "evm-as/compiler.hpp"
     "evm-as/instruction.hpp"
+    "evm-as/kernel-builder.hpp"
     "evm-as/resolver.hpp"
     "evm-as/validator.hpp"
     "evm-as/utils.hpp"

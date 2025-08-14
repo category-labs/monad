@@ -13,19 +13,24 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-add_executable(kernel-generator)
-
-target_sources(kernel-generator PRIVATE
-  kernel-generator.cpp)
-
-target_include_directories(kernel-generator
+add_executable(vm-micro-benchmarks)
+target_sources(vm-micro-benchmarks
+    PRIVATE main.cpp
+)
+target_include_directories(vm-micro-benchmarks
     PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
-    PRIVATE "${TEST_DATA_DIR}/unit/common/include"
+)
+monad_compile_options(vm-micro-benchmarks)
+
+target_link_libraries(vm-micro-benchmarks
+    PRIVATE blockchain-test-vm
+    PRIVATE monad-vm::monad-vm-test-utils
+    PRIVATE evmone::state
+    PRIVATE evmone::statetestutils
+    PRIVATE evmone-blockchaintest-lib
+    PRIVATE monad_execution
 )
 
-target_link_libraries(kernel-generator
-  PRIVATE monad_execution
-  PRIVATE CLI11::CLI11
+target_include_directories(vm-micro-benchmarks
+  PRIVATE "${CATEGORY_MAIN_DIR}/third_party"
 )
-
-monad_compile_options(kernel-generator)

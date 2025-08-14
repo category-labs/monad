@@ -103,6 +103,11 @@ public:
         evmc_revision rev, evmone::test::TestState const &state,
         BlockchainTestVM::Implementation const impl);
 
+    Implementation implementation() const
+    {
+        return impl_;
+    }
+
 private:
     Implementation impl_;
     evmone::VM evmone_vm_;

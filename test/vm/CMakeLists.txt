@@ -27,12 +27,16 @@ if(MONAD_COMPILER_BENCHMARKS)
   add_subdirectory(compile_benchmarks)
   add_subdirectory(execution_benchmarks)
   add_subdirectory(long_benchmarks)
+  add_subdirectory(micro_benchmarks)
 endif()
 
 if(MONAD_COMPILER_TESTING)
   add_subdirectory(blockchain)
   add_subdirectory(fuzzer)
   add_subdirectory(unit)
+endif()
+
+if(MONAD_COMPILER_BENCHMARKS OR MONAD_COMPILER_TESTING)
   add_subdirectory(utils)
 endif()
 

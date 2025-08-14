@@ -22,21 +22,25 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/interpreter/execute.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
+#include <category/vm/utils/evm-as/kernel-builder.hpp>
 #include <category/vm/utils/evm-as/resolver.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
-#include <cstdlib>
-#include <cstring>
-#include <format>
+
+#include <test/vm/utils/evm-as_utils.hpp>
 
 #include <evmc/evmc.h>
 #include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <format>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -89,7 +93,7 @@ namespace
         return ret;
     }
 
-    runtime::Context test_context(int64_t gas_remaining = 1'000'000)
+    runtime::Context test_context(int64_t gas_remaining = 10'000'000)
     {
         return runtime::Context{
             .chain_params = {.max_initcode_size = 0xC000},
@@ -162,6 +166,16 @@ namespace
             return runtime::uint256_t::load_be_unsafe(ctx.memory.data);
         }
     };
+
+    std::vector<uint8_t> kernel_base_calldata(size_t args_size)
+    {
+        auto const sz = 3000 * 32 * (args_size == 0 ? 1 : args_size);
+        std::vector<uint8_t> ret(sz, 0);
+        for (size_t i = 0; i < ret.size() / 32; ++i) {
+            uint256_t{i + 1}.store_be(&ret[i * 32]);
+        }
+        return ret;
+    }
 }
 
 TEST(EvmAs, PushExpansion)
@@ -1119,4 +1133,173 @@ TEST(EvmAs, Annotation7)
     eb = evm_as::latest();
     eb.push(1).push(2).push(3).swap2();
     ASSERT_EQ(evm_as::mcompile(eb, mconfig), expected);
+}
+
+TEST(EvmAs, KernelBuilderRepetitionCount)
+{
+    using traits = EvmTraits<EVMC_PRAGUE>;
+    using KB = evm_as::KernelBuilder<traits>;
+
+    auto seq = [&](size_t args_size, bool has_output) {
+        KB s;
+        for (size_t i = 0; i < args_size; ++i) {
+            s.pop();
+        }
+        if (has_output) {
+            s.push0();
+        }
+        s.push(KB::free_memory_start).mload(); // [n]
+        s.push(1).add(); // [n + 1]
+        s.push(KB::free_memory_start).mstore(); // []
+        return s;
+    };
+
+    auto run = [&](size_t args_size,
+                   KB const &kb,
+                   evm_as::test::KernelCalldata const &calldata) {
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(kb, bytecode);
+
+        interpreter::Intercode icode{bytecode};
+
+        auto stack_memory = test_stack_memory();
+        auto ctx = test_context();
+        ctx.env.input_data = calldata.data();
+        ctx.env.input_data_size = static_cast<uint32_t>(calldata.size());
+
+        interpreter::execute<traits>(ctx, icode, stack_memory.get());
+
+        ASSERT_EQ(ctx.result.status, runtime::StatusCode::Success);
+        ASSERT_EQ(
+            uint256_t::load_le(ctx.result.size), KB::resulting_memory_size);
+        ASSERT_EQ(uint256_t::load_le(ctx.result.offset), KB::free_memory_start);
+
+        auto const n =
+            uint256_t::load_be_unsafe(&ctx.memory.data[KB::free_memory_start]);
+        ASSERT_EQ(
+            n, KB::get_sequence_repetition_count(args_size, calldata.size()));
+    };
+
+    for (size_t args_size = 0; args_size <= 10; ++args_size) {
+        auto const base_calldata = kernel_base_calldata(args_size);
+        auto const tp_calldata = evm_as::test::to_throughput_calldata<traits>(
+            args_size, base_calldata);
+        for (bool has_output : {false, true}) {
+            auto const &s = seq(args_size, has_output);
+            run(args_size,
+                KB{}.throughput(s, args_size, has_output),
+                tp_calldata);
+        }
+        if (args_size) {
+            auto const &s = seq(args_size, true);
+            auto const calldata =
+                evm_as::test::to_latency_calldata(s, args_size, tp_calldata);
+            run(args_size, KB{}.latency(s, args_size), calldata);
+        }
+    }
+}
+
+TEST(EvmAs, KernelBuilderCalldata)
+{
+    using traits = EvmTraits<EVMC_PRAGUE>;
+    using KB = evm_as::KernelBuilder<traits>;
+
+    KB post_seq;
+    post_seq.jumpdest("invalid-input");
+    post_seq.stop();
+
+    auto output_seq = [&](size_t args_size, bool has_output) {
+        KB s;
+        // [arg(1), arg(2), ..., arg(n)]
+        for (size_t i = 1; i < args_size; ++i) {
+            s.xor_();
+        }
+        // [XOR]
+        if (args_size) {
+            if (!has_output) {
+                s.pop();
+                // []
+            }
+        }
+        else if (has_output) {
+            s.push0();
+        }
+        return s;
+    };
+
+    auto seq = [&](size_t args_size, bool has_output) {
+        KB s;
+        // [arg(1), arg(2), ..., arg(n)]
+        for (size_t i = 0; i < args_size; ++i) {
+            s.dup(args_size);
+        }
+        // [arg(1), ..., arg(n), arg(1), ..., arg(n)]
+        s.push(KB::free_memory_start).mload();
+        // [i, arg(1), ..., arg(n), arg(1), ..., arg(n)]
+        for (size_t i = 0; i < args_size; ++i) {
+            // [i, arg(i), arg(i+1), ..., arg(n), arg(1), ..., arg(n)]
+            s.push(1).add();
+            // [i + 1, arg(i), arg(i+1), ..., arg(n), arg(1), ..., arg(n)]
+            s.dup1();
+            // [i + 1, i + 1, arg(i), arg(i+1), ..., arg(n), arg(1), ...,
+            // arg(n)]
+            s.swap2();
+            // [arg(i), i + 1, i + 1, arg(i+1), ..., arg(n), arg(1), ...,
+            // arg(n)]
+            s.eq();
+            // [arg(i) == i + 1, i + 1, arg(i+1), ..., arg(n), arg(1), ...,
+            // arg(n)]
+            s.iszero();
+            // [arg(i) != i + 1, i + 1, arg(i+1), ..., arg(n), arg(1), ...,
+            // arg(n)]
+            s.jumpi("invalid-input");
+        }
+        // [i', arg(1), ..., arg(n)]
+        s.push(KB::free_memory_start).mstore();
+        // [arg(1), ..., arg(n)]
+        s.append(output_seq(args_size, has_output));
+        return s;
+    };
+
+    auto run = [&](KB const &kb, evm_as::test::KernelCalldata const &calldata) {
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(kb, bytecode);
+
+        interpreter::Intercode icode{bytecode};
+
+        auto stack_memory = test_stack_memory();
+        auto ctx = test_context();
+        ctx.env.input_data = calldata.data();
+        ctx.env.input_data_size = static_cast<uint32_t>(calldata.size());
+
+        interpreter::execute<traits>(ctx, icode, stack_memory.get());
+
+        ASSERT_EQ(ctx.result.status, runtime::StatusCode::Success);
+        ASSERT_EQ(
+            uint256_t::load_le(ctx.result.size), KB::resulting_memory_size);
+        ASSERT_EQ(uint256_t::load_le(ctx.result.offset), KB::free_memory_start);
+    };
+
+    for (size_t args_size = 0; args_size <= 10; ++args_size) {
+        auto const base_calldata = kernel_base_calldata(args_size);
+        auto const tp_calldata = evm_as::test::to_throughput_calldata<traits>(
+            args_size, base_calldata);
+        for (bool has_output : {false, true}) {
+            auto const &s = seq(args_size, has_output);
+            KB kb;
+            kb.throughput(s, args_size, has_output);
+            kb.append(post_seq);
+            run(kb, tp_calldata);
+        }
+        if (args_size) {
+            auto const &os = output_seq(args_size, true);
+            auto const calldata =
+                evm_as::test::to_latency_calldata(os, args_size, tp_calldata);
+            auto const &s = seq(args_size, true);
+            KB kb;
+            kb.latency(s, args_size);
+            kb.append(post_seq);
+            run(kb, calldata);
+        }
+    }
 }

@@ -61,5 +61,4 @@ add_subdirectory(vm/parser)
 
 if(MONAD_COMPILER_BENCHMARKS)
     add_subdirectory(vm/mce)
-    add_subdirectory(vm/kernel-generator)
 endif()

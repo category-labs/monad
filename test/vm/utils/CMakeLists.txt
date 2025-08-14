@@ -16,3 +16,26 @@
 add_executable(directory-type-check directory_type_check.cpp)
 monad_compile_options(directory-type-check)
 target_link_libraries(directory-type-check PRIVATE monad_execution)
+
+add_library(monad-vm-test-utils OBJECT)
+
+target_sources(monad-vm-test-utils PRIVATE
+    "evm-as_utils.hpp"
+)
+
+monad_compile_options(monad-vm-test-utils)
+
+target_link_libraries(monad-vm-test-utils
+    PUBLIC TBB::tbb
+    PUBLIC intx::intx
+    PUBLIC evmc::evmc
+    PUBLIC asmjit::asmjit
+    PUBLIC quill::quill
+    PUBLIC monad-vm::monad-vm-compiler
+    PUBLIC monad-vm::monad-vm-interpreter
+    PUBLIC monad-vm::monad-vm-core
+    PUBLIC monad-vm::monad-vm-runtime
+    PUBLIC monad-vm::monad-vm-utils
+)
+
+add_library(monad-vm::monad-vm-test-utils ALIAS monad-vm-test-utils)

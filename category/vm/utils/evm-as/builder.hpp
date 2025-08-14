@@ -115,9 +115,6 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &push(uint64_t const imm) noexcept
         {
-            if (imm == 0 && traits::evm_rev() >= EVMC_SHANGHAI) {
-                return push0();
-            }
             size_t n = byte_width(imm);
             MONAD_VM_ASSERT(n <= 32);
             return push(n, runtime::uint256_t{imm});
@@ -125,21 +122,27 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &push(runtime::uint256_t const &imm) noexcept
         {
-            if (imm == 0 && traits::evm_rev() >= EVMC_SHANGHAI) {
-                return push0();
-            }
             size_t n = byte_width(imm);
             MONAD_VM_ASSERT(n <= 32);
             return push(n, imm);
         }
 
-        EvmBuilder &push(size_t n, runtime::uint256_t const &imm) noexcept
+        EvmBuilder &push(size_t n_bytes, runtime::uint256_t const &imm) noexcept
         {
-            if (n > 32) {
-                return insert(InvalidI{std::format("PUSH{}", n)});
+            if (n_bytes > 32) {
+                return insert(InvalidI{std::format("PUSH{}", n_bytes)});
+            }
+            size_t n = n_bytes;
+            runtime::uint256_t i = imm;
+            if (n_bytes == 0) {
+                if (traits::evm_rev() >= EVMC_SHANGHAI) {
+                    return push0();
+                }
+                n = 1;
+                i = 0;
             }
             auto pushop =
-                PushI{static_cast<compiler::EvmOpCode>(0x60 + (n - 1)), imm};
+                PushI{static_cast<compiler::EvmOpCode>(0x60 + (n - 1)), i};
             return insert(std::move(pushop));
         }
 

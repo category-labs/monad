@@ -173,6 +173,7 @@ template class ExecuteTransactionNoValidation<EVMC_PARIS>;
 template class ExecuteTransactionNoValidation<EVMC_SHANGHAI>;
 template class ExecuteTransactionNoValidation<EVMC_CANCUN>;
 template class ExecuteTransactionNoValidation<EVMC_PRAGUE>;
+template class ExecuteTransactionNoValidation<EVMC_OSAKA>;
 
 template <evmc_revision rev>
 ExecuteTransaction<rev>::ExecuteTransaction(
@@ -335,6 +336,7 @@ template class ExecuteTransaction<EVMC_PARIS>;
 template class ExecuteTransaction<EVMC_SHANGHAI>;
 template class ExecuteTransaction<EVMC_CANCUN>;
 template class ExecuteTransaction<EVMC_PRAGUE>;
+template class ExecuteTransaction<EVMC_OSAKA>;
 
 uint64_t g_star(
     evmc_revision const rev, Transaction const &tx,

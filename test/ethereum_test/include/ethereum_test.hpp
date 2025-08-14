@@ -48,7 +48,8 @@ inline std::unordered_map<std::string, evmc_revision> const revision_map = {
     {"Merge", EVMC_PARIS},
     {"Shanghai", EVMC_SHANGHAI},
     {"Cancun", EVMC_CANCUN},
-    {"Prague", EVMC_PRAGUE}};
+    {"Prague", EVMC_PRAGUE},
+    {"Osaka", EVMC_OSAKA}};
 
 void load_state_from_json(nlohmann::json const &, State &);
 

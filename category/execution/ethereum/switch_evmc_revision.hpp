@@ -19,6 +19,8 @@
 
 #define SWITCH_EVMC_REVISION(f, ...)                                           \
     switch (rev) {                                                             \
+    case EVMC_OSAKA:                                                           \
+        return f<EVMC_OSAKA>(__VA_ARGS__);                                     \
     case EVMC_PRAGUE:                                                          \
         return f<EVMC_PRAGUE>(__VA_ARGS__);                                    \
     case EVMC_CANCUN:                                                          \

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/config.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/explicit_evmc_revision.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
@@ -56,6 +56,10 @@ consteval unsigned num_precompiles(evmc_revision const rev)
         return 10;
     case EVMC_PRAGUE:
         return 17;
+    case EVMC_OSAKA:
+        // TODO(BSC): handle discontinuous precompiles; this needs to be a value
+        // to allow is_precompile to explicitly specialize for Osaka.
+        return 18;
     default:
         MONAD_ASSERT(false);
     }

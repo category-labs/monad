@@ -494,6 +494,9 @@ namespace monad::vm::compiler::native
             case EVMC_PRAGUE:
                 return ::compile_contract<EVMC_PRAGUE>(
                     rt, contract_code, contract_code_size, config);
+            case EVMC_OSAKA:
+                return ::compile_contract<EVMC_OSAKA>(
+                    rt, contract_code, contract_code_size, config);
             default:
                 MONAD_VM_ASSERT(false);
             }
@@ -546,6 +549,8 @@ namespace monad::vm::compiler::native
             return ::compile_basic_blocks<EVMC_CANCUN>(rt, ir, config);
         case EVMC_PRAGUE:
             return ::compile_basic_blocks<EVMC_PRAGUE>(rt, ir, config);
+        case EVMC_OSAKA:
+            return ::compile_basic_blocks<EVMC_OSAKA>(rt, ir, config);
         default:
             MONAD_VM_ASSERT(false);
         }

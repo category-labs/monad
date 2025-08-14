@@ -734,6 +734,12 @@ namespace monad::vm::compiler
         return make_opcode_table<previous_evm_revision(EVMC_PRAGUE)>();
     }
 
+    template <>
+    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_OSAKA>()
+    {
+        return make_opcode_table<previous_evm_revision(EVMC_OSAKA)>();
+    }
+
     /**
      * Returns `true` if `opcode` is an invalid opcode at this revision.
      */

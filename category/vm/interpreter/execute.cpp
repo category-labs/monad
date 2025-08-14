@@ -126,6 +126,8 @@ extern "C" void monad_vm_interpreter_core_loop(
         return core_loop_impl<EVMC_CANCUN>(*ctx, *analysis, stack_ptr);
     case EVMC_PRAGUE:
         return core_loop_impl<EVMC_PRAGUE>(*ctx, *analysis, stack_ptr);
+    case EVMC_OSAKA:
+        return core_loop_impl<EVMC_OSAKA>(*ctx, *analysis, stack_ptr);
     default:
         MONAD_VM_ASSERT(false);
     }

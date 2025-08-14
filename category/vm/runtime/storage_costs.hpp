@@ -33,7 +33,7 @@ namespace monad::vm::runtime
     template <evmc_revision Rev>
     struct StorageCostTable
     {
-        static_assert(Rev >= EVMC_FRONTIER && Rev <= EVMC_PRAGUE);
+        static_assert(Rev >= EVMC_FRONTIER && Rev <= EVMC_OSAKA);
         static constexpr std::array<StoreCost, 9> costs{};
     };
 
@@ -266,6 +266,22 @@ namespace monad::vm::runtime
 
     template <>
     struct StorageCostTable<EVMC_PRAGUE>
+    {
+        static constexpr auto costs = std::array{
+            StoreCost{.gas_cost = 100, .gas_refund = 0},
+            StoreCost{.gas_cost = 20000, .gas_refund = 0},
+            StoreCost{.gas_cost = 2900, .gas_refund = 4800},
+            StoreCost{.gas_cost = 2900, .gas_refund = 0},
+            StoreCost{.gas_cost = 100, .gas_refund = -4800},
+            StoreCost{.gas_cost = 100, .gas_refund = 4800},
+            StoreCost{.gas_cost = 100, .gas_refund = -2000},
+            StoreCost{.gas_cost = 100, .gas_refund = 19900},
+            StoreCost{.gas_cost = 100, .gas_refund = 2800},
+        };
+    };
+
+    template <>
+    struct StorageCostTable<EVMC_OSAKA>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},

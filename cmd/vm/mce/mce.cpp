@@ -302,6 +302,9 @@ int main(int argc, char **argv)
     else if (rev == "PRAGUE") {
         return mce_main<EVMC_PRAGUE>(args);
     }
+    else if (rev == "OSAKA") {
+        return mce_main<EVMC_OSAKA>(args);
+    }
     else if (rev == "LATEST") {
         return mce_main<EVMC_LATEST_STABLE_REVISION>(args);
     }

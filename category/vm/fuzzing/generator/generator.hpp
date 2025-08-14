@@ -562,6 +562,10 @@ namespace monad::vm::fuzzing
         else if (rev == EVMC_PRAGUE) {
             return 17;
         }
+        else if (rev == EVMC_OSAKA) {
+            // TODO(BSC): handle discontinuous precompiles
+            MONAD_VM_ASSERT(false);
+        }
         else {
             MONAD_VM_ASSERT(false);
         }

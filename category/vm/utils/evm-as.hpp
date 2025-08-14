@@ -99,4 +99,9 @@ namespace monad::vm::utils::evm_as
     {
         return EvmBuilder<EVMC_PRAGUE>{};
     }
+
+    inline EvmBuilder<EVMC_OSAKA> osaka()
+    {
+        return EvmBuilder<EVMC_OSAKA>{};
+    }
 }

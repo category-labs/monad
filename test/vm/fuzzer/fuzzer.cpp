@@ -384,6 +384,7 @@ static arguments parse_args(int const argc, char **const argv)
         {"SHANGHAI", EVMC_SHANGHAI},
         {"CANCUN", EVMC_CANCUN},
         {"PRAGUE", EVMC_PRAGUE},
+        {"OSAKA", EVMC_OSAKA},
         {"LATEST", EVMC_LATEST_STABLE_REVISION}};
     app.add_option(
            "--revision",

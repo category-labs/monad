@@ -325,44 +325,6 @@ void UpdateAuxImpl::set_latest_voted(
     }
 }
 
-int64_t UpdateAuxImpl::get_auto_expire_version_metadata() const noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    return start_lifetime_as<std::atomic_int64_t const>(
-               &db_metadata()->auto_expire_version)
-        ->load(std::memory_order_acquire);
-}
-
-void UpdateAuxImpl::set_auto_expire_version_metadata(
-    int64_t const version) noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
-        reinterpret_cast<std::atomic_int64_t *>(&m->auto_expire_version)
-            ->store(version, std::memory_order_release);
-    };
-    do_(db_metadata_[0].main);
-    do_(db_metadata_[1].main);
-}
-
-int64_t UpdateAuxImpl::calc_auto_expire_version() noexcept
-{
-    MONAD_ASSERT(is_on_disk());
-    if (db_history_max_version() == INVALID_BLOCK_NUM) {
-        return 0;
-    }
-    auto const min_valid_version = db_history_min_valid_version();
-    if (min_valid_version == db_history_max_version()) {
-        return static_cast<int64_t>(min_valid_version);
-    }
-    auto const min_expire_version =
-        static_cast<uint64_t>(get_auto_expire_version_metadata());
-    return static_cast<int64_t>(
-        min_valid_version > min_expire_version + 1 ? min_expire_version + 2
-                                                   : min_valid_version);
-}
-
 void UpdateAuxImpl::rewind_to_match_offsets()
 {
     MONAD_ASSERT(is_on_disk());
@@ -455,9 +417,7 @@ void UpdateAuxImpl::clear_ondisk_db()
     do_(db_metadata_[1].main);
     set_latest_finalized_version(INVALID_BLOCK_NUM);
     set_latest_verified_version(INVALID_BLOCK_NUM);
-
     set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
-    set_auto_expire_version_metadata(0);
 
     advance_db_offsets_to(
         {db_metadata()->fast_list.begin, 0},
@@ -923,7 +883,6 @@ void UpdateAuxImpl::set_io(
         set_latest_finalized_version(INVALID_BLOCK_NUM);
         set_latest_verified_version(INVALID_BLOCK_NUM);
         set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
-        set_auto_expire_version_metadata(0);
 
         for (auto const i : {0, 1}) {
             auto *const m = db_metadata_[i].main;
@@ -1091,7 +1050,6 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             advance_compact_offsets();
         }
     }
-
     // Erase the earliest valid version if it is going to be outdated after
     // upserting new version
     auto const max_version = db_history_max_version();
@@ -1108,7 +1066,6 @@ Node::UniquePtr UpdateAuxImpl::do_update(
             max_version_post_upsert - db_history_min_valid_version() <
             version_history_length());
     }
-    curr_upsert_auto_expire_version = calc_auto_expire_version();
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
         serialize((uint32_t)compact_offset_fast) +
@@ -1125,7 +1082,6 @@ Node::UniquePtr UpdateAuxImpl::do_update(
         std::move(prev_root),
         std::move(root_updates),
         write_root);
-    set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
 
     auto const duration = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - upsert_begin);
@@ -1477,22 +1433,14 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
 void UpdateAuxImpl::print_update_stats(uint64_t const version)
 {
 #if MONAD_MPT_COLLECT_STATS
-    if (stats.nodes_updated_expire > 50'000) {
-        LOG_WARNING_CFORMAT(
-            "The number of nodes updated for expire (%u) is excessively large",
-            stats.nodes_updated_expire);
-    }
     char buf[16 << 10];
     char *p = buf;
     p += snprintf(
         p,
         sizeof(buf) - unsigned(p - buf),
-        "Version %lu: nodes created or updated for upsert = %u, nodes "
-        "updated for expire = %u, nreads for expire = %u\n",
+        "Version %lu: nodes created or updated for upsert = %u\n",
         version,
-        stats.nodes_created_or_updated,
-        stats.nodes_updated_expire,
-        stats.nreads_expire);
+        stats.nodes_created_or_updated);
     if (compact_offset_range_fast_) {
         p += snprintf(
             p,
@@ -1668,20 +1616,6 @@ void UpdateAuxImpl::collect_compaction_read_stats(
 #else
     (void)physical_node_offset;
     (void)bytes_to_read;
-#endif
-}
-
-void UpdateAuxImpl::collect_expire_stats(bool const is_read)
-{
-#if MONAD_MPT_COLLECT_STATS
-    if (is_read) {
-        ++stats.nreads_expire;
-    }
-    else {
-        ++stats.nodes_updated_expire;
-    }
-#else
-    (void)is_read;
 #endif
 }
 

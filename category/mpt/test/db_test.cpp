@@ -865,19 +865,6 @@ TEST(DbTest, history_length_adjustment_never_under_min)
 
     constexpr unsigned nkeys = 1000;
 
-    // prepare updates with 8KB size value
-    std::deque<monad::byte_string> bytes_alloc;
-    std::deque<Update> updates_alloc;
-    auto const &large_value =
-        bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
-    for (size_t i = 0; i < nkeys; ++i) {
-        updates_alloc.push_back(Update{
-            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
-            .value = large_value,
-            .incarnation = false,
-            .next = UpdateList{}});
-    }
-
     // construct a read-only aux
     monad::async::storage_pool::creation_flags pool_options;
     pool_options.open_read_only = true;
@@ -891,10 +878,19 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     monad::async::AsyncIO io_ctx(pool, read_buffers);
     UpdateAux aux_reader{&io_ctx};
 
+    auto const large_value = monad::byte_string(4 * 1024, 0xf);
     auto batch_upsert_once = [&](uint64_t const version) {
+        // prepare updates with 8KB size value
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
+        size_t offset = version * nkeys;
         UpdateList ls;
-        for (auto &u : updates_alloc) {
-            ls.push_front(u);
+        for (size_t i = offset; i < offset + nkeys; ++i) {
+            ls.push_front(updates_alloc.emplace_back(Update{
+                .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+                .value = large_value,
+                .incarnation = false,
+                .next = UpdateList{}}));
         }
         db.upsert(std::move(ls), version);
     };
@@ -1763,7 +1759,7 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
     EXPECT_EQ(bad_read.error(), DbError::version_no_longer_exist);
 }
 
-TEST(DbTest, auto_expire_large_set)
+TEST(DbTest, DISABLED_auto_expire_large_set)
 {
     auto const dbname = create_temp_file(8);
     auto undb = monad::make_scope_exit(
@@ -1827,7 +1823,7 @@ TEST(DbTest, auto_expire_large_set)
     }
 }
 
-TEST(DbTest, auto_expire)
+TEST(DbTest, DISABLED_auto_expire)
 {
     auto const dbname = create_temp_file(8);
     auto undb = monad::make_scope_exit(

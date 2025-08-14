@@ -201,20 +201,6 @@ class UpdateAuxImpl
     // clear all versions <= version, release unused disk space
     void erase_versions_up_to_and_including(uint64_t version);
 
-    /* Calculate the version up to which the database will automatically expire
-    entries (referred to as "auto_expire" in code names).
-
-    Currently, the db auto-expires at most 2 blocks per upsert as a
-    temporary workaround to reduce the sudden increase in auto-expiration
-    workload during upserts that significantly shorten the history length.
-
-    TODO: Develop a more efficient and scalable mechanism for auto-expiration
-    throttling. The goal is to ensure stable database commit times despite
-    varying block loads. */
-    int64_t calc_auto_expire_version() noexcept;
-
-    void set_auto_expire_version_metadata(int64_t) noexcept;
-
     void update_disk_growth_data();
 
     /******** Compaction ********/
@@ -388,7 +374,6 @@ protected:
     };
 
 public:
-    int64_t curr_upsert_auto_expire_version{0};
     compact_virtual_chunk_offset_t compact_offset_fast{
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t compact_offset_slow{
@@ -561,7 +546,6 @@ public:
 
     // collect and print trie update stats
     void reset_stats();
-    void collect_expire_stats(bool is_read);
     void collect_number_nodes_created_stats();
     void collect_compaction_read_stats(
         chunk_offset_t node_offset, unsigned bytes_to_read);
@@ -741,8 +725,6 @@ public:
     bytes32_t get_latest_voted_block_id() const noexcept;
     uint64_t get_latest_voted_version() const noexcept;
 
-    int64_t get_auto_expire_version_metadata() const noexcept;
-
     // WARNING: These are destructive, they discard immediately any extraneous
     // data.
     void rewind_to_match_offsets();
@@ -852,7 +834,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 152 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

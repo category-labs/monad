@@ -160,8 +160,6 @@ namespace detail
         uint64_t latest_finalized_version;
         uint64_t latest_verified_version;
         uint64_t latest_voted_version;
-        uint64_t unused0; // used to be latest_voted_round;
-        int64_t auto_expire_version;
         bytes32_t latest_voted_block_id; // 32 bytes
         // TODO: add latest_proposal info, format as follow, remember to
         // subtract those bytes from `future_variables_unused`
@@ -169,7 +167,7 @@ namespace detail
         // uint8_t latest_proposal_block_id[32];
 
         // padding for adding future atomics without requiring DB reset
-        uint8_t future_variables_unused[4064];
+        uint8_t future_variables_unused[4072];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -505,7 +503,7 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 528512);
+    static_assert(sizeof(db_metadata) == 528504);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

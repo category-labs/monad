@@ -161,8 +161,6 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_sources(
     monad_core
     PRIVATE # core
-            "cgroup.c"
-            "cgroup.h"
             "cpuset.c"
             "cpuset.h"
             # io
@@ -211,7 +209,7 @@ target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  target_link_libraries(monad_core PUBLIC cgroup uring)
+  target_link_libraries(monad_core PUBLIC uring)
 endif()
 
 add_library(

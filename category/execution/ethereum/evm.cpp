@@ -40,7 +40,7 @@
 #include <optional>
 #include <utility>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
@@ -57,6 +57,10 @@ void transfer_balances(
     state.subtract_from_balance(msg.sender, value);
     state.add_to_balance(to, value);
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 template <evmc_revision rev>
 evmc::Result deploy_contract_code(

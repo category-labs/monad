@@ -737,6 +737,7 @@ Lemma execL tx extension s:
 Proof using.
   intros Hext Heoac Hsc.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
   set (sf:=(execValidatedTx s tx).1).
   intros Hc.
   unfold consensusAcceptableTxs in *.
@@ -764,10 +765,7 @@ Proof using.
     clear Hass.
     fold sf in Hdeb.
     rewrite Hscf in Hot;[| set_solver].
-    pose proof (Hsc ac ltac:(set_solver)).
-    specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
-    fold sf in Heoac.
-    rewrite Heoac in Hdeb.
+    rewrite Hscf in Hdeb;[| set_solver].
     autorewrite with syntactic in *.
     remember (addrDelegated sf.1 ac) as dg.
     destruct dg.

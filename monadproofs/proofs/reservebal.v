@@ -314,14 +314,21 @@ Definition isAllowedToEmptyExec
   (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
   isAllowedToEmpty state [] tx.
 
+Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
+
 Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
   : (evm.GlobalState * TransactionResult) :=
   let (si, r) := stateAfterTransaction s t in
   let balCheck (a: evm.address) :=
     let erb:N := ReserveBal `min` (balanceOfAc s a) in
-    bool_decide (erb  - (if bool_decide (sender t =a ) then maxTxFee t else 0) <= balanceOfAc si a) in
+    if hasCode si a
+    then true
+    else
+      if bool_decide (sender t =a)
+      then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
+      else bool_decide (erb <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
-  if (isAllowedToEmptyExec s t || allBalCheck)
+  if (allBalCheck)
   then (si, r)
   else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - maxTxFee t),  DippedTooMuchIntoReserve t) (* revert tx *).
 
@@ -415,7 +422,6 @@ Proof using.
 Qed.
 *)
 
-Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
@@ -425,6 +431,11 @@ Lemma execTxOtherBalanceLB tx s:
        -> if (hasCode s ac)
           then True
           else ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
+Proof using.
+  intros.
+  unfold execValidatedTx in *.
+  
+  
 Proof. Admitted.
 
 (* TODO: do the more liberal check and then weaken the then case to inequality *)

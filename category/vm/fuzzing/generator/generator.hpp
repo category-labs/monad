@@ -713,6 +713,7 @@ namespace monad::vm::fuzzing
             Cases{
                 [&](ValidAddress) {
                     if (valid_addresses.empty()) {
+                        program.push_back(ADDRESS);
                         return;
                     }
 

@@ -491,7 +491,8 @@ Qed.
 Lemma execTxSenderBal tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (if isAllowedToEmpty s [] tx
-  then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
+   then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
+        \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
   else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx))).
 Proof. Admitted.
 
@@ -853,7 +854,7 @@ Proof using.
       rwHypsP.
       intros.
       simpl in *.
-      lia.
+      destruct Hsender; lia.
     }
 
     {

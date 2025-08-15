@@ -169,7 +169,7 @@ inline bool monad_exec_ring_block_id_matches(
             memcmp(
                 block_id,
                 ((struct monad_exec_block_tag const *)payload)->id.bytes,
-                sizeof &block_id) == 0;
+                sizeof *block_id) == 0;
         break;
 
     default:

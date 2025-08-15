@@ -70,8 +70,18 @@ Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
 *)
 Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
-Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r.
-Definition indexWithinK (proj: AccountM -> option N) (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+Record TxHistory :=
+  {
+    
+    lastDelUndelInBlockIndex : option N; (* last block index where this address was delegated or undelegated  *)
+    lastTxInBlockIndex : option N (* last block index where this address sent a tx *)
+  }.
+
+Definition AllTxHistory := (gmap evm.address TxHistory).
+
+(*
+Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r. *)
+Definition indexWithinK (proj: TxHistory -> option N) (state : AllTxHistory)  (tx: TxWithHdr) : bool :=
   let startIndex :=  txBlockNum tx -K  in
   match option_bind _ _ proj (state !! (sender tx))  with
   | Some lastSameSenderTx =>
@@ -79,11 +89,12 @@ Definition indexWithinK (proj: AccountM -> option N) (state : StateOfAccounts)  
   | None => false
   end.
 
-Definition existsTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  indexWithinK lastTxInBlockIndex state tx.
+Definition AugmentedState : Type := StateOfAccounts * AllTxHistory.
+Definition existsTxWithinK (state : AugmentedState)  (tx: TxWithHdr) : bool :=
+  indexWithinK lastTxInBlockIndex (snd state) tx.
 
-Definition existsDelUndelTxWithinK (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
-  indexWithinK  lastDelUndelInBlockIndex state tx.
+Definition existsDelUndelTxWithinK (state : AugmentedState)  (tx: TxWithHdr) : bool :=
+  indexWithinK  lastDelUndelInBlockIndex (snd state) tx.
 
 (*
 [StateOfAccounts] already stores the [Indices] (block index, tx index) of the the last tx from an account.
@@ -99,8 +110,8 @@ t n-k+1
 
 (* external assumption: tx::intermediateTxsSinceState does not span more than K blocks *)
 Definition isAllowedToEmpty
-  (state : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
-  let delegated := (addrDelegated state (sender tx))
+  (state : AugmentedState) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
+  let delegated := (addrDelegated (fst state) (sender tx))
                    || existsDelUndelTxWithinK state tx
                    || bool_decide  ((sender tx) ∈ flat_map addrsDelUndelByTx (tx::intermediateTxsSinceState))
   in
@@ -150,7 +161,7 @@ Qed.
  *)
 
 (*
-Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
+Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKnownState : AugmentedState) (postStateAccountedSuffix rest: list TxWithHdr) (a: evm.address) : N:=
    match rest with
   | [] => 0
    | h::tl =>
@@ -169,13 +180,13 @@ Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
 
 (* weakening to 1 tx *)
 
-Definition updateTotals (latestState : StateOfAccounts) (intermediates: list TxWithHdr) next (old: (N*option (N*N)))
+Definition updateTotals (latestState : AugmentedState) (intermediates: list TxWithHdr) next (old: (N*option (N*N)))
   : N*option (N*N) :=
   if isAllowedToEmpty latestState intermediates next
   then (old.1, Some (maxTxFee next,  value next))
   else (old.1 + maxTxFee next, old.2).
 
-Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr)
+Fixpoint maxTotalReserveDippableDebitL (latestState : AugmentedState) (postStateAccountedSuffix rest: list TxWithHdr)
   : gmap evm.address (N*option (N*N)) :=
   match rest with
   | [] => ∅
@@ -186,7 +197,7 @@ Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStat
   end.
 
 
-Lemma maxTotalReserveDippableDebitLPos  (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) addr:
+Lemma maxTotalReserveDippableDebitLPos  (latestState : AugmentedState) (postStateAccountedSuffix rest: list TxWithHdr) addr:
   addr  ∉ (map sender rest)
   -> ((maxTotalReserveDippableDebitL latestState postStateAccountedSuffix rest) !!! addr) = (0, None).
 Proof using.
@@ -209,7 +220,7 @@ Proof using.
 *)
 
 (*
-Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownState : StateOfAccounts) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
+Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownState : AugmentedState) (intermediateTxsSinceState: list TxWithHdr) (candidate : TxWithHdr) : bool :=
   if isAllowedToEmpty knownBlocks latestKnownState intermediateTxsSinceState candidate
   then bool_decide (maxTxFee candidate <= balanceOfAc latestKnownState (sender candidate))
   else
@@ -217,33 +228,34 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
                  <= balanceOfAc latestKnownState (sender candidate)).
 *)
 
-Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
+Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
   forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
     match emptyingDebits with
-    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
+    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAcA latestState ac))
     | Some (emptyingFee, emptyingValue) =>
-          emptyingFee <= balanceOfAc latestState ac  /\
-          nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - (emptyingValue+emptyingFee)))
+          emptyingFee <= balanceOfAcA latestState ac  /\
+          nonEmptyingDebits <= (ReserveBal `min` (balanceOfAcA latestState ac - (emptyingValue+emptyingFee)))
     end.
 
-Definition consensusAcceptableTxsNoMinus (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+Definition consensusAcceptableTxsNoMinus (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
   forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
     match emptyingDebits with
-    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac))
+    | None => nonEmptyingDebits <= (ReserveBal `min` (balanceOfAcA latestState ac))
     | Some (emptyingFee, emptyingValue) =>
-        let willRevert := bool_decide (balanceOfAc latestState ac < emptyingValue+emptyingFee) in
-          emptyingFee <= balanceOfAc latestState ac 
+        let willRevert := bool_decide (balanceOfAcA latestState ac < emptyingValue+emptyingFee) in
+          emptyingFee <= balanceOfAcA latestState ac 
           /\ nonEmptyingDebits <= ReserveBal
           /\ nonEmptyingDebits + (emptyingFee + if willRevert then 0 else emptyingValue)
-             <= (balanceOfAc latestState ac)
+             <= (balanceOfAcA latestState ac)
     end.
 
 
-Lemma catxEquiv (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
+Lemma catxEquiv (latestState : AugmentedState) (postStateSuffix: list TxWithHdr):
   consensusAcceptableTxs latestState postStateSuffix
   -> consensusAcceptableTxsNoMinus latestState postStateSuffix.
 Proof using.
@@ -261,7 +273,7 @@ Proof using.
 Qed.
 
 
-Lemma catxEquiv2 (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
+Lemma catxEquiv2 (latestState : AugmentedState) (postStateSuffix: list TxWithHdr):
   consensusAcceptableTxsNoMinus latestState postStateSuffix
   -> consensusAcceptableTxs latestState postStateSuffix.
 Proof using.
@@ -282,17 +294,17 @@ Proof using.
 Abort.
 
 (*
-Definition consensusAcceptableTx  (stateNminusK : StateOfAccounts) (candidate : TxWithHdr) : bool :=
+Definition consensusAcceptableTx  (stateNminusK : AugmentedState) (candidate : TxWithHdr) : bool :=
   let NminusK := (txBlockNum candidate - K) in
   let intermediate := (intermediateTxs knownBlocks NminusK candidate) in
   consensusAcceptableTxG knownBlocks stateNminusK intermediate candidate.
 *)
-Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : StateOfAccounts) (blockIndex : N) : Prop :=
+Definition consensusAcceptableBlock (knownBlocks: gmap N Block) (stateNminusK : AugmentedState) (blockIndex : N) : Prop :=
   let extension := (flat_map transactions (blocksInRange knownBlocks (blockIndex - K) K)) in
   consensusAcceptableTxs stateNminusK  extension.
 
 (*
-Definition consensusAcceptableBlocks (knownBlocks: gmap N Block) (knownStates: gmap N StateOfAccounts)
+Definition consensusAcceptableBlocks (knownBlocks: gmap N Block) (knownStates: gmap N AugmentedState)
   (proposedChainExtension: list Block) : bool :=
   forallb (fun b => consensusAcceptableBlock knownBlocks (knownStates !!! (number (header b) - K)) b) proposedChainExtension.
 *)
@@ -306,21 +318,24 @@ Definition stateAfterTransaction s (t: TxWithHdr) :=
 
 Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Admitted.
 
-Definition addrConsideredDelegated  (state: evm.GlobalState) (tx : TxWithHdr) : bool :=
-  (addrDelegated state (sender tx))
+Definition addrConsideredDelegated  (state: AugmentedState) (tx : TxWithHdr) : bool :=
+  (addrDelegated (fst state) (sender tx))
                    || (bool_decide (sender tx ∈ addrsDelUndelByTx tx))
                    || existsDelUndelTxWithinK state tx.
 Definition isAllowedToEmptyExec
-  (state : StateOfAccounts)  (tx: TxWithHdr) : bool :=
+  (state : AugmentedState)  (tx: TxWithHdr) : bool :=
   isAllowedToEmpty state [] tx.
 
 Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
-Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
-  : (evm.GlobalState * TransactionResult) :=
-  let (si, r) := stateAfterTransaction s t in
+Definition updateHistory (a: AllTxHistory) (newTx: TxWithHdr) : AllTxHistory. Proof. Admitted.
+
+Definition revertTx (s: AugmentedState) (t: TxWithHdr) : AugmentedState * TransactionResult. Proof. Admitted.
+Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
+  : (AugmentedState * TransactionResult) :=
+  let (si, r) := stateAfterTransaction (fst s) t in
   let balCheck (a: evm.address) :=
-    let erb:N := ReserveBal `min` (balanceOfAc s a) in
+    let erb:N := ReserveBal `min` (balanceOfAcA s a) in
     if hasCode si a
     then true
     else
@@ -329,18 +344,18 @@ Definition execValidatedTx  (s: evm.GlobalState) (t: TxWithHdr)
       else bool_decide (erb <= balanceOfAc si a) in
   let allBalCheck := (forallb balCheck allAccounts) in
   if (allBalCheck)
-  then (si, r)
-  else (updateBalanceOfAc s (sender t) (fun oldBal => oldBal - maxTxFee t),  DippedTooMuchIntoReserve t) (* revert tx *).
+  then ((si, updateHistory (snd s) t), r)
+  else revertTx s t.
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
-Definition execTx (s: StateOfAccounts) (t: TxWithHdr): option (StateOfAccounts * TransactionResult) :=
-  if (negb (validateTx s t)) (* if this fails. the execution of the entire block aborts *)
+Definition execTx (s: AugmentedState) (t: TxWithHdr): option (AugmentedState * TransactionResult) :=
+  if (negb (validateTx (fst s) t)) (* if this fails. the execution of the entire block aborts *)
   then None
   else Some (execValidatedTx  s t).
 
-Fixpoint execTxs  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAccounts * list TransactionResult) :=
+Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option (AugmentedState * list TransactionResult) :=
   match ts with
   | [] => Some (s, [])
   | t::tls =>
@@ -355,7 +370,7 @@ Fixpoint execTxs  (s: StateOfAccounts) (ts: list TxWithHdr): option (StateOfAcco
   end.
 
 (*
-Lemma isEmptyingEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) n tx :
+Lemma isEmptyingEq (knownBlocks: gmap N Block) (s1 s2 : AugmentedState) n tx :
   (forall a, addrDelegated s1 a = addrDelegated s2 a)
   -> isAllowedToEmpty s1 n tx =  isAllowedToEmpty knownBlocks s2 n tx.
 Proof using.
@@ -367,7 +382,7 @@ Qed.
 
 Set Nested Proofs Allowed.
 
-Lemma maxTotalReserveDippableDebitEq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
+Lemma maxTotalReserveDippableDebitEq (knownBlocks: gmap N Block) (s1 s2 : AugmentedState) (accountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
   (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
   ->   maxTotalReserveDippableDebit knownBlocks s1 accountedSuffix candidate =
          maxTotalReserveDippableDebit knownBlocks s2 accountedSuffix candidate.
@@ -379,7 +394,7 @@ Proof using.
   reflexivity.
 Qed.
 
-Lemma maxTotalReserveDippableDebitLeq (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (accountedSuffix unaccountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
+Lemma maxTotalReserveDippableDebitLeq (knownBlocks: gmap N Block) (s1 s2 : AugmentedState) (accountedSuffix unaccountedSuffix: list TxWithHdr) (candidate : TxWithHdr) :
   (∀ a : evm.address, addrDelegated s1 a = addrDelegated s2 a)
   -> maxTotalReserveDippableDebitLold knownBlocks s1 accountedSuffix unaccountedSuffix (sender candidate)
      = maxTotalReserveDippableDebitLold knownBlocks s2 accountedSuffix unaccountedSuffix (sender candidate).
@@ -394,7 +409,7 @@ Proof using.
 Qed.
 
 
-Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : StateOfAccounts) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
+Lemma consensusAcceptableTxGmono (knownBlocks: gmap N Block) (s1 s2 : AugmentedState) (intermediate: list TxWithHdr) (candidate : TxWithHdr) :
   (forall a, balanceOfAc s1 a <= balanceOfAc s2 a)
   -> (forall a, addrDelegated s1 a = addrDelegated s2 a)
   -> consensusAcceptableTxGold knownBlocks s1 intermediate candidate = true
@@ -428,67 +443,65 @@ Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac,
       (ac <> sender tx)
-       -> if (hasCode s ac)
+       -> if (hasCode (fst s) ac)
           then True
-          else ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
+          else ReserveBal `min` (balanceOfAcA s ac) <= (balanceOfAcA sf ac)).
 Proof using.
   intros.
   unfold execValidatedTx in *.
+Admitted.  
   
-  
-Proof. Admitted.
-
 (* TODO: do the more liberal check and then weaken the then case to inequality *)
 Lemma execTxSenderBal tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (if isAllowedToEmpty s [] tx
-  then balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
-  else ReserveBal `min` (balanceOfAc s (sender tx)) - maxTxFee tx <= (balanceOfAc sf (sender tx))).
+  then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
+  else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx))).
 Proof. Admitted.
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
-  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+  (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof. Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac, ac <> sender tx
-              -> if (addrDelegated sf ac || hasCode sf ac)
+              -> if (addrDelegated (fst sf) ac || hasCode (fst sf) ac)
                  then True
-                 else balanceOfAc s ac <= balanceOfAc sf ac).
+                 else balanceOfAcA s ac <= balanceOfAcA sf ac).
 Proof using. Admitted.
 
 Lemma lastTxInBlockIndexUpd s txlast:
-  option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! sender txlast)
+  option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)
   = Some (txBlockNum txlast).
 Proof using. Admitted.
 
 Lemma otherTxLstSenderLkp s addr txlast :
   addr <> sender txlast
   ->
-    option_bind _ _ lastTxInBlockIndex ((execValidatedTx s txlast).1 !! addr)
-    = option_bind _ _ lastTxInBlockIndex (s !! addr).
+    option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! addr)
+    = option_bind _ _ lastTxInBlockIndex (s.2 !! addr).
 Proof. Admitted.
 
 
 Lemma delgUndelgUpdTx txlast s addr:
   addr ∈  addrsDelUndelByTx txlast
-  -> option_bind _ _ lastDelUndelInBlockIndex ((execValidatedTx s txlast).1 !! addr) = Some (txBlockNum txlast).
+  -> option_bind _ _ lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 !! addr) = Some (txBlockNum txlast).
 Proof using. Admitted.
 
 Lemma otherDelUndelLkp s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
-    option_bind _ _ lastDelUndelInBlockIndex ((execValidatedTx s txlast).1 !! addr)
-    = option_bind _ _ lastDelUndelInBlockIndex (s !! addr).
+    option_bind _ _ lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 !! addr)
+    = option_bind _ _ lastDelUndelInBlockIndex (s.2 !! addr).
 Proof. Admitted.
 
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
-    addrDelegated (execValidatedTx s txlast).1 addr
-    = addrDelegated s addr.
+    addrDelegated ((execValidatedTx s txlast).1).1 addr
+    = addrDelegated s.1 addr.
 Proof using. Admitted.
 
 Hint Rewrite Z.min_l  using lia: syntactic.
@@ -644,7 +657,7 @@ Hint Resolve list_subseteq_app_r : listset.
 Hint Resolve list_subseteq_app_l : listset.
 
 Lemma debLsnd rest extension ac s tx:
-  (addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx)))
+  (addrDelegated s.1 ac || bool_decide (ac ∈ (addrsDelUndelByTx tx)))
   -> snd (maxTotalReserveDippableDebitL s (tx::rest) extension !!! ac) = None.
 Proof using.
   intros Hyp.
@@ -661,7 +674,7 @@ Proof using.
   assert (isAllowedToEmpty s (tx :: rest) a = false) as Heq;
     [| rwHypsP;  simpl; eauto with listset; fail].
   unfold isAllowedToEmpty.
-  destruct (addrDelegated s (sender a)); auto;[].
+  destruct (addrDelegated s.1 (sender a)); auto;[].
   simpl in *.
   rewrite bool_decide_true; try Btauto.btauto.
   set_solver.
@@ -697,12 +710,12 @@ Qed.
 
 Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list evm.address) :=
   forall s, let sf := (fst (execValidatedTx  s tx)) in
-            forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s addr = false -> hasCode sf addr = false.
+            forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s.1 addr = false -> hasCode sf.1 addr = false.
 
 Lemma hasCodeFalsePresExec l s tx:
   (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::l)))
-  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s ac = false)
-  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode (execValidatedTx s tx).1 ac = false).
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s.1 ac = false)
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode ((execValidatedTx s tx).1).1 ac = false).
 Proof using.
   intros Heoac Hsc.
   intros.
@@ -715,7 +728,7 @@ Qed.
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
-  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s ac = false)
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
@@ -752,7 +765,7 @@ Proof using.
     fold sf in Heoac.
     rewrite Heoac in Hdeb.
     autorewrite with syntactic in *.
-    remember (addrDelegated sf ac) as dg.
+    remember (addrDelegated sf.1 ac) as dg.
     destruct dg.
     2:{ (* ac is not delegated *)
        revert Hc.
@@ -823,7 +836,7 @@ in execution checks: treat recently undelegated accounts as delegated
 
 Lemma execValidate tx extension s:
   consensusAcceptableTxs s (tx::extension)
-  -> validateTx s tx = true.
+  -> validateTx s.1 tx = true.
 Proof using.
   intros Hc.
   unfold consensusAcceptableTxs in *.
@@ -836,6 +849,7 @@ Proof using.
   resolveDecide ltac:(congruence).
   unfold validateTx.
   autorewrite with iff.
+  unfold balanceOfAcA in *.
   destruct (isAllowedToEmpty s [] tx); simpl in *; try lia.
   forward_reason.
   case_match; try lia.
@@ -843,10 +857,10 @@ Proof using.
 Qed.
 
 
-Lemma inductiveStep  (latestState : StateOfAccounts) (tx: TxWithHdr) (extension: list TxWithHdr) :
+Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: list TxWithHdr) :
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
-  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode latestState ac = false)
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode latestState.1 ac = false)
  ->  consensusAcceptableTxs latestState (tx::extension)
   -> match execTx latestState tx with
      | None =>  False
@@ -865,7 +879,7 @@ Qed.
 
 
 (*
-Lemma fullBlockStep  (latestState : StateOfAccounts) hb1 (block1: list TxWithHdr) (block2: list TxWithHdr) :
+Lemma fullBlockStep  (latestState : AugmentedState) hb1 (block1: list TxWithHdr) (block2: list TxWithHdr) :
   (forall txext, txext ∈ block1++block2 ->  txBlockNum txext - K ≤ txBlockNum hb1 ≤ txBlockNum txext)
     ->
   consensusAcceptableTxs latestState ((hb1::block1)++block2)
@@ -963,11 +977,11 @@ Proof using.
   set_solver.
 Qed.
 
-Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+Lemma fullBlockStep  (latestState : AugmentedState) (block1: list TxWithHdr) (block2: list TxWithHdr) :
   blockNumsInRange (block1++block2)
   -> consensusAcceptableTxs latestState (block1++block2)
   -> (forall txext, txext ∈ (block1++block2) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (block1++block2)))
-  -> (forall ac, ac ∈ (map sender (block1++block2)) -> hasCode latestState ac = false)
+  -> (forall ac, ac ∈ (map sender (block1++block2)) -> hasCode latestState.1 ac = false)
   -> match execTxs latestState block1 with
      | None =>  False
      | Some (si, _) =>
@@ -982,7 +996,7 @@ Proof.
   forward_reason.
   eapply inductiveStep in Hacc;  auto.
   unfold execTx in *.
-  destruct (validateTx latestState hb1); simpl in *; try contradiction;[].
+  destruct (validateTx latestState.1 hb1); simpl in *; try contradiction;[].
   pose proof (hasCodeFalsePresExec _ _ _ Heoa Hsc) as Hsci.
   destruct (execValidatedTx latestState hb1) as [si tr]; try contradiction;[].
   simpl in *.
@@ -1002,7 +1016,7 @@ Qed.
 
 
 Definition concatL {T} (l: list (list T)) := flat_map id l.
-Definition consensusAcceptableBlocks (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)) :=
+Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
   consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).
 
 Lemma acceptableNil lastConsensedState:
@@ -1019,7 +1033,7 @@ Proof using.
   lia.
 Qed.
 
-Lemma fullBlockStep2  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
+Lemma fullBlockStep2  (latestState : AugmentedState) (block1: list TxWithHdr) (block2: list TxWithHdr) :
   consensusAcceptableBlocks latestState [block1;block2]
   -> match execTxs latestState block1 with
      | None =>  False
@@ -1031,10 +1045,10 @@ Proof. Admitted.
 
 Section use.
   Variable b0: list TxWithHdr.
-  Variable sb0 : StateOfAccounts. (* state after b0 *)
+  Variable sb0 : AugmentedState. (* state after b0 *)
 
   Hypothesis nextBlockPicker:
-    forall (lastConsensedState: StateOfAccounts) (proposedBlocks: list (list TxWithHdr)),
+    forall (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)),
       lengthN proposedBlocks < K
       -> consensusAcceptableBlocks lastConsensedState proposedBlocks
       -> exists nextBlock, consensusAcceptableBlocks lastConsensedState (proposedBlocks++[nextBlock]).
@@ -1050,7 +1064,7 @@ Section use.
     simpl in b1ok.
     pose proof (nextBlockPicker sb0 [b1] ltac:(reflexivity) b1ok) as b2.
     destruct b2 as [b2 b2ok].
-    evar (sb1: StateOfAccounts).
+    evar (sb1: AugmentedState).
 (*
 ad definition consensusAcceptableBlocks that conse
     (consensusAcceptableBlocks sb0 [b1; b2]) ->

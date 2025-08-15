@@ -35,3 +35,16 @@ monad_compile_options(monad-compiler-fuzzer)
 target_include_directories(monad-compiler-fuzzer
   PRIVATE "${ROOT_DIRECTORY}/third_party/evmone/test/state"
 )
+
+
+add_executable(monad-typechecker-fuzzer)
+
+target_sources(monad-typechecker-fuzzer PRIVATE
+  typechecker_fuzzer.cpp)
+
+target_link_libraries(monad-typechecker-fuzzer
+  PRIVATE monad-vm::monad-vm-fuzzing
+  PRIVATE monad_execution
+  PRIVATE CLI11::CLI11
+)
+monad_compile_options(monad-typechecker-fuzzer)

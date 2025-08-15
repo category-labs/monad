@@ -330,7 +330,19 @@ Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitt
 
 Definition updateHistory (a: AllTxHistory) (newTx: TxWithHdr) : AllTxHistory. Proof. Admitted.
 
+
 Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
+
+(*
+  Alice sends money to adds2 in some contract.
+  Alice is EOA.
+  Alice sends tx foo to a smart contract address addr.
+  addr execution creates a deployes code at addr2, and calls it and the call empties addr2.
+  
+
+
+*)
+
 Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   : (AugmentedState * TransactionResult) :=
   let (si, r) := stateAfterTransaction (fst s) t in
@@ -561,7 +573,6 @@ Proof.
 
   }
 Qed.
-
 
 
 Lemma execTxDelegationUpd tx s:
@@ -831,7 +842,7 @@ Qed.
 
   
 Lemma execL tx extension s:
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)

@@ -336,7 +336,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   let (si, r) := stateAfterTransaction (fst s) t in
   let balCheck (a: evm.address) :=
     let erb:N := ReserveBal `min` (balanceOfAcA s a) in
-    if hasCode si a
+    if hasCode si a (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
     then true
     else
       if bool_decide (sender t =a)
@@ -443,12 +443,15 @@ Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac,
       (ac <> sender tx)
-       -> if (hasCode (fst s) ac)
+       -> if (hasCode sf.1 ac)
           then True
           else ReserveBal `min` (balanceOfAcA s ac) <= (balanceOfAcA sf ac)).
 Proof using.
   intros.
   unfold execValidatedTx in *.
+  remember (stateAfterTransaction s.1 tx) as sir.
+  destruct sir as [si r].
+  simpl in *.
 Admitted.  
   
 (* TODO: do the more liberal check and then weaken the then case to inequality *)
@@ -733,6 +736,7 @@ Lemma execL tx extension s:
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
   intros Hext Heoac Hsc.
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
   set (sf:=(execValidatedTx s tx).1).
   intros Hc.
   unfold consensusAcceptableTxs in *.
@@ -759,7 +763,7 @@ Proof using.
     rewrite Hass.
     clear Hass.
     fold sf in Hdeb.
-    rewrite Hsc in Hot;[| set_solver].
+    rewrite Hscf in Hot;[| set_solver].
     pose proof (Hsc ac ltac:(set_solver)).
     specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
     fold sf in Heoac.

@@ -330,7 +330,7 @@ Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitt
 
 Definition updateHistory (a: AllTxHistory) (newTx: TxWithHdr) : AllTxHistory. Proof. Admitted.
 
-Definition revertTx (s: AugmentedState) (t: TxWithHdr) : AugmentedState * TransactionResult. Proof. Admitted.
+Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
 Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   : (AugmentedState * TransactionResult) :=
   let (si, r) := stateAfterTransaction (fst s) t in
@@ -345,7 +345,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   let allBalCheck := (forallb balCheck allAccounts) in
   if (allBalCheck)
   then ((si, updateHistory (snd s) t), r)
-  else revertTx s t.
+  else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r).
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
@@ -438,6 +438,21 @@ Qed.
 *)
 
 
+Lemma balanceOfRevert s tx ac:
+  balanceOfAc (revertTx s tx).1 ac =
+    if bool_decide (ac= sender tx)
+    then balanceOfAc s ac - maxTxFee tx
+    else balanceOfAc s ac.
+Proof using. Admitted.
+
+Lemma allAccountsSpec: forall ac, ac ∈ allAccounts.
+Proof. Admitted.
+
+Lemma allAccountsSpecLegacy: forall ac, In ac allAccounts.
+Proof. intros. rewrite <- elem_of_list_In.
+       apply allAccountsSpec.
+Qed.
+
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -452,8 +467,26 @@ Proof using.
   remember (stateAfterTransaction s.1 tx) as sir.
   destruct sir as [si r].
   simpl in *.
-Admitted.  
-  
+  remember (hasCode sf.1 ac) as sac.
+  destruct sac; auto.
+  match goal with
+    [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
+  end.
+  unfold balanceOfAcA in *.
+  destruct fb; simpl in *.
+  2:{ subst sf.
+      rewrite balanceOfRevert.
+      resolveDecide congruence.
+      lia.
+  }
+  symmetry in Heqfb.
+  rewrite  forallb_forall in Heqfb.
+  specialize (Heqfb ac (allAccountsSpecLegacy ac)).
+  rewrite <- Heqsac in Heqfb.
+  resolveDecide congruence.
+  case_bool_decide; try lia.
+Qed.
+
 (* TODO: do the more liberal check and then weaken the then case to inequality *)
 Lemma execTxSenderBal tx s:
   let sf :=  (execValidatedTx s tx).1 in

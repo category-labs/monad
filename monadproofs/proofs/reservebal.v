@@ -185,6 +185,23 @@ Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStat
       updateKey r (sender h) (updateTotals latestState postStateAccountedSuffix h)
   end.
 
+(* this is a somewhat non-constructive assumption. we need that no contract ever deployed at any address in this set. We must keep this set abstract. Also, because the addresses of new contracts is prododuced by keccak,
+we need to keep the keccak function abstract and not make contradicting assumptions, e.g. that keccak is surjective. perhaps we can morally treat the implenentation as something that emits a 0 whenever the actual output is in allEOAsWithPrivateKeyThatWillEvenBeGenerated *)
+Definition allEOAsWithPrivateKeyThatWillEvenBeGenerated: list evm.address. Proof. Admitted.
+
+
+Lemma maxTotalReserveDippableDebitLPos  (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) addr:
+  addr  ∉ (map sender rest)
+  -> ((maxTotalReserveDippableDebitL latestState postStateAccountedSuffix rest) !!! addr) = (0, None).
+Proof using.
+  revert postStateAccountedSuffix.
+  induction rest; auto.
+  intros.
+  simpl in *.
+  rewrite updateKeyLkp3.
+  rewrite bool_decide_false;[ | set_solver].
+  apply IHrest. set_solver.
+Qed.
 
 (*
 Lemma foo a l s r:
@@ -215,7 +232,7 @@ Definition consensusAcceptableTxs (latestState : StateOfAccounts) (postStateSuff
           nonEmptyingDebits <= (ReserveBal `min` (balanceOfAc latestState ac - (emptyingValue+emptyingFee)))
     end.
 
-Definition consensusAcceptableTxsNoSubtraction (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
+Definition consensusAcceptableTxsNoMinus (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
   forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
@@ -232,9 +249,9 @@ Definition consensusAcceptableTxsNoSubtraction (latestState : StateOfAccounts) (
 
 Lemma catxEquiv (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
   consensusAcceptableTxs latestState postStateSuffix
-  -> consensusAcceptableTxsNoSubtraction latestState postStateSuffix.
+  -> consensusAcceptableTxsNoMinus latestState postStateSuffix.
 Proof using.
-  unfold consensusAcceptableTxsNoSubtraction ,consensusAcceptableTxs.
+  unfold consensusAcceptableTxsNoMinus.
   intros Hp ac.
   specialize (Hp ac).
   case_match.
@@ -249,10 +266,10 @@ Qed.
 
 
 Lemma catxEquiv2 (latestState : StateOfAccounts) (postStateSuffix: list TxWithHdr):
-  consensusAcceptableTxsNoSubtraction latestState postStateSuffix
+  consensusAcceptableTxsNoMinus latestState postStateSuffix
   -> consensusAcceptableTxs latestState postStateSuffix.
 Proof using.
-  unfold consensusAcceptableTxsNoSubtraction ,consensusAcceptableTxs.
+  unfold consensusAcceptableTxsNoMinus ,consensusAcceptableTxs.
   intros Hp ac.
   specialize (Hp ac).
   case_match.
@@ -402,12 +419,16 @@ Proof using.
 Qed.
 *)
 
+Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
-  (forall ac, (ac <> sender tx) ->
-              ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
+  (forall ac,
+      (ac <> sender tx)
+       -> if (hasCode s ac)
+          then True
+          else ReserveBal `min` (balanceOfAc s ac) <= (balanceOfAc sf ac)).
 Proof. Admitted.
 
 (* TODO: do the more liberal check and then weaken the then case to inequality *)
@@ -426,8 +447,7 @@ Proof. Admitted.
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac, ac <> sender tx
-
-              -> if (addrDelegated sf ac) (* addrDelegated is to be renamed to addrDelegatedOrContract *)
+              -> if (addrDelegated sf ac || hasCode sf ac)
                  then True
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using. Admitted.
@@ -579,8 +599,6 @@ Proof using.
 Qed.
   
   
-  
-  
 Lemma debitLeq extension s tx rest:
   let sf :=  fst (execValidatedTx s tx) in 
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
@@ -670,12 +688,18 @@ Proof using.
   reflexivity.
 Qed.
 
+Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list evm.address) :=
+  forall s, let sf := (fst (execValidatedTx  s tx)) in
+            forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s addr = false -> hasCode sf addr = false.
+  
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s ac = false)
   -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
-  intros Hext.
+  intros Hext Heoac Hsc.
   set (sf:=(execValidatedTx s tx).1).
   intros Hc.
   unfold consensusAcceptableTxs in *.
@@ -689,8 +713,11 @@ Proof using.
   { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
   specialize (Hass ac).
   autorewrite with iff.
+  
   case_bool_decide; simpl in *;  try lia.
   2:{ (* non-sender account *)
+    destruct (decide (ac ∈ map sender extension)) as [Hd| Hd];
+    [| rewrite maxTotalReserveDippableDebitLPos; auto; fail].
     pose proof (execTxOtherBalanceLB tx s) as Hot.
     pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
     simpl in *.
@@ -699,14 +726,22 @@ Proof using.
     rewrite Hass.
     clear Hass.
     fold sf in Hdeb.
+    rewrite Hsc in Hot;[| set_solver].
+    pose proof (Hsc ac ltac:(set_solver)).
+    specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
+    fold sf in Heoac.
+    rewrite Heoac in Hdeb.
+    autorewrite with syntactic in *.
     remember (addrDelegated sf ac) as dg.
     destruct dg.
     2:{ (* ac is not delegated *)
        revert Hc.
        rwHypsP.
        utils.case_match_concl.
+       autorewrite with syntactic in *.
        destruct o; subst sf; try lia.
-       destruct p; try lia.
+       rename n into nonEmptyingFees.
+       destruct p as (emptyingFee, emptyingVal); try lia.
     }
     {
       pose proof (debLsnd [] extension ac s tx) as Hsnd.
@@ -788,18 +823,21 @@ Proof using.
 Qed.
 
 
-Lemma inductiveStep  (latestState : StateOfAccounts) (extensionHd: TxWithHdr) (extensionTl: list TxWithHdr) :
-  (forall txext, txext ∈ extensionTl ->  txBlockNum txext - K ≤ txBlockNum extensionHd ≤ txBlockNum txext)
- ->  consensusAcceptableTxs latestState (extensionHd::extensionTl)
-  -> match execTx latestState extensionHd with
+Lemma inductiveStep  (latestState : StateOfAccounts) (tx: TxWithHdr) (extension: list TxWithHdr) :
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode latestState ac = false)
+ ->  consensusAcceptableTxs latestState (tx::extension)
+  -> match execTx latestState tx with
      | None =>  False
      | Some (si, tr) =>
-         consensusAcceptableTxs si extensionTl
+         consensusAcceptableTxs si extension
      end.
 Proof.
-  intros Hext Hc.
+  intros Hext Heoac Hsc Hc.
   unfold execTx.
-  rewrite -> (execValidate extensionHd extensionTl) by assumption.
+  intros.
+  rewrite -> (execValidate tx extension) by assumption.
   simpl.
   apply execL in Hc; auto.
   case_match; auto.
@@ -885,9 +923,31 @@ Proof using.
   lia.
 Qed.
 
+
+Lemma  txCannotCreateContractAtEOAAddrWithPrivateKeyMono tx l1 l2:
+  l1 ⊆ l2
+  -> txCannotCreateContractAtEOAAddrWithPrivateKey tx l2
+  -> txCannotCreateContractAtEOAAddrWithPrivateKey tx l1.
+Proof using.
+  unfold txCannotCreateContractAtEOAAddrWithPrivateKey.
+  intros Hs Hp.
+  intros.
+  apply Hp; auto.
+Qed.
+
+Lemma  txCannotCreateContractAtEOAAddrWithPrivateKeyTrimHead tx h l:
+  txCannotCreateContractAtEOAAddrWithPrivateKey tx (h::l)
+  -> txCannotCreateContractAtEOAAddrWithPrivateKey tx l.
+Proof using.
+  apply txCannotCreateContractAtEOAAddrWithPrivateKeyMono.
+  set_solver.
+Qed.
+
 Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (block2: list TxWithHdr) :
   blockNumsInRange (block1++block2)
   -> consensusAcceptableTxs latestState (block1++block2)
+  -> (forall txext, txext ∈ (block1++block2) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (block1++block2)))
+  -> (forall ac, ac ∈ (map sender (block1++block2)) -> hasCode latestState ac = false)
   -> match execTxs latestState block1 with
      | None =>  False
      | Some (si, _) =>
@@ -897,12 +957,20 @@ Lemma fullBlockStep  (latestState : StateOfAccounts) (block1: list TxWithHdr) (b
 Proof.
   intros Hrange Hacc.
   induction block1 as [|hb1 block1 IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
+  intros Heoa Hsc.
   change  ((hb1 :: block1) ++ block2) with (hb1::(block1++block2)) in Hacc.
   forward_reason.
-  eapply inductiveStep in Hacc; [| auto; fail].
+  eapply inductiveStep in Hacc;  auto. 
   destruct (execTx latestState hb1) as [(si, tr)|]; try contradiction;[].
-  specialize (IH si ltac:(auto) ltac:(auto)).
-  destruct (execTxs si block1) as [|p]; try auto;[].
+  pose proof (fun txext p => txCannotCreateContractAtEOAAddrWithPrivateKeyTrimHead _ _ _
+                               (Heoa txext (elem_of_list_further _ _ _ p))).
+  specialize (fun txext p => Hsc txext (elem_of_list_further _ _ _ p)).
+  specialize (IH si ltac:(auto) ltac:(auto) ltac:(auto)).
+  lapply IH.
+  2:{
+    unfold txCannotCreateContractAtEOAAddrWithPrivateKey in Heoa.
+  destruct (execTxs si block1) as [|]; try auto.
+  2:{
   destruct p as [si2 ?].
   assumption.
 Qed.

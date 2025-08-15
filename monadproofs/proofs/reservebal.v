@@ -691,6 +691,19 @@ Qed.
 Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list evm.address) :=
   forall s, let sf := (fst (execValidatedTx  s tx)) in
             forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s addr = false -> hasCode sf addr = false.
+
+Lemma hasCodeFalsePresExec l s tx:
+  (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::l)))
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s ac = false)
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode (execValidatedTx s tx).1 ac = false).
+Proof using.
+  intros Heoac Hsc.
+  intros.
+  pose proof (Hsc ac ltac:(set_solver)).
+  specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
+  auto.
+Qed.
+
   
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
@@ -960,17 +973,22 @@ Proof.
   intros Heoa Hsc.
   change  ((hb1 :: block1) ++ block2) with (hb1::(block1++block2)) in Hacc.
   forward_reason.
-  eapply inductiveStep in Hacc;  auto. 
-  destruct (execTx latestState hb1) as [(si, tr)|]; try contradiction;[].
+  eapply inductiveStep in Hacc;  auto.
+  unfold execTx in *.
+  destruct (validateTx latestState hb1); simpl in *; try contradiction;[].
+  pose proof (hasCodeFalsePresExec _ _ _ Heoa Hsc) as Hsci.
+  destruct (execValidatedTx latestState hb1) as [si tr]; try contradiction;[].
+  simpl in *.
   pose proof (fun txext p => txCannotCreateContractAtEOAAddrWithPrivateKeyTrimHead _ _ _
                                (Heoa txext (elem_of_list_further _ _ _ p))).
-  specialize (fun txext p => Hsc txext (elem_of_list_further _ _ _ p)).
   specialize (IH si ltac:(auto) ltac:(auto) ltac:(auto)).
   lapply IH.
   2:{
-    unfold txCannotCreateContractAtEOAAddrWithPrivateKey in Heoa.
+    intros.
+    apply Hsci. set_solver.
+  }
+  intros.
   destruct (execTxs si block1) as [|]; try auto.
-  2:{
   destruct p as [si2 ?].
   assumption.
 Qed.

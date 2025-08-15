@@ -17,6 +17,7 @@ set(prague_excluded_tests
     "BlockchainTests.prague/eip7623_increase_calldata_cost/transaction_validity/transaction_validity_type_3.json"
     "BlockchainTests.prague/eip7623_increase_calldata_cost/execution_gas/gas_consumption_below_data_floor.json"
     "BlockchainTests.prague/eip7623_increase_calldata_cost/execution_gas/full_gas_consumption.json"
+    "BlockchainTests.osaka/eip7825_transaction_gas_limit_cap/tx_gas_limit/transaction_gas_limit_cap.json"
 
     # Long-running tests
     "BlockchainTests.prague/eip2935_historical_block_hashes_from_state/block_hashes/block_hashes_history.json"

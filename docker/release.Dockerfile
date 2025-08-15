@@ -30,6 +30,7 @@ RUN apt update && apt install -y \
   libbrotli-dev \
   libcap-dev \
   libcli11-dev \
+  libcrypto++-dev \
   libgmock-dev \
   libgmp-dev \
   libgtest-dev \

@@ -576,6 +576,10 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision)
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision);
+    register_tests(
+        test_resource::build_dir /
+            "src/ExecutionSpecTestFixturesFusakaDevnet/blockchain_tests",
+        revision);
 }
 
 MONAD_TEST_NAMESPACE_END

@@ -3,6 +3,7 @@
 packages=(
   libbenchmark-dev
   libcgroup-dev
+  libcrypto++-dev
   libgmock-dev
   libgtest-dev
   libhugetlbfs-dev

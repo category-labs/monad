@@ -674,3 +674,8 @@ TEST(Prague, bls_pairing_check_invalid)
     do_geth_tests<EVMC_PRAGUE>(
         "bls12_pairing_check_invalid", "fail-blsPairing.json", 0x0f_address);
 }
+
+TEST(Osaka, p256_verify)
+{
+    do_geth_tests<EVMC_OSAKA>("p256_verify", "p256Verify.json", 0x0100_address);
+}

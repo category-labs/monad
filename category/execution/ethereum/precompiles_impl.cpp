@@ -19,6 +19,12 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
+#include <cryptopp/eccrypto.h>
+#include <cryptopp/ecp.h>
+#include <cryptopp/integer.h>
+#include <cryptopp/nbtheory.h>
+#include <cryptopp/oids.h>
+
 #include <blst.h>
 
 #include <c-kzg-4844/trusted_setup.hpp>
@@ -223,6 +229,12 @@ uint64_t bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision)
     return 23800;
 }
 
+// Rollup precompiles
+uint64_t p256_verify_gas_cost(byte_string_view, evmc_revision)
+{
+    return 6900;
+}
+
 PrecompileResult ecrecover_execute(byte_string_view const input)
 {
     return silkpre_execute<silkpre_ecrec_run>(input);
@@ -357,6 +369,98 @@ PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
 PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
 {
     return bls12::map_fp_to_g<bls12::G2>(input);
+}
+
+// Rollup precompiles
+
+// EIP-7951
+PrecompileResult p256_verify_execute(byte_string_view const input)
+{
+    using namespace CryptoPP;
+
+    auto const empty_result = PrecompileResult{
+        .status_code = EVMC_SUCCESS,
+        .obuf = nullptr,
+        .output_size = 0,
+    };
+
+    if (input.size() != 160) {
+        return empty_result;
+    }
+
+    Integer h(input.data(), 32);
+    Integer r(input.data() + 32, 32);
+    Integer s(input.data() + 64, 32);
+    Integer qx(input.data() + 96, 32);
+    Integer qy(input.data() + 128, 32);
+
+    DL_GroupParameters_EC<ECP> params(ASN1::secp256r1());
+    auto const &ec = params.GetCurve();
+    auto const &n = params.GetSubgroupOrder();
+    auto const p_mod = ec.FieldSize();
+    auto const &G = params.GetSubgroupGenerator();
+
+    // if not (0 < r < n and 0 < s < n): return
+    if (!(r > Integer::Zero() && r < n)) {
+        return empty_result;
+    }
+
+    if (!(s > Integer::Zero() && s < n)) {
+        return empty_result;
+    }
+
+    // if not (0 ≤ qx < p and 0 ≤ qy < p): return
+    if (!(qx >= Integer::Zero() && qx < p_mod)) {
+        return empty_result;
+    }
+
+    if (!(qy >= Integer::Zero() && qy < p_mod)) {
+        return empty_result;
+    }
+
+    // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
+    if (!ec.VerifyPoint({qx, qy})) {
+        return empty_result;
+    }
+
+    // if (qx, qy) == (0, 0): return
+    if (qx.IsZero() && qy.IsZero()) {
+        return empty_result;
+    }
+
+    // s1 = s^(-1) (mod n)
+    auto const s1 = s.InverseMod(n);
+
+    // R' = (h * s1) * G + (r * s1) * (qx, qy)
+    auto const u1 = a_times_b_mod_c(h, s1, n);
+    auto const u2 = a_times_b_mod_c(r, s1, n);
+
+    auto const p1 = ec.Multiply(u1, G);
+    auto const p2 = ec.Multiply(u2, {qx, qy});
+    auto const r_prime = ec.Add(p1, p2);
+
+    // If R' is at infinity: return
+    if (r_prime.identity) {
+        return empty_result;
+    }
+
+    // if R'.x ≢ r (mod n): return
+    if (r_prime.x % n != r) {
+        return empty_result;
+    }
+
+    // Return 0x000...1
+    auto *const output_buf = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(output_buf != nullptr);
+    std::memset(output_buf, 0, 32);
+
+    output_buf[31] = 1;
+
+    return {
+        .status_code = EVMC_SUCCESS,
+        .obuf = output_buf,
+        .output_size = 32,
+    };
 }
 
 MONAD_NAMESPACE_END

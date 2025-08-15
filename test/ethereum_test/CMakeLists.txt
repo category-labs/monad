@@ -25,6 +25,20 @@ ExternalProject_Add(
   INSTALL_COMMAND ""
   LOG_DOWNLOAD ON)
 
+# These fixtures are disjoint to the main v4.5.0 release above; they test Fusaka
+# features that haven't yet made it into a mainstream release of the execution
+# specs. Eventually, when we update the fixtures above, this extra download can
+# be removed.
+ExternalProject_Add(
+  ExecutionSpecTestFixturesFusakaDevnet
+  URL "https://github.com/ethereum/execution-spec-tests/releases/download/fusaka-devnet-3%40v1.0.0/fixtures_fusaka-devnet-3.tar.gz"
+  URL_HASH "SHA256=576261e1280e5300c458aa9b05eccb2fec5ff80a0005940dc52fa03fdd907249"
+  PREFIX ${CMAKE_BINARY_DIR}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  LOG_DOWNLOAD ON)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
                                                   monad_execution GTest::gtest)
@@ -79,3 +93,4 @@ add_ethereum_test(FORK merge)
 add_ethereum_test(FORK shanghai)
 add_ethereum_test(FORK cancun)
 add_ethereum_test(FORK prague)
+add_ethereum_test(FORK osaka)

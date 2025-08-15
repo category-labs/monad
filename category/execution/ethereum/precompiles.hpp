@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/core/byte_string.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -31,7 +31,7 @@ bool init_trusted_setup();
 inline constexpr Address ripemd_address{3};
 
 template <evmc_revision rev>
-bool is_precompile(Address const &) noexcept;
+bool is_precompile(Address const &);
 
 template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &);
@@ -55,6 +55,9 @@ uint64_t bls12_g2_msm_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_pairing_check_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_map_fp_to_g1_gas_cost(byte_string_view, evmc_revision);
 uint64_t bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision);
+
+// Rollup precompiles
+uint64_t p256_verify_gas_cost(byte_string_view, evmc_revision);
 
 struct PrecompileResult
 {
@@ -91,5 +94,8 @@ PrecompileResult bls12_g2_msm_execute(byte_string_view);
 PrecompileResult bls12_pairing_check_execute(byte_string_view);
 PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view);
 PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
+
+// Rollup precompiles
+PrecompileResult p256_verify_execute(byte_string_view);
 
 MONAD_NAMESPACE_END

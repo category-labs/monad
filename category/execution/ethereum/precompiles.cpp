@@ -34,95 +34,82 @@
 
 MONAD_NAMESPACE_BEGIN
 
-consteval unsigned num_precompiles(evmc_revision const rev)
-{
-    switch (rev) {
-    case EVMC_FRONTIER:
-    case EVMC_HOMESTEAD:
-    case EVMC_TANGERINE_WHISTLE:
-    case EVMC_SPURIOUS_DRAGON:
-        return 4;
-    case EVMC_BYZANTIUM:
-    case EVMC_CONSTANTINOPLE:
-    case EVMC_PETERSBURG:
-        return 8;
-    case EVMC_ISTANBUL:
-    case EVMC_BERLIN:
-    case EVMC_LONDON:
-    case EVMC_PARIS:
-    case EVMC_SHANGHAI:
-        return 9;
-    case EVMC_CANCUN:
-        return 10;
-    case EVMC_PRAGUE:
-        return 17;
-    case EVMC_OSAKA:
-        // TODO(BSC): handle discontinuous precompiles; this needs to be a value
-        // to allow is_precompile to explicitly specialize for Osaka.
-        return 18;
-    default:
-        MONAD_ASSERT(false);
-    }
-}
-
-template <evmc_revision rev>
-bool is_precompile(Address const &address) noexcept
-{
-    static constexpr auto max_address = Address{num_precompiles(rev)};
-
-    if (MONAD_LIKELY(address > max_address)) {
-        return false;
-    }
-
-    if (MONAD_UNLIKELY(evmc::is_zero(address))) {
-        return false;
-    }
-
-    return true;
-}
-
-EXPLICIT_EVMC_REVISION(is_precompile);
-
 struct PrecompiledContract
 {
     precompiled_gas_cost_fn *gas_cost_func;
     precompiled_execute_fn *execute_func;
 };
 
-inline constexpr std::array<
-    PrecompiledContract, num_precompiles(EVMC_PRAGUE) + 1>
-    dispatch{{
-        {nullptr, nullptr}, // precompiles start at address 0x1
-        {ecrecover_gas_cost, ecrecover_execute},
-        {sha256_gas_cost, sha256_execute},
-        {ripemd160_gas_cost, ripemd160_execute},
-        {identity_gas_cost, identity_execute},
-        {expmod_gas_cost, expmod_execute},
-        {ecadd_gas_cost, ecadd_execute},
-        {ecmul_gas_cost, ecmul_execute},
-        {snarkv_gas_cost, snarkv_execute},
-        {blake2bf_gas_cost, blake2bf_execute},
-        {point_evaluation_gas_cost, point_evaluation_execute},
-        {bls12_g1_add_gas_cost, bls12_g1_add_execute},
-        {bls12_g1_msm_gas_cost, bls12_g1_msm_execute},
-        {bls12_g2_add_gas_cost, bls12_g2_add_execute},
-        {bls12_g2_msm_gas_cost, bls12_g2_msm_execute},
-        {bls12_pairing_check_gas_cost, bls12_pairing_check_execute},
-        {bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute},
-        {bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute},
-    }};
+template <evmc_revision First, evmc_revision Rev>
+static consteval std::optional<PrecompiledContract>
+since(PrecompiledContract impl)
+{
+    if constexpr (Rev >= First) {
+        return impl;
+    }
+
+    return std::nullopt;
+}
+
+template <evmc_revision Rev>
+std::optional<PrecompiledContract> resolve_precompile(Address const &address)
+{
+#define CASE(addr, first_rev, name)                                            \
+    do {                                                                       \
+        if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
+            return since<(first_rev), Rev>({name##_gas_cost, name##_execute}); \
+        }                                                                      \
+    }                                                                          \
+    while (false)
+
+    // Ethereum precompiles
+    CASE(0x01, EVMC_FRONTIER, ecrecover);
+    CASE(0x02, EVMC_FRONTIER, sha256);
+    CASE(0x03, EVMC_FRONTIER, ripemd160);
+    CASE(0x04, EVMC_FRONTIER, identity);
+    CASE(0x05, EVMC_BYZANTIUM, expmod);
+    CASE(0x06, EVMC_BYZANTIUM, ecadd);
+    CASE(0x07, EVMC_BYZANTIUM, ecmul);
+    CASE(0x08, EVMC_BYZANTIUM, snarkv);
+    CASE(0x09, EVMC_ISTANBUL, blake2bf);
+    CASE(0x0A, EVMC_CANCUN, point_evaluation);
+    CASE(0x0B, EVMC_PRAGUE, bls12_g1_add);
+    CASE(0x0C, EVMC_PRAGUE, bls12_g1_msm);
+    CASE(0x0D, EVMC_PRAGUE, bls12_g2_add);
+    CASE(0x0E, EVMC_PRAGUE, bls12_g2_msm);
+    CASE(0x0F, EVMC_PRAGUE, bls12_pairing_check);
+    CASE(0x10, EVMC_PRAGUE, bls12_map_fp_to_g1);
+    CASE(0x11, EVMC_PRAGUE, bls12_map_fp2_to_g2);
+
+    // Rollup precompiles
+    CASE(0x0100, EVMC_OSAKA, p256_verify);
+
+#undef CASE
+
+    return std::nullopt;
+}
+
+EXPLICIT_EVMC_REVISION(resolve_precompile);
+
+template <evmc_revision Rev>
+bool is_precompile(Address const &address)
+{
+    return resolve_precompile<Rev>(address).has_value();
+}
+
+EXPLICIT_EVMC_REVISION(is_precompile);
 
 template <evmc_revision rev>
 std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
 {
     auto const &address = msg.code_address;
+    auto const maybe_precompile = resolve_precompile<rev>(address);
 
-    if (!is_precompile<rev>(address)) {
+    if (!maybe_precompile) {
         return std::nullopt;
     }
 
-    auto const i = address.bytes[sizeof(address.bytes) - 1];
-    auto const [gas_cost_func, execute_func] = dispatch[i];
+    auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};
     uint64_t const cost = gas_cost_func(input, rev);

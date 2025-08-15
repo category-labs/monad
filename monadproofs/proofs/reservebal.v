@@ -450,12 +450,6 @@ Qed.
 *)
 
 
-Lemma balanceOfRevert s tx ac:
-  balanceOfAc (revertTx s tx).1 ac =
-    if bool_decide (ac= sender tx)
-    then balanceOfAc s ac - maxTxFee tx
-    else balanceOfAc s ac.
-Proof using. Admitted.
 
 Lemma allAccountsSpec: forall ac, ac ∈ allAccounts.
 Proof. Admitted.
@@ -472,6 +466,22 @@ Ltac rememberForallb :=
     | [|- context[forallb ?a ?b]] => remember (forallb a b) as fb
   end.
 (** execution assumptions *)
+
+Lemma balanceOfRevert s tx ac:
+  balanceOfAc (revertTx s tx).1 ac =
+    if bool_decide (ac= sender tx)
+    then balanceOfAc s ac - maxTxFee tx
+    else balanceOfAc s ac.
+Proof using. Admitted.
+
+Lemma execTxSenderBalCore tx s:
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (if addrDelegated s (sender tx)
+   then True
+   else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
+        \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx)).
+Proof. Admitted.
+
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac,
@@ -503,13 +513,6 @@ Proof using.
   case_bool_decide; try lia.
 Qed.
 
-Lemma execTxSenderBalCore tx s:
-  let sf :=  (stateAfterTransaction s tx).1 in
-  (if addrDelegated s (sender tx)
-   then True
-   else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
-        \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx)).
-Proof. Admitted.
 
 Lemma execTxSenderBal tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -574,11 +577,49 @@ Proof.
   }
 Qed.
 
+Lemma execTxDelegationUpdCore tx s:
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof.
+Admitted.
+
+Lemma revertTxDelegationUpdCore tx s:
+  let sf :=  (revertTx s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof.
+Admitted.
+
+Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
+  (let '(a,b) := p in f a b) = f (fst p) (snd p).
+Proof using. Admitted.
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
-Proof. Admitted.
+Proof.
+  intros ? ? Hd.
+  subst sf.
+  unfold execValidatedTx in Hd.
+  rewrite pairEta in Hd.
+  simpl in *.
+  case_match.
+  {
+    apply execTxDelegationUpdCore in Hd. assumption.
+  }
+  {
+    apply revertTxDelegationUpdCore in Hd.
+    assumption.
+  }
+Qed.
+
+Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, ac <> sender tx
+              -> if (addrDelegated sf ac || hasCode sf ac)
+                 then True
+                 else balanceOfAc s ac <= balanceOfAc sf ac).
+Proof using.
+Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -586,7 +627,24 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
               -> if (addrDelegated (fst sf) ac || hasCode (fst sf) ac)
                  then True
                  else balanceOfAcA s ac <= balanceOfAcA sf ac).
-Proof using. Admitted.
+Proof using.
+  intros. subst sf.
+  pose proof (execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 ac ltac:(auto)) as Htx.
+  unfold execValidatedTx.
+  rewrite pairEta. simpl in *.
+  case_match_concl;  auto;[].
+  unfold balanceOfAcA in *.
+  case_match_concl; simpl in *; try lia.
+  {
+    rewrite Heqb in Htx.
+    lia.
+  }
+  {
+    rewrite balanceOfRevert.
+    resolveDecide congruence.
+    lia.
+  }
+Qed.
 
 Lemma lastTxInBlockIndexUpd s txlast:
   option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)

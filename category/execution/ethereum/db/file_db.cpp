@@ -54,7 +54,7 @@ public:
         MONAD_ASSERT(pos >= 0);
         value.resize(static_cast<size_t>(pos));
         in.seekg(0, std::ios::beg);
-        in.read(&value[0], static_cast<std::streamsize>(value.size()));
+        in.read(value.data(), static_cast<std::streamsize>(value.size()));
         in.close();
         return value;
     }
@@ -68,7 +68,7 @@ public:
         std::ofstream out{
             temp_path, std::ios::out | std::ios::trunc | std::ios::binary};
         MONAD_ASSERT(out);
-        out.write(&value[0], static_cast<std::streamsize>(value.size()));
+        out.write(value.data(), static_cast<std::streamsize>(value.size()));
         out.close();
         std::filesystem::rename(temp_path, path);
     }

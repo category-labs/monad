@@ -453,6 +453,12 @@ Proof. intros. rewrite <- elem_of_list_In.
        apply allAccountsSpec.
 Qed.
 
+Ltac rememberForallb :=
+    match goal with
+    [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
+    |[H: context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
+    | [|- context[forallb ?a ?b]] => remember (forallb a b) as fb
+  end.
 (** execution assumptions *)
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -469,9 +475,7 @@ Proof using.
   simpl in *.
   remember (hasCode sf.1 ac) as sac.
   destruct sac; auto.
-  match goal with
-    [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
-  end.
+  rememberForallb.
   unfold balanceOfAcA in *.
   destruct fb; simpl in *.
   2:{ subst sf.
@@ -487,14 +491,78 @@ Proof using.
   case_bool_decide; try lia.
 Qed.
 
-(* TODO: do the more liberal check and then weaken the then case to inequality *)
+Lemma execTxSenderBalCore tx s:
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (if addrDelegated s (sender tx)
+   then True
+   else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
+        \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx)).
+Proof. Admitted.
+
 Lemma execTxSenderBal tx s:
   let sf :=  (execValidatedTx s tx).1 in
+  hasCode sf.1 (sender tx) = false->
   (if isAllowedToEmpty s [] tx
    then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
   else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx))).
-Proof. Admitted.
+Proof.
+  intros ? Hsc.
+  pose proof (execTxSenderBalCore tx s.1) as Hc.
+  unfold isAllowedToEmpty.
+  subst sf.
+  revert Hsc.
+  unfold execValidatedTx.
+  unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
+  intros.
+  remember (stateAfterTransaction s.1 tx) as sir.
+  destruct sir as [si r].
+  unfold balanceOfAcA in *.
+  destruct (addrDelegated s.1 (sender tx)); simpl in *.
+  {
+    rememberForallb.
+    unfold balanceOfAcA in *.
+    destruct fb; try lia.
+    2:{
+      simpl in *. rewrite balanceOfRevert.
+      resolveDecide congruence. lia.
+    }
+    symmetry in Heqfb.
+    rewrite  forallb_forall in Heqfb.
+    specialize (Heqfb (sender tx) (allAccountsSpecLegacy (sender tx))).
+    resolveDecide congruence.
+    simpl in *.
+    rewrite -> Hsc in Heqfb.
+    case_bool_decide; try lia.
+  }
+  {
+    autorewrite with syntactic in *.
+    rememberForallb.
+    destruct (~~ (existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)) && ~~ existsTxWithinK s tx);
+      simpl in *.
+    {
+      destruct fb; simpl in *; try lia.
+      rewrite balanceOfRevert.
+      resolveDecide congruence.
+      lia.
+    }
+    {
+      destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
+        try rewrite balanceOfRevert;
+        try resolveDecide congruence;
+        try lia;[].
+      rewrite  forallb_forall in Heqfb.
+      specialize (Heqfb (sender tx) (allAccountsSpecLegacy (sender tx))).
+      rewrite Hsc in Heqfb.
+      resolveDecide congruence.
+      simpl in *.
+      case_bool_decide; try lia.
+    }
+
+  }
+Qed.
+
+
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -854,11 +922,17 @@ Proof using.
       rwHypsP.
       intros.
       simpl in *.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
       destruct Hsender; lia.
     }
 
     {
       revert Hc.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
       revert Hsender.
       orient_rwHyps.
       lia.

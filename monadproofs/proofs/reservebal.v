@@ -185,10 +185,6 @@ Fixpoint maxTotalReserveDippableDebitL (latestState : StateOfAccounts) (postStat
       updateKey r (sender h) (updateTotals latestState postStateAccountedSuffix h)
   end.
 
-(* this is a somewhat non-constructive assumption. we need that no contract ever deployed at any address in this set. We must keep this set abstract. Also, because the addresses of new contracts is prododuced by keccak,
-we need to keep the keccak function abstract and not make contradicting assumptions, e.g. that keccak is surjective. perhaps we can morally treat the implenentation as something that emits a 0 whenever the actual output is in allEOAsWithPrivateKeyThatWillEvenBeGenerated *)
-Definition allEOAsWithPrivateKeyThatWillEvenBeGenerated: list evm.address. Proof. Admitted.
-
 
 Lemma maxTotalReserveDippableDebitLPos  (latestState : StateOfAccounts) (postStateAccountedSuffix rest: list TxWithHdr) addr:
   addr  ∉ (map sender rest)

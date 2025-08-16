@@ -26,6 +26,8 @@ Definition TxWithHdr : Type := BlockHeader * (Transaction * N).
 Definition maxTxFee (t: TxWithHdr) : N. Proof. Admitted.
 
 Definition staticReserveBal : N. Proof. Admitted.
+(* duplicate instance. the upstream one picks 1 *)
+#[global] Instance inhacc: Inhabited N := populate 0.
 
 
 Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
@@ -126,8 +128,6 @@ Definition isAllowedToEmpty
     || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
   (negb delegated) && (negb existsSameSenderTxInWindow).
 
-(* duplicate instance. the upstream one picks 1 *)
-#[global] Instance inhacc: Inhabited N := populate 0.
 
 
 Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
@@ -186,22 +186,34 @@ Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
 
 (* weakening to 1 tx *)
 
-Definition ReserveBals := gmap evm.address (option N (* original balance, None if a tx has been since since the state where the original balance came from *) * N (* ERB *)).
+Definition ReserveBals := gmap evm.address N.
 
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
 
-Definition intialReserveBals (s: AugmentedState) : ReserveBals :=
+Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   let addrs := mapKeys s.1 in
   let sr :=
     map
       (λ addr,
-         (addr, (Some (balanceOfAc s.1 addr), balanceOfAc s.1 addr `min` configuredReserveBal (s.2 !!! addr))))
+         (addr, (balanceOfAc s.1 addr `min` configuredReserveBal (s.2 !!! addr))))
       addrs
     in
     list_to_map sr.
   
-Definition remaingReserveBals (latestState : AugmentedState) (preTxResBalances: ReserveBals) (postStateAccountedSuffix: list TxWithHdr) (candidateTx: TxWithHdr)
-  : (bool (* canidateTx is acceptable? *)* ReserveBals). Proof. Admitted.
+Definition remaingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
+  : (bool (* canidateTx is acceptable? *)* ReserveBals) :=
+  let s := preIntermediatesState in
+  let addr := sender next in
+  let erb := preTxResBalances !!! addr in
+  if isAllowedToEmpty s intermediates next
+  then
+    let sbal := balanceOfAc s.1 addr in
+    (bool_decide (maxTxFee next <= sbal),
+      updateKey preTxResBalances addr (fun _ => sbal `min` configuredReserveBal (s.2 !!! addr)))
+      
+  else (bool_decide (maxTxFee next <= erb)
+         , updateKey preTxResBalances addr (fun _ => erb - maxTxFee next)).
+  
 
 Fixpoint remaingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
   : (bool * ReserveBals):=
@@ -265,6 +277,9 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
 
 Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
+  (remaingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix).1 = true.
+
+Definition consensusAcceptableTxsOld (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
   forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
     let '(nonEmptyingDebits, emptyingDebits) := totDebits !!! ac in
@@ -291,7 +306,7 @@ Definition consensusAcceptableTxsNoMinus (latestState : AugmentedState) (postSta
 
 
 Lemma catxEquiv (latestState : AugmentedState) (postStateSuffix: list TxWithHdr):
-  consensusAcceptableTxs latestState postStateSuffix
+  consensusAcceptableTxsOld latestState postStateSuffix
   -> consensusAcceptableTxsNoMinus latestState postStateSuffix.
 Proof using.
   unfold consensusAcceptableTxsNoMinus.
@@ -310,9 +325,9 @@ Qed.
 
 Lemma catxEquiv2 (latestState : AugmentedState) (postStateSuffix: list TxWithHdr):
   consensusAcceptableTxsNoMinus latestState postStateSuffix
-  -> consensusAcceptableTxs latestState postStateSuffix.
+  -> consensusAcceptableTxsOld latestState postStateSuffix.
 Proof using.
-  unfold consensusAcceptableTxsNoMinus ,consensusAcceptableTxs.
+  unfold consensusAcceptableTxsNoMinus ,consensusAcceptableTxsOld.
   intros Hp ac.
   specialize (Hp ac).
   case_match.
@@ -363,7 +378,7 @@ Definition isAllowedToEmptyExec
 
 Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
-Definition updateHistory (a: AllTxHistory) (newTx: TxWithHdr) : AllTxHistory. Proof. Admitted.
+Definition updateHistory (a: ExtraAcStates) (newTx: TxWithHdr) : ExtraAcStates. Proof. Admitted.
 
 
 Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
@@ -933,7 +948,116 @@ Proof using.
   auto.
 Qed.
 
+Lemma execLOld tx extension s:
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
+  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
+  -> consensusAcceptableTxsOld s (tx::extension)
+  -> consensusAcceptableTxsOld (fst (execValidatedTx  s tx)) extension.
+Proof using.
+  intros Hext Heoac Hsc.
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
+  set (sf:=(execValidatedTx s tx).1).
+  intros Hc.
+  unfold consensusAcceptableTxsOld in *.
+  simpl in *.
+  intros ac.
+  specialize (Hc ac).
+  forward_reason.
+  rewrite updateKeyLkp3 in Hc.
+  assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
+         ) as Hass.
+  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
+  specialize (Hass ac).
+  autorewrite with iff.
   
+  case_bool_decide; simpl in *;  try lia.
+  2:{ (* non-sender account *)
+    destruct (decide (ac ∈ map sender extension)) as [Hd| Hd];
+    [| rewrite maxTotalReserveDippableDebitLPos; auto; fail].
+    pose proof (execTxOtherBalanceLB tx s) as Hot.
+    pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
+    simpl in *.
+    specialize (Hot ac ltac:(auto)).
+    specialize (Hdeb ac ltac:(auto)).
+    rewrite Hass.
+    clear Hass.
+    fold sf in Hdeb.
+    rewrite Hscf in Hot;[| set_solver].
+    rewrite Hscf in Hdeb;[| set_solver].
+    autorewrite with syntactic in *.
+    remember (addrDelegated sf.1 ac) as dg.
+    destruct dg.
+    2:{ (* ac is not delegated *)
+       revert Hc.
+       rwHypsP.
+       utils.case_match_concl.
+       autorewrite with syntactic in *.
+       destruct o; subst sf; try lia.
+       rename n into nonEmptyingFees.
+       destruct p as (emptyingFee, emptyingVal); try lia.
+    }
+    {
+      pose proof (debLsnd [] extension ac s tx) as Hsnd.
+      remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
+      destruct rd as [nonEmptyingDebits emptyingDebits].
+      pose proof (execTxDelegationUpd tx s) as Hdel. 
+      simpl in Hdel. fold sf in Hdel.
+      specialize (Hdel ac).
+      simpl in *.
+      repeat rewrite -> bool.Is_true_eq in *.
+      orient_eqs.
+      apply Hdel in Heqdg.
+      specialize (Hsnd ltac:(auto)).
+      revert Hc.
+      rwHypsP.
+      intros.
+      subst sf.
+      lia.
+    }
+  }
+  { (* sender's account *)
+    subst.
+    rewrite Hass.
+    clear Hass.
+    unfold updateTotals in Hc.
+    remember (isAllowedToEmpty s [] tx) as ae.
+    pose proof (debLsnd2 [] extension s tx) as Hsnd.
+    remember (maxTotalReserveDippableDebitL s [tx] extension !!! (sender tx)) as rd.
+    destruct rd as [nonEmptyingDebits emptyingDebits].
+    (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
+    simpl in *.
+    rwHypsP.
+    pose proof (execTxSenderBal tx s) as Hsender.
+    simpl in Hsender. fold sf in Hsender.
+    destruct ae; simpl in *; try lia;[|].
+    {
+      revert Hsender.
+      orient_rwHyps.
+      intros.
+      revert Hc.
+      rwHypsP.
+      intros.
+      simpl in *.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
+      destruct Hsender; lia.
+    }
+
+    {
+      revert Hc.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
+      revert Hsender.
+      orient_rwHyps.
+      lia.
+    }
+  }
+Qed.
+
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
@@ -948,6 +1072,7 @@ Proof using.
   intros Hc.
   unfold consensusAcceptableTxs in *.
   simpl in *.
+  unfold remaini
   intros ac.
   specialize (Hc ac).
   forward_reason.

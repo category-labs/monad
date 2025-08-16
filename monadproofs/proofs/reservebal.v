@@ -56,6 +56,8 @@ Definition transactions (b: Block) : list TxWithHdr :=
 
 Definition txBlockNum (t: TxWithHdr) : N := number (fst t).
 
+Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N. Proof. Admitted.
+
 (*
 Definition intermediateTxs (knownBlocks: gmap N Block) (stateBlockIndex: N) (tx: TxWithHdr) :=
   let txBlock := knownBlocks !!! (txBlockNum tx) in
@@ -70,18 +72,22 @@ Definition emptyingCheckRange (knownBlocks: gmap N Block) (tx: TxWithHdr) :=
 *)
 Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
-Record TxHistory :=
+Record ExtraAcState :=
   {
     
     lastDelUndelInBlockIndex : option N; (* last block index where this address was delegated or undelegated  *)
-    lastTxInBlockIndex : option N (* last block index where this address sent a tx *)
+    lastTxInBlockIndex : option N; (* last block index where this address sent a tx *)
+    configuredReserveBal: N
   }.
 
-Definition AllTxHistory := (gmap evm.address TxHistory).
+#[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None 0).
+  
+
+Definition ExtraAcStates := (gmap evm.address ExtraAcState).
 
 (*
 Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r. *)
-Definition indexWithinK (proj: TxHistory -> option N) (state : AllTxHistory)  (tx: TxWithHdr) : bool :=
+Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)  (tx: TxWithHdr) : bool :=
   let startIndex :=  txBlockNum tx -K  in
   match option_bind _ _ proj (state !! (sender tx))  with
   | Some lastSameSenderTx =>
@@ -89,7 +95,7 @@ Definition indexWithinK (proj: TxHistory -> option N) (state : AllTxHistory)  (t
   | None => false
   end.
 
-Definition AugmentedState : Type := StateOfAccounts * AllTxHistory.
+Definition AugmentedState : Type := StateOfAccounts * ExtraAcStates.
 Definition existsTxWithinK (state : AugmentedState)  (tx: TxWithHdr) : bool :=
   indexWithinK lastTxInBlockIndex (snd state) tx.
 
@@ -179,6 +185,35 @@ Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
 
 
 (* weakening to 1 tx *)
+
+Definition ReserveBals := gmap evm.address (option N (* original balance, None if a tx has been since since the state where the original balance came from *) * N (* ERB *)).
+
+Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
+
+Definition intialReserveBals (s: AugmentedState) : ReserveBals :=
+  let addrs := mapKeys s.1 in
+  let sr :=
+    map
+      (λ addr,
+         (addr, (Some (balanceOfAc s.1 addr), balanceOfAc s.1 addr `min` configuredReserveBal (s.2 !!! addr))))
+      addrs
+    in
+    list_to_map sr.
+  
+Definition remaingReserveBals (latestState : AugmentedState) (preTxResBalances: ReserveBals) (postStateAccountedSuffix: list TxWithHdr) (candidateTx: TxWithHdr)
+  : (bool (* canidateTx is acceptable? *)* ReserveBals). Proof. Admitted.
+
+Fixpoint remaingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
+  : (bool * ReserveBals):=
+  match rest with
+  | [] => (true, preRestResBalances)
+  | hrest::tlrest =>
+      let (acceptable, remainingReserves) :=
+        remaingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
+      if acceptable
+      then remaingReserveBalsL latestState remainingReserves postStateAccountedSuffix tlrest
+      else (false, preRestResBalances (* can be any garbage *))
+  end.
 
 Definition updateTotals (latestState : AugmentedState) (intermediates: list TxWithHdr) next (old: (N*option (N*N)))
   : N*option (N*N) :=

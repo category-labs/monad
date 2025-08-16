@@ -59,6 +59,12 @@ static enum monad_event_iter_result monad_event_iterator_try_next(
 static enum monad_event_iter_result monad_event_iterator_try_copy(
     struct monad_event_iterator const *, struct monad_event_descriptor *);
 
+/// Set the iterator so that the next call to `monad_event_iterator_try_next`
+/// or `monad_event_iterator_try_copy` will read the event descriptor with the
+/// specified sequence number; this performs no checking
+static void
+monad_event_iterator_set_seqno(struct monad_event_iterator *, uint64_t seqno);
+
 /// Reset the iterator to point to the latest event produced; used for gap
 /// recovery
 static uint64_t monad_event_iterator_reset(struct monad_event_iterator *);

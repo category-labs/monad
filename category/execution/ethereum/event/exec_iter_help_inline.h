@@ -69,7 +69,8 @@ static inline bool _monad_exec_iter_copy_consensus_event(
     if (event->content_ext[MONAD_FLOW_BLOCK_SEQNO] != 0 &&
         event->event_type != MONAD_EXEC_BLOCK_START) {
         uint64_t const iter_save = iter->read_last_seqno;
-        iter->read_last_seqno = event->content_ext[MONAD_FLOW_BLOCK_SEQNO] - 1;
+        monad_event_iterator_set_seqno(
+            iter, event->content_ext[MONAD_FLOW_BLOCK_SEQNO]);
         if (__builtin_expect(
                 monad_event_iterator_try_copy(iter, event) !=
                     MONAD_EVENT_SUCCESS,

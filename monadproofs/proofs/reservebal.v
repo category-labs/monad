@@ -200,7 +200,7 @@ Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
     in
     list_to_map sr.
   
-Definition remaingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
+Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
   : (bool (* canidateTx is acceptable? *)* ReserveBals) :=
   let s := preIntermediatesState in
   let addr := sender next in
@@ -215,15 +215,15 @@ Definition remaingReserveBals (preIntermediatesState : AugmentedState) (preTxRes
          , updateKey preTxResBalances addr (fun _ => erb - maxTxFee next)).
   
 
-Fixpoint remaingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
+Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
   : (bool * ReserveBals):=
   match rest with
   | [] => (true, preRestResBalances)
   | hrest::tlrest =>
       let (acceptable, remainingReserves) :=
-        remaingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
+        remainingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
       if acceptable
-      then remaingReserveBalsL latestState remainingReserves postStateAccountedSuffix tlrest
+      then remainingReserveBalsL latestState remainingReserves postStateAccountedSuffix tlrest
       else (false, preRestResBalances (* can be any garbage *))
   end.
 
@@ -277,7 +277,7 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
 
 Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
-  (remaingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix).1 = true.
+  (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix).1 = true.
 
 Definition consensusAcceptableTxsOld (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
@@ -1058,6 +1058,17 @@ Proof using.
   }
 Qed.
 
+  Lemma  rrr s tx extension:
+    (remainingReserveBalsL s (initialReserveBals s) [] (tx :: extension)).1 = true
+    -> remainingReserveBals s (initialReserveBals s) [] tx = (true, (remainingReserveBals s (initialReserveBals s) [] tx).2).
+  Proof using.
+    intros Hr.
+    simpl in *.
+    case_match.
+    case_match; simpl in *; try congruence.
+  Qed.
+
+
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
@@ -1071,8 +1082,23 @@ Proof using.
   set (sf:=(execValidatedTx s tx).1).
   intros Hc.
   unfold consensusAcceptableTxs in *.
+  pose proof (rrr _ _ _ Hc) as Ht.
   simpl in *.
-  unfold remaini
+  rewrite Ht in Hc.
+  unfold remainingReserveBals in *.
+  remember (isAllowedToEmpty s [] tx) as ae.
+  destruct ae; simpl in *; try lia;[|].
+  {
+    resolveDecide congruence.
+    clear Ht.
+    
+      
+    apply (f_equal snd) in Ht. simpl in Ht.
+    GC.
+    
+    simplify_eq.
+  simpl in Hc.
+  
   intros ac.
   specialize (Hc ac).
   forward_reason.

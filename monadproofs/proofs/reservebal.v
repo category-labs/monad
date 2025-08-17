@@ -177,6 +177,7 @@ Fixpoint maxTotalReserveDippableDebitLold (knownBlocks: gmap N Block) (latestKno
          then (maxTotalReserveDippableDebit knownBlocks latestKnownState postStateAccountedSuffix h)
          else 0)
    end.
+
 Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
   let '(fees, allowedToEmpty) := upd in
   if allowedToEmpty then
@@ -187,7 +188,7 @@ Definition updateTots (upd: N*bool) (old: (N*option (N*N))) : N*option (N*N) :=
 
 (* weakening to 1 tx *)
 
-Definition ReserveBals := gmap evm.address N.
+Definition ReserveBals := gmap evm.address Z.
 
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
 
@@ -197,7 +198,7 @@ Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr :=
   | None => ReserveBal (* rename to DefaultReserveBal *)
   end.
                       
-  
+  Open Scope Z_scope.
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   let addrs := mapKeys s.1 in
   let sr :=
@@ -209,37 +210,41 @@ Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
     list_to_map sr.
   
 Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
-  : (bool (* canidateTx is acceptable? *)* ReserveBals) :=
+  : ReserveBals :=
   let s := preIntermediatesState in
   let addr := sender next in
   let erb := preTxResBalances !!! addr in
   match reserveBalUpdateOfTx next with
   | Some newRb =>
-      (true, updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb))
+      updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
   | None  =>
       if isAllowedToEmpty s intermediates next
       then
         let sbal := balanceOfAc s.1 addr in
-        (bool_decide (maxTxFee next <= sbal),
-          updateKey preTxResBalances addr (fun _ => sbal `min` configuredReserveBal (s.2 !!! addr)))
+        let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
+        if bool_decide (maxTxFee next <= sbal)
+        then updateKey preTxResBalances addr (fun _ => newBal `min` configuredReserveBalOfAddr s.2 addr)
+        else updateKey preTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
           
-      else (bool_decide (maxTxFee next <= erb)
-             , updateKey preTxResBalances addr (fun _ => erb - maxTxFee next))
+      else (updateKey preTxResBalances addr (fun _ => (erb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
   end.
   
 
 Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
-  : (bool * ReserveBals):=
+  : ReserveBals:=
   match rest with
-  | [] => (true, preRestResBalances)
+  | [] => preRestResBalances
   | hrest::tlrest =>
-      let (acceptable, remainingReserves) :=
+      let remainingReserves :=
         remainingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
-      if acceptable
-      then remainingReserveBalsL latestState remainingReserves (hrest::postStateAccountedSuffix) tlrest
-      else (false, preRestResBalances (* can be any garbage *))
+      remainingReserveBalsL latestState remainingReserves (hrest::postStateAccountedSuffix) tlrest
   end.
 
+Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
+  forall addr,
+   0<= (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix) !!! addr.
+
+Open Scope N_scope.
 Definition updateTotals (latestState : AugmentedState) (intermediates: list TxWithHdr) next (old: (N*option (N*N)))
   : N*option (N*N) :=
   if isAllowedToEmpty latestState intermediates next
@@ -287,10 +292,8 @@ Definition consensusAcceptableTxGold (knownBlocks: gmap N Block) (latestKnownSta
     bool_decide (maxTotalReserveDippableDebitLold knownBlocks latestKnownState [] intermediateTxsSinceState (sender candidate)
                  <= balanceOfAc latestKnownState (sender candidate)).
 *)
-
 Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
-Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
-  (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix).1 = true.
+
 
 Definition consensusAcceptableTxsOld (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
@@ -302,7 +305,7 @@ Definition consensusAcceptableTxsOld (latestState : AugmentedState) (postStateSu
           emptyingFee <= balanceOfAcA latestState ac  /\
           nonEmptyingDebits <= (ReserveBal `min` (balanceOfAcA latestState ac - (emptyingValue+emptyingFee)))
     end.
-
+(*
 Definition consensusAcceptableTxsNoMinus (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   let totDebits := maxTotalReserveDippableDebitL latestState [] postStateSuffix in
   forall ac, (* currently, smart contracts cannot empty beyond reserve. to fix, we can add an isEOA hypothesis but it is tricky to define that precisely in a moving state *)
@@ -355,6 +358,7 @@ Proof using.
   split_and; try lia.
   (* not provable: consensusAcceptableTxs is too strong, unnecessarily *)
 Abort.
+*)
 
 (*
 Definition consensusAcceptableTx  (stateNminusK : AugmentedState) (candidate : TxWithHdr) : bool :=
@@ -1135,6 +1139,7 @@ Proof using.
   }
 Qed.
 
+(*
   Lemma  rrr s tx extension:
     (remainingReserveBalsL s (initialReserveBals s) [] (tx :: extension)).1 = true
     -> remainingReserveBals s (initialReserveBals s) [] tx = (true, (remainingReserveBals s (initialReserveBals s) [] tx).2).
@@ -1144,17 +1149,19 @@ Qed.
     case_match.
     case_match; simpl in *; try congruence.
   Qed.
+ *)
 
+Open Scope Z_scope.
 Lemma initResBal s addr:
   (initialReserveBals s) !!! addr =
     balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
 Proof. Admitted. (* should follow easily from definitions *)
 
-
+(*
 Lemma resBalUpdCase tx s extension nrb inter: 
   reserveBalUpdateOfTx tx = Some nrb
   → (remainingReserveBalsL s
-       (updateKey (initialReserveBals s) (sender tx) (λ prevErb : N, (prevErb - maxTxFee tx) `min` nrb)) inter
+       (updateKey (initialReserveBals s) (sender tx) (λ prevErb : Z, (prevErb - maxTxFee tx) `min` nrb)) inter
        extension).1 =
     true
     → (remainingReserveBalsL (execValidatedTx s tx).1 (initialReserveBals (execValidatedTx s tx).1) inter extension).1 =
@@ -1165,6 +1172,7 @@ Proof using.
   induction extension; auto;[].
   intros.
   simpl in *.
+  
       simpl in *.
       revert Hc.
       simpl.
@@ -1176,6 +1184,52 @@ Proof using.
       unfold configuredReserveBalOfAddr.
       rewrite updateKeyLkp3.
       unfold updateHistory.
+ *)
+
+Definition rbLe (rb1 rb2: ReserveBals) :=
+  forall addr, rb1 !!! addr <= rb2 !!! addr.
+
+Hint Rewrite @updateKeyLkp3 : syntactic.
+Lemma mono s rb1 rb2 inter tx:
+  rbLe rb1 rb2
+  -> rbLe (remainingReserveBals s rb1 inter tx)
+       (remainingReserveBals s rb2 inter tx).
+Proof using.
+  intros Hrb addr.
+  unfold remainingReserveBals.
+  pose proof (Hrb addr).
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  {case_bool_decide; subst; try lia. }
+  case_match_concl;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *; try lia.
+Qed.
+  
+Lemma monoL s rb1 rb2 inter extension:
+  rbLe rb1 rb2
+  -> rbLe (remainingReserveBalsL s rb1 inter extension)
+          (remainingReserveBalsL s rb2 inter extension).
+Proof using.
+  revert rb1 rb2 inter.
+  induction extension; auto;[].
+  unfold rbLe in *.
+  intros ? ? ? Hrb addr.
+  simpl.
+  apply IHextension.
+  apply mono.
+  assumption.
+Qed.
+  
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
@@ -1183,6 +1237,130 @@ Lemma execL tx extension s:
   -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
 Proof using.
+  intros Hext Heoac Hsc.
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
+  set (sf:=(execValidatedTx s tx).1).
+  intros Hc.
+  unfold consensusAcceptableTxsOld in *.
+  simpl in *.
+  intros ac.
+  specialize (Hc ac).
+  forward_reason.
+  simpl in *.
+  unfold remainingReserveBals in Hc.
+  rewrite updateKeyLkp3 in Hc.
+  assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
+         ) as Hass.
+  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
+  specialize (Hass ac).
+  autorewrite with iff.
+  
+  case_bool_decide; simpl in *;  try lia.
+  2:{ (* non-sender account *)
+    destruct (decide (ac ∈ map sender extension)) as [Hd| Hd];
+    [| rewrite maxTotalReserveDippableDebitLPos; auto; fail].
+    pose proof (execTxOtherBalanceLB tx s) as Hot.
+    pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
+    simpl in *.
+    specialize (Hot ac ltac:(auto)).
+    specialize (Hdeb ac ltac:(auto)).
+    rewrite Hass.
+    clear Hass.
+    fold sf in Hdeb.
+    rewrite Hscf in Hot;[| set_solver].
+    rewrite Hscf in Hdeb;[| set_solver].
+    autorewrite with syntactic in *.
+    remember (addrDelegated sf.1 ac) as dg.
+    destruct dg.
+    2:{ (* ac is not delegated *)
+       revert Hc.
+       rwHypsP.
+       utils.case_match_concl.
+       autorewrite with syntactic in *.
+       destruct o; subst sf; try lia.
+       rename n into nonEmptyingFees.
+       destruct p as (emptyingFee, emptyingVal); try lia.
+    }
+    {
+      pose proof (debLsnd [] extension ac s tx) as Hsnd.
+      remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
+      destruct rd as [nonEmptyingDebits emptyingDebits].
+      pose proof (execTxDelegationUpd tx s) as Hdel. 
+      simpl in Hdel. fold sf in Hdel.
+      specialize (Hdel ac).
+      simpl in *.
+      repeat rewrite -> bool.Is_true_eq in *.
+      orient_eqs.
+      apply Hdel in Heqdg.
+      specialize (Hsnd ltac:(auto)).
+      revert Hc.
+      rwHypsP.
+      intros.
+      subst sf.
+      lia.
+    }
+  }
+  { (* sender's account *)
+    subst.
+    rewrite Hass.
+    clear Hass.
+    unfold updateTotals in Hc.
+    remember (isAllowedToEmpty s [] tx) as ae.
+    pose proof (debLsnd2 [] extension s tx) as Hsnd.
+    remember (maxTotalReserveDippableDebitL s [tx] extension !!! (sender tx)) as rd.
+    destruct rd as [nonEmptyingDebits emptyingDebits].
+    (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
+    simpl in *.
+    rwHypsP.
+    pose proof (execTxSenderBal tx s) as Hsender.
+    simpl in Hsender. fold sf in Hsender.
+    destruct ae; simpl in *; try lia;[|].
+    {
+      revert Hsender.
+      orient_rwHyps.
+      intros.
+      revert Hc.
+      rwHypsP.
+      intros.
+      simpl in *.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
+      destruct Hsender; lia.
+    }
+
+    {
+      revert Hc.
+      subst sf.
+      rewrite Hscf in Hsender; [|set_solver].
+      specialize (Hsender ltac:(auto)).
+      revert Hsender.
+      orient_rwHyps.
+      lia.
+    }
+  }
+Qed.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
   intros Hext Heoac Hsc.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
   clear Heoac.

@@ -22,16 +22,16 @@ project(monad)
 set(CATEGORY_MAIN_DIR ${PROJECT_SOURCE_DIR})
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
-        message(FATAL_ERROR "GCC version 15 or higher is required.")
-    endif()
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    message(FATAL_ERROR "GCC version 15 or higher is required.")
+  endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
-        message(FATAL_ERROR "Clang version 19 or higher is required.")
-    endif()
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
+    message(FATAL_ERROR "Clang version 19 or higher is required.")
+  endif()
 endif()
 
-if (BUILD_SHARED_LIBS)
+if(BUILD_SHARED_LIBS)
   # BUILD_SHARED_LIBS=ON does not automatically set -fPIC, leading to
   # relocations being emitted in object files that can't be patched
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -45,7 +45,7 @@ option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
 option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 
-if (NOT DEFINED BUILD_SHARED_LIBS)
+if(NOT DEFINED BUILD_SHARED_LIBS)
   # If this isn't defined, evmone has the audacity to define it itself (to ON)
   # whereas the ordinary default is for static libraries; if it's not specified,
   # we explicitly set it to OFF, agreeing with the expected default and
@@ -74,7 +74,7 @@ function(monad_compile_options target)
   target_compile_definitions(${target} PUBLIC QUILL_ROOT_LOGGER_ONLY)
 
   if(MONAD_COMPILER_TESTING)
-      target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_TESTING=1")
+    target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_TESTING=1")
   endif()
 
   target_compile_options(
@@ -125,12 +125,12 @@ target_include_directories(komihash INTERFACE "third_party/komihash")
 
 # LLVM
 if(MONAD_COMPILER_LLVM)
-    # Because LLVM is a large dependency, we only try to find it if it's
-    # explicitly enabled as part of the VM build: regular client builds don't
-    # need to use it.
-    include(cmake/LinkLLVM.cmake)
-    find_package(LLVM 19.1.7 REQUIRED CONFIG)
-    add_definitions(-DMONAD_COMPILER_LLVM)
+  # Because LLVM is a large dependency, we only try to find it if it's
+  # explicitly enabled as part of the VM build: regular client builds don't need
+  # to use it.
+  include(cmake/LinkLLVM.cmake)
+  find_package(LLVM 19.1.7 REQUIRED CONFIG)
+  add_definitions(-DMONAD_COMPILER_LLVM)
 endif()
 
 # quill
@@ -251,10 +251,21 @@ add_subdirectory("category/vm")
 # Assemble all the object libraries into complete monad runtime library,
 # monad_execution
 add_library(monad_execution)
-target_link_libraries(monad_execution PUBLIC
-    monad_core monad_async monad_trie monad_execution_ethereum
-    monad_execution_native monad_rpc monad_statesync monad-vm monad-vm-core
-    monad-vm-compiler monad-vm-interpreter monad-vm-runtime monad-vm-utils)
+target_link_libraries(
+  monad_execution
+  PUBLIC monad_core
+         monad_async
+         monad_trie
+         monad_execution_ethereum
+         monad_execution_native
+         monad_rpc
+         monad_statesync
+         monad-vm
+         monad-vm-core
+         monad-vm-compiler
+         monad-vm-interpreter
+         monad-vm-runtime
+         monad-vm-utils)
 
 # ##############################################################################
 # cmds
@@ -270,5 +281,5 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 
 if(MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
+  add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
 endif()

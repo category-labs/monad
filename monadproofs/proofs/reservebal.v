@@ -82,6 +82,7 @@ Record ExtraAcState :=
     configuredReserveBal: N
   }.
 
+#[only(lens)] derive ExtraAcState.
 #[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None 0).
   
 
@@ -190,12 +191,19 @@ Definition ReserveBals := gmap evm.address N.
 
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
 
+Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr :=
+  match s !! addr with
+  | Some rb => configuredReserveBal rb
+  | None => ReserveBal (* rename to DefaultReserveBal *)
+  end.
+                      
+  
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   let addrs := mapKeys s.1 in
   let sr :=
     map
       (λ addr,
-         (addr, (balanceOfAc s.1 addr `min` configuredReserveBal (s.2 !!! addr))))
+         (addr, (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr)))
       addrs
     in
     list_to_map sr.
@@ -207,7 +215,7 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
   let erb := preTxResBalances !!! addr in
   match reserveBalUpdateOfTx next with
   | Some newRb =>
-      (true, updateKey preTxResBalances addr (fun prevErb => prevErb `min` newRb))
+      (true, updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb))
   | None  =>
       if isAllowedToEmpty s intermediates next
       then
@@ -383,8 +391,32 @@ Definition isAllowedToEmptyExec
 
 Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
+(* rbconfigure txs
+- can they do anything other than configure reserve balance?
+- do they require some gas to execute?
+- a request to configure rb of account ac must come from ac ?
+*)
 
-Definition updateHistory (a: ExtraAcStates) (newTx: TxWithHdr) : ExtraAcStates. Proof. Admitted.
+
+(* TODO: rename to uodate ExtraState *)
+
+Search gmap list.
+Definition upsertKeys {T V} `{c: Countable T} (m: gmap T V) (items: list (T*V)) :=
+  foldr (uncurry insert) m items.
+
+Definition updateHistory (a: ExtraAcStates) (newTx: TxWithHdr) : ExtraAcStates :=
+  let si:=
+  <[sender newTx :=
+      {| lastDelUndelInBlockIndex := option_bind _ _ lastDelUndelInBlockIndex (a !! sender newTx);
+          lastTxInBlockIndex := Some (txBlockNum newTx);
+          configuredReserveBal:=
+          match reserveBalUpdateOfTx newTx with
+          | Some newRb => newRb
+          | None => configuredReserveBalOfAddr a (sender newTx)
+          end
+          |}
+      ]> a in
+  upsertKeys si (map (fun a => (a, (si !!! a) &: _lastTxInBlockIndex.= Some (txBlockNum newTx))) (addrsDelUndelByTx newTx)).
 
 
 Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
@@ -1113,6 +1145,10 @@ Qed.
     case_match; simpl in *; try congruence.
   Qed.
 
+Lemma initResBal s addr:
+  (initialReserveBals s) !!! addr =
+    balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
+Proof. Admitted. (* should follow easily from definitions *)
 
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
@@ -1135,7 +1171,53 @@ Proof using.
   {
     clear Ht.
     simpl in *.
+    rewrite <- Hc.
+    f_equal.
+    subst sf.
+    revert H.
+    clear.
+    intros.
+    induction extension; simpl; auto.
+    {
+      unfold execValidatedTx. rwHypsP.
+      f_equal.
+      apply gmapEquiv.
+      intros a.
+      rewrite initResBal.
+      unfold balanceOfAcA.
+      rewrite balanceOfUpd. 
+      simpl in *. subst.
+      unfold configuredReserveBalOfAddr.
+      rewrite updateKeyLkp3.
+      unfold updateHistory.
+      simpl in *.
+      assert (addrsDelUndelByTx tx = []) as Heq by admit.
+      rewrite Heq.
+      simpl.
+      autorewrite with syntactic.
+      rewrite lookup_insert_iff;[| exact inhabitant].
+      case_bool_decide; auto; simpl in *; rwHypsP;
+        rewrite initResBal;[| reflexivity].
 
+      (* equality does not hold
+  (balanceOfAc s.1 a - maxTxFee tx) `min` n =
+  (balanceOfAcA s a `min` configuredReserveBalOfAddr s.2 a - maxTxFee tx) `min` n
+*)
+      
+      unfold balanceOfAcA in *.
+      Set Printing Parentheses.
+      lia.
+      2:{ reflexivity.
+      Search initialReserveBals.
+      reflexivity.
+      rwHyos
+      Search insert lookup bool_decide.
+      
+      case_bool_decide; auto.
+      {
+      simpl in *. subst.
+      
+      
 Lemma exe     
     remember (isAllowedToEmpty s [] tx) as ae.
     destruct ae; simpl in *; try lia;[|].

@@ -202,7 +202,8 @@ function(monad_add_test2 target)
 endfunction()
 
 function(monad_add_test_folder target)
-  file(GLOB_RECURSE test_files CONFIGURE_DEPENDS ${target}/test_*.cpp)
+  file(GLOB_RECURSE test_files CONFIGURE_DEPENDS ${target}/test_*.cpp
+       ${target}/*_test.cpp)
   foreach(test_file ${test_files})
     get_filename_component(test_name ${test_file} NAME_WLE)
     monad_add_test2(${test_name} ${test_file})

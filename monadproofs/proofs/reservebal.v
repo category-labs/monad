@@ -236,7 +236,7 @@ Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalance
       let (acceptable, remainingReserves) :=
         remainingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
       if acceptable
-      then remainingReserveBalsL latestState remainingReserves postStateAccountedSuffix tlrest
+      then remainingReserveBalsL latestState remainingReserves (hrest::postStateAccountedSuffix) tlrest
       else (false, preRestResBalances (* can be any garbage *))
   end.
 
@@ -1150,6 +1150,32 @@ Lemma initResBal s addr:
     balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
 Proof. Admitted. (* should follow easily from definitions *)
 
+
+Lemma resBalUpdCase tx s extension nrb inter: 
+  reserveBalUpdateOfTx tx = Some nrb
+  → (remainingReserveBalsL s
+       (updateKey (initialReserveBals s) (sender tx) (λ prevErb : N, (prevErb - maxTxFee tx) `min` nrb)) inter
+       extension).1 =
+    true
+    → (remainingReserveBalsL (execValidatedTx s tx).1 (initialReserveBals (execValidatedTx s tx).1) inter extension).1 =
+      true.
+Proof using.
+  intros Hrb.
+  revert inter.
+  induction extension; auto;[].
+  intros.
+  simpl in *.
+      simpl in *.
+      revert Hc.
+      simpl.
+      unfold execValidatedTx. rwHypsP.
+      rewrite initResBal.
+      unfold balanceOfAcA.
+      rewrite balanceOfUpd. 
+      simpl in *. subst.
+      unfold configuredReserveBalOfAddr.
+      rewrite updateKeyLkp3.
+      unfold updateHistory.
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
@@ -1171,18 +1197,19 @@ Proof using.
   {
     clear Ht.
     simpl in *.
-    rewrite <- Hc.
-    f_equal.
     subst sf.
-    revert H.
+    revert H Hc.
     clear.
     intros.
-    induction extension; simpl; auto.
+    induction extension; auto;[].
+    simpl.
+    
     {
+      simpl.
+      clear IHextension.
+      revert Hc.
+      simpl.
       unfold execValidatedTx. rwHypsP.
-      f_equal.
-      apply gmapEquiv.
-      intros a.
       rewrite initResBal.
       unfold balanceOfAcA.
       rewrite balanceOfUpd. 

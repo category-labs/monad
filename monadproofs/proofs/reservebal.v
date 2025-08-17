@@ -205,14 +205,19 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
   let s := preIntermediatesState in
   let addr := sender next in
   let erb := preTxResBalances !!! addr in
-  if isAllowedToEmpty s intermediates next
-  then
-    let sbal := balanceOfAc s.1 addr in
-    (bool_decide (maxTxFee next <= sbal),
-      updateKey preTxResBalances addr (fun _ => sbal `min` configuredReserveBal (s.2 !!! addr)))
-      
-  else (bool_decide (maxTxFee next <= erb)
-         , updateKey preTxResBalances addr (fun _ => erb - maxTxFee next)).
+  match reserveBalUpdateOfTx next with
+  | Some newRb =>
+      (true, updateKey preTxResBalances addr (fun prevErb => prevErb `min` newRb))
+  | None  =>
+      if isAllowedToEmpty s intermediates next
+      then
+        let sbal := balanceOfAc s.1 addr in
+        (bool_decide (maxTxFee next <= sbal),
+          updateKey preTxResBalances addr (fun _ => sbal `min` configuredReserveBal (s.2 !!! addr)))
+          
+      else (bool_decide (maxTxFee next <= erb)
+             , updateKey preTxResBalances addr (fun _ => erb - maxTxFee next))
+  end.
   
 
 Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
@@ -378,6 +383,7 @@ Definition isAllowedToEmptyExec
 
 Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
+
 Definition updateHistory (a: ExtraAcStates) (newTx: TxWithHdr) : ExtraAcStates. Proof. Admitted.
 
 
@@ -393,8 +399,16 @@ Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * Tran
 
 *)
 
+Definition ReserveBalUpdateSuccess (t: TxWithHdr) : TransactionResult. Proof. Admitted.
+
+Hint Rewrite @balanceOfUpd: syntactic.
 Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   : (AugmentedState * TransactionResult) :=
+  match reserveBalUpdateOfTx t with
+  | Some n => ((updateBalanceOfAc s.1  (sender t) (fun b => b - maxTxFee t)
+                 , updateHistory s.2 t), ReserveBalUpdateSuccess t)
+  | None =>
+    
   let (si, r) := stateAfterTransaction (fst s) t in
   let balCheck (a: evm.address) :=
     let erb:N := ReserveBal `min` (balanceOfAcA s a) in
@@ -407,7 +421,9 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   let allBalCheck := (forallb balCheck allAccounts) in
   if (allBalCheck)
   then ((si, updateHistory (snd s) t), r)
-  else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r).
+  else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r)
+  end
+.
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
@@ -545,6 +561,12 @@ Proof using.
   remember (stateAfterTransaction s.1 tx) as sir.
   destruct sir as [si r].
   simpl in *.
+  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  1:{  subst sf. unfold balanceOfAcA.  simpl.
+       rewrite balanceOfUpd. case_match; auto. try lia.
+       case_bool_decide; try lia.
+       congruence.
+  }
   remember (hasCode sf.1 ac) as sac.
   destruct sac; auto.
   rememberForallb.
@@ -578,6 +600,12 @@ Proof.
   subst sf.
   revert Hsc.
   unfold execValidatedTx.
+  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  1:{  unfold balanceOfAcA. simpl in *.  intros.
+       repeat rewrite balanceOfUpd.
+       resolveDecide congruence.
+       case_match_concl; auto; try lia.
+  }
   unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
   intros.
   remember (stateAfterTransaction s.1 tx) as sir.
@@ -643,6 +671,12 @@ Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
   (let '(a,b) := p in f a b) = f (fst p) (snd p).
 Proof using. Admitted.
 
+Lemma addrDelegatedUnchangedByBalUpd s addr f:
+  addrDelegated (updateBalanceOfAc s addr f) = addrDelegated s.
+Proof. Admitted.
+
+
+
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
@@ -652,6 +686,11 @@ Proof.
   unfold execValidatedTx in Hd.
   rewrite pairEta in Hd.
   simpl in *.
+  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  1:{  unfold balanceOfAcA. simpl in *.  intros.
+       repeat rewrite addrDelegatedUnchangedByBalUpd in Hd.
+       auto.
+  }
   case_match.
   {
     apply execTxDelegationUpdCore in Hd. assumption.
@@ -684,6 +723,12 @@ Proof using.
   rewrite pairEta. simpl in *.
   case_match_concl;  auto;[].
   unfold balanceOfAcA in *.
+  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  1:{  simpl in *.
+       rewrite balanceOfUpd.
+       case_bool_decide; try lia.
+       congruence.
+  }
   case_match_concl; simpl in *; try lia.
   {
     rewrite Heqb in Htx.
@@ -1086,8 +1131,14 @@ Proof using.
   simpl in *.
   rewrite Ht in Hc.
   unfold remainingReserveBals in *.
-  remember (isAllowedToEmpty s [] tx) as ae.
-  destruct ae; simpl in *; try lia;[|].
+  case_match.
+  {
+    clear Ht.
+    simpl in *.
+
+Lemma exe     
+    remember (isAllowedToEmpty s [] tx) as ae.
+    destruct ae; simpl in *; try lia;[|].
   {
     resolveDecide congruence.
     clear Ht.

@@ -237,7 +237,7 @@ Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalance
   | hrest::tlrest =>
       let remainingReserves :=
         remainingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
-      remainingReserveBalsL latestState remainingReserves (hrest::postStateAccountedSuffix) tlrest
+      remainingReserveBalsL latestState remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
   end.
 
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
@@ -1229,6 +1229,62 @@ Proof using.
   apply mono.
   assumption.
 Qed.
+
+Lemma monoL2 s rb1 rb2 inter extension tx:
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> rbLe rb1 rb2
+  -> rbLe (remainingReserveBalsL s rb1 (tx::inter) extension)
+          (remainingReserveBalsL (execValidatedTx s tx).1 rb2 inter extension).
+Proof using.
+  intros Hrange.
+  revert rb1 rb2 inter.
+  induction extension; auto;[].
+  unfold rbLe in *.
+  intros ? ? ? Hrb addr.
+  simpl.
+  apply forallCons in Hrange.
+  forward_reason.
+  apply IHextension.
+  clear addr.
+  intros addr.
+  simpl.
+  unfold remainingReserveBals.
+  pose proof (Hrb addr).
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  { case_bool_decide; subst; try lia. }
+  rewrite isAllowedToEmpty2;[| lia].
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide.
+  {
+    rewrite bool_decide_true.
+    2:{
+      etransitivity;[eassumption|].
+      admit.
+    }
+    repeat rewrite updateKeyLkp3;
+      fold ReserveBals in *.
+    case_bool_decide; try lia.
+    admit.
+  }
+  case_bool_decide; 
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *;
+    case_bool_decide; try lia.
+  
+    
+    
+    
+  case_match.
+  (*
+  remainingReserveBals s rb1 (tx :: inter) a !!! addr0
+  ≤ remainingReserveBals (execValidatedTx s tx).1 rb2 inter a !!! addr0
+*)
+Admitted.
   
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
@@ -1247,6 +1303,15 @@ Proof using.
   intros ac.
   specialize (Hc ac).
   forward_reason.
+  simpl in *.
+  etransitivity.
+  { apply Hc. }
+  apply monoL2.
+  (*
+  rbLe (remainingReserveBals s (initialReserveBals s) [] tx) (initialReserveBals sf)
+*)  
+  
+
   simpl in *.
   unfold remainingReserveBals in Hc.
   rewrite updateKeyLkp3 in Hc.

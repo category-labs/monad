@@ -684,6 +684,7 @@ Proof.
   }
 Qed.
 
+  
 Lemma execTxDelegationUpdCore tx s:
   let sf :=  (stateAfterTransaction s tx).1 in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
@@ -768,6 +769,30 @@ Proof using.
     resolveDecide congruence.
     lia.
   }
+Qed.
+
+
+Lemma execBalLb ac s tx:
+  let sf :=  (execValidatedTx s tx).1 in
+  if (bool_decide (ac=sender tx)) then 
+    hasCode sf.1 (sender tx) = false->
+    (if isAllowedToEmpty s [] tx
+     then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
+          \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
+     else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx)))
+  else
+    if (hasCode sf.1 ac)
+    then True
+    else (if addrDelegated (fst sf) ac then ReserveBal `min` (balanceOfAcA s ac) else balanceOfAcA s ac)
+         <= (balanceOfAcA sf ac).
+Proof using.
+  simpl.
+  case_bool_decide;[apply execTxSenderBal|].
+  pose proof (execTxOtherBalanceLB tx s ac ltac:(auto)).
+  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ac ltac:(auto)).
+  destruct (hasCode (execValidatedTx s tx).1.1 ac); auto;[].
+  autorewrite with syntactic in *.
+  case_match; lia.
 Qed.
 
 Lemma lastTxInBlockIndexUpd s txlast:
@@ -1370,7 +1395,14 @@ Proof using.
 Qed.  
     
     
-  
+Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
+Ltac solver := simpl in *; autorewrite with syntactic in *; simpl in *; resolveDecide congruence; resolveDecide lia; resolveDecide tauto.
+Ltac case_bool_decide_concl:=
+  match goal with
+  | |- context [@bool_decide ?P ?dec] =>
+    destruct_decide (@bool_decide_reflect P dec) as Hd
+  end.
+
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
@@ -1414,6 +1446,61 @@ Proof using.
     case_bool_decide;
       resolveDecide congruence; simpl in *; try lia.
   }
+  pose proof (execBalLb addr s tx) as Hlb.
+  simpl in Hlb. fold sf in Hlb.
+  pose proof (Hsc (sender tx) ltac:(set_solver)) as Hnc.
+  pose proof (Hscf (sender tx) ltac:(set_solver)) as Hncf.
+  rewrite Hncf in Hlb.
+  case_match_concl.
+  { (* isAllowedToEmpty *)
+    match goal with
+    | H: isAllowedToEmpty _ _ _ = _ |- _ => rename H into Hae
+    end.
+    subst sf.
+    autorewrite with syntactic in *.
+    case_bool_decide_concl.
+    2:{ (* a separate proof can actually prove that this case is impossible. because this tx was actually accepted : can prove that remaingReserveBals can only decrease the input *)
+      rewrite updateKeyLkp3.
+      autorewrite with syntactic.
+      unfold balanceOfAcA, rbAfterTx in *.
+      rwHypsP.
+      case_bool_decide; resolveDecide congruence; try lia.
+(* the goal at this time can be falsified when addr has code, which can happen without violating any other hyp.
+in the previous formulation maxDebitL must be 0 for any account not in the senders.
+it is not the case here as the remaining balance can be non0 for even non-senders, which can be code and their erb can actually drop. so we need to weaken the defn of [consensusAcceptableBlock]
+
+    if hasCode (execValidatedTx s tx).1.1 addr
+    then True
+    else
+     ((if addrDelegated (execValidatedTx s tx).1.1 addr
+       then ReserveBal `min` balanceOfAc s.1 addr
+       else balanceOfAc s.1 addr)
+      ≤ balanceOfAc (execValidatedTx s tx).1.1 addr)%N
+  Hd : ¬ maxTxFee tx ≤ balanceOfAc s.1 (sender tx)
+  H0 : addr ≠ sender tx
+  n : sender tx ≠ addr
+  ============================
+  balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr
+  ≤ balanceOfAc (execValidatedTx s tx).1.1 addr `min` configuredReserveBalOfAddr s.2 addr
+*)
+
+
+      
+      apply isAllowedToEmptyImpl in Hae.
+      admit. (* isAlloweToEmpty means not delegated so the final balance can only be greater *)
+      }
+      {
+        rewrite updateKeyLkp3.
+        autorewrite with syntactic.
+        unfold balanceOfAcA, rbAfterTx in *.
+        rwHypsP.
+        case_bool_decide; resolveDecide congruence; try lia.
+        case_bool_decide
+        
+        
+     
+      
+    
   
   
       

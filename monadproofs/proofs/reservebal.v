@@ -222,7 +222,7 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
         let sbal := balanceOfAc s.1 addr in
         let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
         if bool_decide (maxTxFee next <= sbal)
-        then updateKey preTxResBalances addr (fun _ => newBal `min` configuredReserveBalOfAddr s.2 addr)
+        then updateKey preTxResBalances addr (fun prevErb => newBal `min` prevErb) (* we know prevErb = sbal `min ` (configuredReserveBalOfAddr s.2 addr). if sbal was larger, this change computes to syntactically equiv defn. if sbal was lower, min was sbal. so the min in the new erb would also be newBal anyway so .  *)
         else updateKey preTxResBalances addr (fun prevErb => prevErb `min` -1) (* -ve =>  this tx cannot be accepted *)
           
       else (updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)

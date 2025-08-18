@@ -241,7 +241,7 @@ Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalance
   end.
 
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
-  forall addr,
+  forall addr, addr ∈ map sender postStateSuffix ->
    0<= (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix) !!! addr.
 
 Open Scope N_scope.
@@ -1204,18 +1204,18 @@ Proof using.
       unfold updateHistory.
  *)
 
-Definition rbLe (rb1 rb2: ReserveBals) :=
-  forall addr, rb1 !!! addr <= rb2 !!! addr.
+Definition rbLe (eoas: list evm.address) (rb1 rb2: ReserveBals) :=
+  forall addr, addr ∈ eoas -> rb1 !!! addr <= rb2 !!! addr.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
-Lemma mono s rb1 rb2 inter tx:
-  rbLe rb1 rb2
-  -> rbLe (remainingReserveBals s rb1 inter tx)
+Lemma mono eoas s rb1 rb2 inter tx:
+  rbLe eoas rb1 rb2
+  -> rbLe eoas (remainingReserveBals s rb1 inter tx)
        (remainingReserveBals s rb2 inter tx).
 Proof using.
-  intros Hrb addr.
+  intros Hrb addr Hin.
   unfold remainingReserveBals.
-  pose proof (Hrb addr).
+  pose proof (Hrb addr Hin).
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *.
@@ -1233,17 +1233,18 @@ Proof using.
     fold ReserveBals in *; try lia.
 Qed.
   
-Lemma monoL s rb1 rb2 inter extension:
-  rbLe rb1 rb2
-  -> rbLe (remainingReserveBalsL s rb1 inter extension)
+Lemma monoL eoas s rb1 rb2 inter extension:
+  map sender extension ⊆ eoas
+  -> rbLe eoas rb1 rb2
+  -> rbLe eoas (remainingReserveBalsL s rb1 inter extension)
           (remainingReserveBalsL s rb2 inter extension).
 Proof using.
   revert rb1 rb2 inter.
   induction extension; auto;[].
   unfold rbLe in *.
-  intros ? ? ? Hrb addr.
+  intros ? ? ? Hs Hrb addr Hin. simpl in *.
   simpl.
-  apply IHextension.
+  apply IHextension;[set_solver | | set_solver].
   apply mono.
   assumption.
 Qed.
@@ -1345,28 +1346,29 @@ Proof using.
 Qed.
   
 Set Default Goal Selector "!".
-Lemma monoL2 s rb1 rb2 inter extension tx:
-  rbLe rb1 rb2
+Lemma monoL2 eoas s rb1 rb2 inter extension tx:
+  (map sender extension) ⊆ eoas
+  -> rbLe eoas rb1 rb2
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (∀ ac : evm.address, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1.1 ac = false)
-  -> rbLe (remainingReserveBalsL s rb1 (tx::inter) extension)
+  -> rbLe eoas (remainingReserveBalsL s rb1 (tx::inter) extension)
           (remainingReserveBalsL (execValidatedTx s tx).1 rb2 inter extension).
 Proof using.
   revert rb1 rb2 inter.
   induction extension; auto;[].
   unfold rbLe in *.
-  intros ? ? ? Hrb  Hrange Hsc addr.
+  intros ? ? ? Hsub Hrb Hrange Hsc addr Hin.
   simpl.
   apply forallCons in Hrange.
   simpl in Hsc.
   forward_reason.
-  apply IHextension; auto.
+  apply IHextension; auto;[set_solver| |].
   2:{ intros. apply Hsc. set_solver. }
-  clear addr.
-  intros addr.
+  clear Hin. clear addr.
+  intros addr Hin.
   simpl.
   unfold remainingReserveBals.
-  pose proof (Hrb addr).
+  pose proof (Hrb addr Hin).
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *.
@@ -1415,18 +1417,21 @@ Proof using.
   clear Heoac.
   set (sf:=(execValidatedTx s tx).1).
   intros Hc.
-  unfold consensusAcceptableTxsOld in *.
   simpl in *.
-  intros ac.
+  intros ac Hin.
   specialize (Hc ac).
   forward_reason.
   simpl in *.
+  specialize (Hc ltac:(set_solver)).
   etransitivity.
   { apply Hc. }
-  apply monoL2; auto.
-  clear Hc. clear ac.
+  pose proof (monoL2 (map sender (tx::extension))) as Hm.
+  unfold rbLe in Hm.
+  apply Hm; auto; simpl in *; [ set_solver | | set_solver].
+  clear Hm.
+  clear Hc. clear Hin. clear ac.
   hnf.
-  intros.
+  intros ? Hin.
   unfold remainingReserveBals.
   case_match.
   { (* this tx updates the reserve balance *)
@@ -1448,9 +1453,8 @@ Proof using.
   }
   pose proof (execBalLb addr s tx) as Hlb.
   simpl in Hlb. fold sf in Hlb.
-  pose proof (Hsc (sender tx) ltac:(set_solver)) as Hnc.
-  pose proof (Hscf (sender tx) ltac:(set_solver)) as Hncf.
-  rewrite Hncf in Hlb.
+  rewrite Hscf in Hlb;[|set_solver].
+  rewrite Hscf in Hlb;[|set_solver].
   case_match_concl.
   { (* isAllowedToEmpty *)
     match goal with
@@ -2072,3 +2076,4 @@ ad definition consensusAcceptableBlocks that conse
 *)
  Abort.
 End use.
+*)

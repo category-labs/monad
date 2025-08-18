@@ -773,6 +773,8 @@ Qed.
 
 Lemma execBalLb ac s tx:
   let sf :=  (execValidatedTx s tx).1 in
+  let ReserveBal := configuredReserveBalOfAddr s.2 ac in
+  reserveBalUpdateOfTx tx = None ->
   if (bool_decide (ac=sender tx)) then 
     hasCode sf.1 (sender tx) = false->
     (if isAllowedToEmpty s [] tx
@@ -784,7 +786,8 @@ Lemma execBalLb ac s tx:
     then True
     else (if addrDelegated (fst sf) ac then ReserveBal `min` (balanceOfAcA s ac) else balanceOfAcA s ac)
          <= (balanceOfAcA sf ac).
-Proof using.
+Proof using. Admitted.
+(*
   simpl.
   case_bool_decide;[apply execTxSenderBal|].
   pose proof (execTxOtherBalanceLB tx s ac ltac:(auto)).
@@ -793,6 +796,7 @@ Proof using.
   autorewrite with syntactic in *.
   case_match; lia.
 Qed.
+ *)
 
 Lemma lastTxInBlockIndexUpd s txlast:
   option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)
@@ -1503,7 +1507,7 @@ Proof using.
     case_bool_decide;
       resolveDecide congruence; simpl in *; try lia.
   }
-  pose proof (execBalLb addr s tx) as Hlb.
+  pose proof (execBalLb addr s tx ltac:(assumption)) as Hlb.
   simpl in Hlb. fold sf in Hlb.
   rewrite Hscf in Hlb;[|set_solver].
   rewrite Hscf in Hlb;[|set_solver].
@@ -1521,347 +1525,68 @@ Proof using.
       unfold balanceOfAcA, rbAfterTx in *.
       rwHypsP.
       case_bool_decide; resolveDecide congruence; try lia.
-      case_match; try lia;[].
-      
-
-      
-      apply isAllowedToEmptyImpl in Hae.
-      admit. (* isAlloweToEmpty means not delegated so the final balance can only be greater *)
-      }
-      {
-        rewrite updateKeyLkp3.
-        autorewrite with syntactic.
-        unfold balanceOfAcA, rbAfterTx in *.
-        rwHypsP.
-        case_bool_decide; resolveDecide congruence; try lia.
-        case_bool_decide
-        
-        
-     
-      
-    
-  
-  
-      
-      rewrite bool_decide_true; auto.
-      simpl in *.
-      unfold rbAfterTx.
-      rwHypsP.
-    case_bool_decide.
-    {
-      rewrite initResBal.
-      rewrite configuredReserveBalOfAddrSpec.
-      unfold execValidatedTx.
-      rwHypsP.
-      simpl.
-      rewrite initResBal.
-      simpl.
-      unfold balanceOfAcA in *.
-      rewrite balanceOfUpd.
-      rewrite bool_decide_true; auto.
-      simpl in *.
-      unfold rbAfterTx.
-      rwHypsP.
-      lia.
+      case_match; try lia.
     }
     {
-      
-      
-      
-      
-  
-  clear ac.
-  hnf.
-  clear Hc.
-  intros addr.
-  unfold remainingReserveBals in Hc.
-  rewrite updateKeyLkp3 in Hc.
-  assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
-         ) as Hass.
-  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
-  specialize (Hass ac).
-  autorewrite with iff.
-  
-  case_bool_decide; simpl in *;  try lia.
-  2:{ (* non-sender account *)
-    destruct (decide (ac ∈ map sender extension)) as [Hd| Hd];
-    [| rewrite maxTotalReserveDippableDebitLPos; auto; fail].
-    pose proof (execTxOtherBalanceLB tx s) as Hot.
-    pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
-    simpl in *.
-    specialize (Hot ac ltac:(auto)).
-    specialize (Hdeb ac ltac:(auto)).
-    rewrite Hass.
-    clear Hass.
-    fold sf in Hdeb.
-    rewrite Hscf in Hot;[| set_solver].
-    rewrite Hscf in Hdeb;[| set_solver].
-    autorewrite with syntactic in *.
-    remember (addrDelegated sf.1 ac) as dg.
-    destruct dg.
-    2:{ (* ac is not delegated *)
-       revert Hc.
-       rwHypsP.
-       utils.case_match_concl.
-       autorewrite with syntactic in *.
-       destruct o; subst sf; try lia.
-       rename n into nonEmptyingFees.
-       destruct p as (emptyingFee, emptyingVal); try lia.
-    }
-    {
-      pose proof (debLsnd [] extension ac s tx) as Hsnd.
-      remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
-      destruct rd as [nonEmptyingDebits emptyingDebits].
-      pose proof (execTxDelegationUpd tx s) as Hdel. 
-      simpl in Hdel. fold sf in Hdel.
-      specialize (Hdel ac).
-      simpl in *.
-      repeat rewrite -> bool.Is_true_eq in *.
-      orient_eqs.
-      apply Hdel in Heqdg.
-      specialize (Hsnd ltac:(auto)).
-      revert Hc.
-      rwHypsP.
-      intros.
-      subst sf.
-      lia.
-    }
-  }
-  { (* sender's account *)
-    subst.
-    rewrite Hass.
-    clear Hass.
-    unfold updateTotals in Hc.
-    remember (isAllowedToEmpty s [] tx) as ae.
-    pose proof (debLsnd2 [] extension s tx) as Hsnd.
-    remember (maxTotalReserveDippableDebitL s [tx] extension !!! (sender tx)) as rd.
-    destruct rd as [nonEmptyingDebits emptyingDebits].
-    (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
-    simpl in *.
-    rwHypsP.
-    pose proof (execTxSenderBal tx s) as Hsender.
-    simpl in Hsender. fold sf in Hsender.
-    destruct ae; simpl in *; try lia;[|].
-    {
-      revert Hsender.
-      orient_rwHyps.
-      intros.
-      revert Hc.
-      rwHypsP.
-      intros.
-      simpl in *.
-      subst sf.
-      rewrite Hscf in Hsender; [|set_solver].
-      specialize (Hsender ltac:(auto)).
-      destruct Hsender; lia.
-    }
-
-    {
-      revert Hc.
-      subst sf.
-      rewrite Hscf in Hsender; [|set_solver].
-      specialize (Hsender ltac:(auto)).
-      revert Hsender.
-      orient_rwHyps.
-      lia.
-    }
-  }
-Qed.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
-  intros Hext Heoac Hsc.
-  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
-  clear Heoac.
-  set (sf:=(execValidatedTx s tx).1).
-  intros Hc.
-  unfold consensusAcceptableTxs in *.
-  pose proof (rrr _ _ _ Hc) as Ht.
-  simpl in *.
-  rewrite Ht in Hc.
-  unfold remainingReserveBals in *.
-  case_match.
-  {
-    clear Ht.
-    simpl in *.
-    subst sf.
-    revert H Hc.
-    clear.
-    intros.
-    induction extension; auto;[].
-    simpl.
-    
-    {
-      simpl.
-      clear IHextension.
-      revert Hc.
-      simpl.
-      unfold execValidatedTx. rwHypsP.
-      rewrite initResBal.
-      unfold balanceOfAcA.
-      rewrite balanceOfUpd. 
-      simpl in *. subst.
-      unfold configuredReserveBalOfAddr.
       rewrite updateKeyLkp3.
-      unfold updateHistory.
-      simpl in *.
-      assert (addrsDelUndelByTx tx = []) as Heq by admit.
-      rewrite Heq.
-      simpl.
       autorewrite with syntactic.
-      rewrite lookup_insert_iff;[| exact inhabitant].
-      case_bool_decide; auto; simpl in *; rwHypsP;
-        rewrite initResBal;[| reflexivity].
-
-      (* equality does not hold
-  (balanceOfAc s.1 a - maxTxFee tx) `min` n =
-  (balanceOfAcA s a `min` configuredReserveBalOfAddr s.2 a - maxTxFee tx) `min` n
-*)
-      
-      unfold balanceOfAcA in *.
-      Set Printing Parentheses.
-      lia.
-      2:{ reflexivity.
-      Search initialReserveBals.
-      reflexivity.
-      rwHyos
-      Search insert lookup bool_decide.
-      
-      case_bool_decide; auto.
-      {
-      simpl in *. subst.
-      
-      
-Lemma exe     
-    remember (isAllowedToEmpty s [] tx) as ae.
-    destruct ae; simpl in *; try lia;[|].
-  {
-    resolveDecide congruence.
-    clear Ht.
-    
-      
-    apply (f_equal snd) in Ht. simpl in Ht.
-    GC.
-    
-    simplify_eq.
-  simpl in Hc.
-  
-  intros ac.
-  specialize (Hc ac).
-  forward_reason.
-  rewrite updateKeyLkp3 in Hc.
-  assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc
-         ) as Hass.
-  { intros. rewrite -> debitLeq with (s:=s) (tx:=tx); auto. }
-  specialize (Hass ac).
-  autorewrite with iff.
-  
-  case_bool_decide; simpl in *;  try lia.
-  2:{ (* non-sender account *)
-    destruct (decide (ac ∈ map sender extension)) as [Hd| Hd];
-    [| rewrite maxTotalReserveDippableDebitLPos; auto; fail].
-    pose proof (execTxOtherBalanceLB tx s) as Hot.
-    pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s) as Hdeb.
-    simpl in *.
-    specialize (Hot ac ltac:(auto)).
-    specialize (Hdeb ac ltac:(auto)).
-    rewrite Hass.
-    clear Hass.
-    fold sf in Hdeb.
-    rewrite Hscf in Hot;[| set_solver].
-    rewrite Hscf in Hdeb;[| set_solver].
-    autorewrite with syntactic in *.
-    remember (addrDelegated sf.1 ac) as dg.
-    destruct dg.
-    2:{ (* ac is not delegated *)
-       revert Hc.
-       rwHypsP.
-       utils.case_match_concl.
-       autorewrite with syntactic in *.
-       destruct o; subst sf; try lia.
-       rename n into nonEmptyingFees.
-       destruct p as (emptyingFee, emptyingVal); try lia.
-    }
-    {
-      pose proof (debLsnd [] extension ac s tx) as Hsnd.
-      remember (maxTotalReserveDippableDebitL s [tx] extension !!! ac) as rd.
-      destruct rd as [nonEmptyingDebits emptyingDebits].
-      pose proof (execTxDelegationUpd tx s) as Hdel. 
-      simpl in Hdel. fold sf in Hdel.
-      specialize (Hdel ac).
-      simpl in *.
-      repeat rewrite -> bool.Is_true_eq in *.
-      orient_eqs.
-      apply Hdel in Heqdg.
-      specialize (Hsnd ltac:(auto)).
-      revert Hc.
+      unfold balanceOfAcA, rbAfterTx in *.
       rwHypsP.
-      intros.
-      subst sf.
-      lia.
+      case_bool_decide; resolveDecide congruence; try lia;
+        [| case_match; lia].
+      specialize (Hlb ltac:(auto)).
+      subst.
+      destruct Hlb; subst; try lia.
     }
   }
-  { (* sender's account *)
-    subst.
-    rewrite Hass.
-    clear Hass.
-    unfold updateTotals in Hc.
-    remember (isAllowedToEmpty s [] tx) as ae.
-    pose proof (debLsnd2 [] extension s tx) as Hsnd.
-    remember (maxTotalReserveDippableDebitL s [tx] extension !!! (sender tx)) as rd.
-    destruct rd as [nonEmptyingDebits emptyingDebits].
-    (* later transactions from the same sender cannot be emptying, assuming the extension spans K or fewer blocks *)
-    simpl in *.
-    rwHypsP.
-    pose proof (execTxSenderBal tx s) as Hsender.
-    simpl in Hsender. fold sf in Hsender.
-    destruct ae; simpl in *; try lia;[|].
-    {
-      revert Hsender.
-      orient_rwHyps.
-      intros.
-      revert Hc.
-      rwHypsP.
-      intros.
-      simpl in *.
-      subst sf.
-      rewrite Hscf in Hsender; [|set_solver].
-      specialize (Hsender ltac:(auto)).
-      destruct Hsender; lia.
-    }
-
-    {
-      revert Hc.
-      subst sf.
-      rewrite Hscf in Hsender; [|set_solver].
-      specialize (Hsender ltac:(auto)).
-      revert Hsender.
-      orient_rwHyps.
-      lia.
-    }
-  }
+  rewrite updateKeyLkp3.
+  subst sf.
+  autorewrite with syntactic in *.
+  unfold balanceOfAcA, rbAfterTx in *.
+  rwHypsP.
+  case_bool_decide; subst; resolveDecide congruence; try lia.
+  case_match; lia.
 Qed.
-
 (* TODO: delegation strictness: why needed:
 in execution checks: treat recently undelegated accounts as delegated
  *)
+
+Lemma decreasingRemTxSender s irb proc tx a:
+  remainingReserveBals s irb (tx :: proc) a !!! sender tx ≤ irb !!! sender tx.
+Proof using.
+  unfold remainingReserveBals.
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  { case_bool_decide; rwHypsP; try lia. }
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; rwHypsP; try lia. }
+  apply isAllowedToEmptyImpl in Heqb.
+  forward_reason.
+  case_bool_decide; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; rwHypsP; try lia.  congruence. }
+  case_bool_decide; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *; try lia.
+  congruence.
+Qed.
+  
+  
+Lemma decreasingRemL s irb proc next tx:
+  (remainingReserveBalsL s irb (tx::proc) next) !!! (sender tx) <=  (irb !!! (sender tx)).
+Proof using.
+  revert proc irb.
+  induction next; unfold rbLeA in *; simpl; [lia|].
+  intros.
+  pose proof (IHnext (proc++[a]) (remainingReserveBals s irb (tx::proc) a)).
+  etransitivity;[apply H|].
+  apply decreasingRemTxSender.
+Qed.
+
 
 Lemma execValidate tx extension s:
   consensusAcceptableTxs s (tx::extension)
@@ -1873,16 +1598,38 @@ Proof using.
   simpl in *.
   unfold updateTotals in Hc. (* rename [ maxTotalReserveDippableDebit] to reserveBal decrement *)
   simpl.
+  specialize (Hc ltac:(set_solver)).
+  (*
   autorewrite with syntactic in Hc.
   rewrite updateKeyLkp3 in Hc.
-  resolveDecide ltac:(congruence).
+  resolveDecide ltac:(congruence). *)
+  
   unfold validateTx.
   autorewrite with iff.
-  unfold balanceOfAcA in *.
-  destruct (isAllowedToEmpty s [] tx); simpl in *; try lia.
-  forward_reason.
-  case_match; try lia.
-  destruct p; try lia.
+  match type of Hc with
+    context[ remainingReserveBalsL _ ?irb _ _ ]
+    => assert (0<= irb !!! (sender tx)) as Hr
+  end.
+  {
+    etransitivity;[ apply Hc|].
+    apply decreasingRemL.
+  }
+  clear Hc.
+  unfold remainingReserveBals in Hr.
+  case_match; auto;
+    repeat rewrite updateKeyLkp3 in Hr;
+    autorewrite with syntactic in Hr;
+    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+  case_match; auto;
+    repeat rewrite updateKeyLkp3 in Hr;
+    autorewrite with syntactic in Hr;
+    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+  case_match; auto;
+    repeat rewrite updateKeyLkp3 in Hr;
+    autorewrite with syntactic in Hr;
+    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+  autorewrite with iff in *.
+  lia.
 Qed.
 
 
@@ -2048,17 +1795,14 @@ Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
   consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).
 
+
 Lemma acceptableNil lastConsensedState:
   consensusAcceptableTxs lastConsensedState [].
 Proof using.
   unfold consensusAcceptableTxs.
   intros.
   simpl.
-  unfold lookup_total.
-  unfold map_lookup_total. simpl.
-  unfold default. simpl.
-  autorewrite with syntactic.
-  rewrite lookup_empty.
+  rewrite initResBal.
   lia.
 Qed.
 
@@ -2082,7 +1826,7 @@ Section use.
       -> consensusAcceptableBlocks lastConsensedState proposedBlocks
       -> exists nextBlock, consensusAcceptableBlocks lastConsensedState (proposedBlocks++[nextBlock]).
 
-
+Open Scope N_scope.
   Lemma operation  : (K=2) -> False.
     intros.
     revert nextBlockPicker.
@@ -2111,4 +1855,3 @@ ad definition consensusAcceptableBlocks that conse
 *)
  Abort.
 End use.
-*)

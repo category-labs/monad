@@ -222,8 +222,8 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
         let sbal := balanceOfAc s.1 addr in
         let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
         if bool_decide (maxTxFee next <= sbal)
-        then updateKey preTxResBalances addr (fun prevErb => newBal `min` prevErb) (* we know prevErb = sbal `min ` (configuredReserveBalOfAddr s.2 addr). if sbal was larger, this change computes to syntactically equiv defn. if sbal was lower, min was sbal. so the min in the new erb would also be newBal anyway so .  *)
-        else updateKey preTxResBalances addr (fun prevErb => prevErb `min` -1) (* -ve =>  this tx cannot be accepted *)
+        then updateKey preTxResBalances addr (fun prevErb => newBal `min` (configuredReserveBalOfAddr s.2 addr)) 
+        else updateKey preTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
           
       else (updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
   end.
@@ -1393,7 +1393,6 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *;
     case_bool_decide; try lia.
-  subst. lia.
 Qed.
     
     
@@ -1408,6 +1407,7 @@ Ltac case_bool_decide_concl:=
 Definition rbLeA (rb1 rb2: ReserveBals) :=
   forall addr, rb1 !!! addr <= rb2 !!! addr.
 
+(*
 Lemma decreasingRem s irb proc next:
   rbLeA (remainingReserveBals s irb proc next) irb.
 Proof using.
@@ -1454,6 +1454,8 @@ Proof using.
   pose proof (decreasingRem s irb proc a addr).
   lia.
 Qed.
+ *)
+
 
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
@@ -1519,7 +1521,8 @@ Proof using.
       unfold balanceOfAcA, rbAfterTx in *.
       rwHypsP.
       case_bool_decide; resolveDecide congruence; try lia.
-
+      case_match; try lia;[].
+      
 
       
       apply isAllowedToEmptyImpl in Hae.

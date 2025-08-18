@@ -1230,21 +1230,116 @@ Proof using.
   assumption.
 Qed.
 
+Lemma isAllowedToEmptyImpl s tx inter a:
+  isAllowedToEmpty s (tx::inter) a = true
+  -> sender tx <> sender a
+     /\ addrDelegated (execValidatedTx s tx).1.1 (sender a) = false.
+Proof using.
+  intros  Hae.
+  unfold isAllowedToEmpty in *.
+  simpl in *.
+  destruct (decide (sender a = sender tx)).
+  {
+    assert (bool_decide (sender a ∈ sender tx :: map sender inter)= true) as Heq.
+    { rewrite bool_decide_true; set_solver. }
+    rewrite Heq in Hae.
+    autorewrite with syntactic in Hae.
+    congruence.
+  }
+  split_and; auto.
+  rewrite <- not_true_iff_false.
+  intros Hc.
+  pose proof (execTxDelegationUpd tx s) as Hdel.
+  simpl in Hdel.
+  specialize (Hdel (sender a)).
+  repeat rewrite Is_true_true in Hdel.
+  specialize (Hdel Hc).
+  apply orb_prop in Hdel.
+  destruct Hdel as [Hdel | Hdel].
+  {
+    rewrite Hdel in Hae.
+    simpl.
+    autorewrite with syntactic in Hae.
+    congruence.
+  }
+  {
+    rewrite bool_decide_eq_true in Hdel.
+    case_bool_decide; try set_solver.
+    autorewrite with syntactic in Hae.
+    congruence.
+  }
+Qed.
+  
+
+Lemma emptyBalanceUb s tx inter a:
+  hasCode (execValidatedTx s tx).1.1 (sender a) = false
+  -> isAllowedToEmpty s (tx :: inter) a = true
+  -> balanceOfAc s.1 (sender a) ≤ balanceOfAc (execValidatedTx s tx).1.1 (sender a).
+Proof.
+  intros Hsc Hae.
+  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s (sender a)) as Hs.
+  simpl in Hs.
+  pose proof (isAllowedToEmptyImpl _ _ _  _ Hae).
+  forward_reason.
+  rewrite Hr in Hs.
+  simpl in *.
+  rewrite Hsc in Hs.
+  unfold balanceOfAcA in *.
+  simpl in *.
+  lia.
+Qed.
+
+Lemma configuredReserveBalOfAddrSame s tx  a:
+  sender tx <> a
+  -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 a
+      =
+        configuredReserveBalOfAddr s.2 a).
+Proof using.
+  intros Hn.
+  unfold configuredReserveBalOfAddr.
+  unfold execValidatedTx.
+  simpl.
+  destruct (reserveBalUpdateOfTx tx).
+  {
+    simpl.
+    unfold updateHistory.
+    simpl.
+    
+  intros Hae.
+  simpl in *.
+  unfold 
+
+Lemma configuredReserveBalOfAddrSame s tx inter a:
+  isAllowedToEmpty s (tx :: inter) a = true
+  -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 (sender a)
+      =
+        configuredReserveBalOfAddr s.2 (sender a)).
+Proof using.
+  unfold isAllowedToEmpty, configuredReserveBalOfAddr.
+  intros Hae.
+  simpl in *.
+  unfold 
+  
+Admitted.
+  
+Set Default Goal Selector "!".
 Lemma monoL2 s rb1 rb2 inter extension tx:
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
-  -> rbLe rb1 rb2
+  rbLe rb1 rb2
+  -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> (∀ ac : evm.address, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1.1 ac = false)
   -> rbLe (remainingReserveBalsL s rb1 (tx::inter) extension)
           (remainingReserveBalsL (execValidatedTx s tx).1 rb2 inter extension).
 Proof using.
-  intros Hrange.
   revert rb1 rb2 inter.
   induction extension; auto;[].
   unfold rbLe in *.
-  intros ? ? ? Hrb addr.
+  intros ? ? ? Hrb  Hrange Hsc addr.
   simpl.
   apply forallCons in Hrange.
+  simpl in Hsc.
   forward_reason.
-  apply IHextension.
+  apply IHextension; auto.
+  2:{ intros. apply Hsc. set_solver. }
   clear addr.
   intros addr.
   simpl.
@@ -1259,32 +1354,25 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
+  specialize (Hsc (sender a) ltac:(set_solver)).
+  pose proof (emptyBalanceUb _ _ _ _ Hsc Heqb) as Hle.
   case_bool_decide.
   {
-    rewrite bool_decide_true.
-    2:{
-      etransitivity;[eassumption|].
-      admit.
-    }
+    rewrite bool_decide_true; [|lia].
     repeat rewrite updateKeyLkp3;
       fold ReserveBals in *.
     case_bool_decide; try lia.
-    admit.
+    pose proof (configuredReserveBalOfAddrSame _ _ _ _ Heqb) as Hlle.
+    rewrite Hlle.
+    lia.
   }
   case_bool_decide; 
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *;
     case_bool_decide; try lia.
-  
+Qed.  
     
     
-    
-  case_match.
-  (*
-  remainingReserveBals s rb1 (tx :: inter) a !!! addr0
-  ≤ remainingReserveBals (execValidatedTx s tx).1 rb2 inter a !!! addr0
-*)
-Admitted.
   
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
@@ -1306,7 +1394,7 @@ Proof using.
   simpl in *.
   etransitivity.
   { apply Hc. }
-  apply monoL2.
+  apply monoL2; auto.
   (*
   rbLe (remainingReserveBals s (initialReserveBals s) [] tx) (initialReserveBals sf)
 *)  

@@ -284,7 +284,6 @@ Fixpoint totalTxFees (lt: list Transaction): gmap evm.address N :=
   | [] => ∅
   end.
 
-Definition ReserveBal : N. Proof. Admitted. (* TODO: make it per/account and possibly dynamic *)
 
 (*
 Definition txsFeesUB (s: evm.GlobalState) (lt: list Transaction) : Prop:=

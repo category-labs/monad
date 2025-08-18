@@ -213,7 +213,6 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
   : ReserveBals :=
   let s := preIntermediatesState in
   let addr := sender next in
-  let erb := preTxResBalances !!! addr in
   match reserveBalUpdateOfTx next with
   | Some newRb =>
       updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
@@ -224,9 +223,9 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
         let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
         if bool_decide (maxTxFee next <= sbal)
         then updateKey preTxResBalances addr (fun _ => newBal `min` configuredReserveBalOfAddr s.2 addr)
-        else updateKey preTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
+        else updateKey preTxResBalances addr (fun prevErb => prevErb `min` -1) (* -ve =>  this tx cannot be accepted *)
           
-      else (updateKey preTxResBalances addr (fun _ => (erb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
+      else (updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
   end.
   
 
@@ -1394,7 +1393,8 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *;
     case_bool_decide; try lia.
-Qed.  
+  subst. lia.
+Qed.
     
     
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
@@ -1404,6 +1404,56 @@ Ltac case_bool_decide_concl:=
   | |- context [@bool_decide ?P ?dec] =>
     destruct_decide (@bool_decide_reflect P dec) as Hd
   end.
+
+Definition rbLeA (rb1 rb2: ReserveBals) :=
+  forall addr, rb1 !!! addr <= rb2 !!! addr.
+
+Lemma decreasingRem s irb proc next:
+  rbLeA (remainingReserveBals s irb proc next) irb.
+Proof using.
+  intros addr.
+  unfold remainingReserveBals.
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  { case_bool_decide; subst; try lia. }
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide; auto;
+    repeat rewrite updateKeyLkp3;
+    fold ReserveBals in *; try lia.
+  subst.
+  (*
+  s : AugmentedState
+  irb : ReserveBals
+  proc : list TxWithHdr
+  next : TxWithHdr
+  Heqo : reserveBalUpdateOfTx next = None
+  Heqb : isAllowedToEmpty s proc next = true
+  H : maxTxFee next ≤ balanceOfAc s.1 (sender next)
+  ============================
+  (balanceOfAc s.1 (sender next) - maxTxFee next - value next)%N
+  `min` configuredReserveBalOfAddr s.2 (sender next) ≤ irb !!! sender next
+*)
+    
+Admitted.
+
+Lemma decreasingRemL s irb proc next:
+  rbLeA (remainingReserveBalsL s irb proc next) irb.
+Proof using.
+  revert proc irb.
+  induction next; unfold rbLeA in *; simpl; [lia|].
+  intros.
+  pose proof (IHnext (proc++[a]) (remainingReserveBals s irb proc a) addr).
+  pose proof (decreasingRem s irb proc a addr).
+  lia.
+Qed.
 
 Lemma execL tx extension s:
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
@@ -1469,24 +1519,6 @@ Proof using.
       unfold balanceOfAcA, rbAfterTx in *.
       rwHypsP.
       case_bool_decide; resolveDecide congruence; try lia.
-(* the goal at this time can be falsified when addr has code, which can happen without violating any other hyp.
-in the previous formulation maxDebitL must be 0 for any account not in the senders.
-it is not the case here as the remaining balance can be non0 for even non-senders, which can be code and their erb can actually drop. so we need to weaken the defn of [consensusAcceptableBlock]
-
-    if hasCode (execValidatedTx s tx).1.1 addr
-    then True
-    else
-     ((if addrDelegated (execValidatedTx s tx).1.1 addr
-       then ReserveBal `min` balanceOfAc s.1 addr
-       else balanceOfAc s.1 addr)
-      ≤ balanceOfAc (execValidatedTx s tx).1.1 addr)%N
-  Hd : ¬ maxTxFee tx ≤ balanceOfAc s.1 (sender tx)
-  H0 : addr ≠ sender tx
-  n : sender tx ≠ addr
-  ============================
-  balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr
-  ≤ balanceOfAc (execValidatedTx s tx).1.1 addr `min` configuredReserveBalOfAddr s.2 addr
-*)
 
 
       

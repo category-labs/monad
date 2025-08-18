@@ -395,16 +395,9 @@ Definition isAllowedToEmptyExec
 
 Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
 
-(* rbconfigure txs
-- can they do anything other than configure reserve balance?
-- do they require some gas to execute?
-- a request to configure rb of account ac must come from ac ?
-*)
-
 
 (* TODO: rename to uodate ExtraState *)
 
-Search gmap list.
 Definition upsertKeys {T V} `{c: Countable T} (m: gmap T V) (items: list (T*V)) :=
   foldr (uncurry insert) m items.
 
@@ -1289,6 +1282,20 @@ Proof.
   lia.
 Qed.
 
+Definition rbAfterTx s tx :=
+  match reserveBalUpdateOfTx tx with
+  | Some rb => rb
+  | None => configuredReserveBalOfAddr s (sender tx)
+  end.
+    
+    
+Lemma configuredReserveBalOfAddrSpec s tx a:
+  configuredReserveBalOfAddr (execValidatedTx s tx).1.2 a
+  = if bool_decide (a=sender tx)
+    then rbAfterTx s.2 tx
+    else configuredReserveBalOfAddr s.2 a.
+Proof. Admitted.
+
 Lemma configuredReserveBalOfAddrSame s tx  a:
   sender tx <> a
   -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 a
@@ -1296,31 +1303,21 @@ Lemma configuredReserveBalOfAddrSame s tx  a:
         configuredReserveBalOfAddr s.2 a).
 Proof using.
   intros Hn.
-  unfold configuredReserveBalOfAddr.
-  unfold execValidatedTx.
-  simpl.
-  destruct (reserveBalUpdateOfTx tx).
-  {
-    simpl.
-    unfold updateHistory.
-    simpl.
-    
-  intros Hae.
-  simpl in *.
-  unfold 
+  rewrite configuredReserveBalOfAddrSpec.
+  case_bool_decide; try congruence.
+Qed.
 
-Lemma configuredReserveBalOfAddrSame s tx inter a:
+Lemma configuredReserveBalOfAddrSame2 s tx inter a:
   isAllowedToEmpty s (tx :: inter) a = true
   -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 (sender a)
       =
         configuredReserveBalOfAddr s.2 (sender a)).
 Proof using.
-  unfold isAllowedToEmpty, configuredReserveBalOfAddr.
   intros Hae.
-  simpl in *.
-  unfold 
-  
-Admitted.
+  apply configuredReserveBalOfAddrSame.
+  apply isAllowedToEmptyImpl in Hae.
+  tauto.
+Qed.
   
 Set Default Goal Selector "!".
 Lemma monoL2 s rb1 rb2 inter extension tx:
@@ -1362,7 +1359,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
       fold ReserveBals in *.
     case_bool_decide; try lia.
-    pose proof (configuredReserveBalOfAddrSame _ _ _ _ Heqb) as Hlle.
+    pose proof (configuredReserveBalOfAddrSame2 _ _ _ _ Heqb) as Hlle.
     rewrite Hlle.
     lia.
   }
@@ -1395,12 +1392,62 @@ Proof using.
   etransitivity.
   { apply Hc. }
   apply monoL2; auto.
-  (*
-  rbLe (remainingReserveBals s (initialReserveBals s) [] tx) (initialReserveBals sf)
-*)  
+  clear Hc. clear ac.
+  hnf.
+  intros.
+  unfold remainingReserveBals.
+  case_match.
+  { (* this tx updates the reserve balance *)
+    rename n into nrb.
+    rewrite updateKeyLkp3.
+    unfold sf.
+    repeat rewrite initResBal.
+    rewrite configuredReserveBalOfAddrSpec.
+    unfold execValidatedTx.
+    rwHypsP.
+    simpl.
+    simpl.
+    unfold balanceOfAcA in *.
+    rewrite balanceOfUpd.
+    unfold rbAfterTx.
+    rwHypsP.
+    case_bool_decide;
+      resolveDecide congruence; simpl in *; try lia.
+  }
   
-
-  simpl in *.
+  
+      
+      rewrite bool_decide_true; auto.
+      simpl in *.
+      unfold rbAfterTx.
+      rwHypsP.
+    case_bool_decide.
+    {
+      rewrite initResBal.
+      rewrite configuredReserveBalOfAddrSpec.
+      unfold execValidatedTx.
+      rwHypsP.
+      simpl.
+      rewrite initResBal.
+      simpl.
+      unfold balanceOfAcA in *.
+      rewrite balanceOfUpd.
+      rewrite bool_decide_true; auto.
+      simpl in *.
+      unfold rbAfterTx.
+      rwHypsP.
+      lia.
+    }
+    {
+      
+      
+      
+      
+  
+  clear ac.
+  hnf.
+  clear Hc.
+  intros addr.
   unfold remainingReserveBals in Hc.
   rewrite updateKeyLkp3 in Hc.
   assert (forall acc, (maxTotalReserveDippableDebitL sf [] extension) !!! acc = (maxTotalReserveDippableDebitL s [tx] extension) !!! acc

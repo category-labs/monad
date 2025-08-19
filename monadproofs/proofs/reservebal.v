@@ -83,10 +83,11 @@ Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum 
 
 Record ExtraAcState :=
   {
-    
+
+    (* in impl, the meaning of None can be changed to just mean there was none in the last 2K *)
     lastDelUndelInBlockIndex : option N; (* last block index where this address was delegated or undelegated  *)
     lastTxInBlockIndex : option N; (* last block index where this address sent a tx *)
-    configuredReserveBal: N
+    configuredReserveBal: N (* this must go to the state in db/blockchain *)
   }.
 
 #[only(lens)] derive ExtraAcState.
@@ -147,15 +148,17 @@ Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReser
 Open Scope Z_scope.
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
-  
+
+
+(* rename it to remainingErb *)
 Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
   : ReserveBals :=
   let s := preIntermediatesState in
   let addr := sender next in
   match reserveBalUpdateOfTx next with
-  | Some newRb =>
+  | Some newRb => (* is there a way to make it liberal ?*)
       updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
-  | None  =>
+  | None  => (* regular tx *)
       if isAllowedToEmpty s intermediates next
       then
         let sbal := balanceOfAc s.1 addr in
@@ -179,7 +182,7 @@ Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalance
   end.
 
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
-  forall addr, addr ∈ map sender postStateSuffix ->
+  forall addr,  addr ∈ map sender postStateSuffix ->
    0<= (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix) !!! addr.
 
 Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
@@ -259,6 +262,7 @@ Definition ReserveBalUpdateSuccess (t: TxWithHdr) : TransactionResult. Proof. Ad
 
 Hint Rewrite @balanceOfUpd: syntactic.
 Open Scope N_scope.
+
 Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   : (AugmentedState * TransactionResult) :=
   match reserveBalUpdateOfTx t with
@@ -276,7 +280,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
          if bool_decide (sender t =a)
          then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
          else bool_decide (erb <= balanceOfAc si a) in
-     let allBalCheck := (forallb balCheck allAccounts) in
+     let allBalCheck : bool := (forallb balCheck allAccounts) in (* in impl, only do for updates *)
      if (allBalCheck)
      then ((si, updateHistory s.2 t), r)
      else let r := revertTx s.1 t in ((r.1, updateHistory s.2 t) , snd r)
@@ -333,11 +337,30 @@ Lemma balanceOfRevert s tx ac:
     else balanceOfAc s ac.
 Proof using. Admitted.
 
+
+(* this may need to be strengthened to say that the deelegations would be applied *)
+Lemma revertTxDelegationUpdCoreStronger tx s:
+  let sf :=  (revertTx s tx).1 in
+  (forall ac, addrDelegated sf ac  =
+                (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
+                || bool_decide (ac ∈ (dels tx.1.2))).
+Proof.
+Admitted.
+
+(* this may need to be strengthened to say that the deelegations would be applied *)
 Lemma revertTxDelegationUpdCore tx s:
   let sf :=  (revertTx s tx).1 in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
 Admitted.
+
+Lemma execTxSenderBalCoreEquiv tx s:
+  reserveBalUpdateOfTx tx = None ->
+  let sf :=  (stateAfterTransaction s tx).1 in
+  addrDelegated s (sender tx) = false 
+   ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
+        \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
+Proof. Admitted.
 
 Lemma execTxSenderBalCore tx s:
   reserveBalUpdateOfTx tx = None ->
@@ -1307,6 +1330,7 @@ Proof.
   assumption.
 Qed.
 
+Print Assumptions Z_to_w256.
 
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=

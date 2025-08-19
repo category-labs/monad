@@ -207,14 +207,17 @@ Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
            then Some (txBlockNum tx)
            else lastTxInBlockIndex oldes;
          lastDelUndelInBlockIndex :=
-           if bool_decide (sender tx ∈ addrsDelUndelByTx tx)
+           if bool_decide (addr ∈ addrsDelUndelByTx tx)
            then Some (txBlockNum tx)
            else lastDelUndelInBlockIndex oldes;
          configuredReserveBal:=
-           match reserveBalUpdateOfTx tx with
-           | Some newRb => newRb
-           | None => configuredReserveBal oldes
-           end
+           if bool_decide (sender tx = addr)
+           then 
+             match reserveBalUpdateOfTx tx with
+             | Some newRb => newRb
+             | None => configuredReserveBal oldes
+             end
+           else configuredReserveBal oldes
        |}
     ).
 
@@ -568,28 +571,44 @@ Lemma otherTxLstSenderLkp s addr txlast :
   addr <> sender txlast
   ->
     lastTxInBlockIndex ((((execValidatedTx s txlast).1).2) addr)
-    = lastTxInBlockIndex (s.2 !!! addr).
-Proof. Admitted.
+    = lastTxInBlockIndex (s.2 addr).
+Proof.
+  rewrite execS2.
+  unfold updateHistory.
+  simpl. intros.
+  resdec congruence.
+Qed.  
 
 
 Lemma delgUndelgUpdTx txlast s addr:
   addr ∈  addrsDelUndelByTx txlast
   -> lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2  addr) = Some (txBlockNum txlast).
-Proof using. Admitted.
+Proof using.
+  rewrite execS2.
+  unfold updateHistory.
+  simpl. intros.
+  resdec congruence.
+Qed.
 
 Lemma otherDelUndelLkp s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
     lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 addr)
     = lastDelUndelInBlockIndex (s.2  addr).
-Proof. Admitted.
+Proof.
+  rewrite execS2.
+  unfold updateHistory.
+  simpl. intros.
+  resdec congruence.
+Qed.
 
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
     addrDelegated ((execValidatedTx s txlast).1).1 addr
     = addrDelegated s.1 addr.
-Proof using. Admitted.
+Proof.
+Admitted. (* properly add delegation fields to AccountM and Transaction *)
 
 Hint Rewrite Z.min_l  using lia: syntactic.
 Hint Rewrite Z.min_r  using lia: syntactic.
@@ -603,11 +622,6 @@ Proof using.
   intros. subst. reflexivity.
 Qed.
 
-(* technically, the lemma is unprobable, however, we can prove a Proper lemma about the context
-Lemma gmapEquiv {T} `{c: Countable T} {V} {inhv: Inhabited V} (m1 m2: gmap T V) :
-  (forall a, m1 !!! a = m2 !!! a) -> m1 =m2.
-Proof. Admitted.
- *)
 Hint Rewrite @elem_of_cons: syntactic.
 
 Set Nested Proofs Allowed.
@@ -858,7 +872,15 @@ Lemma configuredReserveBalOfAddrSpec s tx a:
   = if bool_decide (a=sender tx)
     then rbAfterTx s.2 tx
     else configuredReserveBalOfAddr s.2 a.
-Proof. Admitted.
+Proof.
+  unfold configuredReserveBalOfAddr.
+  rewrite execS2.
+  unfold updateHistory.
+  simpl. intros.
+  unfold rbAfterTx.
+  resdec solver.
+  case_bool_decide;  resdec congruence; subst; auto.
+Qed.
 
 Lemma configuredReserveBalOfAddrSame s tx  a:
   sender tx <> a

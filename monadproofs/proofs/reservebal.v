@@ -5,19 +5,9 @@
  *)
 Require Import monad.proofs.bigauto.
 Require Import monad.proofs.evmopsem.
+Require Import monad.proofs.evmmisc.
 Require Import monad.proofs.misc.
 Require Import bluerock.hw_models.utils.
-Ltac resdec tac :=
-  repeat match goal with
-  | [|- context [decide ?P] ] =>
-    resultsIn0or1Goals ltac:(destruct (decide P); try solve [ tac ])
-  | [|- context [bool_decide ?P] ] =>
-    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P); (destruct (decide P); try solve [ tac ]))
-  | [H:context [decide ?P] |- _ ] =>
-    resultsIn0or1Goals ltac:((destruct (decide P); try solve [ tac ]))
-  | [H:context [bool_decide ?P] |- _ ] =>
-    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P) in H; (destruct (decide P); try solve [ tac ]))
-  end.
 (*
 Require Import bluerock.auto.rwdb.
 Require Import bluerock.auto.miscPure.
@@ -32,7 +22,11 @@ Open Scope N_scope.
 
 Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool :=
   match s !! a with
-  | Some ac => bool_decide (lengthZ (delegatedTo ac) = 0)
+  | Some ac => match delegatedTo ac with
+               | [] => false
+               | _ => true
+               end
+                 
   | None => false
   end.
 
@@ -82,7 +76,8 @@ Definition transactions (b: Block) : list TxWithHdr :=
 
 Definition txBlockNum (t: TxWithHdr) : N := number t.1.1.
 
-Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N. Proof. Admitted.
+Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N :=
+  reserveBalUpdate t.1.2.
 
 Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
@@ -190,7 +185,7 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffi
 Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
 
 
-Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
+Definition allAccounts: list evm.address. Proof. Admitted. (* depends on the implementation of evm.address, which comes from the old evmsem library and will change *)
 
 Definition stateAfterTransaction s (t: TxWithHdr) :=
   let '((hdr, newRb), (tx, txindex)) := t in
@@ -207,14 +202,22 @@ Definition isAllowedToEmptyExec
   (state : AugmentedState)  (tx: TxWithHdr) : bool :=
   isAllowedToEmpty state [] tx.
 
-Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitted.
+Print block.block_account.
 
+Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool:=
+  match s !! addr with
+  | None => false
+  | Some ac=> block.block_account_hascode (coreAc ac)
+  end.
+Opaque hasCode.    
+                                         
 
 (* TODO: rename to uodate ExtraState *)
 
+(*
 Definition upsertKeys {T V} `{c: Countable T} (m: gmap T V) (items: list (T*V)) :=
   foldr (uncurry insert) m items.
-
+*)
 
 Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
   (fun addr =>
@@ -481,10 +484,24 @@ Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
 Proof using. destruct p; auto. Qed.
 
 
-Lemma addrDelegatedUnchangedByBalUpd s addr f:
-  addrDelegated (updateBalanceOfAc s addr f) = addrDelegated s.
-Proof. Admitted. (* need to concretely define addrDelegated *)
-
+Lemma addrDelegatedUnchangedByBalUpd s  f addr baladdr:
+  addrDelegated (updateBalanceOfAc s baladdr f) addr = addrDelegated s addr.
+Proof.
+  unfold addrDelegated.
+  simpl.
+  Transparent updateBalanceOfAc.
+  unfold updateBalanceOfAc.
+  symmetry.
+  rewrite lookup_insert_iff;[| exact dummyAc].
+  case_match; try setoid_rewrite H; case_bool_decide; subst; auto;
+    unfold lookup_total, map_lookup_total, default; setoid_rewrite H.
+  {
+    unfold id. destruct a. simpl. reflexivity.
+  }
+  {
+    reflexivity.
+  }
+Qed.
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -1191,7 +1208,7 @@ Fixpoint blockNumsInRange2 (ltx: list TxWithHdr) : Prop :=
   | [] => True
   | htx::ttx =>
       (forall txext, txext ∈ ttx ->  txBlockNum txext ≤ txBlockNum htx + K  /\ txBlockNum htx ≤ txBlockNum txext)
-      /\ blockNumsInRange ttx
+      /\ blockNumsInRange2 ttx
   end.
 
 Lemma bnequiv ltx: blockNumsInRange2 ltx -> blockNumsInRange ltx .

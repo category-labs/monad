@@ -421,7 +421,6 @@ Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Ind
 
 Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
 
-Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N -> N) : evm.GlobalState. Proof. Admitted.
 
 (*
 every tx has a field: list DelegationAuth.  
@@ -476,9 +475,6 @@ Lemma eoaPresV2:
   forall lt, txSendersAreEOA s lt -> txSendersAreEOA sf lt.
 Proof. Admitted.
 *)
-Lemma balanceOfUpd s ac f acp:
-  balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
-Proof. Admitted.
 
 (*
 - other failure modes.

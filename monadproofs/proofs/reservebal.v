@@ -118,13 +118,15 @@ Definition ReserveBals := gmap evm.address Z.
 
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
 
+Definition DefaultReserveBal: N. Proof. Admitted.
+
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr :=
   match s !! addr with
   | Some rb => configuredReserveBal rb
-  | None => ReserveBal (* rename to DefaultReserveBal *)
+  | None => DefaultReserveBal (* rename to DefaultReserveBal *)
   end.
                       
-  Open Scope Z_scope.
+Open Scope Z_scope.
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   let addrs := mapKeys s.1 in
   let sr :=
@@ -235,19 +237,20 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
                  , updateHistory s.2 t), ReserveBalUpdateSuccess t)
   | None =>
     
-  let (si, r) := stateAfterTransaction (fst s) t in
-  let balCheck (a: evm.address) :=
-    let erb:N := ReserveBal `min` (balanceOfAcA s a) in
-    if hasCode si a (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
-    then true
-    else
-      if bool_decide (sender t =a)
-      then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
-      else bool_decide (erb <= balanceOfAc si a) in
-  let allBalCheck := (forallb balCheck allAccounts) in
-  if (allBalCheck)
-  then ((si, updateHistory (snd s) t), r)
-  else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r)
+     let (si, r) := stateAfterTransaction (fst s) t in
+     let balCheck (a: evm.address) :=
+       let ReserveBal := configuredReserveBalOfAddr s.2 a in
+       let erb:N := ReserveBal `min` (balanceOfAcA s a) in
+       if hasCode si a (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
+       then true
+       else
+         if bool_decide (sender t =a)
+         then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
+         else bool_decide (erb <= balanceOfAc si a) in
+     let allBalCheck := (forallb balCheck allAccounts) in
+     if (allBalCheck)
+     then ((si, updateHistory (snd s) t), r)
+     else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r)
   end
 .
 
@@ -289,7 +292,9 @@ Ltac rememberForallb :=
     [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
     |[H: context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
     | [|- context[forallb ?a ?b]] => remember (forallb a b) as fb
-  end.
+    end.
+
+
 (** execution assumptions *)
 
 Lemma balanceOfRevert s tx ac:
@@ -300,22 +305,35 @@ Lemma balanceOfRevert s tx ac:
 Proof using. Admitted.
 
 Lemma execTxSenderBalCore tx s:
+  reserveBalUpdateOfTx tx = None ->
   let sf :=  (stateAfterTransaction s tx).1 in
-  (if addrDelegated s (sender tx)
+  (if addrDelegated s (sender tx) (* sender cannot have code *)
    then True
    else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx)).
 Proof. Admitted.
 
+Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
+  reserveBalUpdateOfTx tx = None ->
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, ac <> sender tx
+              -> if (addrDelegated sf ac || hasCode sf ac)
+                 then True
+                 else balanceOfAc s ac <= balanceOfAc sf ac).
+Proof using. Admitted.
+
+
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
   (forall ac,
+      let ReserveBal := configuredReserveBalOfAddr s.2 ac in
       (ac <> sender tx)
        -> if (hasCode sf.1 ac)
           then True
           else ReserveBal `min` (balanceOfAcA s ac) <= (balanceOfAcA sf ac)).
 Proof using.
   intros.
+  subst ReserveBal.
   unfold execValidatedTx in *.
   remember (stateAfterTransaction s.1 tx) as sir.
   destruct sir as [si r].
@@ -346,6 +364,7 @@ Qed.
 
 
 Lemma execTxSenderBal tx s:
+  let ReserveBal := configuredReserveBalOfAddr s.2 (sender tx) in
   let sf :=  (execValidatedTx s tx).1 in
   hasCode sf.1 (sender tx) = false->
   (if isAllowedToEmpty s [] tx
@@ -353,8 +372,10 @@ Lemma execTxSenderBal tx s:
         \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
   else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx))).
 Proof.
-  intros ? Hsc.
+  intros ? ? Hsc.
+  subst ReserveBal.
   pose proof (execTxSenderBalCore tx s.1) as Hc.
+  simpl in Hc.
   unfold isAllowedToEmpty.
   subst sf.
   revert Hsc.
@@ -365,6 +386,7 @@ Proof.
        resolveDecide congruence.
        case_match_concl; auto; try lia.
   }
+  specialize (Hc ltac:(auto)).
   unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
   intros.
   remember (stateAfterTransaction s.1 tx) as sir.
@@ -461,14 +483,6 @@ Proof.
   }
 Qed.
 
-Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
-  let sf :=  (stateAfterTransaction s tx).1 in
-  (forall ac, ac <> sender tx
-              -> if (addrDelegated sf ac || hasCode sf ac)
-                 then True
-                 else balanceOfAc s ac <= balanceOfAc sf ac).
-Proof using.
-Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -478,7 +492,7 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
                  else balanceOfAcA s ac <= balanceOfAcA sf ac).
 Proof using.
   intros. subst sf.
-  pose proof (execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 ac ltac:(auto)) as Htx.
+  pose proof (fun p => execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 p ac ltac:(auto)) as Htx.
   unfold execValidatedTx.
   rewrite pairEta. simpl in *.
   case_match_concl;  auto;[].
@@ -489,6 +503,7 @@ Proof using.
        case_bool_decide; try lia.
        congruence.
   }
+  specialize (Htx ltac:(auto)).
   case_match_concl; simpl in *; try lia.
   {
     rewrite Heqb in Htx.
@@ -501,11 +516,9 @@ Proof using.
   }
 Qed.
 
-
 Lemma execBalLb ac s tx:
   let sf :=  (execValidatedTx s tx).1 in
   let ReserveBal := configuredReserveBalOfAddr s.2 ac in
-  reserveBalUpdateOfTx tx = None ->
   if (bool_decide (ac=sender tx)) then 
     hasCode sf.1 (sender tx) = false->
     (if isAllowedToEmpty s [] tx
@@ -517,17 +530,15 @@ Lemma execBalLb ac s tx:
     then True
     else (if addrDelegated (fst sf) ac then ReserveBal `min` (balanceOfAcA s ac) else balanceOfAcA s ac)
          <= (balanceOfAcA sf ac).
-Proof using. Admitted.
-(*
+Proof using.
   simpl.
-  case_bool_decide;[apply execTxSenderBal|].
+  case_bool_decide; subst; [apply execTxSenderBal|].
   pose proof (execTxOtherBalanceLB tx s ac ltac:(auto)).
   pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ac ltac:(auto)).
   destruct (hasCode (execValidatedTx s tx).1.1 ac); auto;[].
   autorewrite with syntactic in *.
   case_match; lia.
 Qed.
- *)
 
 Lemma lastTxInBlockIndexUpd s txlast:
   option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)
@@ -687,14 +698,6 @@ Hint Rewrite bool_decide_spec: iff.
 
 Hint Resolve list_subseteq_app_r : listset.
 Hint Resolve list_subseteq_app_l : listset.
-
-(*
-Lemma isAllowedToEmptyEquiv tx s:
-  isAllowedToEmptyExec s tx = isAllowedToEmpty s [] tx.
-Proof using.
-  reflexivity.
-Qed.
- *)
 
 Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list evm.address) :=
   forall s, let sf := (fst (execValidatedTx  s tx)) in
@@ -971,7 +974,7 @@ Proof using.
     case_bool_decide;
       resolveDecide congruence; simpl in *; try lia.
   }
-  pose proof (execBalLb addr s tx ltac:(assumption)) as Hlb.
+  pose proof (execBalLb addr s tx) as Hlb.
   simpl in Hlb. fold sf in Hlb.
   rewrite Hscf in Hlb;[|set_solver].
   rewrite Hscf in Hlb;[|set_solver].
@@ -1228,15 +1231,6 @@ Proof using.
   rewrite initResBal.
   lia.
 Qed.
-
-Lemma fullBlockStep2  (latestState : AugmentedState) (block1: list TxWithHdr) (block2: list TxWithHdr) :
-  consensusAcceptableBlocks latestState [block1;block2]
-  -> match execTxs latestState block1 with
-     | None =>  False
-     | Some (si, tr) =>
-         consensusAcceptableBlocks si [block2]
-     end.
-Proof. Admitted.
 
 
 Section use.

@@ -1003,33 +1003,14 @@ Ltac case_bool_decide_concl:=
 Definition rbLeA (rb1 rb2: ReserveBals) :=
   forall addr, rb1 !!! addr <= rb2 !!! addr.
 
-
-Lemma execL tx extension s:
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
-  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
-  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
-  -> consensusAcceptableTxs s (tx::extension)
-  -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
+Lemma exec1 tx extension s :
+  let sf := (execValidatedTx s tx).1 in 
+  (∀ ac : evm.address, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1.1 ac = false)
+  -> (∀ addr : evm.address,
+    addr ∈ sender tx :: map sender extension
+    → remainingReserveBals s (initialReserveBals s) [] tx !!! addr ≤ initialReserveBals sf !!! addr).
 Proof using.
-  intros Hext Heoac Hsc.
-  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
-  clear Heoac.
-  set (sf:=(execValidatedTx s tx).1).
-  intros Hc.
-  simpl in *.
-  intros ac Hin.
-  specialize (Hc ac).
-  forward_reason.
-  simpl in *.
-  specialize (Hc ltac:(set_solver)).
-  etransitivity.
-  { apply Hc. }
-  pose proof (monoL2 (map sender (tx::extension))) as Hm.
-  unfold rbLe in Hm.
-  apply Hm; auto; simpl in *; [ set_solver | | set_solver].
-  clear Hm.
-  clear Hc. clear Hin. clear ac.
-  hnf.
+  intros ? Hscf.
   intros ? Hin.
   unfold remainingReserveBals.
   case_match.
@@ -1090,6 +1071,40 @@ Proof using.
   case_bool_decide; subst; resolveDecide congruence; try lia.
   case_match; lia.
 Qed.
+  
+
+Lemma execL tx extension s:
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
+  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
+  -> consensusAcceptableTxs s (tx::extension)
+  -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
+Proof using.
+  intros Hext Heoac Hsc.
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
+  set (sf:=(execValidatedTx s tx).1).
+  intros Hc.
+  simpl in *.
+  intros ac Hin.
+  specialize (Hc ac).
+  forward_reason.
+  simpl in *.
+  specialize (Hc ltac:(set_solver)).
+  etransitivity.
+  { apply Hc. }
+  pose proof (monoL2 (map sender (tx::extension))) as Hm.
+  unfold rbLe in Hm.
+  apply Hm; auto; simpl in *; [ set_solver | | set_solver].
+  clear Hm.
+  clear Hc. clear Hin. clear ac.
+  hnf.
+  clear Hsc.
+  clear Hext.
+  apply exec1. assumption.
+Qed.
+
+  
 (* TODO: delegation strictness: why needed:
 in execution checks: treat recently undelegated accounts as delegated
  *)

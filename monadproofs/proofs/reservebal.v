@@ -1330,7 +1330,6 @@ Proof.
   assumption.
 Qed.
 
-Print Assumptions Z_to_w256.
 
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=

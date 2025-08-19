@@ -417,7 +417,29 @@ Proof using.
 Qed.
  *)
 
-Definition dummyAc : AccountM := Build_AccountM block_account_default (Build_Indices 0 0) [] [].
+Definition defaultW160: word160.word160.
+  constructor; auto.
+  exact false. exact [].
+Defined.
+
+Definition progDefault: program :=
+   {| program_content := λ _ : Z, None; program_length := 0 |}.
+
+Definition block_account_default :=
+{|
+  block_account_address := defaultW160;
+  block_account_storage := storage_default;
+  block_account_code := progDefault;
+  block_account_balance := w256_default;
+  block_account_nonce := w256_default;
+  block_account_exists := coqharness.bool_default;
+  block_account_hascode := coqharness.bool_default
+|}.
+
+Definition dummyAc : AccountM
+  := Build_AccountM block_account_default (Build_Indices 0 0) [] [].
+
+Print Assumptions dummyAc. (* closed under global context *)
 
 Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
 

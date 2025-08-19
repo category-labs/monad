@@ -1,18 +1,9 @@
 set(prague_excluded_tests
-    # Despite being for previous revisions, these tests are from the execution
-    # spec tests corpus and therefore include cases filled using Prague network
-    # parameters. We can't run them until enough Prague support is implemented.
-    "BlockchainTests.berlin/*"
-    "BlockchainTests.byzantium/*"
-    "BlockchainTests.cancun/*"
-    "BlockchainTests.constantinople/*"
-    "BlockchainTests.frontier/*"
-    "BlockchainTests.homestead/*"
-    "BlockchainTests.istanbul/*"
-    "BlockchainTests.paris/*"
-    "BlockchainTests.shanghai/*"
-    "BlockchainTests.zkevm/*"
-    
+    # Blobs (EIP-4844)
+    "BlockchainTests.frontier/scenarios/scenarios/scenarios.json"
+    "BlockchainTests.cancun/eip4844_blobs/*"
+    "BlockchainTests.cancun/eip4788_beacon_root/beacon_root_contract/tx_to_beacon_root_contract.json"
+
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip7702_set_code_tx/*"
     "BlockchainTests.prague/eip6110_deposits/*"

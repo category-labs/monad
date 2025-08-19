@@ -30,14 +30,33 @@ Open Scope lens_scope.
 Require Import bluerock.auto.cpp.tactics4.
 Open Scope N_scope.
 
-Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool. Proof. Admitted.
+Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool :=
+  match s !! a with
+  | Some ac => bool_decide (lengthZ (delegatedTo ac) = 0)
+  | None => false
+  end.
 
-Definition TxWithHdr : Type := BlockHeader * (Transaction * N).
+(* new fiends since ~2018 when the evm semantics library we depend on was developed *)
+Record TxExtra :=
+  {
+    dels: list evm.address;
+    undels: list evm.address;
+
+    (* the fields above should ultimately come from EVM semantics and not here. the fields below are monad specific *)
+    reserveBalUpdate: option N (* updates the reserve balance of the sender if Some. in that case, the tx does not do anything else, e.g. smart contract invocation or transer *)
+  }.
+    
+  
+Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction * N (* index in block*)).
 
 (* only gas fees. does not include value transfers *)
-Definition maxTxFee (t: TxWithHdr) : N. Proof. Admitted.
+Definition maxTxFee (t: TxWithHdr) : N :=
+  ((w256_to_N (block.tr_gas_price t.2.1)) * (w256_to_N (block.tr_gas_limit t.2.1))).
 
-Definition DefaultReserveBal: N. Proof. Admitted.
+Opaque maxTxFee.
+   
+
+Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend on it being 100 *)
 
 (* duplicate instance. the upstream one picks 1 *)
 #[global] Instance inhacc: Inhabited N := populate DefaultReserveBal.
@@ -46,23 +65,22 @@ Definition DefaultReserveBal: N. Proof. Admitted.
 Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
 Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
 
-Definition K : N. Proof. Admitted.
+Definition K : N. Proof. exact 2. Qed. (* no proof can depend on it being 100 *)
 
-Definition addrsDelUndelByTx  (tx: TxWithHdr) : list evm.address. Proof. Admitted.
+Definition addrsDelUndelByTx  (tx: TxWithHdr) : list evm.address := (dels tx.1.2 ++undels tx.1.2).
 
 Definition txDelUndelAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
   bool_decide (addr ∈ addrsDelUndelByTx tx).
 
 
-Opaque txDelUndelAddr.
-
-
 Definition txIndexInBlock  (tx: TxWithHdr) : N:= (snd (snd tx)).
 
+(*
 Definition transactions (b: Block) : list TxWithHdr :=
   map (fun p => (header b, p)) (combine (transactions b) (seqN 0 (lengthN (transactions b)))).
+ *)
 
-Definition txBlockNum (t: TxWithHdr) : N := number (fst t).
+Definition txBlockNum (t: TxWithHdr) : N := number t.1.1.
 
 Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N. Proof. Admitted.
 
@@ -175,7 +193,7 @@ Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fs
 Definition allAccounts: list evm.address. Proof. Admitted. (* define it opaquely with Qed: never unfold *)
 
 Definition stateAfterTransaction s (t: TxWithHdr) :=
-  let '(hdr, (tx, txindex)) := t in
+  let '((hdr, newRb), (tx, txindex)) := t in
   let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
   (applyGasRefundsAndRewards hdr si r, r).
 

@@ -21,6 +21,9 @@
 
 project(monad_event)
 
+option(MONAD_EVENT_DISABLE_LIBHUGETLBFS
+  "Disable the `monad_event_open_ring_dir_fd` API function (removes dependency on libhugetlbfs" OFF)
+
 add_library(
   monad_event
   "../core/cleanup.c"
@@ -46,12 +49,13 @@ target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
 
-find_library(libhugetlbfs NAMES hugetlbfs)
-if(libhugetlbfs)
+if(MONAD_EVENT_DISABLE_LIBHUGETLBFS)
+  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_DISABLE_LIBHUGETLBFS)
+else()
+  find_library(libhugetlbfs NAMES hugetlbfs REQUIRED)
   target_sources(monad_event PRIVATE
     "../core/mem/hugetlb_path.c"
     "../core/mem/hugetlb_path.h")
-  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_HAS_LIBHUGETLBFS)
   target_link_libraries(monad_event PRIVATE hugetlbfs)
 endif()
 

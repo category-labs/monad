@@ -32,7 +32,7 @@
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
 
-#if MONAD_EVENT_HAS_LIBHUGETLBFS
+#if !MONAD_EVENT_DISABLE_LIBHUGETLBFS
     #include <category/core/mem/hugetlb_path.h>
 #endif
 
@@ -305,7 +305,14 @@ Done:
 
 // libhugetlbfs is always present for Category Labs, but when this is compiled
 // by third parties using the SDK, it is optional
-#if MONAD_EVENT_HAS_LIBHUGETLBFS
+#if MONAD_EVENT_DISABLE_LIBHUGETLBFS
+
+int monad_event_open_ring_dir_fd(int *, char *, size_t)
+{
+    return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
+}
+
+#else
 
 int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
 {
@@ -326,13 +333,6 @@ int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
             sizeof _g_monad_event_ring_error_buf);
     }
     return rc;
-}
-
-#else
-
-int monad_event_open_ring_dir_fd(int *, char *, size_t)
-{
-    return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
 }
 
 #endif

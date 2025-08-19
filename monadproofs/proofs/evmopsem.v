@@ -603,3 +603,45 @@ Proof using.
   
 Qed.
 *)
+
+
+
+From stdpp Require Import fin_maps.
+
+(* TODO: move to its own file or misc.v *)
+Section gmap_imap.
+  Context `{Countable K}.
+  Implicit Types A B : Type.
+
+  (* Total: (K → A → B) → gmap K A → gmap K B *)
+  Definition gmap_map {A B} (f : K → A → B) (m : gmap K A) : gmap K B :=
+    map_fold (λ k x acc, <[k := f k x]> acc) ∅ m.
+
+  (* Partial: (K → A → option B) → gmap K A → gmap K B *)
+  Definition gmap_omap {A B} (f : K → A → option B) (m : gmap K A) : gmap K B :=
+    map_fold (λ k x acc, match f k x with
+                         | Some y => <[k := y]> acc
+                         | None => acc
+                         end) ∅ m.
+
+  (** Key lookup characterizations (the main reasoning principles) *)
+  Lemma lookup_gmap_map {A B} (f : K → A → B) (m : gmap K A) i :
+    gmap_map f m !! i = (m !! i) ≫= (λ x, Some (f i x)).
+  Proof.
+    (* Same proof pattern as in std++ (see curry/uncurry lemmas):
+       fold over m and reason with [lookup_insert]/[lookup_insert_ne]. *)
+    revert i.
+    revert m.
+    apply (map_fold_weak_ind (λ mr m, forall i, mr !! i = m !! i ≫= (λ x, Some (f i x)))).
+    {
+      intros. repeat rewrite lookup_empty. reflexivity.
+    }
+    intros k x m' mr Hkx IH i.
+    destruct (decide (i = k)) as [->|Hi]; simpl.
+    - simpl. repeat rewrite lookup_insert. reflexivity.
+    - simpl. repeat rewrite lookup_insert_ne by done.
+      simpl.
+      rewrite <- IH.
+      reflexivity.
+  Qed.
+End gmap_imap.

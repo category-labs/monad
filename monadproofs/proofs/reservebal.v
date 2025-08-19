@@ -3,9 +3,21 @@
 - what consensus assumes execution guarantees
 - how those guarantees ensure execution will never run into a chase when an account has insufficient balance to pay gas fees
  *)
+Require Import monad.proofs.bigauto.
 Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.misc.
 Require Import bluerock.hw_models.utils.
+Ltac resdec tac :=
+  repeat match goal with
+  | [|- context [decide ?P] ] =>
+    resultsIn0or1Goals ltac:(destruct (decide P); try solve [ tac ])
+  | [|- context [bool_decide ?P] ] =>
+    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P); (destruct (decide P); try solve [ tac ]))
+  | [H:context [decide ?P] |- _ ] =>
+    resultsIn0or1Goals ltac:((destruct (decide P); try solve [ tac ]))
+  | [H:context [bool_decide ?P] |- _ ] =>
+    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P) in H; (destruct (decide P); try solve [ tac ]))
+  end.
 (*
 Require Import bluerock.auto.rwdb.
 Require Import bluerock.auto.miscPure.
@@ -68,15 +80,15 @@ Record ExtraAcState :=
 #[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None 0).
   
 
-Definition ExtraAcStates := (gmap evm.address ExtraAcState).
+Definition ExtraAcStates := (evm.address -> ExtraAcState).
 
 (*
 Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r. *)
 Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)  (tx: TxWithHdr) : bool :=
   let startIndex :=  txBlockNum tx -K  in
-  match option_bind _ _ proj (state !! (sender tx))  with
-  | Some lastSameSenderTx =>
-      bool_decide (startIndex <= lastSameSenderTx /\  lastSameSenderTx <= txBlockNum tx)
+  match proj (state (sender tx))  with
+  | Some index =>
+      bool_decide (startIndex <= index <= txBlockNum tx)
   | None => false
   end.
 
@@ -100,43 +112,28 @@ Definition isAllowedToEmpty
   (negb delegated) && (negb existsSameSenderTxInWindow).
 
 
+(* TODO: make it a notation and get rid of calls to updateKeyLkp3 *)
+Definition updateKey  {T} `{c: EqDecision T} {V}  (oldmap: T -> V) (updKey: T) (f: V -> V) : T -> V :=
+  fun k => if (bool_decide (k=updKey)) then f (oldmap updKey) else oldmap k.
 
-Definition updateKey  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a: T) (f: V -> V) : gmap T V :=
-  <[ a :=  f (m !!! a) ]> m.
-
-Lemma updateKeyLkp3  {T} `{c: Countable T} {V} {inhv: Inhabited V} (m: gmap T V) (a b: T) (f: V -> V) :
-  (updateKey m a f) !!! b = if (bool_decide (a=b)) then (f (m !!! a)) else m !!! b.
+Lemma updateKeyLkp3  {T} `{c: EqDecision T} {V} (m: T -> V) (a b: T) (f: V -> V) :
+  (updateKey m a f) !!! b = if (bool_decide (b=a)) then (f (m !!! a)) else m !!! b.
 Proof using.
-  unfold lookup_total.
-  unfold map_lookup_total.
-  unfold default.
-  unfold updateKey.
-  autorewrite with syntactic;[| exact inhabitant].
-  case_bool_decide; auto.
+  reflexivity.
 Qed.
 
 
-Definition ReserveBals := gmap evm.address Z.
+Definition ReserveBals := evm.address -> Z.
 
+(*
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
+*)
 
-
-Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr :=
-  match s !! addr with
-  | Some rb => configuredReserveBal rb
-  | None => DefaultReserveBal (* rename to DefaultReserveBal *)
-  end.
+Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
                       
 Open Scope Z_scope.
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
-  let addrs := mapKeys s.1 in
-  let sr :=
-    map
-      (λ addr,
-         (addr, (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr)))
-      addrs
-    in
-    list_to_map sr.
+  fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
   
 Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
   : ReserveBals :=
@@ -200,19 +197,26 @@ Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool. Proof. Admitt
 Definition upsertKeys {T V} `{c: Countable T} (m: gmap T V) (items: list (T*V)) :=
   foldr (uncurry insert) m items.
 
-Definition updateHistory (a: ExtraAcStates) (newTx: TxWithHdr) : ExtraAcStates :=
-  let si:=
-  <[sender newTx :=
-      {| lastDelUndelInBlockIndex := option_bind _ _ lastDelUndelInBlockIndex (a !! sender newTx);
-          lastTxInBlockIndex := Some (txBlockNum newTx);
-          configuredReserveBal:=
-          match reserveBalUpdateOfTx newTx with
-          | Some newRb => newRb
-          | None => configuredReserveBalOfAddr a (sender newTx)
-          end
-          |}
-      ]> a in
-  upsertKeys si (map (fun a => (a, (si !!! a) &: _lastTxInBlockIndex.= Some (txBlockNum newTx))) (addrsDelUndelByTx newTx)).
+
+Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
+  (fun addr =>
+     let oldes := a addr in
+       {|
+         lastTxInBlockIndex :=
+           if bool_decide (sender tx = addr)
+           then Some (txBlockNum tx)
+           else lastTxInBlockIndex oldes;
+         lastDelUndelInBlockIndex :=
+           if bool_decide (sender tx ∈ addrsDelUndelByTx tx)
+           then Some (txBlockNum tx)
+           else lastDelUndelInBlockIndex oldes;
+         configuredReserveBal:=
+           match reserveBalUpdateOfTx tx with
+           | Some newRb => newRb
+           | None => configuredReserveBal oldes
+           end
+       |}
+    ).
 
 
 Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
@@ -250,8 +254,8 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck := (forallb balCheck allAccounts) in
      if (allBalCheck)
-     then ((si, updateHistory (snd s) t), r)
-     else let r := revertTx s.1 t in ((r.1, updateHistory (snd s) t) , snd r)
+     then ((si, updateHistory s.2 t), r)
+     else let r := revertTx s.1 t in ((r.1, updateHistory s.2 t) , snd r)
   end
 .
 
@@ -542,30 +546,42 @@ Proof using.
   case_match; lia.
 Qed.
 
+Lemma execS2 s txlast:
+  ((execValidatedTx s txlast).1).2 = updateHistory s.2 txlast.
+Proof using.
+  unfold execValidatedTx.
+  repeat (case_match; try reflexivity).
+Qed.
+
+
 Lemma lastTxInBlockIndexUpd s txlast:
-  option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)
+  lastTxInBlockIndex ((((execValidatedTx s txlast).1).2) (sender txlast))
   = Some (txBlockNum txlast).
 Proof using.
-Admitted.
+  rewrite execS2.
+  unfold updateHistory.
+  simpl.
+  resdec congruence.
+Qed.
 
 Lemma otherTxLstSenderLkp s addr txlast :
   addr <> sender txlast
   ->
-    option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! addr)
-    = option_bind _ _ lastTxInBlockIndex (s.2 !! addr).
+    lastTxInBlockIndex ((((execValidatedTx s txlast).1).2) addr)
+    = lastTxInBlockIndex (s.2 !!! addr).
 Proof. Admitted.
 
 
 Lemma delgUndelgUpdTx txlast s addr:
   addr ∈  addrsDelUndelByTx txlast
-  -> option_bind _ _ lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 !! addr) = Some (txBlockNum txlast).
+  -> lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2  addr) = Some (txBlockNum txlast).
 Proof using. Admitted.
 
 Lemma otherDelUndelLkp s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
-    option_bind _ _ lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 !! addr)
-    = option_bind _ _ lastDelUndelInBlockIndex (s.2 !! addr).
+    lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 addr)
+    = lastDelUndelInBlockIndex (s.2  addr).
 Proof. Admitted.
 
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :

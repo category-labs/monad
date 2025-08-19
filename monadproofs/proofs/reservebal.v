@@ -25,8 +25,10 @@ Definition TxWithHdr : Type := BlockHeader * (Transaction * N).
 (* only gas fees. does not include value transfers *)
 Definition maxTxFee (t: TxWithHdr) : N. Proof. Admitted.
 
+Definition DefaultReserveBal: N. Proof. Admitted.
+
 (* duplicate instance. the upstream one picks 1 *)
-#[global] Instance inhacc: Inhabited N := populate 0.
+#[global] Instance inhacc: Inhabited N := populate DefaultReserveBal.
 
 
 Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
@@ -118,7 +120,6 @@ Definition ReserveBals := gmap evm.address Z.
 
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
 
-Definition DefaultReserveBal: N. Proof. Admitted.
 
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr :=
   match s !! addr with
@@ -295,7 +296,7 @@ Ltac rememberForallb :=
     end.
 
 
-(** execution assumptions *)
+(** *core execution assumptions *)
 
 Lemma balanceOfRevert s tx ac:
   balanceOfAc (revertTx s tx).1 ac =
@@ -303,6 +304,12 @@ Lemma balanceOfRevert s tx ac:
     then balanceOfAc s ac - maxTxFee tx
     else balanceOfAc s ac.
 Proof using. Admitted.
+
+Lemma revertTxDelegationUpdCore tx s:
+  let sf :=  (revertTx s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof.
+Admitted.
 
 Lemma execTxSenderBalCore tx s:
   reserveBalUpdateOfTx tx = None ->
@@ -322,6 +329,12 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using. Admitted.
 
+Lemma execTxDelegationUpdCore tx s:
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof. Admitted.
+
+(* end core exec assumptions *)
 
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -437,26 +450,15 @@ Proof.
 Qed.
 
   
-Lemma execTxDelegationUpdCore tx s:
-  let sf :=  (stateAfterTransaction s tx).1 in
-  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
-Proof.
-Admitted.
-
-Lemma revertTxDelegationUpdCore tx s:
-  let sf :=  (revertTx s tx).1 in
-  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
-Proof.
-Admitted.
 
 Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
   (let '(a,b) := p in f a b) = f (fst p) (snd p).
-Proof using. Admitted.
+Proof using. destruct p; auto. Qed.
+
 
 Lemma addrDelegatedUnchangedByBalUpd s addr f:
   addrDelegated (updateBalanceOfAc s addr f) = addrDelegated s.
-Proof. Admitted.
-
+Proof. Admitted. (* need to concretely define addrDelegated *)
 
 
 Lemma execTxDelegationUpd tx s:
@@ -543,7 +545,8 @@ Qed.
 Lemma lastTxInBlockIndexUpd s txlast:
   option_bind _ _ lastTxInBlockIndex (((execValidatedTx s txlast).1).2 !! sender txlast)
   = Some (txBlockNum txlast).
-Proof using. Admitted.
+Proof using.
+Admitted.
 
 Lemma otherTxLstSenderLkp s addr txlast :
   addr <> sender txlast

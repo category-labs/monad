@@ -3799,6 +3799,171 @@ TEST_F(Stake, get_valset_empty)
         contract.precompile_get_consensus_valset(input, {}, {}).has_error());
 }
 
+TEST_F(Stake, empty_get_delegators_for_validator_getter)
+{
+    auto const [done, _, delegators] = contract.get_delegators_for_validator(
+        u64_be{1}, Address{}, std::numeric_limits<uint32_t>::max());
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(delegators.empty());
+}
+
+TEST_F(Stake, empty_get_validators_for_delegator_getter)
+{
+    auto const [done, _, validators] = contract.get_validators_for_delegator(
+        Address{0x1337}, u64_be{}, std::numeric_limits<uint32_t>::max());
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(validators.empty());
+}
+
+TEST_F(Stake, get_delegators_for_validator)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    std::set<Address> delegators;
+    delegators.emplace(auth_address);
+    for (uint32_t i = 0; i < 999; ++i) {
+        // delegate twice to make sure dups are handled correctly
+        auto const del = Address{i + 1};
+        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+        delegators.emplace(del);
+    }
+
+    {
+        auto const [done, _, contract_delegators] =
+            contract.get_delegators_for_validator(
+                val.id, Address{}, std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_EQ(delegators.size(), contract_delegators.size());
+        for (auto const &del : contract_delegators) {
+            EXPECT_TRUE(delegators.contains(del));
+        }
+    }
+
+    // activate the stake so it can be undelegated
+    skip_to_next_epoch();
+
+    // undelegate a couple
+    ASSERT_FALSE(
+        undelegate(val.id, Address{20}, 1, 200_u256 * MON).has_error());
+    delegators.erase(Address{20});
+    ASSERT_FALSE(
+        undelegate(val.id, Address{101}, 1, 200_u256 * MON).has_error());
+    delegators.erase(Address{101});
+    ASSERT_FALSE(
+        undelegate(val.id, Address{500}, 1, 200_u256 * MON).has_error());
+    delegators.erase(Address{500});
+
+    {
+        auto const [done, _, contract_delegators] =
+            contract.get_delegators_for_validator(
+                val.id, Address{}, std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_EQ(delegators.size(), contract_delegators.size());
+        for (auto const &del : contract_delegators) {
+            EXPECT_TRUE(delegators.contains(del));
+        }
+    }
+}
+
+TEST_F(Stake, get_validators_for_delegator)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    std::unordered_set<uint64_t> validators;
+    for (uint32_t i = 0; i < 999; ++i) {
+        auto res = add_validator(
+            auth_address,
+            ACTIVE_VALIDATOR_STAKE,
+            0 /* commission */,
+            bytes32_t{i + 1000} /* secret */);
+        ASSERT_FALSE(res.has_error());
+        validators.emplace(res.value().id.native());
+    }
+
+    auto const del = 0x1337_address;
+    for (auto const val_id : validators) {
+        // delegate twice with every validator
+        ASSERT_FALSE(delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
+    }
+
+    {
+        auto const [done, _, contract_validators] =
+            contract.get_validators_for_delegator(
+                del, u64_be{}, std::numeric_limits<uint32_t>::max());
+        EXPECT_EQ(validators.size(), contract_validators.size());
+        for (u64_be const val_id : contract_validators) {
+            EXPECT_TRUE(validators.contains(val_id.native()));
+        }
+    }
+
+    // activate the stake so it can be undelegated
+    skip_to_next_epoch();
+
+    // undelegate a couple
+    ASSERT_FALSE(undelegate(u64_be{20}, del, 1, 200_u256 * MON).has_error());
+    validators.erase(20);
+    ASSERT_FALSE(undelegate(u64_be{101}, del, 1, 200_u256 * MON).has_error());
+    validators.erase(101);
+    ASSERT_FALSE(undelegate(u64_be{500}, del, 1, 200_u256 * MON).has_error());
+    validators.erase(500);
+
+    {
+        auto const [done, _, contract_validators] =
+            contract.get_validators_for_delegator(
+                del, u64_be{}, std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_EQ(validators.size(), contract_validators.size());
+        for (u64_be const val_id : contract_validators) {
+            EXPECT_TRUE(validators.contains(val_id.native()));
+        }
+    }
+}
+
+TEST_F(Stake, get_delegators_for_validator_paginated_reads)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    for (uint32_t i = 0; i < 999; ++i) {
+        // delegate twice to make sure dups are handled correctly
+        auto const del = Address{i + 1};
+        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+    }
+
+    // read all the delegators
+    auto const [done1, _, delegators_one_read] =
+        contract.get_delegators_for_validator(
+            val.id, Address{}, std::numeric_limits<uint32_t>::max());
+    EXPECT_TRUE(done1);
+
+    // read all delegators using paginated reads
+    bool done2 = false;
+    Address next_delegator{};
+    std::vector<Address> delegators_paginated;
+    do {
+        auto paginated_res = contract.get_delegators_for_validator(
+            val.id, next_delegator, PAGINATED_RESULTS_SIZE);
+        std::vector<Address> delegators_page;
+        std::tie(done2, next_delegator, delegators_page) =
+            std::move(paginated_res);
+        delegators_paginated.insert_range(
+            delegators_paginated.end(), delegators_page);
+    }
+    while (!done2);
+
+    // The two vectors should be equal.  This ensures that RPC style reads match
+    // what we expect using internal calls.
+    EXPECT_EQ(delegators_paginated.size(), delegators_one_read.size());
+    EXPECT_TRUE(delegators_paginated == delegators_one_read);
+}
+
 ////////////////////
 // Solvency Tests //
 ////////////////////

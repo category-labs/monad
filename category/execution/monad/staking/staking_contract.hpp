@@ -349,6 +349,41 @@ public:
         }
     } vars;
 
+    // Both of the getters below are mappings with potentially unbounded length.
+    // In particular, get delegators for validator could have hundreds of
+    // thousands of results when querying against a very popular validator.
+    // Since precompiles don't have a great way of quantifying gas usage, these
+    // functions open up a possible DoS vector. Namely, execution memory usage
+    // could be unbounded. To prevent this, both functions will, at most, read
+    // `PAGINATED_RESULTS_SIZE` in a single call. The return types in this call
+    // are defined by these pagination limits.
+    //
+    // The two lists are of Type LinkedList[T] where T = Address | u64_be.  The
+    // return type is defined by the pagination:
+    // return_type = [bool (done), T (next_in_list), List[T] (results)]
+    //
+    // When done is set to false, the user may query RPC again starting at
+    // `next_in_list`.
+
+    // Gets all the delegators mapped to a validator by following a linked list
+    // of addresses in the `Delegator` struct.
+    //
+    // To start querying from the first delegator, pass in the empty Address (20
+    // zero bytes). After that, the `next_in_list` in the output should be used
+    // in followup queries until `done` is true.
+    std::tuple<bool, Address, std::vector<Address>>
+    get_delegators_for_validator(
+        u64_be val_id, Address const &start_delegator, uint32_t pagination);
+
+    // Gets all the validators that `delegator` is delegated with by following a
+    // linked list of validator Ids in the `Delegator` struct.
+    //
+    // To start querying from the first validator, pass in the empty validator
+    // ID (8 zero bytes). After that, the `next_in_list` in the output should be
+    // used in followup queries until `done` is true.
+    std::tuple<bool, u64_be, std::vector<u64_be>> get_validators_for_delegator(
+        Address const &delegator, u64_be start_val_id, uint32_t pagination);
+
 private:
     /////////////
     // Events //
@@ -457,6 +492,15 @@ private:
     Result<byte_string>
     get_valset(byte_string_view, StorageArray<u64_be> const &);
 
+    // Low level helpers for validator and delegator lists
+    template <typename Key, typename Ptr>
+    void linked_list_insert(Key const &, Ptr const &);
+    template <typename Key, typename Ptr>
+    void linked_list_remove(Key const &, Ptr const &);
+    template <typename Key, typename Ptr>
+    std::tuple<bool, Ptr, std::vector<Ptr>>
+    linked_list_traverse(Key const &, Ptr const &, uint32_t limit);
+
 public:
     using PrecompileFunc = Result<byte_string> (StakingContract::*)(
         byte_string_view, evmc_address const &, evmc_bytes32 const &);
@@ -478,6 +522,10 @@ public:
     Result<byte_string> precompile_get_snapshot_valset(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_execution_valset(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_validators_for_delegator(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_delegators_for_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     Result<byte_string> precompile_fallback(

@@ -368,7 +368,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     using StakingPrecompile = std::pair<PrecompileFunc, uint64_t>;
-    constexpr std::array<StakingPrecompile, 23> dispatch_table{
+    constexpr std::array<StakingPrecompile, 25> dispatch_table{
         make_pair(&StakingContract::precompile_fallback, 0),
         make_pair(&StakingContract::precompile_add_validator, 0 /* fixme */),
         make_pair(&StakingContract::precompile_delegate, 0 /* fixme */),
@@ -398,6 +398,12 @@ StakingContract::precompile_dispatch(byte_string_view &input)
             &StakingContract::precompile_get_snapshot_valset, 0 /* fixme */),
         make_pair(
             &StakingContract::precompile_get_execution_valset, 0 /* fixme */),
+        make_pair(
+            &StakingContract::precompile_get_validators_for_delegator,
+            0 /* fixme */),
+        make_pair(
+            &StakingContract::precompile_get_delegators_for_validator,
+            0 /* fixme */),
     };
 
     if (MONAD_UNLIKELY(signature >= dispatch_table.size())) {
@@ -405,6 +411,22 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     }
 
     return dispatch_table[signature];
+}
+
+std::tuple<bool, Address, std::vector<Address>>
+StakingContract::get_delegators_for_validator(
+    u64_be val_id, Address const &start_delegator, uint32_t const limit)
+{
+    return linked_list_traverse<u64_be, Address>(
+        val_id, start_delegator, limit);
+}
+
+std::tuple<bool, u64_be, std::vector<u64_be>>
+StakingContract::get_validators_for_delegator(
+    Address const &delegator, u64_be const start_val_id, uint32_t const limit)
+{
+    return linked_list_traverse<Address, u64_be>(
+        delegator, start_val_id, limit);
 }
 
 Result<byte_string> StakingContract::precompile_get_validator(
@@ -464,7 +486,6 @@ Result<byte_string> StakingContract::precompile_get_delegator(
 Result<byte_string> StakingContract::get_valset(
     byte_string_view const input, StorageArray<u64_be> const &valset)
 {
-    constexpr uint64_t PAGINATED_RESULTS_SIZE{100};
     constexpr size_t MESSAGE_SIZE = sizeof(u32_be) /* start index */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return StakingError::InvalidInput;
@@ -506,6 +527,59 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
 {
     auto const valset = vars.valset_execution;
     return get_valset(input, valset);
+}
+
+Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    constexpr size_t MESSAGE_SIZE = sizeof(Address) /* delegator */ +
+                                    sizeof(u64_be) /* start val id to read*/;
+
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+        return StakingError::InvalidInput;
+    }
+
+    byte_string_view reader = input;
+    auto const delegator =
+        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
+    auto const start_val_id =
+        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
+
+    auto const [done, next_val_id, vals_page] = get_validators_for_delegator(
+        delegator, start_val_id, PAGINATED_RESULTS_SIZE);
+
+    AbiEncoder encoder;
+    encoder.add_bool(done);
+    encoder.add_uint(next_val_id);
+    encoder.add_uint_array(vals_page);
+    return encoder.encode_final();
+}
+
+Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
+    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+{
+    constexpr size_t MESSAGE_SIZE =
+        sizeof(u64_be) /* validator id */ +
+        sizeof(Address) /* start delegator address to read */;
+
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+        return StakingError::InvalidInput;
+    }
+
+    byte_string_view reader = input;
+    auto const val_id =
+        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
+    auto const start_del_addr =
+        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
+
+    auto const [done, next_del_addr, dels_page] = get_delegators_for_validator(
+        val_id, start_del_addr, PAGINATED_RESULTS_SIZE);
+
+    AbiEncoder encoder;
+    encoder.add_bool(done);
+    encoder.add_address(next_del_addr);
+    encoder.add_address_array(dels_page);
+    return encoder.encode_final();
 }
 
 Result<byte_string> StakingContract::precompile_get_withdrawal_request(
@@ -725,6 +799,9 @@ Result<void> StakingContract::delegate(
         }
     }
 
+    linked_list_insert(val_id, address); // validator => List[Delegator]
+    linked_list_insert(address, val_id); // delegator => List[Validator]
+
     return outcome::success();
 }
 
@@ -825,6 +902,11 @@ Result<byte_string> StakingContract::precompile_undelegate(
         // consensus view of stake is zero. should this user re-delegate, he
         // will receive a new accumulator. this frees up state.
         del.accumulated_reward_per_token().clear();
+    }
+
+    if (del.get_next_epoch_stake() == 0) {
+        linked_list_remove(val_id, static_cast<Address>(msg_sender));
+        linked_list_remove(static_cast<Address>(msg_sender), val_id);
     }
 
     return byte_string{};
@@ -1135,6 +1217,215 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
     vars.in_epoch_delay_period.store(true);
 
     return outcome::success();
+}
+
+// This is a trait for an intrusive linked list in state.
+// The delegators are laid out in state as follows:
+//      mapping(uint64 /* val */ ) => mapping(Address /* del */ ) => DelInfo
+//
+// The linked list is designed to support two types of queries:
+//   1. validator => List[Delegators]
+//   2. delegator => List[Validators]
+//
+// These are created as doubly linked lists starting at a sentinel address.
+// Suppose a delegator at address 0xbeef is delegated with validators 0x1, 0x5,
+// and 0xA. For the purposes of this example, let's assume validator ids are one
+// byte, meaning the sentinel is 0xff. The list would look like this in state.
+// Note that the delegator key is constant.
+//
+// -------------     -------------    --------------    -------------
+// |0xbeef,0xff|  -> |0xbeef,0x01| -> |0xbeef, 0x05| -> |0xbeef,0x0A|
+// -------------     -------------    --------------    -------------
+//
+// The delegator list for a specific validator looks the same
+// except the validator is constant.
+template <typename Key, typename Ptr>
+struct LinkedListTrait;
+
+// Trait for all validators given a delegator
+template <>
+struct LinkedListTrait<Address, u64_be>
+{
+    using Key = Address;
+    using Ptr = u64_be;
+
+    static constexpr Ptr sentinel()
+    {
+        return Ptr{0xFFFFFFFFFFFFFFFFull};
+    }
+
+    static constexpr Ptr empty()
+    {
+        return Ptr{};
+    }
+
+    static Ptr const &prev(auto const &n)
+    {
+        return n.iprev;
+    }
+
+    static Ptr &prev(auto &n)
+    {
+        return n.iprev;
+    }
+
+    static Ptr const &next(auto const &n)
+    {
+        return n.inext;
+    }
+
+    static Ptr &next(auto &n)
+    {
+        return n.inext;
+    }
+
+    static auto load_node(StakingContract &c, Key const &k, Ptr const &p)
+    {
+        return c.vars.delegator(p, k).list_node().load(); // storage(id, addr)
+    }
+
+    static void
+    store_node(StakingContract &c, Key const &k, Ptr const &p, auto const &n)
+    {
+        c.vars.delegator(p, k).list_node().store(n);
+    }
+};
+
+// Trait for all delegators given a validator
+template <>
+struct LinkedListTrait<u64_be, Address>
+{
+    using Key = u64_be; // val id
+    using Ptr = Address; // delegator address
+
+    static constexpr Ptr sentinel()
+    {
+        return Ptr{{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
+    }
+
+    static constexpr Ptr empty()
+    {
+        return Ptr{};
+    }
+
+    static Ptr const &prev(auto const &n)
+    {
+        return n.aprev;
+    }
+
+    static Ptr &prev(auto &n)
+    {
+        return n.aprev;
+    }
+
+    static Ptr const &next(auto const &n)
+    {
+        return n.anext;
+    }
+
+    static Ptr &next(auto &n)
+    {
+        return n.anext;
+    }
+
+    static auto load_node(StakingContract &c, Key const &k, Ptr const &p)
+    {
+        return c.vars.delegator(k, p).list_node().load(); // storage(id, addr)
+    }
+
+    static void
+    store_node(StakingContract &c, Key const &k, Ptr const &p, auto const &n)
+    {
+        c.vars.delegator(k, p).list_node().store(n);
+    }
+};
+
+template <typename Key, typename Ptr>
+void StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
+{
+    using Trait = LinkedListTrait<Key, Ptr>;
+
+    auto this_node = Trait::load_node(*this, key, this_ptr);
+    if (Trait::prev(this_node) != Trait::empty()) {
+        // all nodes but sentinel have a prev pointer.
+        // allows O(1) existence check.
+        return;
+    }
+
+    auto sentinel_node = Trait::load_node(*this, key, Trait::sentinel());
+    Ptr const next_ptr = Trait::next(sentinel_node); // may be empty
+
+    if (next_ptr != Trait::empty()) {
+        auto next = Trait::load_node(*this, key, next_ptr);
+        Trait::prev(next) = this_ptr;
+        Trait::store_node(*this, key, next_ptr, next);
+    }
+    Trait::prev(this_node) = Trait::sentinel();
+    Trait::next(this_node) = next_ptr;
+    Trait::next(sentinel_node) = this_ptr;
+
+    Trait::store_node(*this, key, this_ptr, this_node);
+    Trait::store_node(*this, key, Trait::sentinel(), sentinel_node);
+}
+
+template <typename Key, typename Ptr>
+void StakingContract::linked_list_remove(Key const &key, Ptr const &this_ptr)
+{
+    using Trait = LinkedListTrait<Key, Ptr>;
+
+    auto this_node = Trait::load_node(*this, key, this_ptr);
+    if (Trait::prev(this_node) == Trait::empty()) {
+        // not in the list
+        return;
+    }
+
+    Ptr const prev_ptr = Trait::prev(this_node); // may be SENTINEL
+    Ptr const next_ptr = Trait::next(this_node); // may be empty
+
+    auto prev_node = Trait::load_node(*this, key, prev_ptr);
+    Trait::next(prev_node) = next_ptr;
+    Trait::store_node(*this, key, prev_ptr, prev_node);
+
+    if (next_ptr != Trait::empty()) {
+        auto next_node = Trait::load_node(*this, key, next_ptr);
+        Trait::prev(next_node) = prev_ptr;
+        Trait::store_node(*this, key, next_ptr, next_node);
+    }
+
+    // remove from list
+    Trait::prev(this_node) = Trait::empty();
+    Trait::next(this_node) = Trait::empty();
+    Trait::store_node(*this, key, this_ptr, this_node);
+}
+
+template <typename Key, typename Ptr>
+std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
+    Key const &key, Ptr const &start_ptr, uint32_t const limit)
+{
+    using Trait = LinkedListTrait<Key, Ptr>;
+
+    Ptr ptr;
+    if (start_ptr == Trait::empty()) {
+        auto const sentinel_node =
+            Trait::load_node(*this, key, Trait::sentinel());
+        ptr = Trait::next(sentinel_node);
+    }
+    else {
+        ptr = start_ptr;
+    }
+
+    std::vector<Ptr> results;
+    uint32_t nodes_read = 0;
+    while (ptr != Trait::empty() && nodes_read < limit) {
+        auto const node = Trait::load_node(*this, key, ptr);
+        results.push_back(std::move(ptr));
+        ptr = Trait::next(node);
+        ++nodes_read;
+    }
+    bool const done = (ptr == Trait::empty());
+    return {done, ptr, results};
 }
 
 MONAD_STAKING_NAMESPACE_END

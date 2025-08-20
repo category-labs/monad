@@ -41,6 +41,10 @@ inline constexpr Address STAKING_CA{0x1000};
 inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};
 inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
 
+// Results for get_valset, get_delegators_for_validator, and
+// get_validators_for_delegator are paginated
+inline constexpr uint64_t PAGINATED_RESULTS_SIZE{500};
+
 enum
 {
     ValidatorFlagsOk = 0,

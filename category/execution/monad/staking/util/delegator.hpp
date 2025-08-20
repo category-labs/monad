@@ -51,6 +51,21 @@ public:
         u64_be next_delta_epoch;
     };
 
+    static_assert(StorageVariable<Epochs>::N == 1);
+
+    struct ListNode
+    {
+        // next and prev pointers in validator list
+        u64_be inext;
+        u64_be iprev;
+
+        // next and prev pointers in delegator list
+        Address anext;
+        Address aprev;
+    };
+
+    static_assert(StorageVariable<ListNode>::N == 2);
+
     ////////////
     // Layout //
     ////////////
@@ -60,6 +75,7 @@ public:
     using DeltaStake_t = u256_be;
     using NextDeltaStake_t = u256_be;
     using Epochs_t = Epochs;
+    using ListNode_t = ListNode;
 
     struct Offsets
     {
@@ -74,9 +90,9 @@ public:
             delta_stake + StorageVariable<DeltaStake_t>::N;
         static constexpr size_t epochs =
             next_delta_stake + StorageVariable<NextDeltaStake_t>::N;
+        static constexpr size_t list_node =
+            epochs + StorageVariable<Epochs_t>::N;
     };
-
-    static_assert(StorageVariable<Epochs>::N == 1);
 
     Delegator(State &state, Address const &address, bytes32_t const key);
 
@@ -120,6 +136,14 @@ public:
     StorageVariable<Epochs_t> epochs() noexcept
     {
         return {state_, address_, key_ + Offsets::epochs};
+    }
+
+    // list nodes that point to two things:
+    //  1. next validator ID
+    //  2. next delegator address
+    StorageVariable<ListNode> list_node() noexcept
+    {
+        return {state_, address_, key_ + Offsets::list_node};
     }
 
     /////////////

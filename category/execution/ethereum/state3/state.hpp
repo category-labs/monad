@@ -290,20 +290,31 @@ public:
         account.value().nonce = nonce;
     }
 
-    void add_to_balance(Address const &address, uint256_t const &delta)
+    [[nodiscard]] bool
+    add_to_balance_safe(Address const &address, uint256_t const &delta)
     {
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
+
         if (MONAD_UNLIKELY(!account.has_value())) {
             account = Account{.incarnation = incarnation_};
         }
 
-        MONAD_ASSERT(
-            std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance);
+        // Check for overflow BEFORE addition
+        if (delta >
+            std::numeric_limits<uint256_t>::max() - account.value().balance) {
+            return true; // Return error instead of crashing
+        }
 
         account.value().balance += delta;
         account_state.touch();
+        return false;
+    }
+
+    void add_to_balance(Address const &address, uint256_t const &delta)
+    {
+        auto const overflow = add_to_balance_safe(address, delta);
+        MONAD_ASSERT(!overflow);
     }
 
     void subtract_from_balance(Address const &address, uint256_t const &delta)

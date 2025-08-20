@@ -50,12 +50,12 @@ bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     return balance >= value;
 }
 
-void transfer_balances(
+bool transfer_balances(
     State &state, evmc_message const &msg, Address const &to) noexcept
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     state.subtract_from_balance(msg.sender, value);
-    state.add_to_balance(to, value);
+    return state.add_to_balance_safe(to, value);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -122,7 +122,11 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (msg.flags != EVMC_STATIC) {
-            transfer_balances(state, msg, msg.recipient);
+            auto const overflow = transfer_balances(state, msg, msg.recipient);
+
+            if (MONAD_UNLIKELY(overflow)) {
+                return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+            }
         }
     }
 

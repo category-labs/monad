@@ -529,6 +529,79 @@ TEST_F(EthCallFixture, contract_deployment_success)
     monad_eth_call_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, state_override_overflow)
+{
+    auto const from = 0x1111111111111111111111111111111111111111_address;
+    auto const to = 0x2222222222222222222222222222222222222222_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0x100000, .code_hash = NULL_HASH}}}},
+            {to,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}}},
+        Code{},
+        BlockHeader{.number = 0});
+
+    Transaction tx{
+        .gas_limit = 21'000u,
+        .value = 0x1234,
+        .to = to,
+        .data = {},
+    };
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        false,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_INSUFFICIENT_BALANCE);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21'000u);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
 TEST_F(EthCallFixture, loop_out_of_gas)
 {
     auto const code = evmc::from_hex("0x5B5F56").value();

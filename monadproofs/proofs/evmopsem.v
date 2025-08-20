@@ -444,6 +444,8 @@ Print Assumptions dummyAc. (* closed under global context *)
 
 Definition DippedTooMuchIntoReserve (t: Transaction): TransactionResult. Proof. Admitted.
 
+Definition EvmAddr := N.
+Definition tsender (t:Transaction) : EvmAddr := Z.to_N (word160ToInteger (sender t)).
 
 (*
 every tx has a field: list DelegationAuth.  

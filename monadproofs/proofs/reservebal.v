@@ -17,24 +17,22 @@ Require Import monad.proofs.bigauto.
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
+Set Default Goal Selector "!".
 
 Require Import bluerock.auto.cpp.tactics4.
 Open Scope N_scope.
-Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool :=
-  match s !! a with
-  | Some ac => match delegatedTo ac with
-               | [] => false
-               | _ => true
-               end
-                 
-  | None => false
+Definition StateOfAccounts : Type := EvmAddr -> AccountM.
+Definition addrDelegated  (s: StateOfAccounts) (a : EvmAddr) : bool :=
+  match delegatedTo (s a) with
+  | [] => false
+  | _ => true
   end.
 
 (* new fiends since ~2018 when the evm semantics library we depend on was developed *)
 Record TxExtra :=
   {
-    dels: list evm.address;
-    undels: list evm.address;
+    dels: list EvmAddr;
+    undels: list EvmAddr;
 
     (* the fields above should ultimately come from EVM semantics and not here. the fields below are monad specific *)
     reserveBalUpdate: option N (* updates the reserve balance of the sender if Some. in that case, the tx does not do anything else, e.g. smart contract invocation or transer *)
@@ -56,14 +54,14 @@ Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend o
 #[global] Instance inhacc: Inhabited N := populate DefaultReserveBal.
 
 
-Definition sender (t: TxWithHdr): evm.address := sender (fst (snd t)).
+Definition sender (t: TxWithHdr): EvmAddr := tsender (fst (snd t)).
 Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
 
 Definition K : N. Proof. exact 2. Qed. (* no proof can depend on it being 100 *)
 
-Definition addrsDelUndelByTx  (tx: TxWithHdr) : list evm.address := (dels tx.1.2 ++undels tx.1.2).
+Definition addrsDelUndelByTx  (tx: TxWithHdr) : list EvmAddr := (dels tx.1.2 ++undels tx.1.2).
 
-Definition txDelUndelAddr (addr: evm.address) (tx: TxWithHdr) : bool :=
+Definition txDelUndelAddr (addr: EvmAddr) (tx: TxWithHdr) : bool :=
   bool_decide (addr ∈ addrsDelUndelByTx tx).
 
 
@@ -94,7 +92,7 @@ Record ExtraAcState :=
 #[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None 0).
   
 
-Definition ExtraAcStates := (evm.address -> ExtraAcState).
+Definition ExtraAcStates := (EvmAddr -> ExtraAcState).
 
 (*
 Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r. *)
@@ -130,6 +128,8 @@ Definition isAllowedToEmpty
 Definition updateKey  {T} `{c: EqDecision T} {V}  (oldmap: T -> V) (updKey: T) (f: V -> V) : T -> V :=
   fun k => if (bool_decide (k=updKey)) then f (oldmap updKey) else oldmap k.
 
+(* TODO: 
+Disable Notation "!!!".*)
 Lemma updateKeyLkp3  {T} `{c: EqDecision T} {V} (m: T -> V) (a b: T) (f: V -> V) :
   (updateKey m a f) !!! b = if (bool_decide (b=a)) then (f (m !!! a)) else m !!! b.
 Proof using.
@@ -137,7 +137,7 @@ Proof using.
 Qed.
 
 
-Definition ReserveBals := evm.address -> Z.
+Definition ReserveBals := EvmAddr -> Z.
 
 (*
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
@@ -146,9 +146,15 @@ Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
                       
 Open Scope Z_scope.
+
+Definition balanceOfAc (s: StateOfAccounts) (a: EvmAddr) : N :=
+  balance (s a).
+
+Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) : StateOfAccounts :=
+  updateKey s addr (fun old => old &: _balance %= upd).
+
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
-
 
 (* rename it to remainingErb *)
 Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
@@ -185,10 +191,10 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffi
   forall addr,  addr ∈ map sender postStateSuffix ->
    0<= (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix) !!! addr.
 
-Definition balanceOfAcA (s: AugmentedState) (ac: evm.address) := balanceOfAc (fst s) ac.
+Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc (fst s) ac.
 
 
-Definition allAccounts: list evm.address. Proof. Admitted. (* depends on the implementation of evm.address, which comes from the old evmsem library and will change *)
+Definition allAccounts: list EvmAddr. Proof. Admitted. (* depends on the implementation of EvmAddr, which comes from the old evmsem library and will change *)
 
 Definition stateAfterTransaction s (t: TxWithHdr) :=
   let '((hdr, newRb), (tx, txindex)) := t in
@@ -207,12 +213,10 @@ Definition isAllowedToEmptyExec
 
 Print block.block_account.
 
-Definition hasCode (s: StateOfAccounts) (addr: evm.address): bool:=
-  match s !! addr with
-  | None => false
-  | Some ac=> block.block_account_hascode (coreAc ac)
-  end.
-Opaque hasCode.    
+Definition hasCode (s: StateOfAccounts) (addr: EvmAddr): bool:=
+  block.block_account_hascode (coreAc (s addr)).
+
+Opaque hasCode.
                                          
 
 (* TODO: rename to uodate ExtraState *)
@@ -246,7 +250,6 @@ Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
     ).
 
 
-Definition revertTx (s: StateOfAccounts) (t: TxWithHdr) : StateOfAccounts * TransactionResult. Proof. Admitted.
 
 (*
   Alice sends money to adds2 in some contract.
@@ -263,15 +266,18 @@ Definition ReserveBalUpdateSuccess (t: TxWithHdr) : TransactionResult. Proof. Ad
 Hint Rewrite @balanceOfUpd: syntactic.
 Open Scope N_scope.
 
+Axiom evmExecTxCore : StateOfAccounts -> TxWithHdr -> StateOfAccounts.
+Axiom revertTx : StateOfAccounts -> TxWithHdr -> StateOfAccounts.
+
 Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
-  : (AugmentedState * TransactionResult) :=
+  : AugmentedState :=
   match reserveBalUpdateOfTx t with
-  | Some n => ((updateBalanceOfAc s.1  (sender t) (fun b => b - maxTxFee t)
-                 , updateHistory s.2 t), ReserveBalUpdateSuccess t)
+  | Some n => (updateBalanceOfAc s.1  (sender t) (fun b => b - maxTxFee t)
+                 , updateHistory s.2 t)
   | None =>
     
-     let (si, r) := stateAfterTransaction (fst s) t in
-     let balCheck (a: evm.address) :=
+     let si := evmExecTxCore (fst s) t in
+     let balCheck (a: EvmAddr) :=
        let ReserveBal := configuredReserveBalOfAddr s.2 a in
        let erb:N := ReserveBal `min` (balanceOfAcA s a) in
        if hasCode si a (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
@@ -282,29 +288,25 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck : bool := (forallb balCheck allAccounts) in (* in impl, only do for updates *)
      if (allBalCheck)
-     then ((si, updateHistory s.2 t), r)
-     else let r := revertTx s.1 t in ((r.1, updateHistory s.2 t) , snd r)
+     then (si, updateHistory s.2 t)
+     else (revertTx s.1 t, updateHistory s.2 t)
   end
 .
 
 Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
-Definition execTx (s: AugmentedState) (t: TxWithHdr): option (AugmentedState * TransactionResult) :=
+Definition execTx (s: AugmentedState) (t: TxWithHdr): option (AugmentedState) :=
   if (negb (validateTx (fst s) t)) (* if this fails. the execution of the entire block aborts *)
   then None
   else Some (execValidatedTx  s t).
 
-Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option (AugmentedState * list TransactionResult) :=
+Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option AugmentedState :=
   match ts with
-  | [] => Some (s, [])
+  | [] => Some s
   | t::tls =>
       match execTx s t with
-      | Some (si, r)=>
-          match execTxs si tls with
-          | Some (sf, lr)=> Some (sf, r::lr)
-          | None => None
-          end
+      | Some si => execTxs si tls
       | None => None
       end
   end.
@@ -332,7 +334,7 @@ Ltac rememberForallb :=
 
 Lemma balanceOfRevert s tx ac:
   reserveBalUpdateOfTx tx = None ->
-  balanceOfAc (revertTx s tx).1 ac =
+  balanceOfAc (revertTx s tx) ac =
     if bool_decide (ac= sender tx)
     then balanceOfAc s ac - maxTxFee tx
     else balanceOfAc s ac.
@@ -341,7 +343,7 @@ Proof using. Admitted.
 
 Lemma revertTxDelegationUpdCore tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (revertTx s tx).1 in
+  let sf :=  (revertTx s tx) in
   (forall ac, addrDelegated sf ac  =
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
                 || bool_decide (ac ∈ (dels tx.1.2))).
@@ -350,7 +352,7 @@ Admitted.
 
 Lemma execTxDelegationUpdCore tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (stateAfterTransaction s tx).1 in
+  let sf :=  (evmExecTxCore s tx) in
   (forall ac, addrDelegated sf ac  =
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
                 || bool_decide (ac ∈ (dels tx.1.2))).
@@ -359,7 +361,7 @@ Admitted.
 
 Lemma execTxSenderBalCoreEquiv tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (stateAfterTransaction s tx).1 in
+  let sf :=  (evmExecTxCore s tx) in
   addrDelegated s (sender tx) = false 
    ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
@@ -367,7 +369,7 @@ Proof. Admitted.
 
 Lemma execTxSenderBalCore tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (stateAfterTransaction s tx).1 in
+  let sf :=  (evmExecTxCore s tx) in
   (if addrDelegated s (sender tx) (* sender cannot have code *)
    then True
    else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
@@ -376,7 +378,7 @@ Proof. Admitted.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (stateAfterTransaction s tx).1 in
+  let sf :=  (evmExecTxCore s tx) in
   (forall ac, ac <> sender tx
               -> if (addrDelegated sf ac || hasCode sf ac)
                  then True
@@ -395,20 +397,16 @@ Proof.
   Transparent updateBalanceOfAc.
   unfold updateBalanceOfAc.
   symmetry.
-  rewrite lookup_insert_iff;[| exact dummyAc].
-  case_match; try setoid_rewrite H; case_bool_decide; subst; auto;
-    unfold lookup_total, map_lookup_total, default; setoid_rewrite H.
-  {
-    unfold id. destruct a. simpl. reflexivity.
-  }
-  {
-    reflexivity.
-  }
+  unfold updateKey.
+  case_bool_decide; subst; auto.
+  simpl.
+  destruct (s baladdr); simpl.
+  reflexivity.
 Qed.
 
 Lemma execTxDelegationUpdCoreImpl tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (stateAfterTransaction s tx).1 in
+  let sf :=  (evmExecTxCore s tx) in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
   simpl.
@@ -427,7 +425,7 @@ Qed.
 
 Lemma revertTxDelegationUpdCoreImpl tx s:
   reserveBalUpdateOfTx tx = None ->
-  let sf :=  (revertTx s tx).1 in
+  let sf :=  (revertTx s tx) in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
   simpl.
@@ -444,8 +442,16 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma balanceOfUpd s ac f acp:
+  balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
+Proof.
+  unfold updateBalanceOfAc, updateKey, balanceOfAc. simpl.
+  case_bool_decide; simpl; subst; auto; resdec ltac:(congruence);[].
+  destruct (s ac); auto.
+Qed.
+
 Lemma execTxOtherBalanceLB tx s:
-  let sf :=  (execValidatedTx s tx).1 in
+  let sf :=  (execValidatedTx s tx) in
   (forall ac,
       let ReserveBal := configuredReserveBalOfAddr s.2 ac in
       (ac <> sender tx)
@@ -456,15 +462,12 @@ Proof using.
   intros.
   subst ReserveBal.
   unfold execValidatedTx in *.
-  remember (stateAfterTransaction s.1 tx) as sir.
-  destruct sir as [si r].
   simpl in *.
   remember (reserveBalUpdateOfTx tx) as rb.
   destruct rb; simpl in *.
   1:{  subst sf. unfold balanceOfAcA.  simpl.
        rewrite balanceOfUpd. case_match; auto. try lia.
        case_bool_decide; try lia.
-       congruence.
   }
   remember (hasCode sf.1 ac) as sac.
   destruct sac; auto.
@@ -487,7 +490,7 @@ Qed.
 
 Lemma execTxSenderBal tx s:
   let ReserveBal := configuredReserveBalOfAddr s.2 (sender tx) in
-  let sf :=  (execValidatedTx s tx).1 in
+  let sf :=  (execValidatedTx s tx) in
   hasCode sf.1 (sender tx) = false->
   (if isAllowedToEmpty s [] tx
    then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
@@ -512,8 +515,6 @@ Proof.
   specialize (Hc ltac:(auto)).
   unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
   intros.
-  remember (stateAfterTransaction s.1 tx) as sir.
-  destruct sir as [si r].
   unfold balanceOfAcA in *.
   destruct (addrDelegated s.1 (sender tx)); simpl in *.
   {
@@ -559,18 +560,19 @@ Proof.
   }
 Qed.
 
+(*
 Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
   (let '(a,b) := p in f a b) = f (fst p) (snd p).
 Proof using. destruct p; auto. Qed.
+ *)
 
 Lemma execTxDelegationUpd tx s:
-  let sf :=  (execValidatedTx s tx).1 in
+  let sf :=  (execValidatedTx s tx) in
   (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
   intros ? ? Hd.
   subst sf.
   unfold execValidatedTx in Hd.
-  rewrite pairEta in Hd.
   simpl in *.
   remember (reserveBalUpdateOfTx tx) as rb.
   destruct rb; simpl in *.
@@ -589,7 +591,7 @@ Qed.
 
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
-  let sf :=  (execValidatedTx s tx).1 in
+  let sf :=  (execValidatedTx s tx) in
   (forall ac, ac <> sender tx
               -> if (addrDelegated (fst sf) ac || hasCode (fst sf) ac)
                  then True
@@ -598,7 +600,7 @@ Proof using.
   intros. subst sf.
   pose proof (fun p => execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 p ac ltac:(auto)) as Htx.
   unfold execValidatedTx.
-  rewrite pairEta. simpl in *.
+  simpl in *.
   case_match_concl;  auto;[].
   unfold balanceOfAcA in *.
   remember (reserveBalUpdateOfTx tx) as rb.
@@ -606,7 +608,6 @@ Proof using.
   1:{  simpl in *.
        rewrite balanceOfUpd.
        case_bool_decide; try lia.
-       congruence.
   }
   specialize (Htx ltac:(auto)).
   case_match_concl; simpl in *; try lia.
@@ -622,7 +623,7 @@ Proof using.
 Qed.
 
 Lemma execBalLb ac s tx:
-  let sf :=  (execValidatedTx s tx).1 in
+  let sf :=  (execValidatedTx s tx) in
   let ReserveBal := configuredReserveBalOfAddr s.2 ac in
   if (bool_decide (ac=sender tx)) then 
     hasCode sf.1 (sender tx) = false->
@@ -640,13 +641,13 @@ Proof using.
   case_bool_decide; subst; [apply execTxSenderBal|].
   pose proof (execTxOtherBalanceLB tx s ac ltac:(auto)).
   pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ac ltac:(auto)).
-  destruct (hasCode (execValidatedTx s tx).1.1 ac); auto;[].
+  destruct (hasCode (execValidatedTx s tx).1 ac); auto;[].
   autorewrite with syntactic in *.
   case_match; lia.
 Qed.
 
 Lemma execS2 s txlast:
-  ((execValidatedTx s txlast).1).2 = updateHistory s.2 txlast.
+  ((execValidatedTx s txlast)).2 = updateHistory s.2 txlast.
 Proof using.
   unfold execValidatedTx.
   repeat (case_match; try reflexivity).
@@ -654,7 +655,7 @@ Qed.
 
 
 Lemma lastTxInBlockIndexUpd s txlast:
-  lastTxInBlockIndex ((((execValidatedTx s txlast).1).2) (sender txlast))
+  lastTxInBlockIndex ((((execValidatedTx s txlast)).2) (sender txlast))
   = Some (txBlockNum txlast).
 Proof using.
   rewrite execS2.
@@ -666,7 +667,7 @@ Qed.
 Lemma otherTxLstSenderLkp s addr txlast :
   addr <> sender txlast
   ->
-    lastTxInBlockIndex ((((execValidatedTx s txlast).1).2) addr)
+    lastTxInBlockIndex ((((execValidatedTx s txlast)).2) addr)
     = lastTxInBlockIndex (s.2 addr).
 Proof.
   rewrite execS2.
@@ -678,7 +679,7 @@ Qed.
 
 Lemma delgUndelgUpdTx txlast s addr:
   addr ∈  addrsDelUndelByTx txlast
-  -> lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2  addr) = Some (txBlockNum txlast).
+  -> lastDelUndelInBlockIndex (((execValidatedTx s txlast)).2  addr) = Some (txBlockNum txlast).
 Proof using.
   rewrite execS2.
   unfold updateHistory.
@@ -689,7 +690,7 @@ Qed.
 Lemma otherDelUndelLkp s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
-    lastDelUndelInBlockIndex (((execValidatedTx s txlast).1).2 addr)
+    lastDelUndelInBlockIndex (((execValidatedTx s txlast)).2 addr)
     = lastDelUndelInBlockIndex (s.2  addr).
 Proof.
   rewrite execS2.
@@ -701,7 +702,7 @@ Qed.
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
   addr ∉ addrsDelUndelByTx txlast
   ->
-    addrDelegated ((execValidatedTx s txlast).1).1 addr
+    addrDelegated ((execValidatedTx s txlast)).1 addr
     = addrDelegated s.1 addr.
 Proof.
   intros Hn.
@@ -711,8 +712,6 @@ Proof.
     simpl.
     rewrite addrDelegatedUnchangedByBalUpd. reflexivity.
   }
-  case_match.
-  simpl in *.
   case_match;
     simpl in *.
   2:{
@@ -759,7 +758,7 @@ Set Nested Proofs Allowed.
 
 
 Lemma isAllowedToEmpty2 s txlast rest txnext:
-  let sf :=  fst (execValidatedTx s txlast) in 
+  let sf :=  execValidatedTx s txlast in 
   txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
   -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
 Proof using.
@@ -851,7 +850,6 @@ Proof using.
 Qed.
   
 
-#[global] Instance inhadd: Inhabited evm.address := populate word160.word160_default.
 Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
   (forall x, P /\ Q x)  -> P /\ forall x, Q x.
 Proof using.
@@ -863,14 +861,14 @@ Hint Rewrite bool_decide_spec: iff.
 Hint Resolve list_subseteq_app_r : listset.
 Hint Resolve list_subseteq_app_l : listset.
 
-Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list evm.address) :=
-  forall s, let sf := (fst (execValidatedTx  s tx)) in
+Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list EvmAddr) :=
+  forall s, let sf := (execValidatedTx  s tx) in
             forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s.1 addr = false -> hasCode sf.1 addr = false.
 
 Lemma hasCodeFalsePresExec l s tx:
   (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::l)))
   -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s.1 ac = false)
-  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode ((execValidatedTx s tx).1).1 ac = false).
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode (execValidatedTx s tx).1 ac = false).
 Proof using.
   intros Heoac Hsc.
   intros.
@@ -889,7 +887,7 @@ Proof.
 Qed.
 
 
-Definition rbLe (eoas: list evm.address) (rb1 rb2: ReserveBals) :=
+Definition rbLe (eoas: list EvmAddr) (rb1 rb2: ReserveBals) :=
   forall addr, addr ∈ eoas -> rb1 !!! addr <= rb2 !!! addr.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
@@ -937,7 +935,7 @@ Qed.
 Lemma isAllowedToEmptyImpl s tx inter a:
   isAllowedToEmpty s (tx::inter) a = true
   -> sender tx <> sender a
-     /\ addrDelegated (execValidatedTx s tx).1.1 (sender a) = false.
+     /\ addrDelegated (execValidatedTx s tx).1 (sender a) = false.
 Proof using.
   intros  Hae.
   unfold isAllowedToEmpty in *.
@@ -976,9 +974,9 @@ Qed.
   
 
 Lemma emptyBalanceUb s tx inter a:
-  hasCode (execValidatedTx s tx).1.1 (sender a) = false
+  hasCode (execValidatedTx s tx).1 (sender a) = false
   -> isAllowedToEmpty s (tx :: inter) a = true
-  -> balanceOfAc s.1 (sender a) ≤ balanceOfAc (execValidatedTx s tx).1.1 (sender a).
+  -> balanceOfAc s.1 (sender a) ≤ balanceOfAc (execValidatedTx s tx).1 (sender a).
 Proof.
   intros Hsc Hae.
   pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s (sender a)) as Hs.
@@ -1001,7 +999,7 @@ Definition rbAfterTx s tx :=
     
     
 Lemma configuredReserveBalOfAddrSpec s tx a:
-  configuredReserveBalOfAddr (execValidatedTx s tx).1.2 a
+  configuredReserveBalOfAddr (execValidatedTx s tx).2 a
   = if bool_decide (a=sender tx)
     then rbAfterTx s.2 tx
     else configuredReserveBalOfAddr s.2 a.
@@ -1017,7 +1015,7 @@ Qed.
 
 Lemma configuredReserveBalOfAddrSame s tx  a:
   sender tx <> a
-  -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 a
+  -> (configuredReserveBalOfAddr (execValidatedTx s tx).2 a
       =
         configuredReserveBalOfAddr s.2 a).
 Proof using.
@@ -1028,7 +1026,7 @@ Qed.
 
 Lemma configuredReserveBalOfAddrSame2 s tx inter a:
   isAllowedToEmpty s (tx :: inter) a = true
-  -> (configuredReserveBalOfAddr (execValidatedTx s tx).1.2 (sender a)
+  -> (configuredReserveBalOfAddr (execValidatedTx s tx).2 (sender a)
       =
         configuredReserveBalOfAddr s.2 (sender a)).
 Proof using.
@@ -1038,14 +1036,13 @@ Proof using.
   tauto.
 Qed.
   
-Set Default Goal Selector "!".
 Lemma monoL2 eoas s rb1 rb2 inter extension tx:
   (map sender extension) ⊆ eoas
   -> rbLe eoas rb1 rb2
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
-  -> (∀ ac : evm.address, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1.1 ac = false)
+  -> (∀ ac : EvmAddr, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1 ac = false)
   -> rbLe eoas (remainingReserveBalsL s rb1 (tx::inter) extension)
-          (remainingReserveBalsL (execValidatedTx s tx).1 rb2 inter extension).
+          (remainingReserveBalsL (execValidatedTx s tx) rb2 inter extension).
 Proof using.
   revert rb1 rb2 inter.
   induction extension; auto;[].
@@ -1102,9 +1099,9 @@ Definition rbLeA (rb1 rb2: ReserveBals) :=
   forall addr, rb1 !!! addr <= rb2 !!! addr.
 
 Lemma exec1 tx extension s :
-  let sf := (execValidatedTx s tx).1 in 
-  (∀ ac : evm.address, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1.1 ac = false)
-  -> (∀ addr : evm.address,
+  let sf := (execValidatedTx s tx) in 
+  (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1 ac = false)
+  -> (∀ addr : EvmAddr,
     addr ∈ sender tx :: map sender extension
     → remainingReserveBals s (initialReserveBals s) [] tx !!! addr ≤ initialReserveBals sf !!! addr).
 Proof using.
@@ -1176,7 +1173,7 @@ Lemma execL tx extension s:
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
-  -> consensusAcceptableTxs (fst (execValidatedTx  s tx)) extension.
+  -> consensusAcceptableTxs (execValidatedTx  s tx) extension.
 Proof using.
   intros Hext Heoac Hsc.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
@@ -1224,11 +1221,10 @@ Proof using.
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *.
-  2:{ case_bool_decide; rwHypsP; try lia.  congruence. }
+  2:{ case_bool_decide; rwHypsP; try lia.  }
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
     fold ReserveBals in *; try lia.
-  congruence.
 Qed.
   
   
@@ -1294,7 +1290,7 @@ Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: 
  ->  consensusAcceptableTxs latestState (tx::extension)
   -> match execTx latestState tx with
      | None =>  False
-     | Some (si, tr) =>
+     | Some si =>
          consensusAcceptableTxs si extension
      end.
 Proof.
@@ -1304,7 +1300,6 @@ Proof.
   rewrite -> (execValidate tx extension) by assumption.
   simpl.
   apply execL in Hc; auto.
-  case_match; auto.
 Qed.
 
 Set Printing Coercions.
@@ -1375,7 +1370,7 @@ Lemma fullBlockStep  (latestState : AugmentedState) (block1: list TxWithHdr) (bl
   -> (forall ac, ac ∈ (map sender (block1++block2)) -> hasCode latestState.1 ac = false)
   -> match execTxs latestState block1 with
      | None =>  False
-     | Some (si, _) =>
+     | Some si =>
          consensusAcceptableTxs si block2
          /\ blockNumsInRange block2
      end.
@@ -1389,7 +1384,7 @@ Proof.
   unfold execTx in *.
   destruct (validateTx latestState.1 hb1); simpl in *; try contradiction;[].
   pose proof (hasCodeFalsePresExec _ _ _ Heoa Hsc) as Hsci.
-  destruct (execValidatedTx latestState hb1) as [si tr]; try contradiction;[].
+  remember (execValidatedTx latestState hb1) as si.
   simpl in *.
   pose proof (fun txext p => txCannotCreateContractAtEOAAddrWithPrivateKeyTrimHead _ _ _
                                (Heoa txext (elem_of_list_further _ _ _ p))).
@@ -1401,16 +1396,9 @@ Proof.
   }
   intros.
   destruct (execTxs si block1) as [|]; try auto.
-  destruct p as [si2 ?].
-  assumption.
 Qed.
 
-
 Print Assumptions fullBlockStep.
-Print Countable.
-
-Search word160.word160 bool.
-Print Assumptions word160.w160Eq.
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
   consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).

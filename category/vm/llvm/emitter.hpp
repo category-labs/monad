@@ -181,6 +181,7 @@ namespace monad::vm::llvm
         Value *jump_mem = nullptr;
         BasicBlock *jump_lbl = nullptr;
         BasicBlock *error_lbl = nullptr;
+    BlockAddress *error_addr = nullptr;
         BasicBlock *return_lbl = nullptr;
         BasicBlock *revert_lbl = nullptr;
         BasicBlock *entry = nullptr;
@@ -208,6 +209,7 @@ namespace monad::vm::llvm
             g_ctx_ref = arg[1];
             entry = llvm.basic_block("entry", contract);
             error_lbl = llvm.basic_block("error_lbl", contract);
+            error_addr = llvm.block_address(error_lbl);
             return_lbl = llvm.basic_block("return_lbl", contract);
             revert_lbl = llvm.basic_block("revert_lbl", contract);
 
@@ -244,9 +246,39 @@ namespace monad::vm::llvm
             MONAD_VM_ASSERT(jumpdests.size() > 0);
 
             llvm.insert_at(jump_lbl);
-            auto *d = llvm.load(llvm.word_ty, jump_mem);
+       auto *d = llvm.load(llvm.word_ty, jump_mem);
 
-            // create switch
+
+bool const do_indirectbr = false;
+
+        if (do_indirectbr)
+        {
+        auto [max_ix, _] = jumpdests.back();
+        auto out_of_bounds = max_ix + 1;
+        auto sz = out_of_bounds + 1;
+
+        std::vector<Constant *> jump_tbl(sz, error_addr);
+        std::vector<BasicBlock *> jump_blks(sz, error_lbl);
+
+        for(auto [k, v] : jumpdests) {
+            jump_tbl[k] = llvm.block_address(v);
+            jump_blks[k] = v;
+            }
+
+    GlobalVariable *jump_arr = llvm.const_array(jump_tbl, "jump_tbl");
+
+        Value *out_of_bounds_ix = llvm.lit_word(static_cast<uint256_t>(out_of_bounds));
+        Value *is_in_bounds = llvm.ult(d, out_of_bounds_ix);
+        Value *ix = llvm.select(is_in_bounds, llvm.cast_u32(d), llvm.lit(32, out_of_bounds));
+
+        Type *block_addr_t = llvm.ptr_ty(llvm.int_ty(8));
+
+        Value *p = llvm.gep(llvm.array_ty(block_addr_t, sz), jump_arr, {llvm.lit(32, 0), ix}, "jump_dest_p");
+
+        Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_t), p);
+
+        llvm.indirectbr(jd_addr, jump_blks);
+        } else {
             auto *jump_lbl_switch = llvm.switch_(
                 d, error_lbl, static_cast<unsigned>(jumpdests.size()));
 
@@ -254,6 +286,9 @@ namespace monad::vm::llvm
                 auto *c = llvm.lit_word(static_cast<uint256_t>(k));
                 jump_lbl_switch->addCase(c, v);
             }
+        }
+
+
         };
 
         void set_stack_vars(Value *evm_stackv, Value *evm_stack_heightv)
@@ -326,7 +361,7 @@ namespace monad::vm::llvm
 
         Value *get_evm_stack_top(Value *evm_stackp, Value *height)
         {
-            return llvm.gep(llvm.word_ty, evm_stackp, height, "evm_stack_top");
+            return llvm.gep(llvm.word_ty, evm_stackp, {height}, "evm_stack_top");
         };
 
         Function *init_evm_pop()
@@ -567,7 +602,7 @@ namespace monad::vm::llvm
                 stack_spill();
             }
 
-            llvm.condbr(isz, then_lbl, else_lbl);
+            llvm.condbr(isz, then_lbl, else_lbl, true);
 
             llvm.insert_at(else_lbl);
 
@@ -636,7 +671,7 @@ namespace monad::vm::llvm
             auto *stack_low = llvm.add(
                 stack_height, llvm.lit(32, static_cast<uint32_t>(low)));
             auto *low_pred = llvm.slt(stack_low, llvm.lit(32, 0));
-            llvm.condbr(low_pred, error_lbl, no_underflow_lbl);
+            llvm.condbr(low_pred, error_lbl, no_underflow_lbl, false);
 
             llvm.insert_at(no_underflow_lbl);
         };
@@ -649,7 +684,7 @@ namespace monad::vm::llvm
             auto *stack_high = llvm.add(
                 stack_height, llvm.lit(32, static_cast<uint32_t>(high)));
             auto *high_pred = llvm.sgt(stack_high, llvm.lit(32, 1024));
-            llvm.condbr(high_pred, error_lbl, no_overflow_lbl);
+            llvm.condbr(high_pred, error_lbl, no_overflow_lbl, false);
 
             llvm.insert_at(no_overflow_lbl);
         };
@@ -663,7 +698,7 @@ namespace monad::vm::llvm
 
             auto *gas_ok_lbl = llvm.basic_block("gas_ok_lbl", contract);
 
-            llvm.condbr(gas_lt_zero, error_lbl, gas_ok_lbl);
+            llvm.condbr(gas_lt_zero, error_lbl, gas_ok_lbl, false);
             llvm.insert_at(gas_ok_lbl);
             llvm.store(gas1, g_local_gas_ref);
         }
@@ -727,7 +762,7 @@ namespace monad::vm::llvm
 
         Value *context_gep(Value *ctx_ref, uint64_t offset, std::string_view nm)
         {
-            return llvm.gep(llvm.int_ty(8), ctx_ref, llvm.lit(64, offset), nm);
+            return llvm.gep(llvm.int_ty(8), ctx_ref, {llvm.lit(64, offset)}, nm);
         };
 
         Value *assign(Value *v, std::string_view nm)
@@ -943,7 +978,7 @@ namespace monad::vm::llvm
             auto *denom_not_0 = llvm.basic_block("denom_not_0", f);
 
             llvm.insert_at(entry);
-            llvm.condbr(llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0);
+            llvm.condbr(llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0, false);
 
             llvm.insert_at(denom_is_0);
             llvm.ret(llvm.lit_word(0));
@@ -988,14 +1023,14 @@ namespace monad::vm::llvm
             llvm.ret(llvm.sdiv(numer, denom));
 
             llvm.insert_at(entry); // check for denominator is 0
-            llvm.condbr(llvm.eq(denom, zero), ret_zero, try_denominator_neg1);
+            llvm.condbr(llvm.eq(denom, zero), ret_zero, try_denominator_neg1, false);
 
             llvm.insert_at(try_denominator_neg1); // check for denominator is -1
-            llvm.condbr(llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv);
+            llvm.condbr(llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv, false);
 
             llvm.insert_at(
                 try_overflow_semantics); // check for numerator is minbound
-            llvm.condbr(llvm.eq(numer, minbound), ret_overflow, ret_sdiv);
+            llvm.condbr(llvm.eq(numer, minbound), ret_overflow, ret_sdiv, false);
 
             return f;
         }
@@ -1016,7 +1051,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isz, then_lbl, else_lbl);
+            llvm.condbr(isz, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1044,7 +1079,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1079,7 +1114,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1107,7 +1142,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.sar(b, llvm.lit_word(255)));
@@ -1134,7 +1169,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(b);

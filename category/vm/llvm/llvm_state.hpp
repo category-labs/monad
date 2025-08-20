@@ -37,6 +37,7 @@
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
@@ -186,9 +187,9 @@ namespace monad::vm::llvm
             insert_lbls.pop_back();
         };
 
-        Value *gep(Type *ty, Value *v, Value *const offset, std::string_view nm)
+        Value *gep(Type *ty, Value *v, ArrayRef<Value *> offsets, std::string_view nm)
         {
-            return ir.CreateInBoundsGEP(ty, v, {offset}, nm);
+            return ir.CreateInBoundsGEP(ty, v, offsets, nm);
         }
 
         void store(Value *v, Value *p)
@@ -225,9 +226,16 @@ namespace monad::vm::llvm
             return shr(bswap(cast_word(val)), lit_word(96));
         };
 
-        void condbr(Value *pred, BasicBlock *then_lbl, BasicBlock *else_lbl)
+        void condbr(Value *pred, BasicBlock *then_lbl, BasicBlock *else_lbl, bool predict_true)
         {
-            ir.CreateCondBr(pred, then_lbl, else_lbl);
+        MDNode *weights;
+        if (predict_true)
+        {
+            weights = MDBuilder(context).createLikelyBranchWeights();
+        } else {
+            weights = MDBuilder(context).createUnlikelyBranchWeights();
+        }
+            ir.CreateCondBr(pred, then_lbl, else_lbl, weights);
         };
 
         SwitchInst *switch_(Value *v, BasicBlock *dflt, unsigned n)
@@ -243,6 +251,11 @@ namespace monad::vm::llvm
         Value *cast_bool(Value *a)
         {
             return ir.CreateIntCast(a, int_ty(1), false, "cast_bool");
+        };
+
+        Value *cast_u32(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(32), false, "cast_u32");
         };
 
         Value *not_(Value *a)
@@ -348,6 +361,11 @@ namespace monad::vm::llvm
             return ir.CreateOr(a, b, "or");
         };
 
+    Value *select(Value *a, Value *b, Value *c)
+    {
+        return ir.CreateSelect(a, b, c);
+    };
+
         Value *sgt(Value *a, Value *b)
         {
             return ir.CreateICmpSGT(a, b, "sgt");
@@ -376,6 +394,11 @@ namespace monad::vm::llvm
         Type *ptr_ty(Type *ty)
         {
             return PointerType::getUnqual(ty);
+        };
+
+        ArrayType *array_ty(Type *ty, size_t sz)
+        {
+            return ArrayType::get(ty, sz);
         };
 
         Constant *lit(unsigned int sz, uint64_t x)
@@ -442,6 +465,30 @@ namespace monad::vm::llvm
         {
             return BasicBlock::Create(context, nm, fun);
         };
+
+    GlobalVariable *const_array(const std::vector<Constant *> vals, std::string_view nm)
+    {
+        MONAD_VM_ASSERT(vals.size() > 0);
+
+        Type *ty = vals[0]->getType();
+        ArrayType *arr_ty = array_ty(ty, vals.size());
+        Constant *arr = ConstantArray::get(arr_ty, vals);
+return new GlobalVariable(m, arr_ty, true, GlobalValue::InternalLinkage, arr, nm);
+    }
+
+    BlockAddress* block_address(BasicBlock *blk)
+    {
+        return BlockAddress::get(blk);
+    }
+
+    IndirectBrInst *indirectbr(Value *addr, std::vector<BasicBlock *>blks)
+    {
+        auto *r = ir.CreateIndirectBr(addr, static_cast<unsigned int>(blks.size()));
+        for (BasicBlock *blk : blks) {
+        r->addDestination(blk);
+        }
+        return r;
+    }
 
     private:
         std::unique_ptr<LLVMContext> llvm_context =

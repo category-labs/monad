@@ -187,6 +187,11 @@ public:
         proposals_.commit(std::move(state_deltas), header.number, block_id);
     }
 
+    void insert_in_accounts_and_storage_caches(StateDeltas const &state_deltas)
+    {
+        insert_in_lru_caches(state_deltas);
+    }
+
     virtual BlockHeader read_eth_header() override
     {
         return db_.read_eth_header();

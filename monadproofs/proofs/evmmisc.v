@@ -38,6 +38,22 @@ Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N ->
   <[ addr :=  (s !!! addr) &: _balanceN %= upd ]> s.
 
 
+Lemma def0:
+  w256_to_N keccak.w256_default = 0%N.
+Proof using.
+  reflexivity.
+Qed.
+Set Printing Coercions.
+
+Lemma idw256 (f:N): w256_to_N (Z_to_w256 f) = f.
+Proof using.
+  unfold w256_to_N.
+  unfold w256_to_Z, Z_to_w256.
+  Search Zdigits.binary_value Zdigits.Z_to_binary.
+  (* this is not provable. there is a counterexample: 2^256+1 *)
+Abort.
+
+(* not provable: counterexample: f := fun _ => 2^256+1 *)  
 Lemma balanceOfUpd s ac f acp:
   balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
 Proof.
@@ -57,6 +73,9 @@ Proof.
     unfold inhabitant.
     simpl.
     unfold nbvfun.
+    rewrite def0.
+    unfold w256_to_N, Z_to_w256.
+    
     admit.
   }
   {

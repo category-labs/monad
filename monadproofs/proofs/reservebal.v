@@ -49,7 +49,7 @@ Definition maxTxFee (t: TxWithHdr) : N :=
   ((w256_to_N (block.tr_gas_price t.2.1)) * (w256_to_N (block.tr_gas_limit t.2.1))).
 
 Opaque maxTxFee.
-   
+
 
 Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend on it being 100 *)
 
@@ -1407,6 +1407,7 @@ Proof.
 Qed.
 
 
+Print Assumptions fullBlockStep.
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
   consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).

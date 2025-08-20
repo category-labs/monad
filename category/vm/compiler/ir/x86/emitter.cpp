@@ -602,6 +602,14 @@ namespace monad::vm::compiler::native
         }
     }
 
+    void Emitter::flush_debug_logger()
+    {
+        if (debug_logger_.file()) {
+            int const err = fflush(debug_logger_.file());
+            MONAD_VM_ASSERT(err == 0);
+        }
+    }
+
     entrypoint_t Emitter::finish_contract(asmjit::JitRuntime &rt)
     {
         contract_epilogue();

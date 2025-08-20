@@ -14,7 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 add_executable(vm-unit-tests
-    "${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp"
     async_compile_tests.cpp
     bin_tests.cpp
     compiler_tests.cpp
@@ -36,6 +35,7 @@ add_executable(vm-unit-tests
     emitter_tests.cpp
     interpreter_tests.cpp
     lru_weight_cache_tests.cpp
+    test_params.cpp
     runtime/fixture.cpp
     runtime/transmute_tests.cpp
     runtime/math_tests.cpp
@@ -46,6 +46,7 @@ add_executable(vm-unit-tests
     runtime/call_tests.cpp
     runtime/data_tests.cpp
     runtime/create_tests.cpp
+    main.cpp
 )
 
 if(MONAD_COMPILER_COVERAGE)
@@ -57,7 +58,9 @@ monad_compile_options(vm-unit-tests)
 target_link_libraries(vm-unit-tests
     PRIVATE evmone
     PRIVATE monad-vm::monad-vm-fuzzing
-    PRIVATE GTest::gtest_main
+    PRIVATE monad-vm::monad-vm-interpreter
+    PRIVATE monad-vm::monad-vm-utils
+    PRIVATE GTest::gtest
     PRIVATE evmc::mocked_host
     PRIVATE monad_execution
     PRIVATE monad_core

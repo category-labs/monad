@@ -53,6 +53,8 @@ struct EthereumMainnet : Chain
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual GenesisState get_genesis_state() const override;
+
+    virtual bool get_create_inside_delegated() const override;
 };
 
 MONAD_NAMESPACE_END

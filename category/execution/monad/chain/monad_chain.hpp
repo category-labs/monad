@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/monad/chain/monad_revision.h>
-#include <category/core/config.hpp>
-#include <category/core/bytes.hpp>
 
 #include <evmc/evmc.h>
 
@@ -44,6 +44,8 @@ struct MonadChain : Chain
 
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual bool get_create_inside_delegated() const override;
 };
 
 MONAD_NAMESPACE_END

@@ -51,6 +51,8 @@ struct Chain
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;
+
+    virtual bool get_create_inside_delegated() const = 0;
 };
 
 MONAD_NAMESPACE_END

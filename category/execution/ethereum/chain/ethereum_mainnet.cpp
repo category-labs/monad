@@ -171,4 +171,9 @@ GenesisState EthereumMainnet::get_genesis_state() const
     return {header, ETHEREUM_MAINNET_ALLOC};
 }
 
+bool EthereumMainnet::get_create_inside_delegated() const
+{
+    return true;
+}
+
 MONAD_NAMESPACE_END

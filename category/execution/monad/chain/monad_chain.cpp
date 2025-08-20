@@ -85,4 +85,9 @@ size_t MonadChain::get_max_code_size(
     }
 }
 
+bool MonadChain::get_create_inside_delegated() const
+{
+    return false;
+}
+
 MONAD_NAMESPACE_END

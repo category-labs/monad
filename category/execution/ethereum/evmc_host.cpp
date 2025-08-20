@@ -20,8 +20,8 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -35,12 +35,13 @@ MONAD_NAMESPACE_BEGIN
 EvmcHostBase::EvmcHostBase(
     CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
     BlockHashBuffer const &block_hash_buffer, State &state,
-    size_t const max_code_size) noexcept
+    size_t const max_code_size, bool const create_inside_delegated) noexcept
     : tx_context_{tx_context}
     , block_hash_buffer_{block_hash_buffer}
     , state_{state}
     , call_tracer_{call_tracer}
     , max_code_size_{max_code_size}
+    , create_inside_delegated_{create_inside_delegated}
 {
 }
 

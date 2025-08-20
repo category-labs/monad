@@ -17,15 +17,15 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
-#include <category/execution/monad/chain/monad_devnet.hpp>
-#include <category/execution/monad/chain/monad_mainnet.hpp>
-#include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/execution/monad/chain/monad_testnet2.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/chain/monad_testnet2.hpp>
 #include <category/mpt/db.hpp>
 
 #include <gtest/gtest.h>
@@ -119,4 +119,13 @@ TEST(MonadChain, Genesis)
             0xFE557D7B2B42D6352B985949AA37EDA10FB02C90FEE62EB29E68839F2FB72B31_bytes32);
         EXPECT_TRUE(static_validate_header<EVMC_CANCUN>(header).has_value());
     }
+}
+
+TEST(MonadChain, create_inside_delegated)
+{
+    EXPECT_FALSE(MonadMainnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadDevnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadTestnet{}.get_create_inside_delegated());
+    EXPECT_FALSE(MonadTestnet2{}.get_create_inside_delegated());
+    EXPECT_TRUE(EthereumMainnet{}.get_create_inside_delegated());
 }

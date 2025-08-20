@@ -63,6 +63,7 @@ WORKDIR src
 ARG GIT_COMMIT_HASH
 RUN test -n "$GIT_COMMIT_HASH"
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
+ARG RUN_TEST=true
 
 RUN CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
@@ -76,7 +77,12 @@ RUN VERBOSE=1 cmake \
   --target all
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
+RUN --security=insecure \
+  if [ "$RUN_TEST" = "true" ]; then \
+  CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh; \
+  else \
+  echo "Skipping tests (RUN_TEST=$RUN_TEST)" ; \
+  fi
 
 FROM base as runner
 COPY --from=build /src/build/category/mpt/monad_mpt /usr/local/bin/

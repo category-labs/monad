@@ -298,9 +298,10 @@ public:
             account = Account{.incarnation = incarnation_};
         }
 
-        MONAD_ASSERT(
-            std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance);
+        // TODO: potentially throw recoverable overflow check here; asserting on
+        // overflow is unsafe as it can crash the process. Wrapping silently is
+        // acceptable per the Ethereum execution specs, but doesn't allow RPC to
+        // return an error when balance overflows happen.
 
         account.value().balance += delta;
         account_state.touch();

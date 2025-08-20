@@ -20,7 +20,6 @@ Open Scope lens_scope.
 
 Require Import bluerock.auto.cpp.tactics4.
 Open Scope N_scope.
-
 Definition addrDelegated  (s: evm.GlobalState) (a : evm.address) : bool :=
   match s !! a with
   | Some ac => match delegatedTo ac with
@@ -1408,6 +1407,10 @@ Qed.
 
 
 Print Assumptions fullBlockStep.
+Print Countable.
+
+Search word160.word160 bool.
+Print Assumptions word160.w160Eq.
 Definition concatL {T} (l: list (list T)) := flat_map id l.
 Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
   consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).

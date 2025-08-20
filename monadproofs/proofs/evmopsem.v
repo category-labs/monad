@@ -22,6 +22,7 @@ Record AccountM : Type :=
     relevantKeys: list N; (* only the storage keys listed here are relevant. for assumptions, there are the only read keysk. for updates, these are the only updated keys. In C++, storage maps typically will have only these keys.
     must be [] if coreState is []*)
     delegatedTo: list evm.address; (* change to option if it can only be delegated to 1 address *)
+    balance : N (* one one in coreAc is of type word256 which is harder to use. instead, we use N and ensure the operations never overflow, e.g. by modding or capping. some assumptions in reserve balance proofs require capping to 2^256. in practice, the distinction is moot unless the money suppy blows up *)
   }.
 
 Module evm.
@@ -234,7 +235,7 @@ Opaque Z_to_w256.
 
 Definition balanceOfAc (s: evm.GlobalState) (a: evm.address) : N (* 0 if account does not exist *) :=
   match s !! a with
-  | Some ac => w256_to_N (block.block_account_balance (coreAc ac))
+  | Some ac => balance ac
   | None => 0
   end.
     
@@ -437,7 +438,7 @@ Definition block_account_default :=
 |}.
 
 Definition dummyAc : AccountM
-  := Build_AccountM block_account_default (Build_Indices 0 0) [] [].
+  := Build_AccountM block_account_default (Build_Indices 0 0) [] [] 0.
 
 Print Assumptions dummyAc. (* closed under global context *)
 
@@ -627,7 +628,7 @@ Qed.
 
 From stdpp Require Import fin_maps.
 
-(* TODO: move to its own file or misc.v *)
+(* TODO: move to its own file or misc.v. it is not needed in reservebal anymore *)
 Section gmap_imap.
   Context `{Countable K}.
   Implicit Types A B : Type.

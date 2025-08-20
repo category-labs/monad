@@ -27,15 +27,17 @@ Definition nbvlens {A:Type} (l: Lens A A keccak.w256 keccak.w256): Lens A A N N 
     Lens.over := λ (fz : N → N) (a : A), (l %= nbvfun fz) a |}.
 
 
+(*
 Definition _balance : Lens AccountM AccountM Z Z:=
   zbvlens (_coreAc .@ _block_account_balance).
+ *)
 
 Definition _balanceN : Lens AccountM AccountM N N :=
   nbvlens (_coreAc .@ _block_account_balance).
 
 #[global] Instance inh : Inhabited AccountM := populate dummyAc.
 Definition updateBalanceOfAc (s: evm.GlobalState) (addr: evm.address) (upd: N -> N) : evm.GlobalState :=
-  <[ addr :=  (s !!! addr) &: _balanceN %= upd ]> s.
+  <[ addr :=  (s !!! addr) &: _balance %= upd ]> s.
 
 
 Lemma def0:
@@ -43,17 +45,8 @@ Lemma def0:
 Proof using.
   reflexivity.
 Qed.
-Set Printing Coercions.
 
-Lemma idw256 (f:N): w256_to_N (Z_to_w256 f) = f.
-Proof using.
-  unfold w256_to_N.
-  unfold w256_to_Z, Z_to_w256.
-  Search Zdigits.binary_value Zdigits.Z_to_binary.
-  (* this is not provable. there is a counterexample: 2^256+1 *)
-Abort.
 
-(* not provable: counterexample: f := fun _ => 2^256+1 *)  
 Lemma balanceOfUpd s ac f acp:
   balanceOfAc (updateBalanceOfAc s ac f) acp = if (bool_decide (ac=acp)) then f (balanceOfAc s ac) else (balanceOfAc s acp).
 Proof.
@@ -70,23 +63,15 @@ Proof.
   case_match; auto.
   2:{
     setoid_rewrite H0.
-    unfold inhabitant.
-    simpl.
-    unfold nbvfun.
-    rewrite def0.
-    unfold w256_to_N, Z_to_w256.
-    
-    admit.
+    reflexivity.
   }
   {
     setoid_rewrite H0.
+    unfold id.
     destruct a.
-    destruct coreAc.
-    simpl.
-    unfold nbvfun.
-    admit.
+    reflexivity.
   }
-Admitted.
+Qed.
 
 
 

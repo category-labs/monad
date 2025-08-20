@@ -109,6 +109,11 @@ public:
     /// Record a transaction-level event with no payload in one step
     void record_txn_marker_event(monad_exec_event_type, uint32_t txn_num);
 
+    monad_event_ring const *get_event_ring() const
+    {
+        return &exec_ring_;
+    }
+
 private:
     static constexpr size_t RECORD_ERROR_TRUNCATED_SIZE = 1UL << 13;
 

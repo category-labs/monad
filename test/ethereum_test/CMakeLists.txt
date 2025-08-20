@@ -46,10 +46,12 @@ target_sources(
   monad-ethereum-test
   PRIVATE include/blockchain_test.hpp
           include/ethereum_test.hpp
+          include/event.hpp
           include/from_json.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/ethereum_test.cpp
+          src/event.cpp
           src/main.cpp
           src/transaction_test.cpp)
 
@@ -77,7 +79,7 @@ function(add_ethereum_test)
 
   add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
            COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --gtest_filter=${FILTER})
+                   --record-exec-events --gtest_filter=${FILTER})
 endfunction()
 
 add_ethereum_test(FORK frontier)

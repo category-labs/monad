@@ -20,6 +20,8 @@
 
 #include <blockchain_test.hpp>
 #include <ethereum_test.hpp>
+#include <event.hpp>
+#include <monad/test/config.hpp>
 #include <transaction_test.hpp>
 
 #include <evmc/evmc.h>
@@ -52,6 +54,7 @@ int main(int argc, char *argv[])
     std::optional<evmc_revision> revision = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
     bool trace_calls = false;
+    bool record_exec_events = false;
 
     CLI::App app{"monad ethereum tests runner"};
     app.add_option("--log_level", log_level, "Logging level")
@@ -61,6 +64,8 @@ int main(int argc, char *argv[])
             CLI::CheckedTransformer(test::revision_map, CLI::ignore_case));
     app.add_option("--txn", txn_index, "Index of transaction to run");
     app.add_flag("--trace_calls", trace_calls, "Enable call tracing");
+    app.add_flag(
+        "--record-exec-events", record_exec_events, "Record execution events");
     CLI11_PARSE(app, argc, argv);
 
     quill::start(true);

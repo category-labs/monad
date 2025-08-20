@@ -37,6 +37,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Block;
+struct BlockExecOutput;
 class BlockHashBuffer;
 struct Receipt;
 
@@ -53,12 +54,17 @@ class BlockchainTest : public testing::Test
     bool enable_tracing_;
 
     template <Traits traits>
-    static Result<std::vector<Receipt>>
-    execute(Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool);
+    static Result<std::vector<Receipt>> execute_and_record(
+        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool);
+
+    template <Traits traits>
+    static Result<BlockExecOutput> execute(
+        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool,
+        std::vector<Receipt> &, std::vector<std::vector<CallFrame>> &);
 
     static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, vm::VM &,
-        BlockHashBuffer const &, bool);
+        evmc_revision, Block &, test::db_t &, vm::VM &, BlockHashBuffer const &,
+        bool);
 
     static void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
@@ -69,7 +75,8 @@ public:
 
     BlockchainTest(
         std::filesystem::path const &file,
-        std::optional<evmc_revision> const &revision, bool enable_tracing) noexcept
+        std::optional<evmc_revision> const &revision,
+        bool enable_tracing) noexcept
         : file_{file}
         , revision_{revision}
         , enable_tracing_{enable_tracing}

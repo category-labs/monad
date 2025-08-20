@@ -36,11 +36,6 @@ struct BytesHashCompare
     {
         return memcmp(a.bytes, b.bytes, sizeof(Bytes)) == 0;
     }
-
-    bool operator()(Bytes const &a) const
-    {
-        return hash(a);
-    }
 };
 
 MONAD_NAMESPACE_END

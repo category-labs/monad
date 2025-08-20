@@ -181,7 +181,7 @@ namespace monad::vm::llvm
         Value *jump_mem = nullptr;
         BasicBlock *jump_lbl = nullptr;
         BasicBlock *error_lbl = nullptr;
-    BlockAddress *error_addr = nullptr;
+        BlockAddress *error_addr = nullptr;
         BasicBlock *return_lbl = nullptr;
         BasicBlock *revert_lbl = nullptr;
         BasicBlock *entry = nullptr;
@@ -246,49 +246,55 @@ namespace monad::vm::llvm
             MONAD_VM_ASSERT(jumpdests.size() > 0);
 
             llvm.insert_at(jump_lbl);
-       auto *d = llvm.load(llvm.word_ty, jump_mem);
+            auto *d = llvm.load(llvm.word_ty, jump_mem);
 
+            bool const do_indirectbr = false;
 
-bool const do_indirectbr = false;
+            if (do_indirectbr) {
+                auto [max_ix, _] = jumpdests.back();
+                auto out_of_bounds = max_ix + 1;
+                auto sz = out_of_bounds + 1;
 
-        if (do_indirectbr)
-        {
-        auto [max_ix, _] = jumpdests.back();
-        auto out_of_bounds = max_ix + 1;
-        auto sz = out_of_bounds + 1;
+                std::vector<Constant *> jump_tbl(sz, error_addr);
+                std::vector<BasicBlock *> jump_blks(sz, error_lbl);
 
-        std::vector<Constant *> jump_tbl(sz, error_addr);
-        std::vector<BasicBlock *> jump_blks(sz, error_lbl);
+                for (auto [k, v] : jumpdests) {
+                    jump_tbl[k] = llvm.block_address(v);
+                    jump_blks[k] = v;
+                }
 
-        for(auto [k, v] : jumpdests) {
-            jump_tbl[k] = llvm.block_address(v);
-            jump_blks[k] = v;
+                GlobalVariable *jump_arr =
+                    llvm.const_array(jump_tbl, "jump_tbl");
+
+                Value *out_of_bounds_ix =
+                    llvm.lit_word(static_cast<uint256_t>(out_of_bounds));
+                Value *is_in_bounds = llvm.ult(d, out_of_bounds_ix);
+                Value *ix = llvm.select(
+                    is_in_bounds,
+                    llvm.cast_u32(d),
+                    llvm.lit(32, out_of_bounds));
+
+                Type *block_addr_t = llvm.ptr_ty(llvm.int_ty(8));
+
+                Value *p = llvm.gep(
+                    llvm.array_ty(block_addr_t, sz),
+                    jump_arr,
+                    {llvm.lit(32, 0), ix},
+                    "jump_dest_p");
+
+                Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_t), p);
+
+                llvm.indirectbr(jd_addr, jump_blks);
             }
+            else {
+                auto *jump_lbl_switch = llvm.switch_(
+                    d, error_lbl, static_cast<unsigned>(jumpdests.size()));
 
-    GlobalVariable *jump_arr = llvm.const_array(jump_tbl, "jump_tbl");
-
-        Value *out_of_bounds_ix = llvm.lit_word(static_cast<uint256_t>(out_of_bounds));
-        Value *is_in_bounds = llvm.ult(d, out_of_bounds_ix);
-        Value *ix = llvm.select(is_in_bounds, llvm.cast_u32(d), llvm.lit(32, out_of_bounds));
-
-        Type *block_addr_t = llvm.ptr_ty(llvm.int_ty(8));
-
-        Value *p = llvm.gep(llvm.array_ty(block_addr_t, sz), jump_arr, {llvm.lit(32, 0), ix}, "jump_dest_p");
-
-        Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_t), p);
-
-        llvm.indirectbr(jd_addr, jump_blks);
-        } else {
-            auto *jump_lbl_switch = llvm.switch_(
-                d, error_lbl, static_cast<unsigned>(jumpdests.size()));
-
-            for (auto [k, v] : jumpdests) {
-                auto *c = llvm.lit_word(static_cast<uint256_t>(k));
-                jump_lbl_switch->addCase(c, v);
+                for (auto [k, v] : jumpdests) {
+                    auto *c = llvm.lit_word(static_cast<uint256_t>(k));
+                    jump_lbl_switch->addCase(c, v);
+                }
             }
-        }
-
-
         };
 
         void set_stack_vars(Value *evm_stackv, Value *evm_stack_heightv)
@@ -361,7 +367,8 @@ bool const do_indirectbr = false;
 
         Value *get_evm_stack_top(Value *evm_stackp, Value *height)
         {
-            return llvm.gep(llvm.word_ty, evm_stackp, {height}, "evm_stack_top");
+            return llvm.gep(
+                llvm.word_ty, evm_stackp, {height}, "evm_stack_top");
         };
 
         Function *init_evm_pop()
@@ -762,7 +769,8 @@ bool const do_indirectbr = false;
 
         Value *context_gep(Value *ctx_ref, uint64_t offset, std::string_view nm)
         {
-            return llvm.gep(llvm.int_ty(8), ctx_ref, {llvm.lit(64, offset)}, nm);
+            return llvm.gep(
+                llvm.int_ty(8), ctx_ref, {llvm.lit(64, offset)}, nm);
         };
 
         Value *assign(Value *v, std::string_view nm)
@@ -978,7 +986,8 @@ bool const do_indirectbr = false;
             auto *denom_not_0 = llvm.basic_block("denom_not_0", f);
 
             llvm.insert_at(entry);
-            llvm.condbr(llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0, false);
+            llvm.condbr(
+                llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0, false);
 
             llvm.insert_at(denom_is_0);
             llvm.ret(llvm.lit_word(0));
@@ -1023,14 +1032,17 @@ bool const do_indirectbr = false;
             llvm.ret(llvm.sdiv(numer, denom));
 
             llvm.insert_at(entry); // check for denominator is 0
-            llvm.condbr(llvm.eq(denom, zero), ret_zero, try_denominator_neg1, false);
+            llvm.condbr(
+                llvm.eq(denom, zero), ret_zero, try_denominator_neg1, false);
 
             llvm.insert_at(try_denominator_neg1); // check for denominator is -1
-            llvm.condbr(llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv, false);
+            llvm.condbr(
+                llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv, false);
 
             llvm.insert_at(
                 try_overflow_semantics); // check for numerator is minbound
-            llvm.condbr(llvm.eq(numer, minbound), ret_overflow, ret_sdiv, false);
+            llvm.condbr(
+                llvm.eq(numer, minbound), ret_overflow, ret_sdiv, false);
 
             return f;
         }

@@ -8,6 +8,7 @@ Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.evmmisc.
 Require Import monad.proofs.misc.
 Require Import bluerock.hw_models.utils.
+Hint Rewrite orb_true_iff andb_true_iff: iff.
 (*
 Require Import bluerock.auto.rwdb.
 Require Import bluerock.auto.miscPure.
@@ -331,6 +332,7 @@ Ltac rememberForallb :=
 (** *core execution assumptions *)
 
 Lemma balanceOfRevert s tx ac:
+  reserveBalUpdateOfTx tx = None ->
   balanceOfAc (revertTx s tx).1 ac =
     if bool_decide (ac= sender tx)
     then balanceOfAc s ac - maxTxFee tx
@@ -338,8 +340,8 @@ Lemma balanceOfRevert s tx ac:
 Proof using. Admitted.
 
 
-(* this may need to be strengthened to say that the deelegations would be applied *)
-Lemma revertTxDelegationUpdCoreStronger tx s:
+Lemma revertTxDelegationUpdCore tx s:
+  reserveBalUpdateOfTx tx = None ->
   let sf :=  (revertTx s tx).1 in
   (forall ac, addrDelegated sf ac  =
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
@@ -347,10 +349,12 @@ Lemma revertTxDelegationUpdCoreStronger tx s:
 Proof.
 Admitted.
 
-(* this may need to be strengthened to say that the deelegations would be applied *)
-Lemma revertTxDelegationUpdCore tx s:
-  let sf :=  (revertTx s tx).1 in
-  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Lemma execTxDelegationUpdCore tx s:
+  reserveBalUpdateOfTx tx = None ->
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, addrDelegated sf ac  =
+                (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
+                || bool_decide (ac ∈ (dels tx.1.2))).
 Proof.
 Admitted.
 
@@ -380,12 +384,66 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
                  else balanceOfAc s ac <= balanceOfAc sf ac).
 Proof using. Admitted.
 
-Lemma execTxDelegationUpdCore tx s:
-  let sf :=  (stateAfterTransaction s tx).1 in
-  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
-Proof. Admitted.
+
 
 (* end core exec assumptions *)
+
+Lemma addrDelegatedUnchangedByBalUpd s  f addr baladdr:
+  addrDelegated (updateBalanceOfAc s baladdr f) addr = addrDelegated s addr.
+Proof.
+  unfold addrDelegated.
+  simpl.
+  Transparent updateBalanceOfAc.
+  unfold updateBalanceOfAc.
+  symmetry.
+  rewrite lookup_insert_iff;[| exact dummyAc].
+  case_match; try setoid_rewrite H; case_bool_decide; subst; auto;
+    unfold lookup_total, map_lookup_total, default; setoid_rewrite H.
+  {
+    unfold id. destruct a. simpl. reflexivity.
+  }
+  {
+    reflexivity.
+  }
+Qed.
+
+Lemma execTxDelegationUpdCoreImpl tx s:
+  reserveBalUpdateOfTx tx = None ->
+  let sf :=  (stateAfterTransaction s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof.
+  simpl.
+  intros ? ?.
+  rewrite execTxDelegationUpdCore;[| assumption].
+  repeat rewrite Is_true_true.
+  intros Hp.
+  autorewrite with iff in Hp.
+  destruct Hp; forward_reason; rwHypsP; auto;[].
+  unfold addrsDelUndelByTx.
+  simpl.
+  resdec ltac:(set_solver).
+  autorewrite with syntactic.
+  reflexivity.
+Qed.
+
+Lemma revertTxDelegationUpdCoreImpl tx s:
+  reserveBalUpdateOfTx tx = None ->
+  let sf :=  (revertTx s tx).1 in
+  (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
+Proof.
+  simpl.
+  intros ? ?.
+  rewrite revertTxDelegationUpdCore;[| assumption].
+  repeat rewrite Is_true_true.
+  intros Hp.
+  autorewrite with iff in Hp.
+  destruct Hp; forward_reason; rwHypsP; auto;[].
+  unfold addrsDelUndelByTx.
+  simpl.
+  resdec ltac:(set_solver).
+  autorewrite with syntactic.
+  reflexivity.
+Qed.
 
 Lemma execTxOtherBalanceLB tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -402,7 +460,8 @@ Proof using.
   remember (stateAfterTransaction s.1 tx) as sir.
   destruct sir as [si r].
   simpl in *.
-  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  remember (reserveBalUpdateOfTx tx) as rb.
+  destruct rb; simpl in *.
   1:{  subst sf. unfold balanceOfAcA.  simpl.
        rewrite balanceOfUpd. case_match; auto. try lia.
        case_bool_decide; try lia.
@@ -414,7 +473,7 @@ Proof using.
   unfold balanceOfAcA in *.
   destruct fb; simpl in *.
   2:{ subst sf.
-      rewrite balanceOfRevert.
+      rewrite balanceOfRevert;[| auto; fail].
       resolveDecide congruence.
       lia.
   }
@@ -444,7 +503,8 @@ Proof.
   subst sf.
   revert Hsc.
   unfold execValidatedTx.
-  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  remember ((reserveBalUpdateOfTx tx)) as rb.
+  destruct rb; simpl in *.
   1:{  unfold balanceOfAcA. simpl in *.  intros.
        repeat rewrite balanceOfUpd.
        resolveDecide congruence.
@@ -462,7 +522,7 @@ Proof.
     unfold balanceOfAcA in *.
     destruct fb; try lia.
     2:{
-      simpl in *. rewrite balanceOfRevert.
+      simpl in *. rewrite balanceOfRevert;[| auto; fail].
       resolveDecide congruence. lia.
     }
     symmetry in Heqfb.
@@ -480,13 +540,13 @@ Proof.
       simpl in *.
     {
       destruct fb; simpl in *; try lia.
-      rewrite balanceOfRevert.
+      rewrite balanceOfRevert;[| auto; fail].
       resolveDecide congruence.
       lia.
     }
     {
       destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
-        try rewrite balanceOfRevert;
+        try (rewrite balanceOfRevert;[| auto; fail]);
         try resolveDecide congruence;
         try lia;[].
       rewrite  forallb_forall in Heqfb.
@@ -500,31 +560,9 @@ Proof.
   }
 Qed.
 
-  
-
 Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
   (let '(a,b) := p in f a b) = f (fst p) (snd p).
 Proof using. destruct p; auto. Qed.
-
-
-Lemma addrDelegatedUnchangedByBalUpd s  f addr baladdr:
-  addrDelegated (updateBalanceOfAc s baladdr f) addr = addrDelegated s addr.
-Proof.
-  unfold addrDelegated.
-  simpl.
-  Transparent updateBalanceOfAc.
-  unfold updateBalanceOfAc.
-  symmetry.
-  rewrite lookup_insert_iff;[| exact dummyAc].
-  case_match; try setoid_rewrite H; case_bool_decide; subst; auto;
-    unfold lookup_total, map_lookup_total, default; setoid_rewrite H.
-  {
-    unfold id. destruct a. simpl. reflexivity.
-  }
-  {
-    reflexivity.
-  }
-Qed.
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx).1 in
@@ -535,18 +573,18 @@ Proof.
   unfold execValidatedTx in Hd.
   rewrite pairEta in Hd.
   simpl in *.
-  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  remember (reserveBalUpdateOfTx tx) as rb.
+  destruct rb; simpl in *.
   1:{  unfold balanceOfAcA. simpl in *.  intros.
        repeat rewrite addrDelegatedUnchangedByBalUpd in Hd.
        auto.
   }
   case_match.
   {
-    apply execTxDelegationUpdCore in Hd. assumption.
+    apply execTxDelegationUpdCoreImpl in Hd; auto.
   }
   {
-    apply revertTxDelegationUpdCore in Hd.
-    assumption.
+    apply revertTxDelegationUpdCoreImpl in Hd; auto.
   }
 Qed.
 
@@ -564,7 +602,8 @@ Proof using.
   rewrite pairEta. simpl in *.
   case_match_concl;  auto;[].
   unfold balanceOfAcA in *.
-  destruct (reserveBalUpdateOfTx tx); simpl in *.
+  remember (reserveBalUpdateOfTx tx) as rb.
+  destruct rb; simpl in *.
   1:{  simpl in *.
        rewrite balanceOfUpd.
        case_bool_decide; try lia.
@@ -577,7 +616,7 @@ Proof using.
     lia.
   }
   {
-    rewrite balanceOfRevert.
+    rewrite balanceOfRevert;[| auto; fail].
     resolveDecide congruence.
     lia.
   }
@@ -666,7 +705,42 @@ Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
     addrDelegated ((execValidatedTx s txlast).1).1 addr
     = addrDelegated s.1 addr.
 Proof.
-Admitted. (* properly add delegation fields to AccountM and Transaction *)
+  intros Hn.
+  unfold execValidatedTx.
+  case_match; auto.
+  {
+    simpl.
+    rewrite addrDelegatedUnchangedByBalUpd. reflexivity.
+  }
+  case_match.
+  simpl in *.
+  case_match;
+    simpl in *.
+  2:{
+    rewrite revertTxDelegationUpdCore;[| auto; fail].
+    unfold addrsDelUndelByTx in *.
+    (*
+    resdec ltac:(set_solver). *)
+    rewrite bool_decide_true;[| set_solver].
+    rewrite bool_decide_false;[|set_solver].
+    autorewrite with syntactic.
+    reflexivity.
+  }
+  {
+    pose proof (execTxDelegationUpdCore txlast s.1 ltac:(auto) addr) as Hd.
+    revert Hd. rwHypsP.
+    simpl.
+    intros.
+    rewrite Hd.
+    clear Hd. revert Hn. clear.
+    unfold addrsDelUndelByTx in *.
+    intros.
+    rewrite bool_decide_true; [| set_solver].
+    rewrite bool_decide_false;[|set_solver].
+    autorewrite with syntactic.
+    reflexivity.
+  }
+Qed.
 
 Hint Rewrite Z.min_l  using lia: syntactic.
 Hint Rewrite Z.min_r  using lia: syntactic.
@@ -811,7 +885,9 @@ Open Scope Z_scope.
 Lemma initResBal s addr:
   (initialReserveBals s) !!! addr =
     balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
-Proof. Admitted. (* should follow easily from definitions *)
+Proof.
+  reflexivity.
+Qed.
 
 
 Definition rbLe (eoas: list evm.address) (rb1 rb2: ReserveBals) :=

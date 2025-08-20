@@ -1,6 +1,7 @@
 Require Import QArith.
 Require Import bluerock.auto.cpp.proof.
 
+
 Require Import monad.proofs.stsg.
 Require Import stdpp.gmap.
 Require Import bluerock.auto.cpp.tactics4.
@@ -664,9 +665,12 @@ Section cp.
   Definition findBodyOfFnNamed2 module filter :=
     List.filter (fun p => let '(nm, body):=p in filter nm) (NM.elements (symbols module)).
 
+(* for newer version of cpp2v, change tu_find.INFO.okind_of_value to okind_of_value
+ *)
+
   Definition lookupSymbolByFullName module (n: name) : option sym_info :=
     let el:= NM.find n (symbols module) in
-    (option_map (fun x => {| info_name := n; info_type := fst (okind_of_value x) |}) el).
+    (option_map (fun x => {| info_name := n; info_type := fst (tu_find.INFO.okind_of_value x) |}) el).
 
   Definition firstEntryName (l :list (name * ObjValue)) :=
     (List.nth 0 (map fst l) (Nunsupported "impossible")).

@@ -415,18 +415,22 @@ Proof. Abort.
 Open Scope N_scope.
 (** *core execution assumptions *)
 
-Lemma balanceOfRevert s tx ac:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
-  reserveBalUpdateOfTx tx = None ->
-  balanceOfAc (revertTx s tx) ac =
-    if bool_decide (ac= sender tx)
-    then balanceOfAc s ac - maxTxFee tx
-    else balanceOfAc s ac.
+Lemma balanceOfRevertSender s tx:
+  maxTxFee tx <= balanceOfAc s (sender tx) 
+  -> reserveBalUpdateOfTx tx = None
+  -> balanceOfAc (revertTx s tx) (sender tx)
+     = balanceOfAc s (sender tx) - maxTxFee tx.
+Proof using. Admitted.
+
+Lemma balanceOfRevertOther s tx ac:
+  reserveBalUpdateOfTx tx = None
+  -> ac <> (sender tx)
+  -> balanceOfAc (revertTx s tx) ac
+     = balanceOfAc s ac.
 Proof using. Admitted.
 
 
 Lemma revertTxDelegationUpdCore tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (revertTx s tx) in
   (forall ac, addrDelegated sf ac  =
@@ -436,7 +440,6 @@ Proof.
 Admitted.
 
 Lemma execTxDelegationUpdCore tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   (forall ac, addrDelegated sf ac  =
@@ -456,7 +459,6 @@ Proof. Admitted.
 
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   forall ac, ac <> sender tx
@@ -466,7 +468,6 @@ Proof using. Admitted.
 
 
 Lemma changedAccountSetSound tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let (sf, changedAccounts) :=  (evmExecTxCore s tx) in
   (forall ac, ac ∉ changedAccounts -> sf ac = s ac).
@@ -500,13 +501,12 @@ Proof.
   reflexivity.
 Qed.
 Lemma execTxDelegationUpdCoreImpl tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
   simpl.
-  intros ? ? ?.
+  intros ? ?.
   rewrite execTxDelegationUpdCore; auto.
   repeat rewrite Is_true_true.
   intros Hp.
@@ -520,13 +520,12 @@ Proof.
 Qed.
 
 Lemma revertTxDelegationUpdCoreImpl tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (revertTx s tx) in
   (forall ac, addrDelegated sf ac  -> addrDelegated s ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
   simpl.
-  intros ? ? ?.
+  intros ? ?.
   rewrite revertTxDelegationUpdCore;auto.
   repeat rewrite Is_true_true.
   intros Hp.
@@ -576,7 +575,7 @@ Proof using.
   unfold balanceOfAcA in *.
   destruct fb; simpl in *.
   2:{ subst sf.
-      rewrite balanceOfRevert; auto;[].
+      rewrite balanceOfRevertOther; auto;[].
       resolveDecide congruence.
       lia.
   }
@@ -634,7 +633,7 @@ Proof.
     unfold balanceOfAcA in *.
     destruct fb; try lia.
     2:{
-      simpl in *. rewrite balanceOfRevert; auto.
+      simpl in *. rewrite balanceOfRevertSender; auto.
       resolveDecide congruence. lia.
     }
     symmetry in Heqfb.
@@ -654,13 +653,11 @@ Proof.
       simpl in *.
     {
       destruct fb; simpl in *; auto; try lia.
-      rewrite balanceOfRevert; auto.
-      resolveDecide congruence.
-      lia.
+      rewrite balanceOfRevertSender; auto.
     }
     {
       destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
-        try (rewrite balanceOfRevert;auto;[]);
+        try (rewrite balanceOfRevertSender;auto;[]);
         try resolveDecide congruence; try auto;
         try lia;[].
       rewrite  forallb_spec in Heqfb.
@@ -685,11 +682,10 @@ Proof.
 Qed.
 
 Lemma execTxDelegationUpd tx s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   let sf :=  (execValidatedTx s tx) in
   (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
 Proof.
-  intros ? ? ? Hd.
+  intros ? ? Hd.
   subst sf.
   unfold execValidatedTx in Hd.
   simpl in *.
@@ -711,7 +707,6 @@ Qed.
 
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   let sf :=  (execValidatedTx s tx) in
   (forall ac, ac <> sender tx
               -> if (addrDelegated (fst sf) ac || hasCode (fst sf) ac)
@@ -719,7 +714,7 @@ Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
                  else balanceOfAcA s ac <= balanceOfAcA sf ac).
 Proof using.
   intros. subst sf.
-  pose proof (fun p => execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 ltac:(auto) p ac ltac:(auto)) as Htx.
+  pose proof (fun p => execTxCannotDebitNonDelegatedNonContractAccountsCore tx s.1 p ac ltac:(auto)) as Htx.
   unfold execValidatedTx.
   simpl in *.
   case_match_concl;  auto;[].
@@ -739,9 +734,7 @@ Proof using.
     lia.
   }
   {
-    rewrite balanceOfRevert;auto.
-    resolveDecide congruence.
-    lia.
+    rewrite balanceOfRevertOther;auto.
   }
 Qed.
 
@@ -764,7 +757,7 @@ Proof using.
   simpl. intros.
   case_bool_decide; subst; auto; [apply execTxSenderBal; auto|].
   pose proof (execTxOtherBalanceLB tx s ltac:(auto) ac ltac:(auto)).
-  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ltac:(auto) ac ltac:(auto)).
+  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ac ltac:(auto)).
   destruct (hasCode (execValidatedTx s tx).1 ac); auto;[].
   autorewrite with syntactic in *.
   case_match; lia.
@@ -824,13 +817,12 @@ Proof.
 Qed.
 
 Lemma otherDelUndelDelegationStatusUnchanged s addr txlast :
-  maxTxFee txlast <= balanceOfAc s.1 (sender txlast) -> 
   addr ∉ addrsDelUndelByTx txlast
   ->
     addrDelegated ((execValidatedTx s txlast)).1 addr
     = addrDelegated s.1 addr.
 Proof.
-  intros ? Hn.
+  intros Hn.
   unfold execValidatedTx.
   case_match; auto.
   {
@@ -851,7 +843,7 @@ Proof.
     reflexivity.
   }
   {
-    pose proof (execTxDelegationUpdCore txlast s.1 ltac:(auto) ltac:(auto )addr) as Hd.
+    pose proof (execTxDelegationUpdCore txlast s.1 ltac:(auto )addr) as Hd.
     revert Hd. rwHyps.
     simpl.
     intros.
@@ -870,12 +862,11 @@ Set Nested Proofs Allowed.
 
 
 Lemma isAllowedToEmpty2 s txlast rest txnext:
-  maxTxFee txlast <= balanceOfAc s.1 (sender txlast) -> 
   let sf :=  execValidatedTx s txlast in 
   txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
   -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
 Proof using.
-  intros ? ? Hr.
+  intros ? Hr.
   unfold isAllowedToEmpty.
   simpl.
   autorewrite with syntactic.
@@ -1020,12 +1011,11 @@ Proof using.
 Qed.
 
 Lemma isAllowedToEmptyImpl s tx inter a:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx)
-  -> isAllowedToEmpty s (tx::inter) a = true
+  isAllowedToEmpty s (tx::inter) a = true
   -> sender tx <> sender a
      /\ addrDelegated (execValidatedTx s tx).1 (sender a) = false.
 Proof using.
-  intros ?  Hae.
+  intros  Hae.
   unfold isAllowedToEmpty in *.
   simpl in *.
   destruct (decide (sender a = sender tx)).
@@ -1039,7 +1029,7 @@ Proof using.
   split_and; auto.
   rewrite <- not_true_iff_false.
   intros Hc.
-  pose proof (execTxDelegationUpd tx s ltac:(lia)) as Hdel.
+  pose proof (execTxDelegationUpd tx s) as Hdel.
   simpl in Hdel.
   specialize (Hdel  (sender a)).
   repeat rewrite Is_true_true in Hdel.
@@ -1062,13 +1052,12 @@ Qed.
   
 
 Lemma emptyBalanceUb s tx inter a:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   hasCode (execValidatedTx s tx).1 (sender a) = false
   -> isAllowedToEmpty s (tx :: inter) a = true
   -> balanceOfAc s.1 (sender a) ≤ balanceOfAc (execValidatedTx s tx).1 (sender a).
 Proof.
-  intros ? Hsc Hae.
-  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ltac:(lia) (sender a)) as Hs.
+  intros Hsc Hae.
+  pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s (sender a)) as Hs.
   simpl in Hs.
   apply isAllowedToEmptyImpl in Hae; auto.
   forward_reason.
@@ -1114,13 +1103,12 @@ Proof using.
 Qed.
 
 Lemma configuredReserveBalOfAddrSame2 s tx inter a:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   isAllowedToEmpty s (tx :: inter) a = true
   -> (configuredReserveBalOfAddr (execValidatedTx s tx).2 (sender a)
       =
         configuredReserveBalOfAddr s.2 (sender a)).
 Proof using.
-  intros ? Hae.
+  intros Hae.
   apply configuredReserveBalOfAddrSame.
   apply isAllowedToEmptyImpl in Hae; auto.
   tauto.
@@ -1128,7 +1116,6 @@ Qed.
 
 
 Lemma monoL2 eoas s rb1 rb2 inter extension tx:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   (map sender extension) ⊆ eoas
   -> rbLe eoas rb1 rb2
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
@@ -1136,7 +1123,6 @@ Lemma monoL2 eoas s rb1 rb2 inter extension tx:
   -> rbLe eoas (remainingEffReserveBalsL s rb1 (tx::inter) extension)
           (remainingEffReserveBalsL (execValidatedTx s tx) rb2 inter extension).
 Proof using.
-  intros Hfee.
   revert rb1 rb2 inter.
   induction extension; auto;[].
   unfold rbLe in *.
@@ -1162,14 +1148,14 @@ Proof using.
     fold EffReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
   specialize (Hsc (sender a) ltac:(set_solver)).
-  pose proof (emptyBalanceUb _ _ _ _ Hfee Hsc Heqb) as Hle.
+  pose proof (emptyBalanceUb _ _ _ _ Hsc Heqb) as Hle.
   case_bool_decide.
   {
     rewrite bool_decide_true; [|lia].
     repeat rewrite updateKeyLkp3;
       fold EffReserveBals in *.
     case_bool_decide; try lia.
-    pose proof (configuredReserveBalOfAddrSame2 _ _ _ _ Hfee Heqb) as Hlle.
+    pose proof (configuredReserveBalOfAddrSame2 _ _ _ _ Heqb) as Hlle.
     rewrite Hlle.
     lia.
   }
@@ -1323,12 +1309,13 @@ Proof using.
 Qed.
 
 Lemma execL tx extension s:
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (execValidatedTx  s tx) extension.
 Proof using.
-  intros Hext Heoac Hsc.
+  intros Hfee Hext Heoac Hsc.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
   clear Heoac.
   set (sf:=(execValidatedTx s tx).1).
@@ -1343,19 +1330,19 @@ Proof using.
   { apply Hc. }
   pose proof (monoL2 (map sender (tx::extension))) as Hm.
   unfold rbLe in Hm.
-  apply Hm; auto; simpl in *; [ set_solver | | set_solver].
+  apply Hm; auto; simpl in *; auto; [ set_solver | | set_solver].
   clear Hm.
   clear Hc. clear Hin. clear ac.
   hnf.
   clear Hsc.
   clear Hext.
-  apply exec1. assumption.
+  apply exec1; auto.
 Qed.
 
 
-
 Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: list TxWithHdr) :
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  maxTxFee tx <= balanceOfAc latestState.1 (sender tx)
+  -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode latestState.1 ac = false)
  ->  consensusAcceptableTxs latestState (tx::extension)
@@ -1447,7 +1434,10 @@ Proof.
   intros Heoa Hsc.
   change  ((hb1 :: blocks1) ++ blocks2) with (hb1::(blocks1++blocks2)) in Hacc.
   forward_reason.
-  eapply inductiveStep in Hacc;  auto.
+  pose proof (execValidate _ _ _ Hacc) as Hv.
+  unfold validateTx in Hv.
+  autorewrite with iff in Hv.
+  eapply inductiveStep in Hacc;  auto;[| lia].
   unfold execTx in *.
   destruct (validateTx latestState.1 hb1); simpl in *; try contradiction;[].
   pose proof (hasCodeFalsePresExec _ _ _ Heoa Hsc) as Hsci.
@@ -1463,6 +1453,9 @@ Qed.
 
 Print Assumptions fullBlockStep.
 (*
+Section Variables:
+K
+: N
 Axioms:
 revertTxDelegationUpdCore :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
@@ -1473,13 +1466,12 @@ revertTxDelegationUpdCore :
 revertTx : StateOfAccounts → TxWithHdr → StateOfAccounts
 execTxSenderBalCore :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
-    reserveBalUpdateOfTx tx = None
-    → let sf := (evmExecTxCore s tx).1 in
-      if addrDelegated s (sender tx)
-      then True
-      else
-       balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - (maxTxFee tx + value tx))%N
-       ∨ balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - maxTxFee tx)%N
+    (maxTxFee tx ≤ balanceOfAc s (sender tx))%N
+    → reserveBalUpdateOfTx tx = None
+      → let sf := (evmExecTxCore s tx).1 in
+        addrDelegated s (sender tx) = false
+        → balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - (maxTxFee tx + value tx))%N
+          ∨ balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - maxTxFee tx)%N
 execTxDelegationUpdCore :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
     reserveBalUpdateOfTx tx = None
@@ -1491,22 +1483,23 @@ execTxCannotDebitNonDelegatedNonContractAccountsCore :
     reserveBalUpdateOfTx tx = None
     → ∀ (sf := (evmExecTxCore s tx).1) (ac : EvmAddr),
         ac ≠ sender tx
-        → if addrDelegated sf ac || hasCode sf ac
-          then True
-          else (balanceOfAc s ac ≤ balanceOfAc sf ac)%N
+        → addrDelegated sf ac || hasCode sf ac = false
+          → (balanceOfAc s ac ≤ balanceOfAc sf ac)%N
 evmExecTxCore : StateOfAccounts → TxWithHdr → StateOfAccounts * list EvmAddr
 changedAccountSetSound :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
     reserveBalUpdateOfTx tx = None
     → let (sf, changedAccounts) := evmExecTxCore s tx in
       ∀ ac : EvmAddr, ac ∉ changedAccounts → sf ac = s ac
-balanceOfRevert :
+balanceOfRevertSender :
+  ∀ (s : StateOfAccounts) (tx : TxWithHdr),
+    (maxTxFee tx ≤ balanceOfAc s (sender tx))%N
+    → reserveBalUpdateOfTx tx = None
+      → balanceOfAc (revertTx s tx) (sender tx) = (balanceOfAc s (sender tx) - maxTxFee tx)%N
+balanceOfRevertOther :
   ∀ (s : StateOfAccounts) (tx : TxWithHdr) (ac : EvmAddr),
     reserveBalUpdateOfTx tx = None
-    → balanceOfAc (revertTx s tx) ac =
-      (if bool_decide (ac = sender tx)
-       then (balanceOfAc s ac - maxTxFee tx)%N
-       else balanceOfAc s ac)
+    → ac ≠ sender tx → balanceOfAc (revertTx s tx) ac = balanceOfAc s ac
 
  *)
 

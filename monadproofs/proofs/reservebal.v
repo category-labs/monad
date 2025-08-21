@@ -1304,22 +1304,24 @@ Proof using.
   set_solver.
 Qed.
 
-Lemma fullBlockStep  (latestState : AugmentedState) (block1: list TxWithHdr) (block2: list TxWithHdr) :
-  blockNumsInRange (block1++block2)
-  -> consensusAcceptableTxs latestState (block1++block2)
-  -> (forall txext, txext ∈ (block1++block2) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (block1++block2)))
-  -> (forall ac, ac ∈ (map sender (block1++block2)) -> hasCode latestState.1 ac = false)
-  -> match execTxs latestState block1 with
+Lemma fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (blocks2: list TxWithHdr) :
+  blockNumsInRange (blocks1++blocks2)
+  -> consensusAcceptableTxs latestState (blocks1++blocks2)
+  -> (forall txext, txext ∈ (blocks1++blocks2) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (blocks1++blocks2)))
+  -> (forall ac, ac ∈ (map sender (blocks1++blocks2)) -> hasCode latestState.1 ac = false)
+  -> match execTxs latestState blocks1 with
      | None =>  False
      | Some si =>
-         consensusAcceptableTxs si block2
-         /\ blockNumsInRange block2
+         (* enough conditions to guarantee fee-solvency of block2 *)
+         consensusAcceptableTxs si blocks2
+         /\ blockNumsInRange blocks2
+         /\ (forall ac, ac ∈ (map sender blocks2) -> hasCode si.1 ac = false)
      end.
 Proof.
   intros Hrange Hacc.
-  induction block1 as [|hb1 block1 IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
+  induction blocks1 as [|hb1 blocks1 IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
   intros Heoa Hsc.
-  change  ((hb1 :: block1) ++ block2) with (hb1::(block1++block2)) in Hacc.
+  change  ((hb1 :: blocks1) ++ blocks2) with (hb1::(blocks1++blocks2)) in Hacc.
   forward_reason.
   eapply inductiveStep in Hacc;  auto.
   unfold execTx in *.
@@ -1336,7 +1338,7 @@ Proof.
     apply Hsci. set_solver.
   }
   intros.
-  destruct (execTxs si block1) as [|]; try auto.
+  destruct (execTxs si blocks1) as [|]; try auto.
 Qed.
 
 Print Assumptions fullBlockStep.
@@ -1399,4 +1401,39 @@ Proof using.
   lia.
 Qed.
 
+
+Section use.
+  Variable b0: list TxWithHdr.
+  Variable sb0 : AugmentedState. (* state after b0 *)
+
+  
+  Hypothesis nextBlockPicker:
+    forall (lastConsensedState: AugmentedState) (proposedTxs: (list TxWithHdr)),
+      consensusAcceptableTxs lastConsensedState proposedTxs
+      -> exists nextBlock, consensusAcceptableTxs lastConsensedState (proposedTxs++nextBlock).
+
+Open Scope N_scope.
+  Lemma operation  : (K=2) -> False.
+    intros.
+    revert nextBlockPicker.
+    rwHyps.
+    intros.
+    pose proof (nextBlockPicker sb0 []  (acceptableNil _)) as b1.
+    destruct b1 as [b1 b1ok].
+    simpl in b1ok.
+    pose proof (nextBlockPicker sb0 b1 ltac:(assumption))  as b2.
+    destruct b2 as [b2 b2ok].
+    evar (sb1: AugmentedState).
+    apply fullBlockStep in b2ok; auto.
+    case_match; auto.
+    destruct p as [sb1 ?].
+    pose proof (nextBlockPicker sb1 [b2] ltac:(reflexivity) b2ok) as b3.
+    destruct b3 as [b3 b3ok].
+    apply fullBlockStep2 in b3ok.
+    case_match; auto.
+    destruct p as [sb2 ?].
+    pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
+*)
+ Abort.
+End use.
 End K.

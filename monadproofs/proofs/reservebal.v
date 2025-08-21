@@ -396,15 +396,16 @@ Definition txCannotCreateContractAtAddrs tx (eoasWithPrivateKey: list EvmAddr) :
   forall s, let sf := (execValidatedTx  s tx) in
             forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s.1 addr = false -> hasCode sf.1 addr = false.
 
-Lemma fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (blocks2: list TxWithHdr) :
+Theorem fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (blocks2: list TxWithHdr) :
   blockNumsInRange (blocks1++blocks2)
   -> consensusAcceptableTxs latestState (blocks1++blocks2)
   -> (forall txext, txext ∈ (blocks1++blocks2) -> txCannotCreateContractAtAddrs txext (map sender (blocks1++blocks2)))
   -> (forall ac, ac ∈ (map sender (blocks1++blocks2)) -> hasCode latestState.1 ac = false)
   -> match execTxs latestState blocks1 with
      | None =>  False
+        (** ^ execution cannot abort (indicated by returning None) due to balance being insufficient to even pay fees *)
      | Some si =>
-         (* enough conditions to guarantee fee-solvency of block2, so that it can be extended and then this lemma reapplied *)
+        (** in this case, we have enough conditions to guarantee fee-solvency of block2, so that it can be extended and then this lemma reapplied *)
          consensusAcceptableTxs si blocks2
          /\ blockNumsInRange blocks2
          /\ (forall ac, ac ∈ (map sender blocks2) -> hasCode si.1 ac = false)
@@ -413,7 +414,9 @@ Lemma fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (b
 Proof. Abort.
 
 Open Scope N_scope.
-(** *core execution assumptions *)
+(** *core execution assumptions
+To prove the theorem [fullBlockStep], we need to make some assumptions about how the core EVM execution updates balances and delegated-ness:
+ *)
 
 Lemma balanceOfRevertSender s tx:
   maxTxFee tx <= balanceOfAc s (sender tx) 
@@ -474,17 +477,9 @@ Lemma changedAccountSetSound tx s:
 Proof using. Admitted.
 
 
-(* end core exec assumptions *)
-
-Lemma execTxSenderBalCore2 tx s:
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
-  reserveBalUpdateOfTx tx = None ->
-  let sf :=  (evmExecTxCore s tx).1 in
-  (if addrDelegated s (sender tx) (* sender cannot have code *)
-   then True
-   else balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
-        \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx)).
-Proof. Abort.
+(** * lemmas about execution
+these follow from  the axioms abouve about [evmExecTxCore] and [revertTx] and by the definition of [execTx]
+ *)
 
 Lemma addrDelegatedUnchangedByBalUpd s  f addr baladdr:
   addrDelegated (updateBalanceOfAc s baladdr f) addr = addrDelegated s addr.
@@ -941,75 +936,6 @@ Proof using.
   }
 Qed.
 
-
-
-Lemma hasCodeFalsePresExec l s tx:
-  (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtAddrs txext (map sender (tx::l)))
-  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s.1 ac = false)
-  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode (execValidatedTx s tx).1 ac = false).
-Proof using.
-  intros Heoac Hsc.
-  intros.
-  pose proof (Hsc ac ltac:(set_solver)).
-  specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
-  auto.
-Qed.
-
-
-Open Scope Z_scope.
-Lemma initResBal s addr:
-  (initialEffReserveBals s)  addr =
-    balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
-Proof.
-  reflexivity.
-Qed.
-
-
-Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
-  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
-
-Hint Rewrite @updateKeyLkp3 : syntactic.
-Lemma mono eoas s rb1 rb2 inter tx:
-  rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
-       (remainingEffReserveBals s rb2 inter tx).
-Proof using.
-  intros Hrb addr Hin.
-  unfold remainingEffReserveBals.
-  pose proof (Hrb addr Hin).
-  case_match_concl; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  {case_bool_decide; subst; try lia. }
-  case_match_concl;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; try lia. }
-  case_bool_decide;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; try lia. }
-  case_bool_decide;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *; try lia.
-Qed.
-  
-Lemma monoL eoas s rb1 rb2 inter extension:
-  map sender extension ⊆ eoas
-  -> rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingEffReserveBalsL s rb1 inter extension)
-          (remainingEffReserveBalsL s rb2 inter extension).
-Proof using.
-  revert rb1 rb2 inter.
-  induction extension; auto;[].
-  unfold rbLe in *.
-  intros ? ? ? Hs Hrb addr Hin. simpl in *.
-  simpl.
-  apply IHextension;[set_solver | | set_solver].
-  apply mono.
-  assumption.
-Qed.
-
 Lemma isAllowedToEmptyImpl s tx inter a:
   isAllowedToEmpty s (tx::inter) a = true
   -> sender tx <> sender a
@@ -1115,25 +1041,69 @@ Proof using.
 Qed.
 
 
-Lemma monoL2 eoas s rb1 rb2 inter extension tx:
-  (map sender extension) ⊆ eoas
-  -> rbLe eoas rb1 rb2
-  -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
-  -> (∀ ac : EvmAddr, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1 ac = false)
-  -> rbLe eoas (remainingEffReserveBalsL s rb1 (tx::inter) extension)
-          (remainingEffReserveBalsL (execValidatedTx s tx) rb2 inter extension).
+Lemma hasCodeFalsePresExec l s tx:
+  (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtAddrs txext (map sender (tx::l)))
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode s.1 ac = false)
+  -> (forall ac, ac ∈ (map sender (tx::l)) -> hasCode (execValidatedTx s tx).1 ac = false).
 Proof using.
-  revert rb1 rb2 inter.
-  induction extension; auto;[].
-  unfold rbLe in *.
-  intros ? ? ? Hsub Hrb Hrange Hsc addr Hin.
-  simpl.
-  apply forallCons in Hrange.
-  simpl in Hsc.
-  forward_reason.
-  apply IHextension; auto;[set_solver| |].
-  2:{ intros. apply Hsc. set_solver. }
-  clear Hin. clear addr.
+  intros Heoac Hsc.
+  intros.
+  pose proof (Hsc ac ltac:(set_solver)).
+  specialize (Heoac tx ltac:(set_solver) s ac ltac:(set_solver) ltac:(assumption)).
+  auto.
+Qed.
+
+
+Open Scope Z_scope.
+Lemma initResBal s addr:
+  (initialEffReserveBals s)  addr =
+    balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
+Proof.
+  reflexivity.
+Qed.
+
+
+Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
+  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
+
+Hint Rewrite @updateKeyLkp3 : syntactic.
+Lemma mono eoas s rb1 rb2 inter tx:
+  rbLe eoas rb1 rb2
+  -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
+       (remainingEffReserveBals s rb2 inter tx).
+Proof using.
+  intros Hrb addr Hin.
+  unfold remainingEffReserveBals.
+  pose proof (Hrb addr Hin).
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold EffReserveBals in *.
+  {case_bool_decide; subst; try lia. }
+  case_match_concl;
+    repeat rewrite updateKeyLkp3;
+    fold EffReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide;
+    repeat rewrite updateKeyLkp3;
+    fold EffReserveBals in *.
+  2:{ case_bool_decide; subst; try lia. }
+  case_bool_decide;
+    repeat rewrite updateKeyLkp3;
+    fold EffReserveBals in *; try lia.
+Qed.
+
+Lemma mono2 tx a extension s (eoas: list EvmAddr) rb1 rb2 inter:
+  (∀ ac : EvmAddr,
+      ac ∈ sender tx :: sender a :: map sender extension
+      → hasCode (execValidatedTx s tx).1 ac = false)
+  → (∀ addr : EvmAddr, addr ∈ eoas → rb1 addr ≤ rb2 addr)
+  → txBlockNum a - K ≤ txBlockNum tx  ≤ txBlockNum a
+  → ∀ addr : EvmAddr,
+      addr ∈ eoas
+      → remainingEffReserveBals s rb1 (tx :: inter) a addr
+          ≤ remainingEffReserveBals (execValidatedTx s tx) rb2 inter a addr.
+Proof using.
+  intros Hsc Hrb Hrangel.
   intros addr Hin.
   simpl.
   unfold remainingEffReserveBals.
@@ -1163,6 +1133,44 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *;
     case_bool_decide; try lia.
+Qed.  
+
+Lemma monoL eoas s rb1 rb2 inter extension:
+  map sender extension ⊆ eoas
+  -> rbLe eoas rb1 rb2
+  -> rbLe eoas (remainingEffReserveBalsL s rb1 inter extension)
+          (remainingEffReserveBalsL s rb2 inter extension).
+Proof using.
+  revert rb1 rb2 inter.
+  induction extension; auto;[].
+  unfold rbLe in *.
+  intros ? ? ? Hs Hrb addr Hin. simpl in *.
+  simpl.
+  apply IHextension;[set_solver | | set_solver].
+  apply mono.
+  assumption.
+Qed.
+
+Lemma monoL2 eoas s rb1 rb2 inter extension tx:
+  (map sender extension) ⊆ eoas
+  -> rbLe eoas rb1 rb2
+  -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
+  -> (∀ ac : EvmAddr, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1 ac = false)
+  -> rbLe eoas (remainingEffReserveBalsL s rb1 (tx::inter) extension)
+          (remainingEffReserveBalsL (execValidatedTx s tx) rb2 inter extension).
+Proof using.
+  revert rb1 rb2 inter.
+  induction extension; auto;[].
+  unfold rbLe in *.
+  intros ? ? ? Hsub Hrb Hrange Hsc addr Hin.
+  simpl.
+  apply forallCons in Hrange.
+  simpl in Hsc.
+  forward_reason.
+  apply IHextension; auto;[set_solver| |].
+  2:{ intros. apply Hsc. set_solver. }
+  clear Hin. clear addr.
+  eapply mono2; eauto.
 Qed.
     
     
@@ -1172,12 +1180,12 @@ Definition rbLeA (rb1 rb2: EffReserveBals) :=
   forall addr, rb1 addr <= rb2 addr.
 
 Lemma exec1 tx extension s :
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
-  let sf := (execValidatedTx s tx) in 
-  (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1 ac = false)
-  -> (∀ addr : EvmAddr,
-    addr ∈ sender tx :: map sender extension
-    → remainingEffReserveBals s (initialEffReserveBals s) [] tx addr ≤ initialEffReserveBals sf addr).
+  maxTxFee tx <= balanceOfAc s.1 (sender tx)
+  -> let sf := (execValidatedTx s tx) in 
+     (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
+     -> (∀ addr : EvmAddr,
+            addr ∈ sender tx :: map sender extension
+            → remainingEffReserveBals s (initialEffReserveBals s) [] tx addr ≤ initialEffReserveBals sf addr).
 Proof using.
   intros Hfee ? Hscf.
   intros ? Hin.

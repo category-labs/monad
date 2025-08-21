@@ -1312,10 +1312,11 @@ Lemma fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (b
   -> match execTxs latestState blocks1 with
      | None =>  False
      | Some si =>
-         (* enough conditions to guarantee fee-solvency of block2 *)
+         (* enough conditions to guarantee fee-solvency of block2, so that it can be extended and then this lemma reapplied *)
          consensusAcceptableTxs si blocks2
          /\ blockNumsInRange blocks2
          /\ (forall ac, ac ∈ (map sender blocks2) -> hasCode si.1 ac = false)
+         /\ (forall txext, txext ∈ (blocks2) ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (blocks2)))
      end.
 Proof.
   intros Hrange Hacc.
@@ -1332,13 +1333,9 @@ Proof.
   pose proof (fun txext p => txCannotCreateContractAtEOAAddrWithPrivateKeyTrimHead _ _ _
                                (Heoa txext (elem_of_list_further _ _ _ p))).
   specialize (IH si ltac:(auto) ltac:(auto) ltac:(auto)).
-  lapply IH.
-  2:{
-    intros.
-    apply Hsci. set_solver.
-  }
+  lapply IH; auto;[].
   intros.
-  destruct (execTxs si blocks1) as [|]; try auto.
+  apply Hsci. set_solver.
 Qed.
 
 Print Assumptions fullBlockStep.
@@ -1401,39 +1398,77 @@ Proof using.
   lia.
 Qed.
 
+(** *Consensus Invariant and how its steps preserve the invariant
+At any given time, consensus has some [latestConsensedState] and a list of transactions/blocks (say [ltx]) proposed on top of that.
+The main invariant is that it maintains is [consensusAcceptableTxs latestConsensedState ltx].
+There are also side conditions like [blockNumsInRange ltx] and that the transactions in [ltx] are not sent an address that has code: the latter is just a formal assumption in Coq but is guaranteed by cryptographic hardness of generating private keys.
 
-Section use.
+This invariant needs to be preserve on the 2 mains steps of consensus:
+- extend ltx with a new block of transactions.
+- once execution catches up to the next block remove a prefix of ltx that corresponds to the block whose execution results are now available.
+
+The lemma [fullBlockStep] is exactly what is needed to preserve the invariant at the latter step.
+To preserve the invariant at the first step, the proposed new txs (e.g. grabbed from mempool) need to be checked so that they satisfy the [consensusAcceptableTxs] property.
+
+Below is an illustration of how the blockchain evolves starting from the genesis block b0.
+It assumes an oracle nextBlockPicker that picks the next block while satisfying the conditions.
+
+ *)
+
+Section consensusInvariantsAndPreservation.
   Variable b0: list TxWithHdr.
   Variable sb0 : AugmentedState. (* state after b0 *)
-
+  Hypothesis b0range: blockNumsInRange b0.
+  Definition cannotCreateCodeAtSenderAddrs ltx := ∀ txext : TxWithHdr,
+   txext ∈ ltx
+   → txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender ltx).
+  Hypothesis b0csa: cannotCreateCodeAtSenderAddrs b0.
   
   Hypothesis nextBlockPicker:
     forall (lastConsensedState: AugmentedState) (proposedTxs: (list TxWithHdr)),
       consensusAcceptableTxs lastConsensedState proposedTxs
-      -> exists nextBlock, consensusAcceptableTxs lastConsensedState (proposedTxs++nextBlock).
+      -> blockNumsInRange proposedTxs
+      -> cannotCreateCodeAtSenderAddrs proposedTxs
+      -> (∀ ac : EvmAddr, ac ∈ map sender proposedTxs → hasCode lastConsensedState.1 ac = false)
+      -> exists nextBlock,
+          consensusAcceptableTxs lastConsensedState (proposedTxs++nextBlock)
+          /\ blockNumsInRange (proposedTxs++nextBlock)
+          /\ cannotCreateCodeAtSenderAddrs (proposedTxs++nextBlock)
+          /\ (∀ ac : EvmAddr, ac ∈ map sender (proposedTxs++nextBlock) → hasCode lastConsensedState.1 ac = false).
+  Open Scope N_scope.
 
-Open Scope N_scope.
-  Lemma operation  : (K=2) -> False.
+  (** The statement below is of course unprovable. But the proof script below illustrates how the state of the consensus module evolves from the genesis block b0, showing how the 2 steps are taken and how they preserve the invaraints. At every time, the proof context (hypotheses) has the assertion that the invariants are satisified for the latest consensed block and the proposal so far. The proof script itself is not useful to see: the Coq goal at every step is illuminating.
+   *)
+  
+  Lemma operation  : False.
     intros.
     revert nextBlockPicker.
     rwHyps.
     intros.
-    pose proof (nextBlockPicker sb0 []  (acceptableNil _)) as b1.
+    (** now we invoke the oracle to pick the next block after b0 *)
+    pose proof (nextBlockPicker sb0 []  (acceptableNil _) I ltac:(set_solver) ltac:(set_solver)) as b1.
     destruct b1 as [b1 b1ok].
     simpl in b1ok.
-    pose proof (nextBlockPicker sb0 b1 ltac:(assumption))  as b2.
+    forward_reason.
+    (** now we invoke the oracle to pick the next block after b1 *)
+    pose proof (nextBlockPicker sb0 b1 ltac:(assumption) ltac:(assumption) ltac:(assumption) ltac:(assumption))  as b2.
     destruct b2 as [b2 b2ok].
-    evar (sb1: AugmentedState).
-    apply fullBlockStep in b2ok; auto.
-    case_match; auto.
-    destruct p as [sb1 ?].
-    pose proof (nextBlockPicker sb1 [b2] ltac:(reflexivity) b2ok) as b3.
+    forward_reason.
+    unfold cannotCreateCodeAtSenderAddrs in *.
+    apply fullBlockStep in b2okl; auto.
+    (** assuming K=2, we wait for execution to execute b1 and give us the new state sb1  *)
+    destruct (execTxs sb0 b1) as [sb1 ?|]; auto.
+    forward_reason.
+    (** now we pick the new block b3, but with the latestConsensedState of sb1 rather than sb0 *)
+    pose proof (nextBlockPicker sb1 b2 ltac:(assumption) ltac:(assumption) ltac:(assumption) ltac:(assumption))  as b3.
     destruct b3 as [b3 b3ok].
-    apply fullBlockStep2 in b3ok.
-    case_match; auto.
-    destruct p as [sb2 ?].
-    pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
-*)
+    forward_reason.
+    apply fullBlockStep in b3okl; auto.
+    (** we wait for execution to execute b2 and give us the new state sb2  *)
+    destruct (execTxs sb1 b2) as [sb2 ?|]; auto;[].
+    forward_reason.
+    (** now we pick the new block b3, but with the latestConsensedState of sb2 rather than sb1 *)
+    pose proof (nextBlockPicker sb2 ltac:(assumption) ltac:(assumption) ltac:(assumption) ltac:(assumption))  as b4.
  Abort.
-End use.
+End consensusInvariantsAndPreservation.
 End K.

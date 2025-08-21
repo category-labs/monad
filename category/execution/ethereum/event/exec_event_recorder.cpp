@@ -21,6 +21,7 @@
 #include <quill/Quill.h>
 
 #include <memory>
+#include <print>
 #include <string_view>
 #include <utility>
 
@@ -56,7 +57,7 @@ ExecutionEventRecorder::~ExecutionEventRecorder()
 }
 
 void ExecutionEventRecorder::diagnose_reserve_failure(
-    monad_exec_event_type type, size_t payload_size) const
+    monad_exec_event_type event_type, size_t payload_size) const
 {
     // This indicates a giant (> UINT32_MAX) event payload reservation failure;
     // in practice, this means either malicious activity or an EVM bug, whereby
@@ -64,13 +65,25 @@ void ExecutionEventRecorder::diagnose_reserve_failure(
     // In normal operation we would expect gas limits to prevent this; we log
     // the occurance, but the event will be lost entirely
     monad_event_metadata const &md =
-        g_monad_exec_event_metadata[std::to_underlying(type)];
+        g_monad_exec_event_metadata[std::to_underlying(event_type)];
 
+#if QUILL_ACTIVE_LOG_LEVEL <= QUILL_LOG_LEVEL_ERROR
     LOG_ERROR(
         "Ignored {} [{}] event because payload size {} was too large",
         md.c_name,
-        std::to_underlying(type),
+        std::to_underlying(event_type),
         payload_size);
+#else
+    // monad-bft usually compiles with QUILL_ACTIVE_LOG_LEVEL above LOG_ERROR;
+    // write to stderr so the information won't be totally lost. Without this
+    // #else case we'd get -Werror=unused-variable, then die because of -Werror
+    std::println(
+        stderr,
+        "Ignored {} [{}] event because payload size {} was too large",
+        md.c_name,
+        std::to_underlying(event_type),
+        payload_size);
+#endif
 }
 
 std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;

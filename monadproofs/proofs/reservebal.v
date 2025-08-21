@@ -131,7 +131,7 @@ Proof using.
 Qed.
 
 
-Definition ReserveBals := EvmAddr -> Z.
+Definition EffReserveBals := EvmAddr -> Z.
 
 (*
 Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
@@ -147,12 +147,12 @@ Definition balanceOfAc (s: StateOfAccounts) (a: EvmAddr) : N :=
 Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) : StateOfAccounts :=
   updateKey s addr (fun old => old &: _balance %= upd).
 
-Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
+Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
 
 (* TODO: rename it to remainingErb *)
-Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
-  : ReserveBals :=
+Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
+  : EffReserveBals :=
   let s := preIntermediatesState in
   let addr := sender next in
   match reserveBalUpdateOfTx next with
@@ -171,19 +171,19 @@ Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxR
   end.
   
 
-Fixpoint remainingReserveBalsL (latestState : AugmentedState) (preRestResBalances: ReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
-  : ReserveBals:=
+Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBalances: EffReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
+  : EffReserveBals:=
   match rest with
   | [] => preRestResBalances
   | hrest::tlrest =>
       let remainingReserves :=
-        remainingReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
-      remainingReserveBalsL latestState remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
+        remainingEffReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
+      remainingEffReserveBalsL latestState remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
   end.
 
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   forall addr,  addr ∈ map sender postStateSuffix ->
-   0<= (remainingReserveBalsL latestState (initialReserveBals latestState) [] postStateSuffix) !!! addr.
+   0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) !!! addr.
 
 Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc (fst s) ac.
 
@@ -211,7 +211,7 @@ Definition upsertKeys {T V} `{c: Countable T} (m: gmap T V) (items: list (T*V)) 
   foldr (uncurry insert) m items.
 *)
 
-Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
+Definition updateExtraState (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
   (fun addr =>
      let oldes := a addr in
        {|
@@ -256,7 +256,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   : AugmentedState :=
   match reserveBalUpdateOfTx t with
   | Some n => (updateBalanceOfAc s.1  (sender t) (fun b => b - maxTxFee t)
-                 , updateHistory s.2 t)
+                 , updateExtraState s.2 t)
   | None =>
     
      let (si, changedAccounts) := evmExecTxCore (fst s) t in
@@ -271,8 +271,8 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck : bool := (forallb balCheck changedAccounts) in (* in impl, only do for updates *)
      if (allBalCheck)
-     then (si, updateHistory s.2 t)
-     else (revertTx s.1 t, updateHistory s.2 t)
+     then (si, updateExtraState s.2 t)
+     else (revertTx s.1 t, updateExtraState s.2 t)
   end
 .
 
@@ -660,7 +660,7 @@ Proof using.
 Qed.
 
 Lemma execS2 s txlast:
-  ((execValidatedTx s txlast)).2 = updateHistory s.2 txlast.
+  ((execValidatedTx s txlast)).2 = updateExtraState s.2 txlast.
 Proof using.
   unfold execValidatedTx.
   repeat (case_match; try reflexivity).
@@ -672,7 +672,7 @@ Lemma lastTxInBlockIndexUpd s txlast:
   = Some (txBlockNum txlast).
 Proof using.
   rewrite execS2.
-  unfold updateHistory.
+  unfold updateExtraState.
   simpl.
   resdec congruence.
 Qed.
@@ -684,7 +684,7 @@ Lemma otherTxLstSenderLkp s addr txlast :
     = lastTxInBlockIndex (s.2 addr).
 Proof.
   rewrite execS2.
-  unfold updateHistory.
+  unfold updateExtraState.
   simpl. intros.
   resdec congruence.
 Qed.  
@@ -695,7 +695,7 @@ Lemma delgUndelgUpdTx txlast s addr:
   -> lastDelUndelInBlockIndex (((execValidatedTx s txlast)).2  addr) = Some (txBlockNum txlast).
 Proof using.
   rewrite execS2.
-  unfold updateHistory.
+  unfold updateExtraState.
   simpl. intros.
   resdec congruence.
 Qed.
@@ -707,7 +707,7 @@ Lemma otherDelUndelLkp s addr txlast :
     = lastDelUndelInBlockIndex (s.2  addr).
 Proof.
   rewrite execS2.
-  unfold updateHistory.
+  unfold updateExtraState.
   simpl. intros.
   resdec congruence.
 Qed.
@@ -894,47 +894,47 @@ Qed.
 
 Open Scope Z_scope.
 Lemma initResBal s addr:
-  (initialReserveBals s) !!! addr =
+  (initialEffReserveBals s) !!! addr =
     balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
 Proof.
   reflexivity.
 Qed.
 
 
-Definition rbLe (eoas: list EvmAddr) (rb1 rb2: ReserveBals) :=
+Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
   forall addr, addr ∈ eoas -> rb1 !!! addr <= rb2 !!! addr.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
 Lemma mono eoas s rb1 rb2 inter tx:
   rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingReserveBals s rb1 inter tx)
-       (remainingReserveBals s rb2 inter tx).
+  -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
+       (remainingEffReserveBals s rb2 inter tx).
 Proof using.
   intros Hrb addr Hin.
-  unfold remainingReserveBals.
+  unfold remainingEffReserveBals.
   pose proof (Hrb addr Hin).
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   {case_bool_decide; subst; try lia. }
   case_match_concl;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
   case_bool_decide;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
   case_bool_decide;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *; try lia.
+    fold EffReserveBals in *; try lia.
 Qed.
   
 Lemma monoL eoas s rb1 rb2 inter extension:
   map sender extension ⊆ eoas
   -> rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingReserveBalsL s rb1 inter extension)
-          (remainingReserveBalsL s rb2 inter extension).
+  -> rbLe eoas (remainingEffReserveBalsL s rb1 inter extension)
+          (remainingEffReserveBalsL s rb2 inter extension).
 Proof using.
   revert rb1 rb2 inter.
   induction extension; auto;[].
@@ -1020,7 +1020,7 @@ Lemma configuredReserveBalOfAddrSpec s tx a:
 Proof.
   unfold configuredReserveBalOfAddr.
   rewrite execS2.
-  unfold updateHistory.
+  unfold updateExtraState.
   simpl. intros.
   unfold rbAfterTx.
   resdec solver.
@@ -1055,8 +1055,8 @@ Lemma monoL2 eoas s rb1 rb2 inter extension tx:
   -> rbLe eoas rb1 rb2
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (∀ ac : EvmAddr, ac ∈ map sender (tx :: extension) → hasCode (execValidatedTx s tx).1 ac = false)
-  -> rbLe eoas (remainingReserveBalsL s rb1 (tx::inter) extension)
-          (remainingReserveBalsL (execValidatedTx s tx) rb2 inter extension).
+  -> rbLe eoas (remainingEffReserveBalsL s rb1 (tx::inter) extension)
+          (remainingEffReserveBalsL (execValidatedTx s tx) rb2 inter extension).
 Proof using.
   revert rb1 rb2 inter.
   induction extension; auto;[].
@@ -1071,16 +1071,16 @@ Proof using.
   clear Hin. clear addr.
   intros addr Hin.
   simpl.
-  unfold remainingReserveBals.
+  unfold remainingEffReserveBals.
   pose proof (Hrb addr Hin).
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   { case_bool_decide; subst; try lia. }
   rewrite isAllowedToEmpty2;[| lia].
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
   specialize (Hsc (sender a) ltac:(set_solver)).
   pose proof (emptyBalanceUb _ _ _ _ Hsc Heqb) as Hle.
@@ -1088,7 +1088,7 @@ Proof using.
   {
     rewrite bool_decide_true; [|lia].
     repeat rewrite updateKeyLkp3;
-      fold ReserveBals in *.
+      fold EffReserveBals in *.
     case_bool_decide; try lia.
     pose proof (configuredReserveBalOfAddrSame2 _ _ _ _ Heqb) as Hlle.
     rewrite Hlle.
@@ -1096,7 +1096,7 @@ Proof using.
   }
   case_bool_decide; 
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *;
+    fold EffReserveBals in *;
     case_bool_decide; try lia.
 Qed.
     
@@ -1109,7 +1109,7 @@ Ltac case_bool_decide_concl:=
     destruct_decide (@bool_decide_reflect P dec) as Hd
   end.
 
-Definition rbLeA (rb1 rb2: ReserveBals) :=
+Definition rbLeA (rb1 rb2: EffReserveBals) :=
   forall addr, rb1 !!! addr <= rb2 !!! addr.
 
 Lemma exec1 tx extension s :
@@ -1117,11 +1117,11 @@ Lemma exec1 tx extension s :
   (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1 ac = false)
   -> (∀ addr : EvmAddr,
     addr ∈ sender tx :: map sender extension
-    → remainingReserveBals s (initialReserveBals s) [] tx !!! addr ≤ initialReserveBals sf !!! addr).
+    → remainingEffReserveBals s (initialEffReserveBals s) [] tx !!! addr ≤ initialEffReserveBals sf !!! addr).
 Proof using.
   intros ? Hscf.
   intros ? Hin.
-  unfold remainingReserveBals.
+  unfold remainingEffReserveBals.
   case_match.
   { (* this tx updates the reserve balance *)
     rename n into nrb.
@@ -1152,7 +1152,7 @@ Proof using.
     subst sf.
     autorewrite with syntactic in *.
     case_bool_decide_concl.
-    2:{ (* a separate proof can actually prove that this case is impossible. because this tx was actually accepted : can prove that remaingReserveBals can only decrease the input *)
+    2:{ (* a separate proof can actually prove that this case is impossible. because this tx was actually accepted : can prove that remaingEffReserveBals can only decrease the input *)
       rewrite updateKeyLkp3.
       autorewrite with syntactic.
       unfold balanceOfAcA, rbAfterTx in *.
@@ -1219,36 +1219,36 @@ in execution checks: treat recently undelegated accounts as delegated
  *)
 
 Lemma decreasingRemTxSender s irb proc tx a:
-  remainingReserveBals s irb (tx :: proc) a !!! sender tx ≤ irb !!! sender tx.
+  remainingEffReserveBals s irb (tx :: proc) a !!! sender tx ≤ irb !!! sender tx.
 Proof using.
-  unfold remainingReserveBals.
+  unfold remainingEffReserveBals.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   { case_bool_decide; rwHypsP; try lia. }
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   2:{ case_bool_decide; rwHypsP; try lia. }
   apply isAllowedToEmptyImpl in Heqb.
   forward_reason.
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *.
+    fold EffReserveBals in *.
   2:{ case_bool_decide; rwHypsP; try lia.  }
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
-    fold ReserveBals in *; try lia.
+    fold EffReserveBals in *; try lia.
 Qed.
   
   
 Lemma decreasingRemL s irb proc next tx:
-  (remainingReserveBalsL s irb (tx::proc) next) !!! (sender tx) <=  (irb !!! (sender tx)).
+  (remainingEffReserveBalsL s irb (tx::proc) next) !!! (sender tx) <=  (irb !!! (sender tx)).
 Proof using.
   revert proc irb.
   induction next; unfold rbLeA in *; simpl; [lia|].
   intros.
-  pose proof (IHnext (proc++[a]) (remainingReserveBals s irb (tx::proc) a)).
+  pose proof (IHnext (proc++[a]) (remainingEffReserveBals s irb (tx::proc) a)).
   etransitivity;[apply H|].
   apply decreasingRemTxSender.
 Qed.
@@ -1271,7 +1271,7 @@ Proof using.
   unfold validateTx.
   autorewrite with iff.
   match type of Hc with
-    context[ remainingReserveBalsL _ ?irb _ _ ]
+    context[ remainingEffReserveBalsL _ ?irb _ _ ]
     => assert (0<= irb !!! (sender tx)) as Hr
   end.
   {
@@ -1279,19 +1279,19 @@ Proof using.
     apply decreasingRemL.
   }
   clear Hc.
-  unfold remainingReserveBals in Hr.
+  unfold remainingEffReserveBals in Hr.
   case_match; auto;
     repeat rewrite updateKeyLkp3 in Hr;
     autorewrite with syntactic in Hr;
-    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
   case_match; auto;
     repeat rewrite updateKeyLkp3 in Hr;
     autorewrite with syntactic in Hr;
-    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
   case_match; auto;
     repeat rewrite updateKeyLkp3 in Hr;
     autorewrite with syntactic in Hr;
-    fold ReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
+    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
   autorewrite with iff in *.
   lia.
 Qed.

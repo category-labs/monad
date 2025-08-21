@@ -46,25 +46,21 @@ Record TxExtra :=
   }.
     
   
-Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction * N (* index in block*)).
+Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction).
 
 (* only gas fees. does not include value transfers *)
 Definition maxTxFee (t: TxWithHdr) : N :=
-  ((w256_to_N (block.tr_gas_price t.2.1)) * (w256_to_N (block.tr_gas_limit t.2.1))).
+  ((w256_to_N (block.tr_gas_price t.2)) * (w256_to_N (block.tr_gas_limit t.2))).
 
 Opaque maxTxFee.
 
-
-Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend on it being 100 *)
-
-(* duplicate instance. the upstream one picks 1 *)
-#[global] Instance inhacc: Inhabited N := populate DefaultReserveBal.
+Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend on it being 100, because it is saved with Qed *)
 
 
-Definition sender (t: TxWithHdr): EvmAddr := tsender (fst (snd t)).
-Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value (fst (snd t))).
+Definition sender (t: TxWithHdr): EvmAddr := tsender t.2.
+Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value t.2).
 
-Definition K : N. Proof. exact 2. Qed. (* no proof can depend on it being 100 *)
+Definition K : N. Proof. exact 2. Qed. (* no proof can depend on it being 2 *)
 
 Definition addrsDelUndelByTx  (tx: TxWithHdr) : list EvmAddr := (dels tx.1.2 ++undels tx.1.2).
 
@@ -72,19 +68,10 @@ Definition txDelUndelAddr (addr: EvmAddr) (tx: TxWithHdr) : bool :=
   bool_decide (addr ∈ addrsDelUndelByTx tx).
 
 
-Definition txIndexInBlock  (tx: TxWithHdr) : N:= (snd (snd tx)).
-
-(*
-Definition transactions (b: Block) : list TxWithHdr :=
-  map (fun p => (header b, p)) (combine (transactions b) (seqN 0 (lengthN (transactions b)))).
- *)
-
 Definition txBlockNum (t: TxWithHdr) : N := number t.1.1.
 
 Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N :=
   reserveBalUpdate t.1.2.
-
-Definition indicesOfTx (tx: TxWithHdr): Indices := {| block_index := txBlockNum tx; tx_index := snd (snd tx) |}.
 
 Record ExtraAcState :=
   {
@@ -163,7 +150,7 @@ Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) 
 Definition initialReserveBals (s: AugmentedState) : ReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
 
-(* rename it to remainingErb *)
+(* TODO: rename it to remainingErb *)
 Definition remainingReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: ReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
   : ReserveBals :=
   let s := preIntermediatesState in
@@ -200,15 +187,6 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffi
 
 Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc (fst s) ac.
 
-
-Definition allAccounts: list EvmAddr. Proof. Admitted. (* depends on the implementation of EvmAddr, which comes from the old evmsem library and will change *)
-
-Definition stateAfterTransaction s (t: TxWithHdr) :=
-  let '((hdr, newRb), (tx, txindex)) := t in
-  let (si, r) := stateAfterTransactionAux hdr s (N.to_nat txindex) tx in
-  (applyGasRefundsAndRewards hdr si r, r).
-
-Definition DippedTooMuchIntoReserve (t: TxWithHdr): TransactionResult. Proof. Admitted.
 
 Definition addrConsideredDelegated  (state: AugmentedState) (tx : TxWithHdr) : bool :=
   (addrDelegated (fst state) (sender tx))
@@ -268,8 +246,6 @@ Definition updateHistory (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :=
 
 *)
 
-Definition ReserveBalUpdateSuccess (t: TxWithHdr) : TransactionResult. Proof. Admitted.
-
 Hint Rewrite @balanceOfUpd: syntactic.
 Open Scope N_scope.
 
@@ -320,14 +296,6 @@ Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option AugmentedStat
 
 
 Hint Rewrite -> bool_decide_eq_true : iff.
-
-Lemma allAccountsSpec: forall ac, ac ∈ allAccounts.
-Proof. Admitted.
-
-Lemma allAccountsSpecLegacy: forall ac, In ac allAccounts.
-Proof. intros. rewrite <- elem_of_list_In.
-       apply allAccountsSpec.
-Qed.
 
 Ltac rememberForallb :=
     match goal with
@@ -1493,10 +1461,6 @@ balanceOfRevert :
 
  *)
 
-Definition concatL {T} (l: list (list T)) := flat_map id l.
-Definition consensusAcceptableBlocks (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)) :=
-  consensusAcceptableTxs lastConsensedState (concatL proposedBlocks).
-
 
 Lemma acceptableNil lastConsensedState:
   consensusAcceptableTxs lastConsensedState [].
@@ -1507,44 +1471,3 @@ Proof using.
   rewrite initResBal.
   lia.
 Qed.
-
-
-Section use.
-  Variable b0: list TxWithHdr.
-  Variable sb0 : AugmentedState. (* state after b0 *)
-
-  Hypothesis nextBlockPicker:
-    forall (lastConsensedState: AugmentedState) (proposedBlocks: list (list TxWithHdr)),
-      lengthN proposedBlocks < K
-      -> consensusAcceptableBlocks lastConsensedState proposedBlocks
-      -> exists nextBlock, consensusAcceptableBlocks lastConsensedState (proposedBlocks++[nextBlock]).
-
-Open Scope N_scope.
-  Lemma operation  : (K=2) -> False.
-    intros.
-    revert nextBlockPicker.
-    rwHypsP.
-    intros.
-    pose proof (nextBlockPicker sb0 [] ltac:(reflexivity) (acceptableNil _)) as b1.
-    destruct b1 as [b1 b1ok].
-    simpl in b1ok.
-    pose proof (nextBlockPicker sb0 [b1] ltac:(reflexivity) b1ok) as b2.
-    destruct b2 as [b2 b2ok].
-    evar (sb1: AugmentedState).
-(*
-ad definition consensusAcceptableBlocks that conse
-    (consensusAcceptableBlocks sb0 [b1; b2]) ->
-    (consensusAcceptableBlocks sb1 [b2])
-
-    apply fullBlockStep2 in b2ok.
-    case_match; auto.
-    destruct p as [sb1 ?].
-    pose proof (nextBlockPicker sb1 [b2] ltac:(reflexivity) b2ok) as b3.
-    destruct b3 as [b3 b3ok].
-    apply fullBlockStep2 in b3ok.
-    case_match; auto.
-    destruct p as [sb2 ?].
-    pose proof (nextBlockPicker sb2 [b3] ltac:(reflexivity) b3ok) as b4.
-*)
- Abort.
-End use.

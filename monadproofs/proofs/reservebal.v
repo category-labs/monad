@@ -478,7 +478,7 @@ Proof using. Admitted.
 
 
 (** * lemmas about execution
-these follow from  the axioms abouve about [evmExecTxCore] and [revertTx] and by the definition of [execTx]
+Unless there is a comment before a lemma, the lemma follows easily from  the axioms above about [evmExecTxCore] and [revertTx] and by the definition of [execTx]
  *)
 
 Lemma addrDelegatedUnchangedByBalUpd s  f addr baladdr:
@@ -495,6 +495,8 @@ Proof.
   destruct (s baladdr); simpl.
   reflexivity.
 Qed.
+
+
 Lemma execTxDelegationUpdCoreImpl tx s:
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
@@ -856,86 +858,6 @@ Qed.
 Set Nested Proofs Allowed.
 
 
-Lemma isAllowedToEmpty2 s txlast rest txnext:
-  let sf :=  execValidatedTx s txlast in 
-  txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
-  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
-Proof using.
-  intros ? Hr.
-  unfold isAllowedToEmpty.
-  simpl.
-  autorewrite with syntactic.
-  destruct (decide (sender txnext = sender txlast)).
-  {
-    assert ((bool_decide (sender txnext ∈ sender txlast :: map sender rest)) = true) as Hf.
-    {
-      rewrite bool_decide_true; auto.
-      set_solver.
-    }
-
-    rewrite Hf.
-    autorewrite with syntactic.
-    match goal with
-    |  |-  _ && ?r = false =>
-         assert (r=false) as Hrf
-    end;
-    [|  rewrite Hrf; autorewrite with syntactic; reflexivity].
-    unfold existsTxWithinK.
-    unfold indexWithinK.
-    rwHyps.
-    rewrite lastTxInBlockIndexUpd.
-    rewrite bool_decide_true;[reflexivity|].
-    split_and !; try lia.
-  }
-  {
-    f_equiv.
-    2:{
-      f_equiv.
-      f_equiv.
-      2:{
-        apply bool_decide_ext.
-        autorewrite with syntactic.
-        tauto.
-      }
-      {
-        unfold existsTxWithinK.
-        unfold indexWithinK.
-        subst sf.
-        rewrite otherTxLstSenderLkp; auto.
-      }
-    }
-    {
-      destruct (decide (sender txnext ∈ addrsDelUndelByTx txlast)).
-      {
-        symmetry.
-          Hint Rewrite @elem_of_app: iff.
-        rewrite bool_decide_true;
-          [ | autorewrite with iff; tauto].
-        autorewrite with syntactic; simpl.
-        unfold existsDelUndelTxWithinK.
-        unfold indexWithinK.
-        rewrite delgUndelgUpdTx; auto;[].
-        resolveDecide lia.
-        autorewrite with syntactic.
-        reflexivity.
-      }
-      {
-        f_equiv.
-        f_equiv;[
-            |apply bool_decide_ext;
-             autorewrite with iff; tauto].
-        unfold existsDelUndelTxWithinK.
-        unfold indexWithinK.
-        rewrite otherDelUndelLkp; auto.
-        f_equiv.
-      
-        apply otherDelUndelDelegationStatusUnchanged; auto.
-      }
-
-    }
-  }
-Qed.
-
 Lemma isAllowedToEmptyImpl s tx inter a:
   isAllowedToEmpty s (tx::inter) a = true
   -> sender tx <> sender a
@@ -1066,6 +988,89 @@ Qed.
 Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
   forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
 
+
+Lemma execPresservesIsAllowedToEmpty s txlast rest txnext:
+  let sf :=  execValidatedTx s txlast in 
+  txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
+  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
+Proof using.
+  intros ? Hr.
+  unfold isAllowedToEmpty.
+  simpl.
+  autorewrite with syntactic.
+  destruct (decide (sender txnext = sender txlast)).
+  {
+    assert ((bool_decide (sender txnext ∈ sender txlast :: map sender rest)) = true) as Hf.
+    {
+      rewrite bool_decide_true; auto.
+      set_solver.
+    }
+
+    rewrite Hf.
+    autorewrite with syntactic.
+    match goal with
+    |  |-  _ && ?r = false =>
+         assert (r=false) as Hrf
+    end;
+    [|  rewrite Hrf; autorewrite with syntactic; reflexivity].
+    unfold existsTxWithinK.
+    unfold indexWithinK.
+    rwHyps.
+    rewrite lastTxInBlockIndexUpd.
+    rewrite bool_decide_true;[reflexivity|].
+    split_and !; try lia.
+  }
+  {
+    f_equiv.
+    2:{
+      f_equiv.
+      f_equiv.
+      2:{
+        apply bool_decide_ext.
+        autorewrite with syntactic.
+        tauto.
+      }
+      {
+        unfold existsTxWithinK.
+        unfold indexWithinK.
+        subst sf.
+        rewrite otherTxLstSenderLkp; auto.
+      }
+    }
+    {
+      destruct (decide (sender txnext ∈ addrsDelUndelByTx txlast)).
+      {
+        symmetry.
+          Hint Rewrite @elem_of_app: iff.
+        rewrite bool_decide_true;
+          [ | autorewrite with iff; tauto].
+        autorewrite with syntactic; simpl.
+        unfold existsDelUndelTxWithinK.
+        unfold indexWithinK.
+        rewrite delgUndelgUpdTx; auto;[].
+        resolveDecide lia.
+        autorewrite with syntactic.
+        rewrite bool_decide_true;[| lia].
+        autorewrite with syntactic.
+        reflexivity.
+      }
+      {
+        f_equiv.
+        f_equiv;[
+            |apply bool_decide_ext;
+             autorewrite with iff; tauto].
+        unfold existsDelUndelTxWithinK.
+        unfold indexWithinK.
+        rewrite otherDelUndelLkp; auto.
+        f_equiv.
+      
+        apply otherDelUndelDelegationStatusUnchanged; auto.
+      }
+
+    }
+  }
+Qed.
+
 Hint Rewrite @updateKeyLkp3 : syntactic.
 Lemma mono eoas s rb1 rb2 inter tx:
   rbLe eoas rb1 rb2
@@ -1092,6 +1097,7 @@ Proof using.
     fold EffReserveBals in *; try lia.
 Qed.
 
+
 Lemma mono2 tx a extension s (eoas: list EvmAddr) rb1 rb2 inter:
   (∀ ac : EvmAddr,
       ac ∈ sender tx :: sender a :: map sender extension
@@ -1112,7 +1118,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
   { case_bool_decide; subst; try lia. }
-  rewrite isAllowedToEmpty2; try lia.
+  rewrite execPresservesIsAllowedToEmpty; try lia.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.

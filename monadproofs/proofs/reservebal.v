@@ -19,23 +19,27 @@ Require Import bluerock.auto.cpp.tactics4.
 Open Scope N_scope.
 
 
+(** * Preliminaries *)
 
-
+(** this is the full evm state that EVM exection takes as input and returns as output *)
 Definition StateOfAccounts : Type := EvmAddr -> AccountM.
+
+
 Definition addrDelegated  (s: StateOfAccounts) (a : EvmAddr) : bool :=
   match delegatedTo (s a) with
   | [] => false
   | _ => true
   end.
 
-(* new fiends since ~2018 when the evm semantics library we depend on was developed *)
+(** Many of the EVM semantics definitions we use come from Yoichi's EVM semantics, developed several years ago. The definition of [Transaction] there lacks fields to support newer features lie delegation. Also, the last field is to support user-configurable reserve balances in Monad. There is a new transaction type which can update the configured reserve balance of the sender. sucn transactions do nothing else. *)
 Record TxExtra :=
   {
     dels: list EvmAddr;
     undels: list EvmAddr;
 
-    (* the fields above should ultimately come from EVM semantics and not here. the fields below are monad specific *)
-    reserveBalUpdate: option N (* updates the reserve balance of the sender if Some. in that case, the tx does not do anything else, e.g. smart contract invocation or transer *)
+    (** the fields above should ultimately come from EVM semantics and not here. the fields below are monad specific *)
+    reserveBalUpdate: option N
+   (** ^ updates the reserve balance of the sender if Some. in that case, the tx does not do anything else, e.g. smart contract invocation or transer *)
   }.
     
   
@@ -47,42 +51,46 @@ Definition maxTxFee (t: TxWithHdr) : N :=
 
 Opaque maxTxFee.
 
-Definition DefaultReserveBal: N. Proof. exact 100. Qed. (* no proof can depend on it being 100, because it is saved with Qed *)
-
+Section K.
+(** consensus can be ahead of execution by at most K. n+Kth block must have the state root hash after execution block n. the next 2 variables are parameters for the rest of the proofs. *)
+Variable K: N.
+Variable DefaultReserveBal: N.
 
 Definition sender (t: TxWithHdr): EvmAddr := tsender t.2.
-Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value t.2).
 
-Definition K : N. Proof. exact 2. Qed. (* no proof can depend on it being 2 *)
+Definition value (t: TxWithHdr): N := w256_to_N (block.tr_value t.2).
 
 Definition addrsDelUndelByTx  (tx: TxWithHdr) : list EvmAddr := (dels tx.1.2 ++undels tx.1.2).
 
 Definition txDelUndelAddr (addr: EvmAddr) (tx: TxWithHdr) : bool :=
   bool_decide (addr ∈ addrsDelUndelByTx tx).
 
-
 Definition txBlockNum (t: TxWithHdr) : N := number t.1.1.
 
 Definition reserveBalUpdateOfTx (t: TxWithHdr) : option N :=
   reserveBalUpdate t.1.2.
 
+(** To implement reserve balance checks, execution needs to maintain some extra state (beyond the core EVM state) for each account:  *)
 Record ExtraAcState :=
   {
-
-    (* in impl, the meaning of None can be changed to just mean there was none in the last 2K *)
-    lastDelUndelInBlockIndex : option N; (* last block index where this address was delegated or undelegated  *)
-    lastTxInBlockIndex : option N; (* last block index where this address sent a tx *)
-    configuredReserveBal: N (* this must go to the state in db/blockchain *)
+    lastTxInBlockIndex : option N;
+    (** ^ last block index where this account sent a transaction. In the implementation, we can just track the last 2K range, e.g. this can be None if the last tx was more than 2K block before. we do not need to store this information in the db as it can be easily computed *)
+    lastDelUndelInBlockIndex : option N;
+    (** ^ last block index where this address was delegated or undelegated. In the implementation, we can just track the last 2K range.*)
+    configuredReserveBal: N;
+    (** ^ the current configured reserve balance of the account. will either be [DefaultReserveBal] or something else if the account sent a transaction where [reserveBalUpdate] is not [None] *)
   }.
 
 #[only(lens)] derive ExtraAcState.
-#[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None 0).
+#[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None DefaultReserveBal).
   
 
 Definition ExtraAcStates := (EvmAddr -> ExtraAcState).
 
-(*
-Definition indLe (l r: Indices):= block_index l  <= block_index r /\ tx_index l <= tx_index r. *)
+(** our modified execution function which does reserve balance checks will use the following type as input/output *)
+Definition AugmentedState : Type := StateOfAccounts * ExtraAcStates.
+
+
 Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)  (tx: TxWithHdr) : bool :=
   let startIndex :=  txBlockNum tx -K  in
   match proj (state (sender tx))  with
@@ -91,14 +99,15 @@ Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)
   | None => false
   end.
 
-Definition AugmentedState : Type := StateOfAccounts * ExtraAcStates.
+(** returns true if [sender tx] sent a transaction within the last K blocks of [txBlockNum tx]*)
 Definition existsTxWithinK (state : AugmentedState)  (tx: TxWithHdr) : bool :=
   indexWithinK lastTxInBlockIndex (snd state) tx.
 
+(** returns true if the account [sender tx] was delegated/undelegated within the last K blocks of [txBlockNum tx]*)
 Definition existsDelUndelTxWithinK (state : AugmentedState)  (tx: TxWithHdr) : bool :=
   indexWithinK  lastDelUndelInBlockIndex (snd state) tx.
 
-(* external assumption: tx::intermediateTxsSinceState does not span more than K blocks *)
+(** this is one of the key elements of the reserve balance checks in consensus and execution. come back to it after you see the top level definitions of those reserve balance checks *)
 Definition isAllowedToEmpty
   (state : AugmentedState) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
   let delegated := (addrDelegated (fst state) (sender tx))
@@ -111,24 +120,20 @@ Definition isAllowedToEmpty
   (negb delegated) && (negb existsSameSenderTxInWindow).
 
 
-(* TODO: make it a notation and get rid of calls to updateKeyLkp3 *)
 Definition updateKey  {T} `{c: EqDecision T} {V}  (oldmap: T -> V) (updKey: T) (f: V -> V) : T -> V :=
   fun k => if (bool_decide (k=updKey)) then f (oldmap updKey) else oldmap k.
 
-(* TODO: 
-Disable Notation "!!!".*)
+Disable Notation "!!!".
+
+(* TODO: remove *)
 Lemma updateKeyLkp3  {T} `{c: EqDecision T} {V} (m: T -> V) (a b: T) (f: V -> V) :
-  (updateKey m a f) !!! b = if (bool_decide (b=a)) then (f (m !!! a)) else m !!! b.
+  (updateKey m a f)  b = if (bool_decide (b=a)) then (f (m a)) else m  b.
 Proof using.
   reflexivity.
 Qed.
 
 
 Definition EffReserveBals := EvmAddr -> Z.
-
-(*
-Definition mapKeys {K V:Type} `{Countable K} (g: gmap K V) : list K := map fst (map_to_list g).
-*)
 
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
                       
@@ -143,15 +148,15 @@ Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) 
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
 
-(* TODO: rename it to remainingErb *)
 Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
   : EffReserveBals :=
   let s := preIntermediatesState in
   let addr := sender next in
   match reserveBalUpdateOfTx next with
-  | Some newRb => (* is there a way to make it liberal ?*)
+  | Some newRb =>
       updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
-  | None  => (* regular tx *)
+  | None  => 
+      (** regular tx, not one that sets reserve balance *)
       if isAllowedToEmpty s intermediates next
       then
         let sbal := balanceOfAc s.1 addr in
@@ -176,7 +181,7 @@ Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBala
 
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   forall addr,  addr ∈ map sender postStateSuffix ->
-   0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) !!! addr.
+   0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr.
 
 Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc (fst s) ac.
 
@@ -828,7 +833,7 @@ Qed.
 
 Open Scope Z_scope.
 Lemma initResBal s addr:
-  (initialEffReserveBals s) !!! addr =
+  (initialEffReserveBals s)  addr =
     balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
 Proof.
   reflexivity.
@@ -836,7 +841,7 @@ Qed.
 
 
 Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
-  forall addr, addr ∈ eoas -> rb1 !!! addr <= rb2 !!! addr.
+  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
 Lemma mono eoas s rb1 rb2 inter tx:
@@ -1038,14 +1043,14 @@ Qed.
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
 
 Definition rbLeA (rb1 rb2: EffReserveBals) :=
-  forall addr, rb1 !!! addr <= rb2 !!! addr.
+  forall addr, rb1 addr <= rb2 addr.
 
 Lemma exec1 tx extension s :
   let sf := (execValidatedTx s tx) in 
   (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode (execValidatedTx s tx).1 ac = false)
   -> (∀ addr : EvmAddr,
     addr ∈ sender tx :: map sender extension
-    → remainingEffReserveBals s (initialEffReserveBals s) [] tx !!! addr ≤ initialEffReserveBals sf !!! addr).
+    → remainingEffReserveBals s (initialEffReserveBals s) [] tx addr ≤ initialEffReserveBals sf addr).
 Proof using.
   intros ? Hscf.
   intros ? Hin.
@@ -1141,7 +1146,7 @@ Proof using.
 Qed.
 
 Lemma decreasingRemTxSender s irb proc tx a:
-  remainingEffReserveBals s irb (tx :: proc) a !!! sender tx ≤ irb !!! sender tx.
+  remainingEffReserveBals s irb (tx :: proc) a (sender tx) ≤ irb (sender tx).
 Proof using.
   unfold remainingEffReserveBals.
   case_match_concl; auto;
@@ -1165,7 +1170,7 @@ Qed.
   
   
 Lemma decreasingRemL s irb proc next tx:
-  (remainingEffReserveBalsL s irb (tx::proc) next) !!! (sender tx) <=  (irb !!! (sender tx)).
+  (remainingEffReserveBalsL s irb (tx::proc) next) (sender tx) <=  (irb (sender tx)).
 Proof using.
   revert proc irb.
   induction next; unfold rbLeA in *; simpl; [lia|].
@@ -1194,7 +1199,7 @@ Proof using.
   autorewrite with iff.
   match type of Hc with
     context[ remainingEffReserveBalsL _ ?irb _ _ ]
-    => assert (0<= irb !!! (sender tx)) as Hr
+    => assert (0<= irb (sender tx)) as Hr
   end.
   {
     etransitivity;[ apply Hc|].
@@ -1393,3 +1398,5 @@ Proof using.
   rewrite initResBal.
   lia.
 Qed.
+
+End K.

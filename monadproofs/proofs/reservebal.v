@@ -5,23 +5,22 @@
  *)
 
 
-Require Import monad.proofs.bigauto.
 Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.evmmisc.
 Require Import monad.proofs.misc.
-Require Import bluerock.hw_models.utils.
-(*
-Require Import monad.proofs.bigauto. *)
-
+Require Import bluerock.hw_models.utils. 
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
-
-
+Import Forward.
+Import miscPure. (* has a better version of forward_reason *)
 Set Default Goal Selector "!".
 Require Import bluerock.auto.cpp.tactics4.
-
 Open Scope N_scope.
+
+
+
+
 Definition StateOfAccounts : Type := EvmAddr -> AccountM.
 Definition addrDelegated  (s: StateOfAccounts) (a : EvmAddr) : bool :=
   match delegatedTo (s a) with
@@ -368,7 +367,6 @@ Proof.
   destruct (s baladdr); simpl.
   reflexivity.
 Qed.
-
 Lemma execTxDelegationUpdCoreImpl tx s:
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
@@ -380,7 +378,7 @@ Proof.
   repeat rewrite Is_true_true.
   intros Hp.
   autorewrite with iff in Hp.
-  destruct Hp; forward_reason; rwHypsP; auto;[].
+  destruct Hp; forward_reason; rwHyps; auto;[].
   unfold addrsDelUndelByTx.
   simpl.
   resdec ltac:(set_solver).
@@ -399,7 +397,7 @@ Proof.
   repeat rewrite Is_true_true.
   intros Hp.
   autorewrite with iff in Hp.
-  destruct Hp; forward_reason; rwHypsP; auto;[].
+  destruct Hp; forward_reason; rwHyps; auto;[].
   unfold addrsDelUndelByTx.
   simpl.
   resdec ltac:(set_solver).
@@ -713,7 +711,7 @@ Proof.
   }
   {
     pose proof (execTxDelegationUpdCore txlast s.1 ltac:(auto) addr) as Hd.
-    revert Hd. rwHypsP.
+    revert Hd. rwHyps.
     simpl.
     intros.
     rewrite Hd.
@@ -756,7 +754,7 @@ Proof using.
     [|  rewrite Hrf; autorewrite with syntactic; reflexivity].
     unfold existsTxWithinK.
     unfold indexWithinK.
-    rwHypsP.
+    rwHyps.
     rewrite lastTxInBlockIndexUpd.
     rewrite bool_decide_true;[reflexivity|].
     split_and !; try lia.
@@ -1060,13 +1058,13 @@ Proof using.
     repeat rewrite initResBal.
     rewrite configuredReserveBalOfAddrSpec.
     unfold execValidatedTx.
-    rwHypsP.
+    rwHyps.
     simpl.
     simpl.
     unfold balanceOfAcA in *.
     rewrite balanceOfUpd.
     unfold rbAfterTx.
-    rwHypsP.
+    rwHyps.
     case_bool_decide;
       resolveDecide congruence; simpl in *; try lia.
   }
@@ -1086,7 +1084,7 @@ Proof using.
       rewrite updateKeyLkp3.
       autorewrite with syntactic.
       unfold balanceOfAcA, rbAfterTx in *.
-      rwHypsP.
+      rwHyps.
       case_bool_decide; resolveDecide congruence; try lia.
       case_match; try lia.
     }
@@ -1094,7 +1092,7 @@ Proof using.
       rewrite updateKeyLkp3.
       autorewrite with syntactic.
       unfold balanceOfAcA, rbAfterTx in *.
-      rwHypsP.
+      rwHyps.
       case_bool_decide; resolveDecide congruence; try lia;
         [| case_match; lia].
       specialize (Hlb ltac:(auto)).
@@ -1106,15 +1104,14 @@ Proof using.
   subst sf.
   autorewrite with syntactic in *.
   unfold balanceOfAcA, rbAfterTx in *.
-  rwHypsP.
+  rwHyps.
   case_bool_decide; subst; resolveDecide congruence; try lia.
   case_match; lia.
 Qed.
   
 
 Lemma execL tx extension s:
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext) (* relaxing it : not imp *)
-  -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtEOAAddrWithPrivateKey txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
   -> consensusAcceptableTxs (execValidatedTx  s tx) extension.
@@ -1143,11 +1140,6 @@ Proof using.
   apply exec1. assumption.
 Qed.
 
-  
-(* TODO: delegation strictness: why needed:
-in execution checks: treat recently undelegated accounts as delegated
- *)
-
 Lemma decreasingRemTxSender s irb proc tx a:
   remainingEffReserveBals s irb (tx :: proc) a !!! sender tx ≤ irb !!! sender tx.
 Proof using.
@@ -1155,17 +1147,17 @@ Proof using.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  { case_bool_decide; rwHypsP; try lia. }
+  { case_bool_decide; rwHyps; try lia. }
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  2:{ case_bool_decide; rwHypsP; try lia. }
+  2:{ case_bool_decide; rwHyps; try lia. }
   apply isAllowedToEmptyImpl in Heqb.
   forward_reason.
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  2:{ case_bool_decide; rwHypsP; try lia.  }
+  2:{ case_bool_decide; rwHyps; try lia.  }
   case_bool_decide; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *; try lia.

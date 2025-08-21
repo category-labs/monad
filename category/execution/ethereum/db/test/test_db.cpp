@@ -18,6 +18,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -988,6 +989,86 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         read_call_frame(this->db, tdb.get_block_number(), 0);
 
     EXPECT_EQ(actual_call_frames.size(), 35799);
+}
+
+// This test is based on the test `DBTest.call_frames_stress_test`
+TYPED_TEST(DBTest, assertion_exception)
+{
+    using namespace intx;
+
+    TrieDb tdb{this->db};
+
+    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+    auto const to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH,
+                          .nonce = 0x0}}}},
+            {to,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = STRESS_TEST_CODE_HASH}}}}},
+        Code{},
+        BlockHeader{.number = 0});
+
+    // clang-format off
+    byte_string const block_rlp = evmc::from_hex("0xf90283f90219a0d2472bbb9c83b0e7615b791409c2efaccd5cb7d923741bbc44783bf0d063f5b6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794b94f5374fce5edbc8e2a8697c15331677e6ebf0ba0644bb1009c2332d1532062fe9c28cae87169ccaab2624aa0cfb4f0a0e59ac3aaa0cc2a2a77bb0d7a07b12d7e1d13b9f5dfff4f4bc53052b126e318f8b27b7ab8f9a027408083641cf20cfde86cd87cd57bf10c741d7553352ca96118e31ab8ceb9ceb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018433428f00840ee6b2808203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421f863f861800a840ee6b28094bbbf5374fce5edbc8e2a8697c15331677e6ebf0b0a801ba0462186579a4be0ad8a63224059a11693b4c0684b9939f6c2394d1fbe045275f2a059d73f99e037295a5f8c0e656acdb5c8b9acd28ec73c320c277df61f2e2d54f9c0c0")
+            .value();
+    // clang-format on
+
+    byte_string_view block_rlp_view{block_rlp};
+    auto block = rlp::decode_block(block_rlp_view);
+    ASSERT_TRUE(!block.has_error());
+
+    BlockHashBufferFinalized block_hash_buffer;
+    block_hash_buffer.set(
+        block.value().header.number - 1, block.value().header.parent_hash);
+
+    BlockState bs(tdb, this->vm);
+    BlockMetrics metrics;
+
+    fiber::PriorityPool pool{1, 1};
+
+    auto const recovered_senders =
+        recover_senders(block.value().transactions, pool);
+    std::vector<Address> senders(block.value().transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        MONAD_ASSERT(recovered_senders[i].has_value());
+        senders[i] = recovered_senders[i].value();
+    }
+    auto const recovered_authorities =
+        recover_authorities(block.value().transactions, pool);
+    std::vector<std::vector<CallFrame>> call_frames(
+        block.value().transactions.size());
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_tracers.emplace_back(std::make_unique<CallTracer>(
+            block.value().transactions[i], call_frames[i]));
+    }
+
+    EXPECT_THROW({
+        (void)execute_block<EVMC_SHANGHAI>(
+            EthereumMainnet{},
+            block.value(),
+            senders,
+            recovered_authorities,
+            bs,
+            block_hash_buffer,
+            pool,
+            metrics,
+            call_tracers);
+    }, MonadException);
 }
 
 // test referenced from :

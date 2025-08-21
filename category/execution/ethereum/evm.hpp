@@ -35,9 +35,9 @@ evmc::Result deploy_contract_code(
 template <evmc_revision rev>
 evmc::Result create(
     EvmcHost<rev> *, State &, evmc_message const &,
-    size_t max_code_size) noexcept;
+    size_t max_code_size);
 
 template <evmc_revision rev>
-evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &) noexcept;
+evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &);
 
 MONAD_NAMESPACE_END

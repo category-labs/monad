@@ -23,6 +23,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
 #include <category/core/procfs/statm.h>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -113,7 +114,7 @@ using namespace monad;
 namespace fs = std::filesystem;
 
 int main(int const argc, char const *argv[])
-{
+try {
     cxx_runtime_terminate_handler = std::get_terminate();
     std::set_terminate(backtrace_terminate_handler);
 
@@ -496,4 +497,9 @@ int main(int const argc, char const *argv[])
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+catch (monad::MonadException const &e) {
+    LOG_ERROR("MonadException: {}", e.message());
+    e.print();
+    return EXIT_FAILURE;
 }

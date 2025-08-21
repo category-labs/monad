@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/runtime/types.hpp>
+#include <category/vm/host.hpp>
 
 #include <intx/intx.hpp>
 
@@ -33,17 +34,14 @@
 
 #include <utility>
 
-static_assert(sizeof(evmc::HostInterface) == 8);
-static_assert(alignof(evmc::HostInterface) == 8);
-
-static_assert(sizeof(evmc::Host) == 8);
-static_assert(alignof(evmc::Host) == 8);
-
 MONAD_NAMESPACE_BEGIN
+
+static_assert(sizeof(vm::Host) == 24);
+static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
 
-class EvmcHostBase : public evmc::Host
+class EvmcHostBase : public vm::Host
 {
     BlockHashBuffer const &block_hash_buffer_;
 
@@ -101,7 +99,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
+static_assert(sizeof(EvmcHostBase) == 88);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <evmc_revision rev>
@@ -111,42 +109,60 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual bool account_exists(Address const &address) const noexcept override
     {
-        if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
-            return state_.account_exists(address);
+        try {
+            if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
+                return state_.account_exists(address);
+            }
+            return !state_.account_is_dead(address);
         }
-        return !state_.account_is_dead(address);
+        catch (...) {
+            capture_current_exception();
+        }
+        stack_unwind();
     }
 
     virtual bool selfdestruct(
         Address const &address, Address const &beneficiary) noexcept override
     {
-        call_tracer_.on_self_destruct(address, beneficiary);
-        return state_.selfdestruct<rev>(address, beneficiary);
+        try {
+            call_tracer_.on_self_destruct(address, beneficiary);
+            return state_.selfdestruct<rev>(address, beneficiary);
+        }
+        catch (...) {
+            capture_current_exception();
+        }
+        stack_unwind();
     }
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-            if (!create_inside_delegated_ && (msg.flags & EVMC_DELEGATED)) {
-                return evmc::Result{EVMC_UNDEFINED_INSTRUCTION, msg.gas};
-            }
+        try {
+            if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+                if (!create_inside_delegated_ && (msg.flags & EVMC_DELEGATED)) {
+                    return evmc::Result{EVMC_UNDEFINED_INSTRUCTION, msg.gas};
+                }
 
-            auto result =
-                ::monad::create<rev>(this, state_, msg, max_code_size_);
+                auto result =
+                    ::monad::create<rev>(this, state_, msg, max_code_size_);
 
-            // EIP-211
-            if (result.status_code != EVMC_REVERT) {
-                result = evmc::Result{
-                    result.status_code,
-                    result.gas_left,
-                    result.gas_refund,
-                    result.create_address};
+                // EIP-211
+                if (result.status_code != EVMC_REVERT) {
+                    result = evmc::Result{
+                        result.status_code,
+                        result.gas_left,
+                        result.gas_refund,
+                        result.create_address};
+                }
+                return result;
             }
-            return result;
+            else {
+                return ::monad::call(this, state_, msg);
+            }
         }
-        else {
-            return ::monad::call(this, state_, msg);
+        catch (...) {
+            capture_current_exception();
         }
+        stack_unwind();
     }
 
     virtual evmc_access_status
@@ -158,13 +174,19 @@ struct EvmcHost final : public EvmcHostBase
         bool const enable_p256_verify =
             chain_.get_p256_verify_enabled(number, timestamp);
 
-        // NOTE: we deliberately do not check the monad precompiles here. They
-        // are stateful and stateful precompiles should pay the COLD account
-        // access like any other contract.
-        if (is_precompile<rev>(address, enable_p256_verify)) {
-            return EVMC_ACCESS_WARM;
+        try {
+            // NOTE: we deliberately do not check the monad precompiles here. They
+            // are stateful and stateful precompiles should pay the COLD account
+            // access like any other contract.
+            if (is_precompile<rev>(address, enable_p256_verify)) {
+                return EVMC_ACCESS_WARM;
+            }
+            return state_.access_account(address);
         }
-        return state_.access_account(address);
+        catch (...) {
+            capture_current_exception();
+        }
+        stack_unwind();
     }
 
     monad::vm::runtime::ChainParams get_chain_params() const noexcept
@@ -185,7 +207,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 72);
+static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 88);
 static_assert(alignof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 8);
 
 MONAD_NAMESPACE_END

@@ -216,11 +216,10 @@ namespace monad::vm::runtime
     {
         using enum StatusCode;
 
-        if (result.status == Error) {
+        if (MONAD_VM_UNLIKELY(result.status == Error)) {
             return evmc_error_result(EVMC_FAILURE);
         }
-
-        if (result.status == OutOfGas) {
+        if (MONAD_VM_UNLIKELY(result.status == OutOfGas)) {
             return evmc_error_result(EVMC_OUT_OF_GAS);
         }
 

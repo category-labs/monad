@@ -17,8 +17,8 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
-
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 
@@ -44,13 +44,75 @@ namespace monad::vm
     }
 
     evmc::Result VM::execute(
-        evmc_revision rev, runtime::ChainParams const &chain_params,
-        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_revision rev, runtime::ChainParams const &params, Host &host,
+        evmc_message const *msg, evmc::bytes32 const &code_hash,
+        SharedVarcode const &vcode)
+    {
+        auto const *const host_itf = &host.get_interface();
+        auto *const host_ctx = host.to_context();
+        auto const &icode = vcode->intercode();
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_,
+            params,
+            host_itf,
+            host_ctx,
+            msg,
+            icode->code_span());
+
+        // Install new runtime context:
+        auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
+
+        auto result = execute_impl(rev, rt_ctx, code_hash, vcode);
+
+        // Re-install previous runtime context:
+        (void)host.set_runtime_context(prev_rt_ctx);
+
+        host.rethrow_on_active_exception();
+
+        return result;
+    }
+
+    evmc::Result VM::execute_bytecode(
+        evmc_revision rev, runtime::ChainParams const &params, Host &host,
+        evmc_message const *msg, std::span<uint8_t const> code)
+    {
+        auto const *const host_itf = &host.get_interface();
+        auto *const host_ctx = host.to_context();
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_, params, host_itf, host_ctx, msg, code);
+
+        // Install new runtime context:
+        auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
+
+        auto result = execute_bytecode_impl(rev, rt_ctx, code);
+
+        // Re-install previous runtime context:
+        (void)host.set_runtime_context(prev_rt_ctx);
+
+        host.rethrow_on_active_exception();
+
+        return result;
+    }
+
+    evmc::Result VM::execute_raw(
+        evmc_revision rev, runtime::ChainParams const &params,
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
         evmc_message const *msg, evmc::bytes32 const &code_hash,
         SharedVarcode const &vcode)
     {
         auto const &icode = vcode->intercode();
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+        return execute_impl(rev, rt_ctx, code_hash, vcode);
+    }
+
+    evmc::Result VM::execute_impl(
+        evmc_revision rev, runtime::Context &rt_ctx,
+        evmc::bytes32 const &code_hash, SharedVarcode const &vcode)
+    {
+        auto const &icode = vcode->intercode();
         auto const &ncode = vcode->nativecode();
+        auto const msg_gas = rt_ctx.gas_remaining;
         if (MONAD_VM_LIKELY(ncode != nullptr)) {
             // The bytecode is compiled.
             if (MONAD_VM_UNLIKELY(ncode->revision() != rev)) {
@@ -59,38 +121,33 @@ namespace monad::vm
                 // revision. Execute with interpreter in the meantime.
                 compiler_.async_compile(
                     rev, code_hash, icode, compiler_config_);
-                return execute_intercode(
-                    rev, chain_params, host, context, msg, icode);
+                return execute_intercode_impl(rev, rt_ctx, icode);
             }
             auto const entry = ncode->entrypoint();
             if (MONAD_VM_UNLIKELY(entry == nullptr)) {
                 // Compilation has failed in this revision, so just execute
                 // with interpreter.
-                return execute_intercode(
-                    rev, chain_params, host, context, msg, icode);
+                return execute_intercode_impl(rev, rt_ctx, icode);
             }
             // Bytecode has been successfully compiled for the right revision.
-            return execute_native_entrypoint(
-                chain_params, host, context, msg, icode, entry);
+            return execute_native_entrypoint_impl(rt_ctx, entry);
         }
         if (!compiler_.is_varcode_cache_warm()) {
             // If cache is not warm then start async compilation immediately,
             // and execute with interpreter in the meantime.
             compiler_.async_compile(rev, code_hash, icode, compiler_config_);
-            return execute_intercode(
-                rev, chain_params, host, context, msg, icode);
+            return execute_intercode_impl(rev, rt_ctx, icode);
         }
         // Execute with interpreter. We will start async compilation when
         // the accumulated execution gas spent by interpreter on the bytecode
         // becomes sufficiently high.
-        auto result =
-            execute_intercode(rev, chain_params, host, context, msg, icode);
+        auto result = execute_intercode_impl(rev, rt_ctx, icode);
         auto const bound = compiler::native::max_code_size(
             compiler_config_.max_code_size_offset, icode->code_size());
         MONAD_VM_DEBUG_ASSERT(result.gas_left >= 0);
-        MONAD_VM_DEBUG_ASSERT(msg->gas >= result.gas_left);
+        MONAD_VM_DEBUG_ASSERT(msg_gas >= result.gas_left);
         uint64_t const gas_used =
-            static_cast<uint64_t>(msg->gas - result.gas_left);
+            static_cast<uint64_t>(msg_gas - result.gas_left);
         // Note that execution gas is counted for the second time via the
         // intercode_gas_used function if this is a re-execution.
         if (vcode->intercode_gas_used(gas_used) >= *bound) {
@@ -99,69 +156,68 @@ namespace monad::vm
         return result;
     }
 
-    evmc::Result VM::execute_raw(
-        evmc_revision rev, runtime::ChainParams const &chain_params,
-        evmc_host_interface const *host, evmc_host_context *context,
+    evmc::Result VM::execute_bytecode_raw(
+        evmc_revision rev, runtime::ChainParams const &params,
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
         evmc_message const *msg, std::span<uint8_t const> code)
     {
-        stats_.event_execute_raw();
-        auto const stack_ptr = stack_allocator_.allocate();
-        auto ctx = runtime::Context::from(
-            memory_allocator_,
-            chain_params,
-            host,
-            context,
-            msg,
-            {code.data(), code.size()});
-
-        interpreter::execute(rev, ctx, Intercode{code}, stack_ptr.get());
-
-        return ctx.copy_to_evmc_result();
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_, params, host, host_ctx, msg, code);
+        return execute_bytecode_impl(rev, rt_ctx, code);
     }
 
-    evmc::Result VM::execute_intercode(
-        evmc_revision rev, runtime::ChainParams const &chain_params,
-        evmc_host_interface const *host, evmc_host_context *context,
+    evmc::Result VM::execute_bytecode_impl(
+        evmc_revision rev, runtime::Context &rt_ctx,
+        std::span<uint8_t const> code)
+    {
+        stats_.event_execute_bytecode();
+
+        auto const stack_ptr = stack_allocator_.allocate();
+        interpreter::execute(rev, rt_ctx, Intercode{code}, stack_ptr.get());
+
+        return rt_ctx.copy_to_evmc_result();
+    }
+
+    evmc::Result VM::execute_intercode_raw(
+        evmc_revision rev, runtime::ChainParams const &params,
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
         evmc_message const *msg, SharedIntercode const &icode)
     {
-        stats_.event_execute_intercode();
-        uint8_t const *const code = icode->code();
-        size_t const code_size = icode->size();
-        auto const stack_ptr = stack_allocator_.allocate();
-        auto ctx = runtime::Context::from(
-            memory_allocator_,
-            chain_params,
-            host,
-            context,
-            msg,
-            {code, code_size});
-
-        interpreter::execute(rev, ctx, *icode, stack_ptr.get());
-
-        return ctx.copy_to_evmc_result();
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+        return execute_intercode_impl(rev, rt_ctx, icode);
     }
 
-    evmc::Result VM::execute_native_entrypoint(
-        runtime::ChainParams const &chain_params,
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, SharedIntercode const &icode,
-        compiler::native::entrypoint_t entry)
+    evmc::Result VM::execute_intercode_impl(
+        evmc_revision rev, runtime::Context &rt_ctx,
+        SharedIntercode const &icode)
     {
-        stats_.event_execute_native_entrypoint();
-        uint8_t const *const code = icode->code();
-        size_t const code_size = icode->size();
-        auto ctx = runtime::Context::from(
-            memory_allocator_,
-            chain_params,
-            host,
-            context,
-            msg,
-            {code, code_size});
+        stats_.event_execute_intercode();
 
         auto const stack_ptr = stack_allocator_.allocate();
+        interpreter::execute(rev, rt_ctx, *icode, stack_ptr.get());
 
-        entry(&ctx, stack_ptr.get());
+        return rt_ctx.copy_to_evmc_result();
+    }
 
-        return ctx.copy_to_evmc_result();
+    evmc::Result VM::execute_native_entrypoint_raw(
+        runtime::ChainParams const &params, evmc_host_interface const *host,
+        evmc_host_context *host_ctx, evmc_message const *msg,
+        SharedIntercode const &icode, compiler::native::entrypoint_t entry)
+    {
+        auto rt_ctx = runtime::Context::from(
+            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+        return execute_native_entrypoint_impl(rt_ctx, entry);
+    }
+
+    evmc::Result VM::execute_native_entrypoint_impl(
+        runtime::Context &rt_ctx, compiler::native::entrypoint_t entry)
+    {
+        stats_.event_execute_native_entrypoint();
+
+        auto const stack_ptr = stack_allocator_.allocate();
+        entry(&rt_ctx, stack_ptr.get());
+
+        return rt_ctx.copy_to_evmc_result();
     }
 }

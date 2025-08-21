@@ -176,6 +176,8 @@ TEST_F(RuntimeTest, ExpandMemory)
 
 TEST_F(RuntimeTest, ExpandMemoryNotUsingCachedAllocatorFreeRegression)
 {
+    ctx_.memory.allocator_.debug_clear_cache();
+
     ASSERT_EQ(EvmMemoryAllocatorMeta::cache_list.size(), 0);
 
     ctx_.gas_remaining = 1'000'000;

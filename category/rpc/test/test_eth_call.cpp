@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
@@ -524,6 +525,177 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 68137);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, assertion_exception_depth1)
+{
+    auto const from = ADDR_A;
+    auto const to = ADDR_B;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1, .code_hash = NULL_HASH}}}},
+            {to,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}}},
+        Code{},
+        BlockHeader{.number = 0});
+
+    Transaction tx{
+        .gas_limit = 21'000u,
+        .value = 1,
+        .to = to,
+        .data = {},
+    };
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        false,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_TRUE(std::strcmp(ctx.result->message, "balance overflow") == 0);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 0);
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, assertion_exception_depth2)
+{
+    auto const addr1 = evmc::address{253};
+    auto const addr2 = evmc::address{254};
+    auto const addr3 = evmc::address{255};
+
+    EXPECT_EQ(addr3.bytes[19], 255);
+    for (size_t i = 0; i < 19; ++i) {
+        EXPECT_EQ(addr3.bytes[i], 0);
+    }
+
+    // PUSH0
+    // PUSH0
+    // PUSH0
+    // PUSH0
+    // PUSH1 2
+    // PUSH1 addr3
+    // GAS
+    // CALL
+    auto const code2 = evmc::from_hex("0x59595959600260FF5AF1").value();
+    auto const hash2 = to_bytes(keccak256(code2));
+    auto const icode2 = vm::make_shared_intercode(code2);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {addr1,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1, .code_hash = NULL_HASH}}}},
+            {addr2,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1, .code_hash = hash2}}}},
+            {addr3,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max() - 1,
+                          .code_hash = NULL_HASH}}}}},
+        Code{{hash2, icode2}},
+        BlockHeader{.number = 0});
+
+    Transaction tx{
+        .gas_limit = 1'000'000u,
+        .value = 1,
+        .to = addr2,
+        .type = TransactionType::eip1559,
+    };
+
+    BlockHeader header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(addr1)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto executor = monad_eth_call_executor_create(
+        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_eth_call_executor_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        true,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_TRUE(std::strcmp(ctx.result->message, "balance overflow") == 0);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->rlp_call_frames_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);

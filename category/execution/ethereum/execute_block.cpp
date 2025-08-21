@@ -247,38 +247,42 @@ Result<std::vector<Receipt>> execute_block(
              &block_state,
              &block_metrics,
              &call_tracer = *call_tracers[i]] {
-                if (chain.is_system_sender(sender)) {
-                    results[i] = ExecuteSystemTransaction<rev>{
-                        chain,
-                        i,
-                        transaction,
-                        sender,
-                        header,
-                        block_state,
-                        block_metrics,
-                        promises[i],
-                        call_tracer}();
+                try {
+                    if (chain.is_system_sender(sender)) {
+                        results[i] = ExecuteSystemTransaction<rev>{
+                            chain,
+                            i,
+                            transaction,
+                            sender,
+                            header,
+                            block_state,
+                            block_metrics,
+                            promises[i],
+                            call_tracer}();
+                    }
+                    else {
+                        results[i] = ExecuteTransaction<rev>{
+                            chain,
+                            i,
+                            transaction,
+                            sender,
+                            authorities,
+                            header,
+                            block_hash_buffer,
+                            block_state,
+                            block_metrics,
+                            promises[i],
+                            call_tracer}();
+                    }
+                    promises[i + 1].set_value();
+                } catch (...) {
+                    promises[i + 1].set_exception(std::current_exception());
                 }
-                else {
-                    results[i] = ExecuteTransaction<rev>{
-                        chain,
-                        i,
-                        transaction,
-                        sender,
-                        authorities,
-                        header,
-                        block_hash_buffer,
-                        block_state,
-                        block_metrics,
-                        promises[i],
-                        call_tracer}();
-                }
-                promises[i + 1].set_value();
             });
     }
 
     auto const last = static_cast<std::ptrdiff_t>(block.transactions.size());
-    promises[last].get_future().wait();
+    promises[last].get_future().get();
     block_metrics.set_tx_exec_time(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin));

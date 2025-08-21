@@ -26,6 +26,13 @@ extern "C" void monad_vm_runtime_context_error_exit
 
 namespace monad::vm::runtime
 {
+    void Context::stack_unwind [[noreturn]] () noexcept
+    {
+        is_stack_unwinding_active = true;
+        result.status = StatusCode::Error;
+        monad_vm_runtime_exit(exit_stack_ptr);
+    }
+
     void Context::exit [[noreturn]] (StatusCode code) noexcept
     {
         result.status = code;

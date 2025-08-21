@@ -261,7 +261,7 @@ evmc::Result BlockchainTestVM::execute_compiler(
     }
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
-    return monad_vm_.execute_native_entrypoint(
+    return monad_vm_.execute_native_entrypoint_raw(
         chain_params(), host, context, msg, icode, ncode->entrypoint());
 }
 
@@ -292,6 +292,6 @@ evmc::Result BlockchainTestVM::execute_interpreter(
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &icode = get_intercode(code_hash, code, code_size);
-    return monad_vm_.execute_intercode(
+    return monad_vm_.execute_intercode_raw(
         rev, chain_params(), host, context, msg, icode);
 }

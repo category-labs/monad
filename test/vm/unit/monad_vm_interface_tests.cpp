@@ -15,6 +15,7 @@
 
 #include <category/vm/code.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/varcode_cache.hpp>
 #include <category/vm/vm.hpp>
@@ -69,6 +70,128 @@ namespace
             ethash::keccak256(bytecode.data(), bytecode.size()));
         return {bytecode, hash};
     }
+
+    class HostMock : public Host
+    {
+        size_t calls_before_exception_;
+        std::function<evmc::Result(Host &)> call_impl_;
+
+    public:
+        struct Exception
+        {
+            std::string message;
+        };
+
+        HostMock(
+            size_t calls_before_exception,
+            std::function<evmc::Result(Host &)> call_impl)
+            : calls_before_exception_{calls_before_exception}
+            , call_impl_{std::move(call_impl)}
+        {
+        }
+
+        bool account_exists(evmc::address const &) const noexcept override
+        {
+            return false;
+        }
+
+        evmc::bytes32 get_storage(evmc::address const &, evmc::bytes32 const &)
+            const noexcept override
+        {
+            return evmc::bytes32{};
+        }
+
+        evmc_storage_status set_storage(
+            evmc::address const &, evmc::bytes32 const &,
+            evmc::bytes32 const &) noexcept override
+        {
+            return evmc_storage_status{};
+        }
+
+        evmc::uint256be
+        get_balance(evmc::address const &) const noexcept override
+        {
+            return evmc::uint256be{};
+        }
+
+        size_t get_code_size(evmc::address const &) const noexcept override
+        {
+            return 0;
+        }
+
+        evmc::bytes32
+        get_code_hash(evmc::address const &) const noexcept override
+        {
+            return evmc::bytes32{};
+        }
+
+        size_t copy_code(evmc::address const &, size_t, uint8_t *, size_t)
+            const noexcept override
+        {
+            return 0;
+        }
+
+        bool selfdestruct(
+            evmc::address const &, evmc::address const &) noexcept override
+        {
+            return false;
+        }
+
+        evmc::Result call(evmc_message const &) noexcept override
+        {
+            try {
+                if (calls_before_exception_-- == 0) {
+                    throw Exception{"exception"};
+                }
+                return call_impl_(*this);
+            }
+            catch (...) {
+                capture_current_exception();
+            }
+            stack_unwind();
+        }
+
+        evmc_tx_context get_tx_context() const noexcept override
+        {
+            return evmc_tx_context{};
+        }
+
+        evmc::bytes32 get_block_hash(int64_t) const noexcept override
+        {
+            return evmc::bytes32{};
+        }
+
+        void emit_log(
+            evmc::address const &, uint8_t const *, size_t,
+            evmc::bytes32 const *, size_t) noexcept override
+        {
+        }
+
+        evmc_access_status
+        access_account(evmc::address const &) noexcept override
+        {
+            return evmc_access_status{};
+        }
+
+        evmc_access_status access_storage(
+            evmc::address const &, evmc::bytes32 const &) noexcept override
+        {
+            return evmc_access_status{};
+        }
+
+        evmc::bytes32 get_transient_storage(
+            evmc::address const &,
+            evmc::bytes32 const &) const noexcept override
+        {
+            return evmc::bytes32{};
+        }
+
+        void set_transient_storage(
+            evmc::address const &, evmc::bytes32 const &,
+            evmc::bytes32 const &) noexcept override
+        {
+        }
+    };
 }
 
 TEST(MonadVmInterface, VarcodeCache)
@@ -221,7 +344,7 @@ TEST(MonadVmInterface, try_insert_varcode)
     ASSERT_EQ(vm.try_insert_varcode(hash1, icode1), vcode1);
 }
 
-TEST(MonadVmInterface, execute_raw)
+TEST(MonadVmInterface, execute_bytecode_raw)
 {
     VM vm;
     evmc::MockedHost host;
@@ -231,7 +354,7 @@ TEST(MonadVmInterface, execute_raw)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_raw(
+    auto result = vm.execute_bytecode_raw(
         EVMC_FRONTIER,
         {.max_initcode_size = 0xC000},
         &host.get_interface(),
@@ -243,7 +366,7 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_EQ(result.gas_left, 4);
 }
 
-TEST(MonadVmInterface, execute_intercode)
+TEST(MonadVmInterface, execute_intercode_raw)
 {
     VM vm;
     evmc::MockedHost host;
@@ -254,7 +377,7 @@ TEST(MonadVmInterface, execute_intercode)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_intercode(
+    auto result = vm.execute_intercode_raw(
         EVMC_FRONTIER,
         {.max_initcode_size = 0xC000},
         &host.get_interface(),
@@ -266,7 +389,7 @@ TEST(MonadVmInterface, execute_intercode)
     ASSERT_EQ(result.gas_left, 4);
 }
 
-TEST(MonadVmInterface, execute_native_entrypoint)
+TEST(MonadVmInterface, execute_native_entrypoint_raw)
 {
     VM vm;
     evmc::MockedHost host;
@@ -280,7 +403,7 @@ TEST(MonadVmInterface, execute_native_entrypoint)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_native_entrypoint(
+    auto result = vm.execute_native_entrypoint_raw(
         {.max_initcode_size = 0xC000},
         &host.get_interface(),
         host.to_context(),
@@ -292,7 +415,7 @@ TEST(MonadVmInterface, execute_native_entrypoint)
     ASSERT_EQ(result.gas_left, 4);
 }
 
-TEST(MonadVmInterface, execute)
+TEST(MonadVmInterface, execute_raw)
 {
     VM vm;
     evmc::MockedHost host;
@@ -303,10 +426,10 @@ TEST(MonadVmInterface, execute)
     static uint32_t const warm_kb_threshold = 1 << 10; // 1MB
     vm.compiler().set_varcode_cache_warm_kb_threshold(warm_kb_threshold);
 
-    auto execute = [&](evmc_revision rev,
-                       evmc::bytes32 const &hash,
-                       SharedVarcode const &vcode) {
-        auto result = vm.execute(
+    auto execute_raw = [&](evmc_revision rev,
+                           evmc::bytes32 const &hash,
+                           SharedVarcode const &vcode) {
+        auto result = vm.execute_raw(
             rev,
             {.max_initcode_size = 0xC000},
             &host.get_interface(),
@@ -328,7 +451,7 @@ TEST(MonadVmInterface, execute)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter on cold cache
-    execute(EVMC_FRONTIER, hash0, vcode0);
+    execute_raw(EVMC_FRONTIER, hash0, vcode0);
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -342,12 +465,12 @@ TEST(MonadVmInterface, execute)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode on cold cache
-    execute(EVMC_FRONTIER, hash0, compiled_vcode0.value());
+    execute_raw(EVMC_FRONTIER, hash0, compiled_vcode0.value());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter because of revision change
-    execute(EVMC_SHANGHAI, hash0, compiled_vcode0.value());
+    execute_raw(EVMC_SHANGHAI, hash0, compiled_vcode0.value());
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -366,7 +489,7 @@ TEST(MonadVmInterface, execute)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode after revision change
-    execute(EVMC_SHANGHAI, hash0, re_compiled_vcode0.value());
+    execute_raw(EVMC_SHANGHAI, hash0, re_compiled_vcode0.value());
 
     auto [noncompiling_bytecode, noncompiling_hash] =
         make_bytecode_with_compilation_failure();
@@ -380,7 +503,7 @@ TEST(MonadVmInterface, execute)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter on cold cache
-    execute(EVMC_SHANGHAI, noncompiling_hash, noncompiling_vcode);
+    execute_raw(EVMC_SHANGHAI, noncompiling_hash, noncompiling_vcode);
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -399,7 +522,7 @@ TEST(MonadVmInterface, execute)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter after failed compliation
-    execute(
+    execute_raw(
         EVMC_SHANGHAI, noncompiling_hash, attempted_noncompiling_vcode.value());
 
     // Warm up cache
@@ -420,7 +543,7 @@ TEST(MonadVmInterface, execute)
 
     // Execute with interpreter on warm cache until compilation is started.
     do {
-        execute(EVMC_SHANGHAI, warm_hash, warm_vcode);
+        execute_raw(EVMC_SHANGHAI, warm_hash, warm_vcode);
         vm.compiler().debug_wait_for_empty_queue();
     }
     while (warm_vcode->get_intercode_gas_used() < *compile_threshold);
@@ -438,5 +561,150 @@ TEST(MonadVmInterface, execute)
     ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode on warm cache
-    execute(EVMC_SHANGHAI, warm_hash, compiled_warm_vcode.value());
+    execute_raw(EVMC_SHANGHAI, warm_hash, compiled_warm_vcode.value());
+}
+
+TEST(MonadVmInterface, execute)
+{
+    // The `VM::execute` is mostly tested already via the test
+    // MonadVmInterface.execute_raw
+
+    evmc_message msg{};
+    msg.gas = 100'000'000;
+
+    {
+        VM vm;
+        HostMock host{0, [&](Host &) { return evmc::Result{}; }};
+        std::vector<uint8_t> bytecode{};
+        auto hash = std::bit_cast<evmc::bytes32>(
+            ethash::keccak256(bytecode.data(), bytecode.size()));
+        auto icode = make_shared_intercode(bytecode);
+        auto vcode = vm.try_insert_varcode(hash, icode);
+        auto result = vm.execute(
+            EVMC_PRAGUE,
+            {.max_initcode_size = 0xC000},
+            host,
+            &msg,
+            hash,
+            vcode);
+        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.output_size, 0);
+    }
+
+    std::vector<uint8_t> bytecode = {
+        PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, ADDRESS, GAS, CALL};
+    auto hash = std::bit_cast<evmc::bytes32>(
+        ethash::keccak256(bytecode.data(), bytecode.size()));
+    auto icode = make_shared_intercode(bytecode);
+
+    for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1024}) {
+        VM vm;
+        try {
+            auto vcode = vm.try_insert_varcode(hash, icode);
+            ASSERT_EQ(vcode->intercode(), icode);
+            ASSERT_EQ(vcode->nativecode(), nullptr);
+            HostMock host{depth, [&](Host &host) {
+                              return vm.execute(
+                                  EVMC_PRAGUE,
+                                  {.max_initcode_size = 0xC000},
+                                  host,
+                                  &msg,
+                                  hash,
+                                  vcode);
+                          }};
+            vm.execute(
+                EVMC_PRAGUE,
+                {.max_initcode_size = 0xC000},
+                host,
+                &msg,
+                hash,
+                vcode);
+            ASSERT_TRUE(false);
+        }
+        catch (HostMock::Exception const &e) {
+            ASSERT_EQ(e.message, std::string{"exception"});
+        }
+        catch (...) {
+            ASSERT_TRUE(false);
+        }
+        vm.compiler().debug_wait_for_empty_queue();
+        try {
+            auto vcode = vm.find_varcode(hash);
+            ASSERT_TRUE(vcode.has_value());
+            ASSERT_EQ(vcode.value()->intercode(), icode);
+            ASSERT_NE(vcode.value()->nativecode(), nullptr);
+            HostMock host{depth, [&](Host &host) {
+                              return vm.execute(
+                                  EVMC_PRAGUE,
+                                  {.max_initcode_size = 0xC000},
+                                  host,
+                                  &msg,
+                                  hash,
+                                  *vcode);
+                          }};
+            vm.execute(
+                EVMC_PRAGUE,
+                {.max_initcode_size = 0xC000},
+                host,
+                &msg,
+                hash,
+                *vcode);
+            ASSERT_TRUE(false);
+        }
+        catch (HostMock::Exception const &e) {
+            ASSERT_EQ(e.message, std::string{"exception"});
+        }
+        catch (...) {
+            ASSERT_TRUE(false);
+        }
+    }
+}
+
+TEST(MonadVmInterface, execute_bytecode)
+{
+    // The `VM::execute_bytecode` function is mostly tested already via the test
+    // MonadVmInterface.execute_bytecode_raw
+
+    VM vm;
+
+    evmc_message msg{};
+    msg.gas = 100'000'000;
+
+    {
+        HostMock host{0, [&](Host &) { return evmc::Result{}; }};
+        std::vector<uint8_t> bytecode{};
+        auto result = vm.execute_bytecode(
+            EVMC_PRAGUE, {.max_initcode_size = 0xC000}, host, &msg, bytecode);
+        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.output_size, 0);
+    }
+
+    std::vector<uint8_t> bytecode = {
+        PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, ADDRESS, GAS, CALL};
+
+    for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1024}) {
+        try {
+            HostMock host{depth, [&](Host &host) {
+                              return vm.execute_bytecode(
+                                  EVMC_PRAGUE,
+                                  {.max_initcode_size = 0xC000},
+                                  host,
+                                  &msg,
+                                  bytecode);
+                          }};
+            vm.execute_bytecode(
+                EVMC_PRAGUE,
+                {.max_initcode_size = 0xC000},
+                host,
+                &msg,
+                bytecode);
+            ASSERT_TRUE(false);
+        }
+        catch (HostMock::Exception const &e) {
+            ASSERT_EQ(e.message, std::string{"exception"});
+        }
+        catch (...) {
+            ASSERT_TRUE(false);
+        }
+    }
 }

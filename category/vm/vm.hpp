@@ -18,6 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/utils/debug.hpp>
 
@@ -57,7 +58,7 @@ namespace monad::vm
             }
         }
 
-        void event_execute_raw() noexcept
+        void event_execute_bytecode() noexcept
         {
             if constexpr (utils::collect_monad_compiler_hot_path_stats) {
                 execute_raw_call_count_.fetch_add(1, std::memory_order_release);
@@ -153,28 +154,39 @@ namespace monad::vm
         }
 
         /// Execute varcode. The function will execute the nativecode in
-        /// the varcode if set, and otherwise start async compilation and
-        /// execute the intercode with interpreter.
+        /// the varcode if set. Otherwise execute the intercode with
+        /// interpreter and potentially start async compilation.
         evmc::Result execute(
+            evmc_revision, runtime::ChainParams const &, Host &,
+            evmc_message const *, evmc::bytes32 const &code_hash,
+            SharedVarcode const &);
+
+        /// Execute the bytecode `code` with interpreter.
+        evmc::Result execute_bytecode(
+            evmc_revision, runtime::ChainParams const &, Host &,
+            evmc_message const *, std::span<uint8_t const> code);
+
+        /// Like `execute`, but without stack unwind support.
+        evmc::Result execute_raw(
             evmc_revision, runtime::ChainParams const &,
             evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, evmc::bytes32 const &code_hash,
             SharedVarcode const &);
 
-        /// Execute the raw `code` with interpreter.
-        evmc::Result execute_raw(
+        /// Like `execute_bytecode`, but without stack unwind support.
+        evmc::Result execute_bytecode_raw(
             evmc_revision, runtime::ChainParams const &,
             evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, std::span<uint8_t const> code);
 
-        /// Execute the intercode with interpreter.
-        evmc::Result execute_intercode(
+        /// Execute with interpreter, without stack unwind support.
+        evmc::Result execute_intercode_raw(
             evmc_revision, runtime::ChainParams const &,
             evmc_host_interface const *, evmc_host_context *,
             evmc_message const *, SharedIntercode const &);
 
-        /// Execute the entrypoint`.
-        evmc::Result execute_native_entrypoint(
+        /// Execute the entrypoint, without stack unwind support.
+        evmc::Result execute_native_entrypoint_raw(
             runtime::ChainParams const &, evmc_host_interface const *,
             evmc_host_context *, evmc_message const *, SharedIntercode const &,
             compiler::native::entrypoint_t);
@@ -196,6 +208,19 @@ namespace monad::vm
         }
 
     private:
+        evmc::Result execute_impl(
+            evmc_revision, runtime::Context &, evmc::bytes32 const &code_hash,
+            SharedVarcode const &);
+
+        evmc::Result execute_bytecode_impl(
+            evmc_revision, runtime::Context &, std::span<uint8_t const> code);
+
+        evmc::Result execute_intercode_impl(
+            evmc_revision, runtime::Context &, SharedIntercode const &);
+
+        evmc::Result execute_native_entrypoint_impl(
+            runtime::Context &, compiler::native::entrypoint_t);
+
         VmStats stats_;
     };
 }

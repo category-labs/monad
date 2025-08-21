@@ -67,7 +67,7 @@ namespace monad::vm::compiler::test
         if (impl == Compiler) {
             auto ncode = vm_.compiler().compile(rev_, icode);
             ASSERT_TRUE(ncode->entrypoint() != nullptr);
-            result_ = evmc::Result{vm_.execute_native_entrypoint(
+            result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
                 chain_params,
                 &host_.get_interface(),
                 host_.to_context(),
@@ -76,7 +76,7 @@ namespace monad::vm::compiler::test
                 ncode->entrypoint())};
         }
         else if (impl == Interpreter) {
-            result_ = evmc::Result{vm_.execute_intercode(
+            result_ = evmc::Result{vm_.execute_intercode_raw(
                 rev_,
                 chain_params,
                 &host_.get_interface(),

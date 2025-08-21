@@ -118,6 +118,14 @@ namespace monad::vm::runtime
             }
         }
 
+        /// Clear cache for testing/debugging purposes
+        void debug_clear_cache() const
+        {
+            while (!T::cache_list.empty()) {
+                std::free(T::cache_list.pop());
+            }
+        }
+
         /// Free memory allocated with `aligned_alloc_cached`.
         void free_cached(uint8_t *ptr) const
         {

@@ -20,6 +20,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
@@ -311,7 +312,8 @@ public:
             account = Account{.incarnation = incarnation_};
         }
 
-        MONAD_ASSERT(
+        MONAD_THROW(
+            "balance overflow",
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance);
 

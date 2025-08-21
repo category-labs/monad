@@ -93,9 +93,14 @@ namespace monad::vm::runtime
 
         auto result = ctx->host->call(ctx->context, &message);
 
+        ctx->env.set_return_data(result.output_data, result.output_size);
+
+        // Unwind the stack after setting return data, so that return data
+        // is deallocated by the `Environment` destructor.
+        ctx->propagate_stack_unwind();
+
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
-        ctx->env.set_return_data(result.output_data, result.output_size);
 
         return (result.status_code == EVMC_SUCCESS)
                    ? uint256_from_address(result.create_address)

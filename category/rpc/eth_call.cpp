@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/lru/lru_cache.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -76,6 +77,8 @@ struct monad_state_override
 
 namespace
 {
+    char const *const UNEXPECTED_EXCEPTION_ERR_MSG =
+        "unexpected error";
     char const *const BLOCKHASH_ERR_MSG =
         "failure to initialize block hash buffer";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
@@ -597,6 +600,7 @@ struct monad_eth_call_executor
              use_high_gas_pool = use_high_gas_pool,
              timeout =
                  use_high_gas_pool ? high_pool_timeout_ : low_pool_timeout_] {
+            try {
                 if (use_high_gas_pool) {
                     --high_pool_queued_count_;
                 }
@@ -708,7 +712,20 @@ struct monad_eth_call_executor
                     complete,
                     user,
                     call_frames);
-            });
+            }
+            catch (MonadException const &e) {
+                result->status_code = EVMC_INTERNAL_ERROR;
+                result->message = strdup(e.message());
+                MONAD_ASSERT(result->message);
+                complete(result, user);
+            }
+            catch (...) {
+                result->status_code = EVMC_INTERNAL_ERROR;
+                result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
+                MONAD_ASSERT(result->message);
+                complete(result, user);
+            }
+        });
     }
 
     void call_complete(

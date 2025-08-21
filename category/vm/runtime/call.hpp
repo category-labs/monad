@@ -165,9 +165,14 @@ namespace monad::vm::runtime
 
         auto result = ctx->host->call(ctx->context, &message);
 
+        ctx->env.set_return_data(result.output_data, result.output_size);
+
+        // Unwind the stack after setting return data, so that return data
+        // is deallocated by the `Environment` destructor.
+        ctx->propagate_stack_unwind();
+
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
-        ctx->env.set_return_data(result.output_data, result.output_size);
 
         auto copy_size =
             std::min(static_cast<std::size_t>(*ret_size), result.output_size);

@@ -51,39 +51,75 @@ EvmcHostBase::EvmcHostBase(
 bytes32_t EvmcHostBase::get_storage(
     Address const &address, bytes32_t const &key) const noexcept
 {
-    return state_.get_storage(address, key);
+    try {
+        return state_.get_storage(address, key);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 evmc_storage_status EvmcHostBase::set_storage(
     Address const &address, bytes32_t const &key,
     bytes32_t const &value) noexcept
 {
-    return state_.set_storage(address, key, value);
+    try {
+        return state_.set_storage(address, key, value);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
-    return state_.get_balance(address);
+    try {
+        return state_.get_balance(address);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 size_t EvmcHostBase::get_code_size(Address const &address) const noexcept
 {
-    return state_.get_code_size(address);
+    try {
+        return state_.get_code_size(address);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 bytes32_t EvmcHostBase::get_code_hash(Address const &address) const noexcept
 {
-    if (state_.account_is_dead(address)) {
-        return bytes32_t{};
+    try {
+        if (state_.account_is_dead(address)) {
+            return bytes32_t{};
+        }
+        return state_.get_code_hash(address);
     }
-    return state_.get_code_hash(address);
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 size_t EvmcHostBase::copy_code(
     Address const &address, size_t offset, uint8_t *data,
     size_t size) const noexcept
 {
-    return state_.copy_code(address, offset, data, size);
+    try {
+        return state_.copy_code(address, offset, data, size);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
@@ -94,38 +130,69 @@ evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
 bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
-    MONAD_ASSERT(block_number >= 0);
-    return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
-};
+    try {
+        MONAD_ASSERT(block_number >= 0);
+        return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
 
 void EvmcHostBase::emit_log(
     Address const &address, uint8_t const *data, size_t data_size,
     bytes32_t const topics[], size_t num_topics) noexcept
 {
-    Receipt::Log log{.data = {data, data_size}, .address = address};
-    for (auto i = 0u; i < num_topics; ++i) {
-        log.topics.push_back({topics[i]});
+    try {
+        Receipt::Log log{.data = {data, data_size}, .address = address};
+        for (auto i = 0u; i < num_topics; ++i) {
+            log.topics.push_back({topics[i]});
+        }
+        state_.store_log(std::move(log));
+        return;
     }
-    state_.store_log(std::move(log));
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 evmc_access_status EvmcHostBase::access_storage(
     Address const &address, bytes32_t const &key) noexcept
 {
-    return state_.access_storage(address, key);
+    try {
+        return state_.access_storage(address, key);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 bytes32_t EvmcHostBase::get_transient_storage(
     Address const &address, bytes32_t const &key) const noexcept
 {
-    return state_.get_transient_storage(address, key);
+    try {
+        return state_.get_transient_storage(address, key);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 void EvmcHostBase::set_transient_storage(
     Address const &address, bytes32_t const &key,
     bytes32_t const &value) noexcept
 {
-    return state_.set_transient_storage(address, key, value);
+    try {
+        return state_.set_transient_storage(address, key, value);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
 }
 
 MONAD_NAMESPACE_END

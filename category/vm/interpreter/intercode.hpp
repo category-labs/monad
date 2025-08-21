@@ -65,6 +65,11 @@ namespace monad::vm::interpreter
             return *code_size_;
         }
 
+        std::span<uint8_t const> code_span() const noexcept
+        {
+            return {padded_code_, size_t{*code_size_}};
+        }
+
         bool is_jumpdest(std::size_t const pc) const noexcept
         {
             return pc < *code_size_ && jumpdest_map_[pc];

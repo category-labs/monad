@@ -289,7 +289,7 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     auto const ncode1 = vm_.compiler().compile(EVMC_CANCUN, icode1, config);
 
     pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint(
+    result_ = vm_.execute_native_entrypoint_raw(
         chain_params,
         &host_.get_interface(),
         host_.to_context(),
@@ -307,7 +307,7 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     auto const ncode2 = vm_.compiler().compile(EVMC_CANCUN, icode2, config);
 
     pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint(
+    result_ = vm_.execute_native_entrypoint_raw(
         chain_params,
         &host_.get_interface(),
         host_.to_context(),
@@ -345,7 +345,7 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     auto const ncode1 = vm_.compiler().compile(EVMC_CANCUN, icode1, config);
 
     pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint(
+    result_ = vm_.execute_native_entrypoint_raw(
         chain_params,
         &host_.get_interface(),
         host_.to_context(),
@@ -363,7 +363,7 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     auto const ncode2 = vm_.compiler().compile(EVMC_CANCUN, icode2, config);
 
     pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint(
+    result_ = vm_.execute_native_entrypoint_raw(
         chain_params,
         &host_.get_interface(),
         host_.to_context(),
@@ -408,7 +408,7 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
     auto const ncode = vm.compiler().compile(EVMC_CANCUN, icode);
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
-    vm.execute_native_entrypoint(
+    vm.execute_native_entrypoint_raw(
         chain_params,
         &host_.get_interface(),
         host_.to_context(),

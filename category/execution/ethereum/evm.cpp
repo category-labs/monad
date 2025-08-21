@@ -51,7 +51,7 @@ bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 }
 
 void transfer_balances(
-    State &state, evmc_message const &msg, Address const &to) noexcept
+    State &state, evmc_message const &msg, Address const &to)
 {
     auto const value = intx::be::load<uint256_t>(msg.value);
     state.subtract_from_balance(msg.sender, value);
@@ -163,7 +163,7 @@ void post_call(State &state, evmc::Result const &result)
 template <evmc_revision rev>
 evmc::Result create(
     EvmcHost<rev> *const host, State &state, evmc_message const &msg,
-    size_t const max_code_size) noexcept
+    size_t const max_code_size)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -231,11 +231,10 @@ evmc::Result create(
         .code_size = 0,
     };
 
-    auto result = state.vm().execute_raw(
+    auto result = state.vm().execute_bytecode(
         rev,
         host->get_chain_params(),
-        &host->get_interface(),
-        host->to_context(),
+        *host,
         &m_call,
         {msg.input_data, msg.input_size});
 
@@ -269,7 +268,7 @@ EXPLICIT_EVMC_REVISION(create);
 
 template <evmc_revision rev>
 evmc::Result
-call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
+call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -300,8 +299,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
         result = state.vm().execute(
             rev,
             host->get_chain_params(),
-            &host->get_interface(),
-            host->to_context(),
+            *host,
             &msg,
             hash,
             code);

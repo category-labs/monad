@@ -107,6 +107,8 @@ add_library(
   "log_ffi.cpp"
   "log_ffi.h"
   "math.hpp"
+  "monad_exception.cpp"
+  "monad_exception.hpp"
   "nibble.h"
   "offset.hpp"
   "result.hpp"

@@ -197,6 +197,7 @@ namespace monad::vm::runtime
         Memory memory;
 
         void *exit_stack_ptr = nullptr;
+        bool is_stack_unwinding_active = false;
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(std::int64_t const gas) noexcept
@@ -252,6 +253,16 @@ namespace monad::vm::runtime
             }
             return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
         }
+
+        [[gnu::always_inline]]
+        void propagate_stack_unwind() noexcept
+        {
+            if (MONAD_VM_UNLIKELY(is_stack_unwinding_active)) {
+                stack_unwind();
+            }
+        }
+
+        void stack_unwind [[noreturn]] () noexcept;
 
         void exit [[noreturn]] (StatusCode code) noexcept;
 

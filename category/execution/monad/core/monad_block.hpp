@@ -30,7 +30,9 @@
     template decltype(f<MonadConsensusBlockHeaderV0>)                          \
         f<MonadConsensusBlockHeaderV0>;                                        \
     template decltype(f<MonadConsensusBlockHeaderV1>)                          \
-        f<MonadConsensusBlockHeaderV1>;
+        f<MonadConsensusBlockHeaderV1>;                                        \
+    template decltype(f<MonadConsensusBlockHeaderV2>)                          \
+        f<MonadConsensusBlockHeaderV2>;
 
 MONAD_NAMESPACE_BEGIN
 
@@ -133,11 +135,25 @@ using MonadConsensusBlockHeaderV0 =
 using MonadConsensusBlockHeaderV1 =
     MonadConsensusBlockHeader<MonadQuorumCertificateV1>;
 
+struct MonadConsensusBlockHeaderV2 : MonadConsensusBlockHeaderV1
+{
+    uint64_t base_fee{0};
+    uint64_t base_fee_trend{0};
+    uint64_t base_fee_moment{0};
+
+    friend bool operator==(
+        MonadConsensusBlockHeaderV2 const &,
+        MonadConsensusBlockHeaderV2 const &) = default;
+};
+
 static_assert(sizeof(MonadConsensusBlockHeaderV0) == 1216);
 static_assert(alignof(MonadConsensusBlockHeaderV0) == 8);
 
 static_assert(sizeof(MonadConsensusBlockHeaderV1) == 1176);
 static_assert(alignof(MonadConsensusBlockHeaderV1) == 8);
+
+static_assert(sizeof(MonadConsensusBlockHeaderV2) == 1200);
+static_assert(alignof(MonadConsensusBlockHeaderV2) == 8);
 
 struct MonadConsensusBlockBody
 {
@@ -165,11 +181,15 @@ struct MonadConsensusBlock
 
 using MonadConsensusBlockV0 = MonadConsensusBlock<MonadConsensusBlockHeaderV0>;
 using MonadConsensusBlockV1 = MonadConsensusBlock<MonadConsensusBlockHeaderV1>;
+using MonadConsensusBlockV2 = MonadConsensusBlock<MonadConsensusBlockHeaderV2>;
 
 static_assert(sizeof(MonadConsensusBlockV0) == 1288);
 static_assert(alignof(MonadConsensusBlockV0) == 8);
 
 static_assert(sizeof(MonadConsensusBlockV1) == 1248);
 static_assert(alignof(MonadConsensusBlockV1) == 8);
+
+static_assert(sizeof(MonadConsensusBlockV2) == 1272);
+static_assert(alignof(MonadConsensusBlockV2) == 8);
 
 MONAD_NAMESPACE_END

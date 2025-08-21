@@ -33,6 +33,7 @@ enum class MonadBlockError
 {
     Success = 0,
     TimestampMismatch,
+    BaseFeeMismatch,
 };
 
 template <class MonadConsensusBlockHeader>

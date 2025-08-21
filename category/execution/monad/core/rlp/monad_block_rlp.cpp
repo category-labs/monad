@@ -197,6 +197,16 @@ decode_consensus_block_header(byte_string_view &enc)
         header.execution_inputs, decode_execution_inputs(payload));
     BOOST_OUTCOME_TRY(header.block_body_id, decode_bytes32(payload));
 
+    if constexpr (std::same_as<
+                      MonadConsensusBlockHeader,
+                      MonadConsensusBlockHeaderV2>) {
+        BOOST_OUTCOME_TRY(header.base_fee, decode_unsigned<uint64_t>(payload));
+        BOOST_OUTCOME_TRY(
+            header.base_fee_trend, decode_unsigned<uint64_t>(payload));
+        BOOST_OUTCOME_TRY(
+            header.base_fee_moment, decode_unsigned<uint64_t>(payload));
+    }
+
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }

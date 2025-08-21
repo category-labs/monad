@@ -39,6 +39,17 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
     if (MONAD_UNLIKELY(timestamp_s != header.execution_inputs.timestamp)) {
         return MonadBlockError::TimestampMismatch;
     }
+
+    if constexpr (std::same_as<
+                      MonadConsensusBlockHeader,
+                      MonadConsensusBlockHeaderV2>) {
+        if (MONAD_UNLIKELY(
+                uint256_t{header.base_fee} !=
+                header.execution_inputs.base_fee_per_gas)) {
+            return MonadBlockError::BaseFeeMismatch;
+        }
+    }
+
     return outcome::success();
 }
 
@@ -57,6 +68,7 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
     static std::initializer_list<mapping> const v = {
         {MonadBlockError::Success, "success", {errc::success}},
         {MonadBlockError::TimestampMismatch, "timestamp mismatch", {}},
+        {MonadBlockError::BaseFeeMismatch, "base fee mismatch", {}},
     };
 
     return v;

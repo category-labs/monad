@@ -54,8 +54,10 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_BUILD_TYPE=Debug        \
   -DCMAKE_C_COMPILER=clang-19     \
-  -DCMAKE_CXX_COMPILER=clang++-19
+  -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DUTILS_CLANG_TIDY_AUTO_CONST=On
 
+RUN cd src && cmake --build build -t ConstCorrectnessChecks
 RUN cd src && ./scripts/check-clang-tidy.sh
 
 FROM base AS vm_fuzz

@@ -39,6 +39,16 @@ exit_code=0
 for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp'); do
     contents=$(head -c $C_LICENSE_HEADER_LEN "$file")
 
+    if [ "$file" == "utils/clang-tidy-auto-const/AutoConstCorrectnessCheck.hpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/AutoConstCorrectnessCheck.cpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/ArgConstCorrectnessCheck.hpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/ArgConstCorrectnessCheck.cpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/ExprAutoMutationAnalyzer.hpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/ExprAutoMutationAnalyzer.cpp" ] || \
+       [ "$file" == "utils/clang-tidy-auto-const/MiscUpdateModule.cpp" ]; then
+       continue
+    fi
+
     if [ "$contents" == "$C_LICENSE_HEADER" ]; then
         continue
     fi

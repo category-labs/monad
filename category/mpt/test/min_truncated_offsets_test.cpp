@@ -130,10 +130,10 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
         }
 
         virtual bool
-        down(unsigned char const branch_in_parent, Node const &node) override
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             ++level; // increment level counter
-
+            auto const &node = subtrie.node;
             if (root_to_node_records.empty()) { // indicates node is root
                 root_to_node_records.push(traverse_record_t{.node = &node});
                 return true;
@@ -142,7 +142,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 const_cast<Node *>(root_to_node_records.top().node);
             MONAD_ASSERT(parent != nullptr);
             auto const node_offset =
-                parent->fnext(parent->to_child_index(branch_in_parent));
+                parent->fnext(parent->to_child_index(branch));
             auto const virtual_node_offset =
                 aux.physical_to_virtual(node_offset);
             if (virtual_node_offset.in_fast_list()) {
@@ -161,7 +161,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
         }
 
         virtual void
-        up(unsigned char const branch_in_parent, Node const &node) override
+        up(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             --level;
 
@@ -171,7 +171,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 // verify that offset equals calculated one in traversal
                 auto [node_branch_min_fast_off, node_branch_min_slow_off] =
                     calc_min_offsets(
-                        *const_cast<Node *>(&node),
+                        *const_cast<Node *>(&subtrie.node),
                         aux.physical_to_virtual(aux.get_latest_root_offset()));
                 EXPECT_EQ(
                     node_record.test_min_offset_fast, node_branch_min_fast_off);
@@ -181,10 +181,10 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             else {
                 auto &parent_record = root_to_node_records.top();
                 Node *const parent = const_cast<Node *>(parent_record.node);
-                auto const node_branch_min_fast_off = parent->min_offset_fast(
-                    parent->to_child_index(branch_in_parent));
-                auto const node_branch_min_slow_off = parent->min_offset_slow(
-                    parent->to_child_index(branch_in_parent));
+                auto const node_branch_min_fast_off =
+                    parent->min_offset_fast(parent->to_child_index(branch));
+                auto const node_branch_min_slow_off =
+                    parent->min_offset_slow(parent->to_child_index(branch));
                 // verify that min offset stored in parent equals the calculated
                 // one during traversal
                 EXPECT_EQ(

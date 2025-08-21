@@ -1061,13 +1061,13 @@ using find_owning_cursor_result_type = find_result_type<OwningNodeCursor>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
-    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(Node &)>>,
     chunk_offset_t_hasher>;
 
 using inflight_map_owning_t = unordered_dense_map<
     virtual_chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(OwningNodeCursor &)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+        std::shared_ptr<Node> &)>>,
     virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread

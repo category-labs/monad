@@ -82,18 +82,21 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
 {
     using Base = UpdateExpireCommonStorage<UpdateTNode>;
     uint16_t orig_mask{0};
+    uint8_t path_start_index{0};
+    bool end_of_path{false};
     // UpdateTNode owns old node's lifetime only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
     Node::UniquePtr old{};
     std::vector<ChildData> children{};
-    Nibbles path{};
+    Nibbles path{}; // fullpath
     std::optional<byte_string_view> opt_leaf_data{std::nullopt};
     int64_t version{0};
 
     UpdateTNode(
         uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
         uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
+        unsigned const relpath_start_index = 0, bool const end_of_path = false,
         int64_t const version = 0,
         std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
         Node::UniquePtr old = {})
@@ -101,12 +104,17 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
               parent, tnode_type::update,
               static_cast<uint8_t>(std::popcount(orig_mask)), branch, orig_mask)
         , orig_mask(orig_mask)
+        , path_start_index(static_cast<uint8_t>(relpath_start_index))
+        , end_of_path{end_of_path}
         , old(std::move(old))
         , children(npending)
         , path(path)
         , opt_leaf_data(opt_leaf_data)
         , version(version)
     {
+        MONAD_ASSERT(
+            relpath_start_index <
+            std::numeric_limits<decltype(path_start_index)>::max());
     }
 
     [[nodiscard]] unsigned number_of_children() const
@@ -118,6 +126,11 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
     {
         MONAD_ASSERT(parent != nullptr);
         return static_cast<uint8_t>(bitmask_index(parent->orig_mask, branch));
+    }
+
+    constexpr unsigned relpath_size() const
+    {
+        return path.nibble_size() - path_start_index;
     }
 
     using allocator_type = allocators::malloc_free_allocator<UpdateTNode>;
@@ -144,22 +157,24 @@ using tnode_unique_ptr = UpdateTNode::unique_ptr_type;
 inline tnode_unique_ptr make_tnode(
     uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
     uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
+    unsigned const relpath_start_index = 0, bool const end_of_path = false,
     int64_t const version = 0,
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
     Node::UniquePtr old = {})
 {
-    return UpdateTNode::make(
-        UpdateTNode{
-            orig_mask,
-            parent,
-            branch,
-            path,
-            version,
-            opt_leaf_data,
-            std::move(old)});
+    return UpdateTNode::make(UpdateTNode{
+        orig_mask,
+        parent,
+        branch,
+        path,
+        relpath_start_index,
+        end_of_path,
+        version,
+        opt_leaf_data,
+        std::move(old)});
 }
 
-static_assert(sizeof(UpdateTNode) == 96);
+static_assert(sizeof(UpdateTNode) == 104);
 static_assert(alignof(UpdateTNode) == 8);
 
 struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>

@@ -156,9 +156,8 @@ namespace
         std::atomic<size_t> cbs{0}; // callbacks when found
 
         OnDiskDbWithFileAsyncFixture()
-            : io_ctx(
-                  ReadOnlyOnDiskDbConfig{
-                      .dbname_paths = this->config.dbname_paths})
+            : io_ctx(ReadOnlyOnDiskDbConfig{
+                  .dbname_paths = this->config.dbname_paths})
             , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
@@ -257,14 +256,16 @@ namespace
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool
+        down(unsigned char branch, SubtrieInfo const subtrie) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
             }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            path =
+                concat(NibblesView{path}, branch, subtrie.node_relative_path());
 
-            if (node.has_value()) {
+            if (subtrie.node.has_value()) {
                 if (times != nullptr && (num_leaves & 4095) == 0) {
                     times->push_back(std::chrono::steady_clock::now());
                 }
@@ -274,7 +275,8 @@ namespace
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void
+        up(unsigned char branch, SubtrieInfo const subtrie) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -282,12 +284,13 @@ namespace
                     MONAD_ASSERT(path_view.nibble_size() == 0);
                     return 0;
                 }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
+                int const rem_size =
+                    path_view.nibble_size() - 1 -
+                    (int)subtrie.node_relative_path_nibble_size();
                 MONAD_ASSERT(rem_size >= 0);
                 MONAD_ASSERT(
                     path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
+                    concat(branch, subtrie.node_relative_path()));
                 return rem_size;
             }();
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
@@ -321,14 +324,40 @@ namespace
         std::deque<Update> updates_alloc;
         for (size_t i = offset; i < nkeys + offset; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
-            updates_alloc.push_back(
-                Update{
-                    .key = kv,
-                    .value = kv,
-                    .incarnation = false,
-                    .next = UpdateList{}});
+            updates_alloc.push_back(Update{
+                .key = kv,
+                .value = kv,
+                .incarnation = false,
+                .next = UpdateList{}});
         }
         return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
+    }
+
+    void init_db_with_data(
+        Db &db, unsigned const num_blocks, unsigned const keys_per_block,
+        monad::byte_string_view const prefix = {})
+    {
+        for (unsigned b = 0; b < num_blocks; ++b) {
+            auto [kv_alloc, updates_alloc] =
+                prepare_random_updates(keys_per_block, b * keys_per_block);
+            UpdateList ls;
+            for (auto &u : updates_alloc) {
+                ls.push_front(u);
+            }
+            if (prefix.size() > 0) {
+                UpdateList ul_prefix;
+                Update u{
+                    .key = prefix,
+                    .value = monad::byte_string_view{},
+                    .incarnation = false,
+                    .next = std::move(ls)};
+                ul_prefix.push_front(u);
+                db.upsert(std::move(ul_prefix), b);
+            }
+            else {
+                db.upsert(std::move(ls), b);
+            }
+        }
     }
 
     struct ROOnDiskWithFileFixture : public OnDiskDbWithFileFixture
@@ -337,29 +366,14 @@ namespace
         monad::fiber::PriorityPool pool;
 
         static constexpr unsigned keys_per_block = 10;
-        static constexpr uint64_t num_blocks = 1000;
 
         ROOnDiskWithFileFixture()
-            : ro_db(
-                  ReadOnlyOnDiskDbConfig{
-                      .dbname_paths = this->config.dbname_paths,
-                      .node_lru_size = 100})
+            : ro_db(ReadOnlyOnDiskDbConfig{
+                  .dbname_paths = this->config.dbname_paths,
+                  .node_lru_size = 100})
             , pool(2, 16)
         {
-            init_db_with_data();
-        }
-
-        void init_db_with_data()
-        {
-            for (unsigned b = 0; b < num_blocks; ++b) {
-                auto [kv_alloc, updates_alloc] =
-                    prepare_random_updates(keys_per_block, b * keys_per_block);
-                UpdateList ls;
-                for (auto &u : updates_alloc) {
-                    ls.push_front(u);
-                }
-                db.upsert(std::move(ls), b);
-            }
+            init_db_with_data(db, DBTEST_HISTORY_LENGTH, keys_per_block);
         }
     };
 }
@@ -483,6 +497,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 
 TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
 {
+    auto const num_blocks = db.get_history_length();
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[num_blocks]};
 
@@ -510,9 +525,11 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     for (unsigned b = 0; b < num_blocks; ++b) {
         pool.submit(0, [b = b, &db = ro_db, promises = promises] {
             for (unsigned i = 0; i < keys_per_block; ++i) {
+                ASSERT_TRUE(db.find({}, b).has_value());
                 auto kv_bytes = keccak_int_to_string(i);
                 auto const res = db.find(kv_bytes, b);
-                ASSERT_TRUE(res.has_value());
+                ASSERT_TRUE(res.has_value())
+                    << "block " << b << ", key i " << i;
                 EXPECT_EQ(res.value().node->value(), kv_bytes);
             }
             ASSERT_TRUE(
@@ -529,103 +546,59 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     }
 }
 
-TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
+TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_single_thread)
 {
-    auto const &kv = fixed_updates::kv;
-
     auto const prefix = 0x00_hex;
-    uint64_t const starting_block_id = 0x0;
-
-    upsert_updates_flat_list(
-        db,
-        prefix,
-        starting_block_id,
-        make_update(kv[0].first, kv[0].second),
-        make_update(kv[1].first, kv[1].second));
-
+    constexpr unsigned keys_per_block = 5;
     constexpr uint8_t const test_cached_level = 1;
-    size_t i;
-    constexpr size_t read_per_iteration = 5;
-    size_t const expected_num_success_callbacks =
-        (ro_db.get_history_length() - 1) * read_per_iteration;
-    for (i = 1; i < ro_db.get_history_length(); ++i) {
-        // upsert new version
-        upsert_updates_flat_list(
-            db,
-            prefix,
-            starting_block_id + i,
-            make_update(kv[2].first, kv[2].second),
-            make_update(kv[3].first, kv[3].second));
 
-        // ensure we can still async query the old version
-        async_get<monad::byte_string>(
-            make_get_sender(
-                ctx.get(),
-                prefix + kv[0].first,
-                starting_block_id,
-                test_cached_level),
-            [&](result_t<monad::byte_string> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(res.value(), kv[0].second);
-            });
-        async_get<monad::byte_string>(
-            make_get_sender(
-                ctx.get(),
-                prefix + kv[1].first,
-                starting_block_id,
-                test_cached_level),
-            [&](result_t<monad::byte_string> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(res.value(), kv[1].second);
-            });
-        async_get<Node::UniquePtr>(
-            make_get_node_sender(
-                ctx.get(),
-                prefix + kv[0].first,
-                starting_block_id,
-                test_cached_level),
-            [&](result_t<Node::UniquePtr> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(res.value()->value(), kv[0].second);
-            });
-        async_get<monad::byte_string>(
-            make_get_data_sender(
-                ctx.get(), prefix, starting_block_id, test_cached_level),
-            [&](result_t<monad::byte_string> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(
-                    res.value(),
-                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
-            });
-        async_get<Node::UniquePtr>(
-            make_get_node_sender(
-                ctx.get(), prefix, starting_block_id, test_cached_level),
-            [&](result_t<Node::UniquePtr> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(
-                    res.value()->data(),
-                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
-            });
+    init_db_with_data(db, DBTEST_HISTORY_LENGTH, keys_per_block, prefix);
+
+    size_t expected_num_success_callbacks = 0;
+    unsigned b;
+    // ensure we can still async query the old version
+    for (b = 0; b < db.get_history_length(); ++b) {
+        unsigned const start_index = b * keys_per_block;
+        for (unsigned i = start_index; i < start_index + keys_per_block; ++i) {
+            auto const kv_bytes = keccak_int_to_string(i);
+            async_get<monad::byte_string>(
+                make_get_sender(
+                    ctx.get(), prefix + kv_bytes, b, test_cached_level),
+                [kv_bytes](result_t<monad::byte_string> res) {
+                    ASSERT_TRUE(res.has_value());
+                    EXPECT_EQ(res.value(), kv_bytes);
+                });
+            ++expected_num_success_callbacks;
+        }
     }
-
-    // Need to poll here because next read will trigger compaction
     poll_until(expected_num_success_callbacks);
 
-    // This will exceed the ring buffer capacity, evicting the first block
+    // Read the same set of keys from all blocks, and invalid blocks and keys
     cbs = 0;
-    upsert_updates_flat_list(
-        db,
-        prefix,
-        starting_block_id + i,
-        make_update(kv[2].first, kv[2].second),
-        make_update(kv[3].first, kv[3].second));
+    expected_num_success_callbacks = 0;
+    for (b = 0; b < db.get_history_length(); ++b) {
+        for (unsigned i = 0; i < keys_per_block; ++i) {
+            auto const kv_bytes = keccak_int_to_string(i);
+            async_get<monad::byte_string>(
+                make_get_sender(
+                    ctx.get(), prefix + kv_bytes, b, test_cached_level),
+                [kv_bytes](result_t<monad::byte_string> res) {
+                    ASSERT_TRUE(res.has_value());
+                    EXPECT_EQ(res.value(), kv_bytes);
+                });
+            ++expected_num_success_callbacks;
+        }
+    }
+    poll_until(expected_num_success_callbacks);
+
+    // This will exceed the ring buffer capacity, evicting the first block, thus
+    // reading from first block should fail
+    cbs = 0;
+    EXPECT_EQ(b, db.get_history_length());
+    upsert_updates_flat_list(db, prefix, b);
 
     async_get<monad::byte_string>(
-        make_get_sender(
-            ctx.get(),
-            prefix + kv[0].first,
-            starting_block_id,
-            test_cached_level),
+        make_get_sender(ctx.get(), prefix, 0, test_cached_level),
         [&](result_t<monad::byte_string> res) {
             ASSERT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::version_no_longer_exist);
@@ -672,13 +645,13 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
         {
         }
 
-        virtual bool down(unsigned char, Node const &) override
+        virtual bool down(unsigned char, SubtrieInfo) override
         {
             ++curr_level;
             return true;
         }
 
-        virtual void up(unsigned char, Node const &) override
+        virtual void up(unsigned char, SubtrieInfo) override
         {
             --curr_level;
         }
@@ -712,7 +685,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
     ro_db.traverse_blocking(NodeCursor{*root}, traverse_machine, version);
 }
 
-TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
+TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_root_cache_invalidation)
 {
     auto const &kv = fixed_updates::kv;
 
@@ -898,12 +871,11 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     auto const &large_value =
         bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
     for (size_t i = 0; i < nkeys; ++i) {
-        updates_alloc.push_back(
-            Update{
-                .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
-                .value = large_value,
-                .incarnation = false,
-                .next = UpdateList{}});
+        updates_alloc.push_back(Update{
+            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+            .value = large_value,
+            .incarnation = false,
+            .next = UpdateList{}});
     }
 
     // construct a read-only aux
@@ -959,12 +931,14 @@ TEST_F(
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool
+        down(unsigned char branch, SubtrieInfo const subtrie) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
             }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            path =
+                concat(NibblesView{path}, branch, subtrie.node_relative_path());
             if (path.nibble_size() == KECCAK256_SIZE * 2 &&
                 has_done_callback == false) {
                 upsert_callback();
@@ -974,7 +948,8 @@ TEST_F(
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void
+        up(unsigned char branch, SubtrieInfo const subtrie) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -982,12 +957,13 @@ TEST_F(
                     MONAD_ASSERT(path_view.nibble_size() == 0);
                     return 0;
                 }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
+                int const rem_size =
+                    path_view.nibble_size() - 1 -
+                    (int)subtrie.node_relative_path_nibble_size();
                 MONAD_ASSERT(rem_size >= 0);
                 MONAD_ASSERT(
                     path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
+                    concat(branch, subtrie.node_relative_path()));
                 return rem_size;
             }();
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
@@ -1566,46 +1542,48 @@ TYPED_TEST(DbTraverseTest, traverse)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
+            Node const &node = subtrie.node;
             if (node.has_value() && branch != INVALID_BRANCH) {
                 ++num_leaves;
             }
             if (branch == INVALID_BRANCH) {
                 // root is always a leaf
                 EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.path_nibbles_len(), 0);
+                EXPECT_EQ(subtrie.node_relative_path_nibble_size(), 0);
                 EXPECT_GT(node.mask, 0);
             }
             else if (branch == 0) { // immediate node under root
                 EXPECT_EQ(node.mask, 0b10);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), monad::byte_string_view{});
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0}));
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
+                EXPECT_EQ(subtrie.node_relative_path(), make_nibbles({0x0}));
             }
             else if (branch == 1) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b11000);
                 EXPECT_FALSE(node.has_value());
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x2}));
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
+                EXPECT_EQ(subtrie.node_relative_path(), make_nibbles({0x2}));
             }
             else if (branch == 3) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b1100000);
                 EXPECT_FALSE(node.has_value());
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x4}));
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
+                EXPECT_EQ(subtrie.node_relative_path(), make_nibbles({0x4}));
             }
             else if (branch == 4) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xdeadbabe_hex);
-                EXPECT_TRUE(node.has_path());
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
                 EXPECT_EQ(
-                    node.path_nibble_view(),
+                    subtrie.node_relative_path(),
                     make_nibbles({0x4, 0x5, 0x6, 0x7, 0x8}));
             }
             else if (branch == 5) {
@@ -1613,18 +1591,20 @@ TYPED_TEST(DbTraverseTest, traverse)
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xcafebabe_hex);
-                EXPECT_TRUE(node.has_path());
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
                 EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+                    subtrie.node_relative_path(),
+                    make_nibbles({0x6, 0x7, 0x8}));
             }
             else if (branch == 6) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xdeadbeef_hex);
-                EXPECT_TRUE(node.has_path());
+                EXPECT_TRUE(subtrie.node_relative_path_nibble_size() > 0);
                 EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+                    subtrie.node_relative_path(),
+                    make_nibbles({0x6, 0x7, 0x8}));
             }
             else {
                 MONAD_ASSERT(false);
@@ -1633,7 +1613,7 @@ TYPED_TEST(DbTraverseTest, traverse)
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override
+        virtual void up(unsigned char const, SubtrieInfo const) override
         {
             ++num_up;
         }
@@ -1686,19 +1666,20 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
-            if (node.path_nibbles_len() == 3 && branch == 5) {
+            if (subtrie.node_relative_path_nibble_size() == 3 && branch == 5) {
                 // trim one leaf
                 return false;
             }
-            if (node.has_value()) {
+            if (subtrie.node.has_value()) {
                 ++num_leaves;
             }
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override {}
+        virtual void up(unsigned char const, SubtrieInfo const) override {}
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
         {

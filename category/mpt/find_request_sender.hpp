@@ -48,7 +48,7 @@ struct inflight_node_hasher
 using inflight_node_t = unordered_dense_map<
     std::pair<chunk_offset_t, Node *>,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
-        NodeCursor, std::shared_ptr<Node>)>>,
+        Node &, std::shared_ptr<Node>)>>,
     inflight_node_hasher>;
 
 template <class T>
@@ -202,8 +202,7 @@ struct find_request_sender<T>::find_receiver
             auto subtrie_with_sender_lifetime_ =
                 sender->subtrie_with_sender_lifetime_;
             for (auto &invoc : pendings) {
-                MONAD_ASSERT(
-                    invoc(NodeCursor(*node), subtrie_with_sender_lifetime_));
+                MONAD_ASSERT(invoc(*node, subtrie_with_sender_lifetime_));
             }
         }
     }
@@ -250,6 +249,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             return success();
         }
         MONAD_ASSERT(prefix_index < key_.nibble_size());
+        MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
         if (unsigned char const branch = key_.get(prefix_index);
             node->mask & (1u << branch)) {
             MONAD_DEBUG_ASSERT(
@@ -258,7 +258,8 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             auto const child_index = node->to_child_index(branch);
             ++this->curr_level_;
             if (node->next(child_index) != nullptr) {
-                root_ = NodeCursor{*node->next(child_index)};
+                root_ = NodeCursor{
+                    *node->next(child_index), node->next_relpath_start_index()};
                 continue;
             }
             if (!tid_checked_) {
@@ -270,13 +271,19 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 tid_checked_ = true;
             }
             chunk_offset_t const offset = node->fnext(child_index);
-            auto cont = [this, io_state](
-                            NodeCursor const root,
+            // `node_prefix_index` must be captured here to because the same
+            // node in inflights can be used in continuations for different
+            // versions where the starting prefix index can be different
+            auto cont = [this,
+                         io_state,
+                         node_prefix_index = node->next_relpath_start_index()](
+                            Node &root,
                             std::shared_ptr<Node>
                                 subtrie_with_sender_lifetime_) -> result<void> {
                 this->subtrie_with_sender_lifetime_ =
                     subtrie_with_sender_lifetime_;
-                return this->resume_(io_state, root);
+                return this->resume_(
+                    io_state, NodeCursor{root, node_prefix_index});
             };
             auto offset_node = std::pair(offset, node);
             if (auto lt = inflights_.find(offset_node);

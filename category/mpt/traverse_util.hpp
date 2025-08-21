@@ -63,27 +63,29 @@ public:
     {
     }
 
-    virtual bool down(unsigned char const branch, Node const &node) override
+    virtual bool
+    down(unsigned char const branch, SubtrieInfo const subtrie) override
     {
         if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
             return true;
         }
 
         auto next_path =
-            concat(NibblesView{path_}, branch, node.path_nibble_view());
+            concat(NibblesView{path_}, branch, subtrie.node_relative_path());
         if (!does_key_intersect_with_range(next_path)) {
             return false;
         }
 
         path_ = std::move(next_path);
-        if (node.has_value() && path_.nibble_size() >= min_.nibble_size()) {
-            callback_(path_, node.value());
+        if (subtrie.node.has_value() &&
+            path_.nibble_size() >= min_.nibble_size()) {
+            callback_(path_, subtrie.node.value());
         }
 
         return true;
     }
 
-    void up(unsigned char const branch, Node const &node) override
+    void up(unsigned char const branch, SubtrieInfo const subtrie) override
     {
         auto const path_view = NibblesView{path_};
         unsigned const rem_size = [&] {
@@ -92,7 +94,7 @@ public:
             }
             constexpr unsigned BRANCH_SIZE = 1;
             return path_view.nibble_size() - BRANCH_SIZE -
-                   node.path_nibble_view().nibble_size();
+                   subtrie.node_relative_path_nibble_size();
         }();
         path_ = path_view.substr(0, rem_size);
     }

@@ -140,7 +140,8 @@ bool statesync_server_handle_request(
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(depth == 0);
@@ -154,7 +155,8 @@ bool statesync_server_handle_request(
             MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
             MONAD_ASSERT(
                 depth >= prefix.nibble_size() || prefix.get(depth) == branch);
-            auto const ext = node.path_nibble_view();
+            auto const ext = subtrie.node_relative_path();
+            Node const &node = subtrie.node;
             for (auto i = depth + 1; i < prefix.nibble_size(); ++i) {
                 auto const j = i - (depth + 1);
                 if (j >= ext.nibble_size()) {
@@ -219,13 +221,14 @@ bool statesync_server_handle_request(
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &node) override
+        virtual void up(unsigned char const, SubtrieInfo const subtrie) override
         {
             if (depth == 0) {
                 nibble = INVALID_BRANCH;
                 return;
             }
-            unsigned const subtrahend = 1 + node.path_nibbles_len();
+            unsigned const subtrahend =
+                1 + subtrie.node_relative_path_nibble_size();
             MONAD_ASSERT(depth >= subtrahend);
             depth -= subtrahend;
         }

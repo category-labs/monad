@@ -373,18 +373,21 @@ int main(int argc, char *const argv[])
                 }
 
                 virtual bool
-                down(unsigned char branch, Node const &node) override
+                down(unsigned char branch, SubtrieInfo const subtrie) override
                 {
                     if (branch == INVALID_BRANCH) {
                         return true;
                     }
                     path = concat(
-                        NibblesView{path}, branch, node.path_nibble_view());
+                        NibblesView{path},
+                        branch,
+                        subtrie.node_relative_path());
 
-                    if (node.has_value()) {
+                    if (subtrie.node.has_value()) {
                         MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
                         uint64_t const version =
-                            deserialize_from_big_endian<uint64_t>(node.value());
+                            deserialize_from_big_endian<uint64_t>(
+                                subtrie.node.value());
                         bool found = false;
                         for (size_t k = 0; k < num_nodes; ++k) {
                             if (path ==
@@ -398,7 +401,8 @@ int main(int argc, char *const argv[])
                     return !g_done;
                 }
 
-                virtual void up(unsigned char branch, Node const &node) override
+                virtual void
+                up(unsigned char branch, SubtrieInfo const subtrie) override
                 {
                     auto const path_view = NibblesView{path};
                     auto const rem_size = [&] {
@@ -408,11 +412,11 @@ int main(int argc, char *const argv[])
                         }
                         int const rem_size =
                             path_view.nibble_size() - 1 -
-                            node.path_nibble_view().nibble_size();
+                            (int)subtrie.node_relative_path_nibble_size();
                         MONAD_ASSERT(rem_size >= 0);
                         MONAD_ASSERT(
                             path_view.substr(static_cast<unsigned>(rem_size)) ==
-                            concat(branch, node.path_nibble_view()));
+                            concat(branch, subtrie.node_relative_path()));
                         return rem_size;
                     }();
                     path = path_view.substr(0, static_cast<unsigned>(rem_size));

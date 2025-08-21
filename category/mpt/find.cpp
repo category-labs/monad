@@ -61,9 +61,9 @@ find_cursor_result_type find_blocking(
                 }
             }
             MONAD_ASSERT(node->next(node->to_child_index(nibble)));
-            node = node->next(node->to_child_index(nibble));
-            node_prefix_index = 0;
+            node_prefix_index = node->next_relpath_start_index();
             ++prefix_index;
+            node = node->next(node->to_child_index(nibble));
             continue;
         }
         if (nibble != node->path_nibble_view().get(node_prefix_index)) {

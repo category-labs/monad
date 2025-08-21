@@ -33,6 +33,22 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+struct SubtrieInfo
+{
+    Node const &node;
+    unsigned relpath_start_index{0};
+
+    NibblesView node_relative_path() const noexcept
+    {
+        return node.path_nibble_view().substr(relpath_start_index);
+    }
+
+    unsigned node_relative_path_nibble_size() const noexcept
+    {
+        return node.path_nibbles_len() - relpath_start_index;
+    }
+};
+
 struct TraverseMachine
 {
     size_t level{0};
@@ -40,11 +56,11 @@ struct TraverseMachine
     virtual ~TraverseMachine() = default;
     // Implement the logic to decide when to stop, return true for continue,
     // false for stop
-    virtual bool down(unsigned char branch, Node const &) = 0;
-    virtual void up(unsigned char branch, Node const &) = 0;
+    virtual bool down(unsigned char branch, SubtrieInfo) = 0;
+    virtual void up(unsigned char branch, SubtrieInfo) = 0;
     virtual std::unique_ptr<TraverseMachine> clone() const = 0;
 
-    virtual bool should_visit(Node const &, unsigned char)
+    virtual bool should_visit(Node const & /*parent*/, unsigned char /*branch*/)
     {
         return true;
     }
@@ -61,39 +77,44 @@ namespace detail
 
     void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch);
+        async::erased_connected_operation *traverse_state,
+        SubtrieInfo const subtrie, TraverseMachine &machine,
+        unsigned char const branch);
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
-        UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
-        TraverseMachine &traverse, uint64_t const version)
+        UpdateAuxImpl &aux, unsigned char const branch,
+        SubtrieInfo const subtrie, TraverseMachine &traverse,
+        uint64_t const version)
     {
         ++traverse.level;
-        if (!traverse.down(branch, node)) {
+        if (!traverse.down(branch, subtrie)) {
             --traverse.level;
             return true;
         }
+        Node const &node = subtrie.node;
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (traverse.should_visit(node, branch)) {
-                auto const *const next = node.next(idx);
-                if (next) {
-                    preorder_traverse_blocking_impl(
-                        aux, branch, *next, traverse, version);
-                    continue;
+                auto const *next = node.next(idx);
+                Node::UniquePtr next_node_ondisk{};
+                if (next == nullptr) {
+                    if ((next_node_ondisk = read_node_blocking(
+                             aux, node.fnext(idx), version)) == nullptr) {
+                        return false;
+                    }
+                    next = next_node_ondisk.get();
                 }
-                MONAD_ASSERT(aux.is_on_disk());
-                Node::UniquePtr next_node_ondisk =
-                    read_node_blocking(aux, node.fnext(idx), version);
-                if (!next_node_ondisk ||
-                    !preorder_traverse_blocking_impl(
-                        aux, branch, *next_node_ondisk, traverse, version)) {
+                MONAD_ASSERT(next != nullptr);
+                SubtrieInfo const next_subtrie{
+                    *next, node.next_relpath_start_index()};
+                if (!preorder_traverse_blocking_impl(
+                        aux, branch, next_subtrie, traverse, version)) {
                     return false;
                 }
             }
         }
         --traverse.level;
-        traverse.up(branch, node);
+        traverse.up(branch, subtrie);
         return true;
     }
 
@@ -121,6 +142,7 @@ namespace detail
             async::erased_connected_operation *const traverse_state;
             std::unique_ptr<TraverseMachine> machine;
             chunk_offset_t rd_offset{0, 0};
+            unsigned next_node_relpath_start_index;
             unsigned bytes_to_read;
             uint16_t buffer_off;
             unsigned char const branch;
@@ -129,10 +151,12 @@ namespace detail
                 TraverseSender *sender,
                 async::erased_connected_operation *const traverse_state,
                 unsigned char const branch, chunk_offset_t const offset,
+                unsigned const next_node_relpath_start_index,
                 std::unique_ptr<TraverseMachine> machine)
                 : sender(sender)
                 , traverse_state(traverse_state)
                 , machine(std::move(machine))
+                , next_node_relpath_start_index(next_node_relpath_start_index)
                 , branch(branch)
             {
                 auto const num_pages_to_load_node =
@@ -171,7 +195,8 @@ namespace detail
                     async_parallel_preorder_traverse_impl(
                         *sender,
                         traverse_state,
-                        *next_node_on_disk,
+                        SubtrieInfo{
+                            *next_node_on_disk, next_node_relpath_start_index},
                         *machine,
                         branch);
                     sender->within_recursion_count--;
@@ -188,7 +213,7 @@ namespace detail
             }
         };
 
-        static_assert(sizeof(receiver_t) == 40);
+        static_assert(sizeof(receiver_t) == 48);
         static_assert(alignof(receiver_t) == 8);
 
         using result_type = async::result<bool>;
@@ -268,7 +293,11 @@ namespace detail
     {
         sender.within_recursion_count++;
         async_parallel_preorder_traverse_impl(
-            sender, traverse_state, node, *sender.machine, INVALID_BRANCH);
+            sender,
+            traverse_state,
+            SubtrieInfo{node, node.path_nibbles_len()},
+            *sender.machine,
+            INVALID_BRANCH);
         sender.within_recursion_count--;
         MONAD_ASSERT(sender.within_recursion_count == 0);
 
@@ -281,8 +310,9 @@ namespace detail
 
     inline void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch)
+        async::erased_connected_operation *traverse_state,
+        SubtrieInfo const subtrie, TraverseMachine &machine,
+        unsigned char const branch)
     {
         // How many children are considered left side for depth first preference
         // Two and four was benchmarked as slightly worse than three, so three
@@ -294,10 +324,11 @@ namespace detail
         // arbitrary and means nothing.
         MONAD_ASSERT(machine.level < 256);
         ++machine.level;
-        if (!machine.down(branch, node)) {
+        if (!machine.down(branch, subtrie)) {
             --machine.level;
             return;
         }
+        auto const &node = subtrie.node;
         unsigned children_read = 0;
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (machine.should_visit(node, branch)) {
@@ -318,6 +349,7 @@ namespace detail
                         traverse_state,
                         branch,
                         node.fnext(idx),
+                        node.next_relpath_start_index(),
                         machine.clone());
                     unsigned const this_child_read = children_read++;
                     if (sender.outstanding_reads >=
@@ -351,7 +383,11 @@ namespace detail
                 }
                 else {
                     async_parallel_preorder_traverse_impl(
-                        sender, traverse_state, *next, machine, branch);
+                        sender,
+                        traverse_state,
+                        SubtrieInfo{*next, node.next_relpath_start_index()},
+                        machine,
+                        branch);
                     if (sender.version_expired_before_complete) {
                         return;
                     }
@@ -367,7 +403,11 @@ inline bool preorder_traverse_blocking(
     uint64_t const version)
 {
     return detail::preorder_traverse_blocking_impl(
-        aux, INVALID_BRANCH, node, traverse, version);
+        aux,
+        INVALID_BRANCH,
+        SubtrieInfo{node, node.path_nibbles_len()},
+        traverse,
+        version);
 }
 
 inline bool preorder_traverse_ondisk(

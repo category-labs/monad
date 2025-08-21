@@ -67,14 +67,15 @@ struct Compute
     //! compute length of hash from a span of child data, which include the node
     //! pointer, file offset and calculated hash
     virtual unsigned compute_len(
-        std::span<ChildData> children, uint16_t mask, NibblesView path,
+        std::span<ChildData> children, uint16_t mask, NibblesView relpath,
         std::optional<byte_string_view> value) = 0;
     //! compute hash_data inside node if hash_len > 0, which is the hash of all
     //! node's branches, return hash data length
     virtual unsigned compute_branch(unsigned char *buffer, Node *node) = 0;
     //! compute data of a trie rooted at node, put data to first argument and
     //! return data length
-    virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
+    virtual unsigned
+    compute(unsigned char *buffer, Node *node, NibblesView const relpath) = 0;
 };
 
 template <typename T>
@@ -173,22 +174,19 @@ struct MerkleComputeBase : Compute
         return to_node_reference({branch_rlp, branch_rlp_len}, buffer);
     }
 
-    virtual unsigned
-    compute(unsigned char *const buffer, Node *const node) override
+    virtual unsigned compute(
+        unsigned char *const buffer, Node *const node,
+        NibblesView const relpath) override
     {
         if (node->has_value()) {
             return encode_two_pieces(
-                buffer,
-                node->path_nibble_view(),
-                TComputeLeafData::compute(*node),
-                true);
+                buffer, relpath, TComputeLeafData::compute(*node), true);
         }
         MONAD_DEBUG_ASSERT(node->number_of_children() > 1);
-        if (node->has_path()) {
+        if (relpath.nibble_size() > 0) {
             unsigned char reference[KECCAK256_SIZE];
             unsigned len = compute_branch(reference, node);
-            return encode_two_pieces(
-                buffer, node->path_nibble_view(), {reference, len}, false);
+            return encode_two_pieces(buffer, relpath, {reference, len}, false);
         }
         return compute_branch(buffer, node);
     }
@@ -200,18 +198,16 @@ protected:
     {
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
-
+        // node relpath_start_index = 1
         return state.len = encode_two_pieces(
                 state.buffer,
-                concat(single_child.branch, node->path_nibble_view()),
+                node->path_nibble_view(),
                 (node->has_value()
                      ? TComputeLeafData::compute(*node)
-                     : (node->has_path()
+                     : (node->path_nibbles_len() > 1
                             ? ([&] -> byte_string {
-                                  unsigned char branch_hash[KECCAK256_SIZE];
-                                  return {
-                                      branch_hash,
-                                      compute_branch(branch_hash, node)};
+            unsigned char branch_hash[KECCAK256_SIZE];
+            return {branch_hash, compute_branch(branch_hash, node)};
                               }())
                             : byte_string_view{single_child.data, single_child.len})),
                 node->has_value());
@@ -295,26 +291,24 @@ struct VarLenMerkleCompute : Compute
             {branch_rlp.data(), branch_rlp.size()}, buffer);
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node *node) override
+    virtual unsigned compute(
+        unsigned char *buffer, Node *node, NibblesView const relpath) override
     {
         // Ethereum leaf: leaf node hash without child
         if (node->number_of_children() == 0) {
             MONAD_ASSERT(node->has_value());
             return encode_two_pieces(
                 buffer,
-                node->path_nibble_view(),
+                relpath,
                 LeafDataProcessor::process(node->value()),
                 true);
         }
         // Ethereum extension: there is non-empty path
         // rlp(encoded path, inline branch hash)
-        if (node->has_path()) { // extension node, rlp encode with path too
+        if (relpath.nibble_size()) { // extension node, rlp encode with path too
             MONAD_ASSERT(node->bitpacked.data_len);
             return encode_two_pieces(
-                buffer,
-                node->path_nibble_view(),
-                node->data(),
-                node->has_value());
+                buffer, relpath, node->data(), node->has_value());
         }
         // Ethereum branch
         return compute_branch(buffer, node);
@@ -355,7 +349,8 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
     using Base = VarLenMerkleCompute<LeafDataProcessor>;
     using Base::state;
 
-    virtual unsigned compute(unsigned char *const, Node *const) override
+    virtual unsigned
+    compute(unsigned char *const, Node *const, NibblesView const) override
     {
         return 0;
     }
@@ -393,14 +388,13 @@ private:
     {
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
-
         return state.len = encode_two_pieces(
                    state.buffer,
-                   concat(single_child.branch, node->path_nibble_view()),
+                   node->path_nibble_view(),
                    /* second: branch hash or leaf value */
                    node->mask ? (node->bitpacked.data_len ? node->data()
                                                           : [&] -> byte_string {
-                       MONAD_ASSERT(!node->has_path());
+                       MONAD_ASSERT(node->path_nibbles_len() == 1);
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {branch_hash, compute_branch(branch_hash, node)};
                    }())

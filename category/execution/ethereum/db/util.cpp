@@ -406,21 +406,20 @@ namespace
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
-        virtual unsigned
-        compute(unsigned char *const buffer, Node *const node) override
+        virtual unsigned compute(
+            unsigned char *const buffer, Node *const node,
+            NibblesView const relpath) override
         {
             MONAD_ASSERT(node->has_value());
             return encode_two_pieces(
-                buffer,
-                node->path_nibble_view(),
-                ComputeAccountLeaf::compute(*node),
-                true);
+                buffer, relpath, ComputeAccountLeaf::compute(*node), true);
         }
     };
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
+        virtual unsigned
+        compute(unsigned char *const, Node *const, NibblesView const) override
         {
             return 0;
         }
@@ -440,7 +439,8 @@ namespace
             return 0;
         }
 
-        virtual unsigned compute(unsigned char *, Node *) override
+        virtual unsigned
+        compute(unsigned char *, Node *, NibblesView const) override
         {
             return 0;
         }
@@ -828,17 +828,18 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
 
         ProposalTraverseMachine(ProposalTraverseMachine const &other) = default;
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(path_.nibble_size() == 0);
-                path_ = node.path_nibble_view();
+                path_ = subtrie.node_relative_path();
                 return true;
             }
 
-            Nibbles const new_path =
-                concat(NibblesView{path_}, branch, node.path_nibble_view());
-            if (node.has_value() && new_path.nibble_size() > 1) {
+            Nibbles const new_path = concat(
+                NibblesView{path_}, branch, subtrie.node_relative_path());
+            if (subtrie.node.has_value() && new_path.nibble_size() > 1) {
                 if (new_path.nibble_size() < PROPOSAL_PREFIX_LEN) {
                     // Ignore proposals of old format that have a shorter prefix
                     // length
@@ -855,13 +856,15 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void
+        up(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             auto const path_view = monad::mpt::NibblesView{path_};
             unsigned const prefix_size =
                 branch == monad::mpt::INVALID_BRANCH
                     ? 0
-                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
+                    : path_view.nibble_size() -
+                          subtrie.node_relative_path_nibble_size() - 1;
             path_ = path_view.substr(0, prefix_size);
         }
 
@@ -917,29 +920,34 @@ bool for_each_code(
 
         CodeTraverseMachine(CodeTraverseMachine const &other) = default;
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool
+        down(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(path_.nibble_size() == 0);
                 return true;
             }
 
-            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
-            if (node.has_value()) {
+            path_ = concat(
+                NibblesView{path_}, branch, subtrie.node_relative_path());
+            if (subtrie.node.has_value()) {
                 MONAD_ASSERT(path_.nibble_size() == (sizeof(bytes32_t) * 2));
-                fn_(to_bytes({path_.data(), sizeof(bytes32_t)}), node.value());
+                fn_(to_bytes({path_.data(), sizeof(bytes32_t)}),
+                    subtrie.node.value());
                 return false;
             }
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void
+        up(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             auto const path_view = monad::mpt::NibblesView{path_};
             unsigned const prefix_size =
                 branch == monad::mpt::INVALID_BRANCH
                     ? 0
-                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
+                    : path_view.nibble_size() -
+                          subtrie.node_relative_path_nibble_size() - 1;
             path_ = path_view.substr(0, prefix_size);
         }
 

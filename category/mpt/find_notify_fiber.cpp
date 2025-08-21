@@ -103,7 +103,7 @@ namespace
                 auto pendings = std::move(it->second);
                 inflights.erase(it);
                 for (auto &cont : pendings) {
-                    MONAD_ASSERT(cont(NodeCursor{*node}));
+                    MONAD_ASSERT(cont(*node));
                 }
             }
         }
@@ -152,7 +152,7 @@ namespace
             ResultType buffer_)
         {
             MONAD_ASSERT(buffer_);
-            OwningNodeCursor start_cursor{};
+            std::shared_ptr<Node> next_node;
             // verify the offset it read is still valid and has not been reused
             // to write new data.
             auto const virtual_offset_after = aux->physical_to_virtual(offset);
@@ -161,18 +161,16 @@ namespace
                     NodeCache::ConstAccessor acc;
                     MONAD_ASSERT(node_cache.find(acc, virtual_offset) == false);
                 }
-                std::shared_ptr<Node> node =
-                    detail::deserialize_node_from_receiver_result(
-                        std::move(buffer_), buffer_off, io_state);
-                node_cache.insert(virtual_offset, node);
-                start_cursor = OwningNodeCursor{node};
+                next_node = detail::deserialize_node_from_receiver_result(
+                    std::move(buffer_), buffer_off, io_state);
+                node_cache.insert(virtual_offset, next_node);
             }
             auto it = inflights.find(virtual_offset);
             MONAD_ASSERT(it != inflights.end());
             auto pendings = std::move(it->second);
             inflights.erase(it);
             for (auto &cont : pendings) {
-                MONAD_ASSERT(cont(start_cursor));
+                MONAD_ASSERT(cont(next_node));
             }
         }
     };
@@ -242,6 +240,7 @@ void find_notify_fiber_future(
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
+    MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
     if (unsigned char const branch = key.get(prefix_index);
         node->mask & (1u << branch)) {
         MONAD_DEBUG_ASSERT(
@@ -249,9 +248,14 @@ void find_notify_fiber_future(
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
-        if (node->next(child_index) != nullptr) {
+        if (auto *const next_node = node->next(child_index);
+            next_node != nullptr) {
             find_notify_fiber_future(
-                aux, inflights, promise, *node->next(child_index), next_key);
+                aux,
+                inflights,
+                promise,
+                {*next_node, node->next_relpath_start_index()},
+                next_key);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -261,10 +265,18 @@ void find_notify_fiber_future(
             return;
         }
         chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
-                        NodeCursor node_cursor) -> result<void> {
+        auto cont = [&aux,
+                     &inflights,
+                     &promise,
+                     next_key,
+                     node_prefix_index = node->next_relpath_start_index()](
+                        Node &node) -> result<void> {
             find_notify_fiber_future(
-                aux, inflights, promise, node_cursor, next_key);
+                aux,
+                inflights,
+                promise,
+                NodeCursor{node, node_prefix_index},
+                next_key);
             return success();
         };
         if (auto lt = inflights.find(offset); lt != inflights.end()) {
@@ -324,6 +336,7 @@ void find_owning_notify_fiber_future(
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
+    MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
     if (unsigned char const branch = key.get(prefix_index);
         node->mask & (1u << branch)) {
         MONAD_DEBUG_ASSERT(
@@ -343,7 +356,8 @@ void find_owning_notify_fiber_future(
         // find in cache
         NodeCache::ConstAccessor acc;
         if (node_cache.find(acc, next_virtual_offset)) {
-            OwningNodeCursor next_cursor{acc->second->val};
+            OwningNodeCursor next_cursor{
+                acc->second->val, node->next_relpath_start_index()};
             find_owning_notify_fiber_future(
                 aux,
                 node_cache,
@@ -354,14 +368,26 @@ void find_owning_notify_fiber_future(
                 version);
             return;
         }
+        unsigned const next_node_prefix_index =
+            node->next_relpath_start_index();
         auto cont =
-            [&aux, &node_cache, &inflights, &promise, next_key, version](
-                OwningNodeCursor &node_cursor) -> result<void> {
-            if (!node_cursor.is_valid()) {
+            [&aux,
+             &node_cache,
+             &inflights,
+             &promise,
+             next_key,
+             next_node_prefix_index, // must be captured here to because the
+                                     // same node in inflights can be used in
+                                     // continuations for different versions
+                                     // where the starting prefix index can be
+                                     // different
+             version](std::shared_ptr<Node> &node) -> result<void> {
+            if (node == nullptr) {
                 promise.set_value(
                     {OwningNodeCursor{}, find_result::version_no_longer_exist});
                 return success();
             }
+            OwningNodeCursor node_cursor{node, next_node_prefix_index};
             find_owning_notify_fiber_future(
                 aux,
                 node_cache,
@@ -409,13 +435,13 @@ void load_root_notify_fiber_future(
         promise.set_value({OwningNodeCursor{root}, find_result::success});
         return;
     }
-    auto cont = [&promise](OwningNodeCursor &node_cursor) -> result<void> {
-        if (!node_cursor.is_valid()) {
-            promise.set_value(
-                {node_cursor, find_result::version_no_longer_exist});
+    auto cont = [&promise](std::shared_ptr<Node> &node) -> result<void> {
+        if (node) {
+            promise.set_value({OwningNodeCursor{node}, find_result::success});
         }
         else {
-            promise.set_value({node_cursor, find_result::success});
+            promise.set_value(
+                {OwningNodeCursor{}, find_result::version_no_longer_exist});
         }
         return success();
     };

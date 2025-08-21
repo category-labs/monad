@@ -57,7 +57,7 @@ namespace monad::test
             return 0;
         }
 
-        virtual unsigned compute(unsigned char *, Node *) override
+        virtual unsigned compute(unsigned char *, Node *, NibblesView) override
         {
             return 0;
         }
@@ -65,7 +65,8 @@ namespace monad::test
 
     struct RootMerkleCompute : public MerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
+        virtual unsigned
+        compute(unsigned char *const, Node *const, NibblesView) override
         {
             return 0;
         }
@@ -416,7 +417,9 @@ namespace monad::test
             if (this->root.get()) {
                 monad::byte_string res(32, 0);
                 auto const len = this->sm->get_compute().compute(
-                    res.data(), this->root.get());
+                    res.data(),
+                    this->root.get(),
+                    this->root->path_nibble_view());
                 if (len < KECCAK256_SIZE) {
                     keccak256(res.data(), len, res.data());
                 }
@@ -669,7 +672,9 @@ namespace monad::test
                 if (this->root.get()) {
                     monad::byte_string res(32, 0);
                     this->sm.get_compute().compute(
-                        res.data(), this->root.get());
+                        res.data(),
+                        this->root.get(),
+                        this->root->path_nibble_view());
                     return res;
                 }
                 return empty_trie_hash;

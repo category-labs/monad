@@ -32,7 +32,7 @@ struct NodeCursor
     {
     }
 
-    constexpr NodeCursor(Node &node_, unsigned prefix_index_ = 0)
+    constexpr NodeCursor(Node &node_, unsigned const prefix_index_ = 0)
         : node{&node_}
         , prefix_index{prefix_index_}
     {

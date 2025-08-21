@@ -182,8 +182,9 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
     }
 
-    virtual bool
-    down(unsigned char const branch, monad::mpt::Node const &node) override
+    virtual bool down(
+        unsigned char const branch,
+        monad::mpt::SubtrieInfo const subtrie) override
     {
         using namespace monad;
         using namespace monad::mpt;
@@ -199,7 +200,8 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
 
-        path = concat(NibblesView{path}, branch, node.path_nibble_view());
+        path = concat(NibblesView{path}, branch, subtrie.node_relative_path());
+        auto const &node = subtrie.node;
 
         if (!node.has_value()) {
             return true;
@@ -248,14 +250,17 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         return true;
     }
 
-    virtual void up(unsigned char const, monad::mpt::Node const &node) override
+    virtual void
+    up(unsigned char const, monad::mpt::SubtrieInfo const subtrie) override
     {
         if (path.nibble_size() == 0) {
             nibble = monad::mpt::INVALID_BRANCH;
             return;
         }
         monad::mpt::NibblesView const view{path};
-        path = view.substr(0, view.nibble_size() - 1 - node.path_nibbles_len());
+        path = view.substr(
+            0,
+            view.nibble_size() - 1 - subtrie.node_relative_path_nibble_size());
     }
 
     virtual std::unique_ptr<TraverseMachine> clone() const override

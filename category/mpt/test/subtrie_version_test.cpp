@@ -60,18 +60,20 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         {
         }
 
-        virtual bool down(unsigned char, Node const &node) override
+        virtual bool down(unsigned char, SubtrieInfo const subtrie) override
         {
             records.push(ExpectedSubtrieVersion{
-                .root = const_cast<Node *>(&node),
-                .min_subtrie_version = node.version,
+                .root = const_cast<Node *>(&subtrie.node),
+                .min_subtrie_version = subtrie.node.version,
                 .max_children_version = 0});
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void
+        up(unsigned char const branch, SubtrieInfo const subtrie) override
         {
             auto const node_record = records.top();
+            auto const &node = subtrie.node;
             ASSERT_TRUE(node_record.root == &node);
             records.pop();
             if (records.empty()) { // node is root

@@ -39,6 +39,10 @@ exit_code=0
 for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp'); do
     contents=$(head -c $C_LICENSE_HEADER_LEN "$file")
 
+    if [ $(dirname "$file") == "utils/clang-tidy-auto-const" ]; then
+       continue
+    fi
+
     if [ "$contents" == "$C_LICENSE_HEADER" ]; then
         continue
     fi

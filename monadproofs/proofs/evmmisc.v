@@ -72,17 +72,3 @@ Proof.
     reflexivity.
   }
 Qed.
-
-
-
-Ltac resdec tac :=
-  repeat match goal with
-  | [|- context [decide ?P] ] =>
-    resultsIn0or1Goals ltac:(destruct (decide P); try solve [ tac ])
-  | [|- context [bool_decide ?P] ] =>
-    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P); (destruct (decide P); try solve [ tac ]))
-  | [H:context [decide ?P] |- _ ] =>
-    resultsIn0or1Goals ltac:((destruct (decide P); try solve [ tac ]))
-  | [H:context [bool_decide ?P] |- _ ] =>
-    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P) in H; (destruct (decide P); try solve [ tac ]))
-    end.

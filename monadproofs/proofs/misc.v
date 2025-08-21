@@ -1649,7 +1649,89 @@ Definition lookup_struct
       Corelib.Init.Datatypes.None
   end.
 
+Lemma forallCons {T} (P : T -> Prop) (l: list T) (h:T):
+  (forall t, t ∈ (h::l) -> P t)
+  -> (P h  /\ forall t, t ∈ l -> P t).
+Proof using.
+  intros Hp.
+  pose proof (Hp h) as Hd.
+  autorewrite with iff in *.
+  split.
+  - apply Hd. left. reflexivity.
+  - intros. apply Hp. autorewrite with iff. right. assumption.
+Qed.
+  
 
+Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
+  (forall x, P /\ Q x)  -> P /\ forall x, Q x.
+Proof using.
+  intros Hp.
+  firstorder.
+Qed.
+
+Hint Rewrite bool_decide_spec: iff.
+
+Hint Resolve list_subseteq_app_r : listset.
+Hint Resolve list_subseteq_app_l : listset.
+Hint Rewrite Z.min_l  using lia: syntactic.
+Hint Rewrite Z.min_r  using lia: syntactic.
+Hint Rewrite N.min_l  using lia: syntactic.
+Hint Rewrite N.min_r  using lia: syntactic.
+
+
+Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
+  b1=b2 -> t1=t2 -> e1=e2 -> (if b1 then t1 else e1) = if b2 then t2 else e2.
+Proof using.
+  intros. subst. reflexivity.
+Qed.
+
+Hint Rewrite @elem_of_cons: syntactic.
+Hint Rewrite orb_true_iff andb_true_iff: iff.
+Hint Rewrite -> bool_decide_eq_true : iff.
+
+Tactic Notation "rdestruct" open_constr(c) "as" intropattern(I) :=
+  (let ff := fresh "rd" in remember c as ff; destruct ff as I).
+
+Tactic Notation "rdestruct" open_constr(c) :=
+  (let ff := fresh "rd" in remember c as ff; destruct ff).
+Ltac solver := simpl in *; autorewrite with syntactic in *; simpl in *; resolveDecide congruence; resolveDecide lia; resolveDecide tauto.
+Ltac case_bool_decide_concl:=
+  match goal with
+  | |- context [@bool_decide ?P ?dec] =>
+    destruct_decide (@bool_decide_reflect P dec) as Hd
+  end.
+
+Ltac rememberForallb :=
+    match goal with
+    [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
+    |[H: context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
+    | [|- context[forallb ?a ?b]] => remember (forallb a b) as fb
+    end.
+
+Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
+  (let '(a,b) := p in f a b) = f (fst p) (snd p).
+Proof using. destruct p; auto. Qed.
+Lemma forallb_spec {T}  (f: T->bool) l:
+  forallb f l = true <-> (forall x, x ∈ l -> f x = true).
+Proof.
+  rewrite forallb_forall.
+  split; intros ? ?; (rewrite elem_of_list_In ||  rewrite <- elem_of_list_In); auto.
+Qed.
+
+(* TODO: delete from bigauto *)
+Ltac resultsIn0or1Goals tac := try (tac; fail); (tac;[]).
+
+Ltac resdec tac :=
+  repeat match goal with
+  | [|- context [decide ?P] ] =>
+    resultsIn0or1Goals ltac:(destruct (decide P); try solve [ tac ])
+  | [|- context [bool_decide ?P] ] =>
+    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P); (destruct (decide P); try solve [ tac ]))
+  | [H:context [decide ?P] |- _ ] =>
+    resultsIn0or1Goals ltac:((destruct (decide P); try solve [ tac ]))
+  | [H:context [bool_decide ?P] |- _ ] =>
+    resultsIn0or1Goals ltac:(rewrite (bool_decide_decide P) in H; (destruct (decide P); try solve [ tac ]))
+    end.
 
 Require Import bluerock.ltac2.extra.extra.
 Require Ltac2.Ltac2.
@@ -1704,3 +1786,4 @@ Ltac searchL t :=
 
 
 Hint Rewrite @gmap.lookup_insert_iff : syntactic.
+

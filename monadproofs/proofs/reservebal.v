@@ -10,23 +10,17 @@ Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.evmmisc.
 Require Import monad.proofs.misc.
 Require Import bluerock.hw_models.utils.
-Hint Rewrite orb_true_iff andb_true_iff: iff.
 (*
-Require Import bluerock.auto.rwdb.
-Require Import bluerock.auto.miscPure.
-*)
-Require Import monad.proofs.bigauto.
+Require Import monad.proofs.bigauto. *)
+
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
+
+
 Set Default Goal Selector "!".
-Tactic Notation "rdestruct" open_constr(c) "as" intropattern(I) :=
-  (let ff := fresh "rd" in remember c as ff; destruct ff as I).
-
-Tactic Notation "rdestruct" open_constr(c) :=
-  (let ff := fresh "rd" in remember c as ff; destruct ff).
-
 Require Import bluerock.auto.cpp.tactics4.
+
 Open Scope N_scope.
 Definition StateOfAccounts : Type := EvmAddr -> AccountM.
 Definition addrDelegated  (s: StateOfAccounts) (a : EvmAddr) : bool :=
@@ -295,16 +289,6 @@ Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option AugmentedStat
   end.
 
 
-Hint Rewrite -> bool_decide_eq_true : iff.
-
-Ltac rememberForallb :=
-    match goal with
-    [H:= context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
-    |[H: context[forallb ?a ?b] |- _] => remember (forallb a b) as fb
-    | [|- context[forallb ?a ?b]] => remember (forallb a b) as fb
-    end.
-
-
 (** *core execution assumptions *)
 
 Lemma balanceOfRevert s tx ac:
@@ -429,13 +413,6 @@ Proof.
   unfold updateBalanceOfAc, updateKey, balanceOfAc. simpl.
   case_bool_decide; simpl; subst; auto; resdec ltac:(congruence);[].
   destruct (s ac); auto.
-Qed.
-
-Lemma forallb_spec {T}  (f: T->bool) l:
-  forallb f l = true <-> (forall x, x ∈ l -> f x = true).
-Proof.
-  rewrite forallb_forall.
-  split; intros ? ?; (rewrite elem_of_list_In ||  rewrite <- elem_of_list_In); auto.
 Qed.
 
 Lemma execTxOtherBalanceLB tx s:
@@ -571,10 +548,6 @@ Proof.
 
   }
 Qed.
-
-Lemma pairEta {A B R} (p:A*B) (f: A -> B -> R):
-  (let '(a,b) := p in f a b) = f (fst p) (snd p).
-Proof using. destruct p; auto. Qed.
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx) in
@@ -754,20 +727,6 @@ Proof.
   }
 Qed.
 
-Hint Rewrite Z.min_l  using lia: syntactic.
-Hint Rewrite Z.min_r  using lia: syntactic.
-Hint Rewrite N.min_l  using lia: syntactic.
-Hint Rewrite N.min_r  using lia: syntactic.
-
-
-Lemma ite_fequiv {T} (t1 t2 e1 e2:T) (b1 b2: bool) :
-  b1=b2 -> t1=t2 -> e1=e2 -> (if b1 then t1 else e1) = if b2 then t2 else e2.
-Proof using.
-  intros. subst. reflexivity.
-Qed.
-
-Hint Rewrite @elem_of_cons: syntactic.
-
 Set Nested Proofs Allowed.
 
 
@@ -851,29 +810,6 @@ Proof using.
   }
 Qed.
 
-Lemma forallCons {T} (P : T -> Prop) (l: list T) (h:T):
-  (forall t, t ∈ (h::l) -> P t)
-  -> (P h  /\ forall t, t ∈ l -> P t).
-Proof using.
-  intros Hp.
-  pose proof (Hp h) as Hd.
-  autorewrite with iff in *.
-  split.
-  - apply Hd. left. reflexivity.
-  - intros. apply Hp. autorewrite with iff. right. assumption.
-Qed.
-  
-
-Lemma moveForallIn {T} {inh:Inhabited T} P (Q: T -> Prop):
-  (forall x, P /\ Q x)  -> P /\ forall x, Q x.
-Proof using.
-  intros Hp.
-  firstorder.
-Qed.
-Hint Rewrite bool_decide_spec: iff.
-
-Hint Resolve list_subseteq_app_r : listset.
-Hint Resolve list_subseteq_app_l : listset.
 
 Definition txCannotCreateContractAtEOAAddrWithPrivateKey tx (eoasWithPrivateKey: list EvmAddr) :=
   forall s, let sf := (execValidatedTx  s tx) in
@@ -1102,12 +1038,6 @@ Qed.
     
     
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
-Ltac solver := simpl in *; autorewrite with syntactic in *; simpl in *; resolveDecide congruence; resolveDecide lia; resolveDecide tauto.
-Ltac case_bool_decide_concl:=
-  match goal with
-  | |- context [@bool_decide ?P ?dec] =>
-    destruct_decide (@bool_decide_reflect P dec) as Hd
-  end.
 
 Definition rbLeA (rb1 rb2: EffReserveBals) :=
   forall addr, rb1 !!! addr <= rb2 !!! addr.

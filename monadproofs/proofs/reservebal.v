@@ -401,20 +401,42 @@ Definition txCannotCreateContractAtAddrs tx (eoasWithPrivateKey: list EvmAddr) :
   forall s, let sf := (execValidatedTx  s tx) in
             forall addr,  addr ∈ eoasWithPrivateKey -> hasCode s.1 addr = false -> hasCode sf.1 addr = false.
 
-Theorem fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (blocks2: list TxWithHdr) :
-  blockNumsInRange (blocks1++blocks2)
-  -> consensusAcceptableTxs latestState (blocks1++blocks2)
-  -> (forall txext, txext ∈ (blocks1++blocks2) -> txCannotCreateContractAtAddrs txext (map sender (blocks1++blocks2)))
-  -> (forall ac, ac ∈ (map sender (blocks1++blocks2)) -> hasCode latestState.1 ac = false)
-  -> match execTxs latestState blocks1 with
+(** The lemma below is probably what one would come up first as the main correctness theorem.
+[blocks] represents the transactions in the blocks proposed after [latestState].
+It says that consensus checks ([consensusAcceptableTxs latestState blocks]) implies
+that the execution of all transactions [blocks] one by one, starting from the state [latestState] will succeed and not abort ([None]) due to preTx balance being less than [maxTxFee].
+
+*)
+Theorem fullBlockStep2  (latestState : AugmentedState) (blocks: list TxWithHdr) :
+  (forall ac, ac ∈ (map sender blocks) -> hasCode latestState.1 ac = false)
+  -> (forall txext, txext ∈ blocks ->  txCannotCreateContractAtAddrs txext (map sender blocks))
+  -> blockNumsInRange blocks
+  -> consensusAcceptableTxs latestState blocks
+  -> match execTxs latestState blocks with
+     | None =>  False
+     | Some si => True
+     end. Abort.
+
+(** ** main correctness theorem
+We will prove the above correctness theorem below, but the actual correctness theorem we need is slightly different.
+Suppose we split [blocks] in the theorem above into [firstblock] and [restblocks] such that [blocks=firstblocks++blocksrest] and suppose these blocks together are all transactions from the K proposed blocks since the last consensed state. Now, consenus will wait for execution to catch up and give the state after [firstblock], say [latestState'].
+After that, consensus should check the next block after [blocksrest] w.r.t [latestState'].
+At that time, it needs to know that [blocksrest] is already valid w.r.t [latestState'], i.e. [consensusAcceptableTxs latestState' blocksrest].  This is precisely what the main theorem, shown next does:
+*)
+Theorem fullBlockStep  (latestState : AugmentedState) (firstblock: list TxWithHdr) (restblocks: list TxWithHdr) :
+  blockNumsInRange (firstblock++restblocks)
+  -> consensusAcceptableTxs latestState (firstblock++restblocks)
+  -> (forall txext, txext ∈ (firstblock++restblocks) -> txCannotCreateContractAtAddrs txext (map sender (firstblock++restblocks)))
+  -> (forall ac, ac ∈ (map sender (firstblock++restblocks)) -> hasCode latestState.1 ac = false)
+  -> match execTxs latestState firstblock with
      | None =>  False
         (** ^ execution cannot abort (indicated by returning None) due to balance being insufficient to even pay fees *)
      | Some si =>
         (** in this case, we have enough conditions to guarantee fee-solvency of block2, so that it can be extended and then this lemma reapplied *)
-         consensusAcceptableTxs si blocks2
-         /\ blockNumsInRange blocks2
-         /\ (forall ac, ac ∈ (map sender blocks2) -> hasCode si.1 ac = false)
-         /\ (forall txext, txext ∈ (blocks2) ->  txCannotCreateContractAtAddrs txext (map sender (blocks2)))
+         consensusAcceptableTxs si restblocks
+         /\ blockNumsInRange restblocks
+         /\ (forall ac, ac ∈ (map sender restblocks) -> hasCode si.1 ac = false)
+         /\ (forall txext, txext ∈ (restblocks) ->  txCannotCreateContractAtAddrs txext (map sender (restblocks)))
      end.
 Proof. Abort.
 
@@ -1470,29 +1492,29 @@ Proof using.
 Qed.
 
 (** * Proof of main theorem:
-    Straightforward induction on [blocks1],
+    Straightforward induction on [firstblock],
     with [inductiveStep] used in the inductive step.
 *)
 
-Lemma fullBlockStep  (latestState : AugmentedState) (blocks1 blocks2: list TxWithHdr) :
-  blockNumsInRange (blocks1++blocks2)
-  -> consensusAcceptableTxs latestState (blocks1++blocks2)
-  -> (forall txext, txext ∈ (blocks1++blocks2) ->  txCannotCreateContractAtAddrs txext (map sender (blocks1++blocks2)))
-  -> (forall ac, ac ∈ (map sender (blocks1++blocks2)) -> hasCode latestState.1 ac = false)
-  -> match execTxs latestState blocks1 with
+Lemma fullBlockStep  (latestState : AugmentedState) (firstblock restblocks: list TxWithHdr) :
+  blockNumsInRange (firstblock++restblocks)
+  -> consensusAcceptableTxs latestState (firstblock++restblocks)
+  -> (forall txext, txext ∈ (firstblock++restblocks) ->  txCannotCreateContractAtAddrs txext (map sender (firstblock++restblocks)))
+  -> (forall ac, ac ∈ (map sender (firstblock++restblocks)) -> hasCode latestState.1 ac = false)
+  -> match execTxs latestState firstblock with
      | None =>  False
      | Some si =>
          (* enough conditions to guarantee fee-solvency of block2, so that it can be extended and then this lemma reapplied *)
-         consensusAcceptableTxs si blocks2
-         /\ blockNumsInRange blocks2
-         /\ (forall ac, ac ∈ (map sender blocks2) -> hasCode si.1 ac = false)
-         /\ (forall txext, txext ∈ (blocks2) ->  txCannotCreateContractAtAddrs txext (map sender (blocks2)))
+         consensusAcceptableTxs si restblocks
+         /\ blockNumsInRange restblocks
+         /\ (forall ac, ac ∈ (map sender restblocks) -> hasCode si.1 ac = false)
+         /\ (forall txext, txext ∈ (restblocks) ->  txCannotCreateContractAtAddrs txext (map sender (restblocks)))
      end.
 Proof.
   intros Hrange Hacc.
-  induction blocks1 as [|hb1 blocks1 IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
+  induction firstblock as [|hb1 firstblock IH] in latestState, Hrange, Hacc |- *; simpl in *; auto.
   intros Heoa Hsc.
-  change  ((hb1 :: blocks1) ++ blocks2) with (hb1::(blocks1++blocks2)) in Hacc.
+  change  ((hb1 :: firstblock) ++ restblocks) with (hb1::(firstblock++restblocks)) in Hacc.
   forward_reason.
   pose proof (execValidate _ _ _ Hacc) as Hv.
   unfold validateTx in Hv.
@@ -1566,10 +1588,10 @@ balanceOfRevertOther :
 
 
 Corollary fullBlockStep2  (latestState : AugmentedState) (blocks: list TxWithHdr) :
-  blockNumsInRange (blocks)
-  -> consensusAcceptableTxs latestState (blocks)
+  (forall ac, ac ∈ (map sender (blocks)) -> hasCode latestState.1 ac = false)
   -> (forall txext, txext ∈ (blocks) ->  txCannotCreateContractAtAddrs txext (map sender (blocks)))
-  -> (forall ac, ac ∈ (map sender (blocks)) -> hasCode latestState.1 ac = false)
+  -> blockNumsInRange (blocks)
+  -> consensusAcceptableTxs latestState (blocks)
   -> match execTxs latestState blocks with
      | None =>  False
      | Some si => True

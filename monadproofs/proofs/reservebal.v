@@ -13,7 +13,7 @@
       exception). If a transaction would violate that, it is reverted in place.
 
     The definitions below encode those two algorithms and the invariants we prove
-    about them. The consensus check is defined in [consensusAcceptableTxs], the execution check is in [execTx]. the main soundness theorem is [fullBlockStep]. Reference to any Coq item is hyperlinked to its definition if the definition is in this page or in Coq standard libarary.
+    about them. The consensus check is defined in [consensusAcceptableTxs], the execution check is in [execTx]. The main soundness theorem is [fullBlockStep]. References to any Coq item are hyperlinked to its definition if the definition is in this file or in the Coq standard library.
 *)
 
 
@@ -33,7 +33,7 @@ Open Scope N_scope.
 
 (** * Preliminaries *)
 
-(** this is the full evm state that EVM exection takes as input and returns as output *)
+(** This is the full EVM state that EVM execution takes as input and returns as output. *)
 Definition StateOfAccounts : Type := EvmAddr -> AccountM.
 
 
@@ -43,15 +43,15 @@ Definition addrDelegated  (s: StateOfAccounts) (a : EvmAddr) : bool :=
   | _ => true
   end.
 
-(** Many of the EVM semantics definitions we use come from Yoichi's EVM semantics, developed several years ago. The definition of [Transaction] there lacks fields to support newer features lie delegation. Also, the last field is to support user-configurable reserve balances in Monad. There is a new transaction type which can update the configured reserve balance of the sender. sucn transactions do nothing else. *)
+(** Many of the EVM semantics definitions we use come from Yoichi's EVM semantics, developed several years ago. The definition of [Transaction] there lacks fields to support newer features like delegation. Also, the last field is to support user-configurable reserve balances in Monad. There is a new transaction type which can update the configured reserve balance of the sender. Such transactions do nothing else. *)
 Record TxExtra :=
   {
     dels: list EvmAddr;
     undels: list EvmAddr;
 
-    (** the fields above should ultimately come from EVM semantics and not here. the fields below are monad specific *)
+    (** The fields above should ultimately come from EVM semantics and not here. The fields below are monad-specific. *)
     reserveBalUpdate: option N
-   (** ^ updates the reserve balance of the sender if Some. in that case, the tx does not do anything else, e.g. smart contract invocation or transer *)
+   (** ^ updates the reserve balance of the sender if Some. In that case, the transaction does nothing else, e.g., smart contract invocation or transfer. *)
   }.
     
   
@@ -250,7 +250,7 @@ Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBala
 
     When evaluating a new tx at block number N to add at the end of [postStateSuffix],
     [latestState] must be the state after N-K block when proposing a new block.
-    However, when next pending (already proposed) block is executed, we need to derive that the remaining already proposed transactions are still valid on top of the  more recent state: this is what the main soundness lemmas [fullBlockStep] proves, in addition to proving that [proposedSateSuffix] will execute without running out of fees to pay the fees. *)
+    However, when the next pending (already proposed) block is executed, we need to derive that the remaining already proposed transactions are still valid on top of the more recent state: this is what the main soundness lemma [fullBlockStep] proves, in addition to proving that [postStateSuffix] will execute without running out of fees to pay. *)
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   forall addr,  addr ∈ map sender postStateSuffix ->
    0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr.
@@ -258,7 +258,7 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffi
 
 (** * Execution Check (algo 2)
 
-The execution logic is also tweaked to ensure that a transaction cannot dip too much into reserves so as to to not have enough fees for a transaction already included by consensus. First, some helpers for that.
+ The execution logic is also tweaked to ensure that a transaction cannot dip too much into reserves so as to not have enough fees for a transaction already included by consensus. First, some helpers for that.
 
 
 [isAllowedToEmptyExec] is a trivial wrapper used in execution, where there are intermediate transactions between the current transaction and the last known fully executed state.
@@ -351,11 +351,11 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   end
 .
 
-(** Note that because the [hasCode] above check is done on [si] (result of running the EVM blackbox to excuted [t]), not [s] (the pre-exec state), the following scenario is allowed.
+(** Note that because the [hasCode] check is done on [si] (the result of running the EVM blackbox to execute [t]), not [s] (the pre-exec state), the following scenario is allowed.
 
-   - Alice sends money to adds2 in some contract. Alice is EOA.
+   - Alice sends money to addr2 in some contract. Alice is EOA.
    - Alice sends tx foo to a smart contract address addr.
-   - addr execution creates a deployes code at addr2, and calls it and the call empties addr2.
+   - addr execution deploys code at addr2 and calls it, and the call empties addr2.
  *)
 
 
@@ -368,7 +368,7 @@ Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
 
 
 (** Top-level execution wrapper that fails fast when validation fails.
-   [None] means the excution of the whole block containing [t] aborts, which is what the consensus/execution checks must guarantee to never happen. *)
+   [None] means the execution of the whole block containing [t] aborts, which is what the consensus/execution checks must guarantee to never happen. *)
 Definition execTx (s: AugmentedState) (t: TxWithHdr): option (AugmentedState) :=
   if (negb (validateTx (fst s) t)) (* if this fails. the execution of the entire block aborts *)
   then None

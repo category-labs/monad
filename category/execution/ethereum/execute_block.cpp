@@ -203,7 +203,6 @@ Result<std::vector<Receipt>> execute_block(
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
-    (void)authorities;
     TRACE_BLOCK_EVENT(StartBlock);
 
     MONAD_ASSERT(senders.size() == block.transactions.size());

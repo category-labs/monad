@@ -78,8 +78,30 @@ TEST(Validation, validate_deployed_code)
         .code_hash = some_non_null_hash,
         .nonce = 24};
 
-    auto const result = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
+}
+
+// EIP-7702
+TEST(Validation, validate_deployed_code_delegated)
+{
+    static constexpr auto some_non_null_hash{
+        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
+
+    Transaction const tx{.gas_limit = 60'500};
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
+
+    auto const result = validate_transaction<EVMC_PRAGUE>(
+        tx,
+        sender_account,
+        std::vector<uint8_t>{
+            0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
+            0x44, 0x55, 0x11, 0x22, 0x33, 0x44, 0x55,
+        });
+    EXPECT_FALSE(result.has_error());
 }
 
 TEST(Validation, validate_nonce)
@@ -92,7 +114,8 @@ TEST(Validation, validate_nonce)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
-    auto const result = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -106,7 +129,8 @@ TEST(Validation, validate_nonce_optimistically)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
-    auto const result = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -123,7 +147,8 @@ TEST(Validation, validate_enough_balance)
     };
     Account const sender_account{.balance = 55'939'568'773'815'811};
 
-    auto const result = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
@@ -151,7 +176,8 @@ TEST(Validation, successful_validation)
         tx, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(!result1.has_error());
 
-    auto const result2 = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result2 =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_TRUE(!result2.has_error());
 }
 
@@ -201,7 +227,8 @@ TEST(Validation, insufficent_balance_overflow)
     Account const sender_account{
         .balance = std::numeric_limits<uint256_t>::max()};
 
-    auto const result = validate_transaction<EVMC_CANCUN>(tx, sender_account);
+    auto const result =
+        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 

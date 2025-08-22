@@ -208,7 +208,9 @@ namespace
             eoa.value().code_hash = NULL_HASH;
         }
 
-        BOOST_OUTCOME_TRY(validate_transaction<rev>(enriched_txn, eoa));
+        // Safe to pass empty code to validation here because the above override
+        // will always mark this transaction as coming from an EOA.
+        BOOST_OUTCOME_TRY(validate_transaction<rev>(enriched_txn, eoa, {}));
 
         auto const tx_context = get_tx_context<rev>(
             enriched_txn, sender, header, chain.get_chain_id());

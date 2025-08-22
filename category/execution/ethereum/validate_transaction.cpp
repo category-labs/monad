@@ -189,7 +189,8 @@ EXPLICIT_EVMC_REVISION(static_validate_transaction);
 
 template <evmc_revision rev>
 Result<void> validate_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account)
+    Transaction const &tx, std::optional<Account> const &sender_account,
+    std::span<uint8_t const> code)
 {
     // YP (70)
     uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
@@ -210,10 +211,14 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    if constexpr (rev < EVMC_PRAGUE) {
-        if (MONAD_UNLIKELY(sender_account->code_hash != NULL_HASH)) {
-            return TransactionError::SenderNotEoa;
-        }
+    bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
+    if constexpr (rev >= EVMC_PRAGUE) {
+        // EIP-7702
+        sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
+    }
+
+    if (MONAD_UNLIKELY(!sender_is_eoa)) {
+        return TransactionError::SenderNotEoa;
     }
 
     // YP (71)

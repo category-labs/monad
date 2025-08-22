@@ -19,6 +19,7 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/vm/code.hpp>
 
 #include <evmc/evmc.h>
 
@@ -67,7 +68,8 @@ Result<void> static_validate_transaction(
 
 template <evmc_revision rev>
 Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account);
+    Transaction const &, std::optional<Account> const &sender_account,
+    std::span<uint8_t const>);
 
 MONAD_NAMESPACE_END
 

@@ -327,7 +327,9 @@ template <evmc_revision rev>
 Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
-    BOOST_OUTCOME_TRY(validate_transaction<rev>(tx_, sender_account));
+    auto const &icode = state.get_code(sender_)->intercode();
+    BOOST_OUTCOME_TRY(validate_transaction<rev>(
+        tx_, sender_account, {icode->code(), icode->size()}));
 
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());

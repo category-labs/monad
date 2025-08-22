@@ -27,8 +27,14 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 evmc_revision MonadChain::get_revision(
-    uint64_t /* block_number */, uint64_t /* timestamp */) const
+    uint64_t const block_number, uint64_t const timestamp) const
 {
+    auto const monad_revision = get_monad_revision(block_number, timestamp);
+
+    if (MONAD_LIKELY(monad_revision >= MONAD_FOUR)) {
+        return EVMC_PRAGUE;
+    }
+
     return EVMC_CANCUN;
 }
 

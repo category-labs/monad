@@ -443,7 +443,8 @@ Proof. Abort.
 (** * Proof *)
 Open Scope N_scope.
 (** ** core execution assumptions
-To prove the theorem [fullBlockStep], we need to make some assumptions about how the core EVM execution updates balances and delegated-ness:
+To prove the theorem [fullBlockStep], we need to make some assumptions about how the core EVM execution updates balances and delegated-ness. The names of these axioms are fairly descriptive.
+
  *)
 
 Axiom balanceOfRevertSender: forall s tx,
@@ -482,6 +483,7 @@ Axiom execTxSenderBalCore: forall tx s,
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
 
 
+(** One caveat in the assumption below is that it assumes that the account [ac] does not receive so much credit that it overflows 2^256. In practice, this should never happen, assuming the ETH supply is well below 2^256. Thus, we can assume that [evmExecTxCore] caps the balance at [2^256] should it overflow, instead of wrapping around, which may violate this assumption. *)
 Axiom execTxCannotDebitNonDelegatedNonContractAccountsCore: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in

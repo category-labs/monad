@@ -944,6 +944,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
+    auto const recovered_authorities =
+        recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
@@ -956,6 +958,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         EthereumMainnet{},
         block.value(),
         senders,
+        recovered_authorities,
         bs,
         block_hash_buffer,
         pool,
@@ -1057,6 +1060,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
+    auto const recovered_authorities =
+        recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
@@ -1069,6 +1074,7 @@ TYPED_TEST(DBTest, call_frames_refund)
         ShanghaiEthereumMainnet{},
         block.value(),
         senders,
+        recovered_authorities,
         bs,
         block_hash_buffer,
         pool,

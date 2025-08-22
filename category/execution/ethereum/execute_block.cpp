@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
@@ -157,13 +158,52 @@ std::vector<std::optional<Address>> recover_senders(
     return senders;
 }
 
+std::vector<std::vector<std::optional<Address>>> recover_authorities(
+    std::vector<Transaction> const &transactions,
+    fiber::PriorityPool &priority_pool)
+{
+    std::vector<std::vector<std::optional<Address>>> authorities{
+        transactions.size()};
+    std::vector<std::shared_ptr<boost::fibers::promise<void>[]>> promises{
+        transactions.size()};
+
+    for (auto i = 0u; i < transactions.size(); ++i) {
+        authorities[i] = std::vector<std::optional<Address>>{
+            transactions[i].authorization_list.size()};
+        promises[i] = std::shared_ptr<boost::fibers::promise<void>[]>{
+            new boost::fibers::promise<void>[authorities[i].size()]};
+
+        for (auto j = 0u; j < authorities[i].size(); ++j) {
+            priority_pool.submit(
+                i,
+                [j = j,
+                 auth_promises = promises[i],
+                 &auth = authorities[i][j],
+                 &auth_entry = transactions[i].authorization_list[j]]() {
+                    auth = recover_authority(auth_entry);
+                    auth_promises[j].set_value();
+                });
+        }
+    }
+
+    for (auto i = 0u; i < transactions.size(); ++i) {
+        for (auto j = 0u; j < transactions[i].authorization_list.size(); ++j) {
+            promises[i][j].get_future().wait();
+        }
+    }
+
+    return authorities;
+}
+
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block &block, std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
+    (void)authorities;
     TRACE_BLOCK_EVENT(StartBlock);
 
     MONAD_ASSERT(senders.size() == block.transactions.size());
@@ -201,6 +241,7 @@ Result<std::vector<Receipt>> execute_block(
              promises = promises,
              &transaction = block.transactions[i],
              &sender = senders[i],
+             &authorities = authorities[i],
              &header = block.header,
              &block_hash_buffer = block_hash_buffer,
              &block_state,
@@ -211,6 +252,7 @@ Result<std::vector<Receipt>> execute_block(
                     i,
                     transaction,
                     sender,
+                    authorities,
                     header,
                     block_hash_buffer,
                     block_state,
@@ -271,8 +313,9 @@ EXPLICIT_EVMC_REVISION(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
-    std::vector<Address> const &senders, BlockState &block_state,
-    BlockHashBuffer const &block_hash_buffer,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
@@ -281,6 +324,7 @@ Result<std::vector<Receipt>> execute_block(
         chain,
         block,
         senders,
+        authorities,
         block_state,
         block_hash_buffer,
         priority_pool,

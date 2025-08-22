@@ -85,24 +85,37 @@ MONAD_NAMESPACE_BEGIN
 template <evmc_revision rev>
 ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
+    std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
+    , authorities_{authorities}
     , header_{header}
+{
+}
+
+template <evmc_revision rev>
+ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
+    Chain const &chain, Transaction const &tx, Address const &sender,
+    BlockHeader const &header)
+    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header}
 {
 }
 
 // EIP-7702
 template <evmc_revision rev>
-uint64_t
-process_authorizations(State &state, EvmcHost<rev> &host, Transaction const &tx)
+uint64_t ExecuteTransactionNoValidation<rev>::process_authorizations(
+    State &state, EvmcHost<rev> &host)
 {
     using namespace intx::literals;
 
+    MONAD_ASSERT(authorities_.size() == tx_.authorization_list.size());
+
     uint64_t refund = 0u;
 
-    for (auto const &auth_entry : tx.authorization_list) {
+    for (auto i = 0u; i < tx_.authorization_list.size(); ++i) {
+        auto const &auth_entry = tx_.authorization_list[i];
         MONAD_ASSERT(auth_entry.sc.chain_id.has_value());
 
         // 1. Verify the chain ID is 0 or the ID of the current chain.
@@ -120,7 +133,7 @@ process_authorizations(State &state, EvmcHost<rev> &host, Transaction const &tx)
         }
 
         // 3. Let authority = ecrecover(msg, y_parity, r, s).
-        auto const authority = recover_authority(auth_entry);
+        auto const &authority = authorities_[i];
         if (!authority.has_value()) {
             continue;
         }
@@ -229,7 +242,7 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
     // EIP-7702
     uint64_t auth_refund = 0u;
     if constexpr (rev >= EVMC_PRAGUE) {
-        auth_refund = process_authorizations(state, host, tx_);
+        auth_refund = process_authorizations(state, host);
     }
 
     // EIP-3651
@@ -294,11 +307,13 @@ template class ExecuteTransactionNoValidation<EVMC_OSAKA>;
 template <evmc_revision rev>
 ExecuteTransaction<rev>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
-    Address const &sender, BlockHeader const &header,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer)
-    : ExecuteTransactionNoValidation<rev>{chain, tx, sender, header}
+    Address const &sender,
+    std::vector<std::optional<Address>> const &authorities,
+    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
+    BlockState &block_state, BlockMetrics &block_metrics,
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer)
+    : ExecuteTransactionNoValidation<
+          rev>{chain, tx, sender, authorities, header}
     , i_{i}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}

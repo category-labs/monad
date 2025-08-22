@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -87,8 +88,9 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
-        Address const &sender, TrieRODb &tdb, vm::VM &vm,
-        BlockHashBufferFinalized const buffer,
+        Address const &sender,
+        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
+        vm::VM &vm, BlockHashBufferFinalized const buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer)
     {
@@ -219,7 +221,7 @@ namespace
             max_code_size,
             chain.get_create_inside_delegated()};
         auto execution_result = ExecuteTransactionNoValidation<rev>{
-            chain, enriched_txn, sender, header}(state, host);
+            chain, enriched_txn, sender, authorities, header}(state, host);
 
         // compute gas_refund and gas_used
         auto const gas_refund = chain.compute_gas_refund(
@@ -239,7 +241,8 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
-        bytes32_t const &block_id, Address const &sender, TrieRODb &tdb,
+        bytes32_t const &block_id, Address const &sender,
+        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer)
@@ -252,6 +255,7 @@ namespace
             block_number,
             block_id,
             sender,
+            authorities,
             tdb,
             vm,
             buffer,
@@ -562,142 +566,145 @@ struct monad_eth_call_executor
         uint64_t const eth_call_seq_no, monad_eth_call_result *const result,
         bool const use_high_gas_pool)
     {
-        (use_high_gas_pool ? high_gas_pool_ : low_gas_pool_)
-            .submit(
-                eth_call_seq_no,
-                [this,
-                 call_begin = call_begin,
-                 eth_call_seq_no = eth_call_seq_no,
-                 chain_config = chain_config,
-                 orig_txn = txn,
-                 block_header = block_header,
-                 block_number = block_number,
-                 block_id = block_id,
-                 &db = db_,
-                 sender = sender,
-                 result = result,
-                 complete = complete,
-                 user = user,
-                 state_overrides = overrides,
-                 trace = trace,
-                 gas_specified = gas_specified,
-                 use_high_gas_pool = use_high_gas_pool,
-                 timeout = use_high_gas_pool ? high_pool_timeout_
-                                             : low_pool_timeout_] {
-                    if (use_high_gas_pool) {
-                        --high_pool_queued_count_;
+        auto &active_pool = use_high_gas_pool ? high_gas_pool_ : low_gas_pool_;
+
+        auto const authorities = recover_authorities({txn}, active_pool);
+        MONAD_ASSERT(authorities.size() == 1);
+
+        active_pool.submit(
+            eth_call_seq_no,
+            [this,
+             call_begin = call_begin,
+             eth_call_seq_no = eth_call_seq_no,
+             chain_config = chain_config,
+             orig_txn = txn,
+             block_header = block_header,
+             block_number = block_number,
+             block_id = block_id,
+             &db = db_,
+             sender = sender,
+             authorities = authorities[0],
+             result = result,
+             complete = complete,
+             user = user,
+             state_overrides = overrides,
+             trace = trace,
+             gas_specified = gas_specified,
+             use_high_gas_pool = use_high_gas_pool,
+             timeout =
+                 use_high_gas_pool ? high_pool_timeout_ : low_pool_timeout_] {
+                if (use_high_gas_pool) {
+                    --high_pool_queued_count_;
+                }
+                // check for timeout
+                if (std::chrono::steady_clock::now() - call_begin > timeout) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(TIMEOUT_ERR_MSG);
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+
+                auto transaction = orig_txn;
+
+                bool const override_with_low_gas_retry_if_oog =
+                    !use_high_gas_pool && !gas_specified &&
+                    orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT;
+
+                if (override_with_low_gas_retry_if_oog) {
+                    // override with low gas limit
+                    transaction.gas_limit = MONAD_ETH_CALL_LOW_GAS_LIMIT;
+                }
+
+                auto const chain = [chain_config] -> std::unique_ptr<Chain> {
+                    switch (chain_config) {
+                    case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                        return std::make_unique<EthereumMainnet>();
+                    case CHAIN_CONFIG_MONAD_DEVNET:
+                        return std::make_unique<MonadDevnet>();
+                    case CHAIN_CONFIG_MONAD_TESTNET:
+                        return std::make_unique<MonadTestnet>();
+                    case CHAIN_CONFIG_MONAD_MAINNET:
+                        return std::make_unique<MonadMainnet>();
+                    case CHAIN_CONFIG_MONAD_TESTNET2:
+                        return std::make_unique<MonadTestnet2>();
                     }
-                    // check for timeout
-                    if (std::chrono::steady_clock::now() - call_begin >
-                        timeout) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(TIMEOUT_ERR_MSG);
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
-                    }
+                    MONAD_ASSERT(false);
+                }();
 
-                    auto transaction = orig_txn;
+                evmc_revision const rev = chain->get_revision(
+                    block_header.number, block_header.timestamp);
 
-                    bool const override_with_low_gas_retry_if_oog =
-                        !use_high_gas_pool && !gas_specified &&
-                        orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT;
+                auto const block_hash_buffer =
+                    create_blockhash_buffer(block_number);
+                if (block_hash_buffer == nullptr) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(BLOCKHASH_ERR_MSG);
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
 
-                    if (override_with_low_gas_retry_if_oog) {
-                        // override with low gas limit
-                        transaction.gas_limit = MONAD_ETH_CALL_LOW_GAS_LIMIT;
-                    }
+                TrieRODb tdb{db};
+                std::vector<CallFrame> call_frames;
+                std::unique_ptr<CallTracerBase> call_tracer =
+                    trace ? std::unique_ptr<CallTracerBase>{std::make_unique<
+                                CallTracer>(transaction, call_frames)}
+                          : std::unique_ptr<CallTracerBase>{
+                                std::make_unique<NoopCallTracer>()};
+                auto const res = eth_call_impl(
+                    *chain,
+                    rev,
+                    transaction,
+                    block_header,
+                    block_number,
+                    block_id,
+                    sender,
+                    authorities,
+                    tdb,
+                    vm_,
+                    *block_hash_buffer,
+                    *state_overrides,
+                    *call_tracer);
 
-                    auto const chain =
-                        [chain_config] -> std::unique_ptr<Chain> {
-                        switch (chain_config) {
-                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-                            return std::make_unique<EthereumMainnet>();
-                        case CHAIN_CONFIG_MONAD_DEVNET:
-                            return std::make_unique<MonadDevnet>();
-                        case CHAIN_CONFIG_MONAD_TESTNET:
-                            return std::make_unique<MonadTestnet>();
-                        case CHAIN_CONFIG_MONAD_MAINNET:
-                            return std::make_unique<MonadMainnet>();
-                        case CHAIN_CONFIG_MONAD_TESTNET2:
-                            return std::make_unique<MonadTestnet2>();
-                        }
-                        MONAD_ASSERT(false);
-                    }();
-
-                    evmc_revision const rev = chain->get_revision(
-                        block_header.number, block_header.timestamp);
-
-                    auto const block_hash_buffer =
-                        create_blockhash_buffer(block_number);
-                    if (block_hash_buffer == nullptr) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(BLOCKHASH_ERR_MSG);
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
-                    }
-
-                    TrieRODb tdb{db};
-                    std::vector<CallFrame> call_frames;
-                    std::unique_ptr<CallTracerBase> call_tracer =
-                        trace
-                            ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                                  CallTracer>(transaction, call_frames)}
-                            : std::unique_ptr<CallTracerBase>{
-                                  std::make_unique<NoopCallTracer>()};
-                    auto const res = eth_call_impl(
-                        *chain,
-                        rev,
-                        transaction,
+                if (override_with_low_gas_retry_if_oog &&
+                    ((res.has_value() &&
+                      (res.value().status_code == EVMC_OUT_OF_GAS ||
+                       res.value().status_code == EVMC_REVERT)) ||
+                     (res.has_error() &&
+                      res.error() ==
+                          TransactionError::IntrinsicGasGreaterThanLimit))) {
+                    retry_in_high_pool(
+                        chain_config,
+                        orig_txn,
                         block_header,
+                        sender,
                         block_number,
                         block_id,
-                        sender,
-                        tdb,
-                        vm_,
-                        *block_hash_buffer,
-                        *state_overrides,
-                        *call_tracer);
-
-                    if (override_with_low_gas_retry_if_oog &&
-                        ((res.has_value() &&
-                          (res.value().status_code == EVMC_OUT_OF_GAS ||
-                           res.value().status_code == EVMC_REVERT)) ||
-                         (res.has_error() &&
-                          res.error() == TransactionError::
-                                             IntrinsicGasGreaterThanLimit))) {
-                        retry_in_high_pool(
-                            chain_config,
-                            orig_txn,
-                            block_header,
-                            sender,
-                            block_number,
-                            block_id,
-                            state_overrides,
-                            complete,
-                            user,
-                            trace,
-                            call_begin,
-                            eth_call_seq_no,
-                            result);
-                        return;
-                    }
-                    if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(res.error().message().c_str());
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
-                    }
-                    call_complete(
-                        transaction,
-                        res.assume_value(),
-                        result,
+                        state_overrides,
                         complete,
                         user,
-                        call_frames);
-                });
+                        trace,
+                        call_begin,
+                        eth_call_seq_no,
+                        result);
+                    return;
+                }
+                if (MONAD_UNLIKELY(res.has_error())) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(res.error().message().c_str());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+                call_complete(
+                    transaction,
+                    res.assume_value(),
+                    result,
+                    complete,
+                    user,
+                    call_frames);
+            });
     }
 
     void call_complete(

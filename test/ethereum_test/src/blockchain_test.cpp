@@ -229,6 +229,8 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
     BlockMetrics metrics;
     EthereumMainnetRev const chain{rev};
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
+    auto const recovered_authorities =
+        recover_authorities(block.transactions, *pool_);
     std::vector<Address> senders(block.transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {
@@ -250,6 +252,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
             chain,
             block,
             senders,
+            recovered_authorities,
             block_state,
             block_hash_buffer,
             *pool_,

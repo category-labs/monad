@@ -44,13 +44,20 @@ class ExecuteTransactionNoValidation
 {
     evmc_message to_message() const;
 
+    uint64_t process_authorizations(State &, EvmcHost<rev> &);
+
 protected:
     Chain const &chain_;
     Transaction const &tx_;
     Address const &sender_;
+    std::vector<std::optional<Address>> const &authorities_;
     BlockHeader const &header_;
 
 public:
+    ExecuteTransactionNoValidation(
+        Chain const &, Transaction const &, Address const &,
+        std::vector<std::optional<Address>> const &, BlockHeader const &);
+
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
         BlockHeader const &);
@@ -79,8 +86,9 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<rev>
 public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
-        BlockHeader const &, BlockHashBuffer const &, BlockState &,
-        BlockMetrics &, boost::fibers::promise<void> &prev, CallTracerBase &);
+        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        boost::fibers::promise<void> &prev, CallTracerBase &);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

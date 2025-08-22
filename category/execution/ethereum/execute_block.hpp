@@ -38,16 +38,21 @@ struct Chain;
 
 template <evmc_revision rev>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block &, std::vector<Address> const &senders, BlockState &,
-    BlockHashBuffer const &, fiber::PriorityPool &, BlockMetrics &,
-    std::vector<std::unique_ptr<CallTracerBase>> &);
+    Chain const &, Block &, std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
+    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &);
 
 Result<std::vector<Receipt>> execute_block(
     Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &);
 
 std::vector<std::optional<Address>>
 recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);
+
+std::vector<std::vector<std::optional<Address>>>
+recover_authorities(std::vector<Transaction> const &, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

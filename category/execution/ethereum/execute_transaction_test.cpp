@@ -90,6 +90,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0,
         tx,
         from,
+        {},
         header,
         block_hash_buffer,
         bs,

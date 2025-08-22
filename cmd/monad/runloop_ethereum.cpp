@@ -117,6 +117,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         auto const sender_recovery_begin = std::chrono::steady_clock::now();
         auto const recovered_senders =
             recover_senders(block.transactions, priority_pool);
+        auto const recovered_authorities =
+            recover_authorities(block.transactions, priority_pool);
         [[maybe_unused]] auto const sender_recovery_time =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - sender_recovery_begin);
@@ -153,6 +155,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 rev,
                 block,
                 senders,
+                recovered_authorities,
                 block_state,
                 block_hash_buffer,
                 priority_pool,

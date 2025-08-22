@@ -1010,21 +1010,29 @@ Qed.
 
 (** **  [isAllowedToEmpty] lemmas
 
+  Recall [isAllowedToEmpty s (txInterfirst :: rest) txnext]
+  determines whether the transaction [txnext] is allowed to empty its balance,
+  in the setting where [s] is the last available state and
+  [(txInterfirst :: rest)] are the transactions between [s] and [txnext].
+
+  This lemma proves that to be equivalen to executing [txInterfirst]
+  at state [s] and considering the result as the latest available state
+  and thereby removing [txInterfirst] from intermediates.
+  
 *)
 
-
-Lemma execPresservesIsAllowedToEmpty s txlast rest txnext:
-  let sf :=  execValidatedTx s txlast in 
-  txBlockNum txnext - K ≤ txBlockNum txlast ≤ txBlockNum txnext
-  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txlast :: rest) txnext.
+Lemma execPresservesIsAllowedToEmpty s txInterfirst rest txnext:
+  let sf :=  execValidatedTx s txInterfirst in 
+  txBlockNum txnext - K ≤ txBlockNum txInterfirst ≤ txBlockNum txnext
+  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txInterfirst :: rest) txnext.
 Proof using.
   intros ? Hr.
   unfold isAllowedToEmpty.
   simpl.
   autorewrite with syntactic.
-  destruct (decide (sender txnext = sender txlast)).
+  destruct (decide (sender txnext = sender txInterfirst)).
   {
-    assert ((bool_decide (sender txnext ∈ sender txlast :: map sender rest)) = true) as Hf.
+    assert ((bool_decide (sender txnext ∈ sender txInterfirst :: map sender rest)) = true) as Hf.
     {
       rewrite bool_decide_true; auto.
       set_solver.
@@ -1062,7 +1070,7 @@ Proof using.
       }
     }
     {
-      destruct (decide (sender txnext ∈ addrsDelUndelByTx txlast)).
+      destruct (decide (sender txnext ∈ addrsDelUndelByTx txInterfirst)).
       {
         symmetry.
           Hint Rewrite @elem_of_app: iff.
@@ -1337,6 +1345,7 @@ Qed.
     the consensus checks guarantee that execution of the first transaction
     will pass validation during execution, i.e. the balance would be sufficient to cover
     [maxTxFee].
+
     This doesn't say anything about whether the execition of the later transactions ([extension]) will also pass the check. That is where the next lemma comes in handy.
  *)
 Lemma execValidate tx extension s:
@@ -1416,7 +1425,7 @@ Proof using.
   apply exec1; auto.
 Qed.
 
-(* the above 2 lemmas can be combined to yield the following: *)
+(** the above 2 lemmas can be combined to yield the following: *)
 Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: list TxWithHdr) :
   maxTxFee tx <= balanceOfAc latestState.1 (sender tx)
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
@@ -1615,7 +1624,7 @@ Proof using.
   lia.
 Qed.
 
-(** *Consensus Invariant and how its steps preserve the invariant
+(* Consensus Invariant and how its steps preserve the invariant
 At any given time, consensus has some [latestConsensedState] and a list of transactions/blocks (say [ltx]) proposed on top of that.
 The main invariant is that it maintains is [consensusAcceptableTxs latestConsensedState ltx].
 There are also side conditions like [blockNumsInRange ltx] and that the transactions in [ltx] are not sent an address that has code: the latter is just a formal assumption in Coq but is guaranteed by cryptographic hardness of generating private keys.

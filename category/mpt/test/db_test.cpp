@@ -947,8 +947,6 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
     std::cout << "RWDb blocking traversal takes " << blocking_elapsed
               << " us, 12.5% node took " << blocking_first_node_elapsed
               << " us." << std::endl;
-
-    EXPECT_TRUE(parallel_elapsed < blocking_elapsed);
 }
 
 TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)

@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 #include <category/async/storage_pool.hpp>
 
 #include <category/async/detail/scope_polyfill.hpp>
@@ -863,13 +862,12 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
             auto devicepath = chunkinfo.device.current_path();
             if (!devicepath.empty()) {
                 fds[0] = chunkinfo.device.uncached_readfd_ =
-                    ::open(devicepath.c_str(), O_RDONLY | O_DIRECT | O_CLOEXEC);
+                    ::open(devicepath.c_str(), O_RDONLY | O_CLOEXEC);
                 MONAD_ASSERT_PRINTF(
                     fds[0] != -1, "open failed due to %s", strerror(errno));
                 fds[1] = chunkinfo.device.uncached_writefd_ = ::open(
                     devicepath.c_str(),
-                    (is_read_only() ? O_RDONLY : O_WRONLY) | O_DIRECT |
-                        O_CLOEXEC);
+                    (is_read_only() ? O_RDONLY : O_WRONLY) | O_CLOEXEC);
                 MONAD_ASSERT_PRINTF(
                     fds[1] != -1, "open failed due to %s", strerror(errno));
             }

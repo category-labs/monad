@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -1482,23 +1483,23 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             "The number of nodes updated for expire (%u) is excessively large",
             stats.nodes_updated_expire);
     }
-    char buf[16 << 10];
-    char *p = buf;
-    p += snprintf(
-        p,
-        sizeof(buf) - unsigned(p - buf),
-        "Version %lu: nodes created or updated for upsert = %u, nodes "
-        "updated for expire = %u, nreads for expire = %u\n",
+
+    std::string buf;
+    buf.reserve(16 << 10);
+    std::format_to(
+        std::back_inserter(buf),
+        "Version {}: nodes created or updated for upsert = {}, nodes "
+        "updated for expire = {}, nreads for expire = {}\n",
         version,
         stats.nodes_created_or_updated,
         stats.nodes_updated_expire,
         stats.nreads_expire);
+
     if (compact_offset_range_fast_) {
-        p += snprintf(
-            p,
-            sizeof(buf) - unsigned(p - buf),
-            "   Fast: total growth ~ %u KB, compact range %u KB, "
-            "bytes copied fast to slow %.2f KB, active data ratio %.2f%%\n",
+        std::format_to(
+            std::back_inserter(buf),
+            "   Fast: total growth ~ {} KB, compact range {} KB, "
+            "bytes copied fast to slow {:.2f} KB, active data ratio {:.2f}%\n",
             last_block_disk_growth_fast_ << 6,
             compact_offset_range_fast_ << 6,
             stats.compacted_bytes_in_fast / 1024.0,
@@ -1508,12 +1509,11 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             // slow list compaction range vs growth
             auto const total_bytes_written_to_slow =
                 stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
-                "   Slow: total growth %.2f KB, compact range %u "
-                "KB, bytes copied slow to slow %.2f KB, active data ratio "
-                "%.2f%%. other bytes copied slow to fast %.2f KB.\n",
+            std::format_to(
+                std::back_inserter(buf),
+                "   Slow: total growth {:.2f} KB, compact range {} "
+                "KB, bytes copied slow to slow {:.2f} KB, active data ratio "
+                "{:.2f}%. other bytes copied slow to fast {:.2f} KB.\n",
                 total_bytes_written_to_slow / 1024.0,
                 compact_offset_range_slow_ << 6,
                 stats.compacted_bytes_in_slow / 1024.0,
@@ -1522,9 +1522,8 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                 stats.bytes_copied_slow_to_fast_for_slow / 1024.0);
         }
         else {
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
+            std::format_to(
+                std::back_inserter(buf),
                 "   Slow: no advance of compaction offset\n");
         }
 
@@ -1532,11 +1531,10 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         auto const nodes_copied_for_slow =
             stats.compacted_nodes_in_fast +
             stats.nodes_copied_fast_to_fast_for_fast;
-        p += snprintf(
-            p,
-            sizeof(buf) - unsigned(p - buf),
+        std::format_to(
+            std::back_inserter(buf),
             "[Nodes Copied]\n"
-            "   Fast: fast to slow %u (%.2f%%), fast to fast %u (%.2f%%)\n",
+            "   Fast: fast to slow {} ({:.2f}%), fast to fast {} ({:.2f}%)\n",
             stats.compacted_nodes_in_fast,
             nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_fast /
                                      (nodes_copied_for_slow))
@@ -1551,11 +1549,10 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                 stats.compacted_nodes_in_slow +
                 stats.nodes_copied_fast_to_fast_for_slow +
                 stats.nodes_copied_slow_to_fast_for_slow;
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
-                "   Slow: active slow to slow %u (%.2f%%), fast to fast %u "
-                "(%.2f%%), other slow to fast %u (%.2f%%)\n",
+            std::format_to(
+                std::back_inserter(buf),
+                "   Slow: active slow to slow {} ({:.2f}%), fast to fast {} "
+                "({:.2f}%), other slow to fast {} ({:.2f}%)\n",
                 stats.compacted_nodes_in_slow,
                 nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_slow /
                                          nodes_copied_for_slow)
@@ -1572,12 +1569,14 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                     : 0);
         }
 
-        p += snprintf(
-            p,
-            sizeof(buf) - unsigned(p - buf),
+        std::format_to(
+            std::back_inserter(buf),
             "[Reads]\n"
-            "   Fast: compact reads within compaction range %u / "
-            "total compact reads %u = %.2f%%\n",
+            "   Fast: compact reads within compaction range {} / "
+            "total compact reads {} = {:.2f}%\n"
+            "   Fast: bytes read within compaction range {:.2f} KB / "
+            "compaction range {} KB = {:.2f}%, bytes read out of "
+            "compaction range {:.2f} KB\n",
             stats.nreads_before_compact_offset[0],
             stats.nreads_before_compact_offset[0] +
                 stats.nreads_after_compact_offset[0],
@@ -1585,13 +1584,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                 ? (100.0 * stats.nreads_before_compact_offset[0] /
                    (stats.nreads_before_compact_offset[0] +
                     stats.nreads_after_compact_offset[0]))
-                : 0);
-        p += snprintf(
-            p,
-            sizeof(buf) - unsigned(p - buf),
-            "   Fast: bytes read within compaction range %.2f KB / "
-            "compaction range %u KB = %.2f%%, bytes read out of "
-            "compaction range %.2f KB\n",
+                : 0,
             (double)stats.bytes_read_before_compact_offset[0] / 1024,
             compact_offset_range_fast_ << 6,
             stats.bytes_read_before_compact_offset[0]
@@ -1600,11 +1593,13 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                 : 0,
             (double)stats.bytes_read_after_compact_offset[0] / 1024);
         if (compact_offset_range_slow_) {
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
-                "   Slow: reads within compaction range %u / "
-                "total compact reads %u = %.2f%%\n",
+            std::format_to(
+                std::back_inserter(buf),
+                "   Slow: reads within compaction range {} / "
+                "total compact reads {} = {:.2f}%\n"
+                "   Slow: bytes read within compaction range {:.2f} KB / "
+                "compaction range {} KB = {:.2f}%, bytes read out of "
+                "compaction range {:.2f} KB\n",
                 stats.nreads_before_compact_offset[1],
                 stats.nreads_before_compact_offset[1] +
                     stats.nreads_after_compact_offset[1],
@@ -1612,13 +1607,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                     ? (100.0 * stats.nreads_before_compact_offset[1] /
                        (stats.nreads_before_compact_offset[1] +
                         stats.nreads_after_compact_offset[1]))
-                    : 0);
-            p += snprintf(
-                p,
-                sizeof(buf) - unsigned(p - buf),
-                "   Slow: bytes read within compaction range %.2f KB / "
-                "compaction range %u KB = %.2f%%, bytes read out of "
-                "compaction range %.2f KB\n",
+                    : 0,
                 (double)stats.bytes_read_before_compact_offset[1] / 1024,
                 compact_offset_range_slow_ << 6,
                 stats.bytes_read_before_compact_offset[1]
@@ -1628,7 +1617,7 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                 (double)stats.bytes_read_after_compact_offset[1] / 1024);
         }
     }
-    LOG_INFO_CFORMAT("%s", buf);
+    LOG_INFO("{}", buf);
 #else
     (void)version;
 #endif

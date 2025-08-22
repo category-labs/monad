@@ -93,7 +93,7 @@ namespace monad::vm::runtime
     public:
         static constexpr size_t alloc_size =
             sizeof(typename T::base_type) * T::size;
-        static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 256 * alloc_size;
+        static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 4096 * alloc_size;
 
         static_assert(alloc_size % T::alignment == 0);
         static_assert(sizeof(CachedAllocatorElement) <= alloc_size);

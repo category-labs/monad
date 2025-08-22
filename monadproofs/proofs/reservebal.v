@@ -143,7 +143,7 @@ Proof using.
   reflexivity.
 Qed.
 
-(** * Consensus Check
+(** * Consensus Check (algo 1)
 Below, we build up the definition of the consensus check [consensusAcceptableTxs]
  *)
 (**  The “emptying” gate:
@@ -498,7 +498,7 @@ Axiom changedAccountSetSound: forall tx s,
   (forall ac, ac ∉ changedAccounts -> sf ac = s ac).
 
 
-(** * lemmas about execution
+(** ** lemmas about execution
 Unless there is a comment before a lemma, the lemma follows easily from  the axioms above about [evmExecTxCore] and [revertTx] and by the definition of [execTx]
  *)
 

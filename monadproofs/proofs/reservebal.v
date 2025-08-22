@@ -1,4 +1,4 @@
-(** * Appendix: Coq model of reserve-balance safety
+(** * Appendix: Coq proof of reserve-balance safety
     This file accompanies the blog post and serves as a literate
     walkthrough of the final model.
 
@@ -13,7 +13,7 @@
       exception). If a transaction would violate that, it is reverted in place.
 
     The definitions below encode those two algorithms and the invariants we prove
-    about them. The consensus check is defined in [consensusAcceptableTxs], the execution check is in [execTx]. the main soundness theorem is [fullBlockStep].
+    about them. The consensus check is defined in [consensusAcceptableTxs], the execution check is in [execTx]. the main soundness theorem is [fullBlockStep]. Reference to any Coq item is hyperlinked to its definition if the definition is in this page or in Coq standard libarary.
 *)
 
 
@@ -67,7 +67,7 @@ Definition maxTxFee (t: TxWithHdr) : N :=
 Opaque maxTxFee.
 
 Section K.
-(** * Parameterization by the lookahead window [K]
+(** Parameterization by the lookahead window [K]:
 consensus can be ahead of execution by at most K. n+Kth block must have the state root hash after execution block n. the next 2 variables are parameters for the rest of the proofs.
 All “emptying” checks therefore only look at activity within a [K]-sized
 window. We also fix a default reserve cap used when an account has never reconfigured its reserve.
@@ -143,7 +143,10 @@ Proof using.
   reflexivity.
 Qed.
 
-(** ** The “emptying” gate
+(** * Consensus Check
+Below, we build up the definition of the consensus check [consensusAcceptableTxs]
+ *)
+(**  The “emptying” gate:
 
     A sender may “empty” (i.e., allow value to eat into reserve for this one tx)
     iff all three are true:
@@ -170,7 +173,7 @@ Definition isAllowedToEmpty
 
 
 
-(** * The effective reserve map used by consensus
+(** The effective reserve map:
 
     Consensus reasons about *how much of the protected (reserve) slice of the balance
     can be consumed* by
@@ -199,7 +202,7 @@ Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc  s.1 ac
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
   fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
 
-(** ** Consensus’ decrement step
+(** Consensus’ decrement step:
 
     [remainingEffReserveBals] is the algebraic heart of consensus check algorithm:
     fold this function left-to-right over the suffix, and you get the remaining
@@ -245,7 +248,7 @@ Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBala
     non-negative effective reserve*.  This is exactly the safety condition
     proposers maintain as they build blocks up to [K] ahead.
 
-    when evaluating a new tx at block number N to add at the end of [postStateSuffix],
+    When evaluating a new tx at block number N to add at the end of [postStateSuffix],
     [latestState] must be the state after N-K block when proposing a new block.
     However, when next pending (already proposed) block is executed, we need to derive that the remaining already proposed transactions are still valid on top of the  more recent state: this is what the main soundness lemmas [fullBlockStep] proves, in addition to proving that [proposedSateSuffix] will execute without running out of fees to pay the fees. *)
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
@@ -253,7 +256,9 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffi
    0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr.
 
 
-(** The execution logic is also tweaked to ensure that a transaction cannot dip too much into reserves so as to to not have enough fees for a transaction already included by consensus. First, some helpers for that.
+(** * Execution Check (algo 2)
+
+The execution logic is also tweaked to ensure that a transaction cannot dip too much into reserves so as to to not have enough fees for a transaction already included by consensus. First, some helpers for that.
 
 
 [isAllowedToEmptyExec] is a trivial wrapper used in execution, where there are intermediate transactions between the current transaction and the last known fully executed state.
@@ -295,7 +300,7 @@ Definition updateExtraState (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :
 Hint Rewrite @balanceOfUpd: syntactic.
 Open Scope N_scope.
 
-(** * Abstract execution and revert
+(** ** Abstract execution and revert
 
     We postulate a single-step EVM core ([evmExecTxCore]) that returns the new
     state and the set of changed accounts; and the revert step for failed checks.
@@ -315,9 +320,9 @@ Axiom revertTx : StateOfAccounts -> TxWithHdr -> StateOfAccounts.
     - Special “reserve update” tx: pay fee; set new configured reserve.
     - Otherwise, run the core EVM step to obtain the *actual* post state.
     - For *changed* accounts, enforce reserve discipline:
-        + Non-sender: their *previous* protected slice must still fit in the
+        - Non-sender: their *previous* protected slice must still fit in the
           *current* balance (unless they have code, deployed in this tx or before). if the account does have code, the address was generated by a keccak, so the proof assumes that nobody has the corresponding private key and thus the address can never send a transaction, thus this step can empty the balance.
-        + Sender: either allowed to empty, or must retain at least
+        - Sender: either allowed to empty, or must retain at least
           [min(R, balance_before) − maxTxFee].
     - If any check fails, revert the tx *and still* update the extra history
       (so K-window bookkeeping remains accurate). *)
@@ -348,9 +353,9 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
 
 (** Note that because the [hasCode] above check is done on [si] (result of running the EVM blackbox to excuted [t]), not [s] (the pre-exec state), the following scenario is allowed.
 
-  1. Alice sends money to adds2 in some contract. Alice is EOA.
-  2. Alice sends tx foo to a smart contract address addr.
-  3. addr execution creates a deployes code at addr2, and calls it and the call empties addr2.
+   - Alice sends money to adds2 in some contract. Alice is EOA.
+   - Alice sends tx foo to a smart contract address addr.
+   - addr execution creates a deployes code at addr2, and calls it and the call empties addr2.
  *)
 
 
@@ -362,15 +367,14 @@ Definition validateTx (preTxState: StateOfAccounts) (t: TxWithHdr): bool :=
    bool_decide (maxTxFee t  <= balanceOfAc preTxState (sender t))%N.
 
 
-(** Top-level execution wrapper that fails fast when validation fails.  Note how
-    the return type stays [option] only at this outer level; the inner step
-    always returns a new [AugmentedState] (possibly after revert). [None] means the excution of the whole block containing [t] aborts, which is what the consensus/execution checks must guarantee to never happen *)
+(** Top-level execution wrapper that fails fast when validation fails.
+   [None] means the excution of the whole block containing [t] aborts, which is what the consensus/execution checks must guarantee to never happen. *)
 Definition execTx (s: AugmentedState) (t: TxWithHdr): option (AugmentedState) :=
   if (negb (validateTx (fst s) t)) (* if this fails. the execution of the entire block aborts *)
   then None
   else Some (execValidatedTx  s t).
 
-(** execute a list of transactions one by one *)
+(** execute a list of transactions one by one. note that the execution of any tx returns [None] (balance insufficient to cover fees), the entire execution (of the whole list of txs) returns [None] *)
 Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option AugmentedState :=
   match ts with
   | [] => Some s
@@ -381,6 +385,7 @@ Fixpoint execTxs  (s: AugmentedState) (ts: list TxWithHdr): option AugmentedStat
       end
   end.
 
+(** * Main correctness theorem *)
 Open Scope Z_scope.
 (** our correctness property only holds when the set of proposed transactions are within K.
   this helps capture that assumption *)
@@ -413,68 +418,60 @@ Theorem fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) 
      end.
 Proof. Abort.
 
+(** * Proof *)
 Open Scope N_scope.
-(** *core execution assumptions
+(** ** core execution assumptions
 To prove the theorem [fullBlockStep], we need to make some assumptions about how the core EVM execution updates balances and delegated-ness:
  *)
 
-Lemma balanceOfRevertSender s tx:
+Axiom balanceOfRevertSender: forall s tx,
   maxTxFee tx <= balanceOfAc s (sender tx) 
   -> reserveBalUpdateOfTx tx = None
   -> balanceOfAc (revertTx s tx) (sender tx)
      = balanceOfAc s (sender tx) - maxTxFee tx.
-Proof using. Admitted.
 
-Lemma balanceOfRevertOther s tx ac:
+Axiom balanceOfRevertOther: forall s tx ac,
   reserveBalUpdateOfTx tx = None
   -> ac <> (sender tx)
   -> balanceOfAc (revertTx s tx) ac
      = balanceOfAc s ac.
-Proof using. Admitted.
 
 
-Lemma revertTxDelegationUpdCore tx s:
+Axiom revertTxDelegationUpdCore: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (revertTx s tx) in
   (forall ac, addrDelegated sf ac  =
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
                 || bool_decide (ac ∈ (dels tx.1.2))).
-Proof.
-Admitted.
 
-Lemma execTxDelegationUpdCore tx s:
+Axiom execTxDelegationUpdCore: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   (forall ac, addrDelegated sf ac  =
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
                 || bool_decide (ac ∈ (dels tx.1.2))).
-Proof.
-Admitted.
 
-Lemma execTxSenderBalCore tx s:
+Axiom execTxSenderBalCore: forall tx s,
   maxTxFee tx <= balanceOfAc s (sender tx) -> 
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   addrDelegated s (sender tx) = false 
    ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
-Proof. Admitted.
 
 
-Lemma execTxCannotDebitNonDelegatedNonContractAccountsCore tx s:
+Axiom execTxCannotDebitNonDelegatedNonContractAccountsCore: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   forall ac, ac <> sender tx
               -> (addrDelegated sf ac || hasCode sf ac) = false 
                  ->  balanceOfAc s ac <= balanceOfAc sf ac.
-Proof using. Admitted.
 
 
-Lemma changedAccountSetSound tx s:
+Axiom changedAccountSetSound: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let (sf, changedAccounts) :=  (evmExecTxCore s tx) in
   (forall ac, ac ∉ changedAccounts -> sf ac = s ac).
-Proof using. Admitted.
 
 
 (** * lemmas about execution
@@ -735,6 +732,9 @@ Proof using.
   }
 Qed.
 
+(** This lemma combines many of the execution lemmas above to build a
+    lower bound of the balance of any account after executing a transaction.
+*)
 Lemma execBalLb ac s tx:
   maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   let sf :=  (execValidatedTx s tx) in
@@ -985,8 +985,10 @@ Proof.
 Qed.
 
 
-Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
-  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
+
+(** **  [isAllowedToEmpty] lemmas
+
+*)
 
 
 Lemma execPresservesIsAllowedToEmpty s txlast rest txnext:
@@ -1072,6 +1074,17 @@ Proof using.
 Qed.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
+
+Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
+  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
+
+(** ** lemmas about [remainingEffReserveBals] 
+
+    The next pair of lemma states that the “remaining effective reserve”
+    function is monotone: if you start from a pointwise larger map, you end at a
+    pointwise larger map. [rbLe] is defined right above.
+
+*)
 Lemma mono eoas s rb1 rb2 inter tx:
   rbLe eoas rb1 rb2
   -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
@@ -1097,17 +1110,24 @@ Proof using.
     fold EffReserveBals in *; try lia.
 Qed.
 
-
-Lemma mono2 tx a extension s (eoas: list EvmAddr) rb1 rb2 inter:
+(** In the proof of the main correctness theorem, we use a slightly different
+variant of monotoncity, where in the RHS of [<=], remainingEffReserveBals starts
+from the final state after executing [tx] from [s] and as a result, [tx]
+is dropped from the list of intermediate transactions between the state
+and the candidate transaction [txc].
+The proof follows from the definition of [remainingEffReserveBals]
+and the execution lemmas above.
+*)
+Lemma mono2 tx txc extension s (eoas: list EvmAddr) rb1 rb2 inter:
   (∀ ac : EvmAddr,
-      ac ∈ sender tx :: sender a :: map sender extension
-      → hasCode (execValidatedTx s tx).1 ac = false)
-  → (∀ addr : EvmAddr, addr ∈ eoas → rb1 addr ≤ rb2 addr)
-  → txBlockNum a - K ≤ txBlockNum tx  ≤ txBlockNum a
-  → ∀ addr : EvmAddr,
+      ac ∈ sender tx :: sender txc :: map sender extension
+      -> hasCode (execValidatedTx s tx).1 ac = false)
+  -> (∀ addr : EvmAddr, addr ∈ eoas → rb1 addr ≤ rb2 addr)
+  -> txBlockNum txc - K ≤ txBlockNum tx  ≤ txBlockNum txc
+  -> ∀ addr : EvmAddr,
       addr ∈ eoas
-      → remainingEffReserveBals s rb1 (tx :: inter) a addr
-          ≤ remainingEffReserveBals (execValidatedTx s tx) rb2 inter a addr.
+      -> remainingEffReserveBals s rb1 (tx :: inter) txc addr
+          <= remainingEffReserveBals (execValidatedTx s tx) rb2 inter txc addr.
 Proof using.
   intros Hsc Hrb Hrangel.
   intros addr Hin.
@@ -1123,7 +1143,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
   2:{ case_bool_decide; subst; try lia. }
-  specialize (Hsc (sender a) ltac:(set_solver)).
+  specialize (Hsc (sender txc) ltac:(set_solver)).
   pose proof (emptyBalanceUb _ _ _ _ Hsc Heqb) as Hle.
   case_bool_decide.
   {
@@ -1141,6 +1161,11 @@ Proof using.
     case_bool_decide; try lia.
 Qed.  
 
+
+(** lifts [mono] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
+proof follows a straightforward induction on the list [extension],
+using [mono] to fulfil the obligations of the induction hypothesis
+ *)
 Lemma monoL eoas s rb1 rb2 inter extension:
   map sender extension ⊆ eoas
   -> rbLe eoas rb1 rb2
@@ -1156,6 +1181,11 @@ Proof using.
   apply mono.
   assumption.
 Qed.
+
+(** Similarly, lifts [mono2] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
+proof follows a straightforward induction on the list [extension],
+using [mono2] to fulfil the obligations of the induction hypothesis.
+ *)
 
 Lemma monoL2 eoas s rb1 rb2 inter extension tx:
   (map sender extension) ⊆ eoas
@@ -1182,16 +1212,17 @@ Qed.
     
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
 
-Definition rbLeA (rb1 rb2: EffReserveBals) :=
-  forall addr, rb1 addr <= rb2 addr.
-
+(** This lemma captures a key property of [remainingEffReserveBals]: it underapproximates
+the resultant effective balance after execution of the transaction
+*)
 Lemma exec1 tx extension s :
   maxTxFee tx <= balanceOfAc s.1 (sender tx)
   -> let sf := (execValidatedTx s tx) in 
      (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
      -> (∀ addr : EvmAddr,
             addr ∈ sender tx :: map sender extension
-            → remainingEffReserveBals s (initialEffReserveBals s) [] tx addr ≤ initialEffReserveBals sf addr).
+            -> remainingEffReserveBals s (initialEffReserveBals s) [] tx addr
+              ≤ initialEffReserveBals sf addr).
 Proof using.
   intros Hfee ? Hscf.
   intros ? Hin.
@@ -1243,9 +1274,10 @@ Proof using.
 Qed.
 
 
-Print Assumptions isAllowedToEmptyImpl.
-Lemma decreasingRemTxSender s irb proc tx a:
-  remainingEffReserveBals s irb (tx :: proc) a (sender tx) ≤ irb (sender tx).
+(** for any account that is a sender of one of the intermediate transactions (between [s] and the candidate transaction [txc]), [remainingEffReserveBals] is a non-increasing function.
+ *)
+Lemma decreasingRemTxSender s irb proc tx txc:
+  remainingEffReserveBals s irb (tx :: proc) txc (sender tx) ≤ irb (sender tx).
 Proof using.
   unfold remainingEffReserveBals.
   case_match_concl; auto;
@@ -1267,19 +1299,24 @@ Proof using.
     fold EffReserveBals in *; try lia.
 Qed.
   
-  
-Lemma decreasingRemL s irb proc next tx:
-  (remainingEffReserveBalsL s irb (tx::proc) next) (sender tx) <=  (irb (sender tx)).
+(** lifts the previous lemma from [remainingEffReserveBals] to [remainingEffReserveBals]. induction on [nextL] *)  
+Lemma decreasingRemL s irb proc (nextL: list TxWithHdr) tx:
+  (remainingEffReserveBalsL s irb (tx::proc) nextL) (sender tx) <=  (irb (sender tx)).
 Proof using.
   revert proc irb.
-  induction next; unfold rbLeA in *; simpl; [lia|].
+  induction nextL; simpl; [lia|].
   intros.
-  pose proof (IHnext (proc++[a]) (remainingEffReserveBals s irb (tx::proc) a)).
+  pose proof (IHnextL (proc++[a]) (remainingEffReserveBals s irb (tx::proc) a)).
   etransitivity;[apply H|].
   apply decreasingRemTxSender.
 Qed.
 
-
+(** Finally, here is one of the key stepping stones to the main theorem, it says that
+    the consensus checks guarantee that execution of the first transaction
+    will pass validation during execution, i.e. the balance would be sufficient to cover
+    [maxTxFee].
+    This doesn't say anything about whether the execition of the later transactions ([extension]) will also pass the check. That is where the next lemma comes in handy.
+ *)
 Lemma execValidate tx extension s:
   consensusAcceptableTxs s (tx::extension)
   -> validateTx s.1 tx = true.
@@ -1322,12 +1359,16 @@ Proof using.
   lia.
 Qed.
 
-Lemma execL tx extension s:
+
+(** you can pick the first tx in the proposed extension and the consensus checks would
+    still hold on the resultant state for the remaining transactions in the proposal.
+*)
+Lemma execPreservesConsensusChecks tx extension s:
   maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
-  -> consensusAcceptableTxs (execValidatedTx  s tx) extension.
+  -> consensusAcceptableTxs (execValidatedTx s tx) extension.
 Proof using.
   intros Hfee Hext Heoac Hsc.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
@@ -1353,7 +1394,7 @@ Proof using.
   apply exec1; auto.
 Qed.
 
-
+(* the above 2 lemmas can be combined to yield the following: *)
 Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: list TxWithHdr) :
   maxTxFee tx <= balanceOfAc latestState.1 (sender tx)
   -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
@@ -1371,7 +1412,7 @@ Proof.
   intros.
   rewrite -> (execValidate tx extension) by assumption.
   simpl.
-  apply execL in Hc; auto.
+  apply execPreservesConsensusChecks in Hc; auto.
 Qed.
 
 Set Printing Coercions.
@@ -1428,7 +1469,12 @@ Proof using.
   set_solver.
 Qed.
 
-Lemma fullBlockStep  (latestState : AugmentedState) (blocks1: list TxWithHdr) (blocks2: list TxWithHdr) :
+(** * Proof of main theorem:
+    Straightforward induction on [blocks1],
+    with [inductiveStep] used in the inductive step.
+*)
+
+Lemma fullBlockStep  (latestState : AugmentedState) (blocks1 blocks2: list TxWithHdr) :
   blockNumsInRange (blocks1++blocks2)
   -> consensusAcceptableTxs latestState (blocks1++blocks2)
   -> (forall txext, txext ∈ (blocks1++blocks2) ->  txCannotCreateContractAtAddrs txext (map sender (blocks1++blocks2)))
@@ -1466,7 +1512,8 @@ Proof.
 Qed.
 
 Print Assumptions fullBlockStep.
-(*
+(** All assumptions of the proof:
+[[
 Section Variables:
 K
 : N
@@ -1514,8 +1561,26 @@ balanceOfRevertOther :
   ∀ (s : StateOfAccounts) (tx : TxWithHdr) (ac : EvmAddr),
     reserveBalUpdateOfTx tx = None
     → ac ≠ sender tx → balanceOfAc (revertTx s tx) ac = balanceOfAc s ac
-
+]]
  *)
+
+
+Corollary fullBlockStep2  (latestState : AugmentedState) (blocks: list TxWithHdr) :
+  blockNumsInRange (blocks)
+  -> consensusAcceptableTxs latestState (blocks)
+  -> (forall txext, txext ∈ (blocks) ->  txCannotCreateContractAtAddrs txext (map sender (blocks)))
+  -> (forall ac, ac ∈ (map sender (blocks)) -> hasCode latestState.1 ac = false)
+  -> match execTxs latestState blocks with
+     | None =>  False
+     | Some si => True
+     end.
+Proof.
+  intros.
+  pose proof (fullBlockStep latestState blocks []) as Hf.
+  autorewrite with syntactic in Hf.
+  specialize (Hf ltac:(auto) ltac:(auto) ltac:(auto) ltac:(auto)).
+  case_match; auto.
+Qed.
 
 
 Lemma acceptableNil lastConsensedState:
@@ -1540,11 +1605,15 @@ This invariant needs to be preserve on the 2 mains steps of consensus:
 The lemma [fullBlockStep] is exactly what is needed to preserve the invariant at the latter step.
 To preserve the invariant at the first step, the proposed new txs (e.g. grabbed from mempool) need to be checked so that they satisfy the [consensusAcceptableTxs] property.
 
+ *)
+
+(*
 Below is an illustration of how the blockchain evolves starting from the genesis block b0.
 It assumes an oracle nextBlockPicker that picks the next block while satisfying the conditions.
 
  *)
 
+(* begin hide *)
 Section consensusInvariantsAndPreservation.
   Variable b0: list TxWithHdr.
   Variable sb0 : AugmentedState. (* state after b0 *)
@@ -1601,4 +1670,5 @@ Section consensusInvariantsAndPreservation.
     pose proof (nextBlockPicker sb2 ltac:(assumption) ltac:(assumption) ltac:(assumption) ltac:(assumption))  as b4.
  Abort.
 End consensusInvariantsAndPreservation.
+(* end hide *)
 End K.

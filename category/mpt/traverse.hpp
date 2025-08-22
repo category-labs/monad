@@ -165,7 +165,7 @@ namespace detail
                 }
                 else { // version is valid after reading the buffer
                     auto next_node_on_disk =
-                        deserialize_node_from_receiver_result(
+                        deserialize_node_from_receiver_result<Node>(
                             std::move(buffer_), buffer_off, io_state);
                     sender->within_recursion_count++;
                     async_parallel_preorder_traverse_impl(
@@ -402,7 +402,11 @@ inline bool preorder_traverse_ondisk(
 
     auto *const state = new auto(async::connect(
         detail::TraverseSender(
-            aux, copy_node(&node), machine.clone(), version, concurrency_limit),
+            aux,
+            copy_node<Node>(&node),
+            machine.clone(),
+            version,
+            concurrency_limit),
         TraverseReceiver{version_expired_before_traverse_complete}));
     state->initiate();
 

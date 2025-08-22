@@ -22,6 +22,7 @@
 #include <category/core/math.hpp>
 #include <category/core/mem/allocators.hpp>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/unaligned.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/util.hpp>
 
@@ -121,11 +122,27 @@ We store node data to its parent's storage to avoid an extra read of child node
 to retrieve child data.
 */
 
-class Node
+class NodeBase
 {
+protected:
     struct prevent_public_construction_tag
     {
     };
+
+    NodeBase() = default;
+
+    NodeBase(
+        prevent_public_construction_tag, uint16_t mask,
+        std::optional<byte_string_view> value, size_t data_size,
+        NibblesView path, int64_t version);
+
+    // Protected destructor to prevent destruction using pointer to NodeBase,
+    // so destructor does not need to be virtual
+    ~NodeBase() = default;
+
+    void *next(size_t index) const noexcept;
+    void set_next(unsigned index, void *ptr) noexcept;
+    void *move_next(unsigned index) noexcept;
 
 public:
     static constexpr size_t max_number_of_children = 16;
@@ -135,10 +152,6 @@ public:
     static constexpr unsigned disk_size_bytes = sizeof(uint32_t);
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
-
-    using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
-        &allocators::aliasing_allocator_pair<Node>>;
-    using UniquePtr = std::unique_ptr<Node, Deleter>;
 
     /* 16-bit mask for children */
     uint16_t mask{0};
@@ -195,26 +208,6 @@ public:
     // remains unchanged, storing inline requires copying them all, storing data
     // out of line allows us to transfer ownership of data array from old node
     // to new one, also help to keep allocated size as small as possible.
-
-    template <class... Args>
-    static UniquePtr make(size_t bytes, Args &&...args)
-    {
-        MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
-        return allocators::allocate_aliasing_unique<
-            &allocators::aliasing_allocator_pair<Node>>(
-            bytes,
-            prevent_public_construction_tag{},
-            std::forward<Args>(args)...);
-    }
-
-    Node(prevent_public_construction_tag);
-    Node(
-        prevent_public_construction_tag, uint16_t mask,
-        std::optional<byte_string_view> value, size_t data_size,
-        NibblesView path, int64_t version);
-    Node(Node const &) = delete;
-    Node(Node &&) = default;
-    ~Node();
 
     unsigned to_child_index(unsigned branch) const noexcept;
 
@@ -284,19 +277,96 @@ public:
     //! next pointers
     unsigned char *next_data() noexcept;
     unsigned char const *next_data() const noexcept;
-    Node *next(size_t index) noexcept;
-    Node const *next(size_t index) const noexcept;
-    void set_next(unsigned index, Node::UniquePtr) noexcept;
-    UniquePtr move_next(unsigned index) noexcept;
 
     //! node size in memory
     unsigned get_mem_size() const noexcept;
     uint32_t get_disk_size() const noexcept;
 };
 
+class Node final : public NodeBase
+{
+public:
+    using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
+        &allocators::aliasing_allocator_pair<Node>>;
+    using UniquePtr = std::unique_ptr<Node, Deleter>;
+
+    Node(prevent_public_construction_tag);
+
+    Node(
+        prevent_public_construction_tag tag, uint16_t mask,
+        std::optional<byte_string_view> value, size_t data_size,
+        NibblesView path, int64_t version)
+        : NodeBase(tag, mask, value, data_size, path, version)
+    {
+    }
+
+    Node(Node const &) = delete;
+    Node(Node &&) = default;
+    ~Node();
+
+    template <class... Args>
+    static UniquePtr make(size_t bytes, Args &&...args)
+    {
+        MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
+        return allocators::allocate_aliasing_unique<
+            &allocators::aliasing_allocator_pair<Node>>(
+            bytes,
+            prevent_public_construction_tag{},
+            std::forward<Args>(args)...);
+    }
+
+    Node *next(size_t const index) const noexcept
+    {
+        return static_cast<Node *>(NodeBase::next(index));
+    }
+
+    void set_next(unsigned const index, Node::UniquePtr p) noexcept
+    {
+        NodeBase::set_next(index, p.release());
+    }
+
+    UniquePtr move_next(unsigned const index) noexcept
+    {
+        return Node::UniquePtr{static_cast<Node *>(NodeBase::move_next(index))};
+    }
+};
+
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
+
 static_assert(sizeof(Node) == 16);
 static_assert(alignof(Node) == 8);
+
+class CacheNode final : public NodeBase
+{
+public:
+    using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
+        &allocators::aliasing_allocator_pair<CacheNode>>;
+    using UniquePtr = std::unique_ptr<CacheNode, Deleter>;
+
+    CacheNode(prevent_public_construction_tag)
+        : NodeBase()
+    {
+    }
+
+    template <class... Args>
+    static UniquePtr make(size_t bytes, Args &&...args)
+    {
+        MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
+        return allocators::allocate_aliasing_unique<
+            &allocators::aliasing_allocator_pair<CacheNode>>(
+            bytes,
+            prevent_public_construction_tag{},
+            std::forward<Args>(args)...);
+    }
+
+    using NodeBase::next;
+    using NodeBase::set_next;
+};
+
+static_assert(std::is_standard_layout_v<CacheNode>, "required by offsetof");
+
+static_assert(sizeof(CacheNode) == 16);
+static_assert(alignof(CacheNode) == 8);
 
 // ChildData is for temporarily holding a child's info, including child ptr,
 // file offset and hash data, in the update recursion.
@@ -370,10 +440,47 @@ void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_write, Node const &,
     uint32_t disk_size, unsigned offset = 0);
 
-Node::UniquePtr
-deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes);
+template <class NodeType>
+inline NodeType::UniquePtr
+deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
+{
+    for (size_t n = 0; n < max_bytes; n += 64) {
+        __builtin_prefetch(read_pos + n, 0, 0);
+    }
+    // Load 32-bit node on-disk size
+    auto const disk_size = unaligned_load<uint32_t>(read_pos);
+    MONAD_ASSERT_PRINTF(
+        disk_size <= max_bytes, "deserialized node disk size is %u", disk_size);
+    MONAD_ASSERT(disk_size > 0 && disk_size <= NodeBase::max_disk_size);
+    read_pos += NodeBase::disk_size_bytes;
+    // Load the on disk node
+    auto const mask = unaligned_load<uint16_t>(read_pos);
+    auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
+    auto const alloc_size = static_cast<uint32_t>(
+        disk_size + number_of_children * sizeof(NodeType *) -
+        NodeBase::disk_size_bytes);
+    auto node = NodeType::make(alloc_size);
+    std::copy_n(
+        read_pos,
+        disk_size - NodeBase::disk_size_bytes,
+        (unsigned char *)node.get());
+    std::memset(node->next_data(), 0, number_of_children * sizeof(NodeType *));
+    MONAD_ASSERT(alloc_size == node->get_mem_size());
+    return node;
+}
 
-Node::UniquePtr copy_node(Node const *);
+template <class NodeType>
+NodeType::UniquePtr copy_node(NodeBase const *const node)
+{
+    auto const alloc_size = node->get_mem_size();
+    auto node_copy = NodeType::make(alloc_size);
+    std::copy_n(
+        (unsigned char *)node, alloc_size, (unsigned char *)node_copy.get());
+    // reset all in memory children
+    auto const next_size = node->number_of_children() * sizeof(void *);
+    std::memset(node_copy->next_data(), 0, next_size);
+    return node_copy;
+}
 
 int64_t calc_min_version(Node const &);
 

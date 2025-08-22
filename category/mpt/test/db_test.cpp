@@ -543,7 +543,6 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
         make_update(kv[0].first, kv[0].second),
         make_update(kv[1].first, kv[1].second));
 
-    constexpr uint8_t const test_cached_level = 1;
     size_t i;
     constexpr size_t read_per_iteration = 5;
     size_t const expected_num_success_callbacks =
@@ -559,48 +558,35 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 
         // ensure we can still async query the old version
         async_get<monad::byte_string>(
-            make_get_sender(
-                ctx.get(),
-                prefix + kv[0].first,
-                starting_block_id,
-                test_cached_level),
+            make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
             [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[0].second);
             });
         async_get<monad::byte_string>(
-            make_get_sender(
-                ctx.get(),
-                prefix + kv[1].first,
-                starting_block_id,
-                test_cached_level),
+            make_get_sender(ctx.get(), prefix + kv[1].first, starting_block_id),
             [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
-        async_get<Node::UniquePtr>(
+        async_get<std::shared_ptr<CacheNode>>(
             make_get_node_sender(
-                ctx.get(),
-                prefix + kv[0].first,
-                starting_block_id,
-                test_cached_level),
-            [&](result_t<Node::UniquePtr> res) {
+                ctx.get(), prefix + kv[0].first, starting_block_id),
+            [&](result_t<std::shared_ptr<CacheNode>> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value()->value(), kv[0].second);
             });
         async_get<monad::byte_string>(
-            make_get_data_sender(
-                ctx.get(), prefix, starting_block_id, test_cached_level),
+            make_get_data_sender(ctx.get(), prefix, starting_block_id),
             [&](result_t<monad::byte_string> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value(),
                     0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
             });
-        async_get<Node::UniquePtr>(
-            make_get_node_sender(
-                ctx.get(), prefix, starting_block_id, test_cached_level),
-            [&](result_t<Node::UniquePtr> res) {
+        async_get<std::shared_ptr<CacheNode>>(
+            make_get_node_sender(ctx.get(), prefix, starting_block_id),
+            [&](result_t<std::shared_ptr<CacheNode>> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value()->data(),
@@ -621,132 +607,13 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
         make_update(kv[3].first, kv[3].second));
 
     async_get<monad::byte_string>(
-        make_get_sender(
-            ctx.get(),
-            prefix + kv[0].first,
-            starting_block_id,
-            test_cached_level),
+        make_get_sender(ctx.get(), prefix + kv[0].first, starting_block_id),
         [&](result_t<monad::byte_string> res) {
             ASSERT_TRUE(res.has_error());
             EXPECT_EQ(res.error(), DbError::version_no_longer_exist);
         });
 
     poll_until(1);
-}
-
-TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_level_based_cache_works)
-{
-    // Insert keys
-    constexpr unsigned nkeys = 1000;
-    auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
-    uint64_t const version = 0;
-    UpdateList ls;
-    for (auto &u : updates_alloc) {
-        ls.push_front(u);
-    }
-    db.upsert(std::move(ls), version);
-
-    constexpr uint8_t test_cached_level = 3;
-
-    // Do async reads
-    for (auto const &kv : kv_alloc) {
-        async_get<monad::byte_string>(
-            make_get_sender(ctx.get(), kv, version, test_cached_level),
-            [&](result_t<monad::byte_string> res) {
-                ASSERT_TRUE(res.has_value());
-                EXPECT_EQ(res.value(), kv);
-            });
-    }
-
-    poll_until(nkeys);
-
-    // Do an in memory traverse to verify all cached nodes are above
-    // test_cached_level
-    struct InMemoryTraverseMachine : public TraverseMachine
-    {
-        uint8_t const expected_cache_level{3};
-        uint8_t curr_level{0};
-
-        constexpr InMemoryTraverseMachine(uint8_t const expected_cache_level_)
-            : expected_cache_level(expected_cache_level_)
-        {
-        }
-
-        virtual bool down(unsigned char, Node const &) override
-        {
-            ++curr_level;
-            return true;
-        }
-
-        virtual void up(unsigned char, Node const &) override
-        {
-            --curr_level;
-        }
-
-        virtual bool
-        should_visit(Node const &node, unsigned char branch) override
-        {
-            bool next_is_in_memory =
-                node.next(node.to_child_index(branch)) != nullptr;
-            EXPECT_EQ(next_is_in_memory, curr_level <= expected_cache_level);
-            return next_is_in_memory;
-        }
-
-        virtual std::unique_ptr<TraverseMachine> clone() const override
-        {
-            return std::make_unique<InMemoryTraverseMachine>(*this);
-        }
-    };
-
-    InMemoryTraverseMachine traverse_machine{test_cached_level};
-    ASSERT_EQ(ctx->root_cache.size(), 1);
-    auto const offset = ctx->aux.get_root_offset_at_version(version);
-    ASSERT_NE(offset, INVALID_OFFSET);
-
-    AsyncContext::TrieRootCache::ConstAccessor acc;
-    ASSERT_TRUE(ctx->root_cache.find(acc, offset));
-    auto root = acc->second->val;
-    // MUST use traverse_blocking() to check the in memory nodes as they are.
-    // The `Db::traverse()` API make a copy of traverse root which does not
-    // maintain the exact in memory trie
-    ro_db.traverse_blocking(NodeCursor{*root}, traverse_machine, version);
-}
-
-TEST_F(OnDiskDbWithFileAsyncFixture, root_cache_invalidation)
-{
-    auto const &kv = fixed_updates::kv;
-
-    auto const prefix0 = 0x001234_hex;
-    auto const final_prefix = 0x10_hex;
-    uint64_t const block_id = 0;
-    upsert_updates_flat_list(
-        db, prefix0, block_id, make_update(kv[0].first, kv[0].second));
-
-    async_get<monad::byte_string>(
-        make_get_sender(ctx.get(), prefix0 + kv[0].first, block_id),
-        [&](result_t<monad::byte_string> res) {
-            ASSERT_TRUE(res.has_value());
-            EXPECT_EQ(res.value(), kv[0].second);
-        });
-    poll_until(1);
-
-    ASSERT_EQ(ctx.get()->root_cache.size(), 1);
-
-    // Copy trie to new prefix. This rewrites the root offset in memory
-    db.copy_trie(block_id, prefix0, block_id, final_prefix, true);
-
-    // Do another async read on the same version
-    async_get<monad::byte_string>(
-        make_get_sender(ctx.get(), final_prefix + kv[0].first, block_id),
-        [&](result_t<monad::byte_string> res) {
-            ASSERT_TRUE(res.has_value());
-            EXPECT_EQ(res.value(), kv[0].second);
-        });
-    poll_until(2);
-
-    // There should be 2 elements in the root cache because the offset in memory
-    // has changed.
-    EXPECT_EQ(ctx.get()->root_cache.size(), 2);
 }
 
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
@@ -1125,7 +992,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
     // async get traverse root
     struct GetNodeReceiver
     {
-        using ResultType = monad::async::result<Node::UniquePtr>;
+        using ResultType = monad::async::result<std::shared_ptr<CacheNode>>;
 
         detail::TraverseSender traverse_sender;
         TraverseResult &result;
@@ -1143,7 +1010,8 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
                 result.traverse_success = false;
             }
             else {
-                traverse_sender.traverse_root = std::move(res.assume_value());
+                traverse_sender.traverse_root =
+                    copy_node<Node>(res.assume_value().get());
                 // issue async traverse
                 auto *traverse_state = new auto(monad::async::connect(
                     std::move(traverse_sender), TraverseReceiver{result}));

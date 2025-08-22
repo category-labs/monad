@@ -92,13 +92,14 @@ struct Stats
 
 int main(int argc, char *const argv[])
 {
-    unsigned num_async_reader_threads = 0;
+    unsigned num_async_reader_threads = 1;
     size_t num_async_reads_inflight = 100;
     unsigned num_traverse_threads = 0;
     double prng_bias = 1.66;
     size_t num_nodes_per_version = 1;
     uint32_t runtime_seconds = std::numeric_limits<uint32_t>::max();
     unsigned update_delay_ms = 500;
+    uint64_t cache_size = 1 * 1024 * 1024;
 
     Stats total_stats;
 
@@ -136,6 +137,10 @@ int main(int argc, char *const argv[])
             "--update-delay",
             update_delay_ms,
             "Delay between upserts in the RWDb in milliseconds");
+        cli.add_option(
+            "--cache-size",
+            cache_size,
+            "Size of the node cache (in number of nodes)");
         cli.add_option(
                "--db",
                dbname_paths,
@@ -275,7 +280,7 @@ int main(int argc, char *const argv[])
                 .dbname_paths = {dbname_paths}};
             AsyncIOContext io_ctx{ro_config};
             Db ro_db{io_ctx};
-            auto async_ctx = async_context_create(ro_db);
+            auto async_ctx = async_context_create(ro_db, cache_size);
 
             struct ThreadStats
             {

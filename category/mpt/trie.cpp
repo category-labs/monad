@@ -232,7 +232,7 @@ struct load_all_impl_
                 MONAD_ASSERT(root.node->next(branch_index) == nullptr);
                 root.node->set_next(
                     branch_index,
-                    detail::deserialize_node_from_receiver_result(
+                    detail::deserialize_node_from_receiver_result<Node>(
                         std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
@@ -343,7 +343,7 @@ struct update_receiver
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
         MONAD_ASSERT(buffer_);
-        Node::UniquePtr old = detail::deserialize_node_from_receiver_result(
+        auto old = detail::deserialize_node_from_receiver_result<Node>(
             std::move(buffer_), buffer_off, io_state);
         // continue recurse down the trie starting from `old`
         upsert_(
@@ -404,7 +404,7 @@ struct read_single_child_expire_receiver
     void set_value(erased_connected_operation *io_state, ResultType buffer_)
     {
         MONAD_ASSERT(buffer_);
-        auto single_child = detail::deserialize_node_from_receiver_result(
+        auto single_child = detail::deserialize_node_from_receiver_result<Node>(
             std::move(buffer_), buffer_off, io_state);
         auto new_node = make_node(
             *single_child,
@@ -497,7 +497,7 @@ struct read_single_child_receiver
         auto &child = tnode->children[bitmask_index(
             tnode->orig_mask,
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
-        child.ptr = detail::deserialize_node_from_receiver_result(
+        child.ptr = detail::deserialize_node_from_receiver_result<Node>(
             std::move(buffer_), buffer_off, io_state);
         auto const path_size = tnode->path.nibble_size();
         create_node_compute_data_possibly_async(
@@ -555,7 +555,7 @@ struct compaction_receiver
     {
         MONAD_ASSERT(buffer_);
         tnode->update_after_async_read(
-            detail::deserialize_node_from_receiver_result(
+            detail::deserialize_node_from_receiver_result<Node>(
                 std::move(buffer_), buffer_off, io_state));
         auto *parent = tnode->parent;
         compact_(
@@ -625,7 +625,7 @@ struct expire_receiver
     {
         MONAD_ASSERT(buffer_);
         tnode->update_after_async_read(
-            detail::deserialize_node_from_receiver_result(
+            detail::deserialize_node_from_receiver_result<Node>(
                 std::move(buffer_), buffer_off, io_state));
         auto *parent = tnode->parent;
         MONAD_ASSERT(parent);

@@ -50,7 +50,7 @@ static_assert(std::is_trivially_copyable_v<NodeCursor> == true);
 
 struct OwningNodeCursor
 {
-    std::shared_ptr<Node> node{nullptr};
+    std::shared_ptr<CacheNode> node;
     unsigned prefix_index{0};
 
     constexpr OwningNodeCursor()
@@ -59,7 +59,8 @@ struct OwningNodeCursor
     {
     }
 
-    OwningNodeCursor(std::shared_ptr<Node> node_, unsigned prefix_index_ = 0)
+    OwningNodeCursor(
+        std::shared_ptr<CacheNode> node_, unsigned prefix_index_ = 0)
         : node{node_}
         , prefix_index{prefix_index_}
     {

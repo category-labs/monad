@@ -22,10 +22,10 @@
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/result.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/lru/static_lru_cache.hpp>
+#include <category/core/result.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -170,24 +170,22 @@ public:
 // thread.
 
 struct AsyncContext
-
 {
     using inflight_root_t = unordered_dense_map<
-        uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
-    using TrieRootCache = static_lru_cache<
-        chunk_offset_t, std::shared_ptr<Node>, chunk_offset_t_hasher>;
+        uint64_t, std::vector<std::function<void(std::shared_ptr<CacheNode>)>>>;
 
     UpdateAux<> &aux;
-    TrieRootCache root_cache;
+    NodeCache node_cache;
     inflight_root_t inflight_roots;
-    inflight_node_t inflight_nodes;
+    AsyncInflightNodes inflight_nodes;
 
-    AsyncContext(Db &db, size_t lru_size = 64);
+    AsyncContext(Db &db, size_t lru_size = 16 * 1024 * 1024);
     ~AsyncContext() noexcept = default;
 };
 
 using AsyncContextUniquePtr = std::unique_ptr<AsyncContext>;
-AsyncContextUniquePtr async_context_create(Db &db);
+AsyncContextUniquePtr
+async_context_create(Db &db, size_t lru_size = 16 * 1024 * 1024);
 
 namespace detail
 {
@@ -208,41 +206,37 @@ namespace detail
             op_get_node2
         } op_type;
 
-        std::shared_ptr<Node> root;
-        NodeCursor cur;
+        std::shared_ptr<CacheNode> root;
+        OwningNodeCursor cur;
         Nibbles const nv;
         uint64_t const block_id;
-        uint8_t const cached_levels;
 
-        find_result_type<NodeCursor> res_root;
+        find_result_type<OwningNodeCursor> res_root;
         find_result_type<T> get_result;
 
         constexpr DbGetSender(
             AsyncContext &context_, op_t const op_type_, NibblesView const n,
-            uint64_t const block_id_, uint8_t const cached_levels_)
+            uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)
             , nv(n)
             , block_id(block_id_)
-            , cached_levels(cached_levels_)
         {
-            if constexpr (std::same_as<T, Node::UniquePtr>) {
+            if constexpr (std::same_as<T, std::shared_ptr<CacheNode>>) {
                 MONAD_ASSERT(op_type == op_t::op_get_node1);
             }
         }
 
         constexpr DbGetSender(
-            AsyncContext &context_, op_t const op_type_, NodeCursor const cur_,
-            NibblesView const n, uint64_t const block_id_,
-            uint8_t const cached_levels_)
+            AsyncContext &context_, op_t const op_type_, OwningNodeCursor cur_,
+            NibblesView const n, uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)
             , cur(cur_)
             , nv(n)
             , block_id(block_id_)
-            , cached_levels(cached_levels_)
         {
-            if constexpr (std::same_as<T, Node::UniquePtr>) {
+            if constexpr (std::same_as<T, std::shared_ptr<CacheNode>>) {
                 MONAD_ASSERT(op_type == op_t::op_get_node1);
             }
         }
@@ -271,42 +265,36 @@ inline detail::TraverseSender make_traverse_sender(
 }
 
 inline detail::DbGetSender<byte_string> make_get_sender(
-    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
-    uint8_t const cached_levels = 5)
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id)
 {
     MONAD_ASSERT(context);
     return {
         *context,
         detail::DbGetSender<byte_string>::op_t::op_get1,
         nv,
-        block_id,
-        cached_levels};
+        block_id};
 }
 
 inline detail::DbGetSender<byte_string> make_get_data_sender(
-    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
-    uint8_t const cached_levels = 5)
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id)
 {
     MONAD_ASSERT(context);
     return {
         *context,
         detail::DbGetSender<byte_string>::op_t::op_get_data1,
         nv,
-        block_id,
-        cached_levels};
+        block_id};
 }
 
-inline detail::DbGetSender<Node::UniquePtr> make_get_node_sender(
-    AsyncContext *const context, NibblesView const nv, uint64_t const block_id,
-    uint8_t const cached_levels = 5)
+inline detail::DbGetSender<std::shared_ptr<CacheNode>> make_get_node_sender(
+    AsyncContext *const context, NibblesView const nv, uint64_t const block_id)
 {
     MONAD_ASSERT(context);
     return {
         *context,
-        detail::DbGetSender<Node::UniquePtr>::op_t::op_get_node1,
+        detail::DbGetSender<std::shared_ptr<CacheNode>>::op_t::op_get_node1,
         nv,
-        block_id,
-        cached_levels};
+        block_id};
 }
 
 MONAD_MPT_NAMESPACE_END

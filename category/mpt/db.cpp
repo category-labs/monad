@@ -1421,13 +1421,13 @@ uint64_t Db::get_history_length() const
 
 AsyncContext::AsyncContext(Db &db, size_t lru_size)
     : aux(db.impl_->aux())
-    , root_cache(lru_size, chunk_offset_t::invalid_value())
+    , node_cache(lru_size, virtual_chunk_offset_t::invalid_value())
 {
 }
 
-AsyncContextUniquePtr async_context_create(Db &db)
+AsyncContextUniquePtr async_context_create(Db &db, size_t lru_size)
 {
-    return std::make_unique<AsyncContext>(db);
+    return std::make_unique<AsyncContext>(db, lru_size);
 }
 
 namespace detail
@@ -1476,25 +1476,21 @@ namespace detail
             auto it = inflights.find(sender->block_id);
             auto pendings = std::move(it->second);
             inflights.erase(it);
-            std::shared_ptr<Node> root{};
+            std::shared_ptr<CacheNode> root{};
             bool const block_alive_after_read =
                 sender->context.aux.version_is_valid_ondisk(sender->block_id);
             if (block_alive_after_read) {
-                sender->root = detail::deserialize_node_from_receiver_result(
-                    std::move(buffer_), buffer_off, io_state);
+                sender->root =
+                    detail::deserialize_node_from_receiver_result<CacheNode>(
+                        std::move(buffer_), buffer_off, io_state);
                 root = sender->root;
-                sender->res_root = {
-                    NodeCursor{*sender->root.get()}, find_result::success};
-                {
-                    AsyncContext::TrieRootCache::ConstAccessor acc;
-                    MONAD_ASSERT(
-                        sender->context.root_cache.find(acc, offset) == false);
-                }
-                sender->context.root_cache.insert(offset, sender->root);
+                sender->res_root = {{sender->root}, find_result::success};
+                auto virt_offset =
+                    sender->context.aux.physical_to_virtual(offset);
+                sender->context.node_cache.insert(virt_offset, sender->root);
             }
             else {
-                sender->res_root = {
-                    NodeCursor{}, find_result::version_no_longer_exist};
+                sender->res_root = {{}, find_result::version_no_longer_exist};
             }
 
             for (auto &invoc : pendings) {
@@ -1550,29 +1546,29 @@ namespace detail
         case op_t::op_get_node1: {
             chunk_offset_t const offset =
                 context.aux.get_root_offset_at_version(block_id);
-            AsyncContext::TrieRootCache::ConstAccessor acc;
-            if (context.root_cache.find(acc, offset)) {
+            auto virt_offset = context.aux.physical_to_virtual(offset);
+            NodeCache::ConstAccessor acc;
+            if (context.node_cache.find(acc, virt_offset)) {
                 // found in LRU - no IO necessary
                 root = acc->second->val;
-                res_root = {NodeCursor{*root.get()}, find_result::success};
+                res_root = {{root}, find_result::success};
                 io_state->completed(async::success());
                 return async::success();
             }
             if (offset == INVALID_OFFSET) {
                 // root is no longer valid
-                res_root = {NodeCursor{}, find_result::version_no_longer_exist};
+                res_root = {{}, find_result::version_no_longer_exist};
                 io_state->completed(async::success());
                 return async::success();
             }
 
-            auto cont = [this, io_state](std::shared_ptr<Node> root_) {
+            auto cont = [this, io_state](std::shared_ptr<CacheNode> root_) {
                 if (!root_) {
-                    res_root = {
-                        NodeCursor{}, find_result::version_no_longer_exist};
+                    res_root = {{}, find_result::version_no_longer_exist};
                 }
                 else {
                     root = root_;
-                    res_root = {NodeCursor{*root.get()}, find_result::success};
+                    res_root = {{root}, find_result::success};
                 }
                 io_state->completed(async::success());
             };
@@ -1600,11 +1596,11 @@ namespace detail
             auto *state = new auto(async::connect(
                 find_request_sender<T>(
                     context.aux,
+                    context.node_cache,
                     context.inflight_nodes,
                     cur,
                     nv,
-                    op_type == op_t::op_get2,
-                    cached_levels),
+                    op_type == op_t::op_get2),
                 find_request_receiver_t<T>{
                     get_result, io_state, block_id, context.aux}));
             state->initiate();
@@ -1657,7 +1653,7 @@ namespace detail
     }
 
     template struct DbGetSender<byte_string>;
-    template struct DbGetSender<Node::UniquePtr>;
+    template struct DbGetSender<std::shared_ptr<CacheNode>>;
 }
 
 MONAD_MPT_NAMESPACE_END

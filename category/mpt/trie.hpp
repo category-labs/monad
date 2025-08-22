@@ -1084,7 +1084,7 @@ static_assert(alignof(fiber_find_request_t) == 8);
 static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 
 using NodeCache = static_lru_cache<
-    virtual_chunk_offset_t, std::shared_ptr<Node>,
+    virtual_chunk_offset_t, std::shared_ptr<CacheNode>,
     virtual_chunk_offset_t_hasher>;
 
 //! \warning this is not threadsafe, should only be called from triedb thread

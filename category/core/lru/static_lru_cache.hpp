@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/unordered_map.hpp>
 
@@ -30,6 +31,7 @@ template <
     typename Hash = ankerl::unordered_dense::hash<Key>>
 class static_lru_cache
 {
+public:
     struct list_node
         : public boost::intrusive::list_base_hook<
               boost::intrusive::link_mode<boost::intrusive::normal_link>>
@@ -38,6 +40,7 @@ class static_lru_cache
         Value val;
     };
 
+private:
     using List = boost::intrusive::list<list_node>;
     using ListIter = typename List::iterator;
     using Map = ankerl::unordered_dense::segmented_map<Key, ListIter, Hash>;
@@ -53,6 +56,7 @@ public:
         size_t const size, Key const &key = Key(), Value const &value = Value())
         : array_(size, list_node{.key = key, .val = value})
     {
+        MONAD_ASSERT(size != 0);
         for (size_t i = 0; i < size; ++i) {
             list_.push_back(array_[i]);
         }
@@ -61,25 +65,28 @@ public:
 
     ~static_lru_cache() = default;
 
-    void insert(Key const &key, Value const &value) noexcept
+    Map::iterator insert(Key const &key, Value const &value) noexcept
     {
         auto it = map_.find(key);
         if (it != map_.end()) {
             it->second->val = value;
             update_lru(it->second);
+            return it;
         }
         else {
-            auto it = std::prev(list_.end());
-            map_.erase(it->key);
-            list_.erase(it);
+            auto list_it = std::prev(list_.end());
+            map_.erase(list_it->key);
+            auto &node = *list_it;
+            list_.erase(list_it);
 
             // Reuse node
-            it->key = key;
-            it->val = value;
+            node.key = key;
+            node.val = value;
 
-            list_.insert(list_.begin(), *it);
-            map_[key] = it;
+            list_.insert(list_.begin(), node);
+            return map_.emplace(key, list_.iterator_to(node)).first;
         }
+        return it;
     }
 
     bool find(ConstAccessor &acc, Key const &key) noexcept

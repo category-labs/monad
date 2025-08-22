@@ -25,6 +25,8 @@
 #include <iostream>
 #include <ostream>
 
+using namespace MONAD_MPT_NAMESPACE;
+
 struct MixedAsyncSyncLoadsTest
     : public monad::test::FillDBWithChunksGTest<
           monad::test::FillDBWithChunksConfig{.chunks_to_fill = 1}>
@@ -64,9 +66,18 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     };
 
     // Initiate an async find of a key
-    monad::mpt::inflight_node_t inflights;
+    monad::mpt::AsyncInflightNodes inflights;
+    monad::mpt::NodeCache node_cache{
+        1000, monad::mpt::virtual_chunk_offset_t::invalid_value()};
+    std::shared_ptr<CacheNode> cache_root = copy_node<CacheNode>(root.get());
     auto state = monad::async::connect(
-        monad::mpt::find_request_sender<>(aux, inflights, *root, key, true, 5),
+        monad::mpt::find_request_sender<>(
+            aux,
+            node_cache,
+            inflights,
+            OwningNodeCursor{cache_root},
+            key,
+            true),
         receiver_t{});
     state.initiate();
 

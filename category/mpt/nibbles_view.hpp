@@ -151,6 +151,7 @@ class NibblesView
 private:
     friend class Nibbles;
     friend class Node;
+    friend class NodeBase;
     using size_type = Nibbles::size_type;
     unsigned char const *data_{nullptr};
     bool begin_nibble_{false};

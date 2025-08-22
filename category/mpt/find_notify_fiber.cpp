@@ -94,7 +94,7 @@ namespace
             if (node == nullptr) {
                 parent->set_next(
                     branch_index,
-                    detail::deserialize_node_from_receiver_result(
+                    detail::deserialize_node_from_receiver_result<Node>(
                         std::move(buffer_), buffer_off, io_state));
                 node = parent->next(branch_index);
             }
@@ -161,8 +161,8 @@ namespace
                     NodeCache::ConstAccessor acc;
                     MONAD_ASSERT(node_cache.find(acc, virtual_offset) == false);
                 }
-                std::shared_ptr<Node> node =
-                    detail::deserialize_node_from_receiver_result(
+                std::shared_ptr<CacheNode> node =
+                    detail::deserialize_node_from_receiver_result<CacheNode>(
                         std::move(buffer_), buffer_off, io_state);
                 node_cache.insert(virtual_offset, node);
                 start_cursor = OwningNodeCursor{node};

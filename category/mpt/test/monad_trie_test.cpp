@@ -27,11 +27,11 @@
 #include <category/core/array.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <category/core/keccak.h>
 #include <category/core/small_prng.hpp>
 #include <category/core/unordered_map.hpp>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -712,13 +712,13 @@ int main(int argc, char *argv[])
                     bool &done;
                     unsigned const n_slices;
                     find_bytes_request_sender *sender{nullptr};
-                    NodeCursor state_start;
+                    OwningNodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
 
                     explicit receiver_t(
                         uint64_t &ops_, bool &done_, unsigned n_slices_,
-                        NodeCursor begin, uint32_t id)
+                        OwningNodeCursor begin, uint32_t id)
                         : ops(ops_)
                         , done(done_)
                         , n_slices(n_slices_)
@@ -755,21 +755,29 @@ int main(int argc, char *argv[])
 
                 uint64_t ops{0};
                 bool signal_done{false};
-                inflight_node_t inflights;
+                AsyncInflightNodes inflights;
+                NodeCache node_cache{
+                    1000, monad::mpt::virtual_chunk_offset_t::invalid_value()};
                 std::vector<std::unique_ptr<connected_state_type>> states;
                 states.reserve(random_read_benchmark_threads);
+                std::shared_ptr<CacheNode> start_node =
+                    copy_node<CacheNode>(state_start.node);
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
                         find_bytes_request_sender{
                             aux,
+                            node_cache,
                             inflights,
-                            state_start,
+                            OwningNodeCursor{start_node},
                             NibblesView{},
-                            true,
-                            5},
+                            true},
                         receiver_t(
-                            ops, signal_done, n_slices, state_start, n))));
+                            ops,
+                            signal_done,
+                            n_slices,
+                            OwningNodeCursor{start_node},
+                            n))));
                 }
 
                 // Initiate

@@ -135,6 +135,9 @@ byte_string encode_block(Block const &block)
 
 Result<BlockHeader> decode_block_header(byte_string_view &enc)
 {
+    // extraData max length is 32, see YP [4.4 - The Block]
+    constexpr size_t EXTRA_DATA_MAX_LENGTH = 32;
+
     BlockHeader block_header;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
@@ -155,6 +158,9 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
     BOOST_OUTCOME_TRY(
         block_header.timestamp, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(payload));
+    if (block_header.extra_data.size() > EXTRA_DATA_MAX_LENGTH) {
+        return DecodeError::Overflow;
+    }
     BOOST_OUTCOME_TRY(block_header.prev_randao, decode_bytes32(payload));
     BOOST_OUTCOME_TRY(block_header.nonce, decode_byte_string_fixed<8>(payload));
 

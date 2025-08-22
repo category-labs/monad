@@ -26,6 +26,7 @@ enum monad_revision
     MONAD_ONE = 1,
     MONAD_TWO = 2,
     MONAD_THREE = 3,
+    MONAD_FOUR = 4,
 };
 
 #ifdef __cplusplus

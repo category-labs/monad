@@ -13,18 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_devnet_alloc.hpp>
 #include <category/execution/monad/chain/monad_revision.h>
-#include <category/core/config.hpp>
-#include <category/core/int.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 monad_revision MonadDevnet::get_monad_revision(
     uint64_t /* block_number */, uint64_t /* timestamp */) const
 {
-    return MONAD_THREE;
+    return MONAD_FOUR;
 }
 
 uint256_t MonadDevnet::get_chain_id() const

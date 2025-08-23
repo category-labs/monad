@@ -184,4 +184,10 @@ bool EthereumMainnet::get_create_inside_delegated() const
     return true;
 }
 
+bool EthereumMainnet::get_p256_verify_enabled(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    return get_revision(block_number, timestamp) >= EVMC_OSAKA;
+}
+
 MONAD_NAMESPACE_END

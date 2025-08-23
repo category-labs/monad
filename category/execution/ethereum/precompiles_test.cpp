@@ -275,7 +275,8 @@ void do_basic_tests(
         auto const &basic_test_case = basic_test_cases[i];
 
         evmc::Result const result =
-            check_call_precompile<EVMC_BERLIN>(basic_test_case.input).value();
+            check_call_precompile<EVMC_BERLIN>(basic_test_case.input, false)
+                .value();
 
         EXPECT_EQ(
             result.status_code, basic_test_case.expected_output.status_code)
@@ -326,7 +327,7 @@ void do_geth_tests(
                 .code_address = code_address};
 
             evmc::Result const result =
-                check_call_precompile<rev>(input).value();
+                check_call_precompile<rev>(input, rev >= EVMC_OSAKA).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)

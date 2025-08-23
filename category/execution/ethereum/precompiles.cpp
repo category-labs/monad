@@ -52,12 +52,21 @@ since(PrecompiledContract impl)
 }
 
 template <evmc_revision Rev>
-std::optional<PrecompiledContract> resolve_precompile(Address const &address)
+std::optional<PrecompiledContract>
+resolve_precompile(Address const &address, bool const enable_p256_verify)
 {
 #define CASE(addr, first_rev, name)                                            \
     do {                                                                       \
         if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
             return since<(first_rev), Rev>({name##_gas_cost, name##_execute}); \
+        }                                                                      \
+    }                                                                          \
+    while (false)
+
+#define CASE_DYN(addr, cond, name)                                             \
+    do {                                                                       \
+        if (MONAD_UNLIKELY(Address{(addr)} == address && (cond))) {            \
+            return PrecompiledContract{name##_gas_cost, name##_execute};       \
         }                                                                      \
     }                                                                          \
     while (false)
@@ -82,9 +91,10 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     CASE(0x11, EVMC_PRAGUE, bls12_map_fp2_to_g2);
 
     // Rollup precompiles
-    CASE(0x0100, EVMC_OSAKA, p256_verify);
+    CASE_DYN(0x0100, enable_p256_verify, p256_verify);
 
 #undef CASE
+#undef CASE_DYN
 
     return std::nullopt;
 }
@@ -92,18 +102,20 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 EXPLICIT_EVMC_REVISION(resolve_precompile);
 
 template <evmc_revision Rev>
-bool is_precompile(Address const &address)
+bool is_precompile(Address const &address, bool const enable_p256_verify)
 {
-    return resolve_precompile<Rev>(address).has_value();
+    return resolve_precompile<Rev>(address, enable_p256_verify).has_value();
 }
 
 EXPLICIT_EVMC_REVISION(is_precompile);
 
 template <evmc_revision rev>
-std::optional<evmc::Result> check_call_precompile(evmc_message const &msg)
+std::optional<evmc::Result>
+check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
 {
     auto const &address = msg.code_address;
-    auto const maybe_precompile = resolve_precompile<rev>(address);
+    auto const maybe_precompile =
+        resolve_precompile<rev>(address, enable_p256_verify);
 
     if (!maybe_precompile) {
         return std::nullopt;

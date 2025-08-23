@@ -112,4 +112,10 @@ bool MonadChain::get_create_inside_delegated() const
     return false;
 }
 
+bool MonadChain::get_p256_verify_enabled(
+    uint64_t /*block_number*/, uint64_t const timestamp) const
+{
+    return get_monad_revision(timestamp) >= MONAD_FOUR;
+}
+
 MONAD_NAMESPACE_END

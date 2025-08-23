@@ -87,7 +87,8 @@ TEST(Evm, create_with_insufficient)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true};
+        true,
+        false};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -140,7 +141,8 @@ TEST(Evm, eip684_existing_code)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true};
+        true,
+        false};
     auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -168,7 +170,8 @@ TEST(Evm, create_nonce_out_of_range)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true};
+        true,
+        false};
 
     commit_sequential(
         tdb,
@@ -220,7 +223,8 @@ TEST(Evm, static_precompile_execution)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true};
+        true,
+        false};
 
     commit_sequential(
         tdb,
@@ -278,7 +282,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true};
+        true,
+        false};
 
     commit_sequential(
         tdb,
@@ -376,7 +381,8 @@ TEST(Evm, create_op_max_initcode_size)
         s,
         128 * 1024,
         2 * 128 * 1024,
-        true};
+        true,
+        false};
 
     // Initcode fits inside size limit
     {
@@ -473,7 +479,8 @@ TEST(Evm, create2_op_max_initcode_size)
         s,
         128 * 1024,
         2 * 128 * 1024,
-        true};
+        true,
+        false};
 
     // Initcode fits inside size limit
     {
@@ -642,6 +649,7 @@ TEST(Evm, create_inside_delegated)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
+        false,
         false};
     auto const result = h.call(m);
 

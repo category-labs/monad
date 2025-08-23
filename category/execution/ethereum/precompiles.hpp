@@ -31,10 +31,11 @@ bool init_trusted_setup();
 inline constexpr Address ripemd_address{3};
 
 template <evmc_revision rev>
-bool is_precompile(Address const &);
+bool is_precompile(Address const &, bool);
 
 template <evmc_revision rev>
-std::optional<evmc::Result> check_call_precompile(evmc_message const &);
+std::optional<evmc::Result>
+check_call_precompile(evmc_message const &, bool enable_p256_verify);
 
 using precompiled_gas_cost_fn = uint64_t(byte_string_view, evmc_revision);
 

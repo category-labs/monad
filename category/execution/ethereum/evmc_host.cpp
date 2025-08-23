@@ -36,7 +36,7 @@ EvmcHostBase::EvmcHostBase(
     CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
     BlockHashBuffer const &block_hash_buffer, State &state,
     size_t const max_code_size, size_t const max_initcode_size,
-    bool const create_inside_delegated) noexcept
+    bool const create_inside_delegated, bool const enable_p256_verify) noexcept
     : tx_context_{tx_context}
     , block_hash_buffer_{block_hash_buffer}
     , state_{state}
@@ -44,6 +44,7 @@ EvmcHostBase::EvmcHostBase(
     , max_code_size_{max_code_size}
     , max_initcode_size_{max_initcode_size}
     , create_inside_delegated_{create_inside_delegated}
+    , enable_p256_verify_{enable_p256_verify}
 {
 }
 

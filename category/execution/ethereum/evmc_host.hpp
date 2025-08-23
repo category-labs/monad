@@ -53,12 +53,13 @@ protected:
     size_t const max_code_size_;
     size_t const max_initcode_size_;
     bool const create_inside_delegated_;
+    bool const enable_p256_verify_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
         State &, size_t max_code_size, size_t max_initcode_size,
-        bool create_inside_delegated) noexcept;
+        bool create_inside_delegated, bool enable_p256_verify) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -150,7 +151,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(Address const &address) noexcept override
     {
-        if (is_precompile<rev>(address)) {
+        if (is_precompile<rev>(address, enable_p256_verify())) {
             return EVMC_ACCESS_WARM;
         }
         return state_.access_account(address);
@@ -166,6 +167,11 @@ struct EvmcHost final : public EvmcHostBase
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
+    }
+
+    bool enable_p256_verify() const noexcept
+    {
+        return enable_p256_verify_;
     }
 };
 

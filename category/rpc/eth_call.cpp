@@ -222,7 +222,8 @@ namespace
             state,
             max_code_size,
             chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_create_inside_delegated(),
+            chain.get_p256_verify_enabled(header.number, header.timestamp)};
         auto execution_result = ExecuteTransactionNoValidation<rev>{
             chain, enriched_txn, sender, authorities, header}(state, host);
 

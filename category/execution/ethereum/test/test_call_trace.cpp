@@ -156,7 +156,8 @@ TEST(CallTrace, execute_success)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true);
+        true,
+        false);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
@@ -230,7 +231,8 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
-        true);
+        true,
+        false);
 
     auto const result = ExecuteTransactionNoValidation<EVMC_SHANGHAI>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(

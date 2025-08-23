@@ -340,7 +340,8 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
         chain_.get_max_initcode_size(header_.number, header_.timestamp),
-        chain_.get_create_inside_delegated()};
+        chain_.get_create_inside_delegated(),
+        chain_.get_p256_verify_enabled(header_.number, header_.timestamp)};
 
     return ExecuteTransactionNoValidation<rev>::operator()(state, host);
 }

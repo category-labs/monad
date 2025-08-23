@@ -284,7 +284,8 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg) noexcept
     }
 
     evmc::Result result;
-    if (auto maybe_result = check_call_precompile<rev>(msg);
+    if (auto maybe_result =
+            check_call_precompile<rev>(msg, host->enable_p256_verify());
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

@@ -108,7 +108,7 @@ Record ExtraAcState :=
 
 Definition ExtraAcStates := (EvmAddr -> ExtraAcState).
 
-(** Our modified execution function which does reserve balance checks will use the following type as input/output. Consensus checks also take this as input, where the [Augmentedstate] is the state after N-K block when proposing a new block. However, when next pending (already proposed) block is executed, it can be a later state. *)
+(** Our modified execution function which does reserve balance checks will use the following type as input/output. Consensus checks also take this as input, where the [AugmentedState] is the state after N-K block when proposing a new block. However, when the next pending (already proposed) block is executed, it can be a later state. *)
 Definition AugmentedState : Type := StateOfAccounts * ExtraAcStates.
 
 Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)  (tx: TxWithHdr) : bool :=
@@ -213,7 +213,7 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
 
     Only the current sender’s entry changes; all other entries are unchanged.
 
-    In the defn of [newBal] (let binding), the subtraction is capped below at 0: the result is a natural number ([N]).
+    In the definition of [newBal] (let binding), the subtraction is capped below at 0: the result is a natural number ([N]).
     So, if if [sbal < maxTxFee next + value next] but  [maxTxFee next <= sbal], this transaction ([next]) will be accepted but all
     subsequent ones from the same sender will be rejected as the remaining effective reserve balance becomes 0.
  *)
@@ -427,7 +427,7 @@ Theorem fullBlockStep2  (latestState : AugmentedState) (blocks: list TxWithHdr) 
 
 (** ** main correctness theorem
 We will prove the above correctness theorem below, but the actual correctness theorem we need is slightly different.
-Suppose we split [blocks] in the theorem above into [firstblock] and [restblocks] such that [blocks=firstblocks++blocksrest] and suppose these blocks together are all transactions from the K proposed blocks since the last consensed state. Now, consenus will wait for execution to catch up and compute the state after [firstblock], say [latestState'].
+Suppose we split [blocks] in the theorem above into [firstblock] and [restblocks] such that [blocks=firstblocks++blocksrest] and suppose these blocks together are all transactions from the K proposed blocks since the last consensed state. Now, consensus will wait for execution to catch up and compute the state after [firstblock], say [latestState'].
 After that, consensus should check the next block after [blocksrest] w.r.t [latestState'].
 At that time, it needs to know that [blocksrest] is already valid w.r.t [latestState'], i.e. [consensusAcceptableTxs latestState' blocksrest].  This is precisely what the main theorem, shown next does:
 *)
@@ -1025,13 +1025,13 @@ Qed.
   in the setting where [s] is the last available state and
   [(txInterfirst :: rest)] are the transactions between [s] and [txnext].
 
-  This lemma proves that to be equivalen to executing [txInterfirst]
+  This lemma proves that to be equivalent to executing [txInterfirst]
   at state [s] and considering the result as the latest available state
   and thereby removing [txInterfirst] from intermediates.
 
 *)
 
-Lemma execPresservesIsAllowedToEmpty s txInterfirst rest txnext:
+Lemma execPreservesIsAllowedToEmpty s txInterfirst rest txnext:
   let sf :=  execValidatedTx s txInterfirst in
   txBlockNum txnext - K ≤ txBlockNum txInterfirst ≤ txBlockNum txnext
   -> isAllowedToEmpty s (txInterfirst :: rest) txnext = isAllowedToEmpty sf rest txnext.
@@ -1179,7 +1179,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
   { case_bool_decide; subst; try lia. }
-  rewrite <- execPresservesIsAllowedToEmpty; try lia.
+  rewrite <- execPreservesIsAllowedToEmpty; try lia.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
@@ -1357,7 +1357,7 @@ Qed.
     will pass validation during execution, i.e. the balance would be sufficient to cover
     [maxTxFee].
 
-    This doesn't say anything about whether the execition of the later transactions ([extension]) will also pass the check. That is where the next lemma comes in handy.
+    This doesn't say anything about whether the execution of the later transactions ([extension]) will also pass the check. That is where the next lemma comes in handy.
  *)
 Lemma execValidate tx extension s:
   consensusAcceptableTxs s (tx::extension)
@@ -1637,10 +1637,10 @@ Qed.
 
 (* Consensus Invariant and how its steps preserve the invariant
 At any given time, consensus has some [latestConsensedState] and a list of transactions/blocks (say [ltx]) proposed on top of that.
-The main invariant is that it maintains is [consensusAcceptableTxs latestConsensedState ltx].
-There are also side conditions like [blockNumsInRange ltx] and that the transactions in [ltx] are not sent an address that has code: the latter is just a formal assumption in Coq but is guaranteed by cryptographic hardness of generating private keys.
+The main invariant is that it maintains [consensusAcceptableTxs latestConsensedState ltx].
+There are also side conditions like [blockNumsInRange ltx] and that the transactions in [ltx] are not sent to an address that has code: the latter is just a formal assumption in Coq but is guaranteed by cryptographic hardness of generating private keys.
 
-This invariant needs to be preserve on the 2 mains steps of consensus:
+This invariant needs to be preserved in the 2 main steps of consensus:
 - extend ltx with a new block of transactions.
 - once execution catches up to the next block remove a prefix of ltx that corresponds to the block whose execution results are now available.
 
@@ -1678,7 +1678,7 @@ Section consensusInvariantsAndPreservation.
           /\ (∀ ac : EvmAddr, ac ∈ map sender (proposedTxs++nextBlock) → hasCode lastConsensedState.1 ac = false).
   Open Scope N_scope.
 
-  (** The statement below is of course unprovable. But the proof script below illustrates how the state of the consensus module evolves from the genesis block b0, showing how the 2 steps are taken and how they preserve the invaraints. At every time, the proof context (hypotheses) has the assertion that the invariants are satisified for the latest consensed block and the proposal so far. The proof script itself is not useful to see: the Coq goal at every step is illuminating.
+  (** The statement below is of course unprovable. But the proof script below illustrates how the state of the consensus module evolves from the genesis block b0, showing how the 2 steps are taken and how they preserve the invariants. At every time, the proof context (hypotheses) has the assertion that the invariants are satisfied for the latest consensed block and the proposal so far. The proof script itself is not useful to see: the Coq goal at every step is illuminating.
    *)
 
   Lemma operation  : False.

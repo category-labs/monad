@@ -65,7 +65,7 @@ Definition maxTxFee (t: TxWithHdr) : N :=
   ((w256_to_N (block.tr_gas_price t.2)) * (w256_to_N (block.tr_gas_limit t.2))).
 
 
-(** The proofs in this file never unfold this definition, so nothing will break if this definition is changed.  *)
+(** The proofs in this file never unfold the definition of [maxTxFee], so nothing will break if this definition is changed.  *)
 Opaque maxTxFee.
 
 Section K.
@@ -1034,9 +1034,10 @@ Qed.
 Lemma execPresservesIsAllowedToEmpty s txInterfirst rest txnext:
   let sf :=  execValidatedTx s txInterfirst in
   txBlockNum txnext - K ≤ txBlockNum txInterfirst ≤ txBlockNum txnext
-  -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txInterfirst :: rest) txnext.
+  -> isAllowedToEmpty s (txInterfirst :: rest) txnext = isAllowedToEmpty sf rest txnext.
 Proof using.
   intros ? Hr.
+  symmetry.
   unfold isAllowedToEmpty.
   simpl.
   autorewrite with syntactic.
@@ -1178,7 +1179,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
   { case_bool_decide; subst; try lia. }
-  rewrite execPresservesIsAllowedToEmpty; try lia.
+  rewrite <- execPresservesIsAllowedToEmpty; try lia.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.

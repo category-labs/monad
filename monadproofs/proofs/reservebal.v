@@ -208,6 +208,9 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
     fold this function left-to-right over the suffix, and you get the remaining
     worst-case protected reserve for every sender.  Only the current sender’s
     entry changes; all other entries are unchanged.
+    In the defn of [newBal] (let binding), the subtraction is capped below at 0: the result is a natural number ([N]).
+    So, if if [sbal < maxTxFee next + value next] but  [maxTxFee next <= sbal], this transaction ([next]) will be accepted but all
+    subsequent ones from the same sender will be rejected as the remaining effective reserve balance becomes 0.
  *)
 
 Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)

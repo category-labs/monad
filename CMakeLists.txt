@@ -103,6 +103,7 @@ endfunction()
 find_package(Boost REQUIRED COMPONENTS fiber json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
+pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 
 # asmjit
 set(ASMJIT_STATIC ON)

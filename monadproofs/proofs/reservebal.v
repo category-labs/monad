@@ -20,7 +20,7 @@
 Require Import monad.proofs.evmopsem.
 Require Import monad.proofs.evmmisc.
 Require Import monad.proofs.misc.
-Require Import bluerock.hw_models.utils. 
+Require Import bluerock.hw_models.utils.
 Require Import Lens.Lens.
 Import LensNotations.
 Open Scope lens_scope.
@@ -53,8 +53,8 @@ Record TxExtra :=
     reserveBalUpdate: option N
    (** ^ updates the reserve balance of the sender if Some. In that case, the transaction does nothing else, e.g., smart contract invocation or transfer. *)
   }.
-    
-  
+
+
 Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction).
 
 (** Our **fee upper bound** is intentionally pessimistic: the consensus rule
@@ -64,6 +64,8 @@ Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction).
 Definition maxTxFee (t: TxWithHdr) : N :=
   ((w256_to_N (block.tr_gas_price t.2)) * (w256_to_N (block.tr_gas_limit t.2))).
 
+
+(** The proofs in this file never unfold this definition, so nothing will break if this definition is changed.  *)
 Opaque maxTxFee.
 
 Section K.
@@ -102,7 +104,7 @@ Record ExtraAcState :=
 
 #[only(lens)] derive ExtraAcState.
 #[global] Instance inhabitedeacs : Inhabited ExtraAcState := populate (Build_ExtraAcState None None DefaultReserveBal).
-  
+
 
 Definition ExtraAcStates := (EvmAddr -> ExtraAcState).
 
@@ -161,14 +163,14 @@ Below, we build up the definition of the consensus check [consensusAcceptableTxs
     occasional value drains safely. *)
 Definition isAllowedToEmpty
   (state : AugmentedState) (intermediateTxsSinceState: list TxWithHdr)  (tx: TxWithHdr) : bool :=
-  let delegated := (addrDelegated (fst state) (sender tx))
+  let consideredDelegated := (addrDelegated (fst state) (sender tx))
                    || existsDelUndelTxWithinK state tx
                    || bool_decide  ((sender tx) ∈ flat_map addrsDelUndelByTx (tx::intermediateTxsSinceState))
   in
   let existsSameSenderTxInWindow :=
     (existsTxWithinK state tx)
     || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
-  (negb delegated) && (negb existsSameSenderTxInWindow).
+  (negb consideredDelegated) && (negb existsSameSenderTxInWindow).
 
 
 
@@ -188,7 +190,7 @@ Definition isAllowedToEmpty
 Definition EffReserveBals := EvmAddr -> Z.
 
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
-                      
+
 Open Scope Z_scope.
 
 Definition balanceOfAc (s: StateOfAccounts) (a: EvmAddr) : N :=
@@ -206,33 +208,36 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
 
     [remainingEffReserveBals] is the algebraic heart of consensus check algorithm:
     fold this function left-to-right over the suffix, and you get the remaining
-    worst-case protected reserve for every sender.  Only the current sender’s
-    entry changes; all other entries are unchanged.
+    worst-case protected reserve for every sender.
+    Formally, this function conservatively estimates the remaining effective reserve balance after executing [candidateTx], assuming [preCandidateTxResBalances] is the estimate before [candidateTx]. This is done in a setting where the latest available state is [preIntermediatesState] and [intermediates] are all the transactions between [preIntermediatesState] and [candidateTx].
+
+    Only the current sender’s entry changes; all other entries are unchanged.
+
     In the defn of [newBal] (let binding), the subtraction is capped below at 0: the result is a natural number ([N]).
     So, if if [sbal < maxTxFee next + value next] but  [maxTxFee next <= sbal], this transaction ([next]) will be accepted but all
     subsequent ones from the same sender will be rejected as the remaining effective reserve balance becomes 0.
  *)
 
-Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
+Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preCandidateTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (candidateTx: TxWithHdr)
   : EffReserveBals :=
   let s := preIntermediatesState in
-  let addr := sender next in
-  match reserveBalUpdateOfTx next with
+  let addr := sender candidateTx in
+  match reserveBalUpdateOfTx candidateTx with
   | Some newRb =>
-      updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
-  | None  => 
+      updateKey preCandidateTxResBalances addr (fun prevErb => (prevErb - maxTxFee candidateTx) `min` newRb)
+  | None  =>
       (** regular tx, not one that sets reserve balance *)
-      if isAllowedToEmpty s intermediates next
+      if isAllowedToEmpty s intermediates candidateTx
       then
         let sbal := balanceOfAc s.1 addr in
-        let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
-        if bool_decide (maxTxFee next <= sbal)
-        then updateKey preTxResBalances addr (fun prevErb => newBal `min` (configuredReserveBalOfAddr s.2 addr)) 
-        else updateKey preTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
-          
-      else (updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
+        let newBal:N := (sbal - maxTxFee candidateTx - value candidateTx)%N in (* this subtraction is done in N: capped at 0*)
+        if bool_decide (maxTxFee candidateTx <= sbal)
+        then updateKey preCandidateTxResBalances addr (fun prevErb => newBal `min` (configuredReserveBalOfAddr s.2 addr))
+        else updateKey preCandidateTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
+
+      else (updateKey preCandidateTxResBalances addr (fun prevErb => (prevErb - maxTxFee candidateTx)%Z)) (* -ve =>  this tx cannot be accepted *)
   end.
-  
+
 
 Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBalances: EffReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
   : EffReserveBals:=
@@ -290,7 +295,7 @@ Definition updateExtraState (a: ExtraAcStates) (tx: TxWithHdr) : ExtraAcStates :
            else lastDelUndelInBlockIndex oldes;
          configuredReserveBal:=
            if bool_decide (sender tx = addr)
-           then 
+           then
              match reserveBalUpdateOfTx tx with
              | Some newRb => newRb
              | None => configuredReserveBal oldes
@@ -314,7 +319,7 @@ Axiom revertTx : StateOfAccounts -> TxWithHdr -> StateOfAccounts.
 
 
 (** ** Algorithm 2 (execution): execute a transaction
-    
+
     This assumes that [t] has already been validated to ensure that the sender has
     enough balance to cover [maxTxFee].
 
@@ -336,7 +341,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
   | Some n => (updateBalanceOfAc s.1  (sender t) (fun b => b - maxTxFee t)
                  , updateExtraState s.2 t)
   | None =>
-    
+
      let (si, changedAccounts) := evmExecTxCore (fst s) t in
      let balCheck (a: EvmAddr) :=
        let ReserveBal := configuredReserveBalOfAddr s.2 a in
@@ -422,7 +427,7 @@ Theorem fullBlockStep2  (latestState : AugmentedState) (blocks: list TxWithHdr) 
 
 (** ** main correctness theorem
 We will prove the above correctness theorem below, but the actual correctness theorem we need is slightly different.
-Suppose we split [blocks] in the theorem above into [firstblock] and [restblocks] such that [blocks=firstblocks++blocksrest] and suppose these blocks together are all transactions from the K proposed blocks since the last consensed state. Now, consenus will wait for execution to catch up and give the state after [firstblock], say [latestState'].
+Suppose we split [blocks] in the theorem above into [firstblock] and [restblocks] such that [blocks=firstblocks++blocksrest] and suppose these blocks together are all transactions from the K proposed blocks since the last consensed state. Now, consenus will wait for execution to catch up and compute the state after [firstblock], say [latestState'].
 After that, consensus should check the next block after [blocksrest] w.r.t [latestState'].
 At that time, it needs to know that [blocksrest] is already valid w.r.t [latestState'], i.e. [consensusAcceptableTxs latestState' blocksrest].  This is precisely what the main theorem, shown next does:
 *)
@@ -451,7 +456,7 @@ To prove the theorem [fullBlockStep], we need to make some assumptions about how
  *)
 
 Axiom balanceOfRevertSender: forall s tx,
-  maxTxFee tx <= balanceOfAc s (sender tx) 
+  maxTxFee tx <= balanceOfAc s (sender tx)
   -> reserveBalUpdateOfTx tx = None
   -> balanceOfAc (revertTx s tx) (sender tx)
      = balanceOfAc s (sender tx) - maxTxFee tx.
@@ -478,10 +483,10 @@ Axiom execTxDelegationUpdCore: forall tx s,
                 || bool_decide (ac ∈ (dels tx.1.2))).
 
 Axiom execTxSenderBalCore: forall tx s,
-  maxTxFee tx <= balanceOfAc s (sender tx) -> 
+  maxTxFee tx <= balanceOfAc s (sender tx) ->
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
-  addrDelegated s (sender tx) = false 
+  addrDelegated s (sender tx) = false
    ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
 
@@ -491,7 +496,7 @@ Axiom execTxCannotDebitNonDelegatedNonContractAccountsCore: forall tx s,
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
   forall ac, ac <> sender tx
-              -> (addrDelegated sf ac || hasCode sf ac) = false 
+              -> (addrDelegated sf ac || hasCode sf ac) = false
                  ->  balanceOfAc s ac <= balanceOfAc sf ac.
 
 
@@ -568,7 +573,7 @@ Proof.
 Qed.
 
 Lemma execTxOtherBalanceLB tx s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
   let sf :=  (execValidatedTx s tx) in
   (forall ac,
       let ReserveBal := configuredReserveBalOfAddr s.2 ac in
@@ -581,7 +586,7 @@ Proof using.
   subst ReserveBal.
   unfold execValidatedTx in *.
   simpl in *.
-  
+
   remember (reserveBalUpdateOfTx tx) as rb.
   destruct rb; simpl in *.
   1:{  subst sf. unfold balanceOfAcA.  simpl.
@@ -613,12 +618,12 @@ Proof using.
     unfold balanceOfAc.
     rewrite Hsnd; auto. lia.
   }
-    
+
 Qed.
 
 
 Lemma execTxSenderBal tx s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
   let ReserveBal := configuredReserveBalOfAddr s.2 (sender tx) in
   let sf :=  (execValidatedTx s tx) in
   hasCode sf.1 (sender tx) = false->
@@ -696,7 +701,7 @@ Proof.
         rewrite Hsnd in H0;auto.
         lia.
       }
-      
+
     }
 
   }
@@ -763,10 +768,10 @@ Qed.
     lower bound of the balance of any account after executing a transaction.
 *)
 Lemma execBalLb ac s tx:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
   let sf :=  (execValidatedTx s tx) in
   let ReserveBal := configuredReserveBalOfAddr s.2 ac in
-  if (bool_decide (ac=sender tx)) then 
+  if (bool_decide (ac=sender tx)) then
     hasCode sf.1 (sender tx) = false->
     (if isAllowedToEmpty s [] tx
      then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
@@ -815,7 +820,7 @@ Proof.
   unfold updateExtraState.
   simpl. intros.
   resdec congruence.
-Qed.  
+Qed.
 
 
 Lemma delgUndelgUpdTx txlast s addr:
@@ -924,7 +929,7 @@ Proof using.
     congruence.
   }
 Qed.
-  
+
 
 Lemma emptyBalanceUb s tx inter a:
   hasCode (execValidatedTx s tx).1 (sender a) = false
@@ -949,8 +954,8 @@ Definition rbAfterTx s tx :=
   | Some rb => rb
   | None => configuredReserveBalOfAddr s (sender tx)
   end.
-    
-    
+
+
 Lemma configuredReserveBalOfAddrSpec s tx a:
   configuredReserveBalOfAddr (execValidatedTx s tx).2 a
   = if bool_decide (a=sender tx)
@@ -1023,11 +1028,11 @@ Qed.
   This lemma proves that to be equivalen to executing [txInterfirst]
   at state [s] and considering the result as the latest available state
   and thereby removing [txInterfirst] from intermediates.
-  
+
 *)
 
 Lemma execPresservesIsAllowedToEmpty s txInterfirst rest txnext:
-  let sf :=  execValidatedTx s txInterfirst in 
+  let sf :=  execValidatedTx s txInterfirst in
   txBlockNum txnext - K ≤ txBlockNum txInterfirst ≤ txBlockNum txnext
   -> isAllowedToEmpty sf rest txnext = isAllowedToEmpty s (txInterfirst :: rest) txnext.
 Proof using.
@@ -1100,7 +1105,7 @@ Proof using.
         unfold indexWithinK.
         rewrite otherDelUndelLkp; auto.
         f_equiv.
-      
+
         apply otherDelUndelDelegationStatusUnchanged; auto.
       }
 
@@ -1113,7 +1118,7 @@ Hint Rewrite @updateKeyLkp3 : syntactic.
 Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
   forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
 
-(** ** lemmas about [remainingEffReserveBals] 
+(** ** lemmas about [remainingEffReserveBals]
 
     The next pair of lemma states that the “remaining effective reserve”
     function is monotone: if you start from a pointwise larger map, you end at a
@@ -1190,11 +1195,11 @@ Proof using.
     rewrite Hlle.
     lia.
   }
-  case_bool_decide; 
+  case_bool_decide;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *;
     case_bool_decide; try lia.
-Qed.  
+Qed.
 
 
 (** lifts [mono] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
@@ -1243,8 +1248,8 @@ Proof using.
   clear Hin. clear addr.
   eapply mono2; eauto.
 Qed.
-    
-    
+
+
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
 
 (** This lemma captures a key property of [remainingEffReserveBals]: it underapproximates
@@ -1252,7 +1257,7 @@ the resultant effective balance after execution of the transaction
 *)
 Lemma exec1 tx extension s :
   maxTxFee tx <= balanceOfAc s.1 (sender tx)
-  -> let sf := (execValidatedTx s tx) in 
+  -> let sf := (execValidatedTx s tx) in
      (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
      -> (∀ addr : EvmAddr,
             addr ∈ sender tx :: map sender extension
@@ -1333,8 +1338,8 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *; try lia.
 Qed.
-  
-(** lifts the previous lemma from [remainingEffReserveBals] to [remainingEffReserveBals]. induction on [nextL] *)  
+
+(** lifts the previous lemma from [remainingEffReserveBals] to [remainingEffReserveBals]. induction on [nextL] *)
 Lemma decreasingRemL s irb proc (nextL: list TxWithHdr) tx:
   (remainingEffReserveBalsL s irb (tx::proc) nextL) (sender tx) <=  (irb (sender tx)).
 Proof using.
@@ -1366,7 +1371,7 @@ Proof using.
   autorewrite with syntactic in Hc.
   rewrite updateKeyLkp3 in Hc.
   resolveDecide ltac:(congruence). *)
-  
+
   unfold validateTx.
   autorewrite with iff.
   match type of Hc with
@@ -1400,7 +1405,7 @@ Qed.
     still hold on the resultant state for the remaining transactions in the proposal.
 *)
 Lemma execPreservesConsensusChecks tx extension s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
   -> consensusAcceptableTxs s (tx::extension)
@@ -1452,7 +1457,7 @@ Proof.
 Qed.
 
 Set Printing Coercions.
-    
+
 Fixpoint blockNumsInRange2 (ltx: list TxWithHdr) : Prop :=
   match ltx with
   | [] => True
@@ -1658,7 +1663,7 @@ Section consensusInvariantsAndPreservation.
    txext ∈ ltx
    → txCannotCreateContractAtAddrs txext (map sender ltx).
   Hypothesis b0csa: cannotCreateCodeAtSenderAddrs b0.
-  
+
   Hypothesis nextBlockPicker:
     forall (lastConsensedState: AugmentedState) (proposedTxs: (list TxWithHdr)),
       consensusAcceptableTxs lastConsensedState proposedTxs
@@ -1674,7 +1679,7 @@ Section consensusInvariantsAndPreservation.
 
   (** The statement below is of course unprovable. But the proof script below illustrates how the state of the consensus module evolves from the genesis block b0, showing how the 2 steps are taken and how they preserve the invaraints. At every time, the proof context (hypotheses) has the assertion that the invariants are satisified for the latest consensed block and the proposal so far. The proof script itself is not useful to see: the Coq goal at every step is illuminating.
    *)
-  
+
   Lemma operation  : False.
     intros.
     revert nextBlockPicker.

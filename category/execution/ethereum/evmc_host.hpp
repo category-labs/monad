@@ -32,6 +32,12 @@
 
 #include <utility>
 
+static_assert(sizeof(evmc::HostInterface) == 8);
+static_assert(alignof(evmc::HostInterface) == 8);
+
+static_assert(sizeof(evmc::Host) == 8);
+static_assert(alignof(evmc::Host) == 8);
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
@@ -92,6 +98,9 @@ public:
         Address const &, bytes32_t const &key,
         bytes32_t const &value) noexcept override;
 };
+
+static_assert(sizeof(EvmcHostBase) == 64);
+static_assert(alignof(EvmcHostBase) == 8);
 
 template <evmc_revision rev>
 struct EvmcHost final : public EvmcHostBase
@@ -159,5 +168,8 @@ struct EvmcHost final : public EvmcHostBase
         return call_tracer_;
     }
 };
+
+static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 64);
+static_assert(alignof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 8);
 
 MONAD_NAMESPACE_END

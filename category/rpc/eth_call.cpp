@@ -35,6 +35,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/switch_evm_chain.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -52,10 +53,13 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <quill/Quill.h>
 
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <string_view>
 #include <variant>
 #include <vector>
@@ -96,7 +100,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBufferFinalized const buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer state_tracer)
     {
         Transaction enriched_txn{txn};
 
@@ -243,6 +247,8 @@ namespace
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
+        trace::run_tracer(state_tracer, state);
+
         return execution_result;
     }
 
@@ -253,7 +259,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBufferFinalized const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
     {
         SWITCH_EVM_CHAIN(
             eth_call_impl,
@@ -268,7 +274,8 @@ namespace
             vm,
             buffer,
             state_overrides,
-            call_tracer);
+            call_tracer,
+            state_tracer);
         MONAD_ASSERT(false);
     }
 
@@ -412,8 +419,8 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
         free(result->message);
     }
 
-    if (result->rlp_call_frames) {
-        delete[] result->rlp_call_frames;
+    if (result->encoded_trace) {
+        delete[] result->encoded_trace;
     }
 
     delete result;
@@ -527,7 +534,7 @@ struct monad_eth_call_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
-        bool const trace, bool const gas_specified)
+        monad_tracer_config const tracer_config, bool const gas_specified)
     {
         monad_eth_call_result *const result = new monad_eth_call_result();
 
@@ -555,7 +562,7 @@ struct monad_eth_call_executor
             overrides,
             complete,
             user,
-            trace,
+            tracer_config,
             gas_specified,
             std::chrono::steady_clock::now(),
             call_count_++,
@@ -569,7 +576,7 @@ struct monad_eth_call_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
-        bool const trace, bool const gas_specified,
+        monad_tracer_config const tracer_config, bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_eth_call_result *const result,
         bool const use_high_gas_pool)
@@ -596,7 +603,7 @@ struct monad_eth_call_executor
              complete = complete,
              user = user,
              state_overrides = overrides,
-             trace = trace,
+             tracer_config = tracer_config,
              gas_specified = gas_specified,
              use_high_gas_pool = use_high_gas_pool,
              timeout =
@@ -658,12 +665,25 @@ struct monad_eth_call_executor
 
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
+                    nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
-                        trace
+                        tracer_config == CALL_TRACER
                             ? std::unique_ptr<CallTracerBase>{std::make_unique<
                                   CallTracer>(transaction, call_frames)}
                             : std::unique_ptr<CallTracerBase>{
                                   std::make_unique<NoopCallTracer>()};
+                    auto state_tracer = [&]() -> trace::StateTracer {
+                        switch (tracer_config) {
+                        case NOOP_TRACER:
+                        case CALL_TRACER:
+                            return std::monostate{};
+                        case PRESTATE_TRACER:
+                            return trace::PrestateTracer{state_trace};
+                        case STATEDIFF_TRACER:
+                            return trace::StateDiffTracer{state_trace};
+                        }
+                        MONAD_ASSERT(false);
+                    }();
                     auto const res = eth_call_impl(
                         *chain,
                         rev,
@@ -677,7 +697,8 @@ struct monad_eth_call_executor
                         vm_,
                         *block_hash_buffer,
                         *state_overrides,
-                        *call_tracer);
+                        *call_tracer,
+                        state_tracer);
 
                     if (override_with_low_gas_retry_if_oog &&
                         ((res.has_value() &&
@@ -696,7 +717,7 @@ struct monad_eth_call_executor
                             state_overrides,
                             complete,
                             user,
-                            trace,
+                            tracer_config,
                             call_begin,
                             eth_call_seq_no,
                             result);
@@ -715,7 +736,8 @@ struct monad_eth_call_executor
                         result,
                         complete,
                         user,
-                        call_frames);
+                        call_frames,
+                        state_trace);
                 }
                 catch (MonadException const &e) {
                     result->status_code = EVMC_INTERNAL_ERROR;
@@ -736,7 +758,8 @@ struct monad_eth_call_executor
         Transaction const &transaction, evmc::Result const &evmc_result,
         monad_eth_call_result *const result,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
-        std::vector<CallFrame> const &call_frames)
+        std::vector<CallFrame> const &call_frames,
+        nlohmann::json const &state_trace)
     {
         result->status_code = evmc_result.status_code;
         result->gas_used =
@@ -756,17 +779,28 @@ struct monad_eth_call_executor
         }
 
         if (!call_frames.empty()) {
-            auto const rlp_call_frames = rlp::encode_call_frames(call_frames);
-            result->rlp_call_frames = new uint8_t[rlp_call_frames.length()];
-            result->rlp_call_frames_len = rlp_call_frames.length();
+            byte_string const rlp_call_frames =
+                rlp::encode_call_frames(call_frames);
+            result->encoded_trace = new uint8_t[rlp_call_frames.size()];
+            result->encoded_trace_len = rlp_call_frames.size();
             memcpy(
-                (uint8_t *)result->rlp_call_frames,
+                (uint8_t *)result->encoded_trace,
                 rlp_call_frames.data(),
-                result->rlp_call_frames_len);
+                rlp_call_frames.size());
+        }
+        else if (!state_trace.empty()) {
+            std::vector<uint8_t> cbor_state_trace =
+                nlohmann::json::to_cbor(state_trace);
+            result->encoded_trace = new uint8_t[cbor_state_trace.size()];
+            result->encoded_trace_len = cbor_state_trace.size();
+            memcpy(
+                (uint8_t *)result->encoded_trace,
+                cbor_state_trace.data(),
+                cbor_state_trace.size());
         }
         else {
-            result->rlp_call_frames = nullptr;
-            result->rlp_call_frames_len = 0;
+            result->encoded_trace = nullptr;
+            result->encoded_trace_len = 0;
         }
         complete(result, user);
     }
@@ -777,7 +811,7 @@ struct monad_eth_call_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
-        bool const trace,
+        monad_tracer_config const tracer_config,
         std::chrono::steady_clock::time_point const call_begin,
         auto const eth_call_seq_no, monad_eth_call_result *const result)
     {
@@ -804,7 +838,7 @@ struct monad_eth_call_executor
             overrides,
             complete,
             user,
-            trace,
+            tracer_config,
             false /* gas_specified */,
             call_begin,
             eth_call_seq_no,
@@ -848,7 +882,8 @@ void monad_eth_call_executor_submit(
     uint8_t const *const rlp_block_id, size_t const rlp_block_id_len,
     monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
-    void *const user, bool const trace, bool const gas_specified)
+    void *const user, monad_tracer_config const tracer_config,
+    bool const gas_specified)
 {
     MONAD_ASSERT(executor);
 
@@ -889,6 +924,6 @@ void monad_eth_call_executor_submit(
         overrides,
         complete,
         user,
-        trace,
+        tracer_config,
         gas_specified);
 }

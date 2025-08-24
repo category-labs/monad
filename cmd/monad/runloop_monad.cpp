@@ -300,7 +300,7 @@ bytes32_t for_each_header(
             !ts.has_error(),
             "Could not rlp decode timestamp from header: %s",
             evmc::hex(id).c_str());
-        auto const monad_rev = chain.get_monad_revision(0, ts.value());
+        auto const monad_rev = chain.get_monad_revision(ts.value());
         std::optional<bytes32_t> next_id;
         if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
             next_id = handle_header<MonadConsensusBlockHeaderV2>(

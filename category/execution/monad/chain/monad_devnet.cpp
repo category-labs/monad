@@ -21,8 +21,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-monad_revision MonadDevnet::get_monad_revision(
-    uint64_t /* block_number */, uint64_t /* timestamp */) const
+monad_revision MonadDevnet::get_monad_revision(uint64_t /*timestamp*/) const
 {
     return MONAD_FOUR;
 }

@@ -17,6 +17,9 @@
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/execution/monad/validate_system_transaction.hpp>
+
+#include <algorithm>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -53,6 +56,29 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
     return outcome::success();
 }
 
+Result<void> static_validate_monad_senders(
+    monad_revision const rev, std::vector<Address> const &senders)
+{
+    if (rev < MONAD_FOUR) {
+        return outcome::success();
+    }
+
+    // Find the first user txn.
+    auto const first_user_sender = std::find_if_not(
+        senders.begin(), senders.end(), [](Address const &sender) {
+            return sender == SYSTEM_TRANSACTION_SENDER;
+        });
+
+    // No other system txns should come after it.
+    auto const bad_system_sender =
+        std::find(first_user_sender, senders.end(), SYSTEM_TRANSACTION_SENDER);
+    if (MONAD_UNLIKELY(bad_system_sender != senders.end())) {
+        return MonadBlockError::SystemTransactionNotFirstInBlock;
+    }
+
+    return outcome::success();
+}
+
 EXPLICIT_MONAD_CONSENSUS_BLOCK_HEADER(static_validate_consensus_header);
 
 MONAD_NAMESPACE_END
@@ -69,6 +95,9 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
         {MonadBlockError::Success, "success", {errc::success}},
         {MonadBlockError::TimestampMismatch, "timestamp mismatch", {}},
         {MonadBlockError::BaseFeeMismatch, "base fee mismatch", {}},
+        {MonadBlockError::SystemTransactionNotFirstInBlock,
+         "system transaction not first in block",
+         {}},
     };
 
     return v;

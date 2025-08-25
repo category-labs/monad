@@ -17,6 +17,9 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/monad/chain/monad_revision.h>
+
+#include <vector>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -34,11 +37,15 @@ enum class MonadBlockError
     Success = 0,
     TimestampMismatch,
     BaseFeeMismatch,
+    SystemTransactionNotFirstInBlock,
 };
 
 template <class MonadConsensusBlockHeader>
 Result<void>
 static_validate_consensus_header(MonadConsensusBlockHeader const &);
+
+Result<void>
+static_validate_monad_senders(monad_revision, std::vector<Address> const &);
 
 MONAD_NAMESPACE_END
 

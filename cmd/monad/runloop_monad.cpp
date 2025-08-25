@@ -173,6 +173,9 @@ Result<std::pair<bytes32_t, uint64_t>> propose_block(
         }
     }
 
+    auto const monad_rev = chain.get_monad_revision(block.header.timestamp);
+    BOOST_OUTCOME_TRY(static_validate_monad_senders(monad_rev, senders));
+
     // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{

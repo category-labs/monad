@@ -89,9 +89,9 @@ constexpr quill::LogLevel to_quill_log_level(syslog_level l)
     case syslog_level::Error:
         return LogLevel::Error;
     case syslog_level::Warning:
-        return LogLevel::Warning;
-    case syslog_level::Notice:
         [[fallthrough]];
+    case syslog_level::Notice:
+        return LogLevel::Warning;
     case syslog_level::Info:
         return LogLevel::Info;
     case syslog_level::Debug:
@@ -203,6 +203,9 @@ void monad_log_handler_destroy(struct monad_log_handler *handler)
 int monad_log_init(
     struct monad_log_handler **handlers, size_t handler_count, uint8_t level)
 {
+    using std::chrono::duration_cast, std::chrono::nanoseconds,
+        std::chrono::microseconds;
+
     // quill recognizes three trace levels, which are assigned after debug
     if (level > syslog_level::Debug + 3) {
         *std::format_to(
@@ -212,6 +215,18 @@ int monad_log_init(
     quill::Config cfg;
     quill::LogLevel const quill_level =
         to_quill_log_level(static_cast<syslog_level>(level));
+    if (quill_level >= quill::LogLevel::Warning) {
+        // Quill is designed for high performance logging, which is potentially
+        // important if we're producing a lot of messages. If the logging is
+        // well-behaved, it should only ever be noisy in the case of debug or
+        // trace messages (perhaps also INFO). In the current configuration,
+        // the caller only wants to see warnings and up; we'll allow the
+        // background thread to sleep for much longer, so we don't schedule
+        // it too often; we are worried about wasting limited CPU resources,
+        // not the queue overflowing
+        cfg.backend_thread_sleep_duration =
+            duration_cast<nanoseconds>(microseconds{250});
+    }
     for (monad_log_handler *h : std::span{handlers, handler_count}) {
         cfg.default_handlers.emplace_back(h->quill_handler);
     }

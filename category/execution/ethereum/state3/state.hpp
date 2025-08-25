@@ -106,8 +106,6 @@ class State
         return current_account_state(address).account_;
     }
 
-    friend class BlockState; // TODO
-
 public:
     State(BlockState &block_state, Incarnation const incarnation)
         : block_state_{block_state}
@@ -119,6 +117,21 @@ public:
     State(State const &) = delete;
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
+
+    Map<Address, AccountState> const &original() const
+    {
+        return original_;
+    }
+
+    Map<Address, VersionStack<AccountState>> const &current() const
+    {
+        return current_;
+    }
+
+    Map<bytes32_t, vm::SharedVarcode> const &code() const
+    {
+        return code_;
+    }
 
     void push()
     {

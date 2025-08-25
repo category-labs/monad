@@ -104,6 +104,8 @@ add_library(
   "keccak.h"
   "keccak.hpp"
   "likely.h"
+  "log_ffi.cpp"
+  "log_ffi.h"
   "math.hpp"
   "nibble.h"
   "offset.hpp"
@@ -209,6 +211,7 @@ target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)
+target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(monad_core PUBLIC hugetlbfs uring)

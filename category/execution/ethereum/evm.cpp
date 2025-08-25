@@ -45,8 +45,22 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    uint256_t const balance =
-        intx::be::load<uint256_t>(state.get_balance(msg.sender));
+    auto const &account = state.recent_account(msg.sender);
+    uint256_t const balance = account.has_value() ? account->balance : 0;
+    auto &original_state = state.original_account_state(msg.sender);
+    if (balance >= value) {
+        auto const diff = balance - value;
+        auto const &original = original_state.account_;
+        auto const original_balance =
+            original.has_value() ? original->balance : 0;
+        if (original_balance > diff) {
+            auto const min_balance = original_balance - diff;
+            original_state.set_min_balance(min_balance);
+        }
+    }
+    else {
+        original_state.set_validate_exact_balance();
+    }
     return balance >= value;
 }
 

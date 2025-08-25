@@ -58,6 +58,13 @@ public:
         return stack_.back().second;
     }
 
+    T &recent()
+    {
+        MONAD_ASSERT(stack_.size());
+
+        return stack_.back().second;
+    }
+
     T &current(unsigned const version)
     {
         MONAD_ASSERT(stack_.size());

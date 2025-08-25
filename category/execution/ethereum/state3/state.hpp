@@ -58,7 +58,7 @@ class State
 
     Incarnation const incarnation_;
 
-    Map<Address, AccountState> original_{};
+    Map<Address, OriginalAccountState> original_{};
 
     Map<Address, VersionStack<AccountState>> current_{};
 
@@ -68,7 +68,10 @@ class State
 
     unsigned version_{0};
 
-    AccountState &original_account_state(Address const &address)
+    bool relaxed_validation_{false};
+
+public:
+    OriginalAccountState &original_account_state(Address const &address)
     {
         auto it = original_.find(address);
         if (it == original_.end()) {
@@ -79,6 +82,7 @@ class State
         return it->second;
     }
 
+private:
     AccountState const &recent_account_state(Address const &address)
     {
         // current
@@ -114,12 +118,27 @@ public:
     {
     }
 
+    State(
+        BlockState &block_state, Incarnation const incarnation,
+        Address const &sender, uint64_t const nonce)
+        : block_state_{block_state}
+        , incarnation_{incarnation}
+        , relaxed_validation_{true}
+    {
+        set_original_nonce(sender, nonce);
+    }
+
     State(State &&) = delete;
     State(State const &) = delete;
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
 
-    Map<Address, AccountState> const &original() const
+    Map<Address, OriginalAccountState> const &original() const
+    {
+        return original_;
+    }
+
+    Map<Address, OriginalAccountState> &original()
     {
         return original_;
     }
@@ -174,6 +193,11 @@ public:
         --version_;
     }
 
+    [[nodiscard]] bool relaxed_validation() const
+    {
+        return relaxed_validation_;
+    }
+
     ////////////////////////////////////////
 
     vm::VM &vm()
@@ -220,6 +244,7 @@ public:
     bytes32_t get_balance(Address const &address)
     {
         auto const &account = recent_account(address);
+        original_account_state(address).set_validate_exact_balance();
         if (MONAD_LIKELY(account.has_value())) {
             return intx::be::store<bytes32_t>(account.value().balance);
         }
@@ -407,12 +432,14 @@ public:
         if constexpr (rev < EVMC_CANCUN) {
             add_to_balance(beneficiary, account.value().balance);
             account.value().balance = 0;
+            original_account_state(address).set_validate_exact_balance();
         }
         else {
             if (address != beneficiary ||
                 account->incarnation == incarnation_) {
                 add_to_balance(beneficiary, account.value().balance);
                 account.value().balance = 0;
+                original_account_state(address).set_validate_exact_balance();
             }
         }
 
@@ -611,6 +638,57 @@ public:
             account = Account{.incarnation = incarnation_};
         }
         account.value().incarnation = incarnation_;
+    }
+
+    bool try_fix_account_mismatch(
+        Address const &address, OriginalAccountState &original_state,
+        std::optional<Account> const &actual)
+    {
+        auto &original = original_state.account_;
+        if (is_dead(original)) {
+            return false;
+        }
+        if (is_dead(actual)) {
+            return false;
+        }
+        if (original->code_hash != actual->code_hash) {
+            return false;
+        }
+        if (original->incarnation != actual->incarnation) {
+            return false;
+        }
+        if (original->nonce != actual->nonce) {
+            return false;
+        }
+        MONAD_ASSERT(original->balance != actual->balance);
+        if (!relaxed_validation()) {
+            return false;
+        }
+        if (original_state.validate_exact_balance()) {
+            return false;
+        }
+        if (actual->balance < original_state.min_balance()) {
+            return false;
+        }
+        auto it = current_.find(address);
+        if (it != current_.end()) {
+            MONAD_ASSERT(it->second.size() == 1);
+            auto &recent_state = it->second.recent();
+            auto &recent = recent_state.account_;
+            if (!recent) {
+                return false;
+            }
+            if (actual->balance > original->balance) {
+                recent->balance += actual->balance - original->balance;
+            }
+            else {
+                MONAD_ASSERT(
+                    recent->balance >= (original->balance - actual->balance));
+                recent->balance -= original->balance - actual->balance;
+            }
+        }
+        original->balance = actual->balance;
+        return true;
     }
 };
 

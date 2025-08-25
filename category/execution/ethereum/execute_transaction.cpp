@@ -328,8 +328,14 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
     auto const &icode = state.get_code(sender_)->intercode();
-    BOOST_OUTCOME_TRY(validate_transaction<rev>(
-        tx_, sender_account, {icode->code(), icode->size()}));
+    auto const validate_txn = [this, &state, &sender_account, &icode] {
+        auto result = validate_transaction<rev>(tx_, sender_account, {icode->code(), icode->size()});
+        if (!result) {
+            state.original_account_state(sender_).set_validate_exact_balance();
+        }
+        return result;
+    };
+    BOOST_OUTCOME_TRY(validate_txn());
 
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
@@ -414,8 +420,11 @@ Result<Receipt> ExecuteTransaction<rev>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
-        state.set_original_nonce(sender_, tx_.nonce);
+        State state{
+            block_state_,
+            Incarnation{header_.number, i_ + 1},
+            sender_,
+            tx_.nonce};
 
         call_tracer_.reset();
 

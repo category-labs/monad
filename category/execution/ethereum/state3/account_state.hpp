@@ -35,7 +35,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class AccountState final : public AccountSubstate
+class AccountState : public AccountSubstate
 {
 public: // TODO
     template <class Key, class T>
@@ -98,6 +98,47 @@ public:
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
         transient_storage_[key] = value;
+    }
+};
+
+class OriginalAccountState final : public AccountState
+{
+    bool validate_exact_balance_{false};
+    uint256_t min_balance_{0};
+
+public:
+    explicit OriginalAccountState(std::optional<Account> &&account)
+        : AccountState(std::move(account))
+    {
+    }
+
+    explicit OriginalAccountState(std::optional<Account> const &account)
+        : AccountState{account}
+    {
+    }
+
+    [[nodiscard]] bool validate_exact_balance() const
+    {
+        return validate_exact_balance_;
+    }
+
+    [[nodiscard]] uint256_t const &min_balance() const
+    {
+        return min_balance_;
+    }
+
+    void set_validate_exact_balance()
+    {
+        validate_exact_balance_ = true;
+    }
+
+    void set_min_balance(uint256_t const &value)
+    {
+        MONAD_ASSERT(account_.has_value());
+        MONAD_ASSERT(account_->balance >= value);
+        if (value > min_balance_) {
+            min_balance_ = value;
+        }
     }
 };
 

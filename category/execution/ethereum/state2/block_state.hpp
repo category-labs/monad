@@ -54,7 +54,7 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
-    bool can_merge(State const &);
+    bool can_merge(State &) const;
 
     void merge(State const &);
 

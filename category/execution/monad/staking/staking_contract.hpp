@@ -527,6 +527,8 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_delegators_for_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_epoch(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     Result<byte_string> precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);

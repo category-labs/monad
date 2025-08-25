@@ -368,7 +368,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     using StakingPrecompile = std::pair<PrecompileFunc, uint64_t>;
-    constexpr std::array<StakingPrecompile, 25> dispatch_table{
+    constexpr std::array<StakingPrecompile, 26> dispatch_table{
         make_pair(&StakingContract::precompile_fallback, 0),
         make_pair(&StakingContract::precompile_add_validator, 0 /* fixme */),
         make_pair(&StakingContract::precompile_delegate, 0 /* fixme */),
@@ -404,6 +404,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         make_pair(
             &StakingContract::precompile_get_delegators_for_validator,
             0 /* fixme */),
+        make_pair(&StakingContract::precompile_get_epoch, 0 /* fixme */),
     };
 
     if (MONAD_UNLIKELY(signature >= dispatch_table.size())) {
@@ -579,6 +580,15 @@ Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
     encoder.add_bool(done);
     encoder.add_address(next_del_addr);
     encoder.add_address_array(dels_page);
+    return encoder.encode_final();
+}
+
+Result<byte_string> StakingContract::precompile_get_epoch(
+    byte_string_view const, evmc_address const &, evmc_uint256be const &)
+{
+    AbiEncoder encoder;
+    encoder.add_uint(vars.epoch.load());
+    encoder.add_bool(vars.in_epoch_delay_period.load());
     return encoder.encode_final();
 }
 

@@ -147,7 +147,7 @@ public:
         // Abstracts the boundary block handling from the caller. The consensus
         // stakes and snapshot validator sets are unstable during an epoch, and
         // this function provides a stable interface.
-        auto this_epoch_valset() noexcept
+        StorageArray<u64_be> this_epoch_valset() noexcept
         {
             return in_epoch_delay_period.load_checked().has_value()
                        ? valset_snapshot
@@ -161,7 +161,7 @@ public:
         // mapping (address => uint64) val_id
         //
         // Used both for existence and for resolving which validator to reward.
-        auto val_id(Address const &secp_eth_address) noexcept
+        StorageVariable<u64_be> val_id(Address const &secp_eth_address) noexcept
         {
             struct
             {
@@ -170,15 +170,15 @@ public:
                 uint8_t slots[11];
             } key{.ns = NSValIdSecp, .address = secp_eth_address, .slots = {}};
 
-            return StorageVariable<u64_be>(
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key));
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping (address => uint64) val_id
         //
         // This mapping only exists to ensure the same bls_key cannot be reused
         // by multiple validators.
-        auto val_id_bls(Address const &bls_eth_address) noexcept
+        StorageVariable<u64_be>
+        val_id_bls(Address const &bls_eth_address) noexcept
         {
             struct
             {
@@ -187,8 +187,7 @@ public:
                 uint8_t slots[11];
             } key{.ns = NSValIdBls, .address = bls_eth_address, .slots = {}};
 
-            return StorageVariable<u64_be>(
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key));
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => uint256) in_valset_bitset
@@ -197,7 +196,7 @@ public:
         // Existence in the bucket can be determined by using the bottom 8 bits.
         // within the bucket. This is to save storage since 256 val ids can be
         // packed in a single slot.
-        auto val_bitset_bucket(u64_be const val_id) noexcept
+        StorageVariable<u256_be> val_bitset_bucket(u64_be const val_id) noexcept
         {
             struct
             {
@@ -209,8 +208,7 @@ public:
                 .bucket = (val_id.native() >> 8),
                 .slots = {}};
 
-            return StorageVariable<u256_be>(
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key));
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => Validator) validator_info
@@ -218,7 +216,7 @@ public:
         // A mapping between a validator ID and the validators info. Stake
         // changes are applied to the execution view and copied to the consensus
         // view on snapshot.
-        auto val_execution(u64_be const id) noexcept
+        ValExecution val_execution(u64_be const id) noexcept
         {
             struct
             {
@@ -227,8 +225,7 @@ public:
                 uint8_t slots[23];
             } key{.ns = NSValExecution, .val_id = id, .slots = {}};
 
-            return ValExecution{
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => uint256) consensus_stake
@@ -236,7 +233,7 @@ public:
         // A copy of the execution stake at the time of the snapshot. This is
         // only set if the validator has a top N stake. Does not account for
         // boundary block.
-        auto consensus_stake(u64_be const id) noexcept
+        StorageVariable<u256_be> consensus_stake(u64_be const id) noexcept
         {
             struct
             {
@@ -245,15 +242,14 @@ public:
                 uint8_t slots[23];
             } key{.ns = NSConsensusStake, .val_id = id, .slots = {}};
 
-            return StorageVariable<u256_be>{
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => uint256) snapshot_stake
         //
         // A copy of the consensus stake at the time of the snapshot to be
         // referenced by reward during the boundary period.
-        auto snapshot_stake(u64_be const id) noexcept
+        StorageVariable<u256_be> snapshot_stake(u64_be const id) noexcept
         {
             struct
             {
@@ -262,8 +258,7 @@ public:
                 uint8_t slots[23];
             } key{.ns = NSSnapshotStake, .val_id = id, .slots = {}};
 
-            return StorageVariable<u256_be>{
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => uint256) this_epoch_stake
@@ -272,7 +267,7 @@ public:
         // Abstracts the boundary block handling from the caller. The consensus
         // stakes and snapshot stakes are unstable during an epoch, and this
         // function provides a stable interface.
-        auto this_epoch_stake(u64_be const id) noexcept
+        StorageVariable<u256_be> this_epoch_stake(u64_be const id) noexcept
         {
             return in_epoch_delay_period.load_checked().has_value()
                        ? snapshot_stake(id)
@@ -282,7 +277,8 @@ public:
         // mapping(uint64 => mapping(address => Delegator)) delegator
         //
         // Retrieve a delegators metadata given a validator.
-        auto delegator(u64_be const val_id, Address const &address) noexcept
+        Delegator
+        delegator(u64_be const val_id, Address const &address) noexcept
         {
             struct
             {
@@ -296,7 +292,7 @@ public:
                 .address = address,
                 .slots = {}};
 
-            return Delegator{state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // clang-format off
@@ -305,7 +301,7 @@ public:
         //
         // Retrieves a withdrawal request for a delegator. The user provides the
         // ID during undelegate.
-        auto withdrawal_request(
+        StorageVariable<WithdrawalRequest> withdrawal_request(
             u64_be const val_id, Address const &delegator,
             uint8_t const withdrawal_id) noexcept
         {
@@ -323,8 +319,7 @@ public:
                 .withdrawal_id = withdrawal_id,
                 .slots = {}};
 
-            return StorageVariable<WithdrawalRequest>{
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
         // mapping(uint64 => mapping(uint64 => bytes32)) acc
@@ -334,7 +329,7 @@ public:
         // increments the refcount, and this value is applied on epoch change.
         // This accumulator is not made accessible to delegators until that
         // epoch has completed.
-        auto accumulated_reward_per_token(
+        StorageVariable<RefCountedAccumulator> accumulated_reward_per_token(
             u64_be const epoch, u64_be const val_id) noexcept
         {
             struct
@@ -349,8 +344,7 @@ public:
                 .val_id = val_id,
                 .slots = {}};
 
-            return StorageVariable<RefCountedAccumulator>(
-                state_, STAKING_CA, std::bit_cast<bytes32_t>(key));
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
     } vars;
 };

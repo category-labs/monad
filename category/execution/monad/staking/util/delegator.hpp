@@ -85,47 +85,41 @@ public:
     /////////////
 
     // currently active stake in the consensus
-    auto stake() noexcept
+    StorageVariable<Stake_t> stake() noexcept
     {
-        return StorageVariable<Stake_t>(
-            state_, address_, key_ + Offsets::stake);
+        return {state_, address_, key_ + Offsets::stake};
     }
 
     // Last read reward per token accumulator. This is updated lazily whenever a
     // delegator action is performed.
-    auto accumulated_reward_per_token() noexcept
+    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token() noexcept
     {
-        return StorageVariable<RewardsPerToken_t>(
-            state_, address_, key_ + Offsets::rewards_per_token);
+        return {state_, address_, key_ + Offsets::rewards_per_token};
     }
 
     // unclaimed rewards
-    auto rewards() noexcept
+    StorageVariable<Rewards_t> rewards() noexcept
     {
-        return StorageVariable<Rewards_t>(
-            state_, address_, key_ + Offsets::rewards);
+        return {state_, address_, key_ + Offsets::rewards};
     }
 
     // stake that will be active next epoch
-    auto delta_stake() noexcept
+    StorageVariable<DeltaStake_t> delta_stake() noexcept
     {
-        return StorageVariable<DeltaStake_t>(
-            state_, address_, key_ + Offsets::delta_stake);
+        return {state_, address_, key_ + Offsets::delta_stake};
     }
 
     // stake that will be active next next epoch (delegate during boundary)
-    auto next_delta_stake() noexcept
+    StorageVariable<NextDeltaStake_t> next_delta_stake() noexcept
     {
-        return StorageVariable<NextDeltaStake_t>(
-            state_, address_, key_ + Offsets::next_delta_stake);
+        return {state_, address_, key_ + Offsets::next_delta_stake};
     }
 
     // low level getter returning packed epochs for delta epoch and next delta
     // epoch. prefer the helpers for getting those values individually.
-    auto epochs() noexcept
+    StorageVariable<Epochs_t> epochs() noexcept
     {
-        return StorageVariable<Epochs_t>(
-            state_, address_, key_ + Offsets::epochs);
+        return {state_, address_, key_ + Offsets::epochs};
     }
 
     /////////////

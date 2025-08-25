@@ -92,47 +92,42 @@ public:
     /////////////
 
     // Total stake in the validator pool
-    auto stake() noexcept
+    StorageVariable<Stake_t> stake() noexcept
     {
-        return StorageVariable<Stake_t>(
-            state_, address_, key_ + Offsets::stake);
+        return {state_, address_, key_ + Offsets::stake};
     }
 
     // Validator's rewards per token. This is updated on every call to reward()
-    auto accumulated_reward_per_token() noexcept
+    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token() noexcept
     {
-        return StorageVariable<RewardsPerToken_t>(
-            state_, address_, key_ + Offsets::rewards_per_token);
+        return {state_, address_, key_ + Offsets::rewards_per_token};
     }
 
     // Immutable: validator commission rate. Valid values are [0,1e18]
-    auto commission() noexcept
+    StorageVariable<Commission_t> commission() noexcept
     {
-        return StorageVariable<Commission_t>(
-            state_, address_, key_ + Offsets::commission);
+        return {state_, address_, key_ + Offsets::commission};
     }
 
     // Immutable: Bls and Secp keys the validator signs blocks with
-    auto keys() noexcept
+    StorageVariable<Keys_t> keys() noexcept
     {
-        return StorageVariable<Keys_t>{state_, address_, key_ + Offsets::keys};
+        return {state_, address_, key_ + Offsets::keys};
     }
 
     // Auth address and flags packed into a single slot. See the helpers for
     // getting these individually.
-    auto address_flags() noexcept
+    StorageVariable<AddressFlags_t> address_flags() noexcept
     {
-        return StorageVariable<AddressFlags_t>{
-            state_, address_, key_ + Offsets::address_flags};
+        return {state_, address_, key_ + Offsets::address_flags};
     }
 
     // Unclaimed rewards in the validator pool. Used for internal solvency
     // checks so that a delegator cannot realize more rewards available to the
     // pool.
-    auto unclaimed_rewards() noexcept
+    StorageVariable<UnclaimedRewards_t> unclaimed_rewards() noexcept
     {
-        return StorageVariable<UnclaimedRewards_t>{
-            state_, address_, key_ + Offsets::unclaimed_rewards};
+        return {state_, address_, key_ + Offsets::unclaimed_rewards};
     }
 
     /////////////

@@ -483,7 +483,9 @@ void AsyncIO::poll_uring_while_submission_queue_full_()
     }
 }
 
-bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
+// return the number of completions processed
+// if blocking is true, will block until at least one completion is processed
+size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 {
     // bit 0 in poll_rings_mask blocks read completions, bit 1 blocks write
     // completions
@@ -708,9 +710,10 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         if (state == nullptr) {
             return ret;
         }
-        return process_cqe();
+        return static_cast<size_t>(process_cqe());
     }
 
+    // eager completions mode, drain everything possible
     struct completion_t
     {
         io_uring *ring{nullptr};
@@ -739,7 +742,7 @@ bool AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         res = std::move(i.res);
         process_cqe();
     }
-    return !completions.empty();
+    return completions.size();
 }
 
 unsigned AsyncIO::deferred_initiations_in_flight() const noexcept

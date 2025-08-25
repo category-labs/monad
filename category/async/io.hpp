@@ -123,7 +123,7 @@ private:
     void submit_request_(timed_invocation_state *state, void *uring_data);
 
     void poll_uring_while_submission_queue_full_();
-    bool poll_uring_(bool blocking, unsigned poll_rings_mask);
+    size_t poll_uring_(bool blocking, unsigned poll_rings_mask);
 
 public:
     AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf);
@@ -267,10 +267,12 @@ public:
     size_t poll_blocking(size_t count = 1)
     {
         size_t n = 0;
-        for (; n < count; n++) {
-            if (!poll_uring_(n == 0, 0)) {
+        while (n < count) {
+            auto const num_completions = poll_uring_(n == 0, 0);
+            if (num_completions == 0) {
                 break;
             }
+            n += num_completions;
         }
         return n;
     }
@@ -288,10 +290,12 @@ public:
     size_t poll_nonblocking(size_t count = size_t(-1))
     {
         size_t n = 0;
-        for (; n < count; n++) {
-            if (!poll_uring_(false, 0)) {
+        while (n < count) {
+            auto const num_completions = poll_uring_(false, 0);
+            if (num_completions == 0) {
                 break;
             }
+            n += num_completions;
         }
         return n;
     }
@@ -548,11 +552,11 @@ public:
             })
     auto make_connected(Sender &&sender, Receiver &&receiver)
     {
-        return make_connected_impl_<
-            Sender::my_operation_type == operation_type::write>([&] {
-            return connect<Sender, Receiver>(
-                *this, std::move(sender), std::move(receiver));
-        });
+        return make_connected_impl_ < Sender::my_operation_type ==
+               operation_type::write > ([&] {
+                   return connect<Sender, Receiver>(
+                       *this, std::move(sender), std::move(receiver));
+               });
     }
 
     //! Construct into internal memory a connected state for an i/o read
@@ -574,11 +578,14 @@ public:
         std::piecewise_construct_t _, std::tuple<SenderArgs...> &&sender_args,
         std::tuple<ReceiverArgs...> &&receiver_args)
     {
-        return make_connected_impl_<
-            Sender::my_operation_type == operation_type::write>([&] {
-            return connect<Sender, Receiver>(
-                *this, _, std::move(sender_args), std::move(receiver_args));
-        });
+        return make_connected_impl_ < Sender::my_operation_type ==
+               operation_type::write > ([&] {
+                   return connect<Sender, Receiver>(
+                       *this,
+                       _,
+                       std::move(sender_args),
+                       std::move(receiver_args));
+               });
     }
 
     template <class Base, sender Sender, receiver Receiver>

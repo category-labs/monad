@@ -66,7 +66,7 @@ std::filesystem::path storage_pool::device::current_path() const
     auto *out = const_cast<char *>(ret.data());
     // Linux keeps a symlink at /proc/self/fd/n
     char in[64];
-    snprintf(in, sizeof(in), "/proc/self/fd/%d", cached_readwritefd_);
+    snprintf(in, sizeof(in), "/proc/self/fd/%d", readwritefd_);
     ssize_t const len = ::readlink(in, out, 32768);
     MONAD_ASSERT_PRINTF(
         len != -1, "readlink failed due to %s", strerror(errno));
@@ -92,7 +92,7 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
     case device::type_t_::file: {
         struct stat stat;
         MONAD_ASSERT_PRINTF(
-            -1 != ::fstat(cached_readwritefd_, &stat),
+            -1 != ::fstat(readwritefd_, &stat),
             "failed due to %s",
             strerror(errno));
         return {
@@ -107,7 +107,7 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
         used += metadata_->chunk_capacity;
         MONAD_ASSERT_PRINTF(
             !ioctl(
-                cached_readwritefd_,
+                readwritefd_,
                 _IOR(0x12, 114, size_t) /*BLKGETSIZE64*/,
                 &capacity),
             "failed due to %s",
@@ -640,8 +640,7 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
                     return ::open(path.c_str(), O_PATH | O_CLOEXEC);
                 }
                 char path[PATH_MAX];
-                sprintf(
-                    path, "/proc/self/fd/%d", src_device.cached_readwritefd_);
+                sprintf(path, "/proc/self/fd/%d", src_device.readwritefd_);
                 return ::open(path, O_RDONLY | O_CLOEXEC);
             }();
             MONAD_ASSERT_PRINTF(
@@ -786,16 +785,9 @@ storage_pool::~storage_pool()
                     total_size)),
                 total_size);
         }
-        if (device.uncached_readfd_ != -1) {
-            (void)::close(device.uncached_readfd_);
-        }
-        if (device.uncached_writefd_ != -1) {
-            (void)::fsync(device.uncached_writefd_);
-            (void)::close(device.uncached_writefd_);
-        }
-        if (device.cached_readwritefd_ != -1) {
-            (void)::fsync(device.cached_readwritefd_);
-            (void)::close(device.cached_readwritefd_);
+        if (device.readwritefd_ != -1) {
+            (void)::fsync(device.readwritefd_);
+            (void)::close(device.readwritefd_);
         }
     }
     devices_.clear();
@@ -843,8 +835,8 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
     case chunk_type::cnv:
         ret = std::shared_ptr<cnv_chunk>(new cnv_chunk(
             chunkinfo.device,
-            chunkinfo.device.cached_readwritefd_,
-            chunkinfo.device.cached_readwritefd_,
+            chunkinfo.device.readwritefd_,
+            chunkinfo.device.readwritefd_,
             file_offset_t(chunkinfo.chunk_offset_into_device) *
                 chunkinfo.device.metadata_->chunk_capacity,
             chunkinfo.device.metadata_->chunk_capacity,
@@ -855,30 +847,10 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
             false));
         break;
     case chunk_type::seq: {
-        int fds[2] = {
-            chunkinfo.device.uncached_readfd_,
-            chunkinfo.device.uncached_writefd_};
-        if (-1 == fds[0]) {
-            auto devicepath = chunkinfo.device.current_path();
-            if (!devicepath.empty()) {
-                fds[0] = chunkinfo.device.uncached_readfd_ =
-                    ::open(devicepath.c_str(), O_RDONLY | O_CLOEXEC);
-                MONAD_ASSERT_PRINTF(
-                    fds[0] != -1, "open failed due to %s", strerror(errno));
-                fds[1] = chunkinfo.device.uncached_writefd_ = ::open(
-                    devicepath.c_str(),
-                    (is_read_only() ? O_RDONLY : O_WRONLY) | O_CLOEXEC);
-                MONAD_ASSERT_PRINTF(
-                    fds[1] != -1, "open failed due to %s", strerror(errno));
-            }
-            else {
-                fds[0] = fds[1] = chunkinfo.device.cached_readwritefd_;
-            }
-        }
         ret = std::shared_ptr<seq_chunk>(new seq_chunk(
             chunkinfo.device,
-            fds[0],
-            fds[1],
+            chunkinfo.device.readwritefd_,
+            chunkinfo.device.readwritefd_,
             file_offset_t(chunkinfo.chunk_offset_into_device) *
                 chunkinfo.device.metadata_->chunk_capacity,
             chunkinfo.device.metadata_->chunk_capacity,

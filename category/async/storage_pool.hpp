@@ -81,12 +81,7 @@ public:
     {
         friend class storage_pool;
 
-        int const cached_readwritefd_; // used for the device memory map of its
-                                       // metadata (not O_DIRECT)
-        int uncached_readfd_; // may or may not be shared by chunks for random
-                              // read i/o (O_DIRECT)
-        int uncached_writefd_; // may or may not be shared by chunks
-                               // for append i/o (O_DIRECT)
+        int const readwritefd_; // shared by all chunks for cached i/o
         const enum class type_t_ : uint8_t {
             unknown,
             file,
@@ -149,11 +144,9 @@ public:
         static_assert(sizeof(metadata_t) == 64);
 
         constexpr device(
-            int cached_readwritefd, type_t_ type, uint64_t unique_hash,
+            int readwritefd, type_t_ type, uint64_t unique_hash,
             file_offset_t size_of_file, metadata_t *metadata)
-            : cached_readwritefd_(cached_readwritefd)
-            , uncached_readfd_(-1)
-            , uncached_writefd_(-1)
+            : readwritefd_(readwritefd)
             , type_(type)
             , unique_hash_(unique_hash)
             , size_of_file_(size_of_file)

@@ -1,0 +1,41 @@
+0000000000000010 <monad::fiber::PriorityQueue::pop()>:
+  10:	48 83 ec 38             	sub    $0x38,%rsp
+  14:	48 c7 44 24 08 00 00 00 	movq   $0x0,0x8(%rsp)
+  1c:	00 
+  1d:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+  21:	c5 f8 29 44 24 10       	vmovaps %xmm0,0x10(%rsp)
+  27:	c7 44 24 20 02 00 00 00 	movl   $0x2,0x20(%rsp)
+  2f:	48 8d 44 24 08          	lea    0x8(%rsp),%rax
+  34:	48 89 44 24 28          	mov    %rax,0x28(%rsp)
+  39:	48 8d 57 10             	lea    0x10(%rdi),%rdx
+  3d:	48 8d 74 24 10          	lea    0x10(%rsp),%rsi
+  42:	b9 01 00 00 00          	mov    $0x1,%ecx
+  47:	e8 00 00 00 00          	call   4c <monad::fiber::PriorityQueue::pop()+0x3c>
+			48: R_X86_64_PLT32	void tbb::detail::d1::aggregator_generic<tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::cpq_operation>::execute<tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::functor>(tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::cpq_operation*, tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::functor&, bool)-0x4
+  4c:	48 8b 44 24 10          	mov    0x10(%rsp),%rax
+  51:	48 8b 44 24 08          	mov    0x8(%rsp),%rax
+  56:	48 83 c4 38             	add    $0x38,%rsp
+  5a:	c3                      	ret
+  5b:	0f 1f 44 00 00          	nopl   0x0(%rax,%rax,1)
+
+0000000000000060 <monad::fiber::PriorityQueue::push(boost::fibers::context*)>:
+  60:	48 83 ec 38             	sub    $0x38,%rsp
+  64:	48 89 74 24 08          	mov    %rsi,0x8(%rsp)
+  69:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+  6d:	c5 f8 29 44 24 10       	vmovaps %xmm0,0x10(%rsp)
+  73:	c7 44 24 20 01 00 00 00 	movl   $0x1,0x20(%rsp)
+  7b:	48 8d 44 24 08          	lea    0x8(%rsp),%rax
+  80:	48 89 44 24 28          	mov    %rax,0x28(%rsp)
+  85:	48 8d 57 10             	lea    0x10(%rdi),%rdx
+  89:	48 8d 74 24 10          	lea    0x10(%rsp),%rsi
+  8e:	b9 01 00 00 00          	mov    $0x1,%ecx
+  93:	e8 00 00 00 00          	call   98 <monad::fiber::PriorityQueue::push(boost::fibers::context*)+0x38>
+			94: R_X86_64_PLT32	void tbb::detail::d1::aggregator_generic<tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::cpq_operation>::execute<tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::functor>(tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::cpq_operation*, tbb::detail::d1::concurrent_priority_queue<boost::fibers::context*, monad::fiber::PriorityQueue::Compare, tbb::detail::d1::cache_aligned_allocator<boost::fibers::context*> >::functor&, bool)-0x4
+  98:	48 8b 44 24 10          	mov    0x10(%rsp),%rax
+  9d:	48 83 f8 02             	cmp    $0x2,%rax
+  a1:	75 0a                   	jne    ad <monad::fiber::PriorityQueue::push(boost::fibers::context*)+0x4d>
+  a3:	bf 01 00 00 00          	mov    $0x1,%edi
+  a8:	e8 00 00 00 00          	call   ad <monad::fiber::PriorityQueue::push(boost::fibers::context*)+0x4d>
+			a9: R_X86_64_PLT32	tbb::detail::r1::throw_exception(tbb::detail::d0::exception_id)-0x4
+  ad:	48 83 c4 38             	add    $0x38,%rsp
+  b1:	c3                      	ret

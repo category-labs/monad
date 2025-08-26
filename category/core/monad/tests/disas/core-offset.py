@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+compilers = [ "clang" ]
 obj = "libmonad_core_disas.a"
 syms = [
     "monad::disas::off48_from_int(monad::off48_t*, long const*)",

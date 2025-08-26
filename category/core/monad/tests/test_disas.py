@@ -19,13 +19,15 @@ from glob import glob
 from os import path
 from subprocess import check_output
 
-__this_file = path.realpath(__file__)
-__this_dir = path.dirname(__this_file)
-__test_dir = path.join(__this_dir, "disas")
+THIS_FILE = path.realpath(__file__)
+THIS_DIR = path.dirname(THIS_FILE)
+TEST_DIR = path.join(THIS_DIR, "disas")
 
 TARGET_REGEX = "((?:call|ja|jae|jb|jbe|je|jmp|jne|js)[ ]+)0x[0-9a-f]+[ ]+"
 TARGET_PATTERN = re.compile(TARGET_REGEX)
 
+CC = os.getenv("CC")
+assert CC
 
 def _get_test_ids(test_dir):
     test_ids = []
@@ -37,141 +39,160 @@ def _get_test_ids(test_dir):
         test_ids.append(test_id)
     return test_ids
 
+class DisassemblyTestCase:
+    def __init__(self, test_id):
+        test_file = path.join(TEST_DIR, "%s.py" % (test_id,))
+        ns = {}
+        with open(test_file, "r") as f:
+            code = compile(f.read(), test_file, "exec")
+            exec(code, ns, ns)
+
+        compilers = ns.get("compilers")
+        obj = ns.get("obj")
+        syms = ns.get("syms")
+
+        assert isinstance(compilers, list)
+        for compiler in compilers:
+            assert isinstance(compiler, str)
+        assert isinstance(obj, str)
+        assert isinstance(syms, list)
+        for sym in syms:
+            assert isinstance(sym, str)
+
+        self.test_id = test_id
+        self.compilers = compilers
+        self.obj = obj
+        self.syms = syms
+        self.matching_compiler = None
+
+    def find_matching_compiler(self):
+        if not self.matching_compiler:
+            for c in self.compilers:
+                if CC.startswith(c):
+                    self.matching_compiler = c
+        return self.matching_compiler
+
+    def _gen_result(self):
+        obj = path.join("**", self.obj)
+        objs = glob(obj, recursive=True)
+        assert len(objs) == 1
+        obj = objs[0]
+        cmd = [
+            "gdb",
+            "-batch",
+            "-ex",
+            "file %s" % (obj,),
+        ]
+        for sym in self.syms:
+            cmd += [
+                "-ex",
+                "disas '%s'" % (sym,),
+            ]
+        result = check_output(cmd)
+        result = result.decode("ascii")
+        result = result.splitlines()
+
+        def remove_address(line: str):
+            line = line.expandtabs()
+            if not line.startswith("   0x"):
+                return line
+            line = line[22:]
+            assert line[0] == "<"
+            return line
+
+        result = [remove_address(line) for line in result]
+
+        def remove_target(line: str):
+            return TARGET_PATTERN.sub("\\1", line, count=1)
+
+        result = [remove_target(line) for line in result]
+
+        def gdb_10_to_12(line: str):  # TODO
+            return line.replace("nopw   %cs:0", "cs nopw 0")
+
+        result = [gdb_10_to_12(line) for line in result]
+        result = "\n".join(result)
+        return result
+
+    def _gen_result_objdump(self):
+        compiler = self.find_matching_compiler()
+
+        obj = path.join("**", self.obj)
+        objs = glob(obj, recursive=True)
+        assert len(objs) == 1
+        obj = objs[0]
+        cmd = [
+            "objdump",
+            "--demangle",
+            "--disassemble",
+            "--reloc",
+            "--insn-width=8",
+            obj,
+        ]
+        result = check_output(cmd)
+        result = result.decode("ascii")
+        result = result.splitlines()
+
+        result2 = []
+        match = False
+        for line in result:
+            if not match:
+                for sym in self.syms:
+                    if "<%s>:" % (sym,) in line:
+                        match = True
+                        break
+            if match:
+                result2.append(line)
+                if not line.strip():
+                    match = False
+
+        result = "\n".join(result2)
+        return result
+
+    def _load_result(self):
+        compiler = self.find_matching_compiler()
+        result_file = path.join(TEST_DIR, "%s_%s.dis" % (self.test_id, compiler))
+        with open(result_file, "r") as f:
+            result = f.read()
+        return result
+
+    def save_result(self):
+        compiler = self.find_matching_compiler()
+        result = self._gen_result_objdump()
+        result_file = path.join(TEST_DIR, "%s_%s.dis" % (self.test_id, compiler))
+        with open(result_file, "w") as f:
+            f.write(result)
+
+    def run(self):
+        print(self.test_id)
+        expected_result = self._load_result()
+        current_result = self._gen_result_objdump()
+        assert expected_result == current_result
 
 def _create_test_class(test_dir):
     class TestDisas:
-        @staticmethod
-        def _load_test(test_id):
-            test_file = path.join(TestDisas._test_dir, "%s.py" % (test_id,))
-            ns = {}
-            with open(test_file, "r") as f:
-                code = compile(f.read(), test_file, "exec")
-                exec(code, ns, ns)
-            obj = ns.get("obj")
-            syms = ns.get("syms")
-            assert isinstance(obj, (str,))
-            assert isinstance(syms, (list,))
-            for sym in syms:
-                assert isinstance(sym, (str,))
-            return obj, syms
-
-        @staticmethod
-        def _load_result(test_id):
-            result_file = path.join(TestDisas._test_dir, "%s.dis" % (test_id,))
-            with open(result_file, "r") as f:
-                result = f.read()
-            return result
-
-        @staticmethod
-        def _gen_result(test_id):
-            obj, syms = TestDisas._load_test(test_id)
-            obj = path.join("**", obj)
-            objs = glob(obj, recursive=True)
-            assert len(objs) == 1
-            obj = objs[0]
-            cmd = [
-                "gdb",
-                "-batch",
-                "-ex",
-                "file %s" % (obj,),
-            ]
-            for sym in syms:
-                cmd += [
-                    "-ex",
-                    "disas '%s'" % (sym,),
-                ]
-            result = check_output(cmd)
-            result = result.decode("ascii")
-            result = result.splitlines()
-
-            def remove_address(line: str):
-                line = line.expandtabs()
-                if not line.startswith("   0x"):
-                    return line
-                line = line[22:]
-                assert line[0] == "<"
-                return line
-
-            result = [remove_address(line) for line in result]
-
-            def remove_target(line: str):
-                return TestDisas._target_pattern.sub("\\1", line, count=1)
-
-            result = [remove_target(line) for line in result]
-
-            def gdb_10_to_12(line: str):  # TODO
-                return line.replace("nopw   %cs:0", "cs nopw 0")
-
-            result = [gdb_10_to_12(line) for line in result]
-            result = "\n".join(result)
-            return result
-
-        @staticmethod
-        def _gen_result_objdump(test_id):
-            obj, syms = TestDisas._load_test(test_id)
-            obj = path.join("**", obj)
-            objs = glob(obj, recursive=True)
-            assert len(objs) == 1
-            obj = objs[0]
-            cmd = [
-                "objdump",
-                "--demangle",
-                "--disassemble",
-                "--reloc",
-                "--insn-width=8",
-                obj,
-            ]
-            result = check_output(cmd)
-            result = result.decode("ascii")
-            result = result.splitlines()
-
-            result2 = []
-            match = False
-            for line in result:
-                if not match:
-                    for sym in syms:
-                        if "<%s>:" % (sym,) in line:
-                            match = True
-                            break
-                if match:
-                    result2.append(line)
-                    if not line.strip():
-                        match = False
-
-            result = "\n".join(result2)
-            return result
-
-        @staticmethod
-        def _save_result(test_id):
-            result = TestDisas._gen_result_objdump(test_id)
-            result_file = path.join(TestDisas._test_dir, "%s.dis" % (test_id,))
-            with open(result_file, "w") as f:
-                f.write(result)
-
-        @staticmethod
-        def _run_test(test_id):
-            expected_result = TestDisas._load_result(test_id)
-            current_result = TestDisas._gen_result_objdump(test_id)
-            assert expected_result == current_result
-
-    setattr(TestDisas, "_test_dir", test_dir)
-    setattr(TestDisas, "_target_pattern", TARGET_PATTERN)
+        pass
 
     test_ids = _get_test_ids(test_dir)
-    for test_id in test_ids:
+    test_cases = [ DisassemblyTestCase(test_id) for test_id in test_ids ]
+    test_cases = [
+        test_case
+        for test_case in test_cases
+        if test_case.find_matching_compiler()
+    ]
+    for test_case in test_cases:
+        def test_func(self, test_case=test_case):
+            test_case.run()
 
-        def test_func(self, test_id=test_id):
-            TestDisas._run_test(test_id)
-
-        setattr(TestDisas, "test_%s" % (test_id,), test_func)
+        setattr(TestDisas, "test_%s" % (test_case.test_id,), test_func)
 
     setattr(TestDisas, "test_ids", test_ids)
+    setattr(TestDisas, "test_cases", test_cases)
 
     return TestDisas
 
 
-TestDisas = _create_test_class(__test_dir)
-
+TestDisas = _create_test_class(TEST_DIR)
 
 def main():
     import argparse
@@ -180,8 +201,8 @@ def main():
     parser.add_argument("cmd", choices=("generate",))
     args = parser.parse_args()
     if args.cmd == "generate":
-        for test_id in TestDisas.test_ids:
-            TestDisas._save_result(test_id)
+        for test_case in TestDisas.test_cases:
+            test_case.save_result()
 
 
 if __name__ == "__main__":

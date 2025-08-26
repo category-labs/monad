@@ -28,13 +28,18 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 evmc_revision MonadChain::get_revision(
-    uint64_t /*block_number*/, uint64_t const timestamp) const
+    uint64_t /*block_number*/, uint64_t const /* timestamp */) const
 {
-    auto const monad_revision = get_monad_revision(timestamp);
+    // TODO(Bruce): This is a temporary measure to unblock work on consensus
+    // while other incompatible work is in-flight; it should be reverted as soon
+    // as reserve balance is merged and consensus is back in sync with
+    // execution.
 
-    if (MONAD_LIKELY(monad_revision >= MONAD_FOUR)) {
-        return EVMC_PRAGUE;
-    }
+    // auto const monad_revision = get_monad_revision(timestamp);
+
+    // if (MONAD_LIKELY(monad_revision >= MONAD_FOUR)) {
+    //     return EVMC_PRAGUE;
+    // }
 
     return EVMC_CANCUN;
 }

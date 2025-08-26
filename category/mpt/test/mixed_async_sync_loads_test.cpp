@@ -76,6 +76,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
             node_cache,
             inflights,
             OwningNodeCursor{cache_root},
+            latest_version,
             key,
             true),
         receiver_t{});

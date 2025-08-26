@@ -770,6 +770,7 @@ int main(int argc, char *argv[])
                             node_cache,
                             inflights,
                             OwningNodeCursor{start_node},
+                            aux.db_history_max_version(),
                             NibblesView{},
                             true},
                         receiver_t(

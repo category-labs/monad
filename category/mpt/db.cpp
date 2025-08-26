@@ -1599,6 +1599,7 @@ namespace detail
                     context.node_cache,
                     context.inflight_nodes,
                     cur,
+                    block_id,
                     nv,
                     op_type == op_t::op_get2),
                 find_request_receiver_t<T>{

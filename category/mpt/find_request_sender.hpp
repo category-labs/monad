@@ -67,6 +67,7 @@ private:
     UpdateAuxImpl &aux_;
     NodeCache &node_cache_;
     OwningNodeCursor root_;
+    uint64_t version_;
     NibblesView key_;
     AsyncInflightNodes &inflights_;
     std::optional<find_result_type<T>> res_{std::nullopt};
@@ -77,8 +78,14 @@ private:
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
         OwningNodeCursor root)
     {
+        if (!root.is_valid()) {
+            // Version invalidated during async read
+            res_ = {T{}, find_result::version_no_longer_exist};
+            io_state->completed(MONAD_ASYNC_NAMESPACE::success());
+            return MONAD_ASYNC_NAMESPACE::success();
+        }
+
         root_ = root;
-        MONAD_ASSERT(root_.is_valid());
         return (*this)(io_state);
     }
 
@@ -87,11 +94,12 @@ public:
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, NodeCache &node_cache,
-        AsyncInflightNodes &inflights, OwningNodeCursor root,
+        AsyncInflightNodes &inflights, OwningNodeCursor root, uint64_t version,
         NibblesView const key, bool const return_value)
         : aux_(aux)
         , node_cache_(node_cache)
         , root_(root)
+        , version_(version)
         , key_(key)
         , inflights_(inflights)
         , return_value_(return_value)
@@ -120,17 +128,15 @@ public:
     }
 };
 
-static_assert(sizeof(find_request_sender<byte_string>) == 120);
+static_assert(sizeof(find_request_sender<byte_string>) == 128);
 static_assert(alignof(find_request_sender<byte_string>) == 8);
 static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender<byte_string>>);
 
-static_assert(sizeof(find_request_sender<std::shared_ptr<CacheNode>>) == 104);
+static_assert(sizeof(find_request_sender<std::shared_ptr<CacheNode>>) == 112);
 static_assert(alignof(find_request_sender<std::shared_ptr<CacheNode>>) == 8);
 static_assert(MONAD_ASYNC_NAMESPACE::sender<
               find_request_sender<std::shared_ptr<CacheNode>>>);
 
-// TODO: fix the version out of history range UB by version validation after
-// each io
 template <return_type T>
 struct find_request_sender<T>::find_receiver
 {
@@ -140,6 +146,7 @@ struct find_request_sender<T>::find_receiver
     MONAD_ASYNC_NAMESPACE::erased_connected_operation *const io_state;
 
     chunk_offset_t rd_offset{0, 0}; // required for sender
+    virtual_chunk_offset_t virt_offset;
     unsigned bytes_to_read; // required for sender too
     uint16_t buffer_off;
     unsigned const branch_index;
@@ -148,9 +155,10 @@ struct find_request_sender<T>::find_receiver
     constexpr find_receiver(
         find_request_sender *sender_,
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state_,
-        unsigned char const branch)
+        virtual_chunk_offset_t const virt_offset_, unsigned char const branch)
         : sender(sender_)
         , io_state(io_state_)
+        , virt_offset(virt_offset_)
         , branch_index(sender->root_.node->to_child_index(branch))
         , branch(branch)
     {
@@ -176,13 +184,15 @@ struct find_request_sender<T>::find_receiver
         MONAD_ASSERT(sender->root_.is_valid());
         auto const next_offset = sender->root_.node->fnext(branch_index);
         auto const virt_offset = sender->aux_.physical_to_virtual(next_offset);
-        std::shared_ptr<CacheNode> sp =
-            detail::deserialize_node_from_receiver_result<CacheNode>(
+        std::shared_ptr<CacheNode> sp;
+        if (this->virt_offset == virt_offset) {
+            sp = detail::deserialize_node_from_receiver_result<CacheNode>(
                 std::move(buffer_), buffer_off, io_state);
-        auto cache_it = sender->node_cache_.insert(virt_offset, sp);
-        auto *const list_node = &*cache_it->second;
-        sender->root_.node->set_next(branch_index, list_node);
-        auto key = std::pair(virt_offset, sender->root_.node.get());
+            auto cache_it = sender->node_cache_.insert(virt_offset, sp);
+            auto *const list_node = &*cache_it->second;
+            sender->root_.node->set_next(branch_index, list_node);
+        }
+        auto key = std::pair(this->virt_offset, sender->root_.node.get());
         auto it = sender->inflights_.find(key);
         if (it != sender->inflights_.end()) {
             auto pendings = std::move(it->second);
@@ -203,6 +213,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
     just a bit quirky is all.
     */
     using namespace MONAD_ASYNC_NAMESPACE;
+
     for (;;) {
         unsigned prefix_index = 0;
         unsigned node_prefix_index = root_.prefix_index;
@@ -247,6 +258,12 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             auto const offset = node->fnext(child_index);
             virtual_chunk_offset_t const virt_offset =
                 aux_.physical_to_virtual(offset);
+            // Verify version after translating address
+            if (!aux_.version_is_valid_ondisk(version_)) {
+                res_ = {T{}, find_result::version_no_longer_exist};
+                io_state->completed(success());
+                return success();
+            }
             if (p != nullptr && p->key == virt_offset) {
                 // found cache entry with the desired key
                 root_ = {p->val};
@@ -280,7 +297,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 return success();
             }
             inflights_[offset_node].emplace_back(cont);
-            find_receiver receiver(this, io_state, branch);
+            find_receiver receiver(this, io_state, virt_offset, branch);
             detail::initiate_async_read_update(
                 *aux_.io, std::move(receiver), receiver.bytes_to_read);
             return success();

@@ -24,12 +24,17 @@ extern "C"
 {
 #endif
 
-struct monad_event_metadata const g_monad_test_event_metadata[2] = {
+struct monad_event_metadata const g_monad_test_event_metadata[3] = {
 
     [MONAD_TEST_EVENT_NONE] =
         {.event_type = MONAD_TEST_EVENT_NONE,
          .c_name = "NONE",
-         .description = "reserved code so that 0 remains invalid"},
+         .description = "Reserved code so that 0 remains invalid"},
+
+    [MONAD_TEST_EVENT_RECORD_ERROR] =
+        {.event_type = MONAD_TEST_EVENT_RECORD_ERROR,
+         .c_name = "RECORD_ERROR",
+         .description = "Reserved event type used for recording errors"},
 
     [MONAD_TEST_EVENT_COUNTER] =
         {.event_type = MONAD_TEST_EVENT_COUNTER,

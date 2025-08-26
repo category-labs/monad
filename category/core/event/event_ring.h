@@ -42,6 +42,7 @@ struct monad_event_recorder;
 struct monad_event_ring_header;
 
 enum monad_event_content_type : uint16_t;
+enum monad_event_record_error_type : uint16_t;
 
 // clang-format off
 
@@ -207,6 +208,32 @@ constexpr uint8_t MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT = 27;
 constexpr uint8_t MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT = 40;
 
 constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
+
+/*
+ * Record error event payload definitions; in any event domain, the event_type
+ * with code 1 is always a `RECORD_ERROR` event and has this payload type
+ */
+
+// clang-format off
+
+struct monad_event_record_error
+{
+    enum monad_event_record_error_type
+        error_type;                  ///< Kind of recording error that occurred
+    uint16_t dropped_event_type;     ///< What kind of event was discarded
+    uint32_t truncated_payload_size; ///< Size of truncated trailing payload
+    uint64_t requested_payload_size; ///< Untruncated size of event payload
+};
+
+enum monad_event_record_error_type : uint16_t
+{
+    MONAD_EVENT_RECORD_ERROR_NONE,            ///< No error
+    MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB,    ///< Payload overflows UINT32_MAX
+    MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE, ///< Payload expired on creation
+    MONAD_EVENT_RECORD_ERROR_MISSING_EVENT,   ///< Missing expected from peer
+};
+
+// clang-format on
 
 /*
  * Event ring inline function definitions

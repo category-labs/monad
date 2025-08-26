@@ -34,6 +34,7 @@ extern "C"
 enum monad_test_event : uint16_t
 {
     MONAD_TEST_EVENT_NONE,
+    MONAD_TEST_EVENT_RECORD_ERROR,
     MONAD_TEST_EVENT_COUNTER,
 };
 
@@ -44,7 +45,7 @@ struct monad_test_event_counter
     uint64_t counter;
 };
 
-extern struct monad_event_metadata const g_monad_test_event_metadata[2];
+extern struct monad_event_metadata const g_monad_test_event_metadata[3];
 extern uint8_t const g_monad_test_event_schema_hash[32];
 
 #define MONAD_EVENT_DEFAULT_TEST_FILE_NAME "event-recorder-test"

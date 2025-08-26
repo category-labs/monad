@@ -79,7 +79,7 @@ constexpr quill::LogLevel to_quill_log_level(syslog_level l)
 {
     using quill::LogLevel;
 
-    switch (l) {
+    switch (std::to_underlying(l)) {
     case syslog_level::Emergency:
         [[fallthrough]];
     case syslog_level::Alert:
@@ -96,6 +96,12 @@ constexpr quill::LogLevel to_quill_log_level(syslog_level l)
         return LogLevel::Info;
     case syslog_level::Debug:
         return LogLevel::Debug;
+    case syslog_level::Debug + 1:
+        return LogLevel::TraceL1;
+    case syslog_level::Debug + 2:
+        return LogLevel::TraceL2;
+    case syslog_level::Debug + 3:
+        return LogLevel::TraceL3;
     default:
         return LogLevel::None;
     }
@@ -206,7 +212,9 @@ int monad_log_init(
     using std::chrono::duration_cast, std::chrono::nanoseconds,
         std::chrono::microseconds;
 
-    // quill recognizes three trace levels, which are assigned after debug
+    // quill recognizes three trace levels, which are assigned after debug;
+    // these aren't real syslog levels but we recognize them in case the
+    // caller wants to coax quill into tracing
     if (level > syslog_level::Debug + 3) {
         *std::format_to(
             error_buf, "level {} out of syslog level range", level) = '\0';

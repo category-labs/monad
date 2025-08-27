@@ -18,6 +18,7 @@
 #include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/llvm/virtual_stack.hpp>
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/data.hpp>
@@ -72,7 +73,7 @@ namespace monad::vm::llvm
         LLVMState &llvm;
     };
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     struct Emitter
     {
 
@@ -127,7 +128,7 @@ namespace monad::vm::llvm
                 auto const &blk = ir.blocks()[i];
 
                 base_gas_remaining =
-                    block_base_gas<Rev>(blk) + gas_from_inlining[i];
+                    block_base_gas<traits>(blk) + gas_from_inlining[i];
 
                 bool const skip_block = block_begin(blk);
 
@@ -142,7 +143,7 @@ namespace monad::vm::llvm
                 }
 
                 base_gas_remaining -=
-                    terminator_static_gas<Rev>(blk.terminator);
+                    terminator_static_gas<traits>(blk.terminator);
 
                 terminate_block(blk);
             }
@@ -602,7 +603,7 @@ namespace monad::vm::llvm
             if (selfdestruct_f == nullptr) {
                 selfdestruct_f = declare_symbol(
                     term_name(SelfDestruct),
-                    (void *)(&selfdestruct<Rev>),
+                    (void *)(&selfdestruct<traits>),
                     llvm.void_ty,
                     {llvm.ptr_ty(context_ty), llvm.ptr_ty(llvm.word_ty)});
             }
@@ -1152,40 +1153,40 @@ namespace monad::vm::llvm
             auto op = instr.opcode();
             switch (op) {
             case SStore:
-                return ffi_runtime(instr, sstore<Rev>);
+                return ffi_runtime(instr, sstore<traits>);
 
             case Create:
-                return ffi_runtime(instr, create<Rev>);
+                return ffi_runtime(instr, create<traits>);
 
             case Create2:
-                return ffi_runtime(instr, create2<Rev>);
+                return ffi_runtime(instr, create2<traits>);
 
             case DelegateCall:
-                return ffi_runtime(instr, delegatecall<Rev>);
+                return ffi_runtime(instr, delegatecall<traits>);
 
             case StaticCall:
-                return ffi_runtime(instr, staticcall<Rev>);
+                return ffi_runtime(instr, staticcall<traits>);
 
             case Call:
-                return ffi_runtime(instr, call<Rev>);
+                return ffi_runtime(instr, call<traits>);
 
             case CallCode:
-                return ffi_runtime(instr, callcode<Rev>);
+                return ffi_runtime(instr, callcode<traits>);
 
             case SelfBalance:
                 return ffi_runtime(instr, selfbalance);
 
             case Balance:
-                return ffi_runtime(instr, balance<Rev>);
+                return ffi_runtime(instr, balance<traits>);
 
             case ExtCodeHash:
-                return ffi_runtime(instr, extcodehash<Rev>);
+                return ffi_runtime(instr, extcodehash<traits>);
 
             case ExtCodeSize:
-                return ffi_runtime(instr, extcodesize<Rev>);
+                return ffi_runtime(instr, extcodesize<traits>);
 
             case SLoad:
-                return ffi_runtime(instr, sload<Rev>);
+                return ffi_runtime(instr, sload<traits>);
 
             case BlobHash:
                 return ffi_runtime(instr, blobhash);
@@ -1203,7 +1204,7 @@ namespace monad::vm::llvm
                 return ffi_runtime(instr, tload);
 
             case Exp:
-                return ffi_runtime(instr, exp<Rev>);
+                return ffi_runtime(instr, exp<traits>);
 
             case Sha3:
                 return ffi_runtime(instr, sha3);
@@ -1230,7 +1231,7 @@ namespace monad::vm::llvm
                 return ffi_runtime(instr, returndatacopy);
 
             case ExtCodeCopy:
-                return ffi_runtime(instr, extcodecopy<Rev>);
+                return ffi_runtime(instr, extcodecopy<traits>);
 
             case Log:
                 switch (instr.index()) {

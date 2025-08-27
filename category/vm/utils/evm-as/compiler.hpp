@@ -17,6 +17,7 @@
 
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -65,14 +66,14 @@ namespace monad::vm::utils::evm_as::internal
         return true;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     bool simulate_stack_effect(Instruction::T inst, annot_context &ctx)
     {
         return std::visit(
             Cases{
                 [&](PlainI const &plain) -> bool {
                     auto const &info =
-                        compiler::opcode_table<Rev>[plain.opcode];
+                        compiler::opcode_table<traits>[plain.opcode];
                     if (info.min_stack > ctx.vstack.size()) {
                         // Stack underflow
                         return false;
@@ -164,11 +165,12 @@ namespace monad::vm::utils::evm_as
     //
     // Generic bytecode compiler
     //
-    template <evmc_revision Rev>
+    template <Traits traits>
     void compile(
-        EvmBuilder<Rev> const &eb, std::invocable<uint8_t const> auto emit_byte)
+        EvmBuilder<traits> const &eb,
+        std::invocable<uint8_t const> auto emit_byte)
     {
-        auto const label_offsets = resolve_labels<Rev>(eb);
+        auto const label_offsets = resolve_labels<traits>(eb);
         for (auto const &ins : eb) {
             std::array<uint8_t, sizeof(runtime::uint256_t)> imm_bytes{};
             if (Instruction::is_comment(ins)) {
@@ -219,32 +221,32 @@ namespace monad::vm::utils::evm_as
 
     // Assembles and emits the corresponding byte code of the provided
     // builder object to the provided `bytecode` vector.
-    template <evmc_revision Rev>
+    template <Traits traits>
     inline void
-    compile(EvmBuilder<Rev> const &eb, std::vector<uint8_t> &bytecode)
+    compile(EvmBuilder<traits> const &eb, std::vector<uint8_t> &bytecode)
     {
         bytecode.reserve(eb.size() /* optimistic estimate */);
-        compile<Rev>(
+        compile<traits>(
             eb, [&](uint8_t const byte) -> void { bytecode.push_back(byte); });
     }
 
     // Assembles and emits the corresponding byte code of the provided
     // builder object to the provided `os` out stream.
-    template <evmc_revision Rev>
-    inline void compile(EvmBuilder<Rev> const &eb, std::ostream &os)
+    template <Traits traits>
+    inline void compile(EvmBuilder<traits> const &eb, std::ostream &os)
     {
-        compile<Rev>(eb, [&](uint8_t const byte) -> void {
+        compile<traits>(eb, [&](uint8_t const byte) -> void {
             os << static_cast<std::ostream::char_type>(byte);
         });
     }
 
     // Assembles and emits the corresponding byte code of the provided
     // builder object in the returned string.
-    template <evmc_revision Rev>
-    inline std::string compile(EvmBuilder<Rev> const &eb)
+    template <Traits traits>
+    inline std::string compile(EvmBuilder<traits> const &eb)
     {
         std::stringstream ss{};
-        compile<Rev>(eb, ss);
+        compile<traits>(eb, ss);
         return ss.str();
     }
 
@@ -274,15 +276,15 @@ namespace monad::vm::utils::evm_as
     //
     // Mnemonic compiler
     //
-    template <evmc_revision Rev>
+    template <Traits traits>
     inline void mcompile(
-        EvmBuilder<Rev> const &eb, std::ostream &os,
+        EvmBuilder<traits> const &eb, std::ostream &os,
         mnemonic_config config = mnemonic_config())
     {
         auto const label_offsets =
             [&]() -> std::unordered_map<std::string, size_t> {
             if (config.resolve_labels) {
-                return resolve_labels<Rev>(eb);
+                return resolve_labels<traits>(eb);
             }
             return {};
         }();
@@ -291,12 +293,13 @@ namespace monad::vm::utils::evm_as
             size_t length = std::visit(
                 Cases{
                     [&](PlainI const &plain) -> size_t {
-                        auto const info = mc::opcode_table<Rev>[plain.opcode];
+                        auto const info =
+                            mc::opcode_table<traits>[plain.opcode];
                         os << info.name;
                         return info.name.size();
                     },
                     [&](PushI const &push) -> size_t {
-                        auto const info = mc::opcode_table<Rev>[push.opcode];
+                        auto const info = mc::opcode_table<traits>[push.opcode];
                         std::string imm_str = push.imm.to_string(16);
                         std::transform(
                             imm_str.begin(),
@@ -359,7 +362,7 @@ namespace monad::vm::utils::evm_as
                     }},
                 ins);
             if (config.annotate && length > 0) {
-                if (internal::simulate_stack_effect<Rev>(ins, ctx)) {
+                if (internal::simulate_stack_effect<traits>(ins, ctx)) {
                     internal::emit_annotation(
                         ctx, length, config.desired_annotation_offset, os);
                 }
@@ -370,9 +373,10 @@ namespace monad::vm::utils::evm_as
 
     // Returns a mnemonic representation of the provided builder object
     // as a string; convenient for testing.
-    template <evmc_revision Rev>
+    template <Traits traits>
     inline std::string mcompile(
-        EvmBuilder<Rev> const &eb, mnemonic_config config = mnemonic_config())
+        EvmBuilder<traits> const &eb,
+        mnemonic_config config = mnemonic_config())
     {
         std::stringstream ss{};
         mcompile(eb, ss, config);

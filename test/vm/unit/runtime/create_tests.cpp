@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/memory.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -23,6 +24,7 @@
 #include <evmc/evmc.h>
 
 using namespace monad;
+using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
@@ -31,14 +33,14 @@ constexpr evmc_address result_addr = {0x42};
 
 TEST_F(RuntimeTest, CreateFrontier)
 {
-    constexpr auto rev = EVMC_FRONTIER;
+    using traits = EvmChain<EVMC_FRONTIER>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto do_create = wrap(create<rev>);
+    auto do_create = wrap(create<traits>);
 
     vm::runtime::uint256_t const addr = do_create(0, 19, 13);
 
@@ -50,14 +52,14 @@ TEST_F(RuntimeTest, CreateFrontier)
 
 TEST_F(RuntimeTest, CreateShanghai)
 {
-    constexpr auto rev = EVMC_SHANGHAI;
+    using traits = EvmChain<EVMC_SHANGHAI>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto do_create = wrap(create<rev>);
+    auto do_create = wrap(create<traits>);
 
     vm::runtime::uint256_t const addr = do_create(0, 19, 13);
 
@@ -69,14 +71,14 @@ TEST_F(RuntimeTest, CreateShanghai)
 
 TEST_F(RuntimeTest, CreateTangerineWhistle)
 {
-    constexpr auto rev = EVMC_TANGERINE_WHISTLE;
+    using traits = EvmChain<EVMC_TANGERINE_WHISTLE>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto do_create = wrap(create<rev>);
+    auto do_create = wrap(create<traits>);
 
     vm::runtime::uint256_t const addr = do_create(0, 19, 13);
 
@@ -88,12 +90,12 @@ TEST_F(RuntimeTest, CreateTangerineWhistle)
 
 TEST_F(RuntimeTest, CreateFrontierSizeIsZero)
 {
-    constexpr auto rev = EVMC_FRONTIER;
+    using traits = EvmChain<EVMC_FRONTIER>;
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000);
 
-    auto do_create = wrap(create<rev>);
+    auto do_create = wrap(create<traits>);
 
     vm::runtime::uint256_t const addr = do_create(0, 0, 0);
 
@@ -103,11 +105,11 @@ TEST_F(RuntimeTest, CreateFrontierSizeIsZero)
 
 TEST_F(RuntimeTest, CreateFrontierFailure)
 {
-    constexpr auto rev = EVMC_FRONTIER;
+    using traits = EvmChain<EVMC_FRONTIER>;
 
     host_.call_result = failure_result(EVMC_OUT_OF_GAS);
 
-    auto do_create = wrap(create<rev>);
+    auto do_create = wrap(create<traits>);
 
     vm::runtime::uint256_t const addr = do_create(0, 0, 0);
 
@@ -116,14 +118,14 @@ TEST_F(RuntimeTest, CreateFrontierFailure)
 
 TEST_F(RuntimeTest, Create2Constantinople)
 {
-    constexpr auto rev = EVMC_CONSTANTINOPLE;
+    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto do_create2 = wrap(create2<rev>);
+    auto do_create2 = wrap(create2<traits>);
 
     vm::runtime::uint256_t const addr = do_create2(0, 19, 13, 0x99);
 
@@ -135,7 +137,7 @@ TEST_F(RuntimeTest, Create2Constantinople)
 
 TEST_F(RuntimeTest, CreateMaxCodeSize)
 {
-    constexpr auto rev = EVMC_CANCUN;
+    using traits = EvmChain<EVMC_CANCUN>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 
@@ -143,14 +145,14 @@ TEST_F(RuntimeTest, CreateMaxCodeSize)
     ctx_.chain_params.max_initcode_size = max_initcode_size;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto const do_create = wrap(create<rev>);
+    auto const do_create = wrap(create<traits>);
     auto const addr = do_create(0, 0, max_initcode_size);
     ASSERT_EQ(addr, uint256_from_address(result_addr));
 }
 
 TEST_F(RuntimeTest, Create2MaxCodeSize)
 {
-    constexpr auto rev = EVMC_CANCUN;
+    using traits = EvmChain<EVMC_CANCUN>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 
@@ -158,7 +160,7 @@ TEST_F(RuntimeTest, Create2MaxCodeSize)
     ctx_.chain_params.max_initcode_size = max_initcode_size;
     host_.call_result = create_result(result_addr, 900000, 10);
 
-    auto const do_create2 = wrap(create2<rev>);
+    auto const do_create2 = wrap(create2<traits>);
     auto const addr = do_create2(0, 0, max_initcode_size, 0);
     ASSERT_EQ(addr, uint256_from_address(result_addr));
 }

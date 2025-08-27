@@ -27,12 +27,12 @@
 
 namespace monad::vm::runtime
 {
-    template <evmc_revision Rev>
+    template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
         auto key = bytes32_from_uint256(*key_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
         *result_ptr = uint256_from_bytes32(value);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         std::int64_t remaining_block_base_gas)
@@ -55,10 +55,10 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::Error);
         }
 
-        constexpr auto min_gas = minimum_store_gas<Rev>();
+        constexpr auto min_gas = minimum_store_gas<traits>();
 
         // EIP-2200
-        if constexpr (Rev >= EVMC_ISTANBUL) {
+        if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
             if (ctx->gas_remaining + remaining_block_base_gas + min_gas <=
                 2300) {
                 ctx->exit(StatusCode::OutOfGas);
@@ -69,7 +69,7 @@ namespace monad::vm::runtime
         auto value = bytes32_from_uint256(*value_ptr);
 
         auto access_status = EVMC_ACCESS_COLD;
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
         }
@@ -77,7 +77,7 @@ namespace monad::vm::runtime
         auto storage_status = ctx->host->set_storage(
             ctx->context, &ctx->env.recipient, &key, &value);
 
-        auto [gas_used, gas_refund] = store_cost<Rev>(storage_status);
+        auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
         // The code generator has taken care of accounting for the minimum base
         // gas cost of this SSTORE already, but to keep the table of costs
@@ -85,7 +85,7 @@ namespace monad::vm::runtime
         // than the amount relative to the minimum gas.
         gas_used -= min_gas;
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             if (access_status == EVMC_ACCESS_COLD) {
                 gas_used += 2100;
             }

@@ -20,6 +20,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/bin.hpp>
 
 #include <evmc/evmc.h>
@@ -43,7 +44,9 @@ using namespace monad::vm::interpreter;
 
 namespace
 {
-    template <evmc_revision rev>
+    using namespace monad::vm;
+
+    template <Traits traits>
     void emit_instr(
         Emitter &emit, Instruction const &instr, int32_t remaining_base_gas)
     {
@@ -53,31 +56,31 @@ namespace
             emit.add();
             break;
         case Mul:
-            emit.mul<rev>(remaining_base_gas);
+            emit.mul<traits>(remaining_base_gas);
             break;
         case Sub:
             emit.sub();
             break;
         case Div:
-            emit.udiv<rev>(remaining_base_gas);
+            emit.udiv<traits>(remaining_base_gas);
             break;
         case SDiv:
-            emit.sdiv<rev>(remaining_base_gas);
+            emit.sdiv<traits>(remaining_base_gas);
             break;
         case Mod:
-            emit.umod<rev>(remaining_base_gas);
+            emit.umod<traits>(remaining_base_gas);
             break;
         case SMod:
-            emit.smod<rev>(remaining_base_gas);
+            emit.smod<traits>(remaining_base_gas);
             break;
         case AddMod:
-            emit.addmod<rev>(remaining_base_gas);
+            emit.addmod<traits>(remaining_base_gas);
             break;
         case MulMod:
-            emit.mulmod<rev>(remaining_base_gas);
+            emit.mulmod<traits>(remaining_base_gas);
             break;
         case Exp:
-            emit.exp<rev>(remaining_base_gas);
+            emit.exp<traits>(remaining_base_gas);
             break;
         case SignExtend:
             emit.signextend();
@@ -125,13 +128,13 @@ namespace
             emit.sar();
             break;
         case Sha3:
-            emit.sha3<rev>(remaining_base_gas);
+            emit.sha3<traits>(remaining_base_gas);
             break;
         case Address:
             emit.address();
             break;
         case Balance:
-            emit.balance<rev>(remaining_base_gas);
+            emit.balance<traits>(remaining_base_gas);
             break;
         case Origin:
             emit.origin();
@@ -149,34 +152,34 @@ namespace
             emit.calldatasize();
             break;
         case CallDataCopy:
-            emit.calldatacopy<rev>(remaining_base_gas);
+            emit.calldatacopy<traits>(remaining_base_gas);
             break;
         case CodeSize:
             emit.codesize();
             break;
         case CodeCopy:
-            emit.codecopy<rev>(remaining_base_gas);
+            emit.codecopy<traits>(remaining_base_gas);
             break;
         case GasPrice:
             emit.gasprice();
             break;
         case ExtCodeSize:
-            emit.extcodesize<rev>(remaining_base_gas);
+            emit.extcodesize<traits>(remaining_base_gas);
             break;
         case ExtCodeCopy:
-            emit.extcodecopy<rev>(remaining_base_gas);
+            emit.extcodecopy<traits>(remaining_base_gas);
             break;
         case ReturnDataSize:
             emit.returndatasize();
             break;
         case ReturnDataCopy:
-            emit.returndatacopy<rev>(remaining_base_gas);
+            emit.returndatacopy<traits>(remaining_base_gas);
             break;
         case ExtCodeHash:
-            emit.extcodehash<rev>(remaining_base_gas);
+            emit.extcodehash<traits>(remaining_base_gas);
             break;
         case BlockHash:
-            emit.blockhash<rev>(remaining_base_gas);
+            emit.blockhash<traits>(remaining_base_gas);
             break;
         case Coinbase:
             emit.coinbase();
@@ -197,13 +200,13 @@ namespace
             emit.chainid();
             break;
         case SelfBalance:
-            emit.selfbalance<rev>(remaining_base_gas);
+            emit.selfbalance<traits>(remaining_base_gas);
             break;
         case BaseFee:
             emit.basefee();
             break;
         case BlobHash:
-            emit.blobhash<rev>(remaining_base_gas);
+            emit.blobhash<traits>(remaining_base_gas);
             break;
         case BlobBaseFee:
             emit.blobbasefee();
@@ -221,10 +224,10 @@ namespace
             emit.mstore8();
             break;
         case SLoad:
-            emit.sload<rev>(remaining_base_gas);
+            emit.sload<traits>(remaining_base_gas);
             break;
         case SStore:
-            emit.sstore<rev>(remaining_base_gas);
+            emit.sstore<traits>(remaining_base_gas);
             break;
         case Pc:
             emit.push(instr.pc());
@@ -236,13 +239,13 @@ namespace
             emit.gas(remaining_base_gas);
             break;
         case TLoad:
-            emit.tload<rev>(remaining_base_gas);
+            emit.tload<traits>(remaining_base_gas);
             break;
         case TStore:
-            emit.tstore<rev>(remaining_base_gas);
+            emit.tstore<traits>(remaining_base_gas);
             break;
         case MCopy:
-            emit.mcopy<rev>(remaining_base_gas);
+            emit.mcopy<traits>(remaining_base_gas);
             break;
         case Push:
             emit.push(instr.immediate_value());
@@ -256,41 +259,41 @@ namespace
         case Log:
             switch (instr.index()) {
             case 0:
-                emit.log0<rev>(remaining_base_gas);
+                emit.log0<traits>(remaining_base_gas);
                 break;
             case 1:
-                emit.log1<rev>(remaining_base_gas);
+                emit.log1<traits>(remaining_base_gas);
                 break;
             case 2:
-                emit.log2<rev>(remaining_base_gas);
+                emit.log2<traits>(remaining_base_gas);
                 break;
             case 3:
-                emit.log3<rev>(remaining_base_gas);
+                emit.log3<traits>(remaining_base_gas);
                 break;
             case 4:
-                emit.log4<rev>(remaining_base_gas);
+                emit.log4<traits>(remaining_base_gas);
                 break;
             default:
                 MONAD_VM_ASSERT(false);
             }
             break;
         case Create:
-            emit.create<rev>(remaining_base_gas);
+            emit.create<traits>(remaining_base_gas);
             break;
         case Call:
-            emit.call<rev>(remaining_base_gas);
+            emit.call<traits>(remaining_base_gas);
             break;
         case CallCode:
-            emit.callcode<rev>(remaining_base_gas);
+            emit.callcode<traits>(remaining_base_gas);
             break;
         case DelegateCall:
-            emit.delegatecall<rev>(remaining_base_gas);
+            emit.delegatecall<traits>(remaining_base_gas);
             break;
         case Create2:
-            emit.create2<rev>(remaining_base_gas);
+            emit.create2<traits>(remaining_base_gas);
             break;
         case StaticCall:
-            emit.staticcall<rev>(remaining_base_gas);
+            emit.staticcall<traits>(remaining_base_gas);
             break;
         }
     }
@@ -318,7 +321,7 @@ namespace
 #endif
     }
 
-    template <evmc_revision rev>
+    template <Traits traits>
     void emit_instrs(
         Emitter &emit, Block const &block, int32_t instr_gas,
         native_code_size_t max_native_size, CompilerConfig const &config)
@@ -329,13 +332,13 @@ namespace
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
-            emit_instr<rev>(emit, instr, remaining_base_gas);
+            emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
             post_instruction_emit(emit, config);
         }
     }
 
-    template <evmc_revision rev>
+    template <Traits traits>
     void
     emit_terminator(Emitter &emit, BasicBlocksIR const &ir, Block const &block)
     {
@@ -364,7 +367,7 @@ namespace
             emit.revert();
             break;
         case SelfDestruct:
-            emit.selfdestruct<rev>(remaining_base_gas);
+            emit.selfdestruct<traits>(remaining_base_gas);
             break;
         case InvalidInstruction:
             emit.invalid_instruction();
@@ -398,7 +401,7 @@ namespace
         }
     }
 
-    template <evmc_revision rev>
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
         asmjit::JitRuntime &rt, BasicBlocksIR const &ir,
         CompilerConfig const &config)
@@ -413,12 +416,12 @@ namespace
         for (Block const &block : ir.blocks()) {
             bool const can_enter_block = emit.begin_new_block(block);
             if (can_enter_block) {
-                int32_t const base_gas = block_base_gas<rev>(block);
+                int32_t const base_gas = block_base_gas<traits>(block);
                 emit_gas_decrement(
                     emit, ir, block, base_gas, &accumulated_base_gas);
-                emit_instrs<rev>(
+                emit_instrs<traits>(
                     emit, block, base_gas, max_native_size, config);
-                emit_terminator<rev>(emit, ir, block);
+                emit_terminator<traits>(emit, ir, block);
             }
             require_code_size_in_bound(emit, max_native_size);
         }
@@ -427,19 +430,20 @@ namespace
         MONAD_VM_DEBUG_ASSERT(size_estimate <= *max_native_size);
         return std::make_shared<Nativecode>(
             rt,
-            rev,
+            traits::id(),
             entry,
             native_code_size_t::unsafe_from(
                 static_cast<uint32_t>(size_estimate)));
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile_contract(
         asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
         code_size_t contract_code_size, CompilerConfig const &config)
     {
-        auto ir = basic_blocks::make_ir<Rev>(contract_code, contract_code_size);
-        return compile_basic_blocks<Rev>(rt, ir, config);
+        auto ir =
+            basic_blocks::make_ir<traits>(contract_code, contract_code_size);
+        return compile_basic_blocks<traits>(rt, ir, config);
     }
 }
 
@@ -453,49 +457,49 @@ namespace monad::vm::compiler::native
         try {
             switch (rev) {
             case EVMC_FRONTIER:
-                return ::compile_contract<EVMC_FRONTIER>(
+                return ::compile_contract<EvmChain<EVMC_FRONTIER>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_HOMESTEAD:
-                return ::compile_contract<EVMC_HOMESTEAD>(
+                return ::compile_contract<EvmChain<EVMC_HOMESTEAD>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_TANGERINE_WHISTLE:
-                return ::compile_contract<EVMC_TANGERINE_WHISTLE>(
+                return ::compile_contract<EvmChain<EVMC_TANGERINE_WHISTLE>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_SPURIOUS_DRAGON:
-                return ::compile_contract<EVMC_SPURIOUS_DRAGON>(
+                return ::compile_contract<EvmChain<EVMC_SPURIOUS_DRAGON>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_BYZANTIUM:
-                return ::compile_contract<EVMC_BYZANTIUM>(
+                return ::compile_contract<EvmChain<EVMC_BYZANTIUM>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_CONSTANTINOPLE:
-                return ::compile_contract<EVMC_CONSTANTINOPLE>(
+                return ::compile_contract<EvmChain<EVMC_CONSTANTINOPLE>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_PETERSBURG:
-                return ::compile_contract<EVMC_PETERSBURG>(
+                return ::compile_contract<EvmChain<EVMC_PETERSBURG>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_ISTANBUL:
-                return ::compile_contract<EVMC_ISTANBUL>(
+                return ::compile_contract<EvmChain<EVMC_ISTANBUL>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_BERLIN:
-                return ::compile_contract<EVMC_BERLIN>(
+                return ::compile_contract<EvmChain<EVMC_BERLIN>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_LONDON:
-                return ::compile_contract<EVMC_LONDON>(
+                return ::compile_contract<EvmChain<EVMC_LONDON>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_PARIS:
-                return ::compile_contract<EVMC_PARIS>(
+                return ::compile_contract<EvmChain<EVMC_PARIS>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_SHANGHAI:
-                return ::compile_contract<EVMC_SHANGHAI>(
+                return ::compile_contract<EvmChain<EVMC_SHANGHAI>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_CANCUN:
-                return ::compile_contract<EVMC_CANCUN>(
+                return ::compile_contract<EvmChain<EVMC_CANCUN>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_PRAGUE:
-                return ::compile_contract<EVMC_PRAGUE>(
+                return ::compile_contract<EvmChain<EVMC_PRAGUE>>(
                     rt, contract_code, contract_code_size, config);
             case EVMC_OSAKA:
-                return ::compile_contract<EVMC_OSAKA>(
+                return ::compile_contract<EvmChain<EVMC_OSAKA>>(
                     rt, contract_code, contract_code_size, config);
             default:
                 MONAD_VM_ASSERT(false);
@@ -504,14 +508,14 @@ namespace monad::vm::compiler::native
         catch (Emitter::Error const &e) {
             LOG_ERROR("ERROR: X86 emitter: failed compile: {}", e.what());
             return std::make_shared<Nativecode>(
-                rt, rev, nullptr, std::monostate{});
+                rt, revision_to_chain_id(rev), nullptr, std::monostate{});
         }
         catch (Nativecode::SizeEstimateOutOfBounds const &e) {
             LOG_WARNING(
                 "WARNING: X86 emitter: native code out of bound: {}",
                 e.size_estimate);
             return std::make_shared<Nativecode>(
-                rt, rev, nullptr, e.size_estimate);
+                rt, revision_to_chain_id(rev), nullptr, e.size_estimate);
         }
     }
 
@@ -521,36 +525,48 @@ namespace monad::vm::compiler::native
     {
         switch (rev) {
         case EVMC_FRONTIER:
-            return ::compile_basic_blocks<EVMC_FRONTIER>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_FRONTIER>>(
+                rt, ir, config);
         case EVMC_HOMESTEAD:
-            return ::compile_basic_blocks<EVMC_HOMESTEAD>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_HOMESTEAD>>(
+                rt, ir, config);
         case EVMC_TANGERINE_WHISTLE:
-            return ::compile_basic_blocks<EVMC_TANGERINE_WHISTLE>(
+            return ::compile_basic_blocks<EvmChain<EVMC_TANGERINE_WHISTLE>>(
                 rt, ir, config);
         case EVMC_SPURIOUS_DRAGON:
-            return ::compile_basic_blocks<EVMC_SPURIOUS_DRAGON>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_SPURIOUS_DRAGON>>(
+                rt, ir, config);
         case EVMC_BYZANTIUM:
-            return ::compile_basic_blocks<EVMC_BYZANTIUM>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_BYZANTIUM>>(
+                rt, ir, config);
         case EVMC_CONSTANTINOPLE:
-            return ::compile_basic_blocks<EVMC_CONSTANTINOPLE>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_CONSTANTINOPLE>>(
+                rt, ir, config);
         case EVMC_PETERSBURG:
-            return ::compile_basic_blocks<EVMC_PETERSBURG>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_PETERSBURG>>(
+                rt, ir, config);
         case EVMC_ISTANBUL:
-            return ::compile_basic_blocks<EVMC_ISTANBUL>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_ISTANBUL>>(
+                rt, ir, config);
         case EVMC_BERLIN:
-            return ::compile_basic_blocks<EVMC_BERLIN>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_BERLIN>>(
+                rt, ir, config);
         case EVMC_LONDON:
-            return ::compile_basic_blocks<EVMC_LONDON>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_LONDON>>(
+                rt, ir, config);
         case EVMC_PARIS:
-            return ::compile_basic_blocks<EVMC_PARIS>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_PARIS>>(rt, ir, config);
         case EVMC_SHANGHAI:
-            return ::compile_basic_blocks<EVMC_SHANGHAI>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_SHANGHAI>>(
+                rt, ir, config);
         case EVMC_CANCUN:
-            return ::compile_basic_blocks<EVMC_CANCUN>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_CANCUN>>(
+                rt, ir, config);
         case EVMC_PRAGUE:
-            return ::compile_basic_blocks<EVMC_PRAGUE>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_PRAGUE>>(
+                rt, ir, config);
         case EVMC_OSAKA:
-            return ::compile_basic_blocks<EVMC_OSAKA>(rt, ir, config);
+            return ::compile_basic_blocks<EvmChain<EVMC_OSAKA>>(rt, ir, config);
         default:
             MONAD_VM_ASSERT(false);
         }

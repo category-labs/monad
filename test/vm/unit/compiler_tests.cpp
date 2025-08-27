@@ -17,6 +17,7 @@
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 
 #include <evmc/evmc.h>
@@ -29,15 +30,16 @@
 #include <utility>
 #include <vector>
 
+using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace intx;
 
 template <
     typename Op, typename... Args,
-    evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
+    Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
 Instruction i(std::uint32_t pc, Op evm_opcode, Args &&...args)
 {
-    auto info = opcode_table<Rev>[evm_opcode];
+    auto info = opcode_table<traits>[evm_opcode];
     return Instruction(
         pc,
         basic_blocks::evm_op_to_opcode(evm_opcode),

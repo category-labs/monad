@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
@@ -26,9 +27,9 @@
 
 namespace monad::vm::utils::evm_as
 {
-    template <evmc_revision Rev>
+    template <Traits traits>
     std::unordered_map<std::string, size_t>
-    resolve_labels(EvmBuilder<Rev> const &eb)
+    resolve_labels(EvmBuilder<traits> const &eb)
     {
         std::unordered_map<std::string, size_t> label_offsets{};
 

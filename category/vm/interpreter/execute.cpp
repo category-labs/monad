@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/interpreter/instruction_table.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -52,7 +53,7 @@ namespace monad::vm::interpreter
 {
     namespace
     {
-        template <evmc_revision Rev>
+        template <Traits traits>
 #if defined(__GNUC__) && !defined(__clang__)
         __attribute__((optimize("-falign-labels=16")))
 #endif
@@ -66,7 +67,7 @@ namespace monad::vm::interpreter
             auto const *const instr_ptr = analysis.code();
             auto const gas_remaining = ctx.gas_remaining;
 
-            instruction_table<Rev>[*instr_ptr](
+            instruction_table<traits>[*instr_ptr](
                 ctx,
                 analysis,
                 stack_bottom,
@@ -94,40 +95,53 @@ extern "C" void monad_vm_interpreter_core_loop(
     ::monad::vm::interpreter::Intercode const *analysis,
     ::monad::vm::runtime::uint256_t *stack_ptr)
 {
+    using namespace ::monad::vm;
     using namespace ::monad::vm::interpreter;
 
     switch (rev) {
     case EVMC_FRONTIER:
-        return core_loop_impl<EVMC_FRONTIER>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_FRONTIER>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_HOMESTEAD:
-        return core_loop_impl<EVMC_HOMESTEAD>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_HOMESTEAD>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_TANGERINE_WHISTLE:
-        return core_loop_impl<EVMC_TANGERINE_WHISTLE>(
+        return core_loop_impl<EvmChain<EVMC_TANGERINE_WHISTLE>>(
             *ctx, *analysis, stack_ptr);
     case EVMC_SPURIOUS_DRAGON:
-        return core_loop_impl<EVMC_SPURIOUS_DRAGON>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_SPURIOUS_DRAGON>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_BYZANTIUM:
-        return core_loop_impl<EVMC_BYZANTIUM>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_BYZANTIUM>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_CONSTANTINOPLE:
-        return core_loop_impl<EVMC_CONSTANTINOPLE>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_CONSTANTINOPLE>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_PETERSBURG:
-        return core_loop_impl<EVMC_PETERSBURG>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_PETERSBURG>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_ISTANBUL:
-        return core_loop_impl<EVMC_ISTANBUL>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_ISTANBUL>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_BERLIN:
-        return core_loop_impl<EVMC_BERLIN>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_BERLIN>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_LONDON:
-        return core_loop_impl<EVMC_LONDON>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_LONDON>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_PARIS:
-        return core_loop_impl<EVMC_PARIS>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_PARIS>>(*ctx, *analysis, stack_ptr);
     case EVMC_SHANGHAI:
-        return core_loop_impl<EVMC_SHANGHAI>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_SHANGHAI>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_CANCUN:
-        return core_loop_impl<EVMC_CANCUN>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_CANCUN>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_PRAGUE:
-        return core_loop_impl<EVMC_PRAGUE>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_PRAGUE>>(
+            *ctx, *analysis, stack_ptr);
     case EVMC_OSAKA:
-        return core_loop_impl<EVMC_OSAKA>(*ctx, *analysis, stack_ptr);
+        return core_loop_impl<EvmChain<EVMC_OSAKA>>(*ctx, *analysis, stack_ptr);
     default:
         MONAD_VM_ASSERT(false);
     }

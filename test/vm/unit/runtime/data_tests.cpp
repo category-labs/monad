@@ -25,6 +25,7 @@
 #include <limits>
 
 using namespace monad;
+using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
@@ -33,8 +34,8 @@ constexpr auto wei = vm::runtime::uint256_t{782374};
 
 TEST_F(RuntimeTest, BalanceHomestead)
 {
-    constexpr auto rev = EVMC_HOMESTEAD;
-    auto f = wrap(balance<rev>);
+    using traits = EvmChain<EVMC_HOMESTEAD>;
+    auto f = wrap(balance<traits>);
     set_balance(addr, wei);
 
     ctx_.gas_remaining = 0;
@@ -44,8 +45,8 @@ TEST_F(RuntimeTest, BalanceHomestead)
 
 TEST_F(RuntimeTest, BalanceCancunCold)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto f = wrap(balance<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto f = wrap(balance<traits>);
     set_balance(addr, wei);
 
     ctx_.gas_remaining = 2500;
@@ -55,8 +56,8 @@ TEST_F(RuntimeTest, BalanceCancunCold)
 
 TEST_F(RuntimeTest, BalanceCancunWarm)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto f = wrap(balance<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto f = wrap(balance<traits>);
     set_balance(addr, wei);
     host_.access_account(address_from_uint256(addr));
 
@@ -226,8 +227,8 @@ TEST_F(RuntimeTest, CodeCopyOutOfBounds)
 
 TEST_F(RuntimeTest, ExtCodeCopyHomestead)
 {
-    constexpr auto rev = EVMC_HOMESTEAD;
-    auto copy = wrap(extcodecopy<rev>);
+    using traits = EvmChain<EVMC_HOMESTEAD>;
+    auto copy = wrap(extcodecopy<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
         evmc::bytes(code_.begin(), code_.end());
@@ -245,8 +246,8 @@ TEST_F(RuntimeTest, ExtCodeCopyHomestead)
 
 TEST_F(RuntimeTest, ExtCodeCopyCancunOutOfBounds)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto copy = wrap(extcodecopy<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto copy = wrap(extcodecopy<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
         evmc::bytes(code_.begin(), code_.end());
@@ -268,8 +269,8 @@ TEST_F(RuntimeTest, ExtCodeCopyCancunOutOfBounds)
 
 TEST_F(RuntimeTest, ExtCodeSize)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto size = wrap(extcodesize<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto size = wrap(extcodesize<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
         evmc::bytes(code_.begin(), code_.end());
@@ -282,8 +283,8 @@ TEST_F(RuntimeTest, ExtCodeSize)
 
 TEST_F(RuntimeTest, ExtCodeHash)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto hash = wrap(extcodehash<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto hash = wrap(extcodehash<traits>);
 
     host_.accounts[address_from_uint256(addr)].codehash =
         bytes32_from_uint256(713682);

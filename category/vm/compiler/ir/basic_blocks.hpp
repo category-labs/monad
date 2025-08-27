@@ -19,6 +19,7 @@
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
@@ -98,7 +99,7 @@ namespace monad::vm::compiler::basic_blocks
     /**
      * Base gas usage for a given terminator.
      */
-    template <evmc_revision Rev>
+    template <Traits traits>
     constexpr std::uint16_t terminator_static_gas(Terminator t)
     {
         using enum Terminator;
@@ -112,7 +113,7 @@ namespace monad::vm::compiler::basic_blocks
         case Jump:
             return 8;
         case SelfDestruct: {
-            if constexpr (Rev < EVMC_TANGERINE_WHISTLE) {
+            if constexpr (traits::evm_rev() < EVMC_TANGERINE_WHISTLE) {
                 return 0;
             }
             else {
@@ -200,8 +201,8 @@ namespace monad::vm::compiler::basic_blocks
 
     bool operator==(Block const &a, Block const &b);
 
-    template <evmc_revision Rev>
-    struct RevisionMarker
+    template <Traits traits>
+    struct ChainMarker
     {
     };
 
@@ -220,16 +221,16 @@ namespace monad::vm::compiler::basic_blocks
         /**
          * Construct basic blocks from a bytecode program.
          */
-        template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
+        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
         BasicBlocksIR(
             std::uint8_t const *, interpreter::code_size_t,
-            RevisionMarker<Rev> = {});
+            ChainMarker<traits> = {});
 
-        template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
+        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
             std::initializer_list<std::uint8_t const> bytes,
-            RevisionMarker<Rev> rm = {})
+            ChainMarker<traits> rm = {})
         {
             MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
             return BasicBlocksIR(
@@ -239,10 +240,10 @@ namespace monad::vm::compiler::basic_blocks
                 rm);
         }
 
-        template <evmc_revision Rev = EVMC_LATEST_STABLE_REVISION>
+        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
-            std::span<std::uint8_t const> bytes, RevisionMarker<Rev> rm = {})
+            std::span<std::uint8_t const> bytes, ChainMarker<traits> rm = {})
         {
             MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
             return BasicBlocksIR(
@@ -301,7 +302,7 @@ namespace monad::vm::compiler::basic_blocks
         bool is_valid() const;
 
     private:
-        template <evmc_revision Rev>
+        template <Traits traits>
         static std::variant<Instruction, Terminator, JumpDest> scan_from(
             std::span<std::uint8_t const> bytes, std::uint32_t &current_offset);
 
@@ -354,13 +355,13 @@ namespace monad::vm::compiler::basic_blocks
         void add_fallthrough_terminator(Terminator t);
     };
 
-    template <evmc_revision Rev, typename... Args>
+    template <Traits traits, typename... Args>
     BasicBlocksIR make_ir(Args &&...);
 
-    template <evmc_revision Rev, typename... Args>
+    template <Traits traits, typename... Args>
     BasicBlocksIR unsafe_make_ir(Args &&...);
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<std::uint8_t const> bytes, std::uint32_t &current_offset)
     {
@@ -369,10 +370,10 @@ namespace monad::vm::compiler::basic_blocks
         auto opcode = bytes[current_offset];
         auto opcode_offset = current_offset;
 
-        auto const &info = opcode_table<Rev>[opcode];
+        auto const &info = opcode_table<traits>[opcode];
         current_offset++;
 
-        if (is_unknown_opcode_info<Rev>(info)) {
+        if (is_unknown_opcode_info<traits>(info)) {
             return Terminator::InvalidInstruction;
         }
 
@@ -418,7 +419,7 @@ namespace monad::vm::compiler::basic_blocks
             info.dynamic_gas);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     int32_t block_base_gas(Block const &block)
     {
         int32_t base_gas = 0;
@@ -426,15 +427,15 @@ namespace monad::vm::compiler::basic_blocks
             base_gas += instr.static_gas_cost();
         }
         auto term_gas =
-            basic_blocks::terminator_static_gas<Rev>(block.terminator);
+            basic_blocks::terminator_static_gas<traits>(block.terminator);
         // This is also correct for fall through and invalid instruction:
         return base_gas + term_gas;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     BasicBlocksIR::BasicBlocksIR(
         std::uint8_t const *bytes, interpreter::code_size_t byte_count,
-        RevisionMarker<Rev>)
+        ChainMarker<traits>)
         : codesize(byte_count)
     {
         using monad::vm::Cases;
@@ -453,7 +454,7 @@ namespace monad::vm::compiler::basic_blocks
         auto first = true;
 
         while (current_offset < *byte_count) {
-            auto inst = scan_from<Rev>({bytes, *byte_count}, current_offset);
+            auto inst = scan_from<traits>({bytes, *byte_count}, current_offset);
 
             if (first && std::holds_alternative<JumpDest>(inst)) {
                 add_jump_dest();
@@ -485,7 +486,7 @@ namespace monad::vm::compiler::basic_blocks
                         // the block as being a jumpdest
                         if (current_offset < *byte_count) {
                             auto next_offset = current_offset;
-                            auto next_inst = scan_from<Rev>(
+                            auto next_inst = scan_from<traits>(
                                 {bytes, *byte_count}, next_offset);
                             if (std::holds_alternative<JumpDest>(next_inst)) {
                                 current_offset += 1;
@@ -519,18 +520,18 @@ namespace monad::vm::compiler::basic_blocks
         }
     }
 
-    template <evmc_revision Rev, typename... Args>
+    template <Traits traits, typename... Args>
     BasicBlocksIR make_ir(Args &&...args)
     {
         return BasicBlocksIR(
-            std::forward<Args>(args)..., RevisionMarker<Rev>{});
+            std::forward<Args>(args)..., ChainMarker<traits>{});
     }
 
-    template <evmc_revision Rev, typename... Args>
+    template <Traits traits, typename... Args>
     BasicBlocksIR unsafe_make_ir(Args &&...args)
     {
         return BasicBlocksIR::unsafe_from(
-            std::forward<Args>(args)..., RevisionMarker<Rev>{});
+            std::forward<Args>(args)..., ChainMarker<traits>{});
     }
 }
 

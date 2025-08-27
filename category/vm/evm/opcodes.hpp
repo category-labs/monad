@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -272,12 +273,12 @@ namespace monad::vm::compiler
      * on the specified EVM revision (that is, some opcodes are invalid in early
      * revisions and become valid in later ones).
      */
-    template <evmc_revision Rev>
+    template <Traits traits>
     consteval std::array<OpCodeInfo, 256> make_opcode_table() = delete;
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     constexpr std::array<OpCodeInfo, 256> opcode_table =
-        make_opcode_table<Rev>();
+        make_opcode_table<traits>();
 
     consteval inline void add_opcode(
         std::uint8_t opcode, std::array<OpCodeInfo, 256> &table,
@@ -288,7 +289,8 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_FRONTIER>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_FRONTIER>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -566,9 +568,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_HOMESTEAD>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_HOMESTEAD>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_HOMESTEAD)>();
+        auto table = make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_HOMESTEAD)>>();
         add_opcode(0xF4, table, {"DELEGATECALL", 0, 6, 1, true, 40, 0});
 
         return table;
@@ -576,10 +580,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EVMC_TANGERINE_WHISTLE>()
+    make_opcode_table<EvmChain<EVMC_TANGERINE_WHISTLE>>()
     {
-        auto table =
-            make_opcode_table<previous_evm_revision(EVMC_TANGERINE_WHISTLE)>();
+        auto table = make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_TANGERINE_WHISTLE)>>();
 
         // EIP-150
         table[SLOAD].min_gas = 200;
@@ -596,15 +600,18 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EVMC_SPURIOUS_DRAGON>()
+    make_opcode_table<EvmChain<EVMC_SPURIOUS_DRAGON>>()
     {
-        return make_opcode_table<previous_evm_revision(EVMC_SPURIOUS_DRAGON)>();
+        return make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_SPURIOUS_DRAGON)>>();
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_BYZANTIUM>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_BYZANTIUM>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_BYZANTIUM)>();
+        auto table = make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_BYZANTIUM)>>();
 
         add_opcode(0x3D, table, {"RETURNDATASIZE", 0, 0, 1, false, 2, 0});
         add_opcode(0x3E, table, {"RETURNDATACOPY", 0, 3, 0, true, 3, 0});
@@ -616,10 +623,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EVMC_CONSTANTINOPLE>()
+    make_opcode_table<EvmChain<EVMC_CONSTANTINOPLE>>()
     {
-        auto table =
-            make_opcode_table<previous_evm_revision(EVMC_CONSTANTINOPLE)>();
+        auto table = make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_CONSTANTINOPLE)>>();
 
         add_opcode(0x1B, table, {"SHL", 0, 2, 1, false, 3, 0});
         add_opcode(0x1C, table, {"SHR", 0, 2, 1, false, 3, 0});
@@ -634,10 +641,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_PETERSBURG>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_PETERSBURG>>()
     {
-        auto table =
-            make_opcode_table<previous_evm_revision(EVMC_PETERSBURG)>();
+        auto table = make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_PETERSBURG)>>();
 
         // EIP-1283 reverted
         table[SSTORE].min_gas = 5000;
@@ -646,9 +654,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_ISTANBUL>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_ISTANBUL>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_ISTANBUL)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_ISTANBUL)>>();
 
         add_opcode(0x46, table, {"CHAINID", 0, 0, 1, false, 2, 0});
         add_opcode(0x47, table, {"SELFBALANCE", 0, 0, 1, false, 5, 0});
@@ -665,9 +675,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_BERLIN>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_BERLIN>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_BERLIN)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_BERLIN)>>();
 
         // EIP-2929
         table[SLOAD].min_gas = 100;
@@ -685,9 +697,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_LONDON>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_LONDON>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_LONDON)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_LONDON)>>();
 
         add_opcode(0x48, table, {"BASEFEE", 0, 0, 1, false, 2, 0});
 
@@ -695,9 +709,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_PARIS>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_PARIS>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_PARIS)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_PARIS)>>();
 
         table[0x44].name = "PREVRANDAO";
 
@@ -705,9 +721,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_SHANGHAI>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_SHANGHAI>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_SHANGHAI)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_SHANGHAI)>>();
 
         add_opcode(0x5F, table, {"PUSH0", 0, 0, 1, false, 2, 0});
 
@@ -715,9 +733,11 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_CANCUN>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_CANCUN>>()
     {
-        auto table = make_opcode_table<previous_evm_revision(EVMC_CANCUN)>();
+        auto table =
+            make_opcode_table<EvmChain<previous_evm_revision(EVMC_CANCUN)>>();
 
         add_opcode(0x49, table, {"BLOBHASH", 0, 1, 1, false, 3, 0});
         add_opcode(0x4A, table, {"BLOBBASEFEE", 0, 0, 1, false, 2, 0});
@@ -729,21 +749,24 @@ namespace monad::vm::compiler
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_PRAGUE>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_PRAGUE>>()
     {
-        return make_opcode_table<previous_evm_revision(EVMC_PRAGUE)>();
+        return make_opcode_table<
+            EvmChain<previous_evm_revision(EVMC_PRAGUE)>>();
     }
 
     template <>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table<EVMC_OSAKA>()
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmChain<EVMC_OSAKA>>()
     {
-        return make_opcode_table<previous_evm_revision(EVMC_OSAKA)>();
+        return make_opcode_table<EvmChain<previous_evm_revision(EVMC_OSAKA)>>();
     }
 
     /**
      * Returns `true` if `opcode` is an invalid opcode at this revision.
      */
-    template <evmc_revision Rev>
+    template <Traits traits>
     constexpr bool is_unknown_opcode_info(OpCodeInfo const &info)
     {
         return info == unknown_opcode_info;

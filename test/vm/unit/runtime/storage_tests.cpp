@@ -22,6 +22,7 @@
 #include <evmc/evmc.h>
 
 using namespace monad;
+using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
@@ -50,9 +51,9 @@ TEST_F(RuntimeTest, TransientStorage)
 
 TEST_F(RuntimeTest, StorageHomestead)
 {
-    constexpr auto rev = EVMC_HOMESTEAD;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_HOMESTEAD>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -76,9 +77,9 @@ TEST_F(RuntimeTest, StorageHomestead)
 
 TEST_F(RuntimeTest, StorageConstantinopleOriginalEmpty)
 {
-    constexpr auto rev = EVMC_CONSTANTINOPLE;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -105,9 +106,9 @@ TEST_F(RuntimeTest, StorageConstantinopleOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageConstantinopleOriginalNonEmpty)
 {
-    constexpr auto rev = EVMC_CONSTANTINOPLE;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // current == original
     auto &loc =
@@ -140,9 +141,9 @@ TEST_F(RuntimeTest, StorageConstantinopleOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageIstanbulOriginalEmpty)
 {
-    constexpr auto rev = EVMC_ISTANBUL;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_ISTANBUL>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -169,9 +170,9 @@ TEST_F(RuntimeTest, StorageIstanbulOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageIstanbulOriginalNonEmpty)
 {
-    constexpr auto rev = EVMC_ISTANBUL;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_ISTANBUL>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // current == original
     auto &loc =
@@ -204,8 +205,8 @@ TEST_F(RuntimeTest, StorageIstanbulOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageBerlinLoadCold)
 {
-    constexpr auto rev = EVMC_BERLIN;
-    auto load = wrap(sload<rev>);
+    using traits = EvmChain<EVMC_BERLIN>;
+    auto load = wrap(sload<traits>);
 
     ctx_.gas_remaining = 2000;
     ASSERT_EQ(load(key), 0);
@@ -216,8 +217,8 @@ TEST_F(RuntimeTest, StorageBerlinLoadCold)
 
 TEST_F(RuntimeTest, StorageBerlinLoadWarm)
 {
-    constexpr auto rev = EVMC_BERLIN;
-    auto load = wrap(sload<rev>);
+    using traits = EvmChain<EVMC_BERLIN>;
+    auto load = wrap(sload<traits>);
 
     host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
 
@@ -228,9 +229,9 @@ TEST_F(RuntimeTest, StorageBerlinLoadWarm)
 
 TEST_F(RuntimeTest, StorageBerlinOriginalEmpty)
 {
-    constexpr auto rev = EVMC_BERLIN;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_BERLIN>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // empty -> nonempty (cold)
     ctx_.gas_remaining = 22000;
@@ -254,9 +255,9 @@ TEST_F(RuntimeTest, StorageBerlinOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageBerlinOriginalNonEmpty)
 {
-    constexpr auto rev = EVMC_BERLIN;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_BERLIN>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // current == original
     auto &loc =
@@ -286,9 +287,9 @@ TEST_F(RuntimeTest, StorageBerlinOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageLondonOriginalNonEmpty)
 {
-    constexpr auto rev = EVMC_LONDON;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_LONDON>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // current == original
     auto &loc =
@@ -318,8 +319,8 @@ TEST_F(RuntimeTest, StorageLondonOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageCancunLoadCold)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto load = wrap(sload<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto load = wrap(sload<traits>);
 
     ctx_.gas_remaining = 2000;
     ASSERT_EQ(load(key), 0);
@@ -330,8 +331,8 @@ TEST_F(RuntimeTest, StorageCancunLoadCold)
 
 TEST_F(RuntimeTest, StorageCancunLoadWarm)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto load = wrap(sload<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto load = wrap(sload<traits>);
 
     host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
 
@@ -342,9 +343,9 @@ TEST_F(RuntimeTest, StorageCancunLoadWarm)
 
 TEST_F(RuntimeTest, StorageCancunOriginalEmpty)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // empty -> nonempty (cold)
     ctx_.gas_remaining = 22000;
@@ -368,9 +369,9 @@ TEST_F(RuntimeTest, StorageCancunOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageCancunOriginalNonEmpty)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto load = wrap(sload<rev>);
-    auto store = wrap(sstore<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto load = wrap(sload<traits>);
+    auto store = wrap(sstore<traits>);
 
     // current == original
     auto &loc =

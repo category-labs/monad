@@ -17,6 +17,7 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -71,7 +72,8 @@ namespace monad::vm
     {
         if (auto vcode = varcode_cache_.get(code_hash)) {
             auto const &ncode = (*vcode)->nativecode();
-            if (ncode != nullptr && ncode->revision() == rev) {
+            if (ncode != nullptr &&
+                ncode->chain_id() == revision_to_chain_id(rev)) {
                 return ncode;
             }
         }
@@ -147,7 +149,10 @@ namespace monad::vm
                     code_hash,
                     icode,
                     std::make_shared<Nativecode>(
-                        asmjit_rt_, revision, nullptr, std::monostate{}));
+                        asmjit_rt_,
+                        revision_to_chain_id(revision),
+                        nullptr,
+                        std::monostate{}));
             }
 
             bool const erase_ok = compile_job_map_.erase(acc);

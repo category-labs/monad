@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -35,14 +36,14 @@ namespace monad::vm::interpreter
     /**
      * Debug trace printing compatible with the JSON format emitted by evmone.
      */
-    template <evmc_revision Rev>
+    template <Traits traits>
     void trace(
         std::uint8_t const instr, runtime::Context const &ctx,
         Intercode const &analysis, runtime::uint256_t const *stack_bottom,
         runtime::uint256_t const *stack_top, std::int64_t gas_remaining,
         std::uint8_t const *instr_ptr)
     {
-        auto const &info = compiler::opcode_table<Rev>[instr];
+        auto const &info = compiler::opcode_table<traits>[instr];
         auto const stack_size = stack_top - stack_bottom;
 
         std::cerr << std::format(

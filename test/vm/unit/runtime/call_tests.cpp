@@ -26,14 +26,15 @@
 #include <cstdint>
 #include <limits>
 
+using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 using namespace intx;
 
 TEST_F(RuntimeTest, CallBasic)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
@@ -51,8 +52,8 @@ TEST_F(RuntimeTest, CallBasic)
 
 TEST_F(RuntimeTest, CallWithValueCold)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
@@ -66,8 +67,8 @@ TEST_F(RuntimeTest, CallWithValueCold)
 
 TEST_F(RuntimeTest, CallGasLimit)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 66500;
     host_.call_result = success_result(2000);
@@ -82,8 +83,8 @@ TEST_F(RuntimeTest, CallGasLimit)
 
 TEST_F(RuntimeTest, CallFailure)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = failure_result();
@@ -96,8 +97,8 @@ TEST_F(RuntimeTest, CallFailure)
 
 TEST_F(RuntimeTest, DelegateCallIstanbul)
 {
-    constexpr auto rev = EVMC_ISTANBUL;
-    auto do_call = wrap(monad::vm::runtime::delegatecall<rev>);
+    using traits = EvmChain<EVMC_ISTANBUL>;
+    auto do_call = wrap(monad::vm::runtime::delegatecall<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
@@ -110,8 +111,8 @@ TEST_F(RuntimeTest, DelegateCallIstanbul)
 
 TEST_F(RuntimeTest, CallCodeHomestead)
 {
-    constexpr auto rev = EVMC_HOMESTEAD;
-    auto do_call = wrap(monad::vm::runtime::callcode<rev>);
+    using traits = EvmChain<EVMC_HOMESTEAD>;
+    auto do_call = wrap(monad::vm::runtime::callcode<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
@@ -124,8 +125,8 @@ TEST_F(RuntimeTest, CallCodeHomestead)
 
 TEST_F(RuntimeTest, StaticCallByzantium)
 {
-    constexpr auto rev = EVMC_BYZANTIUM;
-    auto do_call = wrap(monad::vm::runtime::staticcall<rev>);
+    using traits = EvmChain<EVMC_BYZANTIUM>;
+    auto do_call = wrap(monad::vm::runtime::staticcall<traits>);
 
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
@@ -138,8 +139,8 @@ TEST_F(RuntimeTest, StaticCallByzantium)
 
 TEST_F(RuntimeTest, CallTooDeep)
 {
-    constexpr auto rev = EVMC_CANCUN;
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    using traits = EvmChain<EVMC_CANCUN>;
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.env.depth = 1024;
     ctx_.gas_remaining = 100000;
@@ -153,7 +154,7 @@ TEST_F(RuntimeTest, CallTooDeep)
 
 TEST_F(RuntimeTest, DelegatedCallPrague)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -166,7 +167,7 @@ TEST_F(RuntimeTest, DelegatedCallPrague)
 
     ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
     ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
@@ -184,7 +185,7 @@ TEST_F(RuntimeTest, DelegatedCallPrague)
 
 TEST_F(RuntimeTest, DelegatedStaticCallPrague)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -197,7 +198,7 @@ TEST_F(RuntimeTest, DelegatedStaticCallPrague)
 
     ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::staticcall<rev>);
+    auto do_call = wrap(monad::vm::runtime::staticcall<traits>);
     ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
@@ -215,7 +216,7 @@ TEST_F(RuntimeTest, DelegatedStaticCallPrague)
 
 TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -228,7 +229,7 @@ TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
 
     ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::delegatecall<rev>);
+    auto do_call = wrap(monad::vm::runtime::delegatecall<traits>);
     ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
@@ -246,7 +247,7 @@ TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
 
 TEST_F(RuntimeTest, DelegatedCallcodePrague)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -259,7 +260,7 @@ TEST_F(RuntimeTest, DelegatedCallcodePrague)
 
     ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::callcode<rev>);
+    auto do_call = wrap(monad::vm::runtime::callcode<traits>);
     ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
@@ -277,7 +278,7 @@ TEST_F(RuntimeTest, DelegatedCallcodePrague)
 
 TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0x01);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -287,7 +288,7 @@ TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
 
     ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
     ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
@@ -303,14 +304,14 @@ TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
 
 TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     std::array<uint8_t, 2> baad_addr{0xBA, 0xAD};
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     coffee_code.append_range(baad_addr);
     add_account_at(0xC0FFEE, coffee_code);
 
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
 
@@ -325,12 +326,12 @@ TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
 
 TEST_F(RuntimeTest, DelegatedCallPragueBadCode2)
 {
-    constexpr auto rev = EVMC_PRAGUE;
+    using traits = EvmChain<EVMC_PRAGUE>;
 
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     add_account_at(0xC0FFEE, coffee_code);
 
-    auto do_call = wrap(monad::vm::runtime::call<rev>);
+    auto do_call = wrap(monad::vm::runtime::call<traits>);
     ctx_.gas_remaining = 100000;
     host_.call_result = success_result(2000);
 

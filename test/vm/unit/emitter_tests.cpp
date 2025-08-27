@@ -18,6 +18,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -46,6 +47,7 @@
 #include <vector>
 
 namespace runtime = monad::vm::runtime;
+using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::native;
 using namespace monad::vm::interpreter;
@@ -1730,7 +1732,8 @@ TEST(Emitter, mul)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.mul<EVMC_FRONTIER>(std::numeric_limits<int32_t>::max());
+                em.mul<EvmChain<EVMC_FRONTIER>>(
+                    std::numeric_limits<int32_t>::max());
             },
             a,
             b,
@@ -1760,7 +1763,8 @@ TEST(Emitter, udiv)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.udiv<EVMC_FRONTIER>(std::numeric_limits<int32_t>::max());
+                em.udiv<EvmChain<EVMC_FRONTIER>>(
+                    std::numeric_limits<int32_t>::max());
             },
             a,
             b,
@@ -1819,7 +1823,8 @@ TEST(Emitter, sdiv)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.sdiv<EVMC_FRONTIER>(std::numeric_limits<int32_t>::max());
+                em.sdiv<EvmChain<EVMC_FRONTIER>>(
+                    std::numeric_limits<int32_t>::max());
             },
             a,
             b,
@@ -1851,7 +1856,8 @@ TEST(Emitter, umod)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.umod<EVMC_FRONTIER>(std::numeric_limits<int32_t>::max());
+                em.umod<EvmChain<EVMC_FRONTIER>>(
+                    std::numeric_limits<int32_t>::max());
             },
             a,
             b,
@@ -1915,7 +1921,8 @@ TEST(Emitter, smod)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.smod<EVMC_FRONTIER>(std::numeric_limits<int32_t>::max());
+                em.smod<EvmChain<EVMC_FRONTIER>>(
+                    std::numeric_limits<int32_t>::max());
             },
             a,
             b,
@@ -2184,7 +2191,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EVMC_LATEST_STABLE_REVISION>(1000);
+                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2197,7 +2204,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EVMC_LATEST_STABLE_REVISION>(1000);
+                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2217,7 +2224,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EVMC_LATEST_STABLE_REVISION>(1000);
+                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2230,7 +2237,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EVMC_LATEST_STABLE_REVISION>(1000);
+                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2848,7 +2855,7 @@ TEST(Emitter, call_runtime_pure)
     pure_bin_instr_test(
         rt,
         DIV,
-        [](Emitter &emit) { emit.udiv<EVMC_FRONTIER>(0); },
+        [](Emitter &emit) { emit.udiv<EvmChain<EVMC_FRONTIER>>(0); },
         1000,
         4,
         250);
@@ -2860,7 +2867,7 @@ TEST(Emitter, call_runtime_impl)
     pure_bin_instr_test(
         rt,
         EXP,
-        [](Emitter &emit) { emit.exp<EVMC_FRONTIER>(0); },
+        [](Emitter &emit) { emit.exp<EvmChain<EVMC_FRONTIER>>(0); },
         10,
         20,
         100000000000000000000_u256);
@@ -2952,7 +2959,7 @@ TEST(Emitter, runtime_exit)
     emit.push(0);
     emit.push(300);
     emit.push(10);
-    emit.call_runtime(9, true, runtime::exp<EVMC_SPURIOUS_DRAGON>);
+    emit.call_runtime(9, true, runtime::exp<EvmChain<EVMC_SPURIOUS_DRAGON>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);

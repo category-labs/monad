@@ -17,6 +17,7 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -115,7 +116,8 @@ namespace monad::vm
         auto const msg_gas = rt_ctx.gas_remaining;
         if (MONAD_VM_LIKELY(ncode != nullptr)) {
             // The bytecode is compiled.
-            if (MONAD_VM_UNLIKELY(ncode->revision() != rev)) {
+            if (MONAD_VM_UNLIKELY(
+                    ncode->chain_id() != revision_to_chain_id(rev))) {
                 // Revision change. The bytecode was compiled pre revision
                 // change, so start async compilation immediately for the new
                 // revision. Execute with interpreter in the meantime.

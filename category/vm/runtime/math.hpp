@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
 
@@ -106,7 +107,7 @@ namespace monad::vm::runtime
         *result_ptr = mulmod(*a_ptr, *b_ptr, *n_ptr);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     constexpr void
     exp(Context *ctx, uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *exponent_ptr) noexcept
@@ -114,7 +115,7 @@ namespace monad::vm::runtime
         auto exponent_byte_size = count_significant_bytes(*exponent_ptr);
 
         auto exponent_cost = [] -> decltype(exponent_byte_size) {
-            if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
+            if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
                 return 50;
             }
             else {

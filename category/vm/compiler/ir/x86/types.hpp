@@ -52,10 +52,10 @@ namespace monad::vm::compiler::native
 
         /// If compilation failed, then `entrypoint` is `nullptr`.
         Nativecode(
-            asmjit::JitRuntime &asmjit_rt, evmc_revision rev,
+            asmjit::JitRuntime &asmjit_rt, uint64_t chain_id,
             entrypoint_t entry, CodeSizeEstimate code_size_estimate)
             : asmjit_rt_{asmjit_rt}
-            , revision_{rev}
+            , chain_id_{chain_id}
             , entrypoint_{entry}
             , code_size_estimate_{code_size_estimate}
         {
@@ -73,9 +73,9 @@ namespace monad::vm::compiler::native
             return entrypoint_;
         }
 
-        evmc_revision revision() const
+        uint64_t chain_id() const noexcept
         {
-            return revision_;
+            return chain_id_;
         }
 
         native_code_size_t code_size_estimate() const
@@ -123,7 +123,7 @@ namespace monad::vm::compiler::native
 
     private:
         asmjit::JitRuntime &asmjit_rt_;
-        evmc_revision revision_;
+        uint64_t chain_id_;
         entrypoint_t entrypoint_;
         CodeSizeEstimate code_size_estimate_;
     };

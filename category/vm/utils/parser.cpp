@@ -15,6 +15,7 @@
 
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as.hpp>
@@ -177,7 +178,7 @@ namespace monad::vm::utils
     std::optional<uint8_t> find_opcode(std::string_view op)
     {
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EVMC_LATEST_STABLE_REVISION>();
+            EvmChain<EVMC_LATEST_STABLE_REVISION>>();
         size_t i;
         for (i = 0; i < tbl.size(); ++i) {
             if (tbl[i].name == op) {
@@ -194,7 +195,7 @@ namespace monad::vm::utils
     {
         std::stringstream ss;
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EVMC_LATEST_STABLE_REVISION>();
+            EvmChain<EVMC_LATEST_STABLE_REVISION>>();
         for (std::size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
@@ -210,7 +211,7 @@ namespace monad::vm::utils
 
     std::vector<uint8_t> compile_tokens(
         parser_config const &config,
-        evm_as::EvmBuilder<EVMC_LATEST_STABLE_REVISION> const &eb)
+        evm_as::EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>> const &eb)
     {
         std::vector<uint8_t> opcodes{};
         std::vector<evm_as::ValidationError> errors{};

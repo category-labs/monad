@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
@@ -24,7 +25,7 @@
 
 namespace monad::vm::runtime
 {
-    template <evmc_revision Rev>
+    template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
         if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
@@ -33,7 +34,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -41,9 +42,9 @@ namespace monad::vm::runtime
             }
         }
 
-        if constexpr (Rev >= EVMC_TANGERINE_WHISTLE) {
+        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
             auto non_zero_transfer = [ctx] {
-                if constexpr (Rev == EVMC_TANGERINE_WHISTLE) {
+                if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
                     return true;
                 }
                 auto balance =
@@ -63,7 +64,7 @@ namespace monad::vm::runtime
         auto result = ctx->host->selfdestruct(
             ctx->context, &ctx->env.recipient, &address);
 
-        if constexpr (Rev < EVMC_LONDON) {
+        if constexpr (traits::evm_rev() < EVMC_LONDON) {
             if (result) {
                 ctx->gas_refund += 24000;
             }

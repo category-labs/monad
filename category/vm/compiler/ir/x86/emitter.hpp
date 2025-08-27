@@ -18,6 +18,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -328,7 +329,7 @@ namespace monad::vm::compiler::native
         void mstore8();
 
         // Revision dependent instructions
-        template <evmc_revision rev>
+        template <Traits traits>
         void mul(int32_t remaining_base_gas)
         {
             if (mul_optimized()) {
@@ -337,7 +338,7 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, false, runtime::mul);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void udiv(int32_t remaining_base_gas)
         {
             if (div_optimized<false>()) {
@@ -346,7 +347,7 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, true, runtime::udiv);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void sdiv(int32_t remaining_base_gas)
         {
             if (div_optimized<true>()) {
@@ -355,7 +356,7 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, true, runtime::sdiv);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void umod(int32_t remaining_base_gas)
         {
             if (mod_optimized<false>()) {
@@ -364,7 +365,7 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, true, runtime::umod);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void smod(int32_t remaining_base_gas)
         {
             if (mod_optimized<true>()) {
@@ -375,7 +376,7 @@ namespace monad::vm::compiler::native
 
         bool addmod_opt();
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void addmod(int32_t remaining_base_gas)
         {
             if (addmod_opt()) {
@@ -386,7 +387,7 @@ namespace monad::vm::compiler::native
 
         bool mulmod_opt();
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void mulmod(int32_t remaining_base_gas)
         {
             if (mulmod_opt()) {
@@ -395,179 +396,184 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, true, runtime::mulmod);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void exp(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::exp<rev>);
+            call_runtime(remaining_base_gas, true, runtime::exp<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void sha3(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::sha3);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void balance(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::balance<rev>);
+            call_runtime(remaining_base_gas, true, runtime::balance<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void calldatacopy(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::calldatacopy);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void codecopy(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::codecopy);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void extcodesize(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::extcodesize<rev>);
+            call_runtime(
+                remaining_base_gas, true, runtime::extcodesize<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void extcodecopy(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::extcodecopy<rev>);
+            call_runtime(
+                remaining_base_gas, true, runtime::extcodecopy<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void returndatacopy(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::returndatacopy);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void extcodehash(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::extcodehash<rev>);
+            call_runtime(
+                remaining_base_gas, true, runtime::extcodehash<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void blockhash(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::blockhash);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void selfbalance(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::selfbalance);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void blobhash(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::blobhash);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void sload(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sload<rev>);
+            call_runtime(remaining_base_gas, true, runtime::sload<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void sstore(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sstore<rev>);
+            call_runtime(remaining_base_gas, true, runtime::sstore<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void tload(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::tload);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void tstore(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::tstore);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void mcopy(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::mcopy);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void log0(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::log0);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void log1(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::log1);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void log2(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::log2);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void log3(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::log3);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void log4(int32_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::log4);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void create(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::create<rev>);
+            call_runtime(remaining_base_gas, true, runtime::create<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void call(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::call<rev>);
+            call_runtime(remaining_base_gas, true, runtime::call<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void callcode(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::callcode<rev>);
+            call_runtime(remaining_base_gas, true, runtime::callcode<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void delegatecall(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::delegatecall<rev>);
+            call_runtime(
+                remaining_base_gas, true, runtime::delegatecall<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void create2(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::create2<rev>);
+            call_runtime(remaining_base_gas, true, runtime::create2<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void staticcall(int32_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::staticcall<rev>);
+            call_runtime(remaining_base_gas, true, runtime::staticcall<traits>);
         }
 
-        template <evmc_revision rev>
+        template <Traits traits>
         void selfdestruct(int32_t remaining_base_gas)
         {
             runtime_store_input_stack(*bytecode_size_);
-            call_runtime(remaining_base_gas, true, runtime::selfdestruct<rev>);
+            call_runtime(
+                remaining_base_gas, true, runtime::selfdestruct<traits>);
         }
 
         template <typename... Args>

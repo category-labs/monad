@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/uint256.hpp>
 
 #include <asmjit/core/jitruntime.h>
@@ -176,7 +177,7 @@ static void dump_result(arguments const &args, evmc::Result const &result)
     std::cout << object.dump(2) << std::endl;
 }
 
-template <evmc_revision Rev>
+template <Traits traits>
 int mce_main(arguments const &args)
 {
     auto const device = args.wall_clock_time
@@ -196,11 +197,11 @@ int mce_main(arguments const &args)
     std::optional<basic_blocks::BasicBlocksIR> const ir = [&]() {
         if (args.instrument_parse) {
             InstrumentableParser<true> parser{};
-            return parser.parse<Rev>(bytes, device);
+            return parser.parse<traits>(bytes, device);
         }
         else {
             InstrumentableParser<false> parser{};
-            return parser.parse<Rev>(bytes, device);
+            return parser.parse<traits>(bytes, device);
         }
     }();
     if (!ir) {
@@ -216,11 +217,11 @@ int mce_main(arguments const &args)
     std::shared_ptr<native::Nativecode> const ncode = [&]() {
         if (args.instrument_compile) {
             InstrumentableCompiler<true> compiler(rt, config);
-            return compiler.compile(Rev, *ir, device);
+            return compiler.compile(traits::evm_rev(), *ir, device);
         }
         else {
             InstrumentableCompiler<false> compiler(rt, config);
-            return compiler.compile(Rev, *ir, device);
+            return compiler.compile(traits::evm_rev(), *ir, device);
         }
     }();
 
@@ -232,11 +233,11 @@ int mce_main(arguments const &args)
     evmc::Result const result = [&]() {
         if (args.instrument_execute) {
             InstrumentableVM<true> vm(rt);
-            return vm.execute(Rev, ncode->entrypoint(), device);
+            return vm.execute(traits::evm_rev(), ncode->entrypoint(), device);
         }
         else {
             InstrumentableVM<false> vm(rt);
-            return vm.execute(Rev, ncode->entrypoint(), device);
+            return vm.execute(traits::evm_rev(), ncode->entrypoint(), device);
         }
     }();
 
@@ -261,52 +262,52 @@ int main(int argc, char **argv)
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
     if (rev == "FRONTIER") {
-        return mce_main<EVMC_FRONTIER>(args);
+        return mce_main<EvmChain<EVMC_FRONTIER>>(args);
     }
     else if (rev == "HOMESTEAD") {
-        return mce_main<EVMC_HOMESTEAD>(args);
+        return mce_main<EvmChain<EVMC_HOMESTEAD>>(args);
     }
     else if (rev == "TANGERINE_WHISTLE") {
-        return mce_main<EVMC_TANGERINE_WHISTLE>(args);
+        return mce_main<EvmChain<EVMC_TANGERINE_WHISTLE>>(args);
     }
     else if (rev == "SPURIOUS_DRAGON") {
-        return mce_main<EVMC_SPURIOUS_DRAGON>(args);
+        return mce_main<EvmChain<EVMC_SPURIOUS_DRAGON>>(args);
     }
     else if (rev == "BYZANTIUM") {
-        return mce_main<EVMC_BYZANTIUM>(args);
+        return mce_main<EvmChain<EVMC_BYZANTIUM>>(args);
     }
     else if (rev == "CONSTANTINOPLE") {
-        return mce_main<EVMC_CONSTANTINOPLE>(args);
+        return mce_main<EvmChain<EVMC_CONSTANTINOPLE>>(args);
     }
     else if (rev == "PETERSBURG") {
-        return mce_main<EVMC_PETERSBURG>(args);
+        return mce_main<EvmChain<EVMC_PETERSBURG>>(args);
     }
     else if (rev == "ISTANBUL") {
-        return mce_main<EVMC_ISTANBUL>(args);
+        return mce_main<EvmChain<EVMC_ISTANBUL>>(args);
     }
     else if (rev == "BERLIN") {
-        return mce_main<EVMC_BERLIN>(args);
+        return mce_main<EvmChain<EVMC_BERLIN>>(args);
     }
     else if (rev == "LONDON") {
-        return mce_main<EVMC_LONDON>(args);
+        return mce_main<EvmChain<EVMC_LONDON>>(args);
     }
     else if (rev == "PARIS") {
-        return mce_main<EVMC_PARIS>(args);
+        return mce_main<EvmChain<EVMC_PARIS>>(args);
     }
     else if (rev == "SHANGHAI") {
-        return mce_main<EVMC_SHANGHAI>(args);
+        return mce_main<EvmChain<EVMC_SHANGHAI>>(args);
     }
     else if (rev == "CANCUN") {
-        return mce_main<EVMC_CANCUN>(args);
+        return mce_main<EvmChain<EVMC_CANCUN>>(args);
     }
     else if (rev == "PRAGUE") {
-        return mce_main<EVMC_PRAGUE>(args);
+        return mce_main<EvmChain<EVMC_PRAGUE>>(args);
     }
     else if (rev == "OSAKA") {
-        return mce_main<EVMC_OSAKA>(args);
+        return mce_main<EvmChain<EVMC_OSAKA>>(args);
     }
     else if (rev == "LATEST") {
-        return mce_main<EVMC_LATEST_STABLE_REVISION>(args);
+        return mce_main<EvmChain<EVMC_LATEST_STABLE_REVISION>>(args);
     }
     else {
         std::cerr << std::format(

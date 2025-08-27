@@ -209,7 +209,7 @@ TEST(MonadVmInterface, VarcodeCache)
     auto icode0 = make_shared_intercode(bytecode0);
     asmjit::JitRuntime asmjit_rt;
     auto ncode0 = std::make_shared<Nativecode>(
-        asmjit_rt, EVMC_FRONTIER, nullptr, std::monostate{});
+        asmjit_rt, EvmChain<EVMC_FRONTIER>::id(), nullptr, std::monostate{});
 
     ASSERT_FALSE(cache.get(hash0).has_value());
     cache.set(hash0, icode0, ncode0);
@@ -460,7 +460,9 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_EQ(compiled_vcode0.value()->intercode(), icode0);
     ASSERT_NE(compiled_vcode0.value()->nativecode(), nullptr);
     ASSERT_NE(compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
-    ASSERT_EQ(compiled_vcode0.value()->nativecode()->revision(), EVMC_FRONTIER);
+    ASSERT_EQ(
+        compiled_vcode0.value()->nativecode()->chain_id(),
+        EvmChain<EVMC_FRONTIER>::id());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
@@ -484,7 +486,8 @@ TEST(MonadVmInterface, execute_raw)
         compiled_vcode0.value()->nativecode());
     ASSERT_NE(re_compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
-        re_compiled_vcode0.value()->nativecode()->revision(), EVMC_SHANGHAI);
+        re_compiled_vcode0.value()->nativecode()->chain_id(),
+        EvmChain<EVMC_SHANGHAI>::id());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
@@ -513,8 +516,8 @@ TEST(MonadVmInterface, execute_raw)
         attempted_noncompiling_vcode.value()->intercode(), noncompiling_icode);
     ASSERT_NE(attempted_noncompiling_vcode.value()->nativecode(), nullptr);
     ASSERT_EQ(
-        attempted_noncompiling_vcode.value()->nativecode()->revision(),
-        EVMC_SHANGHAI);
+        attempted_noncompiling_vcode.value()->nativecode()->chain_id(),
+        EvmChain<EVMC_SHANGHAI>::id());
     ASSERT_EQ(
         attempted_noncompiling_vcode.value()->nativecode()->entrypoint(),
         nullptr);
@@ -556,7 +559,8 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_NE(compiled_warm_vcode.value()->nativecode(), nullptr);
     ASSERT_NE(compiled_warm_vcode.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
-        compiled_warm_vcode.value()->nativecode()->revision(), EVMC_SHANGHAI);
+        compiled_warm_vcode.value()->nativecode()->chain_id(),
+        EvmChain<EVMC_SHANGHAI>::id());
 
     ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
 

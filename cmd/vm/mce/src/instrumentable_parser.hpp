@@ -20,6 +20,7 @@
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <valgrind/cachegrind.h>
@@ -31,20 +32,20 @@ template <bool instrument>
 class InstrumentableParser
 {
 public:
-    template <evmc_revision Rev>
+    template <monad::vm::Traits traits>
     std::optional<monad::vm::compiler::basic_blocks::BasicBlocksIR>
     parse(std::vector<uint8_t> const &code, InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
-            return parse<Rev, InstrumentationDevice::Cachegrind>(code);
+            return parse<traits, InstrumentationDevice::Cachegrind>(code);
         case InstrumentationDevice::WallClock:
-            return parse<Rev, InstrumentationDevice::WallClock>(code);
+            return parse<traits, InstrumentationDevice::WallClock>(code);
         }
         std::unreachable();
     }
 
-    template <evmc_revision Rev, InstrumentationDevice device>
+    template <monad::vm::Traits traits, InstrumentationDevice device>
     std::optional<monad::vm::compiler::basic_blocks::BasicBlocksIR>
     parse(std::vector<uint8_t> const &code)
     {
@@ -52,7 +53,7 @@ public:
             if constexpr (device == InstrumentationDevice::Cachegrind) {
                 CACHEGRIND_START_INSTRUMENTATION;
                 auto ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                    monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(
+                    monad::vm::compiler::basic_blocks::unsafe_make_ir<traits>(
                         code));
                 CACHEGRIND_STOP_INSTRUMENTATION;
                 return ir;
@@ -60,7 +61,7 @@ public:
             else {
                 timer.start();
                 auto ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                    monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(
+                    monad::vm::compiler::basic_blocks::unsafe_make_ir<traits>(
                         code));
                 timer.pause();
                 return ir;
@@ -68,7 +69,8 @@ public:
         }
         else {
             return monad::vm::compiler::basic_blocks::BasicBlocksIR(
-                monad::vm::compiler::basic_blocks::unsafe_make_ir<Rev>(code));
+                monad::vm::compiler::basic_blocks::unsafe_make_ir<traits>(
+                    code));
         }
     }
 };

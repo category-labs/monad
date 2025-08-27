@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
@@ -26,13 +27,13 @@
 
 namespace monad::vm::runtime
 {
-    template <evmc_revision Rev>
+    template <Traits traits>
     void
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -117,7 +118,7 @@ namespace monad::vm::runtime
             ctx->env.code_size);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void extcodecopy(
         Context *ctx, uint256_t const *address_ptr,
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
@@ -137,7 +138,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -188,13 +189,13 @@ namespace monad::vm::runtime
         }
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void extcodehash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -206,13 +207,13 @@ namespace monad::vm::runtime
         *result_ptr = uint256_from_bytes32(hash);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void extcodesize(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {

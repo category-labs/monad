@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
@@ -33,7 +34,7 @@ namespace monad::vm::runtime
         return (rev >= EVMC_SHANGHAI) ? bin<8> : bin<6>;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     uint256_t create_impl(
         Context *ctx, uint256_t const &value, uint256_t const &offset_word,
         uint256_t const &size_word, uint256_t const &salt_word,
@@ -53,7 +54,7 @@ namespace monad::vm::runtime
             ctx->expand_memory(offset + size);
         }
 
-        if constexpr (Rev >= EVMC_SHANGHAI) {
+        if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
             if (MONAD_VM_UNLIKELY(
                     *size > ctx->chain_params.max_initcode_size)) {
                 ctx->exit(StatusCode::OutOfGas);
@@ -61,8 +62,9 @@ namespace monad::vm::runtime
         }
 
         auto min_words = shr_ceil<5>(size);
-        auto word_cost = (kind == EVMC_CREATE2) ? create2_code_word_cost(Rev)
-                                                : create_code_word_cost(Rev);
+        auto word_cost = (kind == EVMC_CREATE2)
+                             ? create2_code_word_cost(traits::evm_rev())
+                             : create_code_word_cost(traits::evm_rev());
 
         ctx->deduct_gas(min_words * word_cost);
 
@@ -71,7 +73,7 @@ namespace monad::vm::runtime
         }
 
         auto gas = ctx->gas_remaining + remaining_block_base_gas;
-        if constexpr (Rev >= EVMC_TANGERINE_WHISTLE) {
+        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
             gas = gas - (gas / 64);
         }
 
@@ -107,13 +109,13 @@ namespace monad::vm::runtime
                    : 0;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void create(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
         std::int64_t remaining_block_base_gas)
     {
-        *result_ptr = create_impl<Rev>(
+        *result_ptr = create_impl<traits>(
             ctx,
             *value_ptr,
             *offset_ptr,
@@ -123,13 +125,13 @@ namespace monad::vm::runtime
             remaining_block_base_gas);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void create2(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *salt_ptr, std::int64_t remaining_block_base_gas)
     {
-        *result_ptr = create_impl<Rev>(
+        *result_ptr = create_impl<traits>(
             ctx,
             *value_ptr,
             *offset_ptr,

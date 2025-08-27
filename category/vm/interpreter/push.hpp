@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack.hpp>
@@ -62,7 +63,7 @@ namespace monad::vm::interpreter
                 *reinterpret_cast<subword_t *>(&aligned_mem[0]));
         }
 
-        template <std::size_t N, evmc_revision Rev>
+        template <std::size_t N, Traits traits>
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
             runtime::Context &ctx, Intercode const &analysis,
@@ -73,7 +74,7 @@ namespace monad::vm::interpreter
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
 
-            check_requirements<PUSH0 + N, Rev>(
+            check_requirements<PUSH0 + N, traits>(
                 ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             auto const leading_word = [instr_ptr] {
@@ -139,7 +140,7 @@ namespace monad::vm::interpreter
             }
         }
 
-        template <std::size_t N, evmc_revision Rev>
+        template <std::size_t N, Traits traits>
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
             runtime::Context &ctx, Intercode const &analysis,
@@ -150,7 +151,7 @@ namespace monad::vm::interpreter
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
 
-            check_requirements<PUSH0 + N, Rev>(
+            check_requirements<PUSH0 + N, traits>(
                 ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             static constexpr int64_t m = ~(
@@ -189,7 +190,7 @@ namespace monad::vm::interpreter
         }
     }
 
-    template <std::size_t N, evmc_revision Rev>
+    template <std::size_t N, Traits traits>
     struct push_impl
     {
         [[gnu::always_inline]] static inline void push(
@@ -198,7 +199,7 @@ namespace monad::vm::interpreter
             runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
             std::uint8_t const *instr_ptr)
         {
-            detail::generic_push<N, Rev>(
+            detail::generic_push<N, traits>(
                 ctx,
                 analysis,
                 stack_bottom,
@@ -208,8 +209,8 @@ namespace monad::vm::interpreter
         }
     };
 
-    template <evmc_revision Rev>
-    struct push_impl<0, Rev>
+    template <Traits traits>
+    struct push_impl<0, traits>
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
@@ -217,15 +218,15 @@ namespace monad::vm::interpreter
             runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
             std::uint8_t const *)
         {
-            check_requirements<PUSH0, Rev>(
+            check_requirements<PUSH0, traits>(
                 ctx, analysis, stack_bottom, stack_top, gas_remaining);
             interpreter::push(stack_top, 0);
         }
     };
 
-    template <std::size_t N, evmc_revision Rev>
+    template <std::size_t N, Traits traits>
         requires(detail::use_avx2_push(N))
-    struct push_impl<N, Rev>
+    struct push_impl<N, traits>
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
@@ -233,7 +234,7 @@ namespace monad::vm::interpreter
             runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
             std::uint8_t const *instr_ptr)
         {
-            detail::avx2_push<N, Rev>(
+            detail::avx2_push<N, traits>(
                 ctx,
                 analysis,
                 stack_bottom,

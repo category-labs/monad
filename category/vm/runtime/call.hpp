@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -39,7 +40,7 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
         bool has_value, evmc_bytes32 const &value,
@@ -63,7 +64,7 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        if constexpr (Rev >= EVMC_BERLIN) {
+        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -72,7 +73,7 @@ namespace monad::vm::runtime
         }
 
         auto const code_address = [&]() -> evmc::address {
-            if constexpr (Rev >= EVMC_PRAGUE) {
+            if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.
@@ -110,7 +111,7 @@ namespace monad::vm::runtime
             }
 
             auto has_empty_cost = true;
-            if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
+            if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
                 has_empty_cost = has_value;
             }
             if (has_empty_cost &&
@@ -127,7 +128,7 @@ namespace monad::vm::runtime
 
         auto gas = clamp_cast<std::int64_t>(gas_word);
 
-        if constexpr (Rev >= EVMC_TANGERINE_WHISTLE) {
+        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
             gas = std::min(gas, gas_left_here - (gas_left_here / 64));
         }
         else {
@@ -182,7 +183,7 @@ namespace monad::vm::runtime
         return (result.status_code == EVMC_SUCCESS) ? 1 : 0;
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void call(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
@@ -190,7 +191,7 @@ namespace monad::vm::runtime
         uint256_t const *ret_offset_ptr, uint256_t const *ret_size_ptr,
         std::int64_t remaining_block_base_gas)
     {
-        *result_ptr = call_impl<Rev>(
+        *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,
             *address_ptr,
@@ -205,7 +206,7 @@ namespace monad::vm::runtime
             remaining_block_base_gas);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void callcode(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
@@ -213,7 +214,7 @@ namespace monad::vm::runtime
         uint256_t const *ret_offset_ptr, uint256_t const *ret_size_ptr,
         std::int64_t remaining_block_base_gas)
     {
-        *result_ptr = call_impl<Rev>(
+        *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,
             *address_ptr,
@@ -228,14 +229,14 @@ namespace monad::vm::runtime
             remaining_block_base_gas);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void delegatecall(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
     {
-        *result_ptr = call_impl<Rev>(
+        *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,
             *address_ptr,
@@ -250,15 +251,15 @@ namespace monad::vm::runtime
             remaining_block_base_gas);
     }
 
-    template <evmc_revision Rev>
+    template <Traits traits>
     void staticcall(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
     {
-        MONAD_VM_DEBUG_ASSERT(Rev >= EVMC_BYZANTIUM);
-        *result_ptr = call_impl<Rev>(
+        MONAD_VM_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
+        *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,
             *address_ptr,

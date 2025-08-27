@@ -18,6 +18,7 @@ add_library(monad-vm-evm OBJECT)
 set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 
 target_sources(monad-vm-evm PRIVATE
+    "chain.hpp"
     "delegation.cpp"
     "delegation.hpp"
     "opcodes.hpp"

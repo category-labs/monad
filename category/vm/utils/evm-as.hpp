@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
@@ -25,83 +26,83 @@
 namespace monad::vm::utils::evm_as
 {
 
-    inline EvmBuilder<EVMC_LATEST_STABLE_REVISION> latest()
+    inline EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>> latest()
     {
-        return EvmBuilder<EVMC_LATEST_STABLE_REVISION>{};
+        return EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>>{};
     }
 
-    inline EvmBuilder<EVMC_FRONTIER> frontier()
+    inline EvmBuilder<EvmChain<EVMC_FRONTIER>> frontier()
     {
-        return EvmBuilder<EVMC_FRONTIER>{};
+        return EvmBuilder<EvmChain<EVMC_FRONTIER>>{};
     }
 
-    inline EvmBuilder<EVMC_HOMESTEAD> homestead()
+    inline EvmBuilder<EvmChain<EVMC_HOMESTEAD>> homestead()
     {
-        return EvmBuilder<EVMC_HOMESTEAD>{};
+        return EvmBuilder<EvmChain<EVMC_HOMESTEAD>>{};
     }
 
-    inline EvmBuilder<EVMC_TANGERINE_WHISTLE> tangerine_whistle()
+    inline EvmBuilder<EvmChain<EVMC_TANGERINE_WHISTLE>> tangerine_whistle()
     {
-        return EvmBuilder<EVMC_TANGERINE_WHISTLE>{};
+        return EvmBuilder<EvmChain<EVMC_TANGERINE_WHISTLE>>{};
     }
 
-    inline EvmBuilder<EVMC_SPURIOUS_DRAGON> spurious_dragon()
+    inline EvmBuilder<EvmChain<EVMC_SPURIOUS_DRAGON>> spurious_dragon()
     {
-        return EvmBuilder<EVMC_SPURIOUS_DRAGON>{};
+        return EvmBuilder<EvmChain<EVMC_SPURIOUS_DRAGON>>{};
     }
 
-    inline EvmBuilder<EVMC_BYZANTIUM> byzantium()
+    inline EvmBuilder<EvmChain<EVMC_BYZANTIUM>> byzantium()
     {
-        return EvmBuilder<EVMC_BYZANTIUM>{};
+        return EvmBuilder<EvmChain<EVMC_BYZANTIUM>>{};
     }
 
-    inline EvmBuilder<EVMC_CONSTANTINOPLE> constantinople()
+    inline EvmBuilder<EvmChain<EVMC_CONSTANTINOPLE>> constantinople()
     {
-        return EvmBuilder<EVMC_CONSTANTINOPLE>{};
+        return EvmBuilder<EvmChain<EVMC_CONSTANTINOPLE>>{};
     }
 
-    inline EvmBuilder<EVMC_PETERSBURG> petersburg()
+    inline EvmBuilder<EvmChain<EVMC_PETERSBURG>> petersburg()
     {
-        return EvmBuilder<EVMC_PETERSBURG>{};
+        return EvmBuilder<EvmChain<EVMC_PETERSBURG>>{};
     }
 
-    inline EvmBuilder<EVMC_ISTANBUL> istanbul()
+    inline EvmBuilder<EvmChain<EVMC_ISTANBUL>> istanbul()
     {
-        return EvmBuilder<EVMC_ISTANBUL>{};
+        return EvmBuilder<EvmChain<EVMC_ISTANBUL>>{};
     }
 
-    inline EvmBuilder<EVMC_BERLIN> berlin()
+    inline EvmBuilder<EvmChain<EVMC_BERLIN>> berlin()
     {
-        return EvmBuilder<EVMC_BERLIN>{};
+        return EvmBuilder<EvmChain<EVMC_BERLIN>>{};
     }
 
-    inline EvmBuilder<EVMC_LONDON> london()
+    inline EvmBuilder<EvmChain<EVMC_LONDON>> london()
     {
-        return EvmBuilder<EVMC_LONDON>{};
+        return EvmBuilder<EvmChain<EVMC_LONDON>>{};
     }
 
-    inline EvmBuilder<EVMC_PARIS> paris()
+    inline EvmBuilder<EvmChain<EVMC_PARIS>> paris()
     {
-        return EvmBuilder<EVMC_PARIS>{};
+        return EvmBuilder<EvmChain<EVMC_PARIS>>{};
     }
 
-    inline EvmBuilder<EVMC_SHANGHAI> shanghai()
+    inline EvmBuilder<EvmChain<EVMC_SHANGHAI>> shanghai()
     {
-        return EvmBuilder<EVMC_SHANGHAI>{};
+        return EvmBuilder<EvmChain<EVMC_SHANGHAI>>{};
     }
 
-    inline EvmBuilder<EVMC_CANCUN> cancun()
+    inline EvmBuilder<EvmChain<EVMC_CANCUN>> cancun()
     {
-        return EvmBuilder<EVMC_CANCUN>{};
+        return EvmBuilder<EvmChain<EVMC_CANCUN>>{};
     }
 
-    inline EvmBuilder<EVMC_PRAGUE> prague()
+    inline EvmBuilder<EvmChain<EVMC_PRAGUE>> prague()
     {
-        return EvmBuilder<EVMC_PRAGUE>{};
+        return EvmBuilder<EvmChain<EVMC_PRAGUE>>{};
     }
 
-    inline EvmBuilder<EVMC_OSAKA> osaka()
+    inline EvmBuilder<EvmChain<EVMC_OSAKA>> osaka()
     {
-        return EvmBuilder<EVMC_OSAKA>{};
+        return EvmBuilder<EvmChain<EVMC_OSAKA>>{};
     }
 }

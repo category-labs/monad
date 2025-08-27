@@ -17,6 +17,7 @@
 
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
@@ -47,7 +48,7 @@ namespace monad::vm::utils::evm_as::internal
     // check some common errors. If the validator proves to be useful,
     // then we can improve its precision, e.g. by building the basic
     // block structure and doing a control flow analysis.
-    template <evmc_revision Rev, bool collect_errors>
+    template <Traits traits, bool collect_errors>
     struct EvmDebugValidator
     {
 
@@ -58,7 +59,7 @@ namespace monad::vm::utils::evm_as::internal
         {
         }
 
-        bool validate(EvmBuilder<Rev> const &eb)
+        bool validate(EvmBuilder<traits> const &eb)
         {
             // Validate labels
             std::set<std::string> labels{};
@@ -119,7 +120,7 @@ namespace monad::vm::utils::evm_as::internal
 
         bool operator()(PlainI const &plain)
         {
-            auto const &info = compiler::opcode_table<Rev>[plain.opcode];
+            auto const &info = compiler::opcode_table<traits>[plain.opcode];
             if (vstack_size < info.min_stack) {
                 error(pos, "Stack underflow");
                 return false;
@@ -201,19 +202,19 @@ namespace monad::vm::utils::evm_as::internal
 
 namespace monad::vm::utils::evm_as
 {
-    template <evmc_revision Rev>
+    template <Traits traits>
     bool
-    validate(EvmBuilder<Rev> const &eb, std::vector<ValidationError> &errors)
+    validate(EvmBuilder<traits> const &eb, std::vector<ValidationError> &errors)
     {
-        internal::EvmDebugValidator<Rev, true> v(errors);
+        internal::EvmDebugValidator<traits, true> v(errors);
         return v.validate(eb);
     }
 
-    template <evmc_revision Rev>
-    bool validate(EvmBuilder<Rev> const &eb)
+    template <Traits traits>
+    bool validate(EvmBuilder<traits> const &eb)
     {
         std::vector<ValidationError> errors;
-        internal::EvmDebugValidator<Rev, false> v(errors);
+        internal::EvmDebugValidator<traits, false> v(errors);
         return v.validate(eb);
     }
 }

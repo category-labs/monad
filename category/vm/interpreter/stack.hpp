@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
 
@@ -27,13 +28,13 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-    template <std::uint8_t Instr, evmc_revision Rev>
+    template <std::uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
         std::int64_t &gas_remaining)
     {
-        static constexpr auto info = compiler::opcode_table<Rev>[Instr];
+        static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
         if constexpr (info.min_gas > 0) {
             gas_remaining -= info.min_gas;

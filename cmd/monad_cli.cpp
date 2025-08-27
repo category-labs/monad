@@ -23,12 +23,16 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/block_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/receipt_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/transaction_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 #include <category/execution/ethereum/db/util.hpp>
@@ -116,6 +120,10 @@ std::string_view table_as_string(unsigned char table_id)
         return "code";
     case RECEIPT_NIBBLE:
         return "receipt";
+    case TRANSACTION_NIBBLE:
+        return "transaction";
+    case CALL_FRAME_NIBBLE:
+        return "callframe";
     default:
         return "invalid";
     }
@@ -262,6 +270,9 @@ struct DbStateMachine
                     "Success! Set to proposal block_id {} of version {}",
                     block_id,
                     curr_version);
+                fmt::println("Next: 'table [name]' "
+                             "(state/code/receipt/transaction/callframe) "
+                             "or 'back' to go up");
             }
             else {
                 fmt::println(
@@ -274,6 +285,9 @@ struct DbStateMachine
                 state = DbState::proposal_or_finalize;
                 fmt::println(
                     "Success! Set to finalized of version {}", curr_version);
+                fmt::println("Next: 'table [name]' "
+                             "(state/code/receipt/transaction/callframe) "
+                             "or 'back' to go up");
             }
             else {
                 fmt::println(
@@ -292,39 +306,41 @@ struct DbStateMachine
         }
         MONAD_ASSERT(curr_section_prefix.nibble_size() > 0);
 
-        if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
-            table_id == RECEIPT_NIBBLE) {
-            fmt::println(
-                "Setting cursor to version {}, table {} ...",
-                curr_version,
-                table_as_string(table_id));
-            auto const res =
-                db.find(concat(curr_section_prefix, table_id), curr_version);
-            if (res.has_value()) {
-                NodeCursor const cursor = res.assume_value();
-                state = DbState::table;
-                curr_table_id = table_id;
-                if (curr_table_id != CODE_NIBBLE) {
-                    bytes32_t merkle_root = cursor.node->data().empty()
-                                                ? NULL_ROOT
-                                                : to_bytes(cursor.node->data());
-                    fmt::println(" * Merkle root is {}", merkle_root);
-                }
-                fmt::println(" * \"node_stats\" will display a summary of node "
-                             "metadata");
-                fmt::println(" * Next, try look up a key in this table using "
-                             "\"get [key]\"");
-            }
-            else {
+        fmt::println(
+            "Setting cursor to version {}, table {} ...",
+            curr_version,
+            table_as_string(table_id));
+        auto const res =
+            db.find(concat(curr_section_prefix, table_id), curr_version);
+        if (res.has_value()) {
+            NodeCursor const cursor = res.assume_value();
+            state = DbState::table;
+            curr_table_id = table_id;
+            if (curr_table_id == TRANSACTION_NIBBLE) {
+                auto const transactions_res =
+                    get_transactions(db, curr_version, curr_block_id);
+                MONAD_ASSERT(transactions_res.has_value());
                 fmt::println(
-                    "Couldn't find root node for {} -- {}",
-                    table_as_string(table_id),
-                    res.error().message().c_str());
+                    "Total number of transactions: {}",
+                    transactions_res.value().size());
             }
+            if (curr_table_id != CODE_NIBBLE &&
+                curr_table_id != CALL_FRAME_NIBBLE) {
+                bytes32_t merkle_root = cursor.node->data().empty()
+                                            ? NULL_ROOT
+                                            : to_bytes(cursor.node->data());
+                fmt::println(" * Merkle root is {}", merkle_root);
+            }
+            fmt::println(" * \"node_stats\" will display a summary of node "
+                         "metadata");
+            fmt::println(" * Next, try look up a key in this table using "
+                         "\"get [key]\"");
         }
         else {
-            fmt::println("Invalid table id: choose table id from 0: state, "
-                         "1: code, 2: receipt.");
+            fmt::println(
+                "Couldn't find root node for {} -- {}",
+                table_as_string(table_id),
+                res.error().message().c_str());
         }
     }
 
@@ -337,7 +353,7 @@ struct DbStateMachine
         MONAD_ASSERT(!curr_section_prefix.empty());
         MONAD_ASSERT(curr_table_id != INVALID_NIBBLE);
         fmt::println(
-            "Looking up key {} \nat version {} on table {} ... ",
+            "Looking up key {} at version {} on table {} ... ",
             key,
             curr_version,
             table_as_string(curr_table_id));
@@ -394,7 +410,8 @@ void print_help()
         "proposal [block_id] or finalized -- Set the section to query\n"
         "list sections                -- List any proposal or finalized "
         "section in current version\n"
-        "table [state/receipt/code]   -- Set the table to query\n"
+        "table [state/code/receipt/transaction/callframe] -- Set the table to "
+        "query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
@@ -442,6 +459,12 @@ void do_table(DbStateMachine &sm, std::string_view const table_name)
     }
     else if (table_name == "code") {
         table_nibble = CODE_NIBBLE;
+    }
+    else if (table_name == "transaction") {
+        table_nibble = TRANSACTION_NIBBLE;
+    }
+    else if (table_name == "callframe") {
+        table_nibble = CALL_FRAME_NIBBLE;
     }
 
     if (table_nibble == INVALID_NIBBLE) {
@@ -579,6 +602,76 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
     }
     auto const decoded = receipt_res.value().first;
     print_receipt(decoded);
+}
+
+void do_get_transaction(DbStateMachine &sm, std::string_view const transaction)
+{
+    size_t transaction_id{};
+
+    if (transaction.starts_with("0x")) {
+        fmt::println("Transactions should be entered in base 10 and will be "
+                     "encoded for you.");
+        return;
+    }
+    auto [_, ec] = std::from_chars(
+        transaction.data(),
+        transaction.data() + transaction.size(),
+        transaction_id);
+    if (ec != std::errc()) {
+        fmt::println("Transaction must be an unsigned integer!");
+        return;
+    }
+    auto const transaction_id_encoded = rlp::encode_unsigned(transaction_id);
+    auto const transaction_query_res =
+        sm.lookup(NibblesView{transaction_id_encoded});
+    if (!transaction_query_res) {
+        fmt::println(
+            "Could not find transaction {} -- {}",
+            transaction,
+            transaction_query_res.error().message().c_str());
+        return;
+    }
+    auto transaction_encoded = transaction_query_res.value().node->value();
+    auto const transaction_res = decode_transaction_db(transaction_encoded);
+    if (!transaction_res) {
+        fmt::println(
+            "Could not decode transaction -- {}",
+            transaction_res.error().message().c_str());
+        return;
+    }
+    auto const &[tx, sender] = transaction_res.value();
+    fmt::print("Transaction: {}\n", tx);
+    fmt::print("Sender: {}\n\n", sender);
+}
+
+void do_get_callframe(DbStateMachine &sm, std::string_view const callframe)
+{
+    size_t callframe_id{};
+
+    if (callframe.starts_with("0x")) {
+        fmt::println("Call frames should be entered in base 10 and will be "
+                     "encoded for you.");
+        return;
+    }
+    auto [_, ec] = std::from_chars(
+        callframe.data(), callframe.data() + callframe.size(), callframe_id);
+    if (ec != std::errc()) {
+        fmt::println("Call frame must be an unsigned integer!");
+        return;
+    }
+    auto const callframe_id_encoded = rlp::encode_unsigned(callframe_id);
+    auto const callframe_query_res =
+        sm.lookup(NibblesView{callframe_id_encoded});
+    if (!callframe_query_res) {
+        fmt::println(
+            "Could not find call frame {} -- {}",
+            callframe,
+            callframe_query_res.error().message().c_str());
+        return;
+    }
+    auto callframe_encoded = callframe_query_res.value().node->value();
+    fmt::print("Encoded call frame size: {}\n", callframe_encoded.size());
+    fmt::print("Call frame format is not supported yet.\n\n");
 }
 
 void do_node_stats(DbStateMachine &sm)
@@ -737,7 +830,7 @@ int interactive_impl(Db &db)
             }
             else {
                 fmt::println("Wrong format to set table, type 'table "
-                             "[state/code/receipt]'");
+                             "[state/code/receipt/transaction/callframe]'");
             }
         }
         else if (tokens[0] == "get") {
@@ -760,6 +853,12 @@ int interactive_impl(Db &db)
             }
             else if (state_machine.curr_table_id == RECEIPT_NIBBLE) {
                 do_get_receipt(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == TRANSACTION_NIBBLE) {
+                do_get_transaction(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == CALL_FRAME_NIBBLE) {
+                do_get_callframe(state_machine, tokens[1]);
             }
         }
         else if (tokens[0] == "node_stats") {

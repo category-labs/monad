@@ -47,6 +47,7 @@
 #include <vector>
 
 namespace runtime = monad::vm::runtime;
+using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::native;

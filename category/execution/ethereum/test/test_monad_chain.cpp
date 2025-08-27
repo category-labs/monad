@@ -68,10 +68,12 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0x1436534e54a22183ea29a2273b341cb50018ed066441ffd111cd263297caba35_bytes32);
-        EXPECT_TRUE(static_validate_header<EVMC_FRONTIER>(header).has_value());
+        EXPECT_TRUE(static_validate_header<EvmChain<EVMC_FRONTIER>>(header)
+                        .has_value());
         // the header generated at the time was not a valid header for the
         // cancun revision
-        EXPECT_FALSE(static_validate_header<EVMC_CANCUN>(header).has_value());
+        EXPECT_FALSE(
+            static_validate_header<EvmChain<EVMC_CANCUN>>(header).has_value());
     }
 
     {
@@ -86,10 +88,12 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0xb711505d8f46fc921ae824f847f26c5c3657bf6c8b9dcf07ffdf3357a143bca9_bytes32);
-        EXPECT_TRUE(static_validate_header<EVMC_FRONTIER>(header).has_value());
+        EXPECT_TRUE(static_validate_header<EvmChain<EVMC_FRONTIER>>(header)
+                        .has_value());
         // the header generated at the time was not a valid header for the
         // cancun revision
-        EXPECT_FALSE(static_validate_header<EVMC_CANCUN>(header).has_value());
+        EXPECT_FALSE(
+            static_validate_header<EvmChain<EVMC_CANCUN>>(header).has_value());
     }
     {
         InMemoryMachine machine;
@@ -103,7 +107,8 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0x0c47353304f22b1c15706367d739b850cda80b5c87bbc335014fef3d88deaac9_bytes32);
-        EXPECT_TRUE(static_validate_header<EVMC_CANCUN>(header).has_value());
+        EXPECT_TRUE(
+            static_validate_header<EvmChain<EVMC_CANCUN>>(header).has_value());
     }
     {
         InMemoryMachine machine;
@@ -117,7 +122,8 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0xFE557D7B2B42D6352B985949AA37EDA10FB02C90FEE62EB29E68839F2FB72B31_bytes32);
-        EXPECT_TRUE(static_validate_header<EVMC_CANCUN>(header).has_value());
+        EXPECT_TRUE(
+            static_validate_header<EvmChain<EVMC_CANCUN>>(header).has_value());
     }
 }
 

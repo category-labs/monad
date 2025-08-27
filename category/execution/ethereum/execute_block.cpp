@@ -30,15 +30,16 @@
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp> // TODO: remove when execute block is a functor
+#include <category/vm/evm/chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -196,7 +197,7 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
     return authorities;
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block &block, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
@@ -209,15 +210,15 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == block.transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
 
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         set_block_hash_history(block_state, block.header);
     }
 
-    if constexpr (rev >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         set_beacon_root(block_state, block.header);
     }
 
-    if constexpr (rev == EVMC_HOMESTEAD) {
+    if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
         if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
             transfer_balance_dao(
                 block_state, Incarnation{block.header.number, 0});
@@ -249,7 +250,7 @@ Result<std::vector<Receipt>> execute_block(
              &call_tracer = *call_tracers[i]] {
                 try {
                     if (chain.is_system_sender(sender)) {
-                        results[i] = ExecuteSystemTransaction<rev>{
+                        results[i] = ExecuteSystemTransaction<traits>{
                             chain,
                             i,
                             transaction,
@@ -261,7 +262,7 @@ Result<std::vector<Receipt>> execute_block(
                             call_tracer}();
                     }
                     else {
-                        results[i] = ExecuteTransaction<rev>{
+                        results[i] = ExecuteTransaction<traits>{
                             chain,
                             i,
                             transaction,
@@ -275,7 +276,8 @@ Result<std::vector<Receipt>> execute_block(
                             call_tracer}();
                     }
                     promises[i + 1].set_value();
-                } catch (...) {
+                }
+                catch (...) {
                     promises[i + 1].set_exception(std::current_exception());
                 }
             });
@@ -311,13 +313,13 @@ Result<std::vector<Receipt>> execute_block(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (rev >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);
     }
 
-    apply_block_reward<rev>(state, block);
+    apply_block_reward<traits>(state, block);
 
-    if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
+    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
         state.destruct_touched_dead();
     }
 
@@ -327,7 +329,7 @@ Result<std::vector<Receipt>> execute_block(
     return retvals;
 }
 
-EXPLICIT_EVMC_REVISION(execute_block);
+EXPLICIT_EVM_CHAIN(execute_block);
 
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, evmc_revision const rev, Block &block,
@@ -337,7 +339,7 @@ Result<std::vector<Receipt>> execute_block(
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers)
 {
-    SWITCH_EVMC_REVISION(
+    SWITCH_EVM_CHAIN(
         execute_block,
         chain,
         block,

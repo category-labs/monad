@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -44,7 +45,7 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
     .initcodes = nullptr,
     .initcodes_count = 0};
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &, Address const &sender, BlockHeader const &,
     uint256_t const &chain_id);

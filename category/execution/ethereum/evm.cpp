@@ -24,9 +24,10 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -84,7 +85,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result,
     size_t const max_code_size) noexcept
@@ -92,13 +93,13 @@ evmc::Result deploy_contract_code(
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
     // EIP-3541
-    if constexpr (rev >= EVMC_LONDON) {
+    if constexpr (traits::evm_rev() >= EVMC_LONDON) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
             return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
         }
     }
     // EIP-170
-    if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
+    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
         if (result.output_size > max_code_size) {
             return evmc::Result{EVMC_OUT_OF_GAS};
         }
@@ -107,7 +108,7 @@ evmc::Result deploy_contract_code(
     auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
 
     if (result.gas_left < deploy_cost) {
-        if constexpr (rev == EVMC_FRONTIER) {
+        if constexpr (traits::evm_rev() == EVMC_FRONTIER) {
             // From YP: "No code is deposited in the state if the gas
             // does not cover the additional per-byte contract deposit
             // fee, however, the value is still transferred and the
@@ -131,9 +132,9 @@ evmc::Result deploy_contract_code(
     return result;
 }
 
-EXPLICIT_EVMC_REVISION(deploy_contract_code);
+EXPLICIT_EVM_CHAIN(deploy_contract_code);
 
-template <evmc_revision rev>
+template <Traits traits>
 std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
@@ -148,7 +149,7 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
         }
     }
 
-    if constexpr (rev < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
         MONAD_ASSERT(
             msg.kind != EVMC_CALL ||
             Address{msg.recipient} == Address{msg.code_address});
@@ -182,9 +183,9 @@ void post_call(State &state, evmc::Result const &result)
     }
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc::Result create(
-    EvmcHost<rev> *const host, State &state, evmc_message const &msg,
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
     size_t const max_code_size)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
@@ -233,7 +234,8 @@ evmc::Result create(
     state.create_contract(contract_address);
 
     // EIP-161
-    constexpr auto starting_nonce = rev >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
+    constexpr auto starting_nonce =
+        traits::evm_rev() >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
     state.set_nonce(contract_address, starting_nonce);
     transfer_balances(state, msg, contract_address);
 
@@ -254,14 +256,14 @@ evmc::Result create(
     };
 
     auto result = state.vm().execute_bytecode(
-        rev,
+        traits::evm_rev(),
         host->get_chain_params(),
         *host,
         &m_call,
         {msg.input_data, msg.input_size});
 
     if (result.status_code == EVMC_SUCCESS) {
-        result = deploy_contract_code<rev>(
+        result = deploy_contract_code<traits>(
             state, contract_address, std::move(result), max_code_size);
     }
 
@@ -286,11 +288,11 @@ evmc::Result create(
     return result;
 }
 
-EXPLICIT_EVMC_REVISION(create);
+EXPLICIT_EVM_CHAIN(create);
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc::Result
-call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
+call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -304,7 +306,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<rev>(msg, state); result.has_value()) {
+    if (auto result = pre_call<traits>(msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
@@ -319,7 +321,12 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
         auto const hash = state.get_code_hash(msg.code_address);
         auto const &code = state.read_code(hash);
         result = state.vm().execute(
-            rev, host->get_chain_params(), *host, &msg, hash, code);
+            traits::evm_rev(),
+            host->get_chain_params(),
+            *host,
+            &msg,
+            hash,
+            code);
     }
 
     post_call(state, result);
@@ -327,6 +334,6 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
     return result;
 }
 
-EXPLICIT_EVMC_REVISION(call);
+EXPLICIT_EVM_CHAIN(call);
 
 MONAD_NAMESPACE_END

@@ -46,7 +46,7 @@ using namespace monad::test;
 
 using db_t = TrieDb;
 
-using evm_host_t = EvmcHost<EVMC_SHANGHAI>;
+using evm_host_t = EvmcHost<EvmChain<EVMC_SHANGHAI>>;
 
 TEST(Evm, create_with_insufficient)
 {
@@ -90,7 +90,8 @@ TEST(Evm, create_with_insufficient)
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
         true};
-    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    auto const result =
+        create<EvmChain<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -145,7 +146,8 @@ TEST(Evm, eip684_existing_code)
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860,
         true};
-    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    auto const result =
+        create<EvmChain<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
@@ -197,7 +199,8 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = create<EVMC_SHANGHAI>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    auto const result =
+        create<EvmChain<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -254,7 +257,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+    auto const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -314,7 +317,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call<EVMC_SHANGHAI>(&h, s, m);
+    evmc::Result const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
@@ -399,7 +402,7 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        auto const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -412,7 +415,7 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        auto const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
@@ -498,7 +501,7 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        auto const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -511,7 +514,7 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<EVMC_SHANGHAI>(&h, s, m);
+        auto const result = call<EvmChain<EVMC_SHANGHAI>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
@@ -539,7 +542,7 @@ TEST(Evm, deploy_contract_code)
             State s{bs, Incarnation{0, 0}};
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EVMC_FRONTIER>(
+            auto const r2 = deploy_contract_code<EvmChain<EVMC_FRONTIER>>(
                 s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
@@ -554,7 +557,7 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, Incarnation{0, 1}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EVMC_FRONTIER>(
+            auto const r2 = deploy_contract_code<EvmChain<EVMC_FRONTIER>>(
                 s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, 700);
@@ -571,7 +574,7 @@ TEST(Evm, deploy_contract_code)
             int64_t const gas = 10'000;
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EVMC_HOMESTEAD>(
+            auto const r2 = deploy_contract_code<EvmChain<EVMC_HOMESTEAD>>(
                 s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
@@ -587,7 +590,7 @@ TEST(Evm, deploy_contract_code)
         {
             State s{bs, Incarnation{0, 3}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EVMC_HOMESTEAD>(
+            auto const r2 = deploy_contract_code<EvmChain<EVMC_HOMESTEAD>>(
                 s, a, std::move(r), MAX_CODE_SIZE_EIP170);
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
             EXPECT_EQ(r2.gas_left, 700);
@@ -608,7 +611,7 @@ TEST(Evm, deploy_contract_code)
             0,
             code.data(),
             code.size()};
-        auto const r2 = deploy_contract_code<EVMC_SPURIOUS_DRAGON>(
+        auto const r2 = deploy_contract_code<EvmChain<EVMC_SPURIOUS_DRAGON>>(
             s, a, std::move(r), MAX_CODE_SIZE_EIP170);
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
@@ -623,7 +626,7 @@ TEST(Evm, deploy_contract_code)
 
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 = deploy_contract_code<EVMC_LONDON>(
+        auto const r2 = deploy_contract_code<EvmChain<EVMC_LONDON>>(
             s, a, std::move(r), MAX_CODE_SIZE_EIP170);
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);

@@ -95,7 +95,7 @@ extern "C" void monad_vm_interpreter_core_loop(
     ::monad::vm::interpreter::Intercode const *analysis,
     ::monad::vm::runtime::uint256_t *stack_ptr)
 {
-    using namespace ::monad::vm;
+    using namespace ::monad;
     using namespace ::monad::vm::interpreter;
 
     switch (rev) {

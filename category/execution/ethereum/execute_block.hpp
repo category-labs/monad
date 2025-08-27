@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -36,7 +37,7 @@ class BlockHashBuffer;
 class BlockState;
 struct Chain;
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &, Block &, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,

@@ -41,7 +41,7 @@ using namespace monad;
 
 using db_t = TrieDb;
 
-using evmc_host_t = EvmcHost<EVMC_SHANGHAI>;
+using evmc_host_t = EvmcHost<EvmChain<EVMC_SHANGHAI>>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -95,7 +95,8 @@ TEST(EvmcHost, get_tx_context)
     Transaction const tx{
         .sc = {.chain_id = chain_id}, .max_fee_per_gas = base_fee_per_gas};
 
-    auto const result = get_tx_context<EVMC_SHANGHAI>(tx, from, hdr, 1);
+    auto const result =
+        get_tx_context<EvmChain<EVMC_SHANGHAI>>(tx, from, hdr, 1);
     evmc_tx_context ctx{
         .tx_origin = from,
         .block_coinbase = bene,
@@ -110,7 +111,8 @@ TEST(EvmcHost, get_tx_context)
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
-    auto const pos_result = get_tx_context<EVMC_SHANGHAI>(tx, from, hdr, 1);
+    auto const pos_result =
+        get_tx_context<EvmChain<EVMC_SHANGHAI>>(tx, from, hdr, 1);
     std::memcpy(
         ctx.block_prev_randao.bytes,
         hdr.prev_randao.bytes,

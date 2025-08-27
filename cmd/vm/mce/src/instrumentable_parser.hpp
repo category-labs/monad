@@ -32,7 +32,7 @@ template <bool instrument>
 class InstrumentableParser
 {
 public:
-    template <monad::vm::Traits traits>
+    template <monad::Traits traits>
     std::optional<monad::vm::compiler::basic_blocks::BasicBlocksIR>
     parse(std::vector<uint8_t> const &code, InstrumentationDevice const device)
     {
@@ -45,7 +45,7 @@ public:
         std::unreachable();
     }
 
-    template <monad::vm::Traits traits, InstrumentationDevice device>
+    template <monad::Traits traits, InstrumentationDevice device>
     std::optional<monad::vm::compiler::basic_blocks::BasicBlocksIR>
     parse(std::vector<uint8_t> const &code)
     {

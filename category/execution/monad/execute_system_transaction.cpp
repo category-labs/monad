@@ -29,6 +29,7 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <optional>
 
@@ -36,8 +37,8 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-template <evmc_revision rev>
-ExecuteSystemTransaction<rev>::ExecuteSystemTransaction(
+template <Traits traits>
+ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
@@ -54,8 +55,8 @@ ExecuteSystemTransaction<rev>::ExecuteSystemTransaction(
 {
 }
 
-template <evmc_revision rev>
-Result<Receipt> ExecuteSystemTransaction<rev>::operator()()
+template <Traits traits>
+Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
@@ -65,7 +66,7 @@ Result<Receipt> ExecuteSystemTransaction<rev>::operator()()
         Transaction tx = tx_;
         tx.gas_limit =
             2'000'000; // required to pass intrinsic gas validation check
-        BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
+        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
             tx,
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
@@ -117,8 +118,8 @@ Result<Receipt> ExecuteSystemTransaction<rev>::operator()()
     }
 }
 
-template <evmc_revision rev>
-evmc_message ExecuteSystemTransaction<rev>::to_message() const
+template <Traits traits>
+evmc_message ExecuteSystemTransaction<traits>::to_message() const
 {
     return evmc_message{
         .kind = EVMC_CALL,
@@ -137,8 +138,8 @@ evmc_message ExecuteSystemTransaction<rev>::to_message() const
     };
 }
 
-template <evmc_revision rev>
-Result<void> ExecuteSystemTransaction<rev>::execute(State &state)
+template <Traits traits>
+Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
     BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_account));
@@ -155,8 +156,8 @@ Result<void> ExecuteSystemTransaction<rev>::execute(State &state)
     return success();
 }
 
-template <evmc_revision rev>
-Receipt ExecuteSystemTransaction<rev>::execute_final(State &state)
+template <Traits traits>
+Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
 {
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
@@ -167,8 +168,8 @@ Receipt ExecuteSystemTransaction<rev>::execute_final(State &state)
     return receipt;
 }
 
-template <evmc_revision rev>
-Result<void> ExecuteSystemTransaction<rev>::execute_staking_syscall(
+template <Traits traits>
+Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     State &state, byte_string_view calldata, uint256_t const &value)
 {
     // creates staking account in state if it doesn't exist
@@ -194,20 +195,20 @@ Result<void> ExecuteSystemTransaction<rev>::execute_staking_syscall(
     return staking::StakingError::MethodNotSupported;
 }
 
-template class ExecuteSystemTransaction<EVMC_FRONTIER>;
-template class ExecuteSystemTransaction<EVMC_HOMESTEAD>;
-template class ExecuteSystemTransaction<EVMC_TANGERINE_WHISTLE>;
-template class ExecuteSystemTransaction<EVMC_SPURIOUS_DRAGON>;
-template class ExecuteSystemTransaction<EVMC_BYZANTIUM>;
-template class ExecuteSystemTransaction<EVMC_CONSTANTINOPLE>;
-template class ExecuteSystemTransaction<EVMC_PETERSBURG>;
-template class ExecuteSystemTransaction<EVMC_ISTANBUL>;
-template class ExecuteSystemTransaction<EVMC_BERLIN>;
-template class ExecuteSystemTransaction<EVMC_LONDON>;
-template class ExecuteSystemTransaction<EVMC_PARIS>;
-template class ExecuteSystemTransaction<EVMC_SHANGHAI>;
-template class ExecuteSystemTransaction<EVMC_CANCUN>;
-template class ExecuteSystemTransaction<EVMC_PRAGUE>;
-template class ExecuteSystemTransaction<EVMC_OSAKA>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_FRONTIER>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_HOMESTEAD>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_TANGERINE_WHISTLE>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_SPURIOUS_DRAGON>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_BYZANTIUM>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_CONSTANTINOPLE>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_PETERSBURG>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_ISTANBUL>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_BERLIN>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_LONDON>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_PARIS>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_SHANGHAI>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_CANCUN>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_PRAGUE>>;
+template class ExecuteSystemTransaction<EvmChain<EVMC_OSAKA>>;
 
 MONAD_NAMESPACE_END

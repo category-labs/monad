@@ -15,10 +15,11 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/bytes.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
+#include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -64,10 +65,10 @@ Receipt::Bloom compute_bloom(std::vector<Receipt> const &);
 
 bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &);
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_block(Block const &);
 
 Result<void> static_validate_block(evmc_revision, Block const &);

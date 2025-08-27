@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace intx;

@@ -21,7 +21,7 @@
 
 #include <concepts>
 
-namespace monad::vm
+namespace monad
 {
     template <evmc_revision Rev>
     struct EvmChain

@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -30,10 +31,10 @@ bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
 
-template <evmc_revision rev>
+template <Traits traits>
 bool is_precompile(Address const &, bool);
 
-template <evmc_revision rev>
+template <Traits traits>
 std::optional<evmc::Result>
 check_call_precompile(evmc_message const &, bool enable_p256_verify);
 

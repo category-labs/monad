@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <limits>
 
+using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;

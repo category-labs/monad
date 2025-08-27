@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
 #include <silkpre/precompile.h>
@@ -40,6 +40,9 @@ struct PrecompiledContract
     precompiled_execute_fn *execute_func;
 };
 
+// TODO(Bruce): when we enable feature flags in traits rather than raw use of
+// the EVM version, refactor this code and the general precompile setup to use
+// it.
 template <evmc_revision First, evmc_revision Rev>
 static consteval std::optional<PrecompiledContract>
 since(PrecompiledContract impl)
@@ -51,14 +54,15 @@ since(PrecompiledContract impl)
     return std::nullopt;
 }
 
-template <evmc_revision Rev>
+template <Traits traits>
 std::optional<PrecompiledContract>
 resolve_precompile(Address const &address, bool const enable_p256_verify)
 {
 #define CASE(addr, first_rev, name)                                            \
     do {                                                                       \
         if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
-            return since<(first_rev), Rev>({name##_gas_cost, name##_execute}); \
+            return since<(first_rev), traits::evm_rev()>(                      \
+                {name##_gas_cost, name##_execute});                            \
         }                                                                      \
     }                                                                          \
     while (false)
@@ -99,29 +103,29 @@ resolve_precompile(Address const &address, bool const enable_p256_verify)
     return std::nullopt;
 }
 
-EXPLICIT_EVMC_REVISION(resolve_precompile);
+EXPLICIT_EVM_CHAIN(resolve_precompile);
 
-template <evmc_revision Rev>
+template <Traits traits>
 bool is_precompile(Address const &address, bool const enable_p256_verify)
 {
-    return resolve_precompile<Rev>(address, enable_p256_verify).has_value();
+    return resolve_precompile<traits>(address, enable_p256_verify).has_value();
 }
 
-EXPLICIT_EVMC_REVISION(is_precompile);
+EXPLICIT_EVM_CHAIN(is_precompile);
 
-template <evmc_revision rev>
+template <Traits traits>
 std::optional<evmc::Result>
 check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
 {
     auto const &address = msg.code_address;
     auto const maybe_precompile =
-        resolve_precompile<rev>(address, enable_p256_verify);
+        resolve_precompile<traits>(address, enable_p256_verify);
 
     if (!maybe_precompile) {
         return std::nullopt;
     }
 
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702 specifies that precompiles don't actually get called when
         // they're the target of a delegation.
         auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;
@@ -133,7 +137,7 @@ check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
     auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};
-    uint64_t const cost = gas_cost_func(input, rev);
+    uint64_t const cost = gas_cost_func(input, traits::evm_rev());
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
@@ -154,6 +158,6 @@ check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
     }};
 }
 
-EXPLICIT_EVMC_REVISION(check_call_precompile);
+EXPLICIT_EVM_CHAIN(check_call_precompile);
 
 MONAD_NAMESPACE_END

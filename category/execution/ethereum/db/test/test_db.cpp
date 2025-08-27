@@ -42,6 +42,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
@@ -955,7 +956,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
             block.value().transactions[i], call_frames[i]));
     }
 
-    auto const receipts = execute_block<EVMC_SHANGHAI>(
+    auto const receipts = execute_block<EvmChain<EVMC_SHANGHAI>>(
         EthereumMainnet{},
         block.value(),
         senders,
@@ -1057,18 +1058,20 @@ TYPED_TEST(DBTest, assertion_exception)
             block.value().transactions[i], call_frames[i]));
     }
 
-    EXPECT_THROW({
-        (void)execute_block<EVMC_SHANGHAI>(
-            EthereumMainnet{},
-            block.value(),
-            senders,
-            recovered_authorities,
-            bs,
-            block_hash_buffer,
-            pool,
-            metrics,
-            call_tracers);
-    }, MonadException);
+    EXPECT_THROW(
+        {
+            (void)execute_block<EvmChain<EVMC_SHANGHAI>>(
+                EthereumMainnet{},
+                block.value(),
+                senders,
+                recovered_authorities,
+                bs,
+                block_hash_buffer,
+                pool,
+                metrics,
+                call_tracers);
+        },
+        MonadException);
 }
 
 // test referenced from :
@@ -1151,7 +1154,7 @@ TYPED_TEST(DBTest, call_frames_refund)
             block.value().transactions[i], call_frames[i]));
     }
 
-    auto const receipts = execute_block<EVMC_SHANGHAI>(
+    auto const receipts = execute_block<EvmChain<EVMC_SHANGHAI>>(
         ShanghaiEthereumMainnet{},
         block.value(),
         senders,

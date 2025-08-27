@@ -25,12 +25,13 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
 
 #include <boost/fiber/future/promise.hpp>
@@ -45,7 +46,7 @@
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // YP Sec 6.2 "irrevocable_change"
-template <evmc_revision rev>
+template <Traits traits>
 constexpr void irrevocable_change(
     State &state, Transaction const &tx, Address const &sender,
     uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas)
@@ -56,23 +57,24 @@ constexpr void irrevocable_change(
     }
 
     uint256_t blob_gas = 0;
-    if constexpr (rev >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         blob_gas = (tx.type == TransactionType::eip4844)
                        ? calc_blob_fee(tx, excess_blob_gas)
                        : 0;
     }
     auto const upfront_cost =
-        tx.gas_limit * gas_price<rev>(tx, base_fee_per_gas);
+        tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
     state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 // YP Eqn 72 - template version for each revision
-template <evmc_revision rev>
+template <Traits traits>
 constexpr uint64_t g_star(
     Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
     // EIP-3529
-    constexpr auto max_refund_quotient = rev >= EVMC_LONDON ? 5 : 2;
+    constexpr auto max_refund_quotient =
+        traits::evm_rev() >= EVMC_LONDON ? 5 : 2;
     auto const refund_allowance =
         (tx.gas_limit - gas_remaining) / max_refund_quotient;
     return gas_remaining + std::min(refund_allowance, refund);
@@ -82,8 +84,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
-ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
+template <Traits traits>
+ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header)
@@ -95,8 +97,8 @@ ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
 {
 }
 
-template <evmc_revision rev>
-ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
+template <Traits traits>
+ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     BlockHeader const &header)
     : ExecuteTransactionNoValidation{chain, tx, sender, {}, header}
@@ -104,9 +106,9 @@ ExecuteTransactionNoValidation<rev>::ExecuteTransactionNoValidation(
 }
 
 // EIP-7702
-template <evmc_revision rev>
-uint64_t ExecuteTransactionNoValidation<rev>::process_authorizations(
-    State &state, EvmcHost<rev> &host)
+template <Traits traits>
+uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
+    State &state, EvmcHost<traits> &host)
 {
     using namespace intx::literals;
 
@@ -199,8 +201,8 @@ uint64_t ExecuteTransactionNoValidation<rev>::process_authorizations(
     return refund;
 }
 
-template <evmc_revision rev>
-evmc_message ExecuteTransactionNoValidation<rev>::to_message() const
+template <Traits traits>
+evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
 {
     auto const to_address = [this] {
         if (tx_.to) {
@@ -213,7 +215,7 @@ evmc_message ExecuteTransactionNoValidation<rev>::to_message() const
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<rev>(tx_)),
+        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -228,11 +230,11 @@ evmc_message ExecuteTransactionNoValidation<rev>::to_message() const
     return msg;
 }
 
-template <evmc_revision rev>
-evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
-    State &state, EvmcHost<rev> &host)
+template <Traits traits>
+evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
+    State &state, EvmcHost<traits> &host)
 {
-    irrevocable_change<rev>(
+    irrevocable_change<traits>(
         state,
         tx_,
         sender_,
@@ -241,12 +243,12 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
 
     // EIP-7702
     uint64_t auth_refund = 0u;
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         auth_refund = process_authorizations(state, host);
     }
 
     // EIP-3651
-    if constexpr (rev >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         host.access_account(header_.beneficiary);
     }
 
@@ -264,7 +266,7 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
     auto msg = to_message();
 
     // EIP-7702
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         if (tx_.to.has_value()) {
             if (auto const delegate = vm::evm::resolve_delegation(
                     &host.get_interface(), host.to_context(), *tx_.to)) {
@@ -277,35 +279,35 @@ evmc::Result ExecuteTransactionNoValidation<rev>::operator()(
 
     auto result =
         (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-            ? ::monad::create<rev>(
+            ? ::monad::create<traits>(
                   &host,
                   state,
                   msg,
                   chain_.get_max_code_size(header_.number, header_.timestamp))
-            : ::monad::call<rev>(&host, state, msg);
+            : ::monad::call<traits>(&host, state, msg);
 
     result.gas_refund += auth_refund;
     return result;
 }
 
-template class ExecuteTransactionNoValidation<EVMC_FRONTIER>;
-template class ExecuteTransactionNoValidation<EVMC_HOMESTEAD>;
-template class ExecuteTransactionNoValidation<EVMC_TANGERINE_WHISTLE>;
-template class ExecuteTransactionNoValidation<EVMC_SPURIOUS_DRAGON>;
-template class ExecuteTransactionNoValidation<EVMC_BYZANTIUM>;
-template class ExecuteTransactionNoValidation<EVMC_CONSTANTINOPLE>;
-template class ExecuteTransactionNoValidation<EVMC_PETERSBURG>;
-template class ExecuteTransactionNoValidation<EVMC_ISTANBUL>;
-template class ExecuteTransactionNoValidation<EVMC_BERLIN>;
-template class ExecuteTransactionNoValidation<EVMC_LONDON>;
-template class ExecuteTransactionNoValidation<EVMC_PARIS>;
-template class ExecuteTransactionNoValidation<EVMC_SHANGHAI>;
-template class ExecuteTransactionNoValidation<EVMC_CANCUN>;
-template class ExecuteTransactionNoValidation<EVMC_PRAGUE>;
-template class ExecuteTransactionNoValidation<EVMC_OSAKA>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_FRONTIER>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_HOMESTEAD>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_TANGERINE_WHISTLE>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_SPURIOUS_DRAGON>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_BYZANTIUM>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_CONSTANTINOPLE>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_PETERSBURG>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_ISTANBUL>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_BERLIN>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_LONDON>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_PARIS>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_SHANGHAI>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_CANCUN>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_PRAGUE>>;
+template class ExecuteTransactionNoValidation<EvmChain<EVMC_OSAKA>>;
 
-template <evmc_revision rev>
-ExecuteTransaction<rev>::ExecuteTransaction(
+template <Traits traits>
+ExecuteTransaction<traits>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
@@ -313,7 +315,7 @@ ExecuteTransaction<rev>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer)
     : ExecuteTransactionNoValidation<
-          rev>{chain, tx, sender, authorities, header}
+          traits>{chain, tx, sender, authorities, header}
     , i_{i}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
@@ -323,13 +325,13 @@ ExecuteTransaction<rev>::ExecuteTransaction(
 {
 }
 
-template <evmc_revision rev>
-Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
+template <Traits traits>
+Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
     auto const &icode = state.get_code(sender_)->intercode();
     auto const validate_lambda = [this, &state, &sender_account, &icode] {
-        auto result = validate_transaction<rev>(
+        auto result = validate_transaction<traits>(
             tx_, sender_account, {icode->code(), icode->size()});
         if (!result) {
             // RELAXED MERGE
@@ -342,8 +344,8 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
     BOOST_OUTCOME_TRY(validate_lambda());
 
     auto const tx_context =
-        get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
-    EvmcHost<rev> host{
+        get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
+    EvmcHost<traits> host{
         chain_,
         call_tracer_,
         tx_context,
@@ -353,12 +355,12 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
         chain_.get_max_initcode_size(header_.number, header_.timestamp),
         chain_.get_create_inside_delegated()};
 
-    return ExecuteTransactionNoValidation<rev>::operator()(state, host);
+    return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }
 
-template <evmc_revision rev>
-Receipt
-ExecuteTransaction<rev>::execute_final(State &state, evmc::Result const &result)
+template <Traits traits>
+Receipt ExecuteTransaction<traits>::execute_final(
+    State &state, evmc::Result const &result)
 {
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
@@ -372,13 +374,13 @@ ExecuteTransaction<rev>::execute_final(State &state, evmc::Result const &result)
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
     auto const gas_cost =
-        gas_price<rev>(tx_, header_.base_fee_per_gas.value_or(0));
+        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
     state.add_to_balance(sender_, gas_cost * gas_refund);
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
     // EIP-7623
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
@@ -388,13 +390,13 @@ ExecuteTransaction<rev>::execute_final(State &state, evmc::Result const &result)
         }
     }
 
-    auto const reward = calculate_txn_award<rev>(
+    auto const reward = calculate_txn_award<traits>(
         tx_, header_.base_fee_per_gas.value_or(0), gas_used);
     state.add_to_balance(header_.beneficiary, reward);
 
     // finalize state, Eqn. 77-79
-    state.destruct_suicides<rev>();
-    if constexpr (rev >= EVMC_SPURIOUS_DRAGON) {
+    state.destruct_suicides<traits>();
+    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
         state.destruct_touched_dead();
     }
 
@@ -409,12 +411,12 @@ ExecuteTransaction<rev>::execute_final(State &state, evmc::Result const &result)
     return receipt;
 }
 
-template <evmc_revision rev>
-Result<Receipt> ExecuteTransaction<rev>::operator()()
+template <Traits traits>
+Result<Receipt> ExecuteTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
-    BOOST_OUTCOME_TRY(static_validate_transaction<rev>(
+    BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
         tx_,
         header_.base_fee_per_gas,
         header_.excess_blob_gas,
@@ -470,27 +472,27 @@ Result<Receipt> ExecuteTransaction<rev>::operator()()
     }
 }
 
-template class ExecuteTransaction<EVMC_FRONTIER>;
-template class ExecuteTransaction<EVMC_HOMESTEAD>;
-template class ExecuteTransaction<EVMC_TANGERINE_WHISTLE>;
-template class ExecuteTransaction<EVMC_SPURIOUS_DRAGON>;
-template class ExecuteTransaction<EVMC_BYZANTIUM>;
-template class ExecuteTransaction<EVMC_CONSTANTINOPLE>;
-template class ExecuteTransaction<EVMC_PETERSBURG>;
-template class ExecuteTransaction<EVMC_ISTANBUL>;
-template class ExecuteTransaction<EVMC_BERLIN>;
-template class ExecuteTransaction<EVMC_LONDON>;
-template class ExecuteTransaction<EVMC_PARIS>;
-template class ExecuteTransaction<EVMC_SHANGHAI>;
-template class ExecuteTransaction<EVMC_CANCUN>;
-template class ExecuteTransaction<EVMC_PRAGUE>;
-template class ExecuteTransaction<EVMC_OSAKA>;
+template class ExecuteTransaction<EvmChain<EVMC_FRONTIER>>;
+template class ExecuteTransaction<EvmChain<EVMC_HOMESTEAD>>;
+template class ExecuteTransaction<EvmChain<EVMC_TANGERINE_WHISTLE>>;
+template class ExecuteTransaction<EvmChain<EVMC_SPURIOUS_DRAGON>>;
+template class ExecuteTransaction<EvmChain<EVMC_BYZANTIUM>>;
+template class ExecuteTransaction<EvmChain<EVMC_CONSTANTINOPLE>>;
+template class ExecuteTransaction<EvmChain<EVMC_PETERSBURG>>;
+template class ExecuteTransaction<EvmChain<EVMC_ISTANBUL>>;
+template class ExecuteTransaction<EvmChain<EVMC_BERLIN>>;
+template class ExecuteTransaction<EvmChain<EVMC_LONDON>>;
+template class ExecuteTransaction<EvmChain<EVMC_PARIS>>;
+template class ExecuteTransaction<EvmChain<EVMC_SHANGHAI>>;
+template class ExecuteTransaction<EvmChain<EVMC_CANCUN>>;
+template class ExecuteTransaction<EvmChain<EVMC_PRAGUE>>;
+template class ExecuteTransaction<EvmChain<EVMC_OSAKA>>;
 
 uint64_t g_star(
     evmc_revision const rev, Transaction const &tx,
     uint64_t const gas_remaining, uint64_t const refund)
 {
-    SWITCH_EVMC_REVISION(g_star, tx, gas_remaining, refund);
+    SWITCH_EVM_CHAIN(g_star, tx, gas_remaining, refund);
     MONAD_ASSERT(false);
 }
 

@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
@@ -122,7 +122,7 @@ std::optional<evmc::Result> MonadChain::check_call_precompile(
 
     auto maybe_result =
         [rev, &msg, enable_p256_verify]() -> std::optional<evmc::Result> {
-        SWITCH_EVMC_REVISION(
+        SWITCH_EVM_CHAIN(
             ::monad::check_call_precompile, msg, enable_p256_verify);
         return std::nullopt;
     }();

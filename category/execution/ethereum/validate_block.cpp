@@ -22,8 +22,8 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
@@ -68,7 +68,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
     return to_bytes(keccak256(rlp::encode_ommers(ommers)));
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
     // YP eq. 56
@@ -88,7 +88,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-1559
-    if constexpr (rev < EVMC_LONDON) {
+    if constexpr (traits::evm_rev() < EVMC_LONDON) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -98,7 +98,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-7685
-    if constexpr (rev < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
         if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -108,7 +108,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-4844 and EIP-4788
-    if constexpr (rev < EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         if (MONAD_UNLIKELY(
                 header.blob_gas_used.has_value() ||
                 header.excess_blob_gas.has_value() ||
@@ -124,7 +124,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-4895
-    if constexpr (rev < EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -134,7 +134,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-3675
-    if constexpr (rev >= EVMC_PARIS) {
+    if constexpr (traits::evm_rev() >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return BlockError::PowBlockAfterMerge;
         }
@@ -153,9 +153,9 @@ Result<void> static_validate_header(BlockHeader const &header)
     return success();
 }
 
-EXPLICIT_EVMC_REVISION(static_validate_header);
+EXPLICIT_EVM_CHAIN(static_validate_header);
 
-template <evmc_revision rev>
+template <Traits traits>
 constexpr Result<void> static_validate_ommers(Block const &block)
 {
     // YP eq. 33
@@ -164,7 +164,7 @@ constexpr Result<void> static_validate_ommers(Block const &block)
     }
 
     // EIP-3675
-    if constexpr (rev >= EVMC_PARIS) {
+    if constexpr (traits::evm_rev() >= EVMC_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return BlockError::TooManyOmmers;
         }
@@ -183,16 +183,16 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        BOOST_OUTCOME_TRY(static_validate_header<rev>(ommer));
+        BOOST_OUTCOME_TRY(static_validate_header<traits>(ommer));
     }
 
     return success();
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 constexpr Result<void> static_validate_4844(Block const &block)
 {
-    if constexpr (rev >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         uint64_t blob_gas_used = 0;
         for (auto const &tx : block.transactions) {
             if (tx.type == TransactionType::eip4844) {
@@ -211,11 +211,11 @@ constexpr Result<void> static_validate_4844(Block const &block)
     return success();
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 constexpr Result<void> static_validate_body(Block const &block)
 {
     // EIP-4895
-    if constexpr (rev < EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -226,27 +226,27 @@ constexpr Result<void> static_validate_body(Block const &block)
         }
     }
 
-    BOOST_OUTCOME_TRY(static_validate_ommers<rev>(block));
-    BOOST_OUTCOME_TRY(static_validate_4844<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_ommers<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_4844<traits>(block));
 
     return success();
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_block(Block const &block)
 {
-    BOOST_OUTCOME_TRY(static_validate_header<rev>(block.header));
+    BOOST_OUTCOME_TRY(static_validate_header<traits>(block.header));
 
-    BOOST_OUTCOME_TRY(static_validate_body<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_body<traits>(block));
 
     return success();
 }
 
-EXPLICIT_EVMC_REVISION(static_validate_block);
+EXPLICIT_EVM_CHAIN(static_validate_block);
 
 Result<void> static_validate_block(evmc_revision const rev, Block const &block)
 {
-    SWITCH_EVMC_REVISION(static_validate_block, block);
+    SWITCH_EVM_CHAIN(static_validate_block, block);
     MONAD_ASSERT(false);
 }
 

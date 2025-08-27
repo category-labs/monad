@@ -24,8 +24,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
-#include <category/vm/runtime/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/host.hpp>
+#include <category/vm/runtime/types.hpp>
 
 #include <intx/intx.hpp>
 
@@ -102,7 +103,7 @@ public:
 static_assert(sizeof(EvmcHostBase) == 88);
 static_assert(alignof(EvmcHostBase) == 8);
 
-template <evmc_revision rev>
+template <Traits traits>
 struct EvmcHost final : public EvmcHostBase
 {
     using EvmcHostBase::EvmcHostBase;
@@ -110,7 +111,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool account_exists(Address const &address) const noexcept override
     {
         try {
-            if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
+            if constexpr (traits::evm_rev() < EVMC_SPURIOUS_DRAGON) {
                 return state_.account_exists(address);
             }
             return !state_.account_is_dead(address);
@@ -126,7 +127,7 @@ struct EvmcHost final : public EvmcHostBase
     {
         try {
             call_tracer_.on_self_destruct(address, beneficiary);
-            return state_.selfdestruct<rev>(address, beneficiary);
+            return state_.selfdestruct<traits>(address, beneficiary);
         }
         catch (...) {
             capture_current_exception();
@@ -143,7 +144,7 @@ struct EvmcHost final : public EvmcHostBase
                 }
 
                 auto result =
-                    ::monad::create<rev>(this, state_, msg, max_code_size_);
+                    ::monad::create<traits>(this, state_, msg, max_code_size_);
 
                 // EIP-211
                 if (result.status_code != EVMC_REVERT) {
@@ -175,10 +176,10 @@ struct EvmcHost final : public EvmcHostBase
             chain_.get_p256_verify_enabled(number, timestamp);
 
         try {
-            // NOTE: we deliberately do not check the monad precompiles here. They
-            // are stateful and stateful precompiles should pay the COLD account
-            // access like any other contract.
-            if (is_precompile<rev>(address, enable_p256_verify)) {
+            // NOTE: we deliberately do not check the monad precompiles here.
+            // They are stateful and stateful precompiles should pay the COLD
+            // account access like any other contract.
+            if (is_precompile<traits>(address, enable_p256_verify)) {
                 return EVMC_ACCESS_WARM;
             }
             return state_.access_account(address);
@@ -207,7 +208,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 88);
-static_assert(alignof(EvmcHost<EVMC_LATEST_STABLE_REVISION>) == 8);
+static_assert(sizeof(EvmcHost<EvmChain<EVMC_LATEST_STABLE_REVISION>>) == 88);
+static_assert(alignof(EvmcHost<EvmChain<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
 MONAD_NAMESPACE_END

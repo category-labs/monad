@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -44,7 +45,7 @@ TEST(Validation, validate_enough_gas)
         .gas_limit = 27'500, // no .to, under the creation amount
         .value = 1};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+    auto const result = static_validate_transaction<EvmChain<EVMC_SHANGHAI>>(
         t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
@@ -56,13 +57,15 @@ TEST(Validation, validate_floor_gas)
         .data = evmc::bytes(10000, 0x01),
     };
 
-    auto const cancun_result = static_validate_transaction<EVMC_CANCUN>(
-        t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
+    auto const cancun_result =
+        static_validate_transaction<EvmChain<EVMC_CANCUN>>(
+            t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_NE(
         cancun_result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 
-    auto const prague_result = static_validate_transaction<EVMC_PRAGUE>(
-        t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
+    auto const prague_result =
+        static_validate_transaction<EvmChain<EVMC_PRAGUE>>(
+            t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(
         prague_result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
@@ -79,7 +82,7 @@ TEST(Validation, validate_deployed_code)
         .nonce = 24};
 
     auto const result =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
 
@@ -93,7 +96,7 @@ TEST(Validation, validate_deployed_code_delegated)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
 
-    auto const result = validate_transaction<EVMC_PRAGUE>(
+    auto const result = validate_transaction<EvmChain<EVMC_PRAGUE>>(
         tx,
         sender_account,
         std::vector<uint8_t>{
@@ -115,7 +118,7 @@ TEST(Validation, validate_nonce)
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
     auto const result =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -130,7 +133,7 @@ TEST(Validation, validate_nonce_optimistically)
         .balance = 56'939'568'773'815'811, .nonce = 24};
 
     auto const result =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
@@ -148,7 +151,7 @@ TEST(Validation, validate_enough_balance)
     Account const sender_account{.balance = 55'939'568'773'815'811};
 
     auto const result =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
@@ -172,12 +175,12 @@ TEST(Validation, successful_validation)
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 25};
 
-    auto const result1 = static_validate_transaction<EVMC_SHANGHAI>(
+    auto const result1 = static_validate_transaction<EvmChain<EVMC_SHANGHAI>>(
         tx, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_TRUE(!result1.has_error());
 
     auto const result2 =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_TRUE(!result2.has_error());
 }
 
@@ -193,7 +196,7 @@ TEST(Validation, max_fee_less_than_base)
         .to = b,
         .max_priority_fee_per_gas = 100'000'000};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+    auto const result = static_validate_transaction<EvmChain<EVMC_SHANGHAI>>(
         t, 37'000'000'000, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::MaxFeeLessThanBase);
 }
@@ -210,7 +213,7 @@ TEST(Validation, priority_fee_greater_than_max)
         .to = b,
         .max_priority_fee_per_gas = 100'000'000'000};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+    auto const result = static_validate_transaction<EvmChain<EVMC_SHANGHAI>>(
         t, 29'000'000'000, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
@@ -228,7 +231,7 @@ TEST(Validation, insufficent_balance_overflow)
         .balance = std::numeric_limits<uint256_t>::max()};
 
     auto const result =
-        validate_transaction<EVMC_CANCUN>(tx, sender_account, {});
+        validate_transaction<EvmChain<EVMC_CANCUN>>(tx, sender_account, {});
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
@@ -244,7 +247,7 @@ TEST(Validation, init_code_exceed_limit)
     static Transaction const t{
         .max_fee_per_gas = 0, .gas_limit = 1000, .value = 0, .data = long_data};
 
-    auto const result = static_validate_transaction<EVMC_SHANGHAI>(
+    auto const result = static_validate_transaction<EvmChain<EVMC_SHANGHAI>>(
         t, 0, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
 }
@@ -253,7 +256,7 @@ TEST(Validation, invalid_gas_limit)
 {
     static BlockHeader const header{.gas_limit = 1000, .gas_used = 500};
 
-    auto const result = static_validate_header<EVMC_SHANGHAI>(header);
+    auto const result = static_validate_header<EvmChain<EVMC_SHANGHAI>>(header);
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
@@ -273,13 +276,14 @@ TEST(Validation, base_fee_per_gas_existence)
     static BlockHeader const header1{
         .gas_limit = 10000, .gas_used = 5000, .base_fee_per_gas = 1000};
 
-    auto const result1 = static_validate_header<EVMC_FRONTIER>(header1);
+    auto const result1 =
+        static_validate_header<EvmChain<EVMC_FRONTIER>>(header1);
     EXPECT_EQ(result1.error(), BlockError::FieldBeforeFork);
 
     static BlockHeader const header2{
         .gas_limit = 10000, .gas_used = 5000, .base_fee_per_gas = std::nullopt};
 
-    auto const result2 = static_validate_header<EVMC_LONDON>(header2);
+    auto const result2 = static_validate_header<EvmChain<EVMC_LONDON>>(header2);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
 }
 
@@ -295,7 +299,8 @@ TEST(Validation, withdrawal_root_existence)
         .base_fee_per_gas = std::nullopt,
         .withdrawals_root = 0x00_bytes32};
 
-    auto const result1 = static_validate_header<EVMC_FRONTIER>(header1);
+    auto const result1 =
+        static_validate_header<EvmChain<EVMC_FRONTIER>>(header1);
     EXPECT_EQ(result1.error(), BlockError::FieldBeforeFork);
 
     static BlockHeader const header2{
@@ -307,7 +312,8 @@ TEST(Validation, withdrawal_root_existence)
         .base_fee_per_gas = 1000,
         .withdrawals_root = std::nullopt};
 
-    auto const result2 = static_validate_header<EVMC_SHANGHAI>(header2);
+    auto const result2 =
+        static_validate_header<EvmChain<EVMC_SHANGHAI>>(header2);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
 }
 
@@ -322,6 +328,6 @@ TEST(Validation, invalid_nonce)
         .nonce = nonce,
         .base_fee_per_gas = 1000};
 
-    auto const result = static_validate_header<EVMC_PARIS>(header);
+    auto const result = static_validate_header<EvmChain<EVMC_PARIS>>(header);
     EXPECT_EQ(result.error(), BlockError::InvalidNonce);
 }

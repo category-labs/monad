@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -27,19 +28,19 @@ MONAD_NAMESPACE_BEGIN
 struct Transaction;
 struct BlockHeader;
 
-template <evmc_revision rev>
+template <Traits traits>
 uint64_t g_data(Transaction const &) noexcept;
 
-template <evmc_revision rev>
+template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
 uint64_t floor_data_gas(Transaction const &) noexcept;
 
-template <evmc_revision rev>
+template <Traits traits>
 uint256_t
 gas_price(Transaction const &, uint256_t const &base_fee_per_gas) noexcept;
 
-template <evmc_revision rev>
+template <Traits traits>
 uint256_t calculate_txn_award(
     Transaction const &, uint256_t const &base_fee_per_gas,
     uint64_t gas_used) noexcept;

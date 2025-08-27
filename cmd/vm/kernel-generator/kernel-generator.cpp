@@ -84,6 +84,7 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 namespace fs = std::filesystem;
+using monad::EvmChain;
 using namespace monad::vm;
 using namespace monad::vm::utils;
 using namespace monad::vm::runtime;

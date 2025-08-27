@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -275,7 +276,8 @@ void do_basic_tests(
         auto const &basic_test_case = basic_test_cases[i];
 
         evmc::Result const result =
-            check_call_precompile<EVMC_BERLIN>(basic_test_case.input, false)
+            check_call_precompile<EvmChain<EVMC_BERLIN>>(
+                basic_test_case.input, false)
                 .value();
 
         EXPECT_EQ(
@@ -308,7 +310,7 @@ void do_basic_tests(
     }
 }
 
-template <evmc_revision rev = EVMC_BERLIN>
+template <Traits traits = EvmChain<EVMC_BERLIN>>
 void do_geth_tests(
     char const *suite_name, std::vector<test_case> const &test_cases,
     monad::Address const &code_address)
@@ -327,7 +329,9 @@ void do_geth_tests(
                 .code_address = code_address};
 
             evmc::Result const result =
-                check_call_precompile<rev>(input, rev >= EVMC_OSAKA).value();
+                check_call_precompile<traits>(
+                    input, traits::evm_rev() >= EVMC_OSAKA)
+                    .value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)
@@ -356,14 +360,14 @@ void do_geth_tests(
     }
 }
 
-template <evmc_revision rev = EVMC_BERLIN>
+template <Traits traits = EvmChain<EVMC_BERLIN>>
 void do_geth_tests(
     char const *suite_name, std::string_view json_path,
     monad::Address const &code_address)
 {
     auto const tests =
         load_test_cases(test_resource::geth_vectors_dir / json_path);
-    do_geth_tests<rev>(suite_name, tests, code_address);
+    do_geth_tests<traits>(suite_name, tests, code_address);
 }
 
 TEST(FrontierThroughHomestead, ecrecover)
@@ -414,7 +418,7 @@ TEST(SpuriousDragonThroughByzantium, identity_empty_enough_gas)
 
 TEST(SpuriousDragonThroughByzantium, modular_exponentiation)
 {
-    do_geth_tests<EVMC_BYZANTIUM>(
+    do_geth_tests<EvmChain<EVMC_BYZANTIUM>>(
         "Modular Exponentiation", "modexp.json", 0x05_address);
 }
 
@@ -425,7 +429,7 @@ TEST(SpuriousDragonThroughByzantium, bn_add)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json"),
         [](auto &test) { test.gas = 500; });
 
-    do_geth_tests<EVMC_BYZANTIUM>("bn_add", tests, 0x06_address);
+    do_geth_tests<EvmChain<EVMC_BYZANTIUM>>("bn_add", tests, 0x06_address);
 }
 
 TEST(SpuriousDragonThroughByzantium, bn_mul)
@@ -436,7 +440,7 @@ TEST(SpuriousDragonThroughByzantium, bn_mul)
             test_resource::geth_vectors_dir / "bn256ScalarMul.json"),
         [](auto &test) { test.gas = 40'000; });
 
-    do_geth_tests<EVMC_BYZANTIUM>("bn_mul", tests, 0x07_address);
+    do_geth_tests<EvmChain<EVMC_BYZANTIUM>>("bn_mul", tests, 0x07_address);
 }
 
 TEST(SpuriousDragonThroughByzantium, bn_pairing)
@@ -451,7 +455,7 @@ TEST(SpuriousDragonThroughByzantium, bn_pairing)
             test.gas = static_cast<int64_t>(80'000 * k + 100'000);
         });
 
-    do_geth_tests<EVMC_BYZANTIUM>("bn_pairing", tests, 0x08_address);
+    do_geth_tests<EvmChain<EVMC_BYZANTIUM>>("bn_pairing", tests, 0x08_address);
 }
 
 TEST(Istanbul, ecrecover)
@@ -480,29 +484,31 @@ TEST(Istanbul, identity)
 TEST(Istanbul, modular_exponentiation)
 {
     // the modular exponentiation behavior did not change from the previous fork
-    do_geth_tests<EVMC_ISTANBUL>(
+    do_geth_tests<EvmChain<EVMC_ISTANBUL>>(
         "Modular Exponentiation", "modexp.json", 0x05_address);
 }
 
 TEST(Istanbul, bn_add)
 {
-    do_geth_tests<EVMC_ISTANBUL>("bn_add", "bn256Add.json", 0x06_address);
+    do_geth_tests<EvmChain<EVMC_ISTANBUL>>(
+        "bn_add", "bn256Add.json", 0x06_address);
 }
 
 TEST(Istanbul, bn_mul)
 {
-    do_geth_tests<EVMC_ISTANBUL>("bn_mul", "bn256ScalarMul.json", 0x07_address);
+    do_geth_tests<EvmChain<EVMC_ISTANBUL>>(
+        "bn_mul", "bn256ScalarMul.json", 0x07_address);
 }
 
 TEST(Istanbul, bn_pairing)
 {
-    do_geth_tests<EVMC_ISTANBUL>(
+    do_geth_tests<EvmChain<EVMC_ISTANBUL>>(
         "bn_pairing", "bn256Pairing.json", 0x08_address);
 }
 
 TEST(Istanbul, blake2f_valid)
 {
-    do_geth_tests<EVMC_ISTANBUL>(
+    do_geth_tests<EvmChain<EVMC_ISTANBUL>>(
         "blake_2f_valid", "blake2F.json", 0x09_address);
 }
 
@@ -536,147 +542,152 @@ TEST(Berlin, identity)
 
 TEST(Berlin, modular_exponentiation)
 {
-    do_geth_tests<EVMC_BERLIN>(
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
         "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
 }
 
 TEST(Berlin, bn_add)
 {
-    do_geth_tests<EVMC_BERLIN>("bn_add", "bn256Add.json", 0x06_address);
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
+        "bn_add", "bn256Add.json", 0x06_address);
 }
 
 TEST(Berlin, bn_mul)
 {
-    do_geth_tests<EVMC_BERLIN>("bn_mul", "bn256ScalarMul.json", 0x07_address);
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
+        "bn_mul", "bn256ScalarMul.json", 0x07_address);
 }
 
 TEST(Berlin, bn_pairing)
 {
-    do_geth_tests<EVMC_BERLIN>("bn_pairing", "bn256Pairing.json", 0x08_address);
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
+        "bn_pairing", "bn256Pairing.json", 0x08_address);
 }
 
 TEST(Berlin, blake2f_valid)
 {
     // the test cases did not change from the previous fork
-    do_geth_tests<EVMC_BERLIN>("blake_2f_valid", "blake2F.json", 0x09_address);
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
+        "blake_2f_valid", "blake2F.json", 0x09_address);
 }
 
 TEST(Berlin, blake2f_invalid)
 {
     // the test cases did not change from the previous fork
-    do_geth_tests<EVMC_BERLIN>(
+    do_geth_tests<EvmChain<EVMC_BERLIN>>(
         "blake_2f_invalid", "fail-blake2f.json", 0x09_address);
 }
 
 TEST(Prague, blsg1add_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_add_valid", "blsG1Add.json", 0x0b_address);
 }
 
 TEST(Prague, blsg1mul_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_mul_valid", "blsG1Mul.json", 0x0c_address);
 }
 
 TEST(Prague, blsg1msm_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_msm_valid", "blsG1MultiExp.json", 0x0c_address);
 }
 
 TEST(Prague, bls_map_g1_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_map_fp_to_g1_valid", "blsMapG1.json", 0x10_address);
 }
 
 TEST(Prague, blsg2add_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_add_valid", "blsG2Add.json", 0x0d_address);
 }
 
 TEST(Prague, blsg2mul_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_mul_valid", "blsG2Mul.json", 0x0e_address);
 }
 
 TEST(Prague, blsg2msm_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_msm_valid", "blsG2MultiExp.json", 0x0e_address);
 }
 
 TEST(Prague, bls_map_g2_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_map_fp2_to_g2_valid", "blsMapG2.json", 0x11_address);
 }
 
 TEST(Prague, blsg1add_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_add_invalid", "fail-blsG1Add.json", 0x0b_address);
 }
 
 TEST(Prague, blsg1mul_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_mul_invalid", "fail-blsG1Mul.json", 0x0c_address);
 }
 
 TEST(Prague, blsg1msm_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g1_msm_invalid", "fail-blsG1MultiExp.json", 0x0c_address);
 }
 
 TEST(Prague, bls_map_g1_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_map_fp_to_g1_valid", "fail-blsMapG1.json", 0x10_address);
 }
 
 TEST(Prague, blsg2add_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_add_invalid", "fail-blsG2Add.json", 0x0d_address);
 }
 
 TEST(Prague, blsg2mul_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_mul_invalid", "fail-blsG2Mul.json", 0x0e_address);
 }
 
 TEST(Prague, blsg2msm_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls_g2_msm_invalid", "fail-blsG2MultiExp.json", 0x0e_address);
 }
 
 TEST(Prague, bls_map_g2_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_map_fp2_to_g2_valid", "fail-blsMapG2.json", 0x11_address);
 }
 
 TEST(Prague, bls_pairing_check_valid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_pairing_check_valid", "blsPairing.json", 0x0f_address);
 }
 
 TEST(Prague, bls_pairing_check_invalid)
 {
-    do_geth_tests<EVMC_PRAGUE>(
+    do_geth_tests<EvmChain<EVMC_PRAGUE>>(
         "bls12_pairing_check_invalid", "fail-blsPairing.json", 0x0f_address);
 }
 
 TEST(Osaka, p256_verify)
 {
-    do_geth_tests<EVMC_OSAKA>("p256_verify", "p256Verify.json", 0x0100_address);
+    do_geth_tests<EvmChain<EVMC_OSAKA>>(
+        "p256_verify", "p256Verify.json", 0x0100_address);
 }

@@ -18,10 +18,11 @@
 #include <ethereum_test.hpp>
 
 #include <category/core/config.hpp>
-#include <category/core/result.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <monad/test/config.hpp>
+#include <category/core/result.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/vm.hpp>
+#include <monad/test/config.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -50,12 +51,13 @@ class BlockchainTest : public testing::Test
     std::filesystem::path const file_;
     std::optional<evmc_revision> const revision_;
 
-    template <evmc_revision rev>
+    template <Traits traits>
     static Result<std::vector<Receipt>>
     execute(Block &, test::db_t &, vm::VM &, BlockHashBuffer const &);
 
     static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, vm::VM &, BlockHashBuffer const &);
+        evmc_revision, Block &, test::db_t &, vm::VM &,
+        BlockHashBuffer const &);
 
     static void
     validate_post_state(nlohmann::json const &json, nlohmann::json const &db);

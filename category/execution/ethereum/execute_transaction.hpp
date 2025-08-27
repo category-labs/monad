@@ -19,6 +19,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
@@ -34,17 +35,17 @@ struct BlockHeader;
 class BlockState;
 struct CallTracerBase;
 struct Chain;
-template <evmc_revision rev>
+template <Traits traits>
 struct EvmcHost;
 class State;
 struct Transaction;
 
-template <evmc_revision rev>
+template <Traits traits>
 class ExecuteTransactionNoValidation
 {
     evmc_message to_message() const;
 
-    uint64_t process_authorizations(State &, EvmcHost<rev> &);
+    uint64_t process_authorizations(State &, EvmcHost<traits> &);
 
 protected:
     Chain const &chain_;
@@ -62,16 +63,16 @@ public:
         Chain const &, Transaction const &, Address const &,
         BlockHeader const &);
 
-    evmc::Result operator()(State &, EvmcHost<rev> &);
+    evmc::Result operator()(State &, EvmcHost<traits> &);
 };
 
-template <evmc_revision rev>
-class ExecuteTransaction : public ExecuteTransactionNoValidation<rev>
+template <Traits traits>
+class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
 {
-    using ExecuteTransactionNoValidation<rev>::chain_;
-    using ExecuteTransactionNoValidation<rev>::tx_;
-    using ExecuteTransactionNoValidation<rev>::sender_;
-    using ExecuteTransactionNoValidation<rev>::header_;
+    using ExecuteTransactionNoValidation<traits>::chain_;
+    using ExecuteTransactionNoValidation<traits>::tx_;
+    using ExecuteTransactionNoValidation<traits>::sender_;
+    using ExecuteTransactionNoValidation<traits>::header_;
 
     uint64_t i_;
     BlockHashBuffer const &block_hash_buffer_;

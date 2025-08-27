@@ -44,7 +44,7 @@ using namespace monad::vm::interpreter;
 
 namespace
 {
-    using namespace monad::vm;
+    using monad::Traits;
 
     template <Traits traits>
     void emit_instr(

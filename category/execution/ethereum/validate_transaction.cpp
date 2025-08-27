@@ -20,9 +20,10 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -50,7 +51,7 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
@@ -58,7 +59,7 @@ Result<void> static_validate_transaction(
 {
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
-        if constexpr (rev < EVMC_SPURIOUS_DRAGON) {
+        if constexpr (traits::evm_rev() < EVMC_SPURIOUS_DRAGON) {
             return TransactionError::TypeNotSupported;
         }
         if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
@@ -67,20 +68,20 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-2930 & EIP-2718
-    if constexpr (rev < EVMC_BERLIN) {
+    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
         if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
             return TransactionError::TypeNotSupported;
         }
     }
     // EIP-1559
-    else if constexpr (rev < EVMC_LONDON) {
+    else if constexpr (traits::evm_rev() < EVMC_LONDON) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930)) {
             return TransactionError::TypeNotSupported;
         }
     }
-    else if constexpr (rev < EVMC_CANCUN) {
+    else if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
@@ -88,7 +89,7 @@ Result<void> static_validate_transaction(
             return TransactionError::TypeNotSupported;
         }
     }
-    else if constexpr (rev < EVMC_PRAGUE) {
+    else if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
@@ -117,7 +118,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-3860
-    if constexpr (rev >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         if (MONAD_UNLIKELY(
                 !tx.to.has_value() && tx.data.size() > 2 * max_code_size)) {
             return TransactionError::InitCodeLimitExceeded;
@@ -125,11 +126,11 @@ Result<void> static_validate_transaction(
     }
 
     // YP eq. 62
-    if (MONAD_UNLIKELY(intrinsic_gas<rev>(tx) > tx.gas_limit)) {
+    if (MONAD_UNLIKELY(intrinsic_gas<traits>(tx) > tx.gas_limit)) {
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7623
         if (MONAD_UNLIKELY(floor_data_gas(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
@@ -157,11 +158,11 @@ Result<void> static_validate_transaction(
 
     // EIP-2
     if (MONAD_UNLIKELY(!silkpre::is_valid_signature(
-            tx.sc.r, tx.sc.s, rev >= EVMC_HOMESTEAD))) {
+            tx.sc.r, tx.sc.s, traits::evm_rev() >= EVMC_HOMESTEAD))) {
         return TransactionError::InvalidSignature;
     }
 
-    if constexpr (rev >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         if (tx.type == TransactionType::eip4844) {
             if (MONAD_UNLIKELY(tx.blob_versioned_hashes.empty())) {
                 return TransactionError::InvalidBlobHash;
@@ -185,9 +186,9 @@ Result<void> static_validate_transaction(
     return success();
 }
 
-EXPLICIT_EVMC_REVISION(static_validate_transaction);
+EXPLICIT_EVM_CHAIN(static_validate_transaction);
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> validate_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account,
     std::span<uint8_t const> code)
@@ -212,7 +213,7 @@ Result<void> validate_transaction(
 
     // YP (71)
     bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
-    if constexpr (rev >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702
         sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
     }
@@ -241,7 +242,7 @@ Result<void> validate_transaction(
     return success();
 }
 
-EXPLICIT_EVMC_REVISION(validate_transaction);
+EXPLICIT_EVM_CHAIN(validate_transaction);
 
 MONAD_NAMESPACE_END
 

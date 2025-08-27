@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/vm.hpp>
 
 #include <evmc/evmc.h>
@@ -410,14 +411,14 @@ public:
 
     ////////////////////////////////////////
 
-    template <evmc_revision rev>
+    template <Traits traits>
     bool selfdestruct(Address const &address, Address const &beneficiary)
     {
         auto &account_state = current_account_state(address);
         auto &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
 
-        if constexpr (rev < EVMC_CANCUN) {
+        if constexpr (traits::evm_rev() < EVMC_CANCUN) {
             add_to_balance(beneficiary, account.value().balance);
             account.value().balance = 0;
             original_account_state(address).set_validate_exact_balance();
@@ -435,7 +436,7 @@ public:
     }
 
     // YP (87)
-    template <evmc_revision rev>
+    template <Traits traits>
     void destruct_suicides()
     {
         MONAD_ASSERT(!version_);
@@ -447,7 +448,7 @@ public:
             auto &account_state = stack.current(0);
             if (account_state.is_destructed()) {
                 auto &account = account_state.account_;
-                if constexpr (rev < EVMC_CANCUN) {
+                if constexpr (traits::evm_rev() < EVMC_CANCUN) {
                     account.reset();
                 }
                 else {

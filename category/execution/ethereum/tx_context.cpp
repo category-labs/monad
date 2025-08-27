@@ -19,9 +19,10 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -29,14 +30,14 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id)
 {
     return {
         .tx_gas_price = to_bytes(to_big_endian(
-            gas_price<rev>(tx, hdr.base_fee_per_gas.value_or(0)))),
+            gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0)))),
         .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),
@@ -57,6 +58,6 @@ evmc_tx_context get_tx_context(
     };
 }
 
-EXPLICIT_EVMC_REVISION(get_tx_context);
+EXPLICIT_EVM_CHAIN(get_tx_context);
 
 MONAD_NAMESPACE_END

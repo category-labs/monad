@@ -20,6 +20,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -60,13 +61,13 @@ enum class TransactionError
 
 struct Transaction;
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     size_t max_code_size);
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<void> validate_transaction(
     Transaction const &, std::optional<Account> const &sender_account,
     std::span<uint8_t const>);

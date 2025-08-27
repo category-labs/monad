@@ -17,10 +17,11 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
-#include <category/execution/ethereum/explicit_evmc_revision.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -32,25 +33,25 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 constexpr uint256_t block_reward()
 {
-    if constexpr (rev < EVMC_BYZANTIUM) {
+    if constexpr (traits::evm_rev() < EVMC_BYZANTIUM) {
         return 5'000'000'000'000'000'000; // YP Eqn. 176
     }
-    else if constexpr (rev < EVMC_PETERSBURG) {
+    else if constexpr (traits::evm_rev() < EVMC_PETERSBURG) {
         return 3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
     }
-    else if constexpr (rev < EVMC_PARIS) {
+    else if constexpr (traits::evm_rev() < EVMC_PARIS) {
         return 2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
     }
     return 0; // EIP-3675
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 constexpr uint256_t additional_ommer_reward()
 {
-    return block_reward<rev>() >> 5; // YP Eqn. 172, block reward / 32
+    return block_reward<traits>() >> 5; // YP Eqn. 172, block reward / 32
 }
 
 constexpr uint256_t calculate_block_reward(
@@ -72,12 +73,12 @@ constexpr uint256_t const calculate_ommer_reward(
     return reward - subtrahend;
 }
 
-template <evmc_revision rev>
+template <Traits traits>
 void apply_block_reward(State &state, Block const &block)
 {
     auto const miner_reward = calculate_block_reward(
-        block_reward<rev>(),
-        additional_ommer_reward<rev>(),
+        block_reward<traits>(),
+        additional_ommer_reward<traits>(),
         block.ommers.size());
 
     // reward block beneficiary, YP Eqn. 172
@@ -88,13 +89,13 @@ void apply_block_reward(State &state, Block const &block)
     // reward ommers, YP Eqn. 175
     for (auto const &ommer : block.ommers) {
         auto const ommer_reward = calculate_ommer_reward(
-            block_reward<rev>(), block.header.number, ommer.number);
+            block_reward<traits>(), block.header.number, ommer.number);
         if (MONAD_LIKELY(ommer_reward)) {
             state.add_to_balance(ommer.beneficiary, ommer_reward);
         }
     }
 }
 
-EXPLICIT_EVMC_REVISION(apply_block_reward);
+EXPLICIT_EVM_CHAIN(apply_block_reward);
 
 MONAD_NAMESPACE_END

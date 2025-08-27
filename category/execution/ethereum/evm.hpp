@@ -17,27 +17,27 @@
 
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 struct EvmcHost;
 
 class State;
 
-template <evmc_revision rev>
+template <Traits traits>
 evmc::Result deploy_contract_code(
     State &, Address const &, evmc::Result, size_t max_code_size) noexcept;
 
-template <evmc_revision rev>
-evmc::Result create(
-    EvmcHost<rev> *, State &, evmc_message const &,
-    size_t max_code_size);
+template <Traits traits>
+evmc::Result
+create(EvmcHost<traits> *, State &, evmc_message const &, size_t max_code_size);
 
-template <evmc_revision rev>
-evmc::Result call(EvmcHost<rev> *, State &, evmc_message const &);
+template <Traits traits>
+evmc::Result call(EvmcHost<traits> *, State &, evmc_message const &);
 
 MONAD_NAMESPACE_END

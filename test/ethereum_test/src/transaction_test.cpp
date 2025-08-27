@@ -23,9 +23,10 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -83,10 +84,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_transaction<rev>(
+    if (auto const result = static_validate_transaction<traits>(
             txn, std::nullopt, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
@@ -105,7 +106,7 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 
             // check gas
             EXPECT_EQ(
-                intrinsic_gas<rev>(txn),
+                intrinsic_gas<traits>(txn),
                 integer_from_json<uint64_t>(expected.at("intrinsicGas")));
         }
     }
@@ -116,7 +117,7 @@ void process_transaction(
     nlohmann::json const &expected)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(process_transaction, txn, expected);
+    SWITCH_EVM_CHAIN(process_transaction, txn, expected);
     MONAD_ASSERT(false);
 }
 

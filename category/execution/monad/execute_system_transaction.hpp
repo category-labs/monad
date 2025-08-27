@@ -18,12 +18,13 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
 
 MONAD_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 class ExecuteSystemTransaction
 {
     Chain const &chain_;

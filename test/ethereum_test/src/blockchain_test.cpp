@@ -40,11 +40,12 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/switch_evmc_revision.hpp>
+#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/vm/evm/chain.hpp>
 
 #include <monad/test/config.hpp>
 
@@ -216,18 +217,18 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-template <evmc_revision rev>
+template <Traits traits>
 Result<std::vector<Receipt>> BlockchainTest::execute(
     Block &block, test::db_t &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer)
 {
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<rev>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
-    EthereumMainnetRev const chain{rev};
+    EthereumMainnetRev const chain{traits::evm_rev()};
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     auto const recovered_authorities =
         recover_authorities(block.transactions, *pool_);
@@ -248,7 +249,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
 
     BOOST_OUTCOME_TRY(
         auto const receipts,
-        execute_block<rev>(
+        execute_block<traits>(
             chain,
             block,
             senders,
@@ -283,7 +284,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
     BlockHashBuffer const &block_hash_buffer)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVMC_REVISION(execute, block, db, vm, block_hash_buffer);
+    SWITCH_EVM_CHAIN(execute, block, db, vm, block_hash_buffer);
     MONAD_ASSERT(false);
 }
 

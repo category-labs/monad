@@ -200,7 +200,7 @@ static void print_event(
                 monad_event_ring_payload_peek(event_ring, &start_block_event);
         }
         if (block_start) {
-            uint64_t const block_number = block_start->exec_input.number;
+            uint64_t const block_number = block_start->eth_block_input.number;
             if (monad_event_ring_payload_check(
                     event_ring, &start_block_event)) {
                 o += sprintf(o, " BLK: %lu", block_number);

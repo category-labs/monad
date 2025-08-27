@@ -30,7 +30,7 @@ extern "C"
 {
 #endif
 
-struct monad_event_metadata const g_monad_exec_event_metadata[22] = {
+struct monad_event_metadata const g_monad_exec_event_metadata[25] = {
 
     [MONAD_EXEC_NONE] =
         {.event_type = MONAD_EXEC_NONE,
@@ -45,7 +45,7 @@ struct monad_event_metadata const g_monad_exec_event_metadata[22] = {
     [MONAD_EXEC_BLOCK_START] =
         {.event_type = MONAD_EXEC_BLOCK_START,
          .c_name = "BLOCK_START",
-         .description = "Event recorded at the start of block execution"},
+         .description = "Event recorded at the start of EVM execution"},
 
     [MONAD_EXEC_BLOCK_REJECT] =
         {.event_type = MONAD_EXEC_BLOCK_REJECT,
@@ -88,10 +88,27 @@ struct monad_event_metadata const g_monad_exec_event_metadata[22] = {
          .description = "Event recorded when consensus verifies the state root "
                         "of a finalized block"},
 
-    [MONAD_EXEC_TXN_START] =
-        {.event_type = MONAD_EXEC_TXN_START,
-         .c_name = "TXN_START",
-         .description = "Event recorded when transaction processing starts"},
+    [MONAD_EXEC_TXN_HEADER_START] =
+        {.event_type = MONAD_EXEC_TXN_HEADER_START,
+         .c_name = "TXN_HEADER_START",
+         .description =
+             "First event recorded when transaction processing starts"},
+
+    [MONAD_EXEC_TXN_ACCESS_LIST_ENTRY] =
+        {.event_type = MONAD_EXEC_TXN_ACCESS_LIST_ENTRY,
+         .c_name = "TXN_ACCESS_LIST_ENTRY",
+         .description = "Entry in an EIP-2930 storage access warmup list"},
+
+    [MONAD_EXEC_TXN_AUTH_LIST_ENTRY] =
+        {.event_type = MONAD_EXEC_TXN_AUTH_LIST_ENTRY,
+         .c_name = "TXN_AUTH_LIST_ENTRY",
+         .description = "Entry in an EIP-7702 authorization list"},
+
+    [MONAD_EXEC_TXN_HEADER_END] =
+        {.event_type = MONAD_EXEC_TXN_HEADER_END,
+         .c_name = "TXN_HEADER_END",
+         .description = "Marker event recorded after all transaction header "
+                        "events are emitted"},
 
     [MONAD_EXEC_TXN_REJECT] =
         {.event_type = MONAD_EXEC_TXN_REJECT,
@@ -157,9 +174,9 @@ struct monad_event_metadata const g_monad_exec_event_metadata[22] = {
 };
 
 uint8_t const g_monad_exec_event_schema_hash[32] = {
-    0x51, 0xbe, 0x78, 0xe0, 0x73, 0xef, 0x1b, 0x5f, 0x9f, 0x20, 0x7c,
-    0x96, 0x47, 0x8c, 0x2d, 0xdb, 0x8d, 0xf2, 0x59, 0x1a, 0xf9, 0xd0,
-    0xd3, 0xf9, 0x70, 0x01, 0x08, 0xde, 0xe3, 0x0c, 0xf2, 0x76,
+    0x89, 0x33, 0xf9, 0x07, 0xc4, 0x32, 0xc9, 0x8a, 0xc0, 0xc8, 0xdb,
+    0x62, 0xf9, 0xaa, 0x16, 0x4c, 0x0c, 0x3f, 0x16, 0x72, 0xf4, 0x12,
+    0x90, 0xe4, 0xea, 0x34, 0x08, 0xdf, 0x6c, 0x67, 0x23, 0xf3,
 };
 
 #ifdef __cplusplus

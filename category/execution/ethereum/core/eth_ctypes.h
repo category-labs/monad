@@ -43,6 +43,8 @@ enum monad_c_transaction_type : uint8_t
     MONAD_TXN_LEGACY = 0,
     MONAD_TXN_EIP2930 = 1,
     MONAD_TXN_EIP1559 = 2,
+    MONAD_TXN_EIP4844 = 3,
+    MONAD_TXN_EIP7702 = 4,
 };
 
 /// Entry in a EIP-2930 storage access warmup list
@@ -50,6 +52,17 @@ struct monad_c_access_list_entry
 {
     monad_c_address address;    ///< E_a: addr of account whose storage to warm
     uint32_t storage_key_count; ///< Size of trailing E_s storage key array
+};
+
+/// Entry in an EIP-7702 authorization_list
+struct monad_c_auth_list_entry
+{
+    monad_c_uint256_ne chain_id; ///< Chain where authorization is valid
+    monad_c_address address;     ///< Delegation contract address
+    uint64_t nonce;              ///< Nonce of signing authority
+    bool y_parity;               ///< y parity of authority ECDSA signature
+    monad_c_uint256_ne r;        ///< r of authority ECDSA signature
+    monad_c_uint256_ne s;        ///< s of authority ECDSA signature
 };
 
 /// Fields of an Ethereum transaction that are recognized by the monad EVM
@@ -61,21 +74,25 @@ struct monad_c_access_list_entry
 struct monad_c_eth_txn_header
 {
     enum monad_c_transaction_type
-        txn_type;                       ///< EIP-2718 transaction type
-    monad_c_uint256_ne chain_id;        ///< T_c: EIP-155 blockchain identifier
-    uint64_t nonce;                     ///< T_n: num txns sent by this sender
-    uint64_t gas_limit;                 ///< T_g: max usable gas (upfront xfer)
-    monad_c_uint256_ne max_fee_per_gas; ///< T_m in EIP-1559 txns or T_p (gasPrice)
+        txn_type;                        ///< EIP-2718 transaction type
+    monad_c_uint256_ne chain_id;         ///< T_c: EIP-155 blockchain identifier
+    uint64_t nonce;                      ///< T_n: num txns sent by this sender
+    uint64_t gas_limit;                  ///< T_g: max usable gas (upfront xfer)
+    monad_c_uint256_ne max_fee_per_gas;  ///< T_m in EIP-1559 txns or T_p (gasPrice)
     monad_c_uint256_ne
-        max_priority_fee_per_gas;       ///< T_f in EIP-1559 txns, 0 otherwise
-    monad_c_uint256_ne value;           ///< T_v: wei xfered or contract endowment
-    monad_c_address to;                 ///< T_t: recipient
-    bool is_contract_creation;          ///< True -> interpret T_t == 0 as null
-    monad_c_uint256_ne r;               ///< T_r: r value of ECDSA signature
-    monad_c_uint256_ne s;               ///< T_s: s value of ECDSA signature
-    bool y_parity;                      ///< Signature Y parity (see YP App. F)
-    uint32_t data_length;               ///< Length of trailing `data` array
-    uint32_t access_list_count;         ///< # of EIP-2930 AccessList entries
+        max_priority_fee_per_gas;        ///< T_f in EIP-1559 txns, 0 otherwise
+    monad_c_uint256_ne value;            ///< T_v: wei xfered or contract endowment
+    monad_c_address to;                  ///< T_t: recipient
+    bool is_contract_creation;           ///< True -> interpret T_t == 0 as null
+    monad_c_uint256_ne r;                ///< T_r: r value of ECDSA signature
+    monad_c_uint256_ne s;                ///< T_s: s value of ECDSA signature
+    bool y_parity;                       ///< Signature Y parity (see YP App. F)
+    monad_c_uint256_ne
+        max_fee_per_blob_gas;            ///< EIP-4844 contribution to max fee
+    uint32_t data_length;                ///< Length of trailing `data` array
+    uint32_t blob_versioned_hash_length; ///< Length of trailing `blob_versioned_hashes` array
+    uint32_t access_list_count;          ///< # of EIP-2930 AccessList entries
+    uint32_t auth_list_count;            ///< # of EIP-7702 AuthorizationList entries
 };
 
 /// Result of executing a valid transaction
@@ -108,7 +125,7 @@ struct monad_c_eth_account_state
 };
 
 /// Fields of an Ethereum block header which are known at the start of execution
-struct monad_c_eth_block_exec_input
+struct monad_c_eth_block_input
 {
     monad_c_bytes32 ommers_hash;         ///< H_o: hash of ommer blocks
     monad_c_address beneficiary;         ///< H_c: recipient addr of prio gas fees
@@ -134,6 +151,13 @@ struct monad_c_eth_block_exec_output
     monad_c_bytes32 receipts_root; ///< H_e: MPT root hash of receipt trie
     monad_c_bloom256 logs_bloom;   ///< H_b: bloom filter of transaction logs
     uint64_t gas_used;             ///< H_g: gas used by all txns in block
+};
+
+/// Compressed ECDSA public key using secp256k1 curve [SEC1v2: 2.3.3]
+struct monad_c_secp256k1_pubkey
+{
+    uint8_t y_parity;  ///< Parity of compressed y coordinate
+    monad_c_bytes32 x; ///< x coordinate of public key (big endian)
 };
 
 // clang-format on

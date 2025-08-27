@@ -28,7 +28,7 @@
 
 // Functions like monad_exec_ring_get_block_number expect the caller to pass a
 // descriptor containing a consensus event; if this is not the case, we need to
-// seek to the nearest BLOCK_START and copy that event into an caller-provided
+// seek to the nearest BLOCK_START and copy that event into a caller-provided
 // buffer, then reseat the event_p pointer to refer to that event buffer instead
 static inline bool _monad_exec_ring_ensure_block(
     struct monad_event_ring const *event_ring,
@@ -346,8 +346,8 @@ inline bool monad_exec_iter_rewind_for_simple_replay(
     // There are an unknown number of events (proposed block EVM events,
     // consensus events) between the original proposal of this finalized block
     // and its finalization; the one thing we do know is that once we've seen
-    // the BLOCK_START for its original proposal, we want the consensus event
-    // immediately prior to that
+    // the BLOCK_START for its original proposal, we want the consensus
+    // event immediately prior to that
     bool found_finalized_block_start = false;
     uint64_t prev_read = iter->read_last_seqno;
 

@@ -30,6 +30,7 @@
 
 #include <category/core/event/event_metadata.h>
 #include <category/execution/ethereum/core/eth_ctypes.h>
+#include <category/execution/monad/core/monad_ctypes.h>
 #include <stdint.h>
 
 // clang-format off
@@ -51,7 +52,10 @@ enum monad_exec_event_type : uint16_t
     MONAD_EXEC_BLOCK_QC,
     MONAD_EXEC_BLOCK_FINALIZED,
     MONAD_EXEC_BLOCK_VERIFIED,
-    MONAD_EXEC_TXN_START,
+    MONAD_EXEC_TXN_HEADER_START,
+    MONAD_EXEC_TXN_ACCESS_LIST_ENTRY,
+    MONAD_EXEC_TXN_AUTH_LIST_ENTRY,
+    MONAD_EXEC_TXN_HEADER_END,
     MONAD_EXEC_TXN_REJECT,
     MONAD_EXEC_TXN_PERF_EVM_ENTER,
     MONAD_EXEC_TXN_PERF_EVM_EXIT,
@@ -96,17 +100,22 @@ struct monad_exec_block_tag
     uint64_t block_number; ///< Proposal is to become this block
 };
 
-/// Event recorded at the start of block execution
+/// Event recorded at the start of EVM execution
 struct monad_exec_block_start
 {
     struct monad_exec_block_tag
-        block_tag;                      ///< Execution is for this block
-    uint64_t round;                     ///< Round when block was proposed
-    uint64_t epoch;                     ///< Epoch when block was proposed
-    monad_c_bytes32 parent_eth_hash;    ///< Hash of Ethereum parent block
-    monad_c_uint256_ne chain_id;        ///< Block chain we're associated with
-    struct monad_c_eth_block_exec_input
-        exec_input;                     ///< Ethereum execution inputs
+        block_tag;                    ///< Proposal is for this block
+    uint64_t round;                   ///< Round when block was proposed
+    uint64_t epoch;                   ///< Epoch when block was proposed
+    __uint128_t proposal_epoch_nanos; ///< UNIX epoch nanosecond timestamp
+    monad_c_uint256_ne chain_id;      ///< Block chain we're associated with
+    struct monad_c_secp256k1_pubkey
+        author;                       ///< Public key of block author
+    monad_c_bytes32 parent_eth_hash;  ///< Hash of Ethereum parent block
+    struct monad_c_eth_block_input
+        eth_block_input;              ///< Ethereum execution inputs
+    struct monad_c_native_block_input
+        monad_block_input;            ///< Monad execution inputs
 };
 
 /// Event recorded when a block is rejected (i.e., is invalid)
@@ -141,14 +150,31 @@ struct monad_exec_block_verified
     uint64_t block_number; ///< Number of verified block
 };
 
-/// Event recorded when transaction processing starts
-struct monad_exec_txn_start
+/// First event recorded when transaction processing starts
+struct monad_exec_txn_header_start
 {
-    uint64_t ingest_epoch_nanos;  ///< Epoch nanos before sender recovery
     monad_c_bytes32 txn_hash;     ///< Keccak hash of transaction RLP
     monad_c_address sender;       ///< Recovered sender address
     struct monad_c_eth_txn_header
         txn_header;               ///< Transaction header
+};
+
+/// Entry in an EIP-2930 storage access warmup list
+struct monad_exec_txn_access_list_entry
+{
+    uint32_t index;                  ///< Array index of access list entry
+    struct monad_c_access_list_entry
+        entry;                       ///< Entry for a single account
+};
+
+/// Entry in an EIP-7702 authorization list
+struct monad_exec_txn_auth_list_entry
+{
+    uint32_t index;                ///< Array index of EIP-7702 list entry
+    struct monad_c_auth_list_entry
+        entry;                     ///< Entry for a single authorization
+    monad_c_address authority;     ///< Recovered authority from signature
+    bool is_valid_authority;       ///< Distinguish true 0x0 from recovery failure
 };
 
 /// Event recorded when a transaction is rejected (i.e., is invalid)
@@ -266,7 +292,7 @@ struct monad_exec_evm_error
 
 // clang-format on
 
-extern struct monad_event_metadata const g_monad_exec_event_metadata[22];
+extern struct monad_event_metadata const g_monad_exec_event_metadata[25];
 extern uint8_t const g_monad_exec_event_schema_hash[32];
 
 constexpr char MONAD_EVENT_DEFAULT_EXEC_FILE_NAME[] = "monad-exec-events";

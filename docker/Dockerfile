@@ -81,3 +81,4 @@ FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad_mpt /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad-block-inspector /usr/local/bin/

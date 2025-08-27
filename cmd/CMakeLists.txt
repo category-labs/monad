@@ -39,6 +39,10 @@ add_executable(monad_cli monad_cli.cpp)
 monad_compile_options(monad_cli)
 target_link_libraries(monad_cli PUBLIC monad_execution CLI11::CLI11)
 
+add_executable(monad-block-inspector block_inspector.cpp)
+monad_compile_options(monad-block-inspector)
+target_link_libraries(monad-block-inspector PUBLIC monad_execution CLI11::CLI11)
+
 if(DEFINED ENV{GIT_COMMIT_HASH})
   set(GIT_COMMIT_HASH $ENV{GIT_COMMIT_HASH})
 else()

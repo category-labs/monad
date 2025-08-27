@@ -42,6 +42,7 @@ extern "C"
 enum monad_exec_event_type : uint16_t
 {
     MONAD_EXEC_NONE,
+    MONAD_EXEC_RECORD_ERROR,
     MONAD_EXEC_BLOCK_START,
     MONAD_EXEC_BLOCK_REJECT,
     MONAD_EXEC_BLOCK_PERF_EVM_ENTER,
@@ -63,6 +64,9 @@ enum monad_exec_event_type : uint16_t
     MONAD_EXEC_STORAGE_ACCESS,
     MONAD_EXEC_EVM_ERROR,
 };
+
+/// Reserved event type used for recording errors
+typedef struct monad_event_record_error monad_exec_record_error;
 
 /// Stored in event descriptor's `user` array to tag the block & transaction
 /// context of event
@@ -262,7 +266,7 @@ struct monad_exec_evm_error
 
 // clang-format on
 
-extern struct monad_event_metadata const g_monad_exec_event_metadata[21];
+extern struct monad_event_metadata const g_monad_exec_event_metadata[22];
 extern uint8_t const g_monad_exec_event_schema_hash[32];
 
 constexpr char MONAD_EVENT_DEFAULT_EXEC_FILE_NAME[] = "monad-exec-events";

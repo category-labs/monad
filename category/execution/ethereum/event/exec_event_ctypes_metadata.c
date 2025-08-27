@@ -30,11 +30,17 @@ extern "C"
 {
 #endif
 
-struct monad_event_metadata const g_monad_exec_event_metadata[21] = {
+struct monad_event_metadata const g_monad_exec_event_metadata[22] = {
+
     [MONAD_EXEC_NONE] =
         {.event_type = MONAD_EXEC_NONE,
-         .c_name = "MONAD_EXEC_NONE",
-         .description = "reserved code so that 0 remains invalid"},
+         .c_name = "NONE",
+         .description = "Reserved code so that 0 remains invalid"},
+
+    [MONAD_EXEC_RECORD_ERROR] =
+        {.event_type = MONAD_EXEC_RECORD_ERROR,
+         .c_name = "RECORD_ERROR",
+         .description = "Reserved event type used for recording errors"},
 
     [MONAD_EXEC_BLOCK_START] =
         {.event_type = MONAD_EXEC_BLOCK_START,
@@ -151,9 +157,9 @@ struct monad_event_metadata const g_monad_exec_event_metadata[21] = {
 };
 
 uint8_t const g_monad_exec_event_schema_hash[32] = {
-    0xdd, 0xc5, 0x8d, 0x9a, 0xfc, 0xab, 0xb6, 0xae, 0x55, 0xd5, 0x25,
-    0xd2, 0x81, 0xef, 0x9f, 0xd2, 0xf9, 0xb4, 0xdb, 0xce, 0xb2, 0x7a,
-    0xc1, 0x18, 0x06, 0x7c, 0xda, 0xfd, 0x70, 0xe9, 0x01, 0x6b,
+    0x51, 0xbe, 0x78, 0xe0, 0x73, 0xef, 0x1b, 0x5f, 0x9f, 0x20, 0x7c,
+    0x96, 0x47, 0x8c, 0x2d, 0xdb, 0x8d, 0xf2, 0x59, 0x1a, 0xf9, 0xd0,
+    0xd3, 0xf9, 0x70, 0x01, 0x08, 0xde, 0xe3, 0x0c, 0xf2, 0x76,
 };
 
 #ifdef __cplusplus

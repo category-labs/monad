@@ -64,7 +64,7 @@ void MonadException::print(int fd) const noexcept
     }
     dprintf(
         fd,
-        "%s: %s:%ld: %s: Monad throw '%s' failed: '%s'\n",
+        "%s: %s:%ld: %s: Monad assert throw '%s' failed: '%s'\n",
         __progname,
         file_,
         line_,

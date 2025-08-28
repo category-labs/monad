@@ -25,7 +25,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-/// Exception for `MONAD_THROW` assertion failure.
+/// Exception for `MONAD_ASSERT_THROW` assertion failure.
 class MonadException
 {
 public:
@@ -68,7 +68,7 @@ MONAD_NAMESPACE_END
 
 /// Given `bool expr` and 'char const *message', throw
 /// `monad::MonadException` iff `expr` evaluates to `false`.
-#define MONAD_THROW(expr, message)                                             \
+#define MONAD_ASSERT_THROW(expr, message)                                             \
     if (MONAD_LIKELY(expr)) { /* likeliest */                                  \
     }                                                                          \
     else {                                                                     \

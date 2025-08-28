@@ -312,7 +312,7 @@ public:
             account = Account{.incarnation = incarnation_};
         }
 
-        MONAD_THROW(
+        MONAD_ASSERT_THROW(
             std::numeric_limits<uint256_t>::max() - delta >=
             account.value().balance,
             "balance overflow");

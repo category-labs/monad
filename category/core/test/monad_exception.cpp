@@ -27,7 +27,7 @@ namespace
     TEST(MonadExceptionTest, message_empty)
     {
         try {
-            MONAD_THROW(false, "");
+            MONAD_ASSERT_THROW(false, "");
         } catch (MonadException const &e) {
             ASSERT_TRUE(std::strcmp(e.message(), "") == 0);
             return;
@@ -43,7 +43,7 @@ namespace
         }
         message[MonadException::message_buffer_size - 1] = '\0';
         try {
-            MONAD_THROW(false, message);
+            MONAD_ASSERT_THROW(false, message);
         } catch (MonadException const &e) {
             ASSERT_TRUE(std::strcmp(e.message(), message) == 0);
             return;
@@ -59,7 +59,7 @@ namespace
         }
         message[MonadException::message_buffer_size] = '\0';
         try {
-            MONAD_THROW(false, message);
+            MONAD_ASSERT_THROW(false, message);
         } catch (MonadException const &e) {
             message[MonadException::message_buffer_size - 1] = '\0';
             ASSERT_TRUE(std::strcmp(e.message(), message) == 0);
@@ -71,7 +71,7 @@ namespace
     TEST(MonadExceptionTest, print)
     {
         try {
-            MONAD_THROW(false, "hello world");
+            MONAD_ASSERT_THROW(false, "hello world");
         } catch (MonadException const &e) {
             int fds[2];
             int r = ::pipe(fds);

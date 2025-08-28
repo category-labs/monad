@@ -61,7 +61,7 @@ public:
                 "still valid in db",
                 evmc::hex(to_byte_string_view(block_id.bytes)).c_str(),
                 block_number);
-            MONAD_THROW(
+            MONAD_ASSERT_THROW(
                 res.has_value(),
                 "Block was invalidated in db while execution was in progress");
         }
@@ -78,7 +78,7 @@ public:
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
             block_number_);
         if (!acc_leaf_res.has_value()) {
-            MONAD_THROW(
+            MONAD_ASSERT_THROW(
                 acc_leaf_res.assume_error() !=
                     ::monad::mpt::DbError::version_no_longer_exist,
                 "Block was invalidated in db while execution was in progress");
@@ -101,7 +101,7 @@ public:
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
-            MONAD_THROW(
+            MONAD_ASSERT_THROW(
                 storage_leaf_res.assume_error() !=
                     ::monad::mpt::DbError::version_no_longer_exist,
                 "Block was invalidated in db while execution was in progress");
@@ -123,7 +123,7 @@ public:
                 mpt::NibblesView{to_byte_string_view(code_hash.bytes)}),
             block_number_);
         if (!code_leaf_res.has_value()) {
-            MONAD_THROW(
+            MONAD_ASSERT_THROW(
                 code_leaf_res.assume_error() !=
                     ::monad::mpt::DbError::version_no_longer_exist,
                 "Block was invalidated in db while execution was in progress");

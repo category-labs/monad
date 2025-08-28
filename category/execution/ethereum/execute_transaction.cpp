@@ -328,14 +328,18 @@ Result<evmc::Result> ExecuteTransaction<rev>::execute_impl2(State &state)
 {
     auto const sender_account = state.recent_account(sender_);
     auto const &icode = state.get_code(sender_)->intercode();
-    auto const validate_txn = [this, &state, &sender_account, &icode] {
-        auto result = validate_transaction<rev>(tx_, sender_account, {icode->code(), icode->size()});
+    auto const validate_lambda = [this, &state, &sender_account, &icode] {
+        auto result = validate_transaction<rev>(
+            tx_, sender_account, {icode->code(), icode->size()});
         if (!result) {
+            // RELAXED MERGE
+            // if `validate_transaction` fails using current values, require
+            // exact match during merge as a precaution
             state.original_account_state(sender_).set_validate_exact_balance();
         }
         return result;
     };
-    BOOST_OUTCOME_TRY(validate_txn());
+    BOOST_OUTCOME_TRY(validate_lambda());
 
     auto const tx_context =
         get_tx_context<rev>(tx_, sender_, header_, chain_.get_chain_id());
@@ -423,8 +427,8 @@ Result<Receipt> ExecuteTransaction<rev>::operator()()
         State state{
             block_state_,
             Incarnation{header_.number, i_ + 1},
-            sender_,
-            tx_.nonce};
+            /*relaxed_validation=*/true};
+        state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
 

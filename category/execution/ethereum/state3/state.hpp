@@ -68,7 +68,7 @@ class State
 
     unsigned version_{0};
 
-    bool relaxed_validation_{false};
+    bool const relaxed_validation_{false};
 
 public:
     OriginalAccountState &original_account_state(Address const &address)
@@ -112,20 +112,13 @@ private:
     }
 
 public:
-    State(BlockState &block_state, Incarnation const incarnation)
-        : block_state_{block_state}
-        , incarnation_{incarnation}
-    {
-    }
-
     State(
         BlockState &block_state, Incarnation const incarnation,
-        Address const &sender, uint64_t const nonce)
+        bool relaxed_validation = false)
         : block_state_{block_state}
         , incarnation_{incarnation}
-        , relaxed_validation_{true}
+        , relaxed_validation_{relaxed_validation}
     {
-        set_original_nonce(sender, nonce);
     }
 
     State(State &&) = delete;
@@ -191,11 +184,6 @@ public:
         }
 
         --version_;
-    }
-
-    [[nodiscard]] bool relaxed_validation() const
-    {
-        return relaxed_validation_;
     }
 
     ////////////////////////////////////////
@@ -339,7 +327,7 @@ public:
 
         MONAD_ASSERT_THROW(
             std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance,
+                account.value().balance,
             "balance overflow");
 
         account.value().balance += delta;
@@ -640,11 +628,15 @@ public:
         account.value().incarnation = incarnation_;
     }
 
+    // RELAXED MERGE
+    // if original and current can be adjusted to satisfy min balance, adjust
+    // both values for merge
     bool try_fix_account_mismatch(
         Address const &address, OriginalAccountState &original_state,
         std::optional<Account> const &actual)
     {
         auto &original = original_state.account_;
+        // verify original used and original found are otherwise the same
         if (is_dead(original)) {
             return false;
         }
@@ -661,15 +653,18 @@ public:
             return false;
         }
         MONAD_ASSERT(original->balance != actual->balance);
-        if (!relaxed_validation()) {
+        // is relaxed merge disabled
+        if (!relaxed_validation_) {
             return false;
         }
         if (original_state.validate_exact_balance()) {
             return false;
         }
+        // original balance does not meet min required
         if (actual->balance < original_state.min_balance()) {
             return false;
         }
+        // adjust balances
         auto it = current_.find(address);
         if (it != current_.end()) {
             MONAD_ASSERT(it->second.size() == 1);

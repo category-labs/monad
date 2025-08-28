@@ -101,6 +101,9 @@ public:
     }
 };
 
+// RELAXED MERGE
+// track the min original balance needed at start of transaction and if the
+// original and current balances can be adjusted
 class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};

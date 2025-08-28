@@ -141,15 +141,19 @@ bool BlockState::can_merge(State &state) const
     auto &original = state.original();
     for (auto &kv : original) {
         Address const &address = kv.first;
-        OriginalAccountState &original_state = kv.second;
-        auto const &account = original_state.account_;
-        auto const &storage = original_state.storage_;
+        OriginalAccountState &account_state = kv.second;
+        auto const &account = account_state.account_;
+        auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        auto const &actual = it->second.account.second;
-        if ((account != actual) &&
-            !state.try_fix_account_mismatch(address, original_state, actual)) {
-            return false;
+        if (account != it->second.account.second) {
+            // RELAXED MERGE
+            // try to fix original and current in `state` to match the block
+            // state up until this transaction
+            if (!state.try_fix_account_mismatch(
+                    address, account_state, it->second.account.second)) {
+                return false;
+            }
         }
         // TODO account.has_value()???
         for (auto const &[key, value] : storage) {

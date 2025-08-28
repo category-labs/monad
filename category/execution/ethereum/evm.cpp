@@ -48,17 +48,26 @@ bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     auto const &account = state.recent_account(msg.sender);
     uint256_t const balance = account.has_value() ? account->balance : 0;
     auto &original_state = state.original_account_state(msg.sender);
+    // RELAXED MERGE
+    // if current balance has at least message value, then:
+    // 1. compute the amount that current balance exceeds message value
+    // 2. require that the original balance at merge time is at least the
+    // original balance used during this execution less said excess
     if (balance >= value) {
-        auto const diff = balance - value;
+        uint256_t const diff = balance - value;
         auto const &original = original_state.account_;
-        auto const original_balance =
+        uint256_t const original_balance =
             original.has_value() ? original->balance : 0;
-        if (original_balance > diff) {
-            auto const min_balance = original_balance - diff;
+        if (original_balance > diff) { // avoid underflow
+            uint256_t const min_balance =
+                original_balance -
+                diff; // original balance - current balance + value
             original_state.set_min_balance(min_balance);
         }
     }
     else {
+        // otherwise require that original balance at merge time matches
+        // original balance used during this execution exactly
         original_state.set_validate_exact_balance();
     }
     return balance >= value;

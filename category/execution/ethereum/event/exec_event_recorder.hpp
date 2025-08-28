@@ -23,6 +23,7 @@
  * recording will remain disabled.
  */
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
@@ -35,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -82,19 +84,11 @@ public:
     // such customized recording calls this method and manually finishes the
     // recording process; in the general case, recording should instead call
     // one of the "all-in-one" `record` overloads below, when possible
-    monad_event_descriptor *record_reserve(
-        monad_exec_event_type type, size_t payload_size, uint64_t *seqno,
-        uint8_t **payload)
+    monad_event_descriptor *
+    record_reserve(size_t payload_size, uint64_t *seqno, uint8_t **payload)
     {
-        monad_event_descriptor *const event = monad_event_recorder_reserve(
+        return monad_event_recorder_reserve(
             &exec_recorder_, payload_size, seqno, payload);
-        if (event == nullptr) [[unlikely]] {
-            diagnose_reserve_failure(type, payload_size);
-        }
-        else {
-            event->event_type = std::to_underlying(type);
-        }
-        return event;
     }
 
     /*
@@ -104,30 +98,67 @@ public:
     /// Record an execution event with a payload specified by a C-style
     /// (pointer, length) pair
     void record(
-        std::optional<uint32_t> opt_txn_num, monad_exec_event_type type,
+        std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
         void const *payload, size_t payload_size)
     {
         uint64_t seqno;
         uint8_t *payload_buf;
 
-        monad_event_descriptor *const event =
-            record_reserve(type, payload_size, &seqno, &payload_buf);
-        if (event == nullptr) [[unlikely]] {
-            return;
+        if (payload_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+            return record_error_event(
+                opt_txn_num,
+                event_type,
+                MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB,
+                payload,
+                payload_size);
         }
-        if (payload_size > 0 &&
-            monad_event_ring_payload_check(&exec_ring_, event)) [[likely]] {
+
+        monad_event_descriptor *const event =
+            record_reserve(payload_size, &seqno, &payload_buf);
+        // Reservation failure should only happen in the > UINT32_MAX case,
+        // which was handled above
+        MONAD_DEBUG_ASSERT(event != nullptr);
+
+        if (!monad_event_ring_payload_check(&exec_ring_, event)) [[unlikely]] {
+            // The payload buffer expired immediately after it was allocated;
+            // because this happened so quickly, this is typically not a "real"
+            // expiration but means we tried to allocate space for a payload
+            // that was smaller than the 4 GiB limit, but still larger than the
+            // maximum size that the payload buffer was able to handle. For
+            // example, suppose we tried to allocate 300 MiB from a 256 MiB
+            // payload buffer.
+            //
+            // The event ring C API does not handle this as a special case;
+            // instead, the payload buffer's normal ring buffer expiration logic
+            // allows the allocation to "succeed" but it appears as expired
+            // immediately upon allocation (for the expiration logic, see the
+            // "Sliding window buffer" section of event_recorder.md).
+            //
+            // We treat this as a formal error so that the operator will know
+            // to allocate a (much) larger event ring buffer.
+            return record_error_event(
+                opt_txn_num,
+                event_type,
+                MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE,
+                payload,
+                payload_size);
+        }
+        if (payload_size > 0) {
+            // This guard is here because sometimes payload == nullptr when
+            // payload_size == 0, and ASAN doesn't like it
             memcpy(payload_buf, payload, payload_size);
         }
+        event->event_type = event_type;
         event->user[MONAD_FLOW_BLOCK_SEQNO] = block_start_seqno_;
         event->user[MONAD_FLOW_TXN_ID] = opt_txn_num.value_or(-1) + 1;
         monad_event_recorder_commit(event, seqno);
     }
 
     /// Record an execution event with no payload
-    void record(std::optional<uint32_t> opt_txn_num, monad_exec_event_type type)
+    void record(
+        std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type)
     {
-        return record(opt_txn_num, type, nullptr, 0);
+        return record(opt_txn_num, event_type, nullptr, 0);
     }
 
     /// Record an execution event whose payload is described by some
@@ -135,10 +166,10 @@ public:
     template <typename T>
         requires std::is_trivially_copyable_v<T>
     void record(
-        std::optional<uint32_t> opt_txn_num, monad_exec_event_type type,
+        std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
         T const &payload)
     {
-        return record(opt_txn_num, type, &payload, sizeof payload);
+        return record(opt_txn_num, event_type, &payload, sizeof payload);
     }
 
     /// Record an execution event whose payload is described by a memcpy-able
@@ -150,31 +181,49 @@ public:
     template <typename T, std::same_as<std::span<std::byte const>>... U>
         requires std::is_trivially_copyable_v<T>
     void record(
-        std::optional<uint32_t> opt_txn_num, monad_exec_event_type type,
+        std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
         T const &payload, U... bufs)
     {
         uint64_t seqno;
         uint8_t *payload_buf;
         size_t const payload_size = (size(bufs) + ... + sizeof payload);
 
-        monad_event_descriptor *const event =
-            record_reserve(type, payload_size, &seqno, &payload_buf);
-        if (event == nullptr) [[unlikely]] {
-            return;
+        if (payload_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+            return record_error_event(
+                opt_txn_num,
+                event_type,
+                MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB,
+                payload,
+                payload_size);
         }
-        if (monad_event_ring_payload_check(&exec_ring_, event)) [[likely]] {
+
+        monad_event_descriptor *const event =
+            record_reserve(payload_size, &seqno, &payload_buf);
+        MONAD_DEBUG_ASSERT(event != nullptr);
+        if (!monad_event_ring_payload_check(&exec_ring_, event)) [[unlikely]] {
+            return record_error_event(
+                opt_txn_num,
+                event_type,
+                MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE,
+                payload,
+                payload_size);
+        }
+        else {
             void *p = mempcpy(payload_buf, &payload, sizeof payload);
             ((p = mempcpy(p, data(bufs), size(bufs))), ...);
         }
+        event->event_type = event_type;
         event->user[MONAD_FLOW_BLOCK_SEQNO] = block_start_seqno_;
         event->user[MONAD_FLOW_TXN_ID] = opt_txn_num.value_or(-1) + 1;
         monad_event_recorder_commit(event, seqno);
     }
 
-private:
-    void
-    diagnose_reserve_failure(monad_exec_event_type, size_t payload_size) const;
+    void record_error_event(
+        std::optional<uint32_t> opt_txn_num, monad_exec_event_type,
+        monad_event_record_error_type, void const *payload,
+        size_t original_payload_size);
 
+private:
     alignas(64) monad_event_recorder exec_recorder_;
     monad_event_ring exec_ring_;
     uint64_t block_start_seqno_;
@@ -196,33 +245,33 @@ extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
  */
 
 inline void record_exec_event(
-    std::optional<uint32_t> opt_txn_num, monad_exec_event_type type)
+    std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type)
 {
     if (auto *const e = g_exec_event_recorder.get()) {
-        return e->record(opt_txn_num, type);
+        return e->record(opt_txn_num, event_type);
     }
 }
 
 template <typename T>
     requires std::is_trivially_copyable_v<T>
 void record_exec_event(
-    std::optional<uint32_t> opt_txn_num, monad_exec_event_type type,
+    std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
     T const &payload)
 {
     if (auto *const e = g_exec_event_recorder.get()) {
-        return e->record(opt_txn_num, type, payload);
+        return e->record(opt_txn_num, event_type, payload);
     }
 }
 
 template <typename T, std::same_as<std::span<std::byte const>>... U>
     requires std::is_trivially_copyable_v<T>
 void record_exec_event(
-    std::optional<uint32_t> opt_txn_num, monad_exec_event_type type,
+    std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
     T const &payload, U &&...bufs)
 {
     if (auto *const e = g_exec_event_recorder.get()) {
         return e->record(
-            opt_txn_num, type, payload, std::forward<U...>(bufs...));
+            opt_txn_num, event_type, payload, std::forward<U...>(bufs...));
     }
 }
 

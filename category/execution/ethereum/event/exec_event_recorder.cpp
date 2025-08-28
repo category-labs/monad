@@ -14,15 +14,18 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 #include <category/core/event/event_metadata.h>
+#include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
-#include <quill/Quill.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string_view>
-#include <utility>
 
 #include <errno.h>
 #include <string.h>
@@ -55,22 +58,62 @@ ExecutionEventRecorder::~ExecutionEventRecorder()
     monad_event_ring_unmap(&exec_ring_);
 }
 
-void ExecutionEventRecorder::diagnose_reserve_failure(
-    monad_exec_event_type type, size_t payload_size) const
+void ExecutionEventRecorder::record_error_event(
+    std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
+    monad_event_record_error_type error_type, void const *payload,
+    size_t original_payload_size)
 {
-    // This indicates a giant (> UINT32_MAX) event payload reservation failure;
-    // in practice, this means either malicious activity or an EVM bug, whereby
-    // the creation of unrealistically large execution outputs is possible.
-    // In normal operation we would expect gas limits to prevent this; we log
-    // the occurance, but the event will be lost entirely
-    monad_event_metadata const &md =
-        g_monad_exec_event_metadata[std::to_underlying(type)];
+    constexpr size_t RECORD_TRUNCATED_SIZE = 1UL << 16;
+    monad_exec_record_error *error_payload;
+    size_t error_payload_size;
+    uint64_t seqno;
+    uint8_t *payload_buf;
 
-    LOG_ERROR(
-        "Ignored {} [{}] event because payload size {} was too large",
-        md.c_name,
-        std::to_underlying(type),
-        payload_size);
+    switch (error_type) {
+    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB:
+        [[fallthrough]];
+    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE:
+        // When an event cannot be recorded due to its payload size, we still
+        // record the first 64 KiB of that payload; it may help with diagnosing
+        // the cause of the overflow, which is a condition that is not expected
+        // in normal operation
+        error_payload_size = sizeof *error_payload + RECORD_TRUNCATED_SIZE;
+        break;
+    default:
+        error_payload_size = sizeof *error_payload;
+        break;
+    }
+
+    monad_event_descriptor *const event =
+        record_reserve(error_payload_size, &seqno, &payload_buf);
+    MONAD_ASSERT(event != nullptr, "non-overflow reservation must succeed");
+
+    event->event_type = MONAD_EXEC_RECORD_ERROR;
+    event->user[MONAD_FLOW_BLOCK_SEQNO] = block_start_seqno_;
+    event->user[MONAD_FLOW_TXN_ID] = opt_txn_num.value_or(-1) + 1;
+
+    error_payload = reinterpret_cast<monad_exec_record_error *>(payload_buf);
+    error_payload->error_type = error_type;
+    error_payload->dropped_event_type = event_type;
+    error_payload->requested_payload_size = original_payload_size;
+
+    switch (error_type) {
+    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB:
+        [[fallthrough]];
+    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE:
+        error_payload->truncated_payload_size = RECORD_TRUNCATED_SIZE;
+        memcpy(
+            payload_buf + sizeof *error_payload,
+            payload,
+            RECORD_TRUNCATED_SIZE);
+        break;
+
+    default:
+        error_payload->truncated_payload_size = 0;
+        break;
+    }
+
+    monad_event_recorder_commit(event, seqno);
 }
 
 std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;

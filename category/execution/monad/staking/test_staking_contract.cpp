@@ -2823,6 +2823,36 @@ TEST_F(Stake, validator_exit_delegator_boundary_nz_accumulator)
     EXPECT_EQ(val_acc, epoch_acc.value.native());
 }
 
+TEST_F(Stake, snapshot_set_same_order_as_consensus_set)
+{
+    // Add five validators
+    auto const auth_address = 0xdeadbeef_address;
+    for (uint64_t i = 0; i < 5; ++i) {
+        auto const res = add_validator(
+            auth_address,
+            ACTIVE_VALIDATOR_STAKE,
+            0 /* commission */,
+            bytes32_t{i + 1} /* unique keys*/);
+        EXPECT_FALSE(res.has_error());
+    }
+
+    // validators join the consensus set
+    skip_to_next_epoch();
+
+    // consensus set copied to snapshot set. they should be the same now
+    skip_to_next_epoch();
+
+    // sets should be the same with ids in order.
+    EXPECT_EQ(
+        contract.vars.valset_consensus.length(),
+        contract.vars.valset_snapshot.length());
+    for (uint64_t i = 0; i < contract.vars.valset_consensus.length(); ++i) {
+        EXPECT_EQ(
+            contract.vars.valset_consensus.get(i).load().native(),
+            contract.vars.valset_snapshot.get(i).load().native());
+    }
+}
+
 /////////////////////
 // compound / redelegate tests
 /////////////////////

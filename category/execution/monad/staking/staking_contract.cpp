@@ -1154,31 +1154,37 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
         return StakingError::SnapshotInBoundary;
     }
 
-    // 1. throw out last epoch's snapshot view
+    // 1. Throw out last epoch's snapshot view
     auto valset_snapshot = vars.valset_snapshot;
     while (!valset_snapshot.empty()) {
         u64_be const val_id = valset_snapshot.pop();
         vars.snapshot_stake(val_id).clear();
     }
 
-    // 2. swap the consensus view to the snapshot view
+    // 2. Copy the consensus view to the snapshot view
     auto valset_consensus = vars.valset_consensus;
-    while (!valset_consensus.empty()) {
-        u64_be const val_id = valset_consensus.pop();
+    uint64_t const consensus_valset_length = vars.valset_consensus.length();
+    for (uint64_t i = 0; i < consensus_valset_length; ++i) {
+        u64_be const val_id = valset_consensus.get(i).load();
         valset_snapshot.push(val_id);
-        auto consensus_stake_slot = vars.consensus_stake(val_id);
-        vars.snapshot_stake(val_id).store(consensus_stake_slot.load());
-        consensus_stake_slot.clear();
+        vars.snapshot_stake(val_id).store(vars.consensus_stake(val_id).load());
     }
 
-    // 3. Seal the consensus view for the next epoch using the top 200
-    // validators from the execution set.
+    // 3. Throw out the consensus view
+    while (!valset_consensus.empty()) {
+        u64_be const val_id = valset_consensus.pop();
+        vars.consensus_stake(val_id).clear();
+    }
+
+    // 4. Find all the candidates in the execution set and load into memory for
+    // sorting. The only validators selected have OK status. Validators with
+    // nonzero status are queued up for removal.
     using Candidate = std::pair<u64_be, uint256_t>;
     std::vector<Candidate> candidates;
     std::vector<uint64_t> removals;
 
-    uint64_t const num_validators = vars.valset_execution.length();
-    for (uint64_t i = 0; i < num_validators; ++i) {
+    uint64_t const execution_valset_length = vars.valset_execution.length();
+    for (uint64_t i = 0; i < execution_valset_length; ++i) {
         auto const val_id = vars.valset_execution.get(i).load();
         auto val_execution = vars.val_execution(val_id);
         // TODO: once Maged's speculative execution is merged, move this
@@ -1193,7 +1199,7 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
         }
     }
 
-    // 4. Construct consensus set from top validators
+    // 5. Construct consensus set from top validators
     auto cmp = [](Candidate const &a, Candidate const &b) {
         if (MONAD_LIKELY(a.second != b.second)) {
             // sort by stake descending
@@ -1214,7 +1220,8 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
         vars.consensus_stake(id).store(stake);
     }
 
-    // 5. Process removals
+    // 6. Process removals from execution set to prevent state bloat.
+    //
     // Pop-and-swap from the array: highest indices must processed first.
     for (auto it = removals.rbegin(); it != removals.rend(); ++it) {
         auto slot_to_replace = vars.valset_execution.get(*it);

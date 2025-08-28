@@ -62,8 +62,8 @@ public:
                 evmc::hex(to_byte_string_view(block_id.bytes)).c_str(),
                 block_number);
             MONAD_THROW(
-                "Block was invalidated in db while execution was in progress",
-                res.has_value());
+                res.has_value(),
+                "Block was invalidated in db while execution was in progress");
         }
         prefix_cursor_ = res.value();
         block_number_ = block_number;
@@ -79,9 +79,9 @@ public:
             block_number_);
         if (!acc_leaf_res.has_value()) {
             MONAD_THROW(
-                "Block was invalidated in db while execution was in progress",
                 acc_leaf_res.assume_error() !=
-                    ::monad::mpt::DbError::version_no_longer_exist);
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
             return std::nullopt;
         }
         auto encoded_account = acc_leaf_res.value().node->value();
@@ -102,9 +102,9 @@ public:
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_THROW(
-                "Block was invalidated in db while execution was in progress",
                 storage_leaf_res.assume_error() !=
-                    ::monad::mpt::DbError::version_no_longer_exist);
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
             return {};
         }
         auto encoded_storage = storage_leaf_res.value().node->value();
@@ -124,9 +124,9 @@ public:
             block_number_);
         if (!code_leaf_res.has_value()) {
             MONAD_THROW(
-                "Block was invalidated in db while execution was in progress",
                 code_leaf_res.assume_error() !=
-                    ::monad::mpt::DbError::version_no_longer_exist);
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
             return vm::make_shared_intercode({});
         }
         return vm::make_shared_intercode(code_leaf_res.value().node->value());

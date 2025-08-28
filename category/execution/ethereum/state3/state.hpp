@@ -313,9 +313,9 @@ public:
         }
 
         MONAD_THROW(
-            "balance overflow",
             std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance);
+            account.value().balance,
+            "balance overflow");
 
         account.value().balance += delta;
         account_state.touch();

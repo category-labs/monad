@@ -66,9 +66,9 @@ static_assert(sizeof(MonadException) < 512);
 
 MONAD_NAMESPACE_END
 
-/// Given 'char const *message' and `bool expr`, throw
+/// Given `bool expr` and 'char const *message', throw
 /// `monad::MonadException` iff `expr` evaluates to `false`.
-#define MONAD_THROW(message, expr)                                             \
+#define MONAD_THROW(expr, message)                                             \
     if (MONAD_LIKELY(expr)) { /* likeliest */                                  \
     }                                                                          \
     else {                                                                     \

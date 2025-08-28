@@ -44,16 +44,15 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
-    auto const value = intx::be::load<uint256_t>(msg.value);
-    auto const balance =
+    uint256_t const value = intx::be::load<uint256_t>(msg.value);
+    uint256_t const balance =
         intx::be::load<uint256_t>(state.get_balance(msg.sender));
     return balance >= value;
 }
 
-void transfer_balances(
-    State &state, evmc_message const &msg, Address const &to)
+void transfer_balances(State &state, evmc_message const &msg, Address const &to)
 {
-    auto const value = intx::be::load<uint256_t>(msg.value);
+    uint256_t const value = intx::be::load<uint256_t>(msg.value);
     state.subtract_from_balance(msg.sender, value);
     state.add_to_balance(to, value);
 }
@@ -297,12 +296,7 @@ call(EvmcHost<rev> *const host, State &state, evmc_message const &msg)
         auto const hash = state.get_code_hash(msg.code_address);
         auto const &code = state.read_code(hash);
         result = state.vm().execute(
-            rev,
-            host->get_chain_params(),
-            *host,
-            &msg,
-            hash,
-            code);
+            rev, host->get_chain_params(), *host, &msg, hash, code);
     }
 
     post_call(state, result);

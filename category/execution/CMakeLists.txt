@@ -107,6 +107,10 @@ add_library(
   "ethereum/event/exec_event_recorder.cpp"
   "ethereum/event/exec_event_recorder.hpp"
   "ethereum/event/exec_iter_help.h"
+  "ethereum/event/record_block_events.cpp"
+  "ethereum/event/record_block_events.hpp"
+  "ethereum/event/record_txn_events.cpp"
+  "ethereum/event/record_txn_events.hpp"
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"
@@ -193,8 +197,12 @@ add_library(
   "monad/chain/monad_testnet2_alloc.hpp"
   # monad/core
   "monad/core/monad_block.hpp"
+  "monad/core/monad_ctypes.h"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
+  # monad/event
+  "monad/event/record_consensus_events.cpp"
+  "monad/event/record_consensus_events.hpp"
   # monad/execution
   "monad/execute_system_transaction.cpp"
   "monad/execute_system_transaction.hpp"

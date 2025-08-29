@@ -3761,31 +3761,51 @@ TEST_F(Stake, epoch_goes_backwards)
 
 TEST_F(Stake, contract_bootstrap)
 {
-    // This simulates the bootstrap flow. execution will deploy the
-    // precompiles, but consensus won't send any snapshot or epoch change
-    // txns. So everything will be added to epoch 0 and then later, a
-    // snapshot will be called and the epoch will change to N. For the
-    // purpose of this test, we will jump to epoch 1000.
+    // This test simulates the bootstrap flow for a live chain.
+    //
+    // First, some definitions.
+    //   Forkpoint `N`: Staking precompiles are made accessible.
+    //   Forkpoint `M`: Consensus starts issuing rewards. Note that M > N.
+    //   Epoch `E`: The epoch of forkpoint m.
+    //
+    // At N, the first transaction will be an epoch change from 0 to E-1. This
+    // ensures the execution view of the epoch is in accordance with the
+    // consensus view of the epoch. Validators will add themselves to the
+    // execution valset during E-1 and no rewards will be issued. At forkpoint
+    // M, staking begins.
+
+    constexpr uint64_t E = 20;
     contract.vars.epoch.store(0);
+
+    // consensus initializes the epoch by calling epoch change
+    EXPECT_FALSE(syscall_on_epoch_change(E - 1).has_error());
+
+    // sets should be empty
+    EXPECT_EQ(contract.vars.valset_execution.length(), 0);
+    EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
+    EXPECT_EQ(contract.vars.valset_consensus.length(), 0);
+    EXPECT_EQ(contract.vars.epoch.load().native(), E - 1);
+
     auto const auth_address = 0xdeadbeef_address;
+
+    // Add two validators
     auto res =
         add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    ASSERT_FALSE(res.has_error());
     auto const val1 = res.assume_value();
-
-    // Add a second validator that doesn't have enough stake to activate
     res = add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1002});
+    ASSERT_FALSE(res.has_error());
     auto const val2 = res.assume_value();
 
-    // add delegator
+    // delegate with validator 1
     auto const d1 = 0xaaaabbbb_address;
     EXPECT_FALSE(delegate(val1.id, d1, 10 * MON).has_error());
-    // add some more
     EXPECT_FALSE(delegate(val1.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
 
-    // cannot undelegate before activation
+    // verify no undelegations before activation
     EXPECT_TRUE(undelegate(val1.id, d1, 1, ACTIVE_VALIDATOR_STAKE).has_error());
 
-    // no withdrawals work either
+    // verify withdrawals don't work
     for (uint16_t i = 0; i <= std::numeric_limits<uint8_t>::max(); ++i) {
         EXPECT_EQ(
             withdraw(val1.id, d1, static_cast<uint8_t>(i)).assume_error(),
@@ -3793,29 +3813,27 @@ TEST_F(Stake, contract_bootstrap)
     }
 
     EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_on_epoch_change(1000).has_error());
+    EXPECT_FALSE(syscall_on_epoch_change(E).has_error());
 
-    // both only have their principal and no rewards
+    // All delegators have their principal (no rewards earned)
     check_delegator_c_state(val1, auth_address, MIN_VALIDATE_STAKE, 0);
     check_delegator_c_state(val1, d1, 10 * MON + ACTIVE_VALIDATOR_STAKE, 0);
+    check_delegator_c_state(val2, auth_address, MIN_VALIDATE_STAKE, 0);
 
+    // only one of the validators had enough stake to be active.
     EXPECT_EQ(contract.vars.valset_consensus.length(), 1);
     EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
     EXPECT_EQ(
         contract.vars.valset_consensus.get(0).load().native(),
         val1.id.native());
 
-    // accumulator at 0 should be cleared since all delegators have been
-    // pulled up-to-date.
+    // check: accumulator refcounts are cleared
     auto const acc =
-        contract.vars.accumulated_reward_per_token(0, val1.id).load();
+        contract.vars.accumulated_reward_per_token(E - 1, val1.id).load();
     EXPECT_EQ(acc.refcount.native(), 0);
     EXPECT_EQ(acc.value.native(), 0);
-
-    // the inactive validator is not active but still has his principal
-    check_delegator_c_state(val2, auth_address, MIN_VALIDATE_STAKE, 0);
     auto const acc2 =
-        contract.vars.accumulated_reward_per_token(0, val2.id).load();
+        contract.vars.accumulated_reward_per_token(E - 1, val2.id).load();
     EXPECT_EQ(acc2.refcount.native(), 0);
     EXPECT_EQ(acc2.value.native(), 0);
 }

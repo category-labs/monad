@@ -36,12 +36,14 @@ static inline bool _monad_exec_ring_ensure_block(
     struct monad_event_descriptor *buf)
 {
     if (__builtin_expect(
-            (*event_p)->user[MONAD_FLOW_BLOCK_SEQNO] != 0 &&
+            (*event_p)->content_ext[MONAD_FLOW_BLOCK_SEQNO] != 0 &&
                 (*event_p)->event_type != MONAD_EXEC_BLOCK_START,
             0)) {
         if (__builtin_expect(
                 !monad_event_ring_try_copy(
-                    event_ring, (*event_p)->user[MONAD_FLOW_BLOCK_SEQNO], buf),
+                    event_ring,
+                    (*event_p)->content_ext[MONAD_FLOW_BLOCK_SEQNO],
+                    buf),
                 0)) {
             return false;
         }
@@ -64,10 +66,10 @@ static inline bool _monad_exec_iter_copy_consensus_event(
             0)) {
         return false;
     }
-    if (event->user[MONAD_FLOW_BLOCK_SEQNO] != 0 &&
+    if (event->content_ext[MONAD_FLOW_BLOCK_SEQNO] != 0 &&
         event->event_type != MONAD_EXEC_BLOCK_START) {
         uint64_t const iter_save = iter->read_last_seqno;
-        iter->read_last_seqno = event->user[MONAD_FLOW_BLOCK_SEQNO] - 1;
+        iter->read_last_seqno = event->content_ext[MONAD_FLOW_BLOCK_SEQNO] - 1;
         if (__builtin_expect(
                 monad_event_iterator_try_copy(iter, event) !=
                     MONAD_EVENT_SUCCESS,

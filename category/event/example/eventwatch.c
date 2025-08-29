@@ -185,16 +185,16 @@ static void print_event(
         event->seqno,
         event->payload_size,
         event->payload_buf_offset);
-    if (event->user[MONAD_FLOW_BLOCK_SEQNO] != 0) {
-        // When `event->user[MONAD_FLOW_BLOCK_SEQNO]` is non-zero, it is set to
-        // the sequence number of the MONAD_EXEC_BLOCK_START event that started
-        // the block that this event is part of. This code tries to read the
-        // payload of that event, to print the block number.
+    if (event->content_ext[MONAD_FLOW_BLOCK_SEQNO] != 0) {
+        // When `event->content_ext[MONAD_FLOW_BLOCK_SEQNO]` is non-zero, it
+        // is set to the sequence number of the MONAD_EXEC_BLOCK_START event
+        // that started the block that this event is part of. This code tries
+        // to read the payload of that event, to print the block number.
         struct monad_event_descriptor start_block_event;
         struct monad_exec_block_start const *block_start = nullptr;
         if (monad_event_ring_try_copy(
                 event_ring,
-                event->user[MONAD_FLOW_BLOCK_SEQNO],
+                event->content_ext[MONAD_FLOW_BLOCK_SEQNO],
                 &start_block_event)) {
             block_start =
                 monad_event_ring_payload_peek(event_ring, &start_block_event);
@@ -210,8 +210,8 @@ static void print_event(
             }
         }
     }
-    if (event->user[MONAD_FLOW_TXN_ID] != 0) {
-        o += sprintf(o, " TXN: %lu", event->user[MONAD_FLOW_TXN_ID] - 1);
+    if (event->content_ext[MONAD_FLOW_TXN_ID] != 0) {
+        o += sprintf(o, " TXN: %lu", event->content_ext[MONAD_FLOW_TXN_ID] - 1);
     }
     *o++ = '\n';
     fwrite(event_buf, (size_t)(o - event_buf), 1, out);

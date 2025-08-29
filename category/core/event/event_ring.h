@@ -73,7 +73,7 @@ struct monad_event_descriptor
     uint32_t payload_size;       ///< Size of event payload
     uint64_t record_epoch_nanos; ///< Time event was recorded
     uint64_t payload_buf_offset; ///< Unwrapped offset of payload in p. buf
-    uint64_t user[4];            ///< Meaning defined by the writer
+    uint64_t content_ext[4];     ///< Extensions for particular content types
 };
 
 static_assert(sizeof(struct monad_event_descriptor) == 64);
@@ -207,7 +207,11 @@ constexpr uint8_t MONAD_EVENT_MAX_DESCRIPTORS_SHIFT = 32;
 constexpr uint8_t MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT = 27;
 constexpr uint8_t MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT = 40;
 
+/// Sliding window increment, see `event_recorder.md` documentation
 constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
+
+/// Allocations from an event ring payload buffer have this alignment
+constexpr size_t MONAD_EVENT_PAYLOAD_ALIGN = 16;
 
 /*
  * Record error event payload definitions; in any event domain, the event_type
@@ -218,7 +222,7 @@ constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
 
 struct monad_event_record_error
 {
-    enum monad_event_record_error_type
+    alignas(16) enum monad_event_record_error_type
         error_type;                  ///< Kind of recording error that occurred
     uint16_t dropped_event_type;     ///< What kind of event was discarded
     uint32_t truncated_payload_size; ///< Size of truncated trailing payload

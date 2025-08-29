@@ -108,7 +108,7 @@ struct monad_exec_block_start
     uint64_t round;                   ///< Round when block was proposed
     uint64_t epoch;                   ///< Epoch when block was proposed
     __uint128_t proposal_epoch_nanos; ///< UNIX epoch nanosecond timestamp
-    monad_c_uint256_ne chain_id;      ///< Block chain we're associated with
+    monad_c_uint256_ne chain_id;      ///< Blockchain we're associated with
     struct monad_c_secp256k1_pubkey
         author;                       ///< Public key of block author
     monad_c_bytes32 parent_eth_hash;  ///< Hash of Ethereum parent block

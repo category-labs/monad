@@ -15,17 +15,18 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/event/event_metadata.h>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
+#include <span>
 #include <string_view>
+#include <tuple>
 
 #include <errno.h>
 #include <string.h>
@@ -37,7 +38,7 @@ ExecutionEventRecorder::ExecutionEventRecorder(
     int ring_fd, std::string_view ring_path, monad_event_ring const &exec_ring)
     : exec_recorder_{}
     , exec_ring_{exec_ring}
-    , block_start_seqno_{0}
+    , cur_block_start_seqno_{0}
     , ring_path_{ring_path}
     , ring_fd_{dup(ring_fd)}
 {
@@ -46,6 +47,7 @@ ExecutionEventRecorder::ExecutionEventRecorder(
         "dup(2) of ring_fd failed: %s (%d)",
         strerror(errno),
         errno);
+
     int const rc = monad_event_ring_init_recorder(&exec_ring_, &exec_recorder_);
     MONAD_ASSERT_PRINTF(
         rc == 0, "init recorder failed: %s", monad_event_ring_get_last_error());
@@ -58,39 +60,41 @@ ExecutionEventRecorder::~ExecutionEventRecorder()
     monad_event_ring_unmap(&exec_ring_);
 }
 
-void ExecutionEventRecorder::record_error_event(
-    std::optional<uint32_t> opt_txn_num, monad_exec_event_type event_type,
-    monad_event_record_error_type error_type, void const *payload,
+std::tuple<monad_event_descriptor *, std::byte *, uint64_t>
+ExecutionEventRecorder::setup_record_error_event(
+    monad_exec_event_type event_type, monad_event_record_error_type error_type,
+    size_t header_payload_size,
+    std::span<std::span<std::byte const> const> trailing_payload_bufs,
     size_t original_payload_size)
 {
-    constexpr size_t RECORD_TRUNCATED_SIZE = 1UL << 16;
     monad_exec_record_error *error_payload;
     size_t error_payload_size;
-    uint64_t seqno;
-    uint8_t *payload_buf;
 
     switch (error_type) {
     case MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB:
         [[fallthrough]];
     case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE:
         // When an event cannot be recorded due to its payload size, we still
-        // record the first 64 KiB of that payload; it may help with diagnosing
+        // record the first 8 KiB of that payload; it may help with diagnosing
         // the cause of the overflow, which is a condition that is not expected
         // in normal operation
-        error_payload_size = sizeof *error_payload + RECORD_TRUNCATED_SIZE;
+        error_payload_size = RECORD_ERROR_TRUNCATED_SIZE;
         break;
     default:
         error_payload_size = sizeof *error_payload;
         break;
     }
 
-    monad_event_descriptor *const event =
-        record_reserve(error_payload_size, &seqno, &payload_buf);
+    uint64_t seqno;
+    uint8_t *payload_buf;
+    monad_event_descriptor *const event = monad_event_recorder_reserve(
+        &exec_recorder_, error_payload_size, &seqno, &payload_buf);
     MONAD_ASSERT(event != nullptr, "non-overflow reservation must succeed");
 
     event->event_type = MONAD_EXEC_RECORD_ERROR;
-    event->user[MONAD_FLOW_BLOCK_SEQNO] = block_start_seqno_;
-    event->user[MONAD_FLOW_TXN_ID] = opt_txn_num.value_or(-1) + 1;
+    event->content_ext[MONAD_FLOW_BLOCK_SEQNO] = cur_block_start_seqno_;
+    event->content_ext[MONAD_FLOW_TXN_ID] = 0;
+    event->content_ext[MONAD_FLOW_ACCOUNT_INDEX] = 0;
 
     error_payload = reinterpret_cast<monad_exec_record_error *>(payload_buf);
     error_payload->error_type = error_type;
@@ -101,11 +105,19 @@ void ExecutionEventRecorder::record_error_event(
     case MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB:
         [[fallthrough]];
     case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE:
-        error_payload->truncated_payload_size = RECORD_TRUNCATED_SIZE;
-        memcpy(
-            payload_buf + sizeof *error_payload,
-            payload,
-            RECORD_TRUNCATED_SIZE);
+        error_payload->truncated_payload_size = RECORD_ERROR_TRUNCATED_SIZE;
+        {
+            size_t residual_size = error_payload->truncated_payload_size;
+            void *p = payload_buf + sizeof *error_payload + header_payload_size;
+            for (std::span<std::byte const> buf : trailing_payload_bufs) {
+                size_t const copy_len = std::min(residual_size, size(buf));
+                p = mempcpy(p, data(buf), copy_len);
+                residual_size -= copy_len;
+                if (residual_size == 0) {
+                    break;
+                }
+            }
+        }
         break;
 
     default:
@@ -113,7 +125,10 @@ void ExecutionEventRecorder::record_error_event(
         break;
     }
 
-    monad_event_recorder_commit(event, seqno);
+    return {
+        event,
+        reinterpret_cast<std::byte *>(payload_buf) + sizeof *error_payload,
+        seqno};
 }
 
 std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;

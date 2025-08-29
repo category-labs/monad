@@ -83,7 +83,8 @@ static inline struct monad_event_descriptor *monad_event_recorder_reserve(
     uint64_t const sliding_window_width =
         payload_buf_size - MONAD_EVENT_WINDOW_INCR;
     struct monad_event_ring_control *const rctl = recorder->control;
-    size_t const alloc_size = monad_round_size_to_align(payload_size, 8);
+    size_t const alloc_size =
+        monad_round_size_to_align(payload_size, MONAD_EVENT_PAYLOAD_ALIGN);
 
     if (MONAD_UNLIKELY(alloc_size > UINT32_MAX)) {
         *seqno = 0;

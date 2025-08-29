@@ -3713,7 +3713,7 @@ TEST_F(Stake, valset_exceeds_n)
     EXPECT_EQ(contract.vars.valset_execution.length(), 1000u);
 
     // create the consensus valset
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    skip_to_next_epoch();
     EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
     EXPECT_EQ(contract.vars.valset_consensus.length(), ACTIVE_VALSET_SIZE);
 
@@ -3738,6 +3738,12 @@ TEST_F(Stake, valset_exceeds_n)
             EXPECT_EQ(contract.vars.consensus_stake(val_id).load().native(), 0);
         }
     }
+
+    skip_to_next_epoch();
+
+    // now both valsets should be active valset size
+    EXPECT_EQ(contract.vars.valset_snapshot.length(), ACTIVE_VALSET_SIZE);
+    EXPECT_EQ(contract.vars.valset_consensus.length(), ACTIVE_VALSET_SIZE);
 }
 
 ////////////////////////

@@ -220,8 +220,6 @@ add_library(
   "monad/staking/util/staking_error.hpp"
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
-  "monad/staking/util/validator.cpp"
-  "monad/staking/util/validator.h"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

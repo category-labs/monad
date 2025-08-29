@@ -15,8 +15,10 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/execution/monad/staking/util/validator.h>
+#include <category/execution/monad/staking/config.hpp>
+
+#include <utility>
+#include <vector>
 
 #include <evmc/evmc.h>
 #include <stdint.h>
@@ -28,6 +30,18 @@ namespace mpt
     class Db;
 }
 
-monad_validator_set read_valset(mpt::Db &db, size_t block_num, bool get_next);
-
 MONAD_NAMESPACE_END
+
+MONAD_STAKING_NAMESPACE_BEGIN
+
+struct Validator
+{
+    uint8_t secp_pubkey[33];
+    uint8_t bls_pubkey[48];
+    evmc_uint256be stake;
+};
+
+std::pair<bool, std::vector<Validator>>
+read_valset(mpt::Db &db, size_t block_num, uint64_t requested_epoch);
+
+MONAD_STAKING_NAMESPACE_END

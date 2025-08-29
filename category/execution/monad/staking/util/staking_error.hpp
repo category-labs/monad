@@ -53,6 +53,8 @@ enum class StakingError
     SolvencyError,
     SnapshotInBoundary,
     InvalidEpochChange,
+    RequiresAuthAddress,
+    CommissionTooHigh,
 };
 
 MONAD_STAKING_NAMESPACE_END

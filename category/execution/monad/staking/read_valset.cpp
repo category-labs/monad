@@ -60,8 +60,8 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
                                      ? contract.vars.valset_consensus
                                      : contract.vars.this_epoch_valset();
     auto get_stake = [&](u64_be const id) {
-        return get_next_epoch ? contract.vars.consensus_stake(id)
-                              : contract.vars.this_epoch_stake(id);
+        return get_next_epoch ? contract.vars.consensus_view(id).stake()
+                              : contract.vars.this_epoch_view(id).stake();
     };
 
     uint64_t const length = contract_valset.length();

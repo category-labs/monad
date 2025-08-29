@@ -63,6 +63,8 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
          "called snapshot while in boundary",
          {}},
         {StakingError::InvalidEpochChange, "invalid epoch change", {}},
+        {StakingError::RequiresAuthAddress, "requires auth address", {}},
+        {StakingError::CommissionTooHigh, "commission too high", {}},
     };
 
     return v;

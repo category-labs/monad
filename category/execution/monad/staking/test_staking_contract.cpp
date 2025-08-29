@@ -219,6 +219,17 @@ namespace
         input += withdrawal_id;
         return input;
     }
+
+    byte_string craft_change_commission_input(
+        u64_be const val_id, uint256_t const &commission)
+    {
+        u256_be const commission_encoded{commission};
+
+        byte_string input;
+        input += to_byte_string_view(val_id.bytes);
+        input += to_byte_string_view(commission_encoded.bytes);
+        return input;
+    }
 }
 
 struct Stake : public ::testing::Test
@@ -415,6 +426,17 @@ struct Stake : public ::testing::Test
         return outcome::success();
     }
 
+    Result<void> change_commission(
+        u64_be const val_id, Address const &sender, uint256_t const &commission)
+    {
+        auto const input = craft_change_commission_input(val_id, commission);
+        state.push();
+        auto res = contract.precompile_change_commission(input, sender, {});
+        post_call(res.has_error());
+        BOOST_OUTCOME_TRYV(std::move(res));
+        return outcome::success();
+    }
+
     Result<byte_string> get_valset(uint32_t const start_index)
     {
         u32_be encoded = start_index;
@@ -497,6 +519,41 @@ TEST_F(Stake, accumulator_is_monotonic_again)
         intx::to_string(validator.stake().load().native(), 10),
         intx::to_string(
             validator.accumulated_reward_per_token().load().native(), 10));
+}
+
+//////////////////////
+// Commission Tests //
+//////////////////////
+TEST_F(Stake, revert_if_commission_too_high)
+{
+    auto const auth_address = 0xababab_address;
+    constexpr auto bad_commission = 2000000000000000000_u256;
+    auto const res =
+        add_validator(auth_address, MIN_VALIDATE_STAKE, bad_commission);
+    EXPECT_EQ(res.assume_error(), StakingError::CommissionTooHigh);
+
+    // add a validator with no commission to set a bad commission
+    auto const res2 = add_validator(
+        auth_address, MIN_VALIDATE_STAKE, 0 /* starting commission */);
+    ASSERT_FALSE(res2.has_error());
+    auto const res3 =
+        change_commission(res2.value().id, auth_address, bad_commission);
+    EXPECT_EQ(res3.assume_error(), StakingError::CommissionTooHigh);
+}
+
+TEST_F(Stake, non_auth_attempts_to_change_commission)
+{
+    // add a validator with no commission. have a random sender try to change
+    // the commission.
+    auto const auth_address = 0x600d_address;
+    auto const bad_sender = 0xbadd_address;
+
+    auto const res = add_validator(
+        auth_address, MIN_VALIDATE_STAKE, 0 /* starting commission */);
+    ASSERT_FALSE(res.has_error());
+    auto const res2 =
+        change_commission(res.value().id, bad_sender, 200000000000000000_u256);
+    EXPECT_EQ(res2.assume_error(), StakingError::RequiresAuthAddress);
 }
 
 class StakeCommission
@@ -631,16 +688,6 @@ TEST_F(Stake, add_validator_revert_minimum_stake_not_met)
     EXPECT_EQ(res.assume_error(), StakingError::InsufficientStake);
 }
 
-TEST_F(Stake, add_validator_revert_commission_too_high)
-{
-    constexpr auto commission = 2000000000000000000_u256;
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
-    auto const [input, address] = craft_add_validator_input(
-        0xababab_address, MIN_VALIDATE_STAKE, commission);
-    auto const res = contract.precompile_add_validator(input, address, value);
-    EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
-}
-
 TEST_F(Stake, add_validator_sufficent_balance)
 {
     auto const auth_address = 0xdeadbeef_address;
@@ -677,10 +724,10 @@ TEST_F(Stake, add_validator_sufficent_balance)
     EXPECT_EQ(contract.vars.val_execution(2).get_flags(), ValidatorFlagsOk);
 
     EXPECT_EQ(
-        contract.vars.this_epoch_stake(1).load().native(),
+        contract.vars.this_epoch_view(1).stake().load().native(),
         ACTIVE_VALIDATOR_STAKE);
     EXPECT_EQ(
-        contract.vars.this_epoch_stake(2).load().native(),
+        contract.vars.this_epoch_view(2).stake().load().native(),
         ACTIVE_VALIDATOR_STAKE);
 
     EXPECT_EQ(
@@ -1591,7 +1638,7 @@ TEST_F(Stake, validator_removes_self)
     // validate snapshot view since the current epoch is ongoing.
     EXPECT_EQ(contract.vars.valset_snapshot.length(), 1);
     EXPECT_EQ(
-        contract.vars.snapshot_stake(val.id).load().native(),
+        contract.vars.snapshot_view(val.id).stake().load().native(),
         ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE);
 
     // rewards now reference the snapshot set and should continue to work
@@ -1813,7 +1860,7 @@ TEST_F(Stake, validator_miss_snapshot_miss_deactivation)
         ValidatorFlagWithdrawn | ValidatorFlagsStakeTooLow);
 
     EXPECT_EQ(
-        contract.vars.this_epoch_stake(1).load().native(),
+        contract.vars.this_epoch_view(1).stake().load().native(),
         ACTIVE_VALIDATOR_STAKE);
     EXPECT_EQ(contract.vars.val_execution(1).stake().load().native(), 0);
 }
@@ -2430,7 +2477,7 @@ TEST_F(Stake, delegator_delegates_in_epoch_delay_period)
 
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
-            contract.vars.this_epoch_stake(val.id).load().native(),
+            contract.vars.this_epoch_view(val.id).stake().load().native(),
             ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(
             contract.vars.val_execution(val.id).stake().load().native(),
@@ -3731,11 +3778,14 @@ TEST_F(Stake, valset_exceeds_n)
         if (i <= ACTIVE_VALSET_SIZE) {
             EXPECT_TRUE(is_in_valset(val_id));
             EXPECT_EQ(
-                contract.vars.consensus_stake(val_id).load().native(), stake);
+                contract.vars.consensus_view(val_id).stake().load().native(),
+                stake);
         }
         else {
             EXPECT_FALSE(is_in_valset(val_id));
-            EXPECT_EQ(contract.vars.consensus_stake(val_id).load().native(), 0);
+            EXPECT_EQ(
+                contract.vars.consensus_view(val_id).stake().load().native(),
+                0);
         }
     }
 

@@ -90,11 +90,12 @@ protected:
         // so they can easily be identified.
         for (uint64_t id = 1; id <= SNAPSHOT_VALSET_LENGTH; ++id) {
             contract.vars.valset_snapshot.push(id);
-            contract.vars.snapshot_stake(id).store(SNAPSHOT_STAKE);
+            contract.vars.snapshot_view(id).stake().store(SNAPSHOT_STAKE);
         }
         for (uint64_t id = 1; id <= CONSENSUS_VALSET_LENGTH; ++id) {
             contract.vars.valset_consensus.push(id + SNAPSHOT_VALSET_LENGTH);
-            contract.vars.consensus_stake(id + SNAPSHOT_VALSET_LENGTH)
+            contract.vars.consensus_view(id + SNAPSHOT_VALSET_LENGTH)
+                .stake()
                 .store(CONSENSUS_STAKE);
         }
 

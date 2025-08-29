@@ -150,7 +150,7 @@ void StakingContract::emit_withdraw_event(
 }
 
 void StakingContract::emit_claim_rewards_event(
-    u64_be val_id, Address const &delegator, u256_be const &amount)
+    u64_be const val_id, Address const &delegator, u256_be const &amount)
 {
     constexpr bytes32_t signature{
         0x3170ba953fe3e068954fcbc93913a05bf457825d4d4d86ec9b72ce2186cd8109_bytes32};
@@ -158,6 +158,20 @@ void StakingContract::emit_claim_rewards_event(
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(delegator))
                            .add_data(abi_encode_uint(amount))
+                           .build();
+    state_.store_log(event);
+}
+
+void StakingContract::emit_commission_changed_event(
+    u64_be const val_id, u256_be const &old_commission,
+    u256_be const &new_commission)
+{
+    constexpr bytes32_t signature{
+        0xd1698d3454c5b5384b70aaae33f1704af7c7e055f0c75503ba3146dc28995920_bytes32};
+    auto const event = EventBuilder(STAKING_CA, signature)
+                           .add_topic(abi_encode_uint(val_id))
+                           .add_data(abi_encode_uint(old_commission))
+                           .add_data(abi_encode_uint(new_commission))
                            .build();
     state_.store_log(event);
 }
@@ -376,8 +390,9 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         make_pair(&StakingContract::precompile_compound, 0 /* fixme */),
         make_pair(&StakingContract::precompile_withdraw, 0 /* fixme */),
         make_pair(&StakingContract::precompile_claim_rewards, 0 /* fixme */),
-        /* reserve space for mutating for future upgrades */
-        make_pair(&StakingContract::precompile_fallback, 0),
+        make_pair(
+            &StakingContract::precompile_change_commission, 0 /* fixme */),
+        /* reserve space for future upgrades */
         make_pair(&StakingContract::precompile_fallback, 0),
         make_pair(&StakingContract::precompile_fallback, 0),
         make_pair(&StakingContract::precompile_fallback, 0),
@@ -438,17 +453,21 @@ Result<byte_string> StakingContract::precompile_get_validator(
     }
     auto const val_id = unaligned_load<u64_be>(input.data());
     auto val = vars.val_execution(val_id);
+    auto consensus_view = vars.consensus_view(val_id);
+    auto snapshot_view = vars.snapshot_view(val_id);
 
     AbiEncoder encoder;
     auto const af = val.address_flags().load();
     encoder.add_address(af.auth_address);
     encoder.add_uint(af.flags);
     encoder.add_uint(val.stake().load());
-    encoder.add_uint(vars.consensus_stake(val_id).load());
-    encoder.add_uint(vars.snapshot_stake(val_id).load());
     encoder.add_uint(val.accumulated_reward_per_token().load());
     encoder.add_uint(val.commission().load());
     encoder.add_uint(val.unclaimed_rewards().load());
+    encoder.add_uint(consensus_view.stake().load());
+    encoder.add_uint(consensus_view.commission().load());
+    encoder.add_uint(snapshot_view.stake().load());
+    encoder.add_uint(snapshot_view.commission().load());
 
     auto const k = val.keys().load();
     encoder.add_bytes(to_byte_string_view(k.secp_pubkey));
@@ -706,10 +725,8 @@ Result<byte_string> StakingContract::precompile_add_validator(
         return StakingError::BlsSignatureVerificationFailed;
     }
 
-    // check commission rate doesn't exceed 100%
-    // note that: delegator_reward = (raw_reward * 1e18) / 1e18
-    if (MONAD_UNLIKELY(commission.native() > MON)) {
-        return StakingError::InvalidInput;
+    if (MONAD_UNLIKELY(commission.native() > MAX_COMMISSION)) {
+        return StakingError::CommissionTooHigh;
     }
 
     // Check if validator already exists
@@ -1025,6 +1042,43 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
     return byte_string{};
 }
 
+Result<byte_string> StakingContract::precompile_change_commission(
+    byte_string_view const input, evmc_address const &msg_sender,
+    evmc_uint256be const &)
+{
+    constexpr size_t MESSAGE_SIZE =
+        sizeof(u64_be) /* validator id */ + sizeof(u256_be) /* commission */;
+    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+        return StakingError::InvalidInput;
+    }
+
+    byte_string_view reader = input;
+    auto const val_id =
+        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
+    auto const new_commission =
+        unaligned_load<u256_be>(consume_bytes(reader, sizeof(u256_be)).data());
+
+    auto validator = vars.val_execution(val_id);
+    if (MONAD_UNLIKELY(!validator.exists())) {
+        return StakingError::UnknownValidator;
+    }
+
+    if (MONAD_UNLIKELY(msg_sender != validator.auth_address())) {
+        return StakingError::RequiresAuthAddress;
+    }
+
+    if (MONAD_UNLIKELY(new_commission.native() > MAX_COMMISSION)) {
+        return StakingError::CommissionTooHigh;
+    }
+
+    // set in execution view. will go live next epoch.
+    u256_be const old_commission = validator.commission().load();
+    validator.commission().store(new_commission);
+    emit_commission_changed_event(val_id, old_commission, new_commission);
+
+    return byte_string{};
+}
+
 ////////////////////
 //  System Calls  //
 ////////////////////
@@ -1097,8 +1151,8 @@ Result<void> StakingContract::syscall_reward(
     }
 
     // 2. validator must be active
-    uint256_t const active_stake =
-        vars.this_epoch_stake(val_id.value()).load().native();
+    auto consensus_view = vars.this_epoch_view(val_id.value());
+    uint256_t const active_stake = consensus_view.stake().load().native();
     if (MONAD_UNLIKELY(active_stake == 0)) {
         // Validator cannot be in the active set with no stake
         return StakingError::BlockAuthorNotInSet;
@@ -1107,20 +1161,21 @@ Result<void> StakingContract::syscall_reward(
     mint_tokens(raw_reward);
 
     // 3. subtract commission
-    auto val_execution = vars.val_execution(val_id.value());
     uint256_t const commission_rate =
-        val_execution.commission().load().native();
+        consensus_view.commission().load().native();
     BOOST_OUTCOME_TRY(
         auto const commission,
         checked_mul_div(raw_reward, commission_rate, MON));
 
+    // 4. Send commission to the auth address
+    auto val_execution = vars.val_execution(val_id.value());
     auto auth = vars.delegator(val_id.value(), val_execution.auth_address());
     BOOST_OUTCOME_TRY(
         auto const auth_reward,
         checked_add(auth.rewards().load().native(), commission));
     auth.rewards().store(auth_reward);
 
-    // 4. reward wrt to accumulator
+    // 5. reward wrt to accumulator
     BOOST_OUTCOME_TRY(
         auto const del_reward, checked_sub(raw_reward, commission));
     BOOST_OUTCOME_TRY(
@@ -1133,7 +1188,7 @@ Result<void> StakingContract::syscall_reward(
             reward_acc));
     val_execution.accumulated_reward_per_token().store(acc);
 
-    // 5. update unclaimed rewards
+    // 6. update unclaimed rewards for this validator pool
     BOOST_OUTCOME_TRY(
         auto const unclaimed_rewards,
         checked_add(
@@ -1158,7 +1213,9 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
     auto valset_snapshot = vars.valset_snapshot;
     while (!valset_snapshot.empty()) {
         u64_be const val_id = valset_snapshot.pop();
-        vars.snapshot_stake(val_id).clear();
+        auto snapshot_view = vars.snapshot_view(val_id);
+        snapshot_view.stake().clear();
+        snapshot_view.commission().clear();
     }
 
     // 2. Copy the consensus view to the snapshot view
@@ -1166,14 +1223,20 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
     uint64_t const consensus_valset_length = vars.valset_consensus.length();
     for (uint64_t i = 0; i < consensus_valset_length; ++i) {
         u64_be const val_id = valset_consensus.get(i).load();
+        auto snapshot_view = vars.snapshot_view(val_id);
+        auto consensus_view = vars.consensus_view(val_id);
+
         valset_snapshot.push(val_id);
-        vars.snapshot_stake(val_id).store(vars.consensus_stake(val_id).load());
+        snapshot_view.stake().store(consensus_view.stake().load());
+        snapshot_view.commission().store(consensus_view.commission().load());
     }
 
     // 3. Throw out the consensus view
     while (!valset_consensus.empty()) {
         u64_be const val_id = valset_consensus.pop();
-        vars.consensus_stake(val_id).clear();
+        auto consensus_view = vars.consensus_view(val_id);
+        consensus_view.stake().clear();
+        consensus_view.commission().clear();
     }
 
     // 4. Find all the candidates in the execution set and load into memory for
@@ -1217,7 +1280,9 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
     for (uint64_t i = 0; i < n; ++i) {
         auto const &[id, stake] = candidates[i];
         valset_consensus.push(id);
-        vars.consensus_stake(id).store(stake);
+        vars.consensus_view(id).stake().store(stake);
+        vars.consensus_view(id).commission().store(
+            vars.val_execution(id).commission().load());
     }
 
     // 6. Process removals from execution set to prevent state bloat.

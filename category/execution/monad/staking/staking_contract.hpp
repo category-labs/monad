@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/monad/staking/config.hpp>
+#include <category/execution/monad/staking/util/consensus_view.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
@@ -229,12 +230,12 @@ public:
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
-        // mapping(uint64 => uint256) consensus_stake
+        // mapping(uint64 => uint256) consensus_view
         //
-        // A copy of the execution stake at the time of the snapshot. This is
-        // only set if the validator has a top N stake. Does not account for
-        // boundary block.
-        StorageVariable<u256_be> consensus_stake(u64_be const id) noexcept
+        // A view of the execution stake and commmission at the time of the
+        // snapshot. This is only set if the validator has a top N stake. Does
+        // not account for boundary block.
+        ConsensusView consensus_view(u64_be const id) noexcept
         {
             struct
             {
@@ -246,11 +247,11 @@ public:
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
-        // mapping(uint64 => uint256) snapshot_stake
+        // mapping(uint64 => uint256) snapshot_view
         //
-        // A copy of the consensus stake at the time of the snapshot to be
-        // referenced by reward during the boundary period.
-        StorageVariable<u256_be> snapshot_stake(u64_be const id) noexcept
+        // A view of the consensus stake and commission at the time of the
+        // snapshot.  Referenced by reward during the boundary period.
+        SnapshotView snapshot_view(u64_be const id) noexcept
         {
             struct
             {
@@ -262,17 +263,18 @@ public:
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
 
-        // mapping(uint64 => uint256) this_epoch_stake
+        // mapping(uint64 => uint256) this_epoch_view
         //
-        // A higher level API for getting a validator's stake for this epoch.
-        // Abstracts the boundary block handling from the caller. The consensus
-        // stakes and snapshot stakes are unstable during an epoch, and this
-        // function provides a stable interface.
-        StorageVariable<u256_be> this_epoch_stake(u64_be const id) noexcept
+        // A higher level API for getting a view of a validator's stake and
+        // commission for this epoch.  Abstracts the boundary block handling
+        // from the caller.  The consensus stakes and snapshot stakes are
+        // unstable during an epoch, and this function provides a stable
+        // interface.
+        ConsensusView this_epoch_view(u64_be const id) noexcept
         {
             return in_epoch_delay_period.load_checked().has_value()
-                       ? snapshot_stake(id)
-                       : consensus_stake(id);
+                       ? snapshot_view(id)
+                       : consensus_view(id);
         }
 
         // mapping(uint64 => mapping(address => Delegator)) delegator
@@ -431,11 +433,18 @@ private:
         u256_be const &amount);
 
     // event ClaimRewards(
-    // uint256 indexed valId,
+    // uint64  indexed valId,
     // address indexed delegatorAddress
     // uint256         amount);
     void emit_claim_rewards_event(
         u64_be val_id, Address const &delegator, u256_be const &amount);
+
+    // event CommissionChanged(
+    // uint64  indexed valId,
+    // uint256         oldCommission
+    // uint256         newCommission);
+    void emit_commission_changed_event(
+        u64_be, u256_be const &old_commission, u256_be const &new_commission);
 
     /////////////
     // Helpers //
@@ -543,6 +552,8 @@ public:
     Result<byte_string> precompile_withdraw(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_claim_rewards(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_change_commission(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     ////////////////////

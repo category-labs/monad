@@ -33,6 +33,7 @@ using namespace intx::literals;
 
 inline constexpr uint256_t MON{1000000000000000000_u256};
 
+inline constexpr uint256_t MAX_COMMISSION = MON;
 inline constexpr uint256_t MIN_VALIDATE_STAKE{1'000'000 * MON};
 inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{50'000'000 * MON};
 inline constexpr uint256_t UNIT_BIAS{100000000000000000000000000000_u256};
@@ -44,6 +45,10 @@ inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
 // Results for get_valset, get_delegators_for_validator, and
 // get_validators_for_delegator are paginated
 inline constexpr uint64_t PAGINATED_RESULTS_SIZE{500};
+
+// sanity check: commission rate doesn't exceed 100% (1e18)
+// note that: delegator_reward = (raw_reward * COMMISSION) / 1e18
+static_assert(MAX_COMMISSION <= MON);
 
 enum class SyscallSelector : uint32_t
 {

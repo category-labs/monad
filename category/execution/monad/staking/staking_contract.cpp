@@ -62,6 +62,19 @@ Result<uint256_t> calculate_rewards(
     return checked_mul_div(delta, stake, UNIT_BIAS);
 }
 
+Result<void> function_not_payable(evmc_uint256be const &value)
+{
+    bool const all_zero = std::all_of(
+        value.bytes,
+        value.bytes + sizeof(evmc_uint256be),
+        [](uint8_t const byte) { return byte == 0; });
+
+    if (MONAD_UNLIKELY(!all_zero)) {
+        return StakingError::ValueNonZero;
+    }
+    return outcome::success();
+}
+
 MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
@@ -446,8 +459,11 @@ StakingContract::get_validators_for_delegator(
 }
 
 Result<byte_string> StakingContract::precompile_get_validator(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     if (MONAD_UNLIKELY(input.size() != sizeof(u64_be) /* validator id */)) {
         return StakingError::InvalidInput;
     }
@@ -477,8 +493,11 @@ Result<byte_string> StakingContract::precompile_get_validator(
 }
 
 Result<byte_string> StakingContract::precompile_get_delegator(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
                                     sizeof(Address) /* delegator address */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
@@ -531,27 +550,36 @@ Result<byte_string> StakingContract::get_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_consensus_valset(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     return get_valset(input, vars.valset_consensus);
 }
 
 Result<byte_string> StakingContract::precompile_get_snapshot_valset(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     return get_valset(input, vars.valset_snapshot);
 }
 
 Result<byte_string> StakingContract::precompile_get_execution_valset(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     auto const valset = vars.valset_execution;
     return get_valset(input, valset);
 }
 
 Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(Address) /* delegator */ +
                                     sizeof(u64_be) /* start val id to read*/;
 
@@ -576,8 +604,11 @@ Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
 }
 
 Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE =
         sizeof(u64_be) /* validator id */ +
         sizeof(Address) /* start delegator address to read */;
@@ -603,8 +634,11 @@ Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
 }
 
 Result<byte_string> StakingContract::precompile_get_epoch(
-    byte_string_view const, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     AbiEncoder encoder;
     encoder.add_uint(vars.epoch.load());
     encoder.add_bool(vars.in_epoch_delay_period.load());
@@ -612,8 +646,11 @@ Result<byte_string> StakingContract::precompile_get_epoch(
 }
 
 Result<byte_string> StakingContract::precompile_get_withdrawal_request(
-    byte_string_view const input, evmc_address const &, evmc_uint256be const &)
+    byte_string_view const input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
                                     sizeof(Address) /* delegator */ +
                                     sizeof(uint8_t) /* withdrawal id */;
@@ -853,8 +890,10 @@ Result<byte_string> StakingContract::precompile_delegate(
 
 Result<byte_string> StakingContract::precompile_undelegate(
     byte_string_view const input, evmc_address const &msg_sender,
-    evmc_uint256be const &)
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
                                     sizeof(u256_be) /* amount */ +
                                     sizeof(uint8_t) /* withdrawal id */;
@@ -942,8 +981,10 @@ Result<byte_string> StakingContract::precompile_undelegate(
 // TODO: No compounds allowed if auth_address is under sufficent amount.
 Result<byte_string> StakingContract::precompile_compound(
     byte_string_view const input, evmc_address const &msg_sender,
-    evmc_uint256be const &)
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validatorId */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return StakingError::InvalidInput;
@@ -967,8 +1008,10 @@ Result<byte_string> StakingContract::precompile_compound(
 
 Result<byte_string> StakingContract::precompile_withdraw(
     byte_string_view const input, evmc_address const &msg_sender,
-    evmc_uint256be const &)
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE =
         sizeof(u64_be) /* validator id */ + sizeof(uint8_t) /* withdrawal id */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
@@ -1020,8 +1063,10 @@ Result<byte_string> StakingContract::precompile_withdraw(
 
 Result<byte_string> StakingContract::precompile_claim_rewards(
     byte_string_view const input, evmc_address const &msg_sender,
-    evmc_uint256be const &)
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
         return StakingError::InvalidInput;
@@ -1044,8 +1089,10 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
 
 Result<byte_string> StakingContract::precompile_change_commission(
     byte_string_view const input, evmc_address const &msg_sender,
-    evmc_uint256be const &)
+    evmc_uint256be const &msg_value)
 {
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
     constexpr size_t MESSAGE_SIZE =
         sizeof(u64_be) /* validator id */ + sizeof(u256_be) /* commission */;
     if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {

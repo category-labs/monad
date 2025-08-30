@@ -55,6 +55,7 @@ enum class StakingError
     InvalidEpochChange,
     RequiresAuthAddress,
     CommissionTooHigh,
+    ValueNonZero,
 };
 
 MONAD_STAKING_NAMESPACE_END

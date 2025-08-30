@@ -65,6 +65,7 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
         {StakingError::InvalidEpochChange, "invalid epoch change", {}},
         {StakingError::RequiresAuthAddress, "requires auth address", {}},
         {StakingError::CommissionTooHigh, "commission too high", {}},
+        {StakingError::ValueNonZero, "value is nonzero", {}},
     };
 
     return v;

@@ -682,9 +682,9 @@ TEST_F(Stake, validator_changes_commission)
         total_rewards - auth_running_rewards);
 }
 
-/////////////////////
-// add_validator unit tests
-/////////////////////
+////////////////////////////
+// Input Validation Tests //
+////////////////////////////
 
 TEST_F(Stake, add_validator_revert_invalid_input_size)
 {
@@ -766,6 +766,60 @@ TEST_F(Stake, add_validator_revert_minimum_stake_not_met)
     auto const res = contract.precompile_add_validator(input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InsufficientStake);
 }
+
+TEST_F(Stake, nonpayable_functions_revert)
+{
+    evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
+    EXPECT_EQ(
+        contract.precompile_undelegate({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_compound({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_withdraw({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_claim_rewards({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_change_commission({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_validator({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_delegator({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_withdrawal_request({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_consensus_valset({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_snapshot_valset({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_execution_valset({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_validators_for_delegator({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_delegators_for_validator({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_epoch({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+}
+
+/////////////////////////
+// Add Validator Tests //
+/////////////////////////
 
 TEST_F(Stake, add_validator_sufficent_balance)
 {

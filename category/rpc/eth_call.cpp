@@ -34,7 +34,6 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -49,6 +48,7 @@
 #include <category/mpt/util.hpp>
 #include <category/rpc/eth_call.h>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>

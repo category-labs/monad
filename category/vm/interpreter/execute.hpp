@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -23,7 +24,7 @@
 
 namespace monad::vm::interpreter
 {
-    void execute(
-        evmc_revision, runtime::Context &, Intercode const &,
-        std::uint8_t *stack_ptr);
+    template <Traits traits>
+    void
+    execute(runtime::Context &, Intercode const &, std::uint8_t *stack_ptr);
 }

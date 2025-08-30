@@ -19,7 +19,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/chain.hpp>
 

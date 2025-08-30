@@ -18,6 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/runtime/bin.hpp>
 
@@ -36,6 +37,7 @@
 
 namespace fs = std::filesystem;
 
+using monad::EvmChain;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::test;
@@ -262,7 +264,7 @@ TEST_F(EvmTest, NativeCodeSizeOutOfBound)
     }
     bytecode.push_back(JUMPDEST);
     auto icode = make_shared_intercode(bytecode);
-    auto ncode = vm_.compiler().compile(EVMC_CANCUN, icode, config);
+    auto ncode = vm_.compiler().compile<EvmChain<EVMC_CANCUN>>(icode, config);
     ASSERT_GT(
         ncode->code_size_estimate_before_error(),
         *config.max_code_size_offset + n_jumpi * 32);
@@ -286,7 +288,8 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     std::vector<uint8_t> bytecode1{base_bytecode};
     bytecode1.push_back(JUMPDEST);
     auto const icode1 = make_shared_intercode(bytecode1);
-    auto const ncode1 = vm_.compiler().compile(EVMC_CANCUN, icode1, config);
+    auto const ncode1 =
+        vm_.compiler().compile<EvmChain<EVMC_CANCUN>>(icode1, config);
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
@@ -304,7 +307,8 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     bytecode2.push_back(PUSH0);
     bytecode2.push_back(JUMPDEST);
     auto const icode2 = make_shared_intercode(bytecode2);
-    auto const ncode2 = vm_.compiler().compile(EVMC_CANCUN, icode2, config);
+    auto const ncode2 =
+        vm_.compiler().compile<EvmChain<EVMC_CANCUN>>(icode2, config);
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
@@ -342,7 +346,8 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     std::vector<uint8_t> bytecode1{base_bytecode};
     bytecode1.push_back(JUMPDEST);
     auto const icode1 = make_shared_intercode(bytecode1);
-    auto const ncode1 = vm_.compiler().compile(EVMC_CANCUN, icode1, config);
+    auto const ncode1 =
+        vm_.compiler().compile<EvmChain<EVMC_CANCUN>>(icode1, config);
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
@@ -360,7 +365,8 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     bytecode2.push_back(POP);
     bytecode2.push_back(JUMPDEST);
     auto const icode2 = make_shared_intercode(bytecode2);
-    auto const ncode2 = vm_.compiler().compile(EVMC_CANCUN, icode2, config);
+    auto const ncode2 =
+        vm_.compiler().compile<EvmChain<EVMC_CANCUN>>(icode2, config);
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
@@ -405,7 +411,7 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
     std::vector<uint8_t> const code(
         {0x63, 0x0f, 0xff, 0xff, 0xff, 0x63, 0x0f, 0xff, 0xff, 0xff, 0xfd});
     auto const icode = make_shared_intercode(code);
-    auto const ncode = vm.compiler().compile(EVMC_CANCUN, icode);
+    auto const ncode = vm.compiler().compile<EvmChain<EVMC_CANCUN>>(icode);
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
     vm.execute_native_entrypoint_raw(

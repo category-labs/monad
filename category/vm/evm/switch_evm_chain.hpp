@@ -15,6 +15,8 @@
 
 #pragma once
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+
 #include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
@@ -38,8 +40,9 @@
     case EVMC_ISTANBUL:                                                        \
         return f<::monad::EvmChain<EVMC_ISTANBUL>>(__VA_ARGS__);               \
     case EVMC_PETERSBURG:                                                      \
-    case EVMC_CONSTANTINOPLE:                                                  \
         return f<::monad::EvmChain<EVMC_PETERSBURG>>(__VA_ARGS__);             \
+    case EVMC_CONSTANTINOPLE:                                                  \
+        return f<::monad::EvmChain<EVMC_CONSTANTINOPLE>>(__VA_ARGS__);         \
     case EVMC_BYZANTIUM:                                                       \
         return f<::monad::EvmChain<EVMC_BYZANTIUM>>(__VA_ARGS__);              \
     case EVMC_SPURIOUS_DRAGON:                                                 \
@@ -53,3 +56,5 @@
     default:                                                                   \
         break;                                                                 \
     }
+
+// NOLINTEND(bugprone-macro-parentheses)

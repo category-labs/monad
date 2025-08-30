@@ -18,7 +18,9 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/host.hpp>
+#include <category/vm/interpreter/execute.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/utils/debug.hpp>
 
@@ -156,34 +158,38 @@ namespace monad::vm
         /// Execute varcode. The function will execute the nativecode in
         /// the varcode if set. Otherwise execute the intercode with
         /// interpreter and potentially start async compilation.
+        template <Traits traits>
         evmc::Result execute(
-            evmc_revision, runtime::ChainParams const &, Host &,
-            evmc_message const *, evmc::bytes32 const &code_hash,
-            SharedVarcode const &);
+            runtime::ChainParams const &params, Host &host,
+            evmc_message const *msg, evmc::bytes32 const &code_hash,
+            SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
+        template <Traits traits>
         evmc::Result execute_bytecode(
-            evmc_revision, runtime::ChainParams const &, Host &,
-            evmc_message const *, std::span<uint8_t const> code);
+            runtime::ChainParams const &params, Host &host,
+            evmc_message const *msg, std::span<uint8_t const> code);
 
         /// Like `execute`, but without stack unwind support.
+        template <Traits traits>
         evmc::Result execute_raw(
-            evmc_revision, runtime::ChainParams const &,
-            evmc_host_interface const *, evmc_host_context *,
-            evmc_message const *, evmc::bytes32 const &code_hash,
-            SharedVarcode const &);
+            runtime::ChainParams const &params, evmc_host_interface const *host,
+            evmc_host_context *host_ctx, evmc_message const *msg,
+            evmc::bytes32 const &code_hash, SharedVarcode const &vcode);
 
         /// Like `execute_bytecode`, but without stack unwind support.
+        template <Traits traits>
         evmc::Result execute_bytecode_raw(
-            evmc_revision, runtime::ChainParams const &,
-            evmc_host_interface const *, evmc_host_context *,
-            evmc_message const *, std::span<uint8_t const> code);
+            runtime::ChainParams const &params, evmc_host_interface const *host,
+            evmc_host_context *host_ctx, evmc_message const *msg,
+            std::span<uint8_t const> code);
 
         /// Execute with interpreter, without stack unwind support.
+        template <Traits traits>
         evmc::Result execute_intercode_raw(
-            evmc_revision, runtime::ChainParams const &,
-            evmc_host_interface const *, evmc_host_context *,
-            evmc_message const *, SharedIntercode const &);
+            runtime::ChainParams const &params, evmc_host_interface const *host,
+            evmc_host_context *host_ctx, evmc_message const *msg,
+            SharedIntercode const &icode);
 
         /// Execute the entrypoint, without stack unwind support.
         evmc::Result execute_native_entrypoint_raw(
@@ -208,15 +214,18 @@ namespace monad::vm
         }
 
     private:
+        template <Traits traits>
         evmc::Result execute_impl(
-            evmc_revision, runtime::Context &, evmc::bytes32 const &code_hash,
-            SharedVarcode const &);
+            runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
+            SharedVarcode const &vcode);
 
+        template <Traits traits>
         evmc::Result execute_bytecode_impl(
-            evmc_revision, runtime::Context &, std::span<uint8_t const> code);
+            runtime::Context &rt_ctx, std::span<uint8_t const> code);
 
+        template <Traits traits>
         evmc::Result execute_intercode_impl(
-            evmc_revision, runtime::Context &, SharedIntercode const &);
+            runtime::Context &rt_ctx, SharedIntercode const &icode);
 
         evmc::Result execute_native_entrypoint_impl(
             runtime::Context &, compiler::native::entrypoint_t);

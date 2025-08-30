@@ -17,6 +17,7 @@
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
 
@@ -32,17 +33,19 @@ namespace monad::vm::compiler::native
     /**
      * Compile the given contract and add it to JitRuntime.
      */
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile(
         asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
-        interpreter::code_size_t contract_code_size, evmc_revision rev,
+        interpreter::code_size_t contract_code_size,
         CompilerConfig const & = {});
 
     /**
      * Compile given IR and add it to the JitRuntime.
      */
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
-        evmc_revision rev, asmjit::JitRuntime &rt,
-        basic_blocks::BasicBlocksIR const &ir, CompilerConfig const & = {});
+        asmjit::JitRuntime &rt, basic_blocks::BasicBlocksIR const &ir,
+        CompilerConfig const & = {});
 
     /**
      * Upper bound on (estimated) native contract size in bytes.

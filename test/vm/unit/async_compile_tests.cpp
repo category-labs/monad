@@ -16,6 +16,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -34,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
 
@@ -61,7 +63,8 @@ namespace
 
 TEST(async_compile_test, stress)
 {
-    constexpr evmc_revision R = EVMC_CANCUN;
+    using traits = EvmChain<EVMC_CANCUN>;
+
     constexpr size_t P = 10;
     constexpr size_t L = 120;
     constexpr size_t N = L * 12;
@@ -69,7 +72,7 @@ TEST(async_compile_test, stress)
     Compiler compiler{true, L};
 
     auto first_start_time = std::chrono::steady_clock::now();
-    compiler.compile(R, make_shared_intercode(test_code(2 * N)));
+    compiler.compile<traits>(make_shared_intercode(test_code(2 * N)));
     auto first_end_time = std::chrono::steady_clock::now();
     auto compile_time_estimate = first_end_time - first_start_time;
 
@@ -84,7 +87,7 @@ TEST(async_compile_test, stress)
                 auto code = test_code(index);
                 auto hash = test_hash(index);
                 auto icode = make_shared_intercode(std::move(code));
-                if (compiler.async_compile(R, hash, icode)) {
+                if (compiler.async_compile<traits>(hash, icode)) {
                     auto [_, inserted] = producer_set.insert(index);
                     ASSERT_TRUE(inserted);
                 }
@@ -132,7 +135,7 @@ TEST(async_compile_test, disable)
         auto const hash = test_hash(i);
         auto const icode = make_shared_intercode(std::move(code));
 
-        ASSERT_TRUE(compiler.async_compile(EVMC_PRAGUE, hash, icode));
+        ASSERT_TRUE(compiler.async_compile<EvmChain<EVMC_PRAGUE>>(hash, icode));
     }
 
     compiler.debug_wait_for_empty_queue();

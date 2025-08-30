@@ -25,7 +25,7 @@
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <evmc/evmc.h>

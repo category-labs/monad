@@ -59,8 +59,8 @@ namespace
         auto const ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
             monad::vm::compiler::basic_blocks::unsafe_make_ir<traits>(
                 bytecode));
-        return monad::vm::compiler::native::compile_basic_blocks(
-            traits::evm_rev(), rt, ir, config);
+        return monad::vm::compiler::native::compile_basic_blocks<traits>(
+            rt, ir, config);
     }
 
     // NOTE/TODO: Copied verbatim from emitter_tests.cpp. Might be

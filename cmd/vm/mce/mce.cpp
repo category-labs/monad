@@ -217,11 +217,11 @@ int mce_main(arguments const &args)
     std::shared_ptr<native::Nativecode> const ncode = [&]() {
         if (args.instrument_compile) {
             InstrumentableCompiler<true> compiler(rt, config);
-            return compiler.compile(traits::evm_rev(), *ir, device);
+            return compiler.compile<traits>(*ir, device);
         }
         else {
             InstrumentableCompiler<false> compiler(rt, config);
-            return compiler.compile(traits::evm_rev(), *ir, device);
+            return compiler.compile<traits>(*ir, device);
         }
     }();
 
@@ -233,11 +233,11 @@ int mce_main(arguments const &args)
     evmc::Result const result = [&]() {
         if (args.instrument_execute) {
             InstrumentableVM<true> vm(rt);
-            return vm.execute(traits::evm_rev(), ncode->entrypoint(), device);
+            return vm.execute<traits>(ncode->entrypoint(), device);
         }
         else {
             InstrumentableVM<false> vm(rt);
-            return vm.execute(traits::evm_rev(), ncode->entrypoint(), device);
+            return vm.execute<traits>(ncode->entrypoint(), device);
         }
     }();
 

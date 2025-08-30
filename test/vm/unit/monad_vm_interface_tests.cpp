@@ -268,7 +268,7 @@ TEST(MonadVmInterface, compile)
     auto [bytecode1, hash1] = make_bytecode(1);
     auto icode1 = make_shared_intercode(bytecode1);
 
-    auto ncode1 = vm.compiler().compile(EVMC_FRONTIER, icode1);
+    auto ncode1 = vm.compiler().compile<EvmChain<EVMC_FRONTIER>>(icode1);
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
@@ -288,7 +288,8 @@ TEST(MonadVmInterface, cached_compile)
     auto [bytecode1, hash1] = make_bytecode(1);
     auto icode1 = make_shared_intercode(bytecode1);
 
-    auto ncode1 = vm.compiler().cached_compile(EVMC_FRONTIER, hash1, icode1);
+    auto ncode1 =
+        vm.compiler().cached_compile<EvmChain<EVMC_FRONTIER>>(hash1, icode1);
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
@@ -312,7 +313,8 @@ TEST(MonadVmInterface, async_compile)
         auto [bytecode1, hash1] = make_bytecode(1);
         auto icode1 = make_shared_intercode(bytecode1);
 
-        ASSERT_TRUE(vm.compiler().async_compile(EVMC_FRONTIER, hash1, icode1));
+        ASSERT_TRUE(vm.compiler().async_compile<EvmChain<EVMC_FRONTIER>>(
+            hash1, icode1));
         vm.compiler().debug_wait_for_empty_queue();
 
         auto vcode1 = vm.find_varcode(hash1);
@@ -355,8 +357,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_bytecode_raw(
-        EVMC_FRONTIER,
+    auto result = vm.execute_bytecode_raw<EvmChain<EVMC_FRONTIER>>(
         {.max_initcode_size = 0xC000},
         &host.get_interface(),
         host.to_context(),
@@ -378,8 +379,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_intercode_raw(
-        EVMC_FRONTIER,
+    auto result = vm.execute_intercode_raw<EvmChain<EVMC_FRONTIER>>(
         {.max_initcode_size = 0xC000},
         &host.get_interface(),
         host.to_context(),
@@ -397,7 +397,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
-    auto ncode0 = vm.compiler().compile(EVMC_FRONTIER, icode0);
+    auto ncode0 = vm.compiler().compile<EvmChain<EVMC_FRONTIER>>(icode0);
     auto entry0 = ncode0->entrypoint();
     ASSERT_NE(entry0, nullptr);
 
@@ -427,20 +427,21 @@ TEST(MonadVmInterface, execute_raw)
     static uint32_t const warm_kb_threshold = 1 << 10; // 1MB
     vm.compiler().set_varcode_cache_warm_kb_threshold(warm_kb_threshold);
 
-    auto execute_raw = [&](evmc_revision rev,
-                           evmc::bytes32 const &hash,
-                           SharedVarcode const &vcode) {
-        auto result = vm.execute_raw(
-            rev,
-            {.max_initcode_size = 0xC000},
-            &host.get_interface(),
-            host.to_context(),
-            &msg,
-            hash,
-            vcode);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
-        ASSERT_EQ(result.output_size, 0);
-    };
+    // First parameter is just to avoid explicitly using .template operator()
+    // when the lambda gets called.
+    auto execute_raw =
+        [&]<Traits traits>(
+            traits, evmc::bytes32 const &hash, SharedVarcode const &vcode) {
+            auto result = vm.execute_raw<traits>(
+                {.max_initcode_size = 0xC000},
+                &host.get_interface(),
+                host.to_context(),
+                &msg,
+                hash,
+                vcode);
+            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(result.output_size, 0);
+        };
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
@@ -452,7 +453,7 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter on cold cache
-    execute_raw(EVMC_FRONTIER, hash0, vcode0);
+    execute_raw(EvmChain<EVMC_FRONTIER>{}, hash0, vcode0);
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -468,12 +469,12 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode on cold cache
-    execute_raw(EVMC_FRONTIER, hash0, compiled_vcode0.value());
+    execute_raw(EvmChain<EVMC_FRONTIER>{}, hash0, compiled_vcode0.value());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter because of revision change
-    execute_raw(EVMC_SHANGHAI, hash0, compiled_vcode0.value());
+    execute_raw(EvmChain<EVMC_SHANGHAI>{}, hash0, compiled_vcode0.value());
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -493,7 +494,7 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode after revision change
-    execute_raw(EVMC_SHANGHAI, hash0, re_compiled_vcode0.value());
+    execute_raw(EvmChain<EVMC_SHANGHAI>{}, hash0, re_compiled_vcode0.value());
 
     auto [noncompiling_bytecode, noncompiling_hash] =
         make_bytecode_with_compilation_failure();
@@ -507,7 +508,8 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter on cold cache
-    execute_raw(EVMC_SHANGHAI, noncompiling_hash, noncompiling_vcode);
+    execute_raw(
+        EvmChain<EVMC_SHANGHAI>{}, noncompiling_hash, noncompiling_vcode);
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -527,7 +529,9 @@ TEST(MonadVmInterface, execute_raw)
 
     // Execute with interpreter after failed compliation
     execute_raw(
-        EVMC_SHANGHAI, noncompiling_hash, attempted_noncompiling_vcode.value());
+        EvmChain<EVMC_SHANGHAI>{},
+        noncompiling_hash,
+        attempted_noncompiling_vcode.value());
 
     // Warm up cache
     for (uint32_t i = 1; i <= warm_kb_threshold / 3; ++i) {
@@ -547,7 +551,7 @@ TEST(MonadVmInterface, execute_raw)
 
     // Execute with interpreter on warm cache until compilation is started.
     do {
-        execute_raw(EVMC_SHANGHAI, warm_hash, warm_vcode);
+        execute_raw(EvmChain<EVMC_SHANGHAI>{}, warm_hash, warm_vcode);
         vm.compiler().debug_wait_for_empty_queue();
     }
     while (warm_vcode->get_intercode_gas_used() < *compile_threshold);
@@ -566,7 +570,8 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode on warm cache
-    execute_raw(EVMC_SHANGHAI, warm_hash, compiled_warm_vcode.value());
+    execute_raw(
+        EvmChain<EVMC_SHANGHAI>{}, warm_hash, compiled_warm_vcode.value());
 }
 
 TEST(MonadVmInterface, execute)
@@ -585,13 +590,8 @@ TEST(MonadVmInterface, execute)
             ethash::keccak256(bytecode.data(), bytecode.size()));
         auto icode = make_shared_intercode(bytecode);
         auto vcode = vm.try_insert_varcode(hash, icode);
-        auto result = vm.execute(
-            EVMC_PRAGUE,
-            {.max_initcode_size = 0xC000},
-            host,
-            &msg,
-            hash,
-            vcode);
+        auto result = vm.execute<EvmChain<EVMC_PRAGUE>>(
+            {.max_initcode_size = 0xC000}, host, &msg, hash, vcode);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
@@ -608,22 +608,13 @@ TEST(MonadVmInterface, execute)
             auto vcode = vm.try_insert_varcode(hash, icode);
             ASSERT_EQ(vcode->intercode(), icode);
             ASSERT_EQ(vcode->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host) {
-                              return vm.execute(
-                                  EVMC_PRAGUE,
-                                  {.max_initcode_size = 0xC000},
-                                  host,
-                                  &msg,
-                                  hash,
-                                  vcode);
-                          }};
-            vm.execute(
-                EVMC_PRAGUE,
-                {.max_initcode_size = 0xC000},
-                host,
-                &msg,
-                hash,
-                vcode);
+            HostMock host{
+                depth, [&](Host &host) {
+                    return vm.execute<EvmChain<EVMC_PRAGUE>>(
+                        {.max_initcode_size = 0xC000}, host, &msg, hash, vcode);
+                }};
+            vm.execute<EvmChain<EVMC_PRAGUE>>(
+                {.max_initcode_size = 0xC000}, host, &msg, hash, vcode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {
@@ -639,21 +630,15 @@ TEST(MonadVmInterface, execute)
             ASSERT_EQ(vcode.value()->intercode(), icode);
             ASSERT_NE(vcode.value()->nativecode(), nullptr);
             HostMock host{depth, [&](Host &host) {
-                              return vm.execute(
-                                  EVMC_PRAGUE,
+                              return vm.execute<EvmChain<EVMC_PRAGUE>>(
                                   {.max_initcode_size = 0xC000},
                                   host,
                                   &msg,
                                   hash,
                                   *vcode);
                           }};
-            vm.execute(
-                EVMC_PRAGUE,
-                {.max_initcode_size = 0xC000},
-                host,
-                &msg,
-                hash,
-                *vcode);
+            vm.execute<EvmChain<EVMC_PRAGUE>>(
+                {.max_initcode_size = 0xC000}, host, &msg, hash, *vcode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {
@@ -678,8 +663,8 @@ TEST(MonadVmInterface, execute_bytecode)
     {
         HostMock host{0, [&](Host &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
-        auto result = vm.execute_bytecode(
-            EVMC_PRAGUE, {.max_initcode_size = 0xC000}, host, &msg, bytecode);
+        auto result = vm.execute_bytecode<EvmChain<EVMC_PRAGUE>>(
+            {.max_initcode_size = 0xC000}, host, &msg, bytecode);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
@@ -689,20 +674,13 @@ TEST(MonadVmInterface, execute_bytecode)
 
     for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1024}) {
         try {
-            HostMock host{depth, [&](Host &host) {
-                              return vm.execute_bytecode(
-                                  EVMC_PRAGUE,
-                                  {.max_initcode_size = 0xC000},
-                                  host,
-                                  &msg,
-                                  bytecode);
-                          }};
-            vm.execute_bytecode(
-                EVMC_PRAGUE,
-                {.max_initcode_size = 0xC000},
-                host,
-                &msg,
-                bytecode);
+            HostMock host{
+                depth, [&](Host &host) {
+                    return vm.execute_bytecode<EvmChain<EVMC_PRAGUE>>(
+                        {.max_initcode_size = 0xC000}, host, &msg, bytecode);
+                }};
+            vm.execute_bytecode<EvmChain<EVMC_PRAGUE>>(
+                {.max_initcode_size = 0xC000}, host, &msg, bytecode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {

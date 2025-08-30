@@ -17,6 +17,7 @@
 
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/utils/log_utils.hpp>
 #include <category/vm/varcode_cache.hpp>
@@ -139,7 +140,11 @@ namespace monad::vm
     {
         using CompileJobMap = tbb::concurrent_hash_map<
             evmc::bytes32,
-            std::tuple<evmc_revision, SharedIntercode, CompilerConfig>,
+            std::tuple<
+                std::function<SharedNativecode(
+                    evmc::bytes32 const &, SharedIntercode const &,
+                    CompilerConfig const &)>,
+                uint64_t, SharedIntercode, CompilerConfig>,
             utils::Hash32Compare>;
         using CompileJobAccessor = CompileJobMap::accessor;
         using CompileJobQueue = tbb::concurrent_queue<evmc::bytes32>;
@@ -151,22 +156,24 @@ namespace monad::vm
         ~Compiler();
 
         /// Compile `Intercode` for `revision` and return compilation result.
-        SharedNativecode compile(
-            evmc_revision revision, SharedIntercode const &,
-            CompilerConfig const & = {});
+        template <Traits traits>
+        SharedNativecode
+        compile(SharedIntercode const &, CompilerConfig const & = {});
 
         /// Find nativecode in cache, else compile and add to cache.
+        template <Traits traits>
         SharedNativecode cached_compile(
-            evmc_revision revision, evmc::bytes32 const &code_hash,
-            SharedIntercode const &, CompilerConfig const & = {});
+            evmc::bytes32 const &code_hash, SharedIntercode const &,
+            CompilerConfig const & = {});
 
         /// Asynchronously compile intercode with given code hash for
         /// `revision`. Returns `true` if compile job was submitted.
         /// Returns `false` if the job was already submitted or there
         /// are too many compile jobs, so unable to submit the new job.
+        template <Traits traits>
         bool async_compile(
-            evmc_revision revision, evmc::bytes32 const &code_hash,
-            SharedIntercode const &, CompilerConfig const & = {});
+            evmc::bytes32 const &code_hash, SharedIntercode const &,
+            CompilerConfig const & = {});
 
         /// Lookup in the cache.
         std::optional<SharedVarcode>

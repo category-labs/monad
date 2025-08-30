@@ -18,8 +18,8 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <atomic>
@@ -58,36 +58,41 @@ namespace monad::vm
         compiler_thread_.join();
     }
 
+    template <Traits traits>
     SharedNativecode Compiler::compile(
-        evmc_revision rev, SharedIntercode const &icode,
-        CompilerConfig const &config)
+        SharedIntercode const &icode, CompilerConfig const &config)
     {
-        return compiler::native::compile(
-            asmjit_rt_, icode->code(), icode->code_size(), rev, config);
+        return compiler::native::compile<traits>(
+            asmjit_rt_, icode->code(), icode->code_size(), config);
     }
 
+    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::compile);
+
+    template <Traits traits>
     SharedNativecode Compiler::cached_compile(
-        evmc_revision rev, evmc::bytes32 const &code_hash,
-        SharedIntercode const &icode, CompilerConfig const &config)
+        evmc::bytes32 const &code_hash, SharedIntercode const &icode,
+        CompilerConfig const &config)
     {
         if (auto vcode = varcode_cache_.get(code_hash)) {
             auto const &ncode = (*vcode)->nativecode();
-            if (ncode != nullptr &&
-                ncode->chain_id() == revision_to_chain_id(rev)) {
+            if (ncode != nullptr && ncode->chain_id() == traits::id()) {
                 return ncode;
             }
         }
         auto const start = std::chrono::steady_clock::now();
-        auto ncode = compile(rev, icode, config);
+        auto ncode = compile<traits>(icode, config);
         auto const end = std::chrono::steady_clock::now();
         varcode_cache_.set(code_hash, icode, ncode);
         stats_.event_new_compiled_code_cached(icode, ncode, start, end);
         return ncode;
     }
 
+    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::cached_compile);
+
+    template <Traits traits>
     bool Compiler::async_compile(
-        evmc_revision rev, evmc::bytes32 const &code_hash,
-        SharedIntercode const &icode, CompilerConfig const &config)
+        evmc::bytes32 const &code_hash, SharedIntercode const &icode,
+        CompilerConfig const &config)
     {
         if (compile_job_map_.size() >= compile_job_soft_limit_) {
             return false;
@@ -100,7 +105,14 @@ namespace monad::vm
         // implying that the peak memory usage of the queued compile jobs will
         // be asymptotically the same as the peak memory usage of concurrently
         // executed bytecode.
-        if (!compile_job_map_.insert({code_hash, {rev, icode, config}})) {
+        auto const cached_compile_lambda = [this](auto &&...args) {
+            return this->cached_compile<traits>(
+                std::forward<decltype(args)>(args)...);
+        };
+
+        if (!compile_job_map_.insert(
+                {code_hash,
+                 {cached_compile_lambda, traits::id(), icode, config}})) {
             // The compile job was already submitted.
             return false;
         }
@@ -109,6 +121,8 @@ namespace monad::vm
         compile_job_cv_.notify_all();
         return true;
     }
+
+    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::async_compile);
 
     void Compiler::compile_loop()
     {
@@ -134,7 +148,7 @@ namespace monad::vm
             CompileJobAccessor acc;
             bool const find_ok = compile_job_map_.find(acc, code_hash);
             MONAD_VM_ASSERT(find_ok);
-            auto const &[revision, icode, config] = acc->second;
+            auto const &[compile_fn, chain_id, icode, config] = acc->second;
 
             if (MONAD_VM_LIKELY(enable_async_compilation_)) {
                 // It is possible that a new async compile request with the same
@@ -142,17 +156,14 @@ namespace monad::vm
                 // `compile_job_map_` below. Therefore we use `cached_compile`,
                 // because it first checks whether the intercode is already
                 // compiled.
-                (void)cached_compile(revision, code_hash, icode, config);
+                compile_fn(code_hash, icode, config);
             }
             else {
                 varcode_cache_.set(
                     code_hash,
                     icode,
                     std::make_shared<Nativecode>(
-                        asmjit_rt_,
-                        revision_to_chain_id(revision),
-                        nullptr,
-                        std::monostate{}));
+                        asmjit_rt_, chain_id, nullptr, std::monostate{}));
             }
 
             bool const erase_ok = compile_job_map_.erase(acc);

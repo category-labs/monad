@@ -21,9 +21,9 @@
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
-
-#include <evmc/evmc.h>
 
 #include <asmjit/core/jitruntime.h>
 
@@ -402,8 +402,46 @@ namespace
     }
 
     template <Traits traits>
+    std::shared_ptr<Nativecode> compile_contract(
+        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        code_size_t contract_code_size, CompilerConfig const &config)
+    {
+        auto ir =
+            basic_blocks::make_ir<traits>(contract_code, contract_code_size);
+        return compile_basic_blocks<traits>(rt, ir, config);
+    }
+}
+
+namespace monad::vm::compiler::native
+{
+    template <Traits traits>
+    std::shared_ptr<Nativecode> compile(
+        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        code_size_t contract_code_size, CompilerConfig const &config)
+    {
+        try {
+            return ::compile_contract<traits>(
+                rt, contract_code, contract_code_size, config);
+        }
+        catch (Emitter::Error const &e) {
+            LOG_ERROR("ERROR: X86 emitter: failed compile: {}", e.what());
+            return std::make_shared<Nativecode>(
+                rt, traits::id(), nullptr, std::monostate{});
+        }
+        catch (Nativecode::SizeEstimateOutOfBounds const &e) {
+            LOG_WARNING(
+                "WARNING: X86 emitter: native code out of bound: {}",
+                e.size_estimate);
+            return std::make_shared<Nativecode>(
+                rt, traits::id(), nullptr, e.size_estimate);
+        }
+    }
+
+    EXPLICIT_EVM_CHAIN(compile);
+
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
-        asmjit::JitRuntime &rt, BasicBlocksIR const &ir,
+        asmjit::JitRuntime &rt, basic_blocks::BasicBlocksIR const &ir,
         CompilerConfig const &config)
     {
         Emitter emit{rt, ir.codesize, config};
@@ -436,139 +474,5 @@ namespace
                 static_cast<uint32_t>(size_estimate)));
     }
 
-    template <Traits traits>
-    std::shared_ptr<Nativecode> compile_contract(
-        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
-        code_size_t contract_code_size, CompilerConfig const &config)
-    {
-        auto ir =
-            basic_blocks::make_ir<traits>(contract_code, contract_code_size);
-        return compile_basic_blocks<traits>(rt, ir, config);
-    }
-}
-
-namespace monad::vm::compiler::native
-{
-    std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
-        code_size_t contract_code_size, evmc_revision rev,
-        CompilerConfig const &config)
-    {
-        try {
-            switch (rev) {
-            case EVMC_FRONTIER:
-                return ::compile_contract<EvmChain<EVMC_FRONTIER>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_HOMESTEAD:
-                return ::compile_contract<EvmChain<EVMC_HOMESTEAD>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_TANGERINE_WHISTLE:
-                return ::compile_contract<EvmChain<EVMC_TANGERINE_WHISTLE>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_SPURIOUS_DRAGON:
-                return ::compile_contract<EvmChain<EVMC_SPURIOUS_DRAGON>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_BYZANTIUM:
-                return ::compile_contract<EvmChain<EVMC_BYZANTIUM>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_CONSTANTINOPLE:
-                return ::compile_contract<EvmChain<EVMC_CONSTANTINOPLE>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_PETERSBURG:
-                return ::compile_contract<EvmChain<EVMC_PETERSBURG>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_ISTANBUL:
-                return ::compile_contract<EvmChain<EVMC_ISTANBUL>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_BERLIN:
-                return ::compile_contract<EvmChain<EVMC_BERLIN>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_LONDON:
-                return ::compile_contract<EvmChain<EVMC_LONDON>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_PARIS:
-                return ::compile_contract<EvmChain<EVMC_PARIS>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_SHANGHAI:
-                return ::compile_contract<EvmChain<EVMC_SHANGHAI>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_CANCUN:
-                return ::compile_contract<EvmChain<EVMC_CANCUN>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_PRAGUE:
-                return ::compile_contract<EvmChain<EVMC_PRAGUE>>(
-                    rt, contract_code, contract_code_size, config);
-            case EVMC_OSAKA:
-                return ::compile_contract<EvmChain<EVMC_OSAKA>>(
-                    rt, contract_code, contract_code_size, config);
-            default:
-                MONAD_VM_ASSERT(false);
-            }
-        }
-        catch (Emitter::Error const &e) {
-            LOG_ERROR("ERROR: X86 emitter: failed compile: {}", e.what());
-            return std::make_shared<Nativecode>(
-                rt, revision_to_chain_id(rev), nullptr, std::monostate{});
-        }
-        catch (Nativecode::SizeEstimateOutOfBounds const &e) {
-            LOG_WARNING(
-                "WARNING: X86 emitter: native code out of bound: {}",
-                e.size_estimate);
-            return std::make_shared<Nativecode>(
-                rt, revision_to_chain_id(rev), nullptr, e.size_estimate);
-        }
-    }
-
-    std::shared_ptr<Nativecode> compile_basic_blocks(
-        evmc_revision rev, asmjit::JitRuntime &rt,
-        basic_blocks::BasicBlocksIR const &ir, CompilerConfig const &config)
-    {
-        switch (rev) {
-        case EVMC_FRONTIER:
-            return ::compile_basic_blocks<EvmChain<EVMC_FRONTIER>>(
-                rt, ir, config);
-        case EVMC_HOMESTEAD:
-            return ::compile_basic_blocks<EvmChain<EVMC_HOMESTEAD>>(
-                rt, ir, config);
-        case EVMC_TANGERINE_WHISTLE:
-            return ::compile_basic_blocks<EvmChain<EVMC_TANGERINE_WHISTLE>>(
-                rt, ir, config);
-        case EVMC_SPURIOUS_DRAGON:
-            return ::compile_basic_blocks<EvmChain<EVMC_SPURIOUS_DRAGON>>(
-                rt, ir, config);
-        case EVMC_BYZANTIUM:
-            return ::compile_basic_blocks<EvmChain<EVMC_BYZANTIUM>>(
-                rt, ir, config);
-        case EVMC_CONSTANTINOPLE:
-            return ::compile_basic_blocks<EvmChain<EVMC_CONSTANTINOPLE>>(
-                rt, ir, config);
-        case EVMC_PETERSBURG:
-            return ::compile_basic_blocks<EvmChain<EVMC_PETERSBURG>>(
-                rt, ir, config);
-        case EVMC_ISTANBUL:
-            return ::compile_basic_blocks<EvmChain<EVMC_ISTANBUL>>(
-                rt, ir, config);
-        case EVMC_BERLIN:
-            return ::compile_basic_blocks<EvmChain<EVMC_BERLIN>>(
-                rt, ir, config);
-        case EVMC_LONDON:
-            return ::compile_basic_blocks<EvmChain<EVMC_LONDON>>(
-                rt, ir, config);
-        case EVMC_PARIS:
-            return ::compile_basic_blocks<EvmChain<EVMC_PARIS>>(rt, ir, config);
-        case EVMC_SHANGHAI:
-            return ::compile_basic_blocks<EvmChain<EVMC_SHANGHAI>>(
-                rt, ir, config);
-        case EVMC_CANCUN:
-            return ::compile_basic_blocks<EvmChain<EVMC_CANCUN>>(
-                rt, ir, config);
-        case EVMC_PRAGUE:
-            return ::compile_basic_blocks<EvmChain<EVMC_PRAGUE>>(
-                rt, ir, config);
-        case EVMC_OSAKA:
-            return ::compile_basic_blocks<EvmChain<EVMC_OSAKA>>(rt, ir, config);
-        default:
-            MONAD_VM_ASSERT(false);
-        }
-    }
+    EXPLICIT_EVM_CHAIN(compile_basic_blocks);
 }

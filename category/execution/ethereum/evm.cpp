@@ -24,7 +24,7 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
-#include <category/execution/ethereum/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/chain.hpp>
@@ -255,8 +255,7 @@ evmc::Result create(
         .code_size = 0,
     };
 
-    auto result = state.vm().execute_bytecode(
-        traits::evm_rev(),
+    auto result = state.vm().execute_bytecode<traits>(
         host->get_chain_params(),
         *host,
         &m_call,
@@ -320,13 +319,8 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     else {
         auto const hash = state.get_code_hash(msg.code_address);
         auto const &code = state.read_code(hash);
-        result = state.vm().execute(
-            traits::evm_rev(),
-            host->get_chain_params(),
-            *host,
-            &msg,
-            hash,
-            code);
+        result = state.vm().execute<traits>(
+            host->get_chain_params(), *host, &msg, hash, code);
     }
 
     post_call(state, result);

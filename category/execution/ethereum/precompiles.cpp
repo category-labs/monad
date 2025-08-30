@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
 #include <silkpre/precompile.h>

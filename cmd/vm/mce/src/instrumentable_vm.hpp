@@ -18,6 +18,7 @@
 
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
 #include <category/vm/runtime/allocator.hpp>
 
 #include <asmjit/x86.h>
@@ -65,21 +66,21 @@ public:
     {
     }
 
-    evmc::Result execute(
-        evmc_revision rev, native::entrypoint_t entry,
-        InstrumentationDevice const device)
+    template <monad::Traits traits>
+    evmc::Result
+    execute(native::entrypoint_t entry, InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
-            return execute<InstrumentationDevice::Cachegrind>(rev, entry);
+            return execute<traits, InstrumentationDevice::Cachegrind>(entry);
         case InstrumentationDevice::WallClock:
-            return execute<InstrumentationDevice::WallClock>(rev, entry);
+            return execute<traits, InstrumentationDevice::WallClock>(entry);
         }
         std::unreachable();
     }
 
-    template <InstrumentationDevice device>
-    evmc::Result execute(evmc_revision rev, native::entrypoint_t entry)
+    template <monad::Traits traits, InstrumentationDevice device>
+    evmc::Result execute(native::entrypoint_t entry)
     {
         MONAD_VM_ASSERT(entry != nullptr);
         using namespace evmone::state;
@@ -108,7 +109,7 @@ public:
         auto hashes = evmone::test::TestBlockHashes{};
         auto tx = Transaction{};
 
-        auto host = Host(rev, vm, evm_state, block, hashes, tx);
+        auto host = Host(traits::evm_rev(), vm, evm_state, block, hashes, tx);
 
         auto const *interface = &host.get_interface();
         auto *context = host.to_context();

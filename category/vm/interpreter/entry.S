@@ -19,7 +19,7 @@ monad_vm_interpreter_trampoline:
     // trampoline is the return address of the interpreter loop. Stack
     // backtraces will deterministically end at the trampoline like this,
     // because the trampoline is not in the `.eh_frame` unwind table.
-    call monad_vm_interpreter_core_loop
+    call *%r8
     int3 // unreachable
 .size monad_vm_interpreter_trampoline, .-monad_vm_interpreter_trampoline
 .section .note.GNU-stack,"",@progbits

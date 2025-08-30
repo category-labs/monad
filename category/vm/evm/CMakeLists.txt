@@ -21,8 +21,10 @@ target_sources(monad-vm-evm PRIVATE
     "chain.hpp"
     "delegation.cpp"
     "delegation.hpp"
+    "explicit_evm_chain.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
+    "switch_evm_chain.hpp"
 )
 
 target_include_directories(monad-vm-evm

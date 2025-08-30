@@ -18,6 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
@@ -65,7 +66,11 @@ namespace monad::vm::compiler::test
         auto icode = make_shared_intercode(code);
 
         if (impl == Compiler) {
-            auto ncode = vm_.compiler().compile(rev_, icode);
+            auto ncode = [&, rev = rev_] {
+                SWITCH_EVM_CHAIN(vm_.compiler().compile, icode);
+                MONAD_VM_ASSERT(false);
+            }();
+
             ASSERT_TRUE(ncode->entrypoint() != nullptr);
             result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
                 chain_params,
@@ -76,13 +81,16 @@ namespace monad::vm::compiler::test
                 ncode->entrypoint())};
         }
         else if (impl == Interpreter) {
-            result_ = evmc::Result{vm_.execute_intercode_raw(
-                rev_,
-                chain_params,
-                &host_.get_interface(),
-                host_.to_context(),
-                &msg_,
-                icode)};
+            result_ = evmc::Result{[&, rev = rev_] {
+                SWITCH_EVM_CHAIN(
+                    vm_.execute_intercode_raw,
+                    chain_params,
+                    &host_.get_interface(),
+                    host_.to_context(),
+                    &msg_,
+                    icode);
+                MONAD_VM_ASSERT(false);
+            }()};
         }
         else {
             MONAD_VM_ASSERT(impl == Evmone);

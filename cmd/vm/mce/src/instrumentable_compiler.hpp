@@ -21,6 +21,8 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
@@ -41,44 +43,45 @@ public:
     {
     }
 
+    template <monad::Traits traits>
     std::shared_ptr<monad::vm::compiler::native::Nativecode> compile(
-        evmc_revision rev,
         monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir,
         InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
-            return compile<InstrumentationDevice::Cachegrind>(rev, ir);
+            return compile<traits, InstrumentationDevice::Cachegrind>(ir);
         case InstrumentationDevice::WallClock:
-            return compile<InstrumentationDevice::WallClock>(rev, ir);
+            return compile<traits, InstrumentationDevice::WallClock>(ir);
         }
         std::unreachable();
     }
 
-    template <InstrumentationDevice device>
-    std::shared_ptr<monad::vm::compiler::native::Nativecode> compile(
-        evmc_revision rev,
-        monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir)
+    template <monad::Traits traits, InstrumentationDevice device>
+    std::shared_ptr<monad::vm::compiler::native::Nativecode>
+    compile(monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir)
     {
         if constexpr (instrument) {
             if constexpr (device == InstrumentationDevice::Cachegrind) {
                 CACHEGRIND_START_INSTRUMENTATION;
-                auto ans = monad::vm::compiler::native::compile_basic_blocks(
-                    rev, rt_, ir, config_);
+                auto ans =
+                    monad::vm::compiler::native::compile_basic_blocks<traits>(
+                        rt_, ir, config_);
                 CACHEGRIND_STOP_INSTRUMENTATION;
                 return ans;
             }
             else {
                 timer.start();
-                auto ans = monad::vm::compiler::native::compile_basic_blocks(
-                    rev, rt_, ir, config_);
+                auto ans =
+                    monad::vm::compiler::native::compile_basic_blocks<traits>(
+                        rt_, ir, config_);
                 timer.pause();
                 return ans;
             }
         }
         else {
-            return monad::vm::compiler::native::compile_basic_blocks(
-                rev, rt_, ir, config_);
+            return monad::vm::compiler::native::compile_basic_blocks<traits>(
+                rt_, ir, config_);
         }
     }
 

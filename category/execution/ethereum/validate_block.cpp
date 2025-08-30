@@ -22,8 +22,8 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/explicit_evm_chain.hpp>
-#include <category/execution/ethereum/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 

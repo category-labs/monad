@@ -603,6 +603,78 @@ TEST_P(StakeCommission, validator_has_commission)
         expected_commission + expected_delegator_reward);
 }
 
+TEST_F(Stake, validator_changes_commission)
+{
+    uint256_t const starting_commission = MON / 20; // 5% commission
+    auto const auth_address = 0xdeadbeef_address;
+    auto const delegator = 0xde1e_address;
+
+    auto const res = add_validator(
+        auth_address, ACTIVE_VALIDATOR_STAKE, starting_commission);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    // Create another delegator with 90% of this stake for the validator pool.
+    // Otherwise, the auth delegator gets all the commission and this doesn't
+    // test anything.
+    EXPECT_FALSE(
+        delegate(val.id, delegator, 9 * ACTIVE_VALIDATOR_STAKE).has_error());
+
+    skip_to_next_epoch();
+
+    // change validator's commission. this won't go live until the next epoch.
+    uint256_t const new_commission = MON / 5; // 20%
+    EXPECT_FALSE(
+        change_commission(val.id, auth_address, new_commission).has_error());
+
+    // reward this epoch, before and after the boundary, to verify both
+    // consensus and snapshot views use the starting commission.
+    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+
+    // auth address has 5% commission and 10% of stake pool. Note that stake
+    // pool rewards are applied after the commission, so he gets two rewards at
+    // 14.5% each.
+    //
+    // if the auth has stake `S` and commission `C`, both expressed as percents,
+    // the reward including commission is: C+S(1−C)
+    uint256_t total_rewards = 2 * REWARD;
+    uint256_t auth_running_rewards = REWARD * 29 / 100;
+    pull_delegator_up_to_date(val.id, auth_address);
+    pull_delegator_up_to_date(val.id, delegator);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        auth_running_rewards);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, delegator).rewards().load().native(),
+        total_rewards - auth_running_rewards);
+
+    // next epoch, new commission is live.
+    EXPECT_FALSE(
+        syscall_on_epoch_change(contract.vars.epoch.load().native() + 1)
+            .has_error());
+
+    // reward before and after the boundary again. uses the new commission.
+    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+
+    // auth address has 20% commission and 10% of stake pool. He gets 28%
+    // commission per call (see the comment in the first epoch reward), or 56%
+    // of one reward for both.
+    total_rewards += 2 * REWARD;
+    auth_running_rewards += REWARD * 56 / 100;
+    pull_delegator_up_to_date(val.id, auth_address);
+    pull_delegator_up_to_date(val.id, delegator);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        auth_running_rewards);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, delegator).rewards().load().native(),
+        total_rewards - auth_running_rewards);
+}
+
 /////////////////////
 // add_validator unit tests
 /////////////////////

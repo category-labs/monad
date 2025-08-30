@@ -128,35 +128,30 @@ class ReadValsetBeforeBoundary : public ReadValsetBase
 
 TEST_F(ReadValsetBeforeBoundary, get_this_epoch_valset)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
-    EXPECT_TRUE(success);
-    EXPECT_EQ(set.size(), CONSENSUS_VALSET_LENGTH);
-    for (auto const &validator : set) {
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
+    ASSERT_TRUE(set.has_value());
+    EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
+    for (auto const &validator : set.value()) {
         EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), CONSENSUS_STAKE);
     }
 }
 
 TEST_F(ReadValsetBeforeBoundary, get_next_epoch_valset)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
-
-    // this is expected to fail since the boundary hasn't happened
-    EXPECT_FALSE(success);
-    EXPECT_EQ(set.size(), 0);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
+    EXPECT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetBeforeBoundary, asking_for_expired_epoch)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
-    EXPECT_FALSE(success);
-    EXPECT_EQ(set.size(), 0);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
+    ASSERT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetBeforeBoundary, asking_for_future_epoch)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
-    EXPECT_FALSE(success);
-    EXPECT_EQ(set.size(), 0);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
+    ASSERT_FALSE(set.has_value());
 }
 
 class ReadValsetAfterBoundary : public ReadValsetBase
@@ -169,38 +164,36 @@ class ReadValsetAfterBoundary : public ReadValsetBase
 
 TEST_F(ReadValsetAfterBoundary, get_this_epoch_valset)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
 
     // expect the snapshot view when requesting current epoch valset
-    EXPECT_TRUE(success);
-    EXPECT_EQ(set.size(), SNAPSHOT_VALSET_LENGTH);
-    for (auto const &validator : set) {
+    ASSERT_TRUE(set.has_value());
+    EXPECT_EQ(set.value().size(), SNAPSHOT_VALSET_LENGTH);
+    for (auto const &validator : set.value()) {
         EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), SNAPSHOT_STAKE);
     }
 }
 
 TEST_F(ReadValsetAfterBoundary, get_next_epoch_valset)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
 
     // expect the consensus view when requesting current epoch valset
-    EXPECT_TRUE(success);
-    EXPECT_EQ(set.size(), CONSENSUS_VALSET_LENGTH);
-    for (auto const &validator : set) {
+    ASSERT_TRUE(set.has_value());
+    EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
+    for (auto const &validator : set.value()) {
         EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), CONSENSUS_STAKE);
     }
 }
 
 TEST_F(ReadValsetAfterBoundary, asking_for_expired_epoch)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
-    EXPECT_FALSE(success);
-    EXPECT_EQ(set.size(), 0);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
+    EXPECT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetAfterBoundary, asking_for_future_epoch)
 {
-    auto const [success, set] = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
-    EXPECT_FALSE(success);
-    EXPECT_EQ(set.size(), 0);
+    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
+    EXPECT_FALSE(set.has_value());
 }

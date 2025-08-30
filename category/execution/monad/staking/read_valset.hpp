@@ -17,7 +17,7 @@
 
 #include <category/execution/monad/staking/config.hpp>
 
-#include <utility>
+#include <optional>
 #include <vector>
 
 #include <evmc/evmc.h>
@@ -41,7 +41,7 @@ struct Validator
     evmc_uint256be stake;
 };
 
-std::pair<bool, std::vector<Validator>>
+std::optional<std::vector<Validator>>
 read_valset(mpt::Db &db, size_t block_num, uint64_t requested_epoch);
 
 MONAD_STAKING_NAMESPACE_END

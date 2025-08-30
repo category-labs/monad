@@ -27,7 +27,7 @@
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-std::pair<bool, std::vector<Validator>>
+std::optional<std::vector<Validator>>
 read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
 {
     vm::VM vm;
@@ -39,22 +39,20 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     staking::StakingContract contract(state);
     state.add_to_balance(staking::STAKING_CA, 0);
 
-    std::vector<Validator> valset;
-
     uint64_t const contract_epoch = contract.vars.epoch.load().native();
     if (requested_epoch == contract_epoch + 1) {
         if (!contract.vars.in_epoch_delay_period.load()) {
             // can't read the next epoch before the boundary block.
-            return {false, valset};
+            return std::nullopt;
         }
     }
     if (requested_epoch < contract_epoch) {
         // old epoch which no longer exists
-        return {false, valset};
+        return std::nullopt;
     }
     if (requested_epoch > contract_epoch + 1) {
         // hasn't happened yet
-        return {false, valset};
+        return std::nullopt;
     }
 
     bool const get_next_epoch = requested_epoch == (contract_epoch + 1);
@@ -68,7 +66,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
 
     uint64_t const length = contract_valset.length();
     MONAD_ASSERT(length <= ACTIVE_VALSET_SIZE)
-    valset.resize(length);
+    std::vector<Validator> valset(length);
     for (uint64_t i = 0; i < length; i += 1) {
         auto const val_id = contract_valset.get(i).load();
         auto const stake = get_stake(val_id).load();
@@ -77,7 +75,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
         std::memcpy(valset[i].bls_pubkey, keys.bls_pubkey.data(), 48);
         std::memcpy(valset[i].stake.bytes, stake.bytes, 32);
     }
-    return {true, valset};
+    return valset;
 }
 
 MONAD_STAKING_NAMESPACE_END

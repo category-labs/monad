@@ -339,11 +339,12 @@ struct Stake : public ::testing::Test
         return outcome::success();
     }
 
-    Result<void> syscall_reward(Address const &address)
+    Result<void>
+    syscall_reward(Address const &address, uint256_t const &raw_reward = REWARD)
     {
         byte_string_view input{address.bytes, sizeof(Address)};
         state.push();
-        auto res = contract.syscall_reward(input, REWARD);
+        auto res = contract.syscall_reward(input, raw_reward);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -558,21 +559,27 @@ TEST_F(Stake, non_auth_attempts_to_change_commission)
 
 class StakeCommission
     : public Stake
-    , public ::testing::WithParamInterface<uint64_t>
+    , public ::testing::WithParamInterface<std::tuple<uint64_t, uint256_t>>
 {
 };
 
 INSTANTIATE_TEST_SUITE_P(
-    Rate, StakeCommission, ::testing::Values(1, 5, 10, 25, 50, 66, 75, 90),
-    [](::testing::TestParamInfo<uint64_t> const &info) {
-        return std::to_string(info.param);
+    Rate, StakeCommission,
+    ::testing::Combine(
+        // commission, expressed as percent
+        ::testing::Values(1, 5, 10, 25, 50, 66, 75, 90),
+        // variable rewards in MON
+        ::testing::Values(
+            MON / 25, MON / 50, 2 * MON, 10 * MON, 300 * MON, 1000 * MON)),
+    [](::testing::TestParamInfo<std::tuple<uint64_t, uint256_t>> const &info) {
+        return std::to_string(std::get<0>(info.param)) + "_" +
+               intx::to_string(std::get<1>(info.param));
     });
 
 TEST_P(StakeCommission, validator_has_commission)
 {
-    auto const commission_percent = GetParam();
-    auto const commission =
-        (1000000000000000000_u256 * commission_percent) / 100;
+    auto const [commission_percent, reward] = GetParam();
+    auto const commission = MON * commission_percent / 100;
     auto const auth_address = 0xababab_address;
 
     auto const val =
@@ -583,12 +590,12 @@ TEST_P(StakeCommission, validator_has_commission)
     EXPECT_FALSE(delegate(val.value().id, del_address, ACTIVE_VALIDATOR_STAKE)
                      .has_error());
     skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.value().sign_address, reward).has_error());
     pull_delegator_up_to_date(val.value().id, auth_address);
     pull_delegator_up_to_date(val.value().id, del_address);
 
-    auto const expected_commission = (REWARD * commission_percent) / 100;
-    auto const expected_delegator_reward = (REWARD - expected_commission) / 2;
+    auto const expected_commission = (reward * commission_percent) / 100;
+    auto const expected_delegator_reward = (reward - expected_commission) / 2;
     EXPECT_EQ(
         contract.vars.delegator(val.value().id, del_address)
             .rewards()
@@ -1787,7 +1794,6 @@ TEST_F(Stake, two_validators_remove_self)
 
 TEST_F(Stake, validator_constant_validator_set)
 {
-
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 

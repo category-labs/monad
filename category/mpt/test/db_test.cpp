@@ -340,7 +340,7 @@ namespace
         ROOnDiskWithFileFixture()
             : ro_db(ReadOnlyOnDiskDbConfig{
                   .dbname_paths = this->config.dbname_paths,
-                  .node_lru_size = 100})
+                  .node_lru_max_mem = 100 * NodeCache::AVERAGE_NODE_SIZE})
             , pool(2, 16)
         {
             init_db_with_data();

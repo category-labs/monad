@@ -15,10 +15,10 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/small_prng.hpp>
-#include <category/core/fiber/priority_pool.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_base.hpp>
@@ -489,8 +489,7 @@ int main(int argc, char *const argv[])
 
         auto async_read_nonblocking_rodb = [&] {
             // RODb
-            RODb ro_db{ReadOnlyOnDiskDbConfig{
-                .dbname_paths = dbname_paths, .node_lru_size = 10240}};
+            RODb ro_db{ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
 
             constexpr unsigned num_fibers = 16;
             monad::fiber::PriorityPool pool(

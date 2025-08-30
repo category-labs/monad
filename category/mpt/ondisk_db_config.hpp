@@ -59,7 +59,7 @@ struct ReadOnlyOnDiskDbConfig
     std::optional<unsigned> sq_thread_cpu{std::nullopt};
     std::vector<std::filesystem::path> dbname_paths;
     unsigned concurrent_read_io_limit{600};
-    unsigned node_lru_size{102400};
+    uint64_t node_lru_max_mem{100ul << 20}; // 100MB
 };
 
 MONAD_MPT_NAMESPACE_END

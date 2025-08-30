@@ -476,9 +476,8 @@ int main(int argc, char *argv[])
 
             // init uring
             monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
-            monad::io::Ring ring2(
-                16
-                /* max concurrent write buffers in use <= 6 */
+            monad::io::Ring ring2(16
+                                  /* max concurrent write buffers in use <= 6 */
             );
 
             // init buffer
@@ -756,8 +755,7 @@ int main(int argc, char *argv[])
                 uint64_t ops{0};
                 bool signal_done{false};
                 AsyncInflightNodes inflights;
-                NodeCache node_cache{
-                    1000, monad::mpt::virtual_chunk_offset_t::invalid_value()};
+                NodeCache node_cache{1000 * NodeCache::AVERAGE_NODE_SIZE};
                 std::vector<std::unique_ptr<connected_state_type>> states;
                 states.reserve(random_read_benchmark_threads);
                 std::shared_ptr<CacheNode> start_node =

@@ -48,7 +48,8 @@ using namespace monad::trace;
 
 namespace
 {
-    constexpr unsigned node_lru_size = 10240;
+    constexpr uint64_t node_lru_max_mem =
+        10240 * mpt::NodeCache::AVERAGE_NODE_SIZE;
     constexpr unsigned max_timeout = std::numeric_limits<unsigned>::max();
     auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
 
@@ -157,7 +158,7 @@ namespace
         auto executor = monad_eth_call_executor_create(
             1,
             1,
-            node_lru_size,
+            node_lru_max_mem,
             max_timeout,
             max_timeout,
             dbname.string().c_str());
@@ -246,7 +247,12 @@ TEST_F(EthCallFixture, simple_success_call)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -306,7 +312,12 @@ TEST_F(EthCallFixture, insufficient_balance)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -365,7 +376,12 @@ TEST_F(EthCallFixture, on_proposed_block)
     auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -425,7 +441,12 @@ TEST_F(EthCallFixture, failed_to_read)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -487,7 +508,12 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -574,7 +600,12 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -671,7 +702,12 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -735,7 +771,12 @@ TEST_F(EthCallFixture, loop_out_of_gas)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -846,9 +887,10 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         BlockHeader{.number = 0});
 
     auto const data =
-        evmc::from_hex("0x56cde25b000000000000000000000000000000000000000000000"
-                       "0000000000000000000000000000000000000000000000000000000"
-                       "0000000000000000000000004e20")
+        evmc::from_hex(
+            "0x56cde25b000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000004e20")
             .value();
     Transaction tx{.gas_limit = 30'000'000u, .to = ca, .data = data};
 
@@ -860,7 +902,12 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -929,7 +976,12 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -1003,7 +1055,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
     auto executor = monad_eth_call_executor_create(
         2,
         10,
-        node_lru_size,
+        node_lru_max_mem,
         max_timeout,
         max_timeout,
         dbname.string().c_str());
@@ -1117,7 +1169,12 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context ctx;
@@ -1218,7 +1275,12 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     struct callback_context prestate_ctx;
@@ -1352,7 +1414,12 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto executor = monad_eth_call_executor_create(
-        1, 1, node_lru_size, max_timeout, max_timeout, dbname.string().c_str());
+        1,
+        1,
+        node_lru_max_mem,
+        max_timeout,
+        max_timeout,
+        dbname.string().c_str());
     auto state_override = monad_state_override_create();
 
     std::string deployed_code =

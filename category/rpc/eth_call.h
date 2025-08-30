@@ -79,7 +79,7 @@ typedef struct monad_eth_call_result
 void monad_eth_call_result_release(monad_eth_call_result *);
 
 struct monad_eth_call_executor *monad_eth_call_executor_create(
-    unsigned num_threads, unsigned num_fibers, unsigned node_lru_size,
+    unsigned num_threads, unsigned num_fibers, uint64_t node_lru_max_mem,
     unsigned low_pool_timeout_sec, unsigned high_pool_timeout_sec,
     char const *dbpath);
 

@@ -35,6 +35,7 @@
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
@@ -495,13 +496,10 @@ struct OnDiskWithWorkerThreadImpl
             }
         }
 
-        void rodb_run(size_t const node_lru_size)
+        void rodb_run(size_t const node_lru_max_mem)
         {
             inflight_map_owning_t inflight;
-            NodeCache node_cache{
-                node_lru_size,
-                virtual_chunk_offset_t::invalid_value(),
-                nullptr};
+            NodeCache node_cache{node_lru_max_mem};
 
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<find_owning_cursor_result_type>>
@@ -784,7 +782,7 @@ struct OnDiskWithWorkerThreadImpl
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);
                 cond_.notify_one();
             }
-            worker_->rodb_run(options.node_lru_size);
+            worker_->rodb_run(options.node_lru_max_mem);
             std::unique_lock const g(lock_);
             worker_.reset();
         })
@@ -900,16 +898,15 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberUpsertRequest{
-                .promise = &promise,
-                .prev_root = std::move(root_),
-                .sm = machine_,
-                .updates = std::move(updates),
-                .version = version,
-                .enable_compaction = enable_compaction && compaction_,
-                .can_write_to_fast = can_write_to_fast,
-                .write_root = write_root});
+        comms_.enqueue(FiberUpsertRequest{
+            .promise = &promise,
+            .prev_root = std::move(root_),
+            .sm = machine_,
+            .updates = std::move(updates),
+            .version = version,
+            .enable_compaction = enable_compaction && compaction_,
+            .can_write_to_fast = can_write_to_fast,
+            .write_root = write_root});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -944,9 +941,8 @@ public:
         MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberLoadAllFromBlockRequest{
-                .promise = &promise, .root = *root(), .sm = machine_});
+        comms_.enqueue(FiberLoadAllFromBlockRequest{
+            .promise = &promise, .root = *root(), .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -968,13 +964,12 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberTraverseRequest{
-                .promise = &promise,
-                .root = node,
-                .machine = machine,
-                .version = version,
-                .concurrency_limit = concurrency_limit});
+        comms_.enqueue(FiberTraverseRequest{
+            .promise = &promise,
+            .root = node,
+            .machine = machine,
+            .version = version,
+            .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -993,9 +988,8 @@ public:
             }
             threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
             auto fut = promise.get_future();
-            comms_.enqueue(
-                FiberLoadRootVersionRequest{
-                    .promise = &promise, .version = version});
+            comms_.enqueue(FiberLoadRootVersionRequest{
+                .promise = &promise, .version = version});
             // promise is racily emptied after this point
             if (worker_->sleeping.load(std::memory_order_acquire)) {
                 std::unique_lock const g(lock_);
@@ -1032,16 +1026,15 @@ public:
 
         threadsafe_boost_fibers_promise<Node::UniquePtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
-            FiberCopyTrieRequest{
-                .promise = &promise,
-                .src_root = src_root,
-                .src = src,
-                .src_version = src_version,
-                .dest_root = std::move(dest_root),
-                .dest = dest,
-                .dest_version = dest_version,
-                .blocked_by_write = blocked_by_write});
+        comms_.enqueue(FiberCopyTrieRequest{
+            .promise = &promise,
+            .src_root = src_root,
+            .src = src,
+            .src_version = src_version,
+            .dest_root = std::move(dest_root),
+            .dest = dest,
+            .dest_version = dest_version,
+            .blocked_by_write = blocked_by_write});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -1419,15 +1412,15 @@ uint64_t Db::get_history_length() const
     return is_on_disk() ? impl_->aux().version_history_length() : 1;
 }
 
-AsyncContext::AsyncContext(Db &db, size_t lru_size)
+AsyncContext::AsyncContext(Db &db, size_t node_lru_max_mem)
     : aux(db.impl_->aux())
-    , node_cache(lru_size, virtual_chunk_offset_t::invalid_value())
+    , node_cache(node_lru_max_mem)
 {
 }
 
-AsyncContextUniquePtr async_context_create(Db &db, size_t lru_size)
+AsyncContextUniquePtr async_context_create(Db &db, size_t node_lru_max_mem)
 {
-    return std::make_unique<AsyncContext>(db, lru_size);
+    return std::make_unique<AsyncContext>(db, node_lru_max_mem);
 }
 
 namespace detail
@@ -1550,7 +1543,7 @@ namespace detail
             NodeCache::ConstAccessor acc;
             if (context.node_cache.find(acc, virt_offset)) {
                 // found in LRU - no IO necessary
-                root = acc->second->val;
+                root = acc->second->val.first;
                 res_root = {{root}, find_result::success};
                 io_state->completed(async::success());
                 return async::success();

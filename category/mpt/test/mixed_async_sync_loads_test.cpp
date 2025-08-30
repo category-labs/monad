@@ -68,7 +68,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     // Initiate an async find of a key
     monad::mpt::AsyncInflightNodes inflights;
     monad::mpt::NodeCache node_cache{
-        1000, monad::mpt::virtual_chunk_offset_t::invalid_value()};
+        1000 * monad::mpt::NodeCache::AVERAGE_NODE_SIZE};
     std::shared_ptr<CacheNode> cache_root = copy_node<CacheNode>(root.get());
     auto state = monad::async::connect(
         monad::mpt::find_request_sender<>(

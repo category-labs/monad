@@ -56,6 +56,7 @@ add_library(
   "nibbles_view_fmt.hpp"
   "node.cpp"
   "node.hpp"
+  "node_cache.hpp"
   "node_cursor.hpp"
   "ondisk_db_config.hpp"
   "request.hpp"

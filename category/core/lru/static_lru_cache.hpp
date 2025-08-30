@@ -21,6 +21,8 @@
 
 #include <boost/intrusive/list.hpp>
 
+#include <optional>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -40,13 +42,14 @@ public:
         Value val;
     };
 
-private:
+protected:
     using List = boost::intrusive::list<list_node>;
     using ListIter = typename List::iterator;
     using Map = ankerl::unordered_dense::segmented_map<Key, ListIter, Hash>;
 
     std::vector<list_node> array_;
-    boost::intrusive::list<list_node> list_;
+    boost::intrusive::list<list_node> active_list_;
+    boost::intrusive::list<list_node> free_list_;
     Map map_;
 
 public:
@@ -58,35 +61,49 @@ public:
     {
         MONAD_ASSERT(size != 0);
         for (size_t i = 0; i < size; ++i) {
-            list_.push_back(array_[i]);
+            free_list_.push_back(array_[i]);
         }
         map_.reserve(size);
+
+        MONAD_ASSERT(free_list_.size() == array_.size());
+        MONAD_ASSERT(active_list_.size() == 0);
     }
 
     ~static_lru_cache() = default;
 
-    Map::iterator insert(Key const &key, Value const &value) noexcept
+    // return the map iterator and the erased value if any
+    std::pair<typename Map::iterator, std::optional<Value>>
+    insert(Key const &key, Value const &value) noexcept
     {
-        auto it = map_.find(key);
-        if (it != map_.end()) {
+        std::optional<Value> erased_value = std::nullopt;
+        if (auto it = map_.find(key); it != map_.end()) {
+            erased_value = it->second->val;
             it->second->val = value;
             update_lru(it->second);
-            return it;
+            return {it, erased_value};
         }
-        else {
-            auto list_it = std::prev(list_.end());
+        list_node *node = nullptr;
+        if (!free_list_.empty()) {
+            // allocate from free_list_
+            auto list_it = free_list_.begin();
+            node = &*list_it;
+            free_list_.erase(list_it);
+        }
+        else { // reuse the last node in active_list_
+            auto list_it = std::prev(active_list_.end());
+            erased_value = list_it->val;
             map_.erase(list_it->key);
-            auto &node = *list_it;
-            list_.erase(list_it);
-
-            // Reuse node
-            node.key = key;
-            node.val = value;
-
-            list_.insert(list_.begin(), node);
-            return map_.emplace(key, list_.iterator_to(node)).first;
+            node = &*list_it;
+            active_list_.erase(list_it);
         }
-        return it;
+        // Reuse node
+        node->key = key;
+        node->val = value;
+
+        active_list_.insert(active_list_.begin(), *node);
+        return {
+            map_.emplace(key, active_list_.iterator_to(*node)).first,
+            erased_value};
     }
 
     bool find(ConstAccessor &acc, Key const &key) noexcept
@@ -109,10 +126,10 @@ public:
         map_.clear();
     }
 
-private:
+protected:
     void update_lru(ListIter it)
     {
-        list_.splice(list_.begin(), list_, it);
+        active_list_.splice(active_list_.begin(), active_list_, it);
     }
 };
 

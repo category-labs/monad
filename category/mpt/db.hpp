@@ -179,13 +179,13 @@ struct AsyncContext
     inflight_root_t inflight_roots;
     AsyncInflightNodes inflight_nodes;
 
-    AsyncContext(Db &db, size_t lru_size = 16 * 1024 * 1024);
+    AsyncContext(Db &db, size_t node_lru_max_mem = 16ul << 20);
     ~AsyncContext() noexcept = default;
 };
 
 using AsyncContextUniquePtr = std::unique_ptr<AsyncContext>;
 AsyncContextUniquePtr
-async_context_create(Db &db, size_t lru_size = 16 * 1024 * 1024);
+async_context_create(Db &db, size_t node_lru_max_mem = 16ul << 20);
 
 namespace detail
 {

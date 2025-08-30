@@ -19,6 +19,7 @@
 #include <category/async/erased_connected_operation.hpp>
 #include <category/core/assert.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
@@ -266,7 +267,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             }
             if (p != nullptr && p->key == virt_offset) {
                 // found cache entry with the desired key
-                root_ = {p->val};
+                root_ = {p->val.first};
                 MONAD_ASSERT(root_.is_valid());
                 continue;
             }
@@ -274,7 +275,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 auto *const list_node = &*acc->second;
                 node->set_next(child_index, list_node);
                 // found in LRU - no IO necessary
-                root_ = {list_node->val};
+                root_ = {list_node->val.first};
                 MONAD_ASSERT(root_.is_valid());
                 continue;
             }

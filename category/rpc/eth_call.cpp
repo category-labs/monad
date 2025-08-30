@@ -453,7 +453,7 @@ struct monad_eth_call_executor
 
     monad_eth_call_executor(
         unsigned const num_threads, unsigned const num_fibers,
-        unsigned const node_lru_size, unsigned const low_pool_timeout_sec,
+        uint64_t const node_lru_max_mem, unsigned const low_pool_timeout_sec,
         unsigned const high_pool_timeout_sec, std::string const &triedb_path)
         : low_gas_pool_{num_threads, num_fibers, true}
         , high_gas_pool_{1, 2, true}
@@ -475,7 +475,7 @@ struct monad_eth_call_executor
             // thread local storage gets instantiated on the one thread its
             // used
             auto const config = mpt::ReadOnlyOnDiskDbConfig{
-                .dbname_paths = paths, .node_lru_size = node_lru_size};
+                .dbname_paths = paths, .node_lru_max_mem = node_lru_max_mem};
             return mpt::RODb{config};
         }()}
     {
@@ -850,7 +850,7 @@ struct monad_eth_call_executor
 
 monad_eth_call_executor *monad_eth_call_executor_create(
     unsigned const num_threads, unsigned const num_fibers,
-    unsigned const node_lru_size, unsigned const low_pool_timeout_sec,
+    uint64_t const node_lru_max_mem, unsigned const low_pool_timeout_sec,
     unsigned const high_pool_timeout_sec, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
@@ -859,7 +859,7 @@ monad_eth_call_executor *monad_eth_call_executor_create(
     monad_eth_call_executor *const e = new monad_eth_call_executor(
         num_threads,
         num_fibers,
-        node_lru_size,
+        node_lru_max_mem,
         low_pool_timeout_sec,
         high_pool_timeout_sec,
         triedb_path);

@@ -25,6 +25,7 @@
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
@@ -343,7 +344,7 @@ void find_owning_notify_fiber_future(
         // find in cache
         NodeCache::ConstAccessor acc;
         if (node_cache.find(acc, next_virtual_offset)) {
-            OwningNodeCursor next_cursor{acc->second->val};
+            OwningNodeCursor next_cursor{acc->second->val.first};
             find_owning_notify_fiber_future(
                 aux,
                 node_cache,
@@ -404,7 +405,7 @@ void load_root_notify_fiber_future(
     }
     NodeCache::ConstAccessor acc;
     if (node_cache.find(acc, root_virtual_offset)) {
-        auto &root = acc->second->val;
+        auto &root = acc->second->val.first;
         MONAD_ASSERT(root != nullptr);
         promise.set_value({OwningNodeCursor{root}, find_result::success});
         return;

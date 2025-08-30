@@ -86,6 +86,37 @@ TEST(static_lru_test, repeated_access)
     EXPECT_EQ(acc->second->val, 400);
 }
 
+TEST(static_lru_test, insert_return)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(3);
+    {
+        auto const [map_it, erased_value] = lru.insert(1, 100);
+        ASSERT_FALSE(erased_value.has_value());
+        EXPECT_EQ(map_it->second->key, 1);
+        EXPECT_EQ(map_it->second->val, 100);
+    }
+    {
+        auto const [map_it, erased_value] = lru.insert(2, 200);
+        ASSERT_FALSE(erased_value.has_value());
+        EXPECT_EQ(map_it->second->key, 2);
+        EXPECT_EQ(map_it->second->val, 200);
+    }
+    {
+        auto const [map_it, erased_value] = lru.insert(3, 300);
+        ASSERT_FALSE(erased_value.has_value());
+        EXPECT_EQ(map_it->second->key, 3);
+        EXPECT_EQ(map_it->second->val, 300);
+    }
+    {
+        auto const [map_it, erased_value] = lru.insert(4, 400);
+        ASSERT_TRUE(erased_value.has_value());
+        EXPECT_EQ(*erased_value, 100);
+        EXPECT_EQ(map_it->second->key, 4);
+        EXPECT_EQ(map_it->second->val, 400);
+    }
+}
+
 TEST(static_lru_test, clear)
 {
     using LruCache = monad::static_lru_cache<int, std::string>;

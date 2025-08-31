@@ -55,6 +55,7 @@ add_trie_test(TARGET rewind_test SOURCES "rewind_test.cpp")
 add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")
 add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
 add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
+add_trie_test(TARGET virtual_offset_test SOURCES "virtual_offset_test.cpp")
 
 # monad trie perf test
 add_executable(monad_trie_test "monad_trie_test.cpp")

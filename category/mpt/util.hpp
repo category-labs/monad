@@ -22,6 +22,7 @@
 #include <category/mpt/nibbles_view.hpp>
 
 #include <concepts>
+#include <tuple>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -82,21 +83,17 @@ struct virtual_chunk_offset_t
         MONAD_DEBUG_ASSERT(is_fast_list_ <= 1);
     }
 
-    // note that comparator ignores `spare` and `is_in_fast_list`
+    // note that comparator ignores `spare`
     constexpr bool operator==(virtual_chunk_offset_t const &o) const noexcept
     {
-        return count == o.count && offset == o.offset;
+        return is_in_fast_list == o.is_in_fast_list && count == o.count &&
+               offset == o.offset;
     }
 
     constexpr auto operator<=>(virtual_chunk_offset_t const &o) const noexcept
     {
-        if (count == o.count && offset == o.offset) {
-            return std::weak_ordering::equivalent;
-        }
-        if (count < o.count || (count == o.count && offset < o.offset)) {
-            return std::weak_ordering::less;
-        }
-        return std::weak_ordering::greater;
+        return std::tuple{is_in_fast_list, count, offset} <=>
+               std::tuple{o.is_in_fast_list, o.count, o.offset};
     }
 
     constexpr bool in_fast_list() const noexcept
@@ -104,6 +101,7 @@ struct virtual_chunk_offset_t
         return is_in_fast_list;
     }
 
+    // ignore `spare` and `is_in_fast_list`
     constexpr file_offset_t raw() const noexcept
     {
         union _
@@ -123,6 +121,26 @@ struct virtual_chunk_offset_t
         u.self.is_in_fast_list = 0;
         return u.ret;
     }
+
+    // for hash table key, only ignore `spare`
+    constexpr file_offset_t hasher_raw() const noexcept
+    {
+        union _
+        {
+            file_offset_t ret;
+            virtual_chunk_offset_t self;
+
+            constexpr _()
+                : ret{}
+            {
+            }
+        } u;
+
+        u.self = *this;
+        u.self.spare =
+            0; // must be flattened, otherwise can't go into the rbtree key
+        return u.ret;
+    }
 };
 
 static_assert(sizeof(virtual_chunk_offset_t) == 8);
@@ -138,7 +156,7 @@ struct virtual_chunk_offset_t_hasher
 {
     constexpr size_t operator()(virtual_chunk_offset_t v) const noexcept
     {
-        return fnv1a_hash<file_offset_t>()(v.raw());
+        return fnv1a_hash<file_offset_t>()(v.hasher_raw());
     }
 };
 

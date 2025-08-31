@@ -4159,6 +4159,42 @@ TEST_F(Stake, get_validators_for_delegator)
     }
 }
 
+TEST_F(Stake, get_valset_paginated_reads)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    for (uint32_t i = 0; i < 999; ++i) {
+        auto res = add_validator(
+            auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{i + 1});
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // read valset in one read
+    auto const [done1, _, valset_one_read] = contract.get_valset(
+        contract.vars.valset_execution,
+        0,
+        std::numeric_limits<uint32_t>::max());
+    EXPECT_TRUE(done1);
+    EXPECT_EQ(valset_one_read.size(), 999);
+
+    // read valset in pages
+    bool done2 = false;
+    u32_be next_index = 0;
+    std::vector<u64_be> valset_paginated;
+    do {
+        auto paginated_res = contract.get_valset(
+            contract.vars.valset_execution,
+            next_index.native(),
+            PAGINATED_RESULTS_SIZE);
+        std::vector<u64_be> valset_page;
+        std::tie(done2, next_index, valset_page) = std::move(paginated_res);
+        valset_paginated.insert_range(valset_paginated.end(), valset_page);
+    }
+    while (!done2);
+
+    EXPECT_EQ(valset_paginated.size(), valset_one_read.size());
+    EXPECT_TRUE(valset_paginated == valset_one_read);
+}
+
 TEST_F(Stake, get_delegators_for_validator_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
@@ -4178,6 +4214,9 @@ TEST_F(Stake, get_delegators_for_validator_paginated_reads)
         contract.get_delegators_for_validator(
             val.id, Address{}, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(done1);
+    EXPECT_EQ(
+        delegators_one_read.size(),
+        1000); // note: this is 1000 because the auth address is a delegator
 
     // read all delegators using paginated reads
     bool done2 = false;

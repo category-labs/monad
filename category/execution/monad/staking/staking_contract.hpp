@@ -351,15 +351,16 @@ public:
         }
     } vars;
 
-    // Both of the getters below are mappings with potentially unbounded length.
-    // In particular, get delegators for validator could have hundreds of
-    // thousands of results when querying against a very popular validator.
+    // The three functions below are mappings with potentially unbounded length.
     // Since precompiles don't have a great way of quantifying gas usage, these
     // functions open up a possible DoS vector. Namely, execution memory usage
     // could be unbounded. To prevent this, both functions will, at most, read
     // `PAGINATED_RESULTS_SIZE` in a single call. The return types in this call
     // are defined by these pagination limits.
-    //
+    std::tuple<bool, u32_be, std::vector<u64_be>> get_valset(
+        StorageArray<u64_be> const &valset, uint32_t const start_index,
+        uint32_t limit);
+
     // The two lists are of Type LinkedList[T] where T = Address | u64_be.  The
     // return type is defined by the pagination:
     // return_type = [bool (done), T (next_in_list), List[T] (results)]
@@ -375,7 +376,7 @@ public:
     // in followup queries until `done` is true.
     std::tuple<bool, Address, std::vector<Address>>
     get_delegators_for_validator(
-        u64_be val_id, Address const &start_delegator, uint32_t pagination);
+        u64_be val_id, Address const &start_delegator, uint32_t limit);
 
     // Gets all the validators that `delegator` is delegated with by following a
     // linked list of validator Ids in the `Delegator` struct.
@@ -384,7 +385,7 @@ public:
     // ID (8 zero bytes). After that, the `next_in_list` in the output should be
     // used in followup queries until `done` is true.
     std::tuple<bool, u64_be, std::vector<u64_be>> get_validators_for_delegator(
-        Address const &delegator, u64_be start_val_id, uint32_t pagination);
+        Address const &delegator, u64_be start_val_id, uint32_t limit);
 
 private:
     /////////////

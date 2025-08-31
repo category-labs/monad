@@ -442,6 +442,22 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     return dispatch_table[signature];
 }
 
+std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
+    StorageArray<u64_be> const &valset, uint32_t const start_index,
+    uint32_t const limit)
+{
+    uint64_t const len = valset.length();
+    uint64_t const end =
+        std::min(len, static_cast<uint64_t>(start_index) + limit);
+    std::vector<u64_be> valids;
+    uint64_t i;
+    for (i = start_index; i < end; ++i) {
+        valids.push_back(valset.get(i).load());
+    }
+    bool const done = (end == len);
+    return {done, static_cast<uint32_t>(i), std::move(valids)};
+}
+
 std::tuple<bool, Address, std::vector<Address>>
 StakingContract::get_delegators_for_validator(
     u64_be val_id, Address const &start_delegator, uint32_t const limit)
@@ -530,21 +546,25 @@ Result<byte_string> StakingContract::get_valset(
         return StakingError::InvalidInput;
     }
 
+    if (MONAD_UNLIKELY(
+            valset.length() > std::numeric_limits<uint32_t>::max())) {
+        // Both consensus set and snapshot set are bounded. The execution set is
+        // theoretically unbounded, but to be a candidate, you need to put
+        // MIN_VALIDATE_STAKE. This amount prevents that valset from exceeding
+        // u32_max in practice.
+        return StakingError::InternalError;
+    }
+
     byte_string_view reader = input;
     uint32_t const start_index =
         unaligned_load<u32_be>(consume_bytes(reader, sizeof(u32_be)).data())
             .native();
 
-    uint64_t const end = std::min(
-        valset.length(),
-        static_cast<uint64_t>(start_index) + PAGINATED_RESULTS_SIZE);
-    bool const done = (end == valset.length());
-    std::vector<u64_be> valids;
-    for (uint64_t i = start_index; i < end; ++i) {
-        valids.push_back(valset.get(i).load());
-    }
+    auto const [done, next_index, valids] =
+        get_valset(valset, start_index, PAGINATED_RESULTS_SIZE);
     AbiEncoder encoder;
     encoder.add_bool(done);
+    encoder.add_uint(next_index);
     encoder.add_uint_array(valids);
     return encoder.encode_final();
 }
@@ -1554,7 +1574,7 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
         ++nodes_read;
     }
     bool const done = (ptr == Trait::empty());
-    return {done, ptr, results};
+    return {done, ptr, std::move(results)};
 }
 
 MONAD_STAKING_NAMESPACE_END

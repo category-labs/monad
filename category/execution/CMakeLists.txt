@@ -114,6 +114,8 @@ add_library(
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"
+  "ethereum/block_hash_history.cpp"
+  "ethereum/block_hash_history.hpp"
   "ethereum/block_reward.cpp"
   "ethereum/block_reward.hpp"
   "ethereum/create_contract_address.cpp"

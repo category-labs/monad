@@ -22,6 +22,7 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -35,16 +36,16 @@
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp> // TODO: remove when execute block is a functor
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -108,26 +109,6 @@ void set_beacon_root(BlockState &block_state, BlockHeader const &header)
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
-
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
-}
-
-// EIP-2935
-void set_block_hash_history(BlockState &block_state, BlockHeader const &header)
-{
-    constexpr auto HISTORY_STORAGE_ADDRESS{
-        0x0000F90827F1C53a10cb7A02335B175320002935_address};
-    constexpr uint256_t HISTORY_SERVE_WINDOW{8191};
-
-    State state{block_state, Incarnation{header.number, 0}};
-    if (state.account_exists(HISTORY_STORAGE_ADDRESS)) {
-        uint256_t const block_number{header.number};
-        bytes32_t const key{
-            to_bytes(to_big_endian((block_number - 1) % HISTORY_SERVE_WINDOW))};
-
-        state.set_storage(HISTORY_STORAGE_ADDRESS, key, header.parent_hash);
 
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
@@ -216,8 +197,17 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == block.transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
 
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-        set_block_hash_history(block_state, block.header);
+    {
+        State state{block_state, Incarnation{block.header.number, 0}};
+
+        if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+            deploy_block_hash_history_contract(state);
+        }
+
+        set_block_hash_history(state, block.header);
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {

@@ -64,4 +64,18 @@ void set_block_hash_history(State &state, BlockHeader const &header)
     }
 }
 
+// Note: EIP-2935 says the get on the block hash history contract should revert
+// if the block number is outside of the block history. However, current usage
+// of this function guarantees that it is always valid.
+bytes32_t get_block_hash_history(State &state, uint64_t const block_number)
+{
+    if (MONAD_UNLIKELY(!state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+        return bytes32_t{};
+    }
+
+    uint256_t const index{block_number % BLOCK_HISTORY_LENGTH};
+    return state.get_storage(
+        BLOCK_HISTORY_ADDRESS, to_bytes(to_big_endian(index)));
+}
+
 MONAD_NAMESPACE_END

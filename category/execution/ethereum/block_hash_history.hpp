@@ -34,4 +34,6 @@ void deploy_block_hash_history_contract(State &);
 
 void set_block_hash_history(State &, BlockHeader const &);
 
+bytes32_t get_block_hash_history(State &, uint64_t block_number);
+
 MONAD_NAMESPACE_END

@@ -17,6 +17,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -127,12 +128,23 @@ evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
     return tx_context_;
 }
 
+// This attempts to read from the contract first before falling back to the
+// block hash buffer. This is currently only called by the BLOCKHASH
+// implementation which guarantees that the block_number is in range.
 bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
     try {
         MONAD_ASSERT(block_number >= 0);
-        return block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+        if (bytes32_t const block_hash = get_block_hash_history(
+                state_, static_cast<uint64_t>(block_number));
+            block_hash != bytes32_t{}) {
+            return block_hash;
+        }
+        bytes32_t const block_hash =
+            block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+        MONAD_ASSERT(block_hash != bytes32_t{});
+        return block_hash;
     }
     catch (...) {
         capture_current_exception();

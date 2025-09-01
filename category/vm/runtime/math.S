@@ -4,7 +4,6 @@
 .type monad_vm_runtime_mul, @function
 .align 16
 monad_vm_runtime_mul:
-.cfi_startproc
     push    r13
     push    r12
     mov     r8, qword ptr [rdx]
@@ -49,14 +48,12 @@ monad_vm_runtime_mul:
     pop     r12
     pop     r13
     ret
-.cfi_endproc
 .size monad_vm_runtime_mul, .-monad_vm_runtime_mul
 
 .globl monad_vm_runtime_mul_192
 .type monad_vm_runtime_mul_192, @function
 .align 16
 monad_vm_runtime_mul_192:
-.cfi_startproc
     mov     r8, qword ptr [rdx]
     mov     r9, qword ptr [rdx + 8]
     mov     r10, qword ptr [rdx + 16]
@@ -85,7 +82,6 @@ monad_vm_runtime_mul_192:
     mov     qword ptr [rdi + 8], r11
     mov     qword ptr [rdi + 16], rcx
     ret
-.cfi_endproc
 .size monad_vm_runtime_mul_192, .-monad_vm_runtime_mul_192
 
 .section .note.GNU-stack,"",@progbits

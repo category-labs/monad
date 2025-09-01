@@ -7,7 +7,6 @@
 .type llvm_runtime_trampoline, @function
 .align 16
 llvm_runtime_trampoline:
-.cfi_startproc
     pushq %rbp
     pushq %rbx
     pushq %r12
@@ -18,6 +17,5 @@ llvm_runtime_trampoline:
     // rsi contains second argument to contract function
     movq %rsp, (%rcx) // save stack ptr (adjust rdx if args added to contract function)
     jmp *%rdx // jump to contract function (adjust rsi if args added to contract function)
-.cfi_endproc
 .size llvm_runtime_trampoline, .-llvm_runtime_trampoline
 .section .note.GNU-stack,"",@progbits

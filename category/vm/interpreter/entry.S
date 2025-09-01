@@ -7,7 +7,6 @@
 .type monad_vm_interpreter_trampoline, @function
 .align 16
 monad_vm_interpreter_trampoline:
-.cfi_startproc
     pushq %rbp
     pushq %rbx    
     pushq %r12
@@ -15,7 +14,12 @@ monad_vm_interpreter_trampoline:
     pushq %r14
     pushq %r15
     movq %rsp, (%rdi)
-    jmp monad_vm_interpreter_core_loop
-.cfi_endproc
+    pushq %rbp // for stack alignment
+    // Use the call instruction to enter the interpreter loop, so that the
+    // trampoline is the return address of the interpreter loop. Stack
+    // backtraces will deterministically end at the trampoline like this,
+    // because the trampoline is not in the `.eh_frame` unwind table.
+    call monad_vm_interpreter_core_loop
+    int3 // unreachable
 .size monad_vm_interpreter_trampoline, .-monad_vm_interpreter_trampoline
 .section .note.GNU-stack,"",@progbits

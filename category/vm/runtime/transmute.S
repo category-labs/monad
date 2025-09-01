@@ -16,7 +16,6 @@ monad_vm_runtime_load_bounded_le_raw:
 //  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ..., ymm13
 // Note it is assumed that rsi <= 32 and may be negative
-.cfi_startproc
     cmp rsi, 16
     jg .g16
     cmp rsi, 8
@@ -101,7 +100,6 @@ monad_vm_runtime_load_bounded_le_raw:
     vmovd xmm15, edx
     ret
 
-.cfi_endproc
 .size monad_vm_runtime_load_bounded_le_raw, .-monad_vm_runtime_load_bounded_le_raw
 
 .globl monad_vm_runtime_load_bounded_le
@@ -119,11 +117,9 @@ monad_vm_runtime_load_bounded_le:
 //  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm1, ymm2, ..., ymm13
 // Note it is assumed that rsi <= 32 and may be negative
-.cfi_startproc
 call monad_vm_runtime_load_bounded_le_raw
 vmovups ymm0, ymm15
 ret
-.cfi_endproc
 .size monad_vm_runtime_load_bounded_le, .-monad_vm_runtime_load_bounded_le
 
 .section .note.GNU-stack,"",@progbits

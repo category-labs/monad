@@ -27,7 +27,6 @@ monad_vm_runtime_increase_memory_raw:
 //  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ymm2, ymm3, ymm4
 // Note - no need for vzeroupper before calling this function
-.cfi_startproc
     // edi = shr_ceil<5>(edi);
     add edi, 0x1f
     shr edi, 5
@@ -110,7 +109,6 @@ monad_vm_runtime_increase_memory_raw:
     vzeroupper
     jmp monad_vm_runtime_context_error_exit
 
-.cfi_endproc
 .size monad_vm_runtime_increase_memory_raw, .-monad_vm_runtime_increase_memory_raw
 
 .globl monad_vm_runtime_increase_memory
@@ -127,13 +125,11 @@ monad_vm_runtime_increase_memory:
 //  rax, rsp, rbp, rbx, r8, r9, ..., r15,
 //  ymm0, ymm1, ymm2, ymm3, ymm4
 // Note - no need for vzeroupper before calling this function
-.cfi_startproc
 push rbx
 mov rbx, rsi
 call monad_vm_runtime_increase_memory_raw
 pop rbx
 ret
-.cfi_endproc
 .size monad_vm_runtime_increase_memory, .-monad_vm_runtime_increase_memory
 
 .section .note.GNU-stack,"",@progbits

@@ -18,6 +18,7 @@
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <algorithm>
 
@@ -56,10 +57,12 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
     return outcome::success();
 }
 
-Result<void> static_validate_monad_senders(
-    monad_revision const rev, std::vector<Address> const &senders)
+EXPLICIT_MONAD_CONSENSUS_BLOCK_HEADER(static_validate_consensus_header);
+
+template <Traits traits>
+Result<void> static_validate_monad_senders(std::vector<Address> const &senders)
 {
-    if (rev < MONAD_FOUR) {
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
         return outcome::success();
     }
 
@@ -79,7 +82,7 @@ Result<void> static_validate_monad_senders(
     return outcome::success();
 }
 
-EXPLICIT_MONAD_CONSENSUS_BLOCK_HEADER(static_validate_consensus_header);
+EXPLICIT_MONAD_TRAITS(static_validate_monad_senders);
 
 MONAD_NAMESPACE_END
 

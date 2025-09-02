@@ -20,8 +20,8 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
 
@@ -437,7 +437,7 @@ namespace monad::vm::compiler::native
         }
     }
 
-    EXPLICIT_EVM_CHAIN(compile);
+    EXPLICIT_TRAITS(compile);
 
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
@@ -474,5 +474,5 @@ namespace monad::vm::compiler::native
                 static_cast<uint32_t>(size_estimate)));
     }
 
-    EXPLICIT_EVM_CHAIN(compile_basic_blocks);
+    EXPLICIT_TRAITS(compile_basic_blocks);
 }

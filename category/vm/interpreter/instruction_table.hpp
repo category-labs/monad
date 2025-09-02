@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/call_runtime.hpp>
 #include <category/vm/interpreter/instructions_fwd.hpp>
 #include <category/vm/interpreter/push.hpp>

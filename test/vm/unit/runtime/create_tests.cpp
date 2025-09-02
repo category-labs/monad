@@ -15,7 +15,7 @@
 
 #include "fixture.hpp"
 
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/memory.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -33,7 +33,7 @@ constexpr evmc_address result_addr = {0x42};
 
 TEST_F(RuntimeTest, CreateFrontier)
 {
-    using traits = EvmChain<EVMC_FRONTIER>;
+    using traits = EvmTraits<EVMC_FRONTIER>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
@@ -52,7 +52,7 @@ TEST_F(RuntimeTest, CreateFrontier)
 
 TEST_F(RuntimeTest, CreateShanghai)
 {
-    using traits = EvmChain<EVMC_SHANGHAI>;
+    using traits = EvmTraits<EVMC_SHANGHAI>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
@@ -71,7 +71,7 @@ TEST_F(RuntimeTest, CreateShanghai)
 
 TEST_F(RuntimeTest, CreateTangerineWhistle)
 {
-    using traits = EvmChain<EVMC_TANGERINE_WHISTLE>;
+    using traits = EvmTraits<EVMC_TANGERINE_WHISTLE>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
@@ -90,7 +90,7 @@ TEST_F(RuntimeTest, CreateTangerineWhistle)
 
 TEST_F(RuntimeTest, CreateFrontierSizeIsZero)
 {
-    using traits = EvmChain<EVMC_FRONTIER>;
+    using traits = EvmTraits<EVMC_FRONTIER>;
 
     ctx_.gas_remaining = 1000000;
     host_.call_result = create_result(result_addr, 900000);
@@ -105,7 +105,7 @@ TEST_F(RuntimeTest, CreateFrontierSizeIsZero)
 
 TEST_F(RuntimeTest, CreateFrontierFailure)
 {
-    using traits = EvmChain<EVMC_FRONTIER>;
+    using traits = EvmTraits<EVMC_FRONTIER>;
 
     host_.call_result = failure_result(EVMC_OUT_OF_GAS);
 
@@ -118,7 +118,7 @@ TEST_F(RuntimeTest, CreateFrontierFailure)
 
 TEST_F(RuntimeTest, Create2Constantinople)
 {
-    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
+    using traits = EvmTraits<EVMC_CONSTANTINOPLE>;
     call(mstore, 0, prog);
     ASSERT_EQ(ctx_.memory.data[31], 0xF3);
 
@@ -137,7 +137,7 @@ TEST_F(RuntimeTest, Create2Constantinople)
 
 TEST_F(RuntimeTest, CreateMaxCodeSize)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 
@@ -152,7 +152,7 @@ TEST_F(RuntimeTest, CreateMaxCodeSize)
 
 TEST_F(RuntimeTest, Create2MaxCodeSize)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 

@@ -19,9 +19,9 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -96,6 +96,6 @@ void apply_block_reward(State &state, Block const &block)
     }
 }
 
-EXPLICIT_EVM_CHAIN(apply_block_reward);
+EXPLICIT_TRAITS(apply_block_reward);
 
 MONAD_NAMESPACE_END

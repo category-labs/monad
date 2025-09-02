@@ -47,8 +47,8 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/rpc/eth_call.h>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -262,7 +262,7 @@ namespace
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
     {
-        SWITCH_EVM_CHAIN(
+        SWITCH_EVM_TRAITS(
             eth_call_impl,
             chain,
             txn,

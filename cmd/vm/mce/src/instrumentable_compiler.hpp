@@ -21,8 +21,8 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>

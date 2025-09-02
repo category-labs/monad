@@ -18,7 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
 #include <category/vm/runtime/allocator.hpp>

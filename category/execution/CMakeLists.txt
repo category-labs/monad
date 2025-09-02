@@ -188,7 +188,6 @@ add_library(
   "monad/chain/monad_mainnet.cpp"
   "monad/chain/monad_mainnet.hpp"
   "monad/chain/monad_mainnet_alloc.hpp"
-  "monad/chain/monad_revision.h"
   "monad/chain/monad_testnet.cpp"
   "monad/chain/monad_testnet.hpp"
   "monad/chain/monad_testnet_alloc.hpp"

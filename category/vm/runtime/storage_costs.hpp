@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -58,7 +58,7 @@ namespace monad::vm::runtime
     }
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_FRONTIER>>
+    struct StorageCostTable<EvmTraits<EVMC_FRONTIER>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -74,7 +74,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_HOMESTEAD>>
+    struct StorageCostTable<EvmTraits<EVMC_HOMESTEAD>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -90,7 +90,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_TANGERINE_WHISTLE>>
+    struct StorageCostTable<EvmTraits<EVMC_TANGERINE_WHISTLE>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -106,7 +106,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_SPURIOUS_DRAGON>>
+    struct StorageCostTable<EvmTraits<EVMC_SPURIOUS_DRAGON>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -122,7 +122,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_BYZANTIUM>>
+    struct StorageCostTable<EvmTraits<EVMC_BYZANTIUM>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -138,7 +138,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_CONSTANTINOPLE>>
+    struct StorageCostTable<EvmTraits<EVMC_CONSTANTINOPLE>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 200, .gas_refund = 0},
@@ -154,7 +154,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_PETERSBURG>>
+    struct StorageCostTable<EvmTraits<EVMC_PETERSBURG>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 5000, .gas_refund = 0},
@@ -170,7 +170,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_ISTANBUL>>
+    struct StorageCostTable<EvmTraits<EVMC_ISTANBUL>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 800, .gas_refund = 0},
@@ -186,7 +186,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_BERLIN>>
+    struct StorageCostTable<EvmTraits<EVMC_BERLIN>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -202,7 +202,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_LONDON>>
+    struct StorageCostTable<EvmTraits<EVMC_LONDON>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -218,7 +218,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_PARIS>>
+    struct StorageCostTable<EvmTraits<EVMC_PARIS>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -234,7 +234,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_SHANGHAI>>
+    struct StorageCostTable<EvmTraits<EVMC_SHANGHAI>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -250,7 +250,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_CANCUN>>
+    struct StorageCostTable<EvmTraits<EVMC_CANCUN>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -266,7 +266,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_PRAGUE>>
+    struct StorageCostTable<EvmTraits<EVMC_PRAGUE>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -282,7 +282,7 @@ namespace monad::vm::runtime
     };
 
     template <>
-    struct StorageCostTable<EvmChain<EVMC_OSAKA>>
+    struct StorageCostTable<EvmTraits<EVMC_OSAKA>>
     {
         static constexpr auto costs = std::array{
             StoreCost{.gas_cost = 100, .gas_refund = 0},
@@ -295,5 +295,35 @@ namespace monad::vm::runtime
             StoreCost{.gas_cost = 100, .gas_refund = 19900},
             StoreCost{.gas_cost = 100, .gas_refund = 2800},
         };
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_ZERO>>
+        : StorageCostTable<MonadTraits<MONAD_ZERO>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_ONE>>
+        : StorageCostTable<MonadTraits<MONAD_ONE>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_TWO>>
+        : StorageCostTable<MonadTraits<MONAD_TWO>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_THREE>>
+        : StorageCostTable<MonadTraits<MONAD_THREE>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_FOUR>>
+        : StorageCostTable<MonadTraits<MONAD_FOUR>::evm_base>
+    {
     };
 }

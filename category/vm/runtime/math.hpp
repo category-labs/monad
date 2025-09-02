@@ -16,7 +16,7 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>
 

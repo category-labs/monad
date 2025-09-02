@@ -15,7 +15,7 @@
 
 #include "fixture.hpp"
 
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/uint256.hpp>
 
@@ -192,7 +192,7 @@ TEST_F(RuntimeTest, MulMod)
 
 TEST_F(RuntimeTest, ExpOld)
 {
-    auto f = wrap(exp<EvmChain<EVMC_TANGERINE_WHISTLE>>);
+    auto f = wrap(exp<EvmTraits<EVMC_TANGERINE_WHISTLE>>);
 
     ctx_.gas_remaining = 0;
     ASSERT_EQ(f(100, 0), 1);
@@ -217,7 +217,7 @@ TEST_F(RuntimeTest, ExpOld)
 
 TEST_F(RuntimeTest, ExpNew)
 {
-    auto f = wrap(exp<EvmChain<EVMC_CANCUN>>);
+    auto f = wrap(exp<EvmTraits<EVMC_CANCUN>>);
 
     ctx_.gas_remaining = 0;
     ASSERT_EQ(f(100, 0), 1);

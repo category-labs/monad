@@ -17,8 +17,8 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -66,7 +66,7 @@ namespace monad::vm
             asmjit_rt_, icode->code(), icode->code_size(), config);
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::compile);
+    EXPLICIT_TRAITS_MEMBER(Compiler::compile);
 
     template <Traits traits>
     SharedNativecode Compiler::cached_compile(
@@ -87,7 +87,7 @@ namespace monad::vm
         return ncode;
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::cached_compile);
+    EXPLICIT_TRAITS_MEMBER(Compiler::cached_compile);
 
     template <Traits traits>
     bool Compiler::async_compile(
@@ -97,6 +97,13 @@ namespace monad::vm
         if (compile_job_map_.size() >= compile_job_soft_limit_) {
             return false;
         }
+        auto const cached_compile_lambda = [this](auto &&...args) {
+            // Clang complains about `this` being unused if we don't explicitly
+            // call `cached_compile` through it.
+            return this->cached_compile<traits>(
+                std::forward<decltype(args)>(args)...);
+        };
+
         // Multiple threads can get through the above limit check, so we might
         // insert more compile jobs than `compile_job_soft_limit_`. We accept
         // multiple threads getting through at approximately the same time and
@@ -105,11 +112,6 @@ namespace monad::vm
         // implying that the peak memory usage of the queued compile jobs will
         // be asymptotically the same as the peak memory usage of concurrently
         // executed bytecode.
-        auto const cached_compile_lambda = [this](auto &&...args) {
-            return this->cached_compile<traits>(
-                std::forward<decltype(args)>(args)...);
-        };
-
         if (!compile_job_map_.insert(
                 {code_hash,
                  {cached_compile_lambda, traits::id(), icode, config}})) {
@@ -122,7 +124,7 @@ namespace monad::vm
         return true;
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(Compiler::async_compile);
+    EXPLICIT_TRAITS_MEMBER(Compiler::async_compile);
 
     void Compiler::compile_loop()
     {

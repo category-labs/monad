@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
@@ -68,7 +68,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EvmChain<EVMC_FRONTIER>>(as, block);
+        apply_block_reward<EvmTraits<EVMC_FRONTIER>>(as, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(as.get_balance(a)),
@@ -100,7 +100,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EvmChain<EVMC_BYZANTIUM>>(as, block);
+        apply_block_reward<EvmTraits<EVMC_BYZANTIUM>>(as, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(as.get_balance(a)),
@@ -128,7 +128,7 @@ TEST(BlockReward, apply_block_reward)
             .ommers = {
                 BlockHeader{.number = 9, .beneficiary = b},
                 BlockHeader{.number = 8, .beneficiary = c}}};
-        apply_block_reward<EvmChain<EVMC_PETERSBURG>>(s, block);
+        apply_block_reward<EvmTraits<EVMC_PETERSBURG>>(s, block);
 
         EXPECT_EQ(
             intx::be::load<uint256_t>(s.get_balance(a)),
@@ -153,7 +153,7 @@ TEST(BlockReward, apply_block_reward)
         BlockState bs{tdb, vm};
         State s{bs, Incarnation{0, 0}};
 
-        apply_block_reward<EvmChain<EVMC_PARIS>>(s, block);
+        apply_block_reward<EvmTraits<EVMC_PARIS>>(s, block);
 
         EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
     }

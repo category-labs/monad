@@ -19,8 +19,8 @@
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <evmc/evmc.h>
@@ -221,12 +221,12 @@ namespace monad::vm::compiler::basic_blocks
         /**
          * Construct basic blocks from a bytecode program.
          */
-        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         BasicBlocksIR(
             std::uint8_t const *, interpreter::code_size_t,
             ChainMarker<traits> = {});
 
-        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
             std::initializer_list<std::uint8_t const> bytes,
@@ -240,7 +240,7 @@ namespace monad::vm::compiler::basic_blocks
                 rm);
         }
 
-        template <Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
             std::span<std::uint8_t const> bytes, ChainMarker<traits> rm = {})

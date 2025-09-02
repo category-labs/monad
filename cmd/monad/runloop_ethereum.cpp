@@ -33,6 +33,8 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
@@ -42,6 +44,8 @@
 #include <memory>
 
 MONAD_NAMESPACE_BEGIN
+
+using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 namespace
 {
@@ -112,133 +116,145 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         evmc_revision const rev =
             chain.get_revision(block.header.number, block.header.timestamp);
 
-        BOOST_OUTCOME_TRY(static_validate_block(rev, block));
+        auto const body = [&]<Traits traits>() -> Result<void> {
+            BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
-        auto const sender_recovery_begin = std::chrono::steady_clock::now();
-        auto const recovered_senders =
-            recover_senders(block.transactions, priority_pool);
-        auto const recovered_authorities =
-            recover_authorities(block.transactions, priority_pool);
-        [[maybe_unused]] auto const sender_recovery_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - sender_recovery_begin);
-        std::vector<Address> senders(block.transactions.size());
-        for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-            if (recovered_senders[i].has_value()) {
-                senders[i] = recovered_senders[i].value();
+            auto const sender_recovery_begin = std::chrono::steady_clock::now();
+            auto const recovered_senders =
+                recover_senders(block.transactions, priority_pool);
+            auto const recovered_authorities =
+                recover_authorities(block.transactions, priority_pool);
+            [[maybe_unused]] auto const sender_recovery_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - sender_recovery_begin);
+            std::vector<Address> senders(block.transactions.size());
+            for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+                if (recovered_senders[i].has_value()) {
+                    senders[i] = recovered_senders[i].value();
+                }
+                else {
+                    return TransactionError::MissingSender;
+                }
             }
-            else {
-                return TransactionError::MissingSender;
+            db.set_block_and_prefix(block.header.number - 1, parent_block_id);
+            BlockState block_state(db, vm);
+            BlockMetrics block_metrics;
+
+            std::vector<std::vector<CallFrame>> call_frames{
+                block.transactions.size()};
+            std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
+                block.transactions.size()};
+            for (unsigned i = 0; i < block.transactions.size(); ++i) {
+                call_tracers[i] =
+                    enable_tracing
+                        ? std::unique_ptr<
+                              CallTracerBase>{std::make_unique<CallTracer>(
+                              block.transactions[i], call_frames[i])}
+                        : std::unique_ptr<CallTracerBase>{
+                              std::make_unique<NoopCallTracer>()};
             }
-        }
-        db.set_block_and_prefix(block.header.number - 1, parent_block_id);
-        BlockState block_state(db, vm);
-        BlockMetrics block_metrics;
 
-        std::vector<std::vector<CallFrame>> call_frames{
-            block.transactions.size()};
-        std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-            block.transactions.size()};
-        for (unsigned i = 0; i < block.transactions.size(); ++i) {
-            call_tracers[i] =
-                enable_tracing
-                    ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                          CallTracer>(block.transactions[i], call_frames[i])}
-                    : std::unique_ptr<CallTracerBase>{
-                          std::make_unique<NoopCallTracer>()};
-        }
+            BOOST_OUTCOME_TRY(
+                auto const receipts,
+                execute_block<traits>(
+                    chain,
+                    block,
+                    senders,
+                    recovered_authorities,
+                    block_state,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_metrics,
+                    call_tracers));
 
-        BOOST_OUTCOME_TRY(
-            auto const receipts,
-            execute_block(
-                chain,
-                rev,
-                block,
+            block_state.log_debug();
+            auto const commit_begin = std::chrono::steady_clock::now();
+            block_state.commit(
+                bytes32_t{block.header.number},
+                block.header,
+                receipts,
+                call_frames,
                 senders,
-                recovered_authorities,
-                block_state,
-                block_hash_buffer,
-                priority_pool,
-                block_metrics,
-                call_tracers));
+                block.transactions,
+                block.ommers,
+                block.withdrawals);
+            [[maybe_unused]] auto const commit_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - commit_begin);
+            auto const output_header = db.read_eth_header();
+            BOOST_OUTCOME_TRY(
+                chain.validate_output_header(block.header, output_header));
 
-        block_state.log_debug();
-        auto const commit_begin = std::chrono::steady_clock::now();
-        block_state.commit(
-            bytes32_t{block.header.number},
-            block.header,
-            receipts,
-            call_frames,
-            senders,
-            block.transactions,
-            block.ommers,
-            block.withdrawals);
-        [[maybe_unused]] auto const commit_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - commit_begin);
-        auto const output_header = db.read_eth_header();
-        BOOST_OUTCOME_TRY(
-            chain.validate_output_header(block.header, output_header));
+            db.finalize(block.header.number, bytes32_t{block.header.number});
+            db.update_verified_block(block.header.number);
 
-        db.finalize(block.header.number, bytes32_t{block.header.number});
-        db.update_verified_block(block.header.number);
+            auto const h =
+                to_bytes(keccak256(rlp::encode_block_header(output_header)));
+            block_hash_buffer.set(block_num, h);
 
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
+            [[maybe_unused]] auto const block_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - block_begin);
+            LOG_INFO(
+                "__exec_block,bl={:8},ts={}"
+                ",tx={:5},rt={:4},rtp={:5.2f}%"
+                ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
+                ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+                block.header.number,
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    block_start.time_since_epoch())
+                    .count(),
+                block.transactions.size(),
+                block_metrics.num_retries(),
+                100.0 * (double)block_metrics.num_retries() /
+                    std::max(1.0, (double)block.transactions.size()),
+                sender_recovery_time,
+                block_metrics.tx_exec_time(),
+                commit_time,
+                block_time,
+                block.transactions.size() * 1'000'000 /
+                    (uint64_t)std::max(
+                        1L, block_metrics.tx_exec_time().count()),
+                block.transactions.size() * 1'000'000 /
+                    (uint64_t)std::max(1L, block_time.count()),
+                output_header.gas_used,
+                output_header.gas_used /
+                    (uint64_t)std::max(
+                        1L, block_metrics.tx_exec_time().count()),
+                output_header.gas_used /
+                    (uint64_t)std::max(1L, block_time.count()),
+                db.print_stats(),
+                vm.print_and_reset_block_counts(),
+                vm.print_compiler_stats());
 
-        [[maybe_unused]] auto const block_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - block_begin);
-        LOG_INFO(
-            "__exec_block,bl={:8},ts={}"
-            ",tx={:5},rt={:4},rtp={:5.2f}%"
-            ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-            ",gas={:9},gpse={:4},gps={:3}{}{}{}",
-            block.header.number,
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                block_start.time_since_epoch())
-                .count(),
-            block.transactions.size(),
-            block_metrics.num_retries(),
-            100.0 * (double)block_metrics.num_retries() /
-                std::max(1.0, (double)block.transactions.size()),
-            sender_recovery_time,
-            block_metrics.tx_exec_time(),
-            commit_time,
-            block_time,
-            block.transactions.size() * 1'000'000 /
-                (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-            block.transactions.size() * 1'000'000 /
-                (uint64_t)std::max(1L, block_time.count()),
-            output_header.gas_used,
-            output_header.gas_used /
-                (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-            output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
-            db.print_stats(),
-            vm.print_and_reset_block_counts(),
-            vm.print_compiler_stats());
+            ntxs += block.transactions.size();
+            batch_num_txs += block.transactions.size();
+            total_gas += block.header.gas_used;
+            batch_gas += block.header.gas_used;
+            ++batch_num_blocks;
 
-        ntxs += block.transactions.size();
-        batch_num_txs += block.transactions.size();
-        total_gas += block.header.gas_used;
-        batch_gas += block.header.gas_used;
-        ++batch_num_blocks;
+            if (block_num % batch_size == 0) {
+                log_tps(
+                    block_num,
+                    batch_num_blocks,
+                    batch_num_txs,
+                    batch_gas,
+                    batch_begin);
+                batch_num_blocks = 0;
+                batch_num_txs = 0;
+                batch_gas = 0;
+                batch_begin = std::chrono::steady_clock::now();
+            }
+            parent_block_id = bytes32_t{block_num};
+            ++block_num;
 
-        if (block_num % batch_size == 0) {
-            log_tps(
-                block_num,
-                batch_num_blocks,
-                batch_num_txs,
-                batch_gas,
-                batch_begin);
-            batch_num_blocks = 0;
-            batch_num_txs = 0;
-            batch_gas = 0;
-            batch_begin = std::chrono::steady_clock::now();
-        }
-        parent_block_id = bytes32_t{block_num};
-        ++block_num;
+            return success();
+        };
+
+        BOOST_OUTCOME_TRY([&] {
+            SWITCH_EVM_TRAITS(body.template operator());
+            MONAD_ASSERT(false);
+        }());
     }
     if (batch_num_blocks > 0) {
         log_tps(

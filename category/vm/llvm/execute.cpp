@@ -19,7 +19,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
@@ -99,50 +99,51 @@ namespace monad::vm::llvm
     {
         switch (rev) {
         case EVMC_FRONTIER:
-            return compile_impl<EvmChain<EVMC_FRONTIER>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_FRONTIER>>(code, dbg_nm);
 
         case EVMC_HOMESTEAD:
-            return compile_impl<EvmChain<EVMC_HOMESTEAD>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_HOMESTEAD>>(code, dbg_nm);
 
         case EVMC_TANGERINE_WHISTLE:
-            return compile_impl<EvmChain<EVMC_TANGERINE_WHISTLE>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_TANGERINE_WHISTLE>>(
+                code, dbg_nm);
 
         case EVMC_SPURIOUS_DRAGON:
-            return compile_impl<EvmChain<EVMC_SPURIOUS_DRAGON>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_SPURIOUS_DRAGON>>(code, dbg_nm);
 
         case EVMC_BYZANTIUM:
-            return compile_impl<EvmChain<EVMC_BYZANTIUM>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_BYZANTIUM>>(code, dbg_nm);
 
         case EVMC_CONSTANTINOPLE:
-            return compile_impl<EvmChain<EVMC_CONSTANTINOPLE>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_CONSTANTINOPLE>>(code, dbg_nm);
 
         case EVMC_PETERSBURG:
-            return compile_impl<EvmChain<EVMC_PETERSBURG>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_PETERSBURG>>(code, dbg_nm);
 
         case EVMC_ISTANBUL:
-            return compile_impl<EvmChain<EVMC_ISTANBUL>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_ISTANBUL>>(code, dbg_nm);
 
         case EVMC_BERLIN:
-            return compile_impl<EvmChain<EVMC_BERLIN>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_BERLIN>>(code, dbg_nm);
 
         case EVMC_LONDON:
-            return compile_impl<EvmChain<EVMC_LONDON>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_LONDON>>(code, dbg_nm);
 
         case EVMC_PARIS:
-            return compile_impl<EvmChain<EVMC_PARIS>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_PARIS>>(code, dbg_nm);
 
         case EVMC_SHANGHAI:
-            return compile_impl<EvmChain<EVMC_SHANGHAI>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_SHANGHAI>>(code, dbg_nm);
 
         case EVMC_CANCUN:
-            return compile_impl<EvmChain<EVMC_CANCUN>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_CANCUN>>(code, dbg_nm);
 
         case EVMC_PRAGUE:
-            return compile_impl<EvmChain<EVMC_PRAGUE>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_PRAGUE>>(code, dbg_nm);
 
         default:
             MONAD_VM_ASSERT(rev == EVMC_OSAKA);
-            return compile_impl<EvmChain<EVMC_OSAKA>>(code, dbg_nm);
+            return compile_impl<EvmTraits<EVMC_OSAKA>>(code, dbg_nm);
         }
     }
 }

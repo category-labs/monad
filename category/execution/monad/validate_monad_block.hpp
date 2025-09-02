@@ -17,7 +17,8 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/monad/chain/monad_revision.h>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
 
 #include <vector>
 
@@ -44,8 +45,8 @@ template <class MonadConsensusBlockHeader>
 Result<void>
 static_validate_consensus_header(MonadConsensusBlockHeader const &);
 
-Result<void>
-static_validate_monad_senders(monad_revision, std::vector<Address> const &);
+template <Traits traits>
+Result<void> static_validate_monad_senders(std::vector<Address> const &);
 
 MONAD_NAMESPACE_END
 

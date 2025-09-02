@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -46,14 +46,6 @@ using RevertTransactionFn = std::function<bool(
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &, Block &, std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
-    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
-    RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                     uint64_t, State &) { return false; });
-
-Result<std::vector<Receipt>> execute_block(
-    Chain const &, evmc_revision, Block &, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,

@@ -43,9 +43,9 @@
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp> // TODO: remove when execute block is a functor
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -345,31 +345,6 @@ Result<std::vector<Receipt>> execute_block(
     return retvals;
 }
 
-EXPLICIT_EVM_CHAIN(execute_block);
-
-Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, evmc_revision const rev, Block &block,
-    std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
-    RevertTransactionFn const &revert_transaction)
-{
-    SWITCH_EVM_CHAIN(
-        execute_block,
-        chain,
-        block,
-        senders,
-        authorities,
-        block_state,
-        block_hash_buffer,
-        priority_pool,
-        block_metrics,
-        call_tracers,
-        revert_transaction);
-    MONAD_ABORT_PRINTF(
-        "unhandled evmc revision %u", static_cast<unsigned>(rev));
-}
+EXPLICIT_TRAITS(execute_block);
 
 MONAD_NAMESPACE_END

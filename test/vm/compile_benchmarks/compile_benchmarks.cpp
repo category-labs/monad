@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/load_program.hpp>
 
@@ -78,7 +78,7 @@ namespace
 
         for (auto _ : state) {
             auto fn = monad::vm::compiler::native::compile<
-                monad::EvmChain<EVMC_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                 rt,
                 program.data(),
                 monad::vm::interpreter::code_size_t::unsafe_from(
@@ -119,7 +119,7 @@ namespace
 
         for (auto _ : state) {
             auto ncode = monad::vm::compiler::native::compile<
-                monad::EvmChain<EVMC_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                 rt,
                 program.data(),
                 monad::vm::interpreter::code_size_t::unsafe_from(

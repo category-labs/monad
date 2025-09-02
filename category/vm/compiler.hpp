@@ -17,7 +17,7 @@
 
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/utils/log_utils.hpp>
 #include <category/vm/varcode_cache.hpp>

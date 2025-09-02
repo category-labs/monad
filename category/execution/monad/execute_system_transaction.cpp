@@ -29,7 +29,8 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <optional>
 
@@ -195,20 +196,6 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     return staking::StakingError::MethodNotSupported;
 }
 
-template class ExecuteSystemTransaction<EvmChain<EVMC_FRONTIER>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_HOMESTEAD>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_TANGERINE_WHISTLE>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_SPURIOUS_DRAGON>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_BYZANTIUM>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_CONSTANTINOPLE>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_PETERSBURG>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_ISTANBUL>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_BERLIN>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_LONDON>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_PARIS>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_SHANGHAI>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_CANCUN>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_PRAGUE>>;
-template class ExecuteSystemTransaction<EvmChain<EVMC_OSAKA>>;
+EXPLICIT_TRAITS_CLASS(ExecuteSystemTransaction);
 
 MONAD_NAMESPACE_END

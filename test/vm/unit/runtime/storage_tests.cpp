@@ -51,7 +51,7 @@ TEST_F(RuntimeTest, TransientStorage)
 
 TEST_F(RuntimeTest, StorageHomestead)
 {
-    using traits = EvmChain<EVMC_HOMESTEAD>;
+    using traits = EvmTraits<EVMC_HOMESTEAD>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -77,7 +77,7 @@ TEST_F(RuntimeTest, StorageHomestead)
 
 TEST_F(RuntimeTest, StorageConstantinopleOriginalEmpty)
 {
-    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
+    using traits = EvmTraits<EVMC_CONSTANTINOPLE>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -106,7 +106,7 @@ TEST_F(RuntimeTest, StorageConstantinopleOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageConstantinopleOriginalNonEmpty)
 {
-    using traits = EvmChain<EVMC_CONSTANTINOPLE>;
+    using traits = EvmTraits<EVMC_CONSTANTINOPLE>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -141,7 +141,7 @@ TEST_F(RuntimeTest, StorageConstantinopleOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageIstanbulOriginalEmpty)
 {
-    using traits = EvmChain<EVMC_ISTANBUL>;
+    using traits = EvmTraits<EVMC_ISTANBUL>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -170,7 +170,7 @@ TEST_F(RuntimeTest, StorageIstanbulOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageIstanbulOriginalNonEmpty)
 {
-    using traits = EvmChain<EVMC_ISTANBUL>;
+    using traits = EvmTraits<EVMC_ISTANBUL>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -205,7 +205,7 @@ TEST_F(RuntimeTest, StorageIstanbulOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageBerlinLoadCold)
 {
-    using traits = EvmChain<EVMC_BERLIN>;
+    using traits = EvmTraits<EVMC_BERLIN>;
     auto load = wrap(sload<traits>);
 
     ctx_.gas_remaining = 2000;
@@ -217,7 +217,7 @@ TEST_F(RuntimeTest, StorageBerlinLoadCold)
 
 TEST_F(RuntimeTest, StorageBerlinLoadWarm)
 {
-    using traits = EvmChain<EVMC_BERLIN>;
+    using traits = EvmTraits<EVMC_BERLIN>;
     auto load = wrap(sload<traits>);
 
     host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
@@ -229,7 +229,7 @@ TEST_F(RuntimeTest, StorageBerlinLoadWarm)
 
 TEST_F(RuntimeTest, StorageBerlinOriginalEmpty)
 {
-    using traits = EvmChain<EVMC_BERLIN>;
+    using traits = EvmTraits<EVMC_BERLIN>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -255,7 +255,7 @@ TEST_F(RuntimeTest, StorageBerlinOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageBerlinOriginalNonEmpty)
 {
-    using traits = EvmChain<EVMC_BERLIN>;
+    using traits = EvmTraits<EVMC_BERLIN>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -287,7 +287,7 @@ TEST_F(RuntimeTest, StorageBerlinOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageLondonOriginalNonEmpty)
 {
-    using traits = EvmChain<EVMC_LONDON>;
+    using traits = EvmTraits<EVMC_LONDON>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -319,7 +319,7 @@ TEST_F(RuntimeTest, StorageLondonOriginalNonEmpty)
 
 TEST_F(RuntimeTest, StorageCancunLoadCold)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto load = wrap(sload<traits>);
 
     ctx_.gas_remaining = 2000;
@@ -331,7 +331,7 @@ TEST_F(RuntimeTest, StorageCancunLoadCold)
 
 TEST_F(RuntimeTest, StorageCancunLoadWarm)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto load = wrap(sload<traits>);
 
     host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
@@ -343,7 +343,7 @@ TEST_F(RuntimeTest, StorageCancunLoadWarm)
 
 TEST_F(RuntimeTest, StorageCancunOriginalEmpty)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 
@@ -369,7 +369,7 @@ TEST_F(RuntimeTest, StorageCancunOriginalEmpty)
 
 TEST_F(RuntimeTest, StorageCancunOriginalNonEmpty)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto load = wrap(sload<traits>);
     auto store = wrap(sstore<traits>);
 

@@ -42,7 +42,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <ethash/keccak.hpp>
 #include <evmc/evmc.hpp>
@@ -956,7 +956,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
             block.value().transactions[i], call_frames[i]));
     }
 
-    auto const receipts = execute_block<EvmChain<EVMC_SHANGHAI>>(
+    auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
         EthereumMainnet{},
         block.value(),
         senders,
@@ -1060,7 +1060,7 @@ TYPED_TEST(DBTest, assertion_exception)
 
     EXPECT_THROW(
         {
-            (void)execute_block<EvmChain<EVMC_SHANGHAI>>(
+            (void)execute_block<EvmTraits<EVMC_SHANGHAI>>(
                 EthereumMainnet{},
                 block.value(),
                 senders,
@@ -1154,7 +1154,7 @@ TYPED_TEST(DBTest, call_frames_refund)
             block.value().transactions[i], call_frames[i]));
     }
 
-    auto const receipts = execute_block<EvmChain<EVMC_SHANGHAI>>(
+    auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
         ShanghaiEthereumMainnet{},
         block.value(),
         senders,

@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
@@ -26,83 +26,83 @@
 namespace monad::vm::utils::evm_as
 {
 
-    inline EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>> latest()
+    inline EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>> latest()
     {
-        return EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>>{};
+        return EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_FRONTIER>> frontier()
+    inline EvmBuilder<EvmTraits<EVMC_FRONTIER>> frontier()
     {
-        return EvmBuilder<EvmChain<EVMC_FRONTIER>>{};
+        return EvmBuilder<EvmTraits<EVMC_FRONTIER>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_HOMESTEAD>> homestead()
+    inline EvmBuilder<EvmTraits<EVMC_HOMESTEAD>> homestead()
     {
-        return EvmBuilder<EvmChain<EVMC_HOMESTEAD>>{};
+        return EvmBuilder<EvmTraits<EVMC_HOMESTEAD>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_TANGERINE_WHISTLE>> tangerine_whistle()
+    inline EvmBuilder<EvmTraits<EVMC_TANGERINE_WHISTLE>> tangerine_whistle()
     {
-        return EvmBuilder<EvmChain<EVMC_TANGERINE_WHISTLE>>{};
+        return EvmBuilder<EvmTraits<EVMC_TANGERINE_WHISTLE>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_SPURIOUS_DRAGON>> spurious_dragon()
+    inline EvmBuilder<EvmTraits<EVMC_SPURIOUS_DRAGON>> spurious_dragon()
     {
-        return EvmBuilder<EvmChain<EVMC_SPURIOUS_DRAGON>>{};
+        return EvmBuilder<EvmTraits<EVMC_SPURIOUS_DRAGON>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_BYZANTIUM>> byzantium()
+    inline EvmBuilder<EvmTraits<EVMC_BYZANTIUM>> byzantium()
     {
-        return EvmBuilder<EvmChain<EVMC_BYZANTIUM>>{};
+        return EvmBuilder<EvmTraits<EVMC_BYZANTIUM>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_CONSTANTINOPLE>> constantinople()
+    inline EvmBuilder<EvmTraits<EVMC_CONSTANTINOPLE>> constantinople()
     {
-        return EvmBuilder<EvmChain<EVMC_CONSTANTINOPLE>>{};
+        return EvmBuilder<EvmTraits<EVMC_CONSTANTINOPLE>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_PETERSBURG>> petersburg()
+    inline EvmBuilder<EvmTraits<EVMC_PETERSBURG>> petersburg()
     {
-        return EvmBuilder<EvmChain<EVMC_PETERSBURG>>{};
+        return EvmBuilder<EvmTraits<EVMC_PETERSBURG>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_ISTANBUL>> istanbul()
+    inline EvmBuilder<EvmTraits<EVMC_ISTANBUL>> istanbul()
     {
-        return EvmBuilder<EvmChain<EVMC_ISTANBUL>>{};
+        return EvmBuilder<EvmTraits<EVMC_ISTANBUL>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_BERLIN>> berlin()
+    inline EvmBuilder<EvmTraits<EVMC_BERLIN>> berlin()
     {
-        return EvmBuilder<EvmChain<EVMC_BERLIN>>{};
+        return EvmBuilder<EvmTraits<EVMC_BERLIN>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_LONDON>> london()
+    inline EvmBuilder<EvmTraits<EVMC_LONDON>> london()
     {
-        return EvmBuilder<EvmChain<EVMC_LONDON>>{};
+        return EvmBuilder<EvmTraits<EVMC_LONDON>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_PARIS>> paris()
+    inline EvmBuilder<EvmTraits<EVMC_PARIS>> paris()
     {
-        return EvmBuilder<EvmChain<EVMC_PARIS>>{};
+        return EvmBuilder<EvmTraits<EVMC_PARIS>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_SHANGHAI>> shanghai()
+    inline EvmBuilder<EvmTraits<EVMC_SHANGHAI>> shanghai()
     {
-        return EvmBuilder<EvmChain<EVMC_SHANGHAI>>{};
+        return EvmBuilder<EvmTraits<EVMC_SHANGHAI>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_CANCUN>> cancun()
+    inline EvmBuilder<EvmTraits<EVMC_CANCUN>> cancun()
     {
-        return EvmBuilder<EvmChain<EVMC_CANCUN>>{};
+        return EvmBuilder<EvmTraits<EVMC_CANCUN>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_PRAGUE>> prague()
+    inline EvmBuilder<EvmTraits<EVMC_PRAGUE>> prague()
     {
-        return EvmBuilder<EvmChain<EVMC_PRAGUE>>{};
+        return EvmBuilder<EvmTraits<EVMC_PRAGUE>>{};
     }
 
-    inline EvmBuilder<EvmChain<EVMC_OSAKA>> osaka()
+    inline EvmBuilder<EvmTraits<EVMC_OSAKA>> osaka()
     {
-        return EvmBuilder<EvmChain<EVMC_OSAKA>>{};
+        return EvmBuilder<EvmTraits<EVMC_OSAKA>>{};
     }
 }

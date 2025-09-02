@@ -51,8 +51,8 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <monad/test/config.hpp>
 
@@ -344,7 +344,7 @@ Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
     BlockHashBuffer const &block_hash_buffer, bool enable_tracing)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVM_CHAIN(
+    SWITCH_EVM_TRAITS(
         execute_and_record, block, db, vm, block_hash_buffer, enable_tracing);
     MONAD_ASSERT(false);
 }

@@ -17,8 +17,8 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -74,7 +74,7 @@ namespace monad::vm
         return result;
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute);
+    EXPLICIT_TRAITS_MEMBER(VM::execute);
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode(
@@ -99,7 +99,7 @@ namespace monad::vm
         return result;
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_bytecode);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode);
 
     template <Traits traits>
     evmc::Result VM::execute_raw(
@@ -113,7 +113,7 @@ namespace monad::vm
         return execute_impl<traits>(rt_ctx, code_hash, vcode);
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_raw);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_raw);
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode_raw(
@@ -126,7 +126,7 @@ namespace monad::vm
         return execute_bytecode_impl<traits>(rt_ctx, code);
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_bytecode_raw);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_raw);
 
     template <Traits traits>
     evmc::Result VM::execute_intercode_raw(
@@ -139,7 +139,7 @@ namespace monad::vm
         return execute_intercode_impl<traits>(rt_ctx, icode);
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_intercode_raw);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_raw);
 
     template <Traits traits>
     evmc::Result VM::execute_impl(
@@ -193,7 +193,7 @@ namespace monad::vm
         return result;
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_impl);
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode_impl(
@@ -207,7 +207,7 @@ namespace monad::vm
         return rt_ctx.copy_to_evmc_result();
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_bytecode_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_impl);
 
     template <Traits traits>
     evmc::Result VM::execute_intercode_impl(
@@ -221,7 +221,7 @@ namespace monad::vm
         return rt_ctx.copy_to_evmc_result();
     }
 
-    EXPLICIT_EVM_CHAIN_MEMBER(VM::execute_intercode_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_impl);
 
     evmc::Result VM::execute_native_entrypoint_raw(
         runtime::ChainParams const &params, evmc_host_interface const *host,

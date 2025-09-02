@@ -16,8 +16,8 @@
 #pragma once
 
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 

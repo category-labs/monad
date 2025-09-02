@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
 #include <silkpre/precompile.h>
@@ -103,7 +103,7 @@ resolve_precompile(Address const &address, bool const enable_p256_verify)
     return std::nullopt;
 }
 
-EXPLICIT_EVM_CHAIN(resolve_precompile);
+EXPLICIT_TRAITS(resolve_precompile);
 
 template <Traits traits>
 bool is_precompile(Address const &address, bool const enable_p256_verify)
@@ -111,7 +111,7 @@ bool is_precompile(Address const &address, bool const enable_p256_verify)
     return resolve_precompile<traits>(address, enable_p256_verify).has_value();
 }
 
-EXPLICIT_EVM_CHAIN(is_precompile);
+EXPLICIT_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result>
@@ -158,6 +158,6 @@ check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
     }};
 }
 
-EXPLICIT_EVM_CHAIN(check_call_precompile);
+EXPLICIT_TRAITS(check_call_precompile);
 
 MONAD_NAMESPACE_END

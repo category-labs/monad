@@ -28,7 +28,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -179,7 +179,7 @@ std::optional<evmc::Result> EthereumMainnet::check_call_precompile(
     evmc_revision const rev = get_revision(block_number, timestamp);
     bool const enable_p256_verify =
         get_p256_verify_enabled(block_number, timestamp);
-    SWITCH_EVM_CHAIN(::monad::check_call_precompile, msg, enable_p256_verify);
+    SWITCH_EVM_TRAITS(::monad::check_call_precompile, msg, enable_p256_verify);
     return std::nullopt;
 }
 

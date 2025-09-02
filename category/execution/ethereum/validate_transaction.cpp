@@ -22,9 +22,9 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -187,7 +187,7 @@ Result<void> static_validate_transaction(
     return success();
 }
 
-EXPLICIT_EVM_CHAIN(static_validate_transaction);
+EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
 Result<void> validate_transaction(
@@ -243,14 +243,14 @@ Result<void> validate_transaction(
     return success();
 }
 
-EXPLICIT_EVM_CHAIN(validate_transaction);
+EXPLICIT_TRAITS(validate_transaction);
 
 Result<void> validate_transaction(
     evmc_revision const rev, Transaction const &tx,
     std::optional<Account> const &sender_account,
     std::span<uint8_t const> const code)
 {
-    SWITCH_EVM_CHAIN(validate_transaction, tx, sender_account, code);
+    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
     MONAD_ABORT("invalid revision");
 }
 

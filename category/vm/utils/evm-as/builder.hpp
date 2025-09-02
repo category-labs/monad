@@ -17,8 +17,8 @@
 
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>

@@ -18,8 +18,8 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/math.hpp>
@@ -1733,7 +1733,7 @@ TEST(Emitter, mul)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.mul<EvmChain<EVMC_FRONTIER>>(
+                em.mul<EvmTraits<EVMC_FRONTIER>>(
                     std::numeric_limits<int32_t>::max());
             },
             a,
@@ -1764,7 +1764,7 @@ TEST(Emitter, udiv)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.udiv<EvmChain<EVMC_FRONTIER>>(
+                em.udiv<EvmTraits<EVMC_FRONTIER>>(
                     std::numeric_limits<int32_t>::max());
             },
             a,
@@ -1824,7 +1824,7 @@ TEST(Emitter, sdiv)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.sdiv<EvmChain<EVMC_FRONTIER>>(
+                em.sdiv<EvmTraits<EVMC_FRONTIER>>(
                     std::numeric_limits<int32_t>::max());
             },
             a,
@@ -1857,7 +1857,7 @@ TEST(Emitter, umod)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.umod<EvmChain<EVMC_FRONTIER>>(
+                em.umod<EvmTraits<EVMC_FRONTIER>>(
                     std::numeric_limits<int32_t>::max());
             },
             a,
@@ -1922,7 +1922,7 @@ TEST(Emitter, smod)
             rt,
             PUSH0,
             [&](Emitter &em) {
-                em.smod<EvmChain<EVMC_FRONTIER>>(
+                em.smod<EvmTraits<EVMC_FRONTIER>>(
                     std::numeric_limits<int32_t>::max());
             },
             a,
@@ -2192,7 +2192,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2205,7 +2205,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2225,7 +2225,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2238,7 +2238,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmChain<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
                 },
                 a,
                 b,
@@ -2856,7 +2856,7 @@ TEST(Emitter, call_runtime_pure)
     pure_bin_instr_test(
         rt,
         DIV,
-        [](Emitter &emit) { emit.udiv<EvmChain<EVMC_FRONTIER>>(0); },
+        [](Emitter &emit) { emit.udiv<EvmTraits<EVMC_FRONTIER>>(0); },
         1000,
         4,
         250);
@@ -2868,7 +2868,7 @@ TEST(Emitter, call_runtime_impl)
     pure_bin_instr_test(
         rt,
         EXP,
-        [](Emitter &emit) { emit.exp<EvmChain<EVMC_FRONTIER>>(0); },
+        [](Emitter &emit) { emit.exp<EvmTraits<EVMC_FRONTIER>>(0); },
         10,
         20,
         100000000000000000000_u256);
@@ -2960,7 +2960,7 @@ TEST(Emitter, runtime_exit)
     emit.push(0);
     emit.push(300);
     emit.push(10);
-    emit.call_runtime(9, true, runtime::exp<EvmChain<EVMC_SPURIOUS_DRAGON>>);
+    emit.call_runtime(9, true, runtime::exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);

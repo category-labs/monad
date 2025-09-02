@@ -30,7 +30,7 @@
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/validate_system_transaction.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <algorithm>
 
@@ -204,7 +204,7 @@ std::optional<evmc::Result> MonadChain::check_call_precompile(
 
     auto maybe_result =
         [rev, &msg, enable_p256_verify]() -> std::optional<evmc::Result> {
-        SWITCH_EVM_CHAIN(
+        SWITCH_EVM_TRAITS(
             ::monad::check_call_precompile, msg, enable_p256_verify);
         return std::nullopt;
     }();

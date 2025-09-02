@@ -85,7 +85,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     NoopCallTracer noop_call_tracer;
 
-    auto const receipt = ExecuteTransaction<EvmChain<EVMC_SHANGHAI>>(
+    auto const receipt = ExecuteTransaction<EvmTraits<EVMC_SHANGHAI>>(
         EthereumMainnet{},
         0,
         tx,

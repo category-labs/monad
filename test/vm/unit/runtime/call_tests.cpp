@@ -34,7 +34,7 @@ using namespace intx;
 
 TEST_F(RuntimeTest, CallBasic)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -53,7 +53,7 @@ TEST_F(RuntimeTest, CallBasic)
 
 TEST_F(RuntimeTest, CallWithValueCold)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -68,7 +68,7 @@ TEST_F(RuntimeTest, CallWithValueCold)
 
 TEST_F(RuntimeTest, CallGasLimit)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 66500;
@@ -84,7 +84,7 @@ TEST_F(RuntimeTest, CallGasLimit)
 
 TEST_F(RuntimeTest, CallFailure)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -98,7 +98,7 @@ TEST_F(RuntimeTest, CallFailure)
 
 TEST_F(RuntimeTest, DelegateCallIstanbul)
 {
-    using traits = EvmChain<EVMC_ISTANBUL>;
+    using traits = EvmTraits<EVMC_ISTANBUL>;
     auto do_call = wrap(monad::vm::runtime::delegatecall<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -112,7 +112,7 @@ TEST_F(RuntimeTest, DelegateCallIstanbul)
 
 TEST_F(RuntimeTest, CallCodeHomestead)
 {
-    using traits = EvmChain<EVMC_HOMESTEAD>;
+    using traits = EvmTraits<EVMC_HOMESTEAD>;
     auto do_call = wrap(monad::vm::runtime::callcode<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -126,7 +126,7 @@ TEST_F(RuntimeTest, CallCodeHomestead)
 
 TEST_F(RuntimeTest, StaticCallByzantium)
 {
-    using traits = EvmChain<EVMC_BYZANTIUM>;
+    using traits = EvmTraits<EVMC_BYZANTIUM>;
     auto do_call = wrap(monad::vm::runtime::staticcall<traits>);
 
     ctx_.gas_remaining = 100000;
@@ -140,7 +140,7 @@ TEST_F(RuntimeTest, StaticCallByzantium)
 
 TEST_F(RuntimeTest, CallTooDeep)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto do_call = wrap(monad::vm::runtime::call<traits>);
 
     ctx_.env.depth = 1024;
@@ -155,7 +155,7 @@ TEST_F(RuntimeTest, CallTooDeep)
 
 TEST_F(RuntimeTest, DelegatedCallPrague)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -186,7 +186,7 @@ TEST_F(RuntimeTest, DelegatedCallPrague)
 
 TEST_F(RuntimeTest, DelegatedStaticCallPrague)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -217,7 +217,7 @@ TEST_F(RuntimeTest, DelegatedStaticCallPrague)
 
 TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -248,7 +248,7 @@ TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
 
 TEST_F(RuntimeTest, DelegatedCallcodePrague)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -279,7 +279,7 @@ TEST_F(RuntimeTest, DelegatedCallcodePrague)
 
 TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     auto const delegate_addr = address_from_uint256(0x01);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -305,7 +305,7 @@ TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
 
 TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     std::array<uint8_t, 2> baad_addr{0xBA, 0xAD};
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -327,7 +327,7 @@ TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
 
 TEST_F(RuntimeTest, DelegatedCallPragueBadCode2)
 {
-    using traits = EvmChain<EVMC_PRAGUE>;
+    using traits = EvmTraits<EVMC_PRAGUE>;
 
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     add_account_at(0xC0FFEE, coffee_code);

@@ -53,7 +53,7 @@ namespace
     std::shared_ptr<monad::vm::compiler::native::Nativecode>
     compile(asmjit::JitRuntime &rt, std::vector<uint8_t> const &bytecode)
     {
-        using traits = EvmChain<EVMC_LATEST_STABLE_REVISION>;
+        using traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>;
 
         monad::vm::compiler::native::CompilerConfig const config{};
         auto const ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
@@ -136,7 +136,8 @@ namespace
     struct jit
     {
         static runtime::uint256_t
-        run(evm_as::EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>> const &eb)
+        run(evm_as::EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>> const
+                &eb)
         {
             std::vector<uint8_t> bytecode{};
             evm_as::compile(eb, bytecode);

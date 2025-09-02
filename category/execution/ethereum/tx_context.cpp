@@ -19,10 +19,10 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -58,6 +58,6 @@ evmc_tx_context get_tx_context(
     };
 }
 
-EXPLICIT_EVM_CHAIN(get_tx_context);
+EXPLICIT_TRAITS(get_tx_context);
 
 MONAD_NAMESPACE_END

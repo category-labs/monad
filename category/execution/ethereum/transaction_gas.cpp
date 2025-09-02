@@ -18,9 +18,9 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -104,7 +104,7 @@ uint64_t g_data(Transaction const &tx) noexcept
     return zeros * 4u + nonzeros * 16u;
 }
 
-EXPLICIT_EVM_CHAIN(g_data);
+EXPLICIT_TRAITS(g_data);
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
@@ -133,7 +133,7 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     }
 }
 
-EXPLICIT_EVM_CHAIN(intrinsic_gas);
+EXPLICIT_TRAITS(intrinsic_gas);
 
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
@@ -172,13 +172,13 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
     return priority_fee_per_gas(tx, base_fee_per_gas) + base_fee_per_gas;
 }
 
-EXPLICIT_EVM_CHAIN(gas_price);
+EXPLICIT_TRAITS(gas_price);
 
 uint256_t gas_price(
     evmc_revision rev, Transaction const &tx,
     uint256_t const &base_fee_per_gas) noexcept
 {
-    SWITCH_EVM_CHAIN(gas_price, tx, base_fee_per_gas);
+    SWITCH_EVM_TRAITS(gas_price, tx, base_fee_per_gas);
     MONAD_ABORT("invalid revision");
 }
 
@@ -193,7 +193,7 @@ uint256_t calculate_txn_award(
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);
 }
 
-EXPLICIT_EVM_CHAIN(calculate_txn_award);
+EXPLICIT_TRAITS(calculate_txn_award);
 
 uint256_t
 calc_blob_fee(Transaction const &tx, uint64_t const excess_blob_gas) noexcept

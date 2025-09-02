@@ -30,9 +30,10 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -295,21 +296,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     return result;
 }
 
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_FRONTIER>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_HOMESTEAD>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_TANGERINE_WHISTLE>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_SPURIOUS_DRAGON>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_BYZANTIUM>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_CONSTANTINOPLE>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_PETERSBURG>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_ISTANBUL>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_BERLIN>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_LONDON>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_PARIS>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_SHANGHAI>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_CANCUN>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_PRAGUE>>;
-template class ExecuteTransactionNoValidation<EvmChain<EVMC_OSAKA>>;
+EXPLICIT_TRAITS_CLASS(ExecuteTransactionNoValidation);
 
 template <Traits traits>
 ExecuteTransaction<traits>::ExecuteTransaction(
@@ -484,27 +471,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     }
 }
 
-template class ExecuteTransaction<EvmChain<EVMC_FRONTIER>>;
-template class ExecuteTransaction<EvmChain<EVMC_HOMESTEAD>>;
-template class ExecuteTransaction<EvmChain<EVMC_TANGERINE_WHISTLE>>;
-template class ExecuteTransaction<EvmChain<EVMC_SPURIOUS_DRAGON>>;
-template class ExecuteTransaction<EvmChain<EVMC_BYZANTIUM>>;
-template class ExecuteTransaction<EvmChain<EVMC_CONSTANTINOPLE>>;
-template class ExecuteTransaction<EvmChain<EVMC_PETERSBURG>>;
-template class ExecuteTransaction<EvmChain<EVMC_ISTANBUL>>;
-template class ExecuteTransaction<EvmChain<EVMC_BERLIN>>;
-template class ExecuteTransaction<EvmChain<EVMC_LONDON>>;
-template class ExecuteTransaction<EvmChain<EVMC_PARIS>>;
-template class ExecuteTransaction<EvmChain<EVMC_SHANGHAI>>;
-template class ExecuteTransaction<EvmChain<EVMC_CANCUN>>;
-template class ExecuteTransaction<EvmChain<EVMC_PRAGUE>>;
-template class ExecuteTransaction<EvmChain<EVMC_OSAKA>>;
+EXPLICIT_TRAITS_CLASS(ExecuteTransaction);
 
 uint64_t g_star(
     evmc_revision const rev, Transaction const &tx,
     uint64_t const gas_remaining, uint64_t const refund)
 {
-    SWITCH_EVM_CHAIN(g_star, tx, gas_remaining, refund);
+    SWITCH_EVM_TRAITS(g_star, tx, gas_remaining, refund);
     MONAD_ASSERT(false);
 }
 

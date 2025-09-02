@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/types.hpp>

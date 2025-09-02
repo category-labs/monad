@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -84,11 +84,11 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 namespace fs = std::filesystem;
-using monad::EvmChain;
+using monad::EvmTraits;
 using namespace monad::vm;
 using namespace monad::vm::utils;
 using namespace monad::vm::runtime;
-using EvmBuilder = evm_as::EvmBuilder<EvmChain<EVMC_LATEST_STABLE_REVISION>>;
+using EvmBuilder = evm_as::EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>>;
 
 namespace monad::vm::utils::evm_as::kernels
 {
@@ -533,7 +533,7 @@ void emit_kernels(arguments const &config)
     for (auto binop : binops) {
         size_t i = 0;
         auto const &info =
-            opcode_table<EvmChain<EVMC_LATEST_STABLE_REVISION>>[binop];
+            opcode_table<EvmTraits<EVMC_LATEST_STABLE_REVISION>>[binop];
         for (auto const &[a, b] : parameters) {
             emit_kernel(
                 em_config,

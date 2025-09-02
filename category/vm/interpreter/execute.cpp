@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/instruction_table.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -78,5 +78,5 @@ namespace monad::vm::interpreter
             reinterpret_cast<void *>(core_loop<traits>));
     }
 
-    EXPLICIT_EVM_CHAIN(execute);
+    EXPLICIT_TRAITS(execute);
 }

@@ -19,7 +19,7 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/chain/monad_revision.h>
+#include <category/vm/evm/monad/revision.h>
 
 MONAD_NAMESPACE_BEGIN
 

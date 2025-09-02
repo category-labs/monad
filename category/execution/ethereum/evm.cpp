@@ -26,8 +26,8 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/chain.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -132,7 +132,7 @@ evmc::Result deploy_contract_code(
     return result;
 }
 
-EXPLICIT_EVM_CHAIN(deploy_contract_code);
+EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
 std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
@@ -287,7 +287,7 @@ evmc::Result create(
     return result;
 }
 
-EXPLICIT_EVM_CHAIN(create);
+EXPLICIT_TRAITS(create);
 
 template <Traits traits>
 evmc::Result call(
@@ -334,6 +334,6 @@ evmc::Result call(
     return result;
 }
 
-EXPLICIT_EVM_CHAIN(call);
+EXPLICIT_TRAITS(call);
 
 MONAD_NAMESPACE_END

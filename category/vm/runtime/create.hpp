@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/runtime/uint256.hpp>

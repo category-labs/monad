@@ -16,8 +16,8 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
@@ -63,7 +63,7 @@ namespace
 
 TEST(async_compile_test, stress)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
 
     constexpr size_t P = 10;
     constexpr size_t L = 120;
@@ -135,7 +135,8 @@ TEST(async_compile_test, disable)
         auto const hash = test_hash(i);
         auto const icode = make_shared_intercode(std::move(code));
 
-        ASSERT_TRUE(compiler.async_compile<EvmChain<EVMC_PRAGUE>>(hash, icode));
+        ASSERT_TRUE(
+            compiler.async_compile<EvmTraits<EVMC_PRAGUE>>(hash, icode));
     }
 
     compiler.debug_wait_for_empty_queue();

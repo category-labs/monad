@@ -15,16 +15,5 @@
 
 #pragma once
 
-#include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/allocator.hpp>
-#include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
-namespace monad::vm::interpreter
-{
-    template <Traits traits>
-    void
-    execute(runtime::Context &, Intercode const &, std::uint8_t *stack_ptr);
-}
+#define MONAD_CORE_CONCAT2(a, b) a##b
+#define MONAD_CORE_CONCAT(a, b) MONAD_CORE_CONCAT2(a, b)

@@ -17,7 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

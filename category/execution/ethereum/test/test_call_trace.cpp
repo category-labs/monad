@@ -150,7 +150,7 @@ TEST(CallTrace, execute_success)
     EthereumMainnet chain;
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmChain<EVMC_SHANGHAI>> host{
+    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{
         chain,
         call_tracer,
         tx_context,
@@ -160,7 +160,7 @@ TEST(CallTrace, execute_success)
         MAX_INITCODE_SIZE_EIP3860,
         true};
 
-    auto const result = ExecuteTransactionNoValidation<EvmChain<EVMC_SHANGHAI>>(
+    auto const result = ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
         s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
@@ -226,7 +226,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     EthereumMainnet chain;
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmChain<EVMC_SHANGHAI>> host{
+    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{
         chain,
         call_tracer,
         tx_context,
@@ -236,7 +236,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         MAX_INITCODE_SIZE_EIP3860,
         true};
 
-    auto const result = ExecuteTransactionNoValidation<EvmChain<EVMC_SHANGHAI>>(
+    auto const result = ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
         EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
         s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);

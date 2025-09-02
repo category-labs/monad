@@ -18,7 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
@@ -67,7 +67,7 @@ namespace monad::vm::compiler::test
 
         if (impl == Compiler) {
             auto ncode = [&, rev = rev_] {
-                SWITCH_EVM_CHAIN(vm_.compiler().compile, icode);
+                SWITCH_EVM_TRAITS(vm_.compiler().compile, icode);
                 MONAD_VM_ASSERT(false);
             }();
 
@@ -82,7 +82,7 @@ namespace monad::vm::compiler::test
         }
         else if (impl == Interpreter) {
             result_ = evmc::Result{[&, rev = rev_] {
-                SWITCH_EVM_CHAIN(
+                SWITCH_EVM_TRAITS(
                     vm_.execute_intercode_raw,
                     chain_params,
                     &host_.get_interface(),

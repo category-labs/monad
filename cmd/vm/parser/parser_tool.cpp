@@ -39,7 +39,7 @@
 #include <evmc/evmc.h>
 
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/parser.hpp>
 
@@ -143,7 +143,7 @@ int main(int argc, char **argv)
         if (args.compile) {
             auto rt = asmjit::JitRuntime{};
             monad::vm::compiler::native::compile<
-                monad::EvmChain<EVMC_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                 rt,
                 opcodes.data(),
                 code_size_t::unsafe_from(static_cast<uint32_t>(opcodes.size())),
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
                 auto outfile_asm = filename + ".asm";
                 auto rt = asmjit::JitRuntime{};
                 monad::vm::compiler::native::compile<
-                    monad::EvmChain<EVMC_LATEST_STABLE_REVISION>>(
+                    monad::EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                     rt,
                     opcodes.data(),
                     code_size_t::unsafe_from(

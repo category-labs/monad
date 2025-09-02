@@ -20,7 +20,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <category/vm/utils/evmc_utils.hpp>
 #include <category/vm/vm.hpp>
@@ -199,14 +199,14 @@ BlockchainTestVM::get_intercode_nativecode(
         auto asm_log_path = file.str();
         config.asm_log_path = asm_log_path.c_str();
         ncode = [&] {
-            SWITCH_EVM_CHAIN(
+            SWITCH_EVM_TRAITS(
                 monad_vm_.compiler().cached_compile, code_hash, icode, config);
             MONAD_VM_ASSERT(false);
         }();
     }
     else {
         ncode = [&] {
-            SWITCH_EVM_CHAIN(
+            SWITCH_EVM_TRAITS(
                 monad_vm_.compiler().cached_compile,
                 code_hash,
                 icode,
@@ -302,7 +302,7 @@ evmc::Result BlockchainTestVM::execute_interpreter(
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &icode = get_intercode(code_hash, code, code_size);
-    SWITCH_EVM_CHAIN(
+    SWITCH_EVM_TRAITS(
         monad_vm_.execute_intercode_raw,
         chain_params(),
         host,

@@ -17,8 +17,8 @@
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -37,7 +37,7 @@ using namespace intx;
 
 template <
     typename Op, typename... Args,
-    Traits traits = EvmChain<EVMC_LATEST_STABLE_REVISION>>
+    Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
 Instruction i(std::uint32_t pc, Op evm_opcode, Args &&...args)
 {
     auto info = opcode_table<traits>[evm_opcode];

@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet_alloc.hpp>
-#include <category/execution/monad/chain/monad_revision.h>
+#include <category/vm/evm/monad/revision.h>
 
 #include <evmc/evmc.hpp>
 

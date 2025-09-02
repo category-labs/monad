@@ -22,8 +22,8 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
@@ -153,7 +153,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     return success();
 }
 
-EXPLICIT_EVM_CHAIN(static_validate_header);
+EXPLICIT_TRAITS(static_validate_header);
 
 template <Traits traits>
 constexpr Result<void> static_validate_ommers(Block const &block)
@@ -242,11 +242,11 @@ Result<void> static_validate_block(Block const &block)
     return success();
 }
 
-EXPLICIT_EVM_CHAIN(static_validate_block);
+EXPLICIT_TRAITS(static_validate_block);
 
 Result<void> static_validate_block(evmc_revision const rev, Block const &block)
 {
-    SWITCH_EVM_CHAIN(static_validate_block, block);
+    SWITCH_EVM_TRAITS(static_validate_block, block);
     MONAD_ASSERT(false);
 }
 

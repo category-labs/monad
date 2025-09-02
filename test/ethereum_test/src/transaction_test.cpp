@@ -23,10 +23,10 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -117,7 +117,7 @@ void process_transaction(
     nlohmann::json const &expected)
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-    SWITCH_EVM_CHAIN(process_transaction, txn, expected);
+    SWITCH_EVM_TRAITS(process_transaction, txn, expected);
     MONAD_ASSERT(false);
 }
 

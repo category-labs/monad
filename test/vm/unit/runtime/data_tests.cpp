@@ -34,7 +34,7 @@ constexpr auto wei = vm::runtime::uint256_t{782374};
 
 TEST_F(RuntimeTest, BalanceHomestead)
 {
-    using traits = EvmChain<EVMC_HOMESTEAD>;
+    using traits = EvmTraits<EVMC_HOMESTEAD>;
     auto f = wrap(balance<traits>);
     set_balance(addr, wei);
 
@@ -45,7 +45,7 @@ TEST_F(RuntimeTest, BalanceHomestead)
 
 TEST_F(RuntimeTest, BalanceCancunCold)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto f = wrap(balance<traits>);
     set_balance(addr, wei);
 
@@ -56,7 +56,7 @@ TEST_F(RuntimeTest, BalanceCancunCold)
 
 TEST_F(RuntimeTest, BalanceCancunWarm)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto f = wrap(balance<traits>);
     set_balance(addr, wei);
     host_.access_account(address_from_uint256(addr));
@@ -227,7 +227,7 @@ TEST_F(RuntimeTest, CodeCopyOutOfBounds)
 
 TEST_F(RuntimeTest, ExtCodeCopyHomestead)
 {
-    using traits = EvmChain<EVMC_HOMESTEAD>;
+    using traits = EvmTraits<EVMC_HOMESTEAD>;
     auto copy = wrap(extcodecopy<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
@@ -246,7 +246,7 @@ TEST_F(RuntimeTest, ExtCodeCopyHomestead)
 
 TEST_F(RuntimeTest, ExtCodeCopyCancunOutOfBounds)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto copy = wrap(extcodecopy<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
@@ -269,7 +269,7 @@ TEST_F(RuntimeTest, ExtCodeCopyCancunOutOfBounds)
 
 TEST_F(RuntimeTest, ExtCodeSize)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto size = wrap(extcodesize<traits>);
 
     host_.accounts[address_from_uint256(addr)].code =
@@ -283,7 +283,7 @@ TEST_F(RuntimeTest, ExtCodeSize)
 
 TEST_F(RuntimeTest, ExtCodeHash)
 {
-    using traits = EvmChain<EVMC_CANCUN>;
+    using traits = EvmTraits<EVMC_CANCUN>;
     auto hash = wrap(extcodehash<traits>);
 
     host_.accounts[address_from_uint256(addr)].codehash =

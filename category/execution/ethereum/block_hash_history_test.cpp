@@ -26,7 +26,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <test_resource_data.h>
 
 #include <gtest/gtest.h>
@@ -48,7 +48,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 using namespace monad;
 using namespace monad::test;
 
-using Prague = EvmChain<EVMC_PRAGUE>;
+using Prague = EvmTraits<EVMC_PRAGUE>;
 
 TEST(BlockHashHistory, read_write_block_hash_history_storage)
 {

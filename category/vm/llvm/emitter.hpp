@@ -18,7 +18,7 @@
 #include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/llvm/virtual_stack.hpp>
 
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/data.hpp>

@@ -20,7 +20,7 @@
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <valgrind/cachegrind.h>

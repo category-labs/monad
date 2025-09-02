@@ -26,6 +26,20 @@
 using namespace monad;
 using namespace intx::literals;
 
+TEST(AbiEncode, boolean)
+{
+    byte_string const expected_false =
+        evmc::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000000")
+            .value();
+    byte_string const expected_true =
+        evmc::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001")
+            .value();
+    EXPECT_EQ(byte_string{abi_encode_bool(false)}, expected_false);
+    EXPECT_EQ(byte_string{abi_encode_bool(true)}, expected_true);
+}
+
 TEST(AbiEncode, u16)
 {
     constexpr uint16_t input{65535};

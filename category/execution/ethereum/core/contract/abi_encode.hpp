@@ -55,6 +55,12 @@ bytes32_t abi_encode_uint(I const &i)
     return output;
 }
 
+inline bytes32_t abi_encode_bool(bool const b)
+{
+    u64_be as_int = b ? 1 : 0;
+    return abi_encode_uint(as_int);
+}
+
 inline byte_string abi_encode_bytes(byte_string_view const input)
 {
     byte_string output;
@@ -130,8 +136,7 @@ public:
 
     void add_bool(bool const b)
     {
-        u64_be as_int = b ? 1 : 0;
-        add_static(abi_encode_uint(as_int));
+        add_static(abi_encode_bool(b));
     }
 
     template <BigEndianType I>

@@ -29,6 +29,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/limits.h>
 #include <pthread.h>
 #include <sched.h>
 #include <string.h>
@@ -45,8 +46,6 @@
 #include <category/core/likely.h>
 
 #include <gtest/gtest.h>
-
-#include <linux/limits.h>
 
 static uint8_t PERF_ITER_SHIFT = 20;
 
@@ -76,20 +75,18 @@ static void open_event_ring_file(
         *file_path =
             strcmp(input, "") == 0 ? MONAD_EVENT_DEFAULT_TEST_FILE_NAME : input;
 
-        if (!file_path->contains('/')) {
-            char event_ring_dir_path_buf[PATH_MAX];
-            int const rc = monad_event_open_ring_dir_fd(
-                nullptr,
-                event_ring_dir_path_buf,
-                sizeof event_ring_dir_path_buf);
-            ASSERT_EQ(rc, 0);
-            *file_path =
-                std::string{event_ring_dir_path_buf} + '/' + *file_path;
-        }
+        char resolved_path_buf[PATH_MAX];
+        int const rc = monad_event_resolve_ring_file(
+            MONAD_EVENT_DEFAULT_HUGETLBFS,
+            file_path->c_str(),
+            resolved_path_buf,
+            sizeof resolved_path_buf);
+        ASSERT_EQ(rc, 0);
+        *file_path = resolved_path_buf;
+        error_name = file_path->c_str();
 
         ring_fd = open(file_path->c_str(), O_RDWR | O_CREAT | O_TRUNC, FS_MODE);
         ASSERT_NE(-1, ring_fd);
-        error_name = file_path->c_str();
 
         // Use MAP_HUGETLB only if the file is on a filesystem that
         // supports it

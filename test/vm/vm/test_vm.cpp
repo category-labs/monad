@@ -201,7 +201,6 @@ BlockchainTestVM::get_intercode_nativecode(
         ncode = [&] {
             SWITCH_EVM_CHAIN(
                 monad_vm_.compiler().cached_compile, code_hash, icode, config);
-            MONAD_VM_ASSERT(false);
         }();
     }
     else {
@@ -211,7 +210,6 @@ BlockchainTestVM::get_intercode_nativecode(
                 code_hash,
                 icode,
                 base_config);
-            MONAD_VM_ASSERT(false);
         }();
     }
 
@@ -309,5 +307,4 @@ evmc::Result BlockchainTestVM::execute_interpreter(
         context,
         msg,
         icode);
-    MONAD_VM_ASSERT(false);
 }

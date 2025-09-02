@@ -276,7 +276,6 @@ namespace
             state_overrides,
             call_tracer,
             state_tracer);
-        MONAD_ASSERT(false);
     }
 
 }

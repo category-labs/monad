@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -33,6 +32,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/chain.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -493,7 +493,6 @@ uint64_t g_star(
     uint64_t const gas_remaining, uint64_t const refund)
 {
     SWITCH_EVM_CHAIN(g_star, tx, gas_remaining, refund);
-    MONAD_ASSERT(false);
 }
 
 MONAD_NAMESPACE_END

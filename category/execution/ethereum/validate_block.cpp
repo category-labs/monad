@@ -22,10 +22,10 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/vm/evm/explicit_evm_chain.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/vm/evm/explicit_evm_chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -247,7 +247,6 @@ EXPLICIT_EVM_CHAIN(static_validate_block);
 Result<void> static_validate_block(evmc_revision const rev, Block const &block)
 {
     SWITCH_EVM_CHAIN(static_validate_block, block);
-    MONAD_ASSERT(false);
 }
 
 MONAD_NAMESPACE_END

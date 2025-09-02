@@ -68,7 +68,6 @@ namespace monad::vm::compiler::test
         if (impl == Compiler) {
             auto ncode = [&, rev = rev_] {
                 SWITCH_EVM_CHAIN(vm_.compiler().compile, icode);
-                MONAD_VM_ASSERT(false);
             }();
 
             ASSERT_TRUE(ncode->entrypoint() != nullptr);
@@ -89,7 +88,6 @@ namespace monad::vm::compiler::test
                     host_.to_context(),
                     &msg_,
                     icode);
-                MONAD_VM_ASSERT(false);
             }()};
         }
         else {

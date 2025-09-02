@@ -40,12 +40,12 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/chain.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <monad/test/config.hpp>
 
@@ -208,7 +208,10 @@ void register_tests(
                 nullptr,
                 path.string().c_str(),
                 0,
-                [=] { return new test::BlockchainTest(path, revision, enable_tracing); });
+                [=] {
+                    return new test::BlockchainTest(
+                        path, revision, enable_tracing);
+                });
         }
     }
 }
@@ -242,17 +245,16 @@ Result<std::vector<Receipt>> BlockchainTest::execute(
         }
     }
 
-    std::vector<std::vector<CallFrame>> call_frames{
-        block.transactions.size()};
+    std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
-                ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                        CallTracer>(block.transactions[i], call_frames[i])}
+                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
+                      block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
-                        std::make_unique<NoopCallTracer>()};
+                      std::make_unique<NoopCallTracer>()};
     }
 
     BOOST_OUTCOME_TRY(
@@ -293,7 +295,6 @@ Result<std::vector<Receipt>> BlockchainTest::execute_dispatch(
 {
     MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
     SWITCH_EVM_CHAIN(execute, block, db, vm, block_hash_buffer, enable_tracing);
-    MONAD_ASSERT(false);
 }
 
 void BlockchainTest::validate_post_state(
@@ -470,7 +471,12 @@ void BlockchainTest::TestBody()
 
             uint64_t const curr_block_number = block.value().header.number;
             auto const result = execute_dispatch(
-                rev, block.value(), tdb, vm, block_hash_buffer, enable_tracing_);
+                rev,
+                block.value(),
+                tdb,
+                vm,
+                block_hash_buffer,
+                enable_tracing_);
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));
@@ -572,7 +578,8 @@ void BlockchainTest::TestBody()
     }
 }
 
-void register_blockchain_tests(std::optional<evmc_revision> const &revision, bool enable_tracing)
+void register_blockchain_tests(
+    std::optional<evmc_revision> const &revision, bool enable_tracing)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -583,17 +590,21 @@ void register_blockchain_tests(std::optional<evmc_revision> const &revision, boo
         "BlockchainTests.ValidBlocks/bcForkStressTest/ForkStressTest.json";
 
     register_tests(
-        test_resource::ethereum_tests_dir / "BlockchainTests", revision, enable_tracing);
+        test_resource::ethereum_tests_dir / "BlockchainTests",
+        revision,
+        enable_tracing);
     register_tests(
         test_resource::internal_blockchain_tests_dir, revision, enable_tracing);
     register_tests(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
-        revision, enable_tracing);
+        revision,
+        enable_tracing);
     register_tests(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixturesFusakaDevnet/blockchain_tests",
-        revision, enable_tracing);
+        revision,
+        enable_tracing);
 }
 
 MONAD_TEST_NAMESPACE_END

@@ -20,11 +20,11 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -124,7 +124,6 @@ std::optional<evmc::Result> MonadChain::check_call_precompile(
         [rev, &msg, enable_p256_verify]() -> std::optional<evmc::Result> {
         SWITCH_EVM_CHAIN(
             ::monad::check_call_precompile, msg, enable_p256_verify);
-        return std::nullopt;
     }();
     if (!maybe_result.has_value()) {
         maybe_result = check_call_monad_precompile(monad_rev, state, msg);

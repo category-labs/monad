@@ -363,8 +363,6 @@ Result<std::vector<Receipt>> execute_block(
         priority_pool,
         block_metrics,
         call_tracers);
-    MONAD_ABORT_PRINTF(
-        "unhandled evmc revision %u", static_cast<unsigned>(rev));
 }
 
 MONAD_NAMESPACE_END

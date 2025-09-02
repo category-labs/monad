@@ -25,8 +25,8 @@
 #include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/vm/evm/switch_evm_chain.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/vm/evm/switch_evm_chain.hpp>
 
 #include <evmc/evmc.h>
 
@@ -177,7 +177,6 @@ std::optional<evmc::Result> EthereumMainnet::check_call_precompile(
     bool const enable_p256_verify =
         get_p256_verify_enabled(block_number, timestamp);
     SWITCH_EVM_CHAIN(::monad::check_call_precompile, msg, enable_p256_verify);
-    return std::nullopt;
 }
 
 GenesisState EthereumMainnet::get_genesis_state() const

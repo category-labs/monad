@@ -17,6 +17,7 @@
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 
+#include <category/core/assert.h>
 #include <category/vm/evm/chain.hpp>
 
 #include <evmc/evmc.h>
@@ -54,7 +55,7 @@
     case EVMC_FRONTIER:                                                        \
         return f<::monad::EvmChain<EVMC_FRONTIER>>(__VA_ARGS__);               \
     default:                                                                   \
-        break;                                                                 \
+        MONAD_ABORT("invalid revision");                                       \
     }
 
 // NOLINTEND(bugprone-macro-parentheses)

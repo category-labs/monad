@@ -63,7 +63,7 @@ std::filesystem::path storage_pool::device::current_path() const
 {
     std::filesystem::path::string_type ret;
     ret.resize(32769);
-    auto *out = const_cast<char *>(ret.data());
+    auto *out = ret.data();
     // Linux keeps a symlink at /proc/self/fd/n
     char in[64];
     snprintf(in, sizeof(in), "/proc/self/fd/%d", readwritefd_);

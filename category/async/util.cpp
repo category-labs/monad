@@ -48,10 +48,10 @@ std::filesystem::path const &working_temporary_directory()
             int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
             if (-1 == fd && ENOTSUP == errno) {
                 auto path2 = path / "monad_XXXXXX";
-                fd = mkostemp(
-                    const_cast<char *>(path2.native().c_str()), O_DIRECT);
+                std::string path2_str = path2.native();
+                fd = mkostemp(path2_str.data(), O_DIRECT);
                 if (-1 != fd) {
-                    unlink(path2.c_str());
+                    unlink(path2_str.c_str());
                 }
             }
             if (-1 != fd) {

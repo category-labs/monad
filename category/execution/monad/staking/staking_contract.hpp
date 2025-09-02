@@ -504,7 +504,7 @@ private:
 
     // Low level helpers for validator and delegator lists
     template <typename Key, typename Ptr>
-    void linked_list_insert(Key const &, Ptr const &);
+    Result<void> linked_list_insert(Key const &, Ptr const &);
     template <typename Key, typename Ptr>
     void linked_list_remove(Key const &, Ptr const &);
     template <typename Key, typename Ptr>

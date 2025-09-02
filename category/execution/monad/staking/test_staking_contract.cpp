@@ -817,6 +817,18 @@ TEST_F(Stake, nonpayable_functions_revert)
         StakingError::ValueNonZero);
 }
 
+TEST_F(Stake, auth_address_conflicts_with_linked_list)
+{
+    // empty pointer
+    Address empty{};
+    EXPECT_TRUE(add_validator(empty, ACTIVE_VALIDATOR_STAKE).has_error());
+
+    // sentinel
+    Address sentinel{};
+    std::memset(sentinel.bytes, 0xFF, sizeof(Address));
+    EXPECT_TRUE(add_validator(sentinel, ACTIVE_VALIDATOR_STAKE).has_error());
+}
+
 /////////////////////////
 // Add Validator Tests //
 /////////////////////////

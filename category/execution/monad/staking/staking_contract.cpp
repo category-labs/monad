@@ -883,8 +883,10 @@ Result<void> StakingContract::delegate(
         }
     }
 
-    linked_list_insert(val_id, address); // validator => List[Delegator]
-    linked_list_insert(address, val_id); // delegator => List[Validator]
+    BOOST_OUTCOME_TRY(
+        linked_list_insert(val_id, address)); // validator => List[Delegator]
+    BOOST_OUTCOME_TRY(
+        linked_list_insert(address, val_id)); // delegator => List[Validator]
 
     return outcome::success();
 }
@@ -1492,15 +1494,21 @@ struct LinkedListTrait<u64_be, Address>
 };
 
 template <typename Key, typename Ptr>
-void StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
+Result<void>
+StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
 {
     using Trait = LinkedListTrait<Key, Ptr>;
+
+    if (MONAD_UNLIKELY(
+            this_ptr == Trait::empty() || this_ptr == Trait::sentinel())) {
+        return StakingError::InvalidInput;
+    }
 
     auto this_node = Trait::load_node(*this, key, this_ptr);
     if (Trait::prev(this_node) != Trait::empty()) {
         // all nodes but sentinel have a prev pointer.
         // allows O(1) existence check.
-        return;
+        return outcome::success();
     }
 
     auto sentinel_node = Trait::load_node(*this, key, Trait::sentinel());
@@ -1517,12 +1525,18 @@ void StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
 
     Trait::store_node(*this, key, this_ptr, this_node);
     Trait::store_node(*this, key, Trait::sentinel(), sentinel_node);
+
+    return outcome::success();
 }
 
 template <typename Key, typename Ptr>
 void StakingContract::linked_list_remove(Key const &key, Ptr const &this_ptr)
 {
     using Trait = LinkedListTrait<Key, Ptr>;
+
+    // These ptr types are blocked during delegator registration. Should never
+    // remove them.
+    MONAD_ASSERT(this_ptr != Trait::empty() && this_ptr != Trait::sentinel());
 
     auto this_node = Trait::load_node(*this, key, this_ptr);
     if (Trait::prev(this_node) == Trait::empty()) {

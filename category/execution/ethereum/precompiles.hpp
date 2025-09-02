@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -32,34 +33,61 @@ bool init_trusted_setup();
 inline constexpr Address ripemd_address{3};
 
 template <Traits traits>
-bool is_precompile(Address const &, bool);
+bool is_precompile(Address const &);
+
+template <Traits traits>
+std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
 template <Traits traits>
 std::optional<evmc::Result>
-check_call_precompile(evmc_message const &, bool enable_p256_verify);
+check_call_precompile(State &, evmc_message const &);
 
-using precompiled_gas_cost_fn = uint64_t(byte_string_view, evmc_revision);
+using precompiled_gas_cost_fn = uint64_t(byte_string_view);
 
-uint64_t ecrecover_gas_cost(byte_string_view, evmc_revision);
-uint64_t sha256_gas_cost(byte_string_view, evmc_revision);
-uint64_t ripemd160_gas_cost(byte_string_view, evmc_revision);
-uint64_t identity_gas_cost(byte_string_view, evmc_revision);
-uint64_t expmod_gas_cost(byte_string_view, evmc_revision);
-uint64_t ecadd_gas_cost(byte_string_view, evmc_revision);
-uint64_t ecmul_gas_cost(byte_string_view, evmc_revision);
-uint64_t snarkv_gas_cost(byte_string_view, evmc_revision);
-uint64_t blake2bf_gas_cost(byte_string_view, evmc_revision);
-uint64_t point_evaluation_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_g1_add_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_g1_msm_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_g2_add_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_g2_msm_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_pairing_check_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_map_fp_to_g1_gas_cost(byte_string_view, evmc_revision);
-uint64_t bls12_map_fp2_to_g2_gas_cost(byte_string_view, evmc_revision);
+template <Traits traits>
+uint64_t ecrecover_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t sha256_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t ripemd160_gas_cost(byte_string_view);
+
+uint64_t identity_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t expmod_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t ecadd_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t ecmul_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t snarkv_gas_cost(byte_string_view);
+
+template <Traits traits>
+uint64_t blake2bf_gas_cost(byte_string_view);
+
+uint64_t point_evaluation_gas_cost(byte_string_view);
+
+uint64_t bls12_g1_add_gas_cost(byte_string_view);
+
+uint64_t bls12_g1_msm_gas_cost(byte_string_view);
+
+uint64_t bls12_g2_add_gas_cost(byte_string_view);
+
+uint64_t bls12_g2_msm_gas_cost(byte_string_view);
+
+uint64_t bls12_pairing_check_gas_cost(byte_string_view);
+
+uint64_t bls12_map_fp_to_g1_gas_cost(byte_string_view);
+
+uint64_t bls12_map_fp2_to_g2_gas_cost(byte_string_view);
 
 // Rollup precompiles
-uint64_t p256_verify_gas_cost(byte_string_view, evmc_revision);
+uint64_t p256_verify_gas_cost(byte_string_view);
 
 struct PrecompileResult
 {

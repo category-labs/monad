@@ -18,9 +18,9 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <silkpre/precompile.h>
 
 #include <evmc/evmc.h>
@@ -55,50 +55,53 @@ since(PrecompiledContract impl)
 }
 
 template <Traits traits>
-std::optional<PrecompiledContract>
-resolve_precompile(Address const &address, bool const enable_p256_verify)
+std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
-#define CASE(addr, first_rev, name)                                            \
+#define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \
         if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
-            return since<(first_rev), traits::evm_rev()>(                      \
-                {name##_gas_cost, name##_execute});                            \
-        }                                                                      \
-    }                                                                          \
-    while (false)
-
-#define CASE_DYN(addr, cond, name)                                             \
-    do {                                                                       \
-        if (MONAD_UNLIKELY(Address{(addr)} == address && (cond))) {            \
-            return PrecompiledContract{name##_gas_cost, name##_execute};       \
+            return PrecompiledContract{(gas_cost), (execute)};                 \
         }                                                                      \
     }                                                                          \
     while (false)
 
     // Ethereum precompiles
-    CASE(0x01, EVMC_FRONTIER, ecrecover);
-    CASE(0x02, EVMC_FRONTIER, sha256);
-    CASE(0x03, EVMC_FRONTIER, ripemd160);
-    CASE(0x04, EVMC_FRONTIER, identity);
-    CASE(0x05, EVMC_BYZANTIUM, expmod);
-    CASE(0x06, EVMC_BYZANTIUM, ecadd);
-    CASE(0x07, EVMC_BYZANTIUM, ecmul);
-    CASE(0x08, EVMC_BYZANTIUM, snarkv);
-    CASE(0x09, EVMC_ISTANBUL, blake2bf);
-    CASE(0x0A, EVMC_CANCUN, point_evaluation);
-    CASE(0x0B, EVMC_PRAGUE, bls12_g1_add);
-    CASE(0x0C, EVMC_PRAGUE, bls12_g1_msm);
-    CASE(0x0D, EVMC_PRAGUE, bls12_g2_add);
-    CASE(0x0E, EVMC_PRAGUE, bls12_g2_msm);
-    CASE(0x0F, EVMC_PRAGUE, bls12_pairing_check);
-    CASE(0x10, EVMC_PRAGUE, bls12_map_fp_to_g1);
-    CASE(0x11, EVMC_PRAGUE, bls12_map_fp2_to_g2);
+    CASE(0x01, ecrecover_gas_cost<traits>, ecrecover_execute);
+    CASE(0x02, sha256_gas_cost<traits>, sha256_execute);
+    CASE(0x03, ripemd160_gas_cost<traits>, ripemd160_execute);
+    CASE(0x04, identity_gas_cost, identity_execute);
+
+    if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
+        CASE(0x05, expmod_gas_cost<traits>, expmod_execute);
+        CASE(0x06, ecadd_gas_cost<traits>, ecadd_execute);
+        CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
+        CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
+    }
+
+    if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
+        CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
+    }
+
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+        CASE(0x0A, point_evaluation_gas_cost, point_evaluation_execute);
+    }
+
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+        CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
+        CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
+        CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
+        CASE(0x0E, bls12_g2_msm_gas_cost, bls12_g2_msm_execute);
+        CASE(0x0F, bls12_pairing_check_gas_cost, bls12_pairing_check_execute);
+        CASE(0x10, bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute);
+        CASE(0x11, bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute);
+    }
 
     // Rollup precompiles
-    CASE_DYN(0x0100, enable_p256_verify, p256_verify);
+    if constexpr (traits::eip_7951_active()) {
+        CASE(0x0100, p256_verify_gas_cost, p256_verify_execute);
+    }
 
 #undef CASE
-#undef CASE_DYN
 
     return std::nullopt;
 }
@@ -106,20 +109,18 @@ resolve_precompile(Address const &address, bool const enable_p256_verify)
 EXPLICIT_TRAITS(resolve_precompile);
 
 template <Traits traits>
-bool is_precompile(Address const &address, bool const enable_p256_verify)
+bool is_precompile(Address const &address)
 {
-    return resolve_precompile<traits>(address, enable_p256_verify).has_value();
+    return resolve_precompile<traits>(address).has_value();
 }
 
 EXPLICIT_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
+std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 {
     auto const &address = msg.code_address;
-    auto const maybe_precompile =
-        resolve_precompile<traits>(address, enable_p256_verify);
+    auto const maybe_precompile = resolve_precompile<traits>(address);
 
     if (!maybe_precompile) {
         return std::nullopt;
@@ -137,7 +138,7 @@ check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
     auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};
-    uint64_t const cost = gas_cost_func(input, traits::evm_rev());
+    uint64_t const cost = gas_cost_func(input);
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
@@ -158,6 +159,15 @@ check_call_precompile(evmc_message const &msg, bool const enable_p256_verify)
     }};
 }
 
-EXPLICIT_TRAITS(check_call_precompile);
+EXPLICIT_TRAITS(check_call_eth_precompile);
+
+template <Traits traits>
+std::optional<evmc::Result>
+check_call_precompile(State &, evmc_message const &msg)
+{
+    return check_call_eth_precompile<traits>(msg);
+}
+
+EXPLICIT_EVM_TRAITS(check_call_precompile);
 
 MONAD_NAMESPACE_END

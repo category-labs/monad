@@ -174,17 +174,11 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(Address const &address) noexcept override
     {
-        auto const number = static_cast<uint64_t>(tx_context_.block_number);
-        auto const timestamp =
-            static_cast<uint64_t>(tx_context_.block_timestamp);
-        bool const enable_p256_verify =
-            chain_.get_p256_verify_enabled(number, timestamp);
-
         try {
             // NOTE: we deliberately do not check the monad precompiles here.
             // They are stateful and stateful precompiles should pay the COLD
             // account access like any other contract.
-            if (is_precompile<traits>(address, enable_p256_verify)) {
+            if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
             return state_.access_account(address);

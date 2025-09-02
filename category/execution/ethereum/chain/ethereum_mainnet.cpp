@@ -172,17 +172,6 @@ size_t EthereumMainnet::get_max_initcode_size(
                : std::numeric_limits<size_t>::max();
 }
 
-std::optional<evmc::Result> EthereumMainnet::check_call_precompile(
-    uint64_t const block_number, uint64_t const timestamp, State &,
-    evmc_message const &msg) const
-{
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    bool const enable_p256_verify =
-        get_p256_verify_enabled(block_number, timestamp);
-    SWITCH_EVM_TRAITS(::monad::check_call_precompile, msg, enable_p256_verify);
-    return std::nullopt;
-}
-
 GenesisState EthereumMainnet::get_genesis_state() const
 {
     BlockHeader header;
@@ -198,12 +187,6 @@ GenesisState EthereumMainnet::get_genesis_state() const
 bool EthereumMainnet::get_create_inside_delegated() const
 {
     return true;
-}
-
-bool EthereumMainnet::get_p256_verify_enabled(
-    uint64_t const block_number, uint64_t const timestamp) const
-{
-    return get_revision(block_number, timestamp) >= EVMC_OSAKA;
 }
 
 bool EthereumMainnet::is_system_sender(Address const &) const

@@ -18,13 +18,15 @@
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-std::optional<evmc::Result> check_call_monad_precompile(
-    monad_revision const rev, State &state, evmc_message const &msg)
+template <Traits traits>
+std::optional<evmc::Result>
+check_call_monad_precompile(State &state, evmc_message const &msg)
 {
-    if (MONAD_UNLIKELY(rev < MONAD_FOUR)) {
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
         return std::nullopt;
     }
 
@@ -62,5 +64,22 @@ std::optional<evmc::Result> check_call_monad_precompile(
         reinterpret_cast<uint8_t const *>(res.error().message().data()),
         res.error().message().size());
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
+template <Traits traits>
+std::optional<evmc::Result>
+check_call_precompile(State &state, evmc_message const &msg)
+{
+    if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
+        return maybe_result;
+    }
+
+    return check_call_monad_precompile<traits>(state, msg);
+}
+
+EXPLICIT_MONAD_TRAITS(check_call_precompile);
 
 MONAD_NAMESPACE_END

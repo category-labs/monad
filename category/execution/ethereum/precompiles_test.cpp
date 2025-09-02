@@ -272,12 +272,19 @@ void do_basic_tests(
     char const *suite_name, basic_test_case const *basic_test_cases,
     size_t num_basic_test_cases)
 {
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
     for (size_t i = 0; i < num_basic_test_cases; i++) {
         auto const &basic_test_case = basic_test_cases[i];
 
         evmc::Result const result =
             check_call_precompile<EvmTraits<EVMC_BERLIN>>(
-                basic_test_case.input, false)
+                s, basic_test_case.input)
                 .value();
 
         EXPECT_EQ(
@@ -315,6 +322,13 @@ void do_geth_tests(
     char const *suite_name, std::vector<test_case> const &test_cases,
     monad::Address const &code_address)
 {
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
     for (auto const &test_case : test_cases) {
         auto const input_bytes =
             evmc::from_hex(std::string_view{test_case.input}).value();
@@ -329,9 +343,7 @@ void do_geth_tests(
                 .code_address = code_address};
 
             evmc::Result const result =
-                check_call_precompile<traits>(
-                    input, traits::evm_rev() >= EVMC_OSAKA)
-                    .value();
+                check_call_precompile<traits>(s, input).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)
@@ -689,5 +701,11 @@ TEST(Prague, bls_pairing_check_invalid)
 TEST(Osaka, p256_verify)
 {
     do_geth_tests<EvmTraits<EVMC_OSAKA>>(
+        "p256_verify", "p256Verify.json", 0x0100_address);
+}
+
+TEST(MonadFour, p256_verify)
+{
+    do_geth_tests<MonadTraits<MONAD_FOUR>>(
         "p256_verify", "p256Verify.json", 0x0100_address);
 }

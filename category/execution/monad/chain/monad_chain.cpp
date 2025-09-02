@@ -193,33 +193,6 @@ size_t MonadChain::get_max_initcode_size(
     }
 }
 
-std::optional<evmc::Result> MonadChain::check_call_precompile(
-    uint64_t const block_number, uint64_t const timestamp, State &state,
-    evmc_message const &msg) const
-{
-    auto const rev = get_revision(block_number, timestamp);
-    auto const monad_rev = get_monad_revision(timestamp);
-    bool const enable_p256_verify =
-        get_p256_verify_enabled(block_number, timestamp);
-
-    auto maybe_result =
-        [rev, &msg, enable_p256_verify]() -> std::optional<evmc::Result> {
-        SWITCH_EVM_TRAITS(
-            ::monad::check_call_precompile, msg, enable_p256_verify);
-        return std::nullopt;
-    }();
-    if (!maybe_result.has_value()) {
-        maybe_result = check_call_monad_precompile(monad_rev, state, msg);
-    }
-    return maybe_result;
-}
-
-bool MonadChain::get_p256_verify_enabled(
-    uint64_t /*block_number*/, uint64_t const timestamp) const
-{
-    return get_monad_revision(timestamp) >= MONAD_FOUR;
-}
-
 bool MonadChain::get_create_inside_delegated() const
 {
     return false;

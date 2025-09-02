@@ -31,6 +31,9 @@ namespace monad
         { T::evm_rev() } -> std::same_as<evmc_revision>;
         { T::monad_rev() } -> std::same_as<monad_revision>;
 
+        // Feature flags
+        { T::eip_7951_active() } -> std::same_as<bool>;
+
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
         // two chain specializations will return the same value, but no
@@ -50,6 +53,11 @@ namespace monad
         {
             static_assert(false, "Calling monad_rev() on an EVM trait type");
             std::unreachable();
+        }
+
+        static constexpr bool eip_7951_active() noexcept
+        {
+            return Rev >= EVMC_OSAKA;
         }
 
         static constexpr uint64_t id() noexcept
@@ -73,6 +81,11 @@ namespace monad
         static constexpr monad_revision monad_rev() noexcept
         {
             return Rev;
+        }
+
+        static constexpr bool eip_7951_active() noexcept
+        {
+            return Rev >= MONAD_FOUR;
         }
 
         static constexpr uint64_t id() noexcept

@@ -57,16 +57,9 @@ struct Chain
     virtual size_t
     get_max_initcode_size(uint64_t block_number, uint64_t timestamp) const = 0;
 
-    virtual std::optional<evmc::Result> check_call_precompile(
-        uint64_t block_number, uint64_t timestamp, State &,
-        evmc_message const &) const = 0;
-
     virtual GenesisState get_genesis_state() const = 0;
 
     virtual bool get_create_inside_delegated() const = 0;
-
-    virtual bool get_p256_verify_enabled(
-        uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual bool is_system_sender(Address const &) const = 0;
 

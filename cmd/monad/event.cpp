@@ -16,7 +16,7 @@
 #include "event.hpp"
 
 #include <category/core/assert.h>
-#include <category/core/cleanup.h>
+#include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
 #include <category/core/config.hpp>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
@@ -25,7 +25,6 @@
 
 #include <charconv>
 #include <concepts>
-#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -38,11 +37,13 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <quill/LogLevel.h>
@@ -267,7 +268,7 @@ try_parse_event_ring_config(std::string_view s)
             "<ring-name-or-path>[:<descriptor-shift>:<payload-buffer-shift>]",
             s));
     }
-    cfg.event_ring_spec = tokens[0];
+    cfg.event_ring_file = tokens[0];
     if (size(tokens) < 2 || tokens[1].empty()) {
         cfg.descriptors_shift = DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT;
     }
@@ -291,29 +292,32 @@ try_parse_event_ring_config(std::string_view s)
 
 int init_execution_event_recorder(EventRingConfig ring_config)
 {
+    char ring_path[PATH_MAX];
     MONAD_ASSERT(!g_exec_event_recorder, "recorder initialized twice?");
 
-    if (!ring_config.event_ring_spec.contains('/')) {
-        // The event ring specification does not contain a '/' character; this
-        // is interpreted as a filename in the default event ring directory,
-        // as computed by `monad_event_open_ring_dir_fd`
-        char event_ring_dir_path_buf[PATH_MAX];
-        int const rc = monad_event_open_ring_dir_fd(
-            nullptr, event_ring_dir_path_buf, sizeof event_ring_dir_path_buf);
-        if (rc != 0) {
-            LOG_ERROR(
-                "open of event ring default directory failed: {}",
-                monad_event_ring_get_last_error());
-            return rc;
-        }
-        ring_config.event_ring_spec = std::string{event_ring_dir_path_buf} +
-                                      '/' + ring_config.event_ring_spec;
+    if (int const rc = monad_event_resolve_ring_file(
+            MONAD_EVENT_DEFAULT_HUGETLBFS,
+            ring_config.event_ring_file.c_str(),
+            ring_path,
+            sizeof ring_path);
+        rc != 0) {
+        LOG_ERROR(
+            "resolution of event ring file {} failed: {}",
+            ring_config.event_ring_file,
+            monad_event_ring_get_last_error());
+        return rc;
+    }
+    if (ring_config.event_ring_file != ring_path) {
+        LOG_INFO(
+            "event ring `{}` resolved to `{}`",
+            ring_config.event_ring_file,
+            ring_path);
     }
 
     // Check if the underlying filesystem supports MAP_HUGETLB
     bool fs_supports_hugetlb;
     if (int const rc = monad_check_path_supports_map_hugetlb(
-            ring_config.event_ring_spec.c_str(), &fs_supports_hugetlb)) {
+            ring_path, &fs_supports_hugetlb)) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;
@@ -322,7 +326,7 @@ int init_execution_event_recorder(EventRingConfig ring_config)
         LOG_WARNING(
             "file system hosting event ring file `{}` does not support "
             "MAP_HUGETLB!",
-            ring_config.event_ring_spec);
+            ring_path);
     }
 
     monad_event_ring_simple_config const simple_cfg = {
@@ -333,8 +337,8 @@ int init_execution_event_recorder(EventRingConfig ring_config)
         .schema_hash = g_monad_exec_event_schema_hash};
 
     int ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
-    if (int const rc = create_owned_event_ring_nointr(
-            ring_config.event_ring_spec, simple_cfg, &ring_fd)) {
+    if (int const rc =
+            create_owned_event_ring_nointr(ring_path, simple_cfg, &ring_fd)) {
         return rc;
     }
 
@@ -349,18 +353,16 @@ int init_execution_event_recorder(EventRingConfig ring_config)
             mmap_extra_flags,
             ring_fd,
             0,
-            ring_config.event_ring_spec.c_str())) {
+            ring_path)) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;
     }
 
     // Create the execution recorder object
-    g_exec_event_recorder = std::make_unique<ExecutionEventRecorder>(
-        ring_fd, ring_config.event_ring_spec.c_str(), exec_ring);
-    LOG_INFO(
-        "execution event ring created: {}",
-        ring_config.event_ring_spec.c_str());
+    g_exec_event_recorder =
+        std::make_unique<ExecutionEventRecorder>(ring_fd, ring_path, exec_ring);
+    LOG_INFO("execution event ring created: {}", ring_path);
     return 0;
 }
 

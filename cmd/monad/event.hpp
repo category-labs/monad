@@ -24,7 +24,6 @@
 
 #include <category/core/config.hpp>
 
-#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -36,7 +35,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct EventRingConfig
 {
-    std::string event_ring_spec; ///< File name or path to shared memory file
+    std::string event_ring_file; ///< Path to event ring file
     uint8_t descriptors_shift;   ///< Descriptor capacity = 2^descriptors_shift
     uint8_t payload_buf_shift;   ///< Payload buffer size = 2^payload_buf_shift
 };

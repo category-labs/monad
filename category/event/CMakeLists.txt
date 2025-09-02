@@ -22,7 +22,7 @@
 project(monad_event)
 
 option(MONAD_EVENT_DISABLE_LIBHUGETLBFS
-  "Disable the `monad_event_open_ring_dir_fd` API function (removes dependency on libhugetlbfs" OFF)
+  "Disable the default value in the `monad_event_open_hugetlbfs_dir_fd` API function (removes dependency on libhugetlbfs)" OFF)
 
 add_library(
   monad_event

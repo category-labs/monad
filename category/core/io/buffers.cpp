@@ -81,33 +81,30 @@ Buffers::Buffers(
             {.iov_base = read_buf_.get_data(), .iov_len = read_buf_.get_size()},
             {.iov_base = write_buf_.value().get_data(),
              .iov_len = write_buf_.value().get_size()}};
-        do_register_buffers(const_cast<io_uring *>(&ring_.get_ring()), iov, 1);
-        do_register_buffers(
-            const_cast<io_uring *>(&wr_ring_->get_ring()), iov + 1, 1);
+        do_register_buffers(&ring_.get_ring(), iov, 1);
+        do_register_buffers(&wr_ring_->get_ring(), iov + 1, 1);
     }
     else if (!write_buf_.has_value()) {
         iovec const iov[2]{
             {.iov_base = read_buf_.get_data(),
              .iov_len = read_buf_.get_size()}};
-        do_register_buffers(const_cast<io_uring *>(&ring_.get_ring()), iov, 1);
+        do_register_buffers(&ring_.get_ring(), iov, 1);
     }
     else {
         iovec const iov[2]{
             {.iov_base = read_buf_.get_data(), .iov_len = read_buf_.get_size()},
             {.iov_base = write_buf_.value().get_data(),
              .iov_len = write_buf_.value().get_size()}};
-        do_register_buffers(const_cast<io_uring *>(&ring_.get_ring()), iov, 2);
+        do_register_buffers(&ring_.get_ring(), iov, 2);
     }
 }
 
 Buffers::~Buffers()
 {
     if (wr_ring_ != nullptr) {
-        MONAD_ASSERT(!io_uring_unregister_buffers(
-            const_cast<io_uring *>(&wr_ring_->get_ring())));
+        MONAD_ASSERT(!io_uring_unregister_buffers(&wr_ring_->get_ring()));
     }
-    MONAD_ASSERT(!io_uring_unregister_buffers(
-        const_cast<io_uring *>(&ring_.get_ring())));
+    MONAD_ASSERT(!io_uring_unregister_buffers(&ring_.get_ring()));
 }
 
 MONAD_IO_NAMESPACE_END

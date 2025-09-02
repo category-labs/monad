@@ -170,7 +170,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
 
     // create and register the message type pipe for threadsafe communications
     // read side is nonblocking, write side is blocking
-    auto *ring = const_cast<io_uring *>(&uring_.get_ring());
+    auto *ring = &uring_.get_ring();
     if (!(ring->flags & IORING_SETUP_IOPOLL)) {
         MONAD_ASSERT_PRINTF(
             ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
@@ -239,9 +239,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     }
     // register files
     auto e = io_uring_register_files(
-        const_cast<io_uring *>(&uring_.get_ring()),
-        fds.data(),
-        static_cast<unsigned int>(fds.size()));
+        &uring_.get_ring(), fds.data(), static_cast<unsigned int>(fds.size()));
     if (e) {
         fprintf(
             stderr,
@@ -252,7 +250,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     MONAD_ASSERT(!e);
     if (wr_uring_ != nullptr) {
         e = io_uring_register_files(
-            const_cast<io_uring *>(&wr_uring_->get_ring()),
+            &wr_uring_->get_ring(),
             fds.data(),
             static_cast<unsigned int>(fds.size()));
         if (e) {
@@ -290,11 +288,9 @@ AsyncIO::~AsyncIO()
     ts.instance = nullptr;
 
     if (wr_uring_ != nullptr) {
-        MONAD_ASSERT(!io_uring_unregister_files(
-            const_cast<io_uring *>(&wr_uring_->get_ring())));
+        MONAD_ASSERT(!io_uring_unregister_files(&wr_uring_->get_ring()));
     }
-    MONAD_ASSERT(
-        !io_uring_unregister_files(const_cast<io_uring *>(&uring_.get_ring())));
+    MONAD_ASSERT(!io_uring_unregister_files(&uring_.get_ring()));
 
     ::close(fds_.msgread);
     ::close(fds_.msgwrite);
@@ -312,8 +308,7 @@ void AsyncIO::submit_request_(
 #endif
 
     poll_uring_while_submission_queue_full_();
-    struct io_uring_sqe *sqe =
-        io_uring_get_sqe(const_cast<io_uring *>(&uring_.get_ring()));
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
@@ -338,8 +333,7 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASYNC_IO_URING_RETRYABLE(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
 }
 
 void AsyncIO::submit_request_(
@@ -356,8 +350,7 @@ void AsyncIO::submit_request_(
 #endif
 
     poll_uring_while_submission_queue_full_();
-    struct io_uring_sqe *sqe =
-        io_uring_get_sqe(const_cast<io_uring *>(&uring_.get_ring()));
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
@@ -391,8 +384,7 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASYNC_IO_URING_RETRYABLE(
-        io_uring_submit(const_cast<io_uring *>(&uring_.get_ring())));
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
 }
 
 void AsyncIO::submit_request_(
@@ -417,9 +409,8 @@ void AsyncIO::submit_request_(
         (offset & 0xffff),
         chunk_and_offset.id);
 
-    auto *const wr_ring = (wr_uring_ != nullptr)
-                              ? const_cast<io_uring *>(&wr_uring_->get_ring())
-                              : const_cast<io_uring *>(&uring_.get_ring());
+    auto *const wr_ring =
+        (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : &uring_.get_ring();
     struct io_uring_sqe *sqe = io_uring_get_sqe(wr_ring);
     MONAD_ASSERT(sqe);
 
@@ -455,7 +446,7 @@ void AsyncIO::submit_request_(
 
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
-    auto *ring = const_cast<io_uring *>(&uring_.get_ring());
+    auto *ring = &uring_.get_ring();
     // if completions is getting close to full, drain some to prevent
     // completions getting dropped, which would break everything.
     auto const max_cq_entries =
@@ -494,10 +485,9 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
-    auto *const other_ring = const_cast<io_uring *>(&uring_.get_ring());
-    auto *const wr_ring = (wr_uring_ != nullptr)
-                              ? const_cast<io_uring *>(&wr_uring_->get_ring())
-                              : nullptr;
+    auto *const other_ring = &uring_.get_ring();
+    auto *const wr_ring =
+        (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : nullptr;
     auto dequeue_concurrent_read_ios_pending = [&]() {
         if (concurrent_read_io_limit_ > 0) {
             auto const max_cq_entries =
@@ -758,12 +748,12 @@ AsyncIO::io_uring_ring_entries_left(bool for_wr_ring) const noexcept
         if (wr_uring_ == nullptr) {
             return {0, 0};
         }
-        auto *ring = const_cast<io_uring *>(&wr_uring_->get_ring());
+        auto *ring = &wr_uring_->get_ring();
         return {
             io_uring_sq_space_left(ring),
             *ring->cq.kring_entries - io_uring_cq_ready(ring)};
     }
-    auto *ring = const_cast<io_uring *>(&uring_.get_ring());
+    auto *ring = &uring_.get_ring();
     return {
         io_uring_sq_space_left(ring),
         *ring->cq.kring_entries - io_uring_cq_ready(ring)};

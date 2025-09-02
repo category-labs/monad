@@ -71,6 +71,11 @@ public:
         return ring_;
     }
 
+    [[gnu::always_inline]] io_uring &get_ring()
+    {
+        return ring_;
+    }
+
     [[gnu::always_inline]] io_uring_params const &get_params() const
     {
         return params_;

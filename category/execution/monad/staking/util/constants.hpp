@@ -21,6 +21,7 @@
 #include <category/execution/monad/staking/config.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -36,7 +37,8 @@ inline constexpr uint256_t MON{1000000000000000000_u256};
 inline constexpr uint256_t MAX_COMMISSION = MON;
 inline constexpr uint256_t MIN_VALIDATE_STAKE{1'000'000 * MON};
 inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{50'000'000 * MON};
-inline constexpr uint256_t UNIT_BIAS{100000000000000000000000000000_u256};
+inline constexpr uint256_t UNIT_BIAS{
+    1000000000000000000000000000000000000_u256}; // 1e36
 
 inline constexpr Address STAKING_CA{0x1000};
 inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};

@@ -85,7 +85,6 @@ add_library(
   "backtrace.cpp"
   "backtrace.hpp"
   "basic_formatter.hpp"
-  "bit_util.h"
   "blake3.hpp"
   "byte_string.hpp"
   "bytes.hpp"
@@ -238,5 +237,4 @@ find_package(GTest REQUIRED)
 
 add_subdirectory("test")
 
-monad_add_test(bit_util_test bit_util_test.cpp)
 monad_add_test(static_lru_test lru/static_lru_test.cpp)

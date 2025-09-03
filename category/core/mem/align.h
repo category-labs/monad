@@ -30,18 +30,29 @@
     #include <stdbit.h>
 #endif
 
+#include <limits.h>
 #include <stddef.h>
 
 #include <category/core/assert.h>
-#include <category/core/bit_util.h>
-#include <category/core/likely.h>
+
+/**
+ * finds the smallest integer n such that n >= x and n is a multiple of 2^b
+ */
+[[gnu::always_inline]] static inline unsigned long
+monad_bit_round_up(unsigned long const x, unsigned long const b)
+{
+    unsigned long const m = (1UL << b) - 1;
+    unsigned long const bit_div_ceil = (x + m) >> b;
+    return bit_div_ceil << b;
+}
 
 #ifdef __cplusplus
 [[gnu::always_inline]] static inline size_t
 monad_round_size_to_align(size_t const size, size_t const align)
 {
     MONAD_DEBUG_ASSERT(std::has_single_bit(align));
-    return bit_round_up(size, static_cast<unsigned>(std::countr_zero(align)));
+    return monad_bit_round_up(
+        size, static_cast<unsigned>(std::countr_zero(align)));
 }
 #else
 [[gnu::always_inline]] static inline size_t
@@ -52,6 +63,6 @@ monad_round_size_to_align(size_t const size, size_t const align)
     // is `log_2 align`) is computed efficiently using stdc_trailing_zeros,
     // an intrinsic operation on many platforms (e.g., TZCNT).
     MONAD_DEBUG_ASSERT(stdc_has_single_bit(align));
-    return bit_round_up(size, stdc_trailing_zeros(align));
+    return monad_bit_round_up(size, stdc_trailing_zeros(align));
 }
 #endif

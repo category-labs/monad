@@ -84,7 +84,7 @@ TEST(LogFFI, Basic)
     // lower. We keep it unrealistically high so that the test won't fail
     // intermittently in the CI even when the system is under extreme
     // scheduling pressure
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
 
     EXPECT_EQ(SYSLOG_ERR, output.syslog_level);
     ASSERT_NE(nullptr, output.message);
@@ -96,7 +96,7 @@ TEST(LogFFI, Basic)
     output = {};
 
     LOG_INFO("Hello, world");
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
 
     // Because we initialized with SYSLOG_WARN, LOG_INFO won't do anything
     EXPECT_EQ(0, output.syslog_level);

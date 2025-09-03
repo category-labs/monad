@@ -70,6 +70,7 @@ uint64_t snarkv_gas_cost(byte_string_view);
 template <Traits traits>
 uint64_t blake2bf_gas_cost(byte_string_view);
 
+template <Traits traits>
 uint64_t point_evaluation_gas_cost(byte_string_view);
 
 uint64_t bls12_g1_add_gas_cost(byte_string_view);

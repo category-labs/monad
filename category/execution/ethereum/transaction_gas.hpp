@@ -45,6 +45,17 @@ uint256_t gas_price(
     uint256_t const &base_fee_per_gas) noexcept;
 
 template <Traits traits>
+uint64_t g_star(Transaction const &, uint64_t gas_remaining, uint64_t refund);
+
+template <Traits traits>
+uint64_t compute_gas_refund(
+    Transaction const &, uint64_t gas_remaining, uint64_t refund);
+
+template <Traits traits>
+uint256_t
+refund_gas_price(Transaction const &, uint256_t const &base_fee_per_gas);
+
+template <Traits traits>
 uint256_t calculate_txn_award(
     Transaction const &, uint256_t const &base_fee_per_gas,
     uint64_t gas_used) noexcept;

@@ -32,8 +32,20 @@ namespace monad
         { T::monad_rev() } -> std::same_as<monad_revision>;
 
         // Feature flags
+        { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
+
+        // Monad specification §2.3: Payment Rule for User
+        { T::should_refund_reduce_gas_used() } -> std::same_as<bool>;
+
+        // Pricing version 1 activates the changes in:
+        // Monad specification §4: Opcode Gas Costs and Gas Refunds
+        { T::monad_pricing_version() } -> std::same_as<uint8_t>;
+
+        // Constants
+        { T::cold_account_cost() } -> std::same_as<int64_t>;
+        { T::cold_storage_cost() } -> std::same_as<int64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -56,6 +68,11 @@ namespace monad
             std::unreachable();
         }
 
+        static constexpr bool eip_2929_active() noexcept
+        {
+            return Rev >= EVMC_BERLIN;
+        }
+
         static constexpr bool eip_7951_active() noexcept
         {
             return Rev >= EVMC_OSAKA;
@@ -64,6 +81,36 @@ namespace monad
         static constexpr bool can_create_inside_delegated() noexcept
         {
             return true;
+        }
+
+        static constexpr uint8_t monad_pricing_version() noexcept
+        {
+            static_assert(
+                false, "Calling monad_pricing_version() on an EVM trait type");
+            std::unreachable();
+        }
+
+        static constexpr bool should_refund_reduce_gas_used() noexcept
+        {
+            return true;
+        }
+
+        static constexpr int64_t cold_account_cost() noexcept
+        {
+            if constexpr (eip_2929_active()) {
+                return 2500;
+            }
+
+            std::unreachable();
+        }
+
+        static constexpr int64_t cold_storage_cost() noexcept
+        {
+            if constexpr (eip_2929_active()) {
+                return 2000;
+            }
+
+            std::unreachable();
         }
 
         static constexpr uint64_t id() noexcept
@@ -89,6 +136,11 @@ namespace monad
             return Rev;
         }
 
+        static constexpr bool eip_2929_active() noexcept
+        {
+            return evm_rev() >= EVMC_BERLIN;
+        }
+
         static constexpr bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
@@ -97,6 +149,44 @@ namespace monad
         static constexpr bool can_create_inside_delegated() noexcept
         {
             return false;
+        }
+
+        static constexpr uint8_t monad_pricing_version() noexcept
+        {
+            if constexpr (Rev >= MONAD_FOUR) {
+                return 1;
+            }
+
+            return 0;
+        }
+
+        static constexpr bool should_refund_reduce_gas_used() noexcept
+        {
+            return Rev < MONAD_FOUR;
+        }
+
+        static constexpr int64_t cold_account_cost() noexcept
+        {
+            if constexpr (monad_pricing_version() >= 1) {
+                return 10000;
+            }
+            else if constexpr (eip_2929_active()) {
+                return 2500;
+            }
+
+            std::unreachable();
+        }
+
+        static constexpr int64_t cold_storage_cost() noexcept
+        {
+            if constexpr (monad_pricing_version() >= 1) {
+                return 8000;
+            }
+            else if constexpr (eip_2929_active()) {
+                return 2000;
+            }
+
+            std::unreachable();
         }
 
         static constexpr uint64_t id() noexcept

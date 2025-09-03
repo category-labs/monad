@@ -64,11 +64,11 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->gas_remaining -= 2500;
+                ctx->gas_remaining -= traits::cold_account_cost();
             }
         }
 
@@ -81,8 +81,10 @@ namespace monad::vm::runtime
                         ctx->host, ctx->context, dest_address)) {
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
-                    ctx->gas_remaining -=
-                        access_status == EVMC_ACCESS_COLD ? 2600 : 100;
+                    ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
+                                               ? traits::cold_account_cost()
+                                               : 0) +
+                                          100;
                     return *delegate_address;
                 }
             }

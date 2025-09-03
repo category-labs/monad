@@ -83,7 +83,7 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     }
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-        CASE(0x0A, point_evaluation_gas_cost, point_evaluation_execute);
+        CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {

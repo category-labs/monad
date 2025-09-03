@@ -35,6 +35,7 @@
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
 #include <bitset>
 
@@ -50,10 +51,20 @@ TEST(MonadChain, compute_gas_refund)
     BlockHeader before_fork{.number = 0, .timestamp = 0};
     BlockHeader after_fork{.number = 1, .timestamp = 1739559600};
 
-    auto const refund_before_fork = monad_chain.compute_gas_refund(
-        before_fork.number, before_fork.timestamp, tx, 20'000, 1000);
-    auto const refund_after_fork = monad_chain.compute_gas_refund(
-        after_fork.number, after_fork.timestamp, tx, 20'000, 1000);
+    auto const before_rev =
+        monad_chain.get_monad_revision(before_fork.timestamp);
+    auto const after_rev = monad_chain.get_monad_revision(after_fork.timestamp);
+
+    auto const refund_before_fork = [&, rev = before_rev] {
+        SWITCH_MONAD_TRAITS(compute_gas_refund, tx, 20'000, 1000);
+        MONAD_ASSERT(false);
+    }();
+
+    auto const refund_after_fork = [&, rev = after_rev] {
+        SWITCH_MONAD_TRAITS(compute_gas_refund, tx, 20'000, 1000);
+        MONAD_ASSERT(false);
+    }();
+
     EXPECT_EQ(20'200, refund_before_fork - refund_after_fork);
 }
 

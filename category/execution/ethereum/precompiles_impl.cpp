@@ -120,7 +120,7 @@ uint64_t ecrecover_gas_cost(byte_string_view const input)
         input.data(), input.size(), static_cast<int>(traits::evm_rev()));
 }
 
-EXPLICIT_TRAITS(ecrecover_gas_cost);
+EXPLICIT_EVM_TRAITS(ecrecover_gas_cost);
 
 template <Traits traits>
 uint64_t sha256_gas_cost(byte_string_view const input)
@@ -153,7 +153,7 @@ uint64_t ecadd_gas_cost(byte_string_view const input)
         input.data(), input.size(), static_cast<int>(traits::evm_rev()));
 }
 
-EXPLICIT_TRAITS(ecadd_gas_cost);
+EXPLICIT_EVM_TRAITS(ecadd_gas_cost);
 
 template <Traits traits>
 uint64_t ecmul_gas_cost(byte_string_view const input)
@@ -162,7 +162,7 @@ uint64_t ecmul_gas_cost(byte_string_view const input)
         input.data(), input.size(), static_cast<int>(traits::evm_rev()));
 }
 
-EXPLICIT_TRAITS(ecmul_gas_cost);
+EXPLICIT_EVM_TRAITS(ecmul_gas_cost);
 
 template <Traits traits>
 uint64_t snarkv_gas_cost(byte_string_view const input)
@@ -171,7 +171,7 @@ uint64_t snarkv_gas_cost(byte_string_view const input)
         input.data(), input.size(), static_cast<int>(traits::evm_rev()));
 }
 
-EXPLICIT_TRAITS(snarkv_gas_cost);
+EXPLICIT_EVM_TRAITS(snarkv_gas_cost);
 
 template <Traits traits>
 uint64_t blake2bf_gas_cost(byte_string_view const input)
@@ -180,7 +180,7 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
         input.data(), input.size(), static_cast<int>(traits::evm_rev()));
 }
 
-EXPLICIT_TRAITS(blake2bf_gas_cost);
+EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
 template <Traits traits>
 uint64_t expmod_gas_cost(byte_string_view const input)
@@ -191,10 +191,13 @@ uint64_t expmod_gas_cost(byte_string_view const input)
 
 EXPLICIT_TRAITS(expmod_gas_cost);
 
+template <Traits>
 uint64_t point_evaluation_gas_cost(byte_string_view)
 {
     return 50'000;
 }
+
+EXPLICIT_EVM_TRAITS(point_evaluation_gas_cost);
 
 uint64_t bls12_g1_add_gas_cost(byte_string_view)
 {

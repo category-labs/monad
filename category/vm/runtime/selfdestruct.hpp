@@ -34,11 +34,13 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2600);
+                // The minimum gas for SELFDESTRUCT is 0, so we have to account
+                // for the extra 100 gas for accessing a warm account here.
+                ctx->deduct_gas(traits::cold_account_cost() + 100);
             }
         }
 

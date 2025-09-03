@@ -47,10 +47,6 @@ struct EthereumMainnet : Chain
     virtual Result<void> validate_output_header(
         BlockHeader const &input, BlockHeader const &output) const override;
 
-    virtual uint64_t compute_gas_refund(
-        uint64_t block_number, uint64_t timestamp, Transaction const &,
-        uint64_t gas_remaining, uint64_t refund) const override;
-
     virtual size_t
     get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
 

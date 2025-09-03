@@ -236,9 +236,7 @@ namespace
             chain, enriched_txn, sender, authorities, header, 0}(state, host);
 
         // compute gas_refund and gas_used
-        auto const gas_refund = chain.compute_gas_refund(
-            header.number,
-            header.timestamp,
+        auto const gas_refund = compute_gas_refund<traits>(
             enriched_txn,
             static_cast<uint64_t>(execution_result.gas_left),
             static_cast<uint64_t>(execution_result.gas_refund));

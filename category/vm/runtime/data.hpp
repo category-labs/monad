@@ -33,11 +33,11 @@ namespace monad::vm::runtime
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2500);
+                ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 
@@ -138,11 +138,11 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2500);
+                ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 
@@ -195,11 +195,11 @@ namespace monad::vm::runtime
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2500);
+                ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 
@@ -213,11 +213,11 @@ namespace monad::vm::runtime
     {
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2500);
+                ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 

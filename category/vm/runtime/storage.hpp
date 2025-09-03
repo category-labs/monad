@@ -32,11 +32,11 @@ namespace monad::vm::runtime
     {
         auto key = bytes32_from_uint256(*key_ptr);
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             auto access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(2000);
+                ctx->deduct_gas(traits::cold_storage_cost());
             }
         }
 
@@ -69,7 +69,7 @@ namespace monad::vm::runtime
         auto value = bytes32_from_uint256(*value_ptr);
 
         auto access_status = EVMC_ACCESS_COLD;
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
         }
@@ -85,7 +85,7 @@ namespace monad::vm::runtime
         // than the amount relative to the minimum gas.
         gas_used -= min_gas;
 
-        if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        if constexpr (traits::eip_2929_active()) {
             if (access_status == EVMC_ACCESS_COLD) {
                 gas_used += 2100;
             }

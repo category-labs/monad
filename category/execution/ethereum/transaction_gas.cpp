@@ -182,6 +182,39 @@ uint256_t gas_price(
     MONAD_ABORT("invalid revision");
 }
 
+// YP Eqn 72 - template version for each revision
+template <Traits traits>
+uint64_t g_star(
+    Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
+{
+    // EIP-3529
+    constexpr auto max_refund_quotient =
+        traits::evm_rev() >= EVMC_LONDON ? 5 : 2;
+    auto const refund_allowance =
+        (tx.gas_limit - gas_remaining) / max_refund_quotient;
+    return gas_remaining + std::min(refund_allowance, refund);
+}
+
+EXPLICIT_TRAITS(g_star);
+
+template <Traits traits>
+uint64_t compute_gas_refund(
+    Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
+{
+    return g_star<traits>(tx, gas_remaining, refund);
+}
+
+EXPLICIT_EVM_TRAITS(compute_gas_refund);
+
+template <Traits traits>
+uint256_t
+refund_gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas)
+{
+    return gas_price<traits>(tx, base_fee_per_gas);
+}
+
+EXPLICIT_EVM_TRAITS(refund_gas_price);
+
 template <Traits traits>
 uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,

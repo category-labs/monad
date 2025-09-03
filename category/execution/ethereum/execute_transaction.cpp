@@ -68,19 +68,6 @@ constexpr void irrevocable_change(
     state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
-// YP Eqn 72 - template version for each revision
-template <Traits traits>
-constexpr uint64_t g_star(
-    Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
-{
-    // EIP-3529
-    constexpr auto max_refund_quotient =
-        traits::evm_rev() >= EVMC_LONDON ? 5 : 2;
-    auto const refund_allowance =
-        (tx.gas_limit - gas_remaining) / max_refund_quotient;
-    return gas_remaining + std::min(refund_allowance, refund);
-}
-
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -365,23 +352,31 @@ Receipt ExecuteTransaction<traits>::execute_final(
     MONAD_ASSERT(tx_.gas_limit >= static_cast<uint64_t>(result.gas_left));
 
     // refund and priority, Eqn. 73-76
-    auto const gas_refund = chain_.compute_gas_refund(
-        header_.number,
-        header_.timestamp,
+    // Monad specification §4.2: Storage Gas Cost and Refunds
+    auto const gas_refund = compute_gas_refund<traits>(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const gas_cost =
-        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, gas_cost * gas_refund);
+    auto const refund_gas_cost =
+        refund_gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+    state.add_to_balance(sender_, refund_gas_cost * gas_refund);
 
-    auto gas_used = tx_.gas_limit - gas_refund;
+    auto gas_used = tx_.gas_limit;
+
+    // Monad specification §2.3: Payment Rule for User:
+    // The storage refund does not reduce the gas consumption of the
+    // transaction.
+    if constexpr (traits::should_refund_reduce_gas_used()) {
+        gas_used -= gas_refund;
+    }
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
+            auto const gas_cost =
+                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
             state.subtract_from_balance(sender_, gas_cost * delta);
 
             gas_used = floor_gas;

@@ -144,24 +144,6 @@ Result<void> MonadChain::validate_output_header(
     return success();
 }
 
-uint64_t MonadChain::compute_gas_refund(
-    uint64_t const block_number, uint64_t const timestamp,
-    Transaction const &tx, uint64_t const gas_remaining,
-    uint64_t const refund) const
-{
-    auto const monad_rev = get_monad_revision(timestamp);
-    if (MONAD_LIKELY(monad_rev >= MONAD_ONE)) {
-        return 0;
-    }
-    else if (monad_rev == MONAD_ZERO) {
-        auto const rev = get_revision(block_number, timestamp);
-        return g_star(rev, tx, gas_remaining, refund);
-    }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-}
-
 size_t MonadChain::get_max_code_size(
     uint64_t /*block_number*/, uint64_t const timestamp) const
 {

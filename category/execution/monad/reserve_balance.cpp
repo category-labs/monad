@@ -17,5 +17,5 @@
 
 unsigned monad_default_max_reserve_balance_mon(monad_revision)
 {
-    return 100;
+    return 10;
 }

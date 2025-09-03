@@ -156,8 +156,7 @@ void run_revert_transaction_test(
     BlockState bs{tdb, vm};
 
     ASSERT_EQ(
-        monad_default_max_reserve_balance_mon(chain.get_monad_revision(0)),
-        100);
+        monad_default_max_reserve_balance_mon(chain.get_monad_revision(0)), 10);
 
     // Set up initial state
     {
@@ -224,8 +223,8 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
 {
     run_revert_transaction_test(
         false, // can_dip
-        100, // initial balance (MON)
-        20, // gas fee (MON)
+        10, // initial balance (MON)
+        2, // gas fee (MON)
         0, // value (MON)
         false // expected should_revert
     );
@@ -233,8 +232,8 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
     // now spend whole reserve
     run_revert_transaction_test(
         false, // can_dip
-        100, // initial balance (MON)
-        100, // gas fee (MON)
+        10, // initial balance (MON)
+        10, // gas fee (MON)
         0, // value (MON)
         false // expected should_revert
     );
@@ -244,17 +243,17 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_true)
 {
     run_revert_transaction_test(
         false, // can_dip
-        100, // initial balance (MON)
-        20, // gas fee (MON)
+        10, // initial balance (MON)
+        2, // gas fee (MON)
         1, // value (MON)
         true // expected should_revert
     );
 
     run_revert_transaction_test(
         false, // can_dip
-        150, // initial balance (MON)
-        50, // gas fee (MON)
-        60, // value (MON)
+        15, // initial balance (MON)
+        5, // gas fee (MON)
+        6, // value (MON)
         true // expected should_revert
     );
 }
@@ -263,9 +262,9 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_false)
 {
     run_revert_transaction_test(
         false, // can_dip
-        150, // initial balance (MON)
-        50, // gas fee (MON)
-        50, // value (MON)
+        15, // initial balance (MON)
+        5, // gas fee (MON)
+        5, // value (MON)
         false // expected should_revert
     );
 }
@@ -274,17 +273,17 @@ TEST(MonadChain, revert_transaction_dip_false)
 {
     run_revert_transaction_test(
         true, // can_dip
-        100, // initial balance (MON)
-        100, // gas fee (MON)
+        10, // initial balance (MON)
+        10, // gas fee (MON)
         0, // value (MON)
         false // expected should_revert
     );
 
     run_revert_transaction_test(
         true, // can_dip
-        100, // initial balance (MON)
-        10, // gas fee (MON)
-        90, // value (MON)
+        10, // initial balance (MON)
+        1, // gas fee (MON)
+        9, // value (MON)
         false // expected should_revert
     );
 }

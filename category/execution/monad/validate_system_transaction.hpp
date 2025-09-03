@@ -47,6 +47,7 @@ enum class SystemTransactionError
     BadSender,
     MissingTo,
     InvalidSystemContract,
+    NonEmptyAuthorizationList,
 };
 
 struct Transaction;

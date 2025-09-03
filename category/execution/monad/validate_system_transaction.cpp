@@ -61,6 +61,10 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
         return SystemTransactionError::GasNonZero;
     }
 
+    if (MONAD_UNLIKELY(!tx.authorization_list.empty())) {
+        return SystemTransactionError::NonEmptyAuthorizationList;
+    }
+
     return success();
 }
 
@@ -100,6 +104,9 @@ quick_status_code_from_enum<monad::SystemTransactionError>::value_mappings()
         {SystemTransactionError::MissingTo, "missing to", {}},
         {SystemTransactionError::InvalidSystemContract,
          "invalid system contract",
+         {}},
+        {SystemTransactionError::NonEmptyAuthorizationList,
+         "non empty authorization list",
          {}},
     };
 

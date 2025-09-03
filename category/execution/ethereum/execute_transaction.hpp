@@ -81,6 +81,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::chain_;
     using ExecuteTransactionNoValidation<traits>::tx_;
     using ExecuteTransactionNoValidation<traits>::sender_;
+    using ExecuteTransactionNoValidation<traits>::authorities_;
     using ExecuteTransactionNoValidation<traits>::header_;
     using ExecuteTransactionNoValidation<traits>::i_;
     using ExecuteTransactionNoValidation<traits>::revert_transaction_;

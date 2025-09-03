@@ -340,7 +340,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             tx_,
             sender_,
             state,
-            header_.base_fee_per_gas.value_or(0));
+            header_.base_fee_per_gas.value_or(0),
+            authorities_);
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require

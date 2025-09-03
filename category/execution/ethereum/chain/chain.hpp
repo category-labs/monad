@@ -72,8 +72,8 @@ struct Chain
 
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
-        Address const &sender, State &,
-        uint256_t const &base_fee_per_gas) const = 0;
+        Address const &sender, State &, uint256_t const &base_fee_per_gas,
+        std::vector<std::optional<Address>> const &authorities) const = 0;
 };
 
 MONAD_NAMESPACE_END

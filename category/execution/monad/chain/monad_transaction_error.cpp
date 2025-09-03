@@ -30,6 +30,9 @@ quick_status_code_from_enum<monad::MonadTransactionError>::value_mappings()
         {MonadTransactionError::InsufficientBalanceForFee,
          "insufficient balance for fee",
          {}},
+        {MonadTransactionError::SystemTransactionSenderIsAuthority,
+         "system transaction sender is authority",
+         {}},
     };
 
     return v;

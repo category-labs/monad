@@ -214,7 +214,7 @@ bool EthereumMainnet::is_system_sender(Address const &) const
 Result<void> EthereumMainnet::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
-    uint256_t const &) const
+    uint256_t const &, std::vector<std::optional<Address>> const &) const
 {
     evmc_revision const rev = get_revision(block_number, timestamp);
     auto const sender_account = state.recent_account(sender);

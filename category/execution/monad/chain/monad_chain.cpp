@@ -233,7 +233,8 @@ bool MonadChain::is_system_sender(Address const &sender) const
 Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
-    uint256_t const &base_fee_per_gas) const
+    uint256_t const &base_fee_per_gas,
+    std::vector<std::optional<Address>> const &authorities) const
 {
     evmc_revision const rev = get_revision(block_number, timestamp);
     auto const acct = state.recent_account(sender);
@@ -246,12 +247,18 @@ Result<void> MonadChain::validate_transaction(
             res.error() != TransactionError::InsufficientBalance) {
             return res;
         }
+
         evmc_revision const rev = get_revision(block_number, timestamp);
         uint256_t const balance = acct.has_value() ? acct.value().balance : 0;
         uint256_t const gas_fee =
             uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
         if (MONAD_UNLIKELY(balance < gas_fee)) {
             return MonadTransactionError::InsufficientBalanceForFee;
+        }
+
+        if (MONAD_UNLIKELY(std::ranges::contains(
+                authorities, SYSTEM_TRANSACTION_SENDER))) {
+            return MonadTransactionError::SystemTransactionSenderIsAuthority;
         }
     }
     else if (monad_rev >= MONAD_ZERO) {

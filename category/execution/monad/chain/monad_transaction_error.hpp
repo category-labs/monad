@@ -36,6 +36,7 @@ enum class MonadTransactionError
     Success = 0,
     InsufficientBalanceForFee, ///< Account doesn't have enough balance to pay
                                ///< transaction fees
+    SystemTransactionSenderIsAuthority,
 };
 
 MONAD_NAMESPACE_END

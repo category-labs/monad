@@ -31,7 +31,9 @@
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/chain/monad_testnet2.hpp>
+#include <category/execution/monad/chain/monad_transaction_error.hpp>
 #include <category/execution/monad/reserve_balance.h>
+#include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/mpt/db.hpp>
 
 #include <gtest/gtest.h>
@@ -324,5 +326,27 @@ TEST(MonadChain, can_sender_dip_into_reserve)
         };
         EXPECT_FALSE(
             can_sender_dip_into_reserve(Address{1}, 1, NULL_HASH, context));
+    }
+}
+
+TEST(MonadChain, system_transaction_sender_is_authority)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State state{bs, Incarnation{0, 0}};
+    std::vector<std::optional<Address>> const authorities = {
+        SYSTEM_TRANSACTION_SENDER};
+
+    {
+        MonadDevnet chain;
+        auto const res =
+            chain.validate_transaction(0, 0, {}, {}, state, 0, authorities);
+        ASSERT_TRUE(res.has_error());
+        EXPECT_EQ(
+            res.error(),
+            MonadTransactionError::SystemTransactionSenderIsAuthority);
     }
 }

@@ -16,6 +16,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/monad_exception.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -338,8 +339,10 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
     bool const can_compound_boundary =
         is_epoch_active(del.get_next_delta_epoch().native());
     if (MONAD_UNLIKELY(can_compound_boundary)) {
-        MONAD_ASSERT(can_compound); // only set when user compounds before
-                                    // and after block boundary
+        MONAD_ASSERT_THROW(
+            can_compound,
+            "staking compound logic error"); // only set when user compounds
+                                             // before and after block boundary
         BOOST_OUTCOME_TRY(auto rewards, apply_compound(val_id, del));
         BOOST_OUTCOME_TRY(reward_invariant(val, rewards));
         BOOST_OUTCOME_TRY(
@@ -1075,7 +1078,8 @@ Result<byte_string> StakingContract::precompile_withdraw(
         withdrawal_amount, checked_add(withdrawal_amount, rewards));
     auto const contract_balance =
         intx::be::load<uint256_t>(state_.get_balance(STAKING_CA));
-    MONAD_ASSERT(contract_balance >= withdrawal_amount);
+    MONAD_ASSERT_THROW(
+        contract_balance >= withdrawal_amount, "withdrawal insolvent");
     send_tokens(msg_sender, withdrawal_amount);
 
     emit_withdraw_event(val_id, msg_sender, withdrawal_id, withdrawal_amount);
@@ -1536,7 +1540,9 @@ void StakingContract::linked_list_remove(Key const &key, Ptr const &this_ptr)
 
     // These ptr types are blocked during delegator registration. Should never
     // remove them.
-    MONAD_ASSERT(this_ptr != Trait::empty() && this_ptr != Trait::sentinel());
+    MONAD_ASSERT_THROW(
+        this_ptr != Trait::empty() && this_ptr != Trait::sentinel(),
+        "invalid list entry");
 
     auto this_node = Trait::load_node(*this, key, this_ptr);
     if (Trait::prev(this_node) == Trait::empty()) {

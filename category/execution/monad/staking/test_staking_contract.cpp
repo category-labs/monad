@@ -16,6 +16,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -828,6 +829,36 @@ TEST_F(Stake, auth_address_conflicts_with_linked_list)
     Address sentinel{};
     std::memset(sentinel.bytes, 0xFF, sizeof(Address));
     EXPECT_TRUE(add_validator(sentinel, ACTIVE_VALIDATOR_STAKE).has_error());
+}
+
+TEST_F(Stake, linked_list_removal_state_override)
+{
+    // even though the empty address and the sentinel address are banned during
+    // delegate, a user could state override and trigger unreachable code
+    // during live execution via eth call.
+
+    contract.vars.epoch.store(10);
+
+    Address sentinel{};
+    std::memset(sentinel.bytes, 0xFF, sizeof(Address));
+
+    uint256_t const stake = 500 * MON;
+
+    // state override invalid validator
+    auto validator = contract.vars.val_execution(1u);
+    validator.address_flags().store(ValExecution::AddressFlags_t{
+        .auth_address = sentinel, .flags = ValidatorFlagsOk});
+    validator.stake().store(stake);
+
+    // state override that the contract can process this withdrawal
+    state.add_to_balance(STAKING_CA, stake);
+
+    // state override the delegator
+    auto delegator = contract.vars.delegator(1u, sentinel);
+    delegator.stake().store(stake);
+    EXPECT_THROW(
+        (void)undelegate(1u, sentinel, 1 /* withdrawal id */, stake),
+        MonadException);
 }
 
 /////////////////////////
@@ -4362,4 +4393,25 @@ TEST_F(Stake, withdrawal_insolvent)
     EXPECT_EQ(
         withdraw(val.id, auth_address, 1).assume_error(),
         StakingError::SolvencyError);
+}
+
+TEST_F(Stake, withdrawal_state_override)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val = res.assume_value();
+
+    skip_to_next_epoch(); // activate the stake
+    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+
+    skip_to_next_epoch(); // withdrawal inactive
+    skip_to_next_epoch(); // withdrawal active.
+
+    // make the contract insolvent. this could be achieved by an eth call state
+    // override.
+    state.subtract_from_balance(
+        STAKING_CA, intx::be::load<uint256_t>(state.get_balance(STAKING_CA)));
+
+    EXPECT_THROW((void)withdraw(val.id, auth_address, 1), MonadException);
 }

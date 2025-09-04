@@ -107,13 +107,15 @@ namespace
 }
 
 BlockchainTestVM::BlockchainTestVM(
-    Implementation impl, native::EmitterHook post_hook)
+    Implementation impl, native::PreEmitterHook pre_hook,
+    native::PostEmitterHook post_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
     , base_config{
           .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
           .max_code_size_offset = code_size_t::max(),
+          .pre_instruction_emit_hook = pre_hook,
           .post_instruction_emit_hook = post_hook}
 {
     MONAD_VM_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));

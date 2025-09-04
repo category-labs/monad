@@ -63,7 +63,8 @@ namespace monad::vm::fuzzing
                 artificial_avx_prob,
                 artificial_general_prob,
                 artificial_top2_prob,
-                &engine](vm::compiler::native::Emitter &emit) {
+                &engine](vm::compiler::native::Emitter &emit, auto block_id, auto instr_ix, auto instr) {
+            (void) block_id; (void) instr_ix; (void) instr; // Unused
             using monad::vm::compiler::native::GENERAL_REG_COUNT;
             using monad::vm::compiler::native::GeneralReg;
 

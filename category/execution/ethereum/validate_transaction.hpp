@@ -69,12 +69,11 @@ Result<void> static_validate_transaction(
 
 template <Traits traits>
 Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account,
-    std::span<uint8_t const>);
+    Transaction const &, std::optional<Account> const &sender_account);
 
 Result<void> validate_transaction(
     evmc_revision, Transaction const &,
-    std::optional<Account> const &sender_account, std::span<uint8_t const>);
+    std::optional<Account> const &sender_account);
 
 MONAD_NAMESPACE_END
 

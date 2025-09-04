@@ -16,9 +16,9 @@
 #include <ethereum_test.hpp>
 #include <from_json.hpp>
 
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <monad/test/config.hpp>
 
@@ -48,8 +48,11 @@ void load_state_from_json(nlohmann::json const &j, State &state)
         }
 
         if (j_acc.contains("code")) {
-            state.set_code(
-                account_address, j_acc.at("code").get<monad::byte_string>());
+            auto const code = j_acc.at("code").get<monad::byte_string>();
+            state.set_code(account_address, code);
+            if (vm::evm::is_delegated(code)) {
+                state.set_account_delegation(account_address, true);
+            }
         }
 
         state.add_to_balance(

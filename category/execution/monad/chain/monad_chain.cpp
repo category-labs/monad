@@ -55,15 +55,9 @@ bool dipped_into_reserve(
         bytes32_t const orig_code_hash = orig_account.has_value()
                                              ? orig_account.value().code_hash
                                              : NULL_HASH;
-
         // Skip if not EOA
-        if (orig_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(orig_code_hash)->intercode();
-            if (!monad::vm::evm::is_delegated(
-                    {intercode->code(), intercode->size()})) {
-                continue;
-            }
+        if (orig_code_hash != NULL_HASH && !orig_account->delegated) {
+            continue;
         }
 
         // Check if dipped into reserve
@@ -201,9 +195,7 @@ Result<void> MonadChain::validate_transaction(
 {
     evmc_revision const rev = get_revision(block_number, timestamp);
     auto const acct = state.recent_account(sender);
-    auto const &icode = state.get_code(sender)->intercode();
-    auto res = ::monad::validate_transaction(
-        rev, tx, acct, {icode->code(), icode->size()});
+    auto res = ::monad::validate_transaction(rev, tx, acct);
     auto const monad_rev = get_monad_revision(timestamp);
     if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
         if (res.has_error() &&

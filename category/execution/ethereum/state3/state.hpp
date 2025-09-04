@@ -318,6 +318,16 @@ public:
         account.value().nonce = nonce;
     }
 
+    void set_account_delegation(Address const &address, bool const delegated)
+    {
+        auto &account_state = current_account_state(address);
+        auto &account = account_state.account_;
+        if (MONAD_UNLIKELY(!account.has_value())) {
+            account = Account{.incarnation = incarnation_};
+        }
+        account.value().delegated = delegated;
+    }
+
     void add_to_balance(Address const &address, uint256_t const &delta)
     {
         auto &account_state = current_account_state(address);

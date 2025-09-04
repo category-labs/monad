@@ -31,6 +31,7 @@ target_sources(vm-unit-tests PRIVATE
     unify_tests.cpp
     infer_tests.cpp
     type_check_tests.cpp
+    untyped_tests.cpp
     stack_tests.cpp
     emitter_tests.cpp
     interpreter_tests.cpp

@@ -41,6 +41,9 @@ target_sources(monad-vm-compiler PRIVATE
     "ir/poly_typed/subst_map.hpp"
     "ir/poly_typed/unify.cpp"
     "ir/poly_typed/unify.hpp"
+    # untyped ir
+    "ir/untyped.hpp"
+    "ir/untyped.cpp"
     # x86 backend
     "ir/x86.hpp"
     "ir/x86.cpp"

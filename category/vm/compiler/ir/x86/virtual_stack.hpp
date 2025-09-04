@@ -150,6 +150,33 @@ namespace monad::vm::compiler::native
         Comparison comparison_;
     };
 
+    struct OperandLocations
+    {
+        bool has_literal;
+        bool has_general_reg;
+        bool has_avx_reg;
+        bool has_stack_offset;
+        bool is_deferred_comparison;
+
+        Literal literal;
+        StackOffset stack_offset;
+        AvxReg avx_reg;
+        GeneralReg general_reg;
+
+        bool operator==(OperandLocations const &other) const
+        {
+            return has_literal == other.has_literal &&
+                   has_general_reg == other.has_general_reg &&
+                   has_avx_reg == other.has_avx_reg &&
+                   has_stack_offset == other.has_stack_offset &&
+                   is_deferred_comparison == other.is_deferred_comparison &&
+                   (!has_literal || literal == other.literal) &&
+                   (!has_stack_offset || stack_offset == other.stack_offset) &&
+                   (!has_avx_reg || avx_reg == other.avx_reg) &&
+                   (!has_general_reg || general_reg == other.general_reg);
+        }
+    };
+
     /**
      * A stack element. It can store its word value in up to 4 locations at the
      * same time. The 4 locations are: `StackOffset`, `AvxReg`, `GeneralReg`,
@@ -204,6 +231,8 @@ namespace monad::vm::compiler::native
         {
             return !stack_indices_.empty();
         }
+
+        bool is_deferred_comparison() const;
 
         // Remember to match this with a call to `unreserve_avx_reg`.
         void reserve_avx_reg()
@@ -771,6 +800,22 @@ namespace monad::vm::compiler::native
         std::int32_t top_index() const
         {
             return top_index_;
+        }
+
+
+        OperandLocations get_stack_elem_locations(std::int32_t index)
+        {
+            StackElemRef elem = at(index);
+            return {
+                elem->literal() != std::nullopt,
+                elem->general_reg() != std::nullopt,
+                elem->avx_reg() != std::nullopt,
+                elem->stack_offset() != std::nullopt,
+                elem->is_deferred_comparison(),
+                elem->literal() ? *elem->literal() : Literal{0},
+                elem->stack_offset() ? *elem->stack_offset() : StackOffset{0},
+                elem->avx_reg() ? *elem->avx_reg() : AvxReg{0},
+                elem->general_reg() ? *elem->general_reg() : GeneralReg{0}};
         }
 
     private:

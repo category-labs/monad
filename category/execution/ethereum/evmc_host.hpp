@@ -54,14 +54,13 @@ protected:
     CallTracerBase &call_tracer_;
     size_t const max_code_size_;
     size_t const max_initcode_size_;
-    bool const create_inside_delegated_;
     std::function<bool()> revert_transaction_;
 
 public:
     EvmcHostBase(
         Chain const &, CallTracerBase &, evmc_tx_context const &,
         BlockHashBuffer const &, State &, size_t max_code_size,
-        size_t max_init_code_size, bool create_inside_delegated,
+        size_t max_init_code_size,
         std::function<bool()> const &revert_transaction = [] {
             return false;
         }) noexcept;
@@ -105,7 +104,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 120);
+static_assert(sizeof(EvmcHostBase) == 112);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -144,7 +143,8 @@ struct EvmcHost final : public EvmcHostBase
     {
         try {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-                if (!create_inside_delegated_ && (msg.flags & EVMC_DELEGATED)) {
+                if (!traits::can_create_inside_delegated() &&
+                    (msg.flags & EVMC_DELEGATED)) {
                     return evmc::Result{EVMC_UNDEFINED_INSTRUCTION, msg.gas};
                 }
 
@@ -207,7 +207,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 120);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 112);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
 MONAD_NAMESPACE_END

@@ -59,8 +59,6 @@ struct EthereumMainnet : Chain
 
     virtual GenesisState get_genesis_state() const override;
 
-    virtual bool get_create_inside_delegated() const override;
-
     virtual bool is_system_sender(Address const &) const override;
 
     virtual Result<void> validate_transaction(

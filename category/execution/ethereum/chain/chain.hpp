@@ -59,8 +59,6 @@ struct Chain
 
     virtual GenesisState get_genesis_state() const = 0;
 
-    virtual bool get_create_inside_delegated() const = 0;
-
     virtual bool is_system_sender(Address const &) const = 0;
 
     virtual Result<void> validate_transaction(

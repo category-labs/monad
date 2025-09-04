@@ -157,12 +157,14 @@ TEST(CallTrace, execute_success)
         buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
-    auto const result = ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
-        EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
-        s, host);
+    auto const result =
+        ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -233,12 +235,14 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
-    auto const result = ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
-        EthereumMainnet{}, tx, sender, BlockHeader{.beneficiary = beneficiary})(
-        s, host);
+    auto const result =
+        ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 

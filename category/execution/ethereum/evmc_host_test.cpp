@@ -147,8 +147,7 @@ TEST(EvmcHost, emit_log)
         block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
     host.emit_log(
         from,
@@ -184,8 +183,7 @@ TEST(EvmcHost, access_precompile)
         block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

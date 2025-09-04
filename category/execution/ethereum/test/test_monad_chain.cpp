@@ -135,15 +135,6 @@ TEST(MonadChain, Genesis)
     }
 }
 
-TEST(MonadChain, create_inside_delegated)
-{
-    EXPECT_FALSE(MonadMainnet{}.get_create_inside_delegated());
-    EXPECT_FALSE(MonadDevnet{}.get_create_inside_delegated());
-    EXPECT_FALSE(MonadTestnet{}.get_create_inside_delegated());
-    EXPECT_FALSE(MonadTestnet2{}.get_create_inside_delegated());
-    EXPECT_TRUE(EthereumMainnet{}.get_create_inside_delegated());
-}
-
 void run_revert_transaction_test(
     bool const can_dip, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)

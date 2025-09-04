@@ -183,8 +183,7 @@ TEST(BlockHashHistory, read_from_block_hash_history_contract)
             buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
 
         bytes32_t calldata = enc(block_number);
         evmc_message msg{
@@ -268,8 +267,7 @@ TEST(BlockHashHistory, read_write_block_hash_history_contract)
             buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
 
         evmc_message msg{
             .kind = EVMC_CALL,
@@ -307,8 +305,7 @@ TEST(BlockHashHistory, read_write_block_hash_history_contract)
             buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
 
         bytes32_t calldata = enc(block_number);
         evmc_message msg{
@@ -414,8 +411,7 @@ TEST(BlockHashHistory, unauthorized_set)
             buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
 
         evmc_message msg{
             .kind = EVMC_CALL,
@@ -458,8 +454,7 @@ TEST(BlockHashHistory, unauthorized_set)
             buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
 
         bytes32_t calldata = enc(block_number);
         evmc_message msg{

@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
@@ -88,8 +89,7 @@ TEST(Evm, create_with_insufficient)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
     auto const result =
         create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
 
@@ -144,8 +144,7 @@ TEST(Evm, eip684_existing_code)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
     auto const result =
         create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -175,8 +174,7 @@ TEST(Evm, create_nonce_out_of_range)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
     commit_sequential(
         tdb,
@@ -230,8 +228,7 @@ TEST(Evm, static_precompile_execution)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
     commit_sequential(
         tdb,
@@ -290,8 +287,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        true};
+        MAX_INITCODE_SIZE_EIP3860};
 
     commit_sequential(
         tdb,
@@ -390,8 +386,7 @@ TEST(Evm, create_op_max_initcode_size)
         block_hash_buffer,
         s,
         128 * 1024,
-        2 * 128 * 1024,
-        true};
+        2 * 128 * 1024};
 
     // Initcode fits inside size limit
     {
@@ -489,8 +484,7 @@ TEST(Evm, create2_op_max_initcode_size)
         block_hash_buffer,
         s,
         128 * 1024,
-        2 * 128 * 1024,
-        true};
+        2 * 128 * 1024};
 
     // Initcode fits inside size limit
     {
@@ -652,16 +646,15 @@ TEST(Evm, create_inside_delegated)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain{};
-    evm_host_t h{
+    MonadDevnet chain{};
+    EvmcHost<MonadTraits<MONAD_FOUR>> h{
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860,
-        false};
+        MAX_INITCODE_SIZE_EIP3860};
     auto const result = h.call(m);
 
     EXPECT_EQ(result.status_code, EVMC_UNDEFINED_INSTRUCTION);

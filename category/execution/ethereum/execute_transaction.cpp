@@ -349,7 +349,6 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
         chain_.get_max_initcode_size(header_.number, header_.timestamp),
-        chain_.get_create_inside_delegated(),
         [this, &state] {
             return revert_transaction_(sender_, tx_, i_, state);
         }};

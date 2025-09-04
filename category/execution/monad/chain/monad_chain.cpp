@@ -193,11 +193,6 @@ size_t MonadChain::get_max_initcode_size(
     }
 }
 
-bool MonadChain::get_create_inside_delegated() const
-{
-    return false;
-}
-
 bool MonadChain::is_system_sender(Address const &sender) const
 {
     return sender == SYSTEM_TRANSACTION_SENDER;

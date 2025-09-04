@@ -47,8 +47,8 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/rpc/eth_call.h>
-#include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -231,8 +231,7 @@ namespace
             buffer,
             state,
             max_code_size,
-            chain.get_max_initcode_size(header.number, header.timestamp),
-            chain.get_create_inside_delegated()};
+            chain.get_max_initcode_size(header.number, header.timestamp)};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain, enriched_txn, sender, authorities, header, 0}(state, host);
 

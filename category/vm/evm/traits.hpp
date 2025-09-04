@@ -33,6 +33,7 @@ namespace monad
 
         // Feature flags
         { T::eip_7951_active() } -> std::same_as<bool>;
+        { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -58,6 +59,11 @@ namespace monad
         static constexpr bool eip_7951_active() noexcept
         {
             return Rev >= EVMC_OSAKA;
+        }
+
+        static constexpr bool can_create_inside_delegated() noexcept
+        {
+            return true;
         }
 
         static constexpr uint64_t id() noexcept
@@ -86,6 +92,11 @@ namespace monad
         static constexpr bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
+        }
+
+        static constexpr bool can_create_inside_delegated() noexcept
+        {
+            return false;
         }
 
         static constexpr uint64_t id() noexcept

@@ -109,7 +109,6 @@ add_library(
   "monad_exception.cpp"
   "monad_exception.hpp"
   "nibble.h"
-  "offset.hpp"
   "result.hpp"
   "size_of.hpp"
   "small_prng.hpp"
@@ -221,7 +220,7 @@ endif()
 add_library(
   monad_core_disas STATIC
   # core
-  "math_disas.cpp" "offset_disas.cpp" "spinlock_disas.c"
+  "math_disas.cpp" "spinlock_disas.c"
   # rlp
   "rlp/encode_disas.cpp")
 monad_compile_options(monad_core_disas)

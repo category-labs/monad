@@ -341,7 +341,10 @@ namespace
 
             auto encoded_account = node.value();
             auto const acct = decode_account_db_ignore_address(encoded_account);
-            MONAD_ASSERT(!acct.has_error());
+            MONAD_ASSERT_PRINTF(
+                !acct.has_error(),
+                "decode error %s",
+                acct.assume_error().message().c_str());
             MONAD_ASSERT(encoded_account.empty());
             bytes32_t storage_root = NULL_ROOT;
             if (node.number_of_children()) {
@@ -456,7 +459,21 @@ namespace
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
         if (!payload.empty()) {
-            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
+            auto const payload_copy = payload;
+            auto code_res = rlp::decode_bytes32(payload);
+            if (code_res.has_value()) {
+                acct.code_hash = code_res.value();
+            }
+            else {
+                payload = payload_copy;
+            }
+            if (!payload.empty()) { // parse the extension list
+                BOOST_OUTCOME_TRY(
+                    auto extra_payload, rlp::parse_list_metadata(payload));
+                BOOST_OUTCOME_TRY(
+                    acct.delegated,
+                    rlp::decode_unsigned<unsigned char>(extra_payload));
+            }
         }
         if (MONAD_UNLIKELY(!payload.empty())) {
             return rlp::DecodeError::InputTooLong;
@@ -679,6 +696,11 @@ byte_string encode_account_db(Address const &address, Account const &account)
     if (account.code_hash != NULL_HASH) {
         encoded_account += rlp::encode_bytes32(account.code_hash);
     }
+
+    byte_string const extra =
+        rlp::encode_unsigned(static_cast<unsigned char>(account.delegated));
+    encoded_account += rlp::encode_list2(extra);
+
     return rlp::encode_list2(encoded_account);
 }
 

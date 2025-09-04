@@ -30,6 +30,7 @@ add_library(
   "../core/cleanup.h"
   "../core/format_err.c"
   "../core/format_err.h"
+  "../core/likely.h"
   "../core/srcloc.h"
   "../core/event/event_iterator.h"
   "../core/event/event_iterator_inline.h"

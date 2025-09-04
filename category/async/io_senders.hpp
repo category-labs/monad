@@ -210,7 +210,8 @@ public:
                 std::vector<struct iovec> temp;
                 temp.reserve(buffers_.size());
                 for (size_t n = 0; n < buffers_.size(); n++) {
-                    temp[n] = {(char *)buffers_[n].data(), buffers_[n].size()};
+                    temp.push_back(
+                        {(char *)buffers_[n].data(), buffers_[n].size()});
                 }
                 iovecs_ = std::move(temp);
                 auto &v = std::get<1>(iovecs_);

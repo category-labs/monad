@@ -306,8 +306,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     BlockHeader hdr{.number = 0};
     {
         sctx->commit(
-            StateDeltas{}, Code{}, bytes32_t{0}, BlockHeader{.number = 0});
-        sctx->finalize(0, bytes32_t{0});
+            StateDeltas{}, Code{}, NULL_HASH_BLAKE3, BlockHeader{.number = 0});
+        sctx->finalize(0, NULL_HASH_BLAKE3);
     }
     while (raw.size() >= sizeof(uint64_t)) {
         StateDeltas deltas;

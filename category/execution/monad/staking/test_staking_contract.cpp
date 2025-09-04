@@ -570,7 +570,8 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::Values(1, 5, 10, 25, 50, 66, 75, 90),
         // variable rewards in MON
         ::testing::Values(
-            MON / 25, MON / 50, 2 * MON, 10 * MON, 300 * MON, 1000 * MON)),
+            0, MON / 25, MON / 50, 2 * MON, 10 * MON, 25 * MON, 300 * MON,
+            1000 * MON)),
     [](::testing::TestParamInfo<std::tuple<uint64_t, uint256_t>> const &info) {
         return std::to_string(std::get<0>(info.param)) + "_" +
                intx::to_string(std::get<1>(info.param));
@@ -4030,6 +4031,74 @@ TEST_F(Stake, contract_bootstrap)
         contract.vars.accumulated_reward_per_token(E - 1, val2.id).load();
     EXPECT_EQ(acc2.refcount.native(), 0);
     EXPECT_EQ(acc2.value.native(), 0);
+}
+
+TEST_F(Stake, zero_reward_epochs)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    std::array<Address, 4> delegators{
+        0xdead_address, 0xbeef_address, 0x600d_address, 0xbadd_address};
+    std::vector<ValResult> validators;
+    uint256_t const DELEGATOR_STAKE = 1000000 * MON;
+
+    contract.vars.epoch.store(49); // start at epoch 49
+
+    for (uint64_t i = 0; i < 10; ++i) {
+        // add validator
+        uint256_t const commission = (i % 2 == 0) ? MON * 10 / 100 : 0;
+        auto const res = add_validator(
+            auth_address, ACTIVE_VALIDATOR_STAKE, commission, bytes32_t{i + 1});
+        ASSERT_FALSE(res.has_error());
+        validators.push_back(res.value());
+
+        // add some delegators to each validator
+        for (auto const &d : delegators) {
+            EXPECT_FALSE(
+                delegate(res.value().id, d, DELEGATOR_STAKE).has_error());
+        }
+    }
+
+    skip_to_next_epoch(); // epoch 50
+    for (uint64_t epoch = 51; epoch <= 60; ++epoch) {
+        for (uint64_t block = 0; block < 50; ++block) {
+            auto const proposer =
+                validators[block % validators.size()].sign_address;
+            if (block == 40) {
+                EXPECT_FALSE(syscall_snapshot().has_error());
+            }
+            EXPECT_FALSE(syscall_reward(proposer, 0).has_error());
+        }
+        EXPECT_FALSE(syscall_on_epoch_change(epoch).has_error());
+    }
+
+    // check no staking emissions occurred
+    EXPECT_EQ(
+        get_balance(STAKING_CA),
+        ACTIVE_VALIDATOR_STAKE * validators.size() +
+            DELEGATOR_STAKE * delegators.size() * validators.size());
+    for (auto const &v : validators) {
+        auto val_info = contract.vars.val_execution(v.id);
+        EXPECT_EQ(
+            val_info.stake().load().native(),
+            ACTIVE_VALIDATOR_STAKE + DELEGATOR_STAKE * delegators.size());
+        EXPECT_EQ(val_info.accumulated_reward_per_token().load().native(), 0);
+        EXPECT_EQ(val_info.unclaimed_rewards().load().native(), 0);
+
+        pull_delegator_up_to_date(v.id, auth_address);
+        auto auth_del = contract.vars.delegator(v.id, auth_address);
+        EXPECT_EQ(auth_del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(auth_del.accumulated_reward_per_token().load().native(), 0);
+        EXPECT_EQ(auth_del.rewards().load().native(), 0);
+
+        for (auto const &d : delegators) {
+            pull_delegator_up_to_date(v.id, d);
+            auto del_info = contract.vars.delegator(v.id, d);
+            EXPECT_EQ(del_info.stake().load().native(), DELEGATOR_STAKE);
+            EXPECT_EQ(
+                del_info.accumulated_reward_per_token().load().native(), 0);
+            EXPECT_EQ(del_info.rewards().load().native(), 0);
+        }
+    }
 }
 
 //////////////////

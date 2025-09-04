@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCE Bytecode Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .instruction {
+            margin-bottom: 10px;
+        }
+    </style>
+    <script src="visualize.js"></script>
+</head>
+<body>
+    <h1>MCE Bytecode Visualization</h1>
+    <div id="bytecode"></div>
+    <!-- File picker -->
+    <div>
+        <p>Select a JSON file to visualize the MCE bytecode.</p>
+        <label for="fileInput">Upload JSON file:</label>
+        <input type="file" id="fileInput" accept=".json" onchange="loadFile(event)">
+    </div>
+    <div id="display">
+    </div>
+</body>
+</html>

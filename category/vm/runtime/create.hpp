@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -42,6 +43,15 @@ namespace monad::vm::runtime
     {
         if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
+        }
+
+        if constexpr (
+            traits::evm_rev() >= EVMC_PRAGUE &&
+            !traits::can_create_inside_delegated()) {
+            if (evm::resolve_delegation(
+                    ctx->host, ctx->context, ctx->env.recipient)) {
+                ctx->exit(StatusCode::Error);
+            }
         }
 
         ctx->env.clear_return_data();

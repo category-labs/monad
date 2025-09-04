@@ -31,6 +31,7 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
 
 #include <intx/intx.hpp>
 
@@ -628,7 +629,7 @@ TEST(Evm, deploy_contract_code)
     }
 }
 
-TEST(Evm, create_inside_delegated)
+TEST(Evm, create_inside_delegated_call)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -637,25 +638,231 @@ TEST(Evm, create_inside_delegated)
     BlockState bs{tdb, vm};
     State s{bs, Incarnation{0, 0}};
 
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    static constexpr auto eoa{
+        0x00000000000000000000000000000000aaaaaaaa_address};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto delegated{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(delegated.bytes, 20, &eoa_code[3]);
+    auto const eoa_icode = vm::make_shared_intercode(eoa_code);
+    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
+
+    // PUSH0; PUSH0; PUSH0; CREATE
+    auto const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    auto const delegated_icode = vm::make_shared_intercode(delegated_code);
+    auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {eoa,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = eoa_code_hash,
+                      }}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {delegated,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = delegated_code_hash,
+                      }}}}},
+        Code{
+            {eoa_code_hash, eoa_icode},
+            {delegated_code_hash, delegated_icode},
+        },
+        BlockHeader{});
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
         .flags = EVMC_DELEGATED,
-        .gas = 20'000,
-        .sender = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address,
+        .gas = 1'000'000,
+        .recipient = eoa,
+        .sender = from,
+        .code_address = delegated,
     };
 
-    BlockHashBufferFinalized const block_hash_buffer;
-    NoopCallTracer call_tracer;
-    MonadDevnet chain{};
-    EvmcHost<MonadTraits<MONAD_FOUR>> h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
-    auto const result = h.call(m);
+    // CREATE should succeed on Ethereum chains
+    {
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        EthereumMainnet chain{};
+        EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
+            chain,
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            MAX_CODE_SIZE_EIP170,
+            MAX_INITCODE_SIZE_EIP3860};
+        auto const result = h.call(m);
 
-    EXPECT_EQ(result.status_code, EVMC_UNDEFINED_INSTRUCTION);
+        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    }
+
+    // CREATE should fail on Monad chains
+    {
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        MonadDevnet chain{};
+        EvmcHost<MonadTraits<MONAD_FOUR>> h{
+            chain,
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            MAX_CODE_SIZE_EIP170,
+            MAX_INITCODE_SIZE_EIP3860};
+        auto const result = h.call(m);
+
+        EXPECT_EQ(result.status_code, EVMC_FAILURE);
+    }
+}
+
+TEST(Evm, create2_inside_delegated_call_via_delegatecall)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    // `eoa` 7702-delegates its code to `delegated`, which makes a DELEGATECALL
+    // to `creator`, which eventually tries to CREATE a contract
+    static constexpr auto eoa{
+        0x00000000000000000000000000000000aaaaaaaa_address};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto delegated{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    static constexpr auto creator{
+        0x00000000000000000000000000000000dddddddd_address};
+
+    uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(delegated.bytes, 20, &eoa_code[3]);
+    auto const eoa_icode = vm::make_shared_intercode(eoa_code);
+    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
+
+    // Make a delegatecall to the creator contract, and fail execution if that
+    // call failed.
+    //
+    // PUSH0; PUSH0; PUSH0; PUSH0; PUSH20 creator; GAS; DELEGATECALL;
+    // PUSH1 0x1f; JUMPI; INVALID; JUMPDEST[1f]
+    auto const delegated_code =
+        evmc::from_hex(
+            "5f5f5f5f7300000000000000000000000000000000dddddddd5af4601f57fe5b")
+            .value();
+    auto const delegated_icode = vm::make_shared_intercode(delegated_code);
+    auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
+
+    // PUSH0; PUSH0; PUSH0; PUSH0; CREATE2
+    auto const creator_code = evmc::from_hex("0x5F5F5F5FF5").value();
+    auto const creator_icode = vm::make_shared_intercode(creator_code);
+    auto const creator_code_hash = to_bytes(keccak256(creator_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {eoa,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = eoa_code_hash,
+                      }}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {delegated,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = delegated_code_hash,
+                      }}}},
+            {creator,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = creator_code_hash,
+                      }}}}},
+        Code{
+            {eoa_code_hash, eoa_icode},
+            {delegated_code_hash, delegated_icode},
+            {creator_code_hash, creator_icode},
+        },
+        BlockHeader{});
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .flags = EVMC_DELEGATED,
+        .gas = 1'000'000,
+        .recipient = eoa,
+        .sender = from,
+        .code_address = delegated,
+    };
+
+    // CREATE2 should succeed on Ethereum chains
+    {
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        EthereumMainnet chain{};
+        EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
+            chain,
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            MAX_CODE_SIZE_EIP170,
+            MAX_INITCODE_SIZE_EIP3860};
+        auto const result = h.call(m);
+
+        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    }
+
+    // CREATE2 should fail on Monad chains
+    {
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        MonadDevnet chain{};
+        EvmcHost<MonadTraits<MONAD_FOUR>> h{
+            chain,
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            MAX_CODE_SIZE_EIP170,
+            MAX_INITCODE_SIZE_EIP3860};
+        auto const result = h.call(m);
+
+        EXPECT_EQ(result.status_code, EVMC_FAILURE);
+    }
 }

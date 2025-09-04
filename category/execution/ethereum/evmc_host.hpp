@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -143,11 +144,6 @@ struct EvmcHost final : public EvmcHostBase
     {
         try {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-                if (!traits::can_create_inside_delegated() &&
-                    (msg.flags & EVMC_DELEGATED)) {
-                    return evmc::Result{EVMC_UNDEFINED_INSTRUCTION, msg.gas};
-                }
-
                 auto result =
                     ::monad::create<traits>(this, state_, msg, max_code_size_);
 

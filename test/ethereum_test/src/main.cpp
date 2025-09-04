@@ -34,9 +34,11 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 MONAD_NAMESPACE_BEGIN
@@ -53,8 +55,9 @@ int main(int argc, char *argv[])
     auto log_level = quill::LogLevel::None;
     std::optional<evmc_revision> revision = std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
+    std::string record_exec_events_path;
     bool trace_calls = false;
-    bool record_exec_events = false;
+    unsigned sleep_seconds = 0;
 
     CLI::App app{"monad ethereum tests runner"};
     app.add_option("--log_level", log_level, "Logging level")
@@ -64,8 +67,15 @@ int main(int argc, char *argv[])
             CLI::CheckedTransformer(test::revision_map, CLI::ignore_case));
     app.add_option("--txn", txn_index, "Index of transaction to run");
     app.add_flag("--trace_calls", trace_calls, "Enable call tracing");
-    app.add_flag(
-        "--record-exec-events", record_exec_events, "Record execution events");
+    CLI::Option const *const record_exec_events =
+        app.add_option(
+               "--record-exec-events",
+               record_exec_events_path,
+               "Record execution events")
+            ->expected(0, 1)
+            ->type_name("<file-path> (leave empty for anonymous memfd)");
+    app.add_option(
+        "--sleep", sleep_seconds, "Sleep for the specified number of seconds");
     CLI11_PARSE(app, argc, argv);
 
     quill::start(true);
@@ -74,6 +84,11 @@ int main(int argc, char *argv[])
     event_tracer = quill::create_logger("event_trace", quill::null_handler());
 #endif
 
+    if (record_exec_events->count() > 0) {
+        test::init_exec_event_recorder(record_exec_events_path);
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds{sleep_seconds});
     test::register_blockchain_tests(revision, trace_calls);
     test::register_transaction_tests(revision);
 

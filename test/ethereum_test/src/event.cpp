@@ -28,9 +28,13 @@
 #include <monad/test/config.hpp>
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 
+#include <fcntl.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -39,6 +43,21 @@ MONAD_NAMESPACE_BEGIN
 extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
 
 MONAD_NAMESPACE_END
+
+namespace
+{
+
+    char *g_unlink_name_buf;
+
+    void unlink_at_exit()
+    {
+        if (g_unlink_name_buf != nullptr) {
+            (void)unlink(g_unlink_name_buf);
+            std::free(g_unlink_name_buf);
+        }
+    }
+
+} // End of anonymous namespace
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -108,16 +127,27 @@ ConsumeMore:
     goto ConsumeMore;
 }
 
-void init_exec_event_recorder()
+void init_exec_event_recorder(std::string event_ring_path)
 {
     constexpr uint8_t DESCRIPTORS_SHIFT = 20;
     constexpr uint8_t PAYLOAD_BUF_SHIFT = 28; // 256 MiB
-    constexpr char MEMFD_NAME[] = "memfd:exec_event_test";
+    constexpr mode_t CREATE_MODE = S_IRUSR | S_IWUSR;
+    constexpr char MEMFD_NAME[] = "exec_event_test";
 
-    int ring_fd [[gnu::cleanup(cleanup_close)]] = memfd_create(MEMFD_NAME, 0);
+    int ring_fd [[gnu::cleanup(cleanup_close)]] =
+        std::empty(event_ring_path) ? memfd_create(MEMFD_NAME, 0)
+                                    : open(
+                                          event_ring_path.c_str(),
+                                          O_CREAT | O_EXCL | O_RDWR,
+                                          CREATE_MODE);
+
     MONAD_ASSERT(ring_fd != -1);
+    if (!std::empty(event_ring_path)) {
+        g_unlink_name_buf = strdup(event_ring_path.c_str());
+        MONAD_ASSERT(g_unlink_name_buf != nullptr);
+        std::atexit(unlink_at_exit);
+    }
 
-    // We're the exclusive owner; initialize the event ring file
     monad_event_ring_simple_config const simple_cfg = {
         .descriptors_shift = DESCRIPTORS_SHIFT,
         .payload_buf_shift = PAYLOAD_BUF_SHIFT,

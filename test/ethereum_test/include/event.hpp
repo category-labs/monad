@@ -18,6 +18,7 @@
 
 #include <monad/test/config.hpp>
 
+#include <string>
 #include <vector>
 
 MONAD_TEST_NAMESPACE_BEGIN
@@ -61,6 +62,6 @@ struct ExecutionEvents
 void find_execution_events(
     monad_event_ring const *, monad_event_iterator *, ExecutionEvents *);
 
-void init_exec_event_recorder();
+void init_exec_event_recorder(std::string event_ring_path);
 
 MONAD_TEST_NAMESPACE_END

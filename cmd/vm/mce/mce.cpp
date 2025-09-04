@@ -18,6 +18,7 @@
 #include <instrumentable_parser.hpp>
 #include <instrumentable_vm.hpp>
 #include <instrumentation_device.hpp>
+#include <operands_logger.cpp>
 #include <stopwatch.hpp>
 
 #include <category/core/runtime/uint256.hpp>
@@ -61,6 +62,8 @@ struct arguments
     bool instrument_parse = false;
     bool instrument_compile = false;
     bool instrument_execute = false;
+    bool instrument_compile_operands = false;
+    bool compile_only = false;
     std::optional<std::string> asm_log_file;
     bool wall_clock_time = false;
     bool report_result = false;
@@ -96,6 +99,16 @@ static arguments parse_args(int const argc, char **const argv)
         args.instrument_execute,
         std::format(
             "Instrument execution (default: {})", args.instrument_execute));
+    app.add_flag(
+        "-o",
+        args.instrument_compile_operands,
+        std::format(
+            "Instrument compilation of operands (default: {})",
+            args.instrument_compile_operands));
+    app.add_flag(
+        "--compile-only",
+        args.compile_only,
+        "Parse bytecode and compile only, skip execution");
     app.add_option(
         "--dump-asm", args.asm_log_file, "Dump assembly output to file");
     app.add_flag(
@@ -211,8 +224,15 @@ int mce_main(arguments const &args)
 
     asmjit::JitRuntime rt{};
     native::CompilerConfig config{};
+    OperandsLoggerState operands_logger_state(ir->blocks().size());
+
     if (args.asm_log_file) {
         config.asm_log_path = args.asm_log_file->c_str();
+    }
+    if (args.instrument_compile_operands) {
+        // This will log the operands of each instruction
+        std::tie(config.pre_instruction_emit_hook, config.post_instruction_emit_hook) =
+            operands_logger_make_hooks(operands_logger_state);
     }
     std::shared_ptr<native::Nativecode> const ncode = [&]() {
         if (args.instrument_compile) {
@@ -230,22 +250,31 @@ int mce_main(arguments const &args)
         return 1;
     }
 
-    evmc::Result const result = [&]() {
-        if (args.instrument_execute) {
-            InstrumentableVM<true> vm(rt);
-            return vm.execute<traits>(ncode->entrypoint(), device);
-        }
-        else {
-            InstrumentableVM<false> vm(rt);
-            return vm.execute<traits>(ncode->entrypoint(), device);
-        }
-    }();
+    if (args.instrument_compile_operands) {
+        std::cout << operands_logger_state.to_json(ir.value()).dump() << std::endl;
+    }
 
-    dump_result(args, result);
+    if (!args.compile_only) {
+        evmc::Result const result = [&]() {
+            if (args.instrument_execute) {
+                InstrumentableVM<true> vm(rt);
+                return vm.execute<traits>(ncode->entrypoint(), device);
+            }
+            else {
+                InstrumentableVM<false> vm(rt);
+                return vm.execute<traits>(ncode->entrypoint(), device);
+            }
+        }();
 
-    auto status_code = result.status_code;
+        dump_result(args, result);
 
-    return status_code == EVMC_SUCCESS ? 0 : 1;
+        auto status_code = result.status_code;
+
+        return status_code == EVMC_SUCCESS ? 0 : 1;
+    }
+    else {
+        return 0;
+    }
 }
 
 static std::string uppercase(std::string s)

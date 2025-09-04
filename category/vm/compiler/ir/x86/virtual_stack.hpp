@@ -802,6 +802,11 @@ namespace monad::vm::compiler::native
             return top_index_;
         }
 
+        std::int32_t bottom_index() const
+        {
+            return -static_cast<std::int32_t>(negative_elems_.size()) -
+                   1; // minus 1 because 1-indexed
+        }
 
         OperandLocations get_stack_elem_locations(std::int32_t index)
         {

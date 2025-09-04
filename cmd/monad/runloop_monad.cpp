@@ -230,7 +230,8 @@ Result<BlockExecOutput> propose_block(
     MonadChainContext chain_context{
         .grandparent_senders_and_authorities = nullptr,
         .parent_senders_and_authorities = nullptr,
-        .senders_and_authorities = senders_and_authorities,
+        .senders_and_authorities =
+            block_cache.at(block_id).senders_and_authorities,
         .senders = senders,
         .authorities = recovered_authorities};
 

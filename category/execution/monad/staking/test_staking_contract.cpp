@@ -1728,6 +1728,7 @@ TEST_F(Stake, validator_exit_compound)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
+    auto const reward = 60 * MON;
 
     auto res =
         add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
@@ -1751,8 +1752,8 @@ TEST_F(Stake, validator_exit_compound)
     skip_to_next_epoch();
     skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val1.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val2.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val1.sign_address, reward).has_error());
+    EXPECT_FALSE(syscall_reward(val2.sign_address, reward).has_error());
 
     EXPECT_FALSE(compound(val1.id, auth_address).has_error());
     EXPECT_FALSE(compound(val2.id, auth_address).has_error());
@@ -1773,13 +1774,22 @@ TEST_F(Stake, validator_exit_compound)
     EXPECT_EQ(get_balance(auth_address), 0);
     EXPECT_EQ(get_balance(other_address), 0);
 
+    constexpr uint256_t expected_reward1 =
+        1176470588235294117_u256; // 1/51 of the reward
+    constexpr uint256_t expected_reward2 =
+        58823529411764705882_u256; // 50/51 of the reward
+    EXPECT_LE(expected_reward1 + expected_reward2, reward);
     check_delegator_c_state(
-        val2, other_address, MIN_VALIDATE_STAKE + 19607843137254901, 0);
-
-    check_delegator_c_state(val2, auth_address, 980392156862745098, 0);
+        val2,
+        other_address,
+        MIN_VALIDATE_STAKE + expected_reward1,
+        0); // didn't undelegate
 
     check_delegator_c_state(
-        val1, auth_address, MIN_VALIDATE_STAKE + REWARD - 1, 0);
+        val2, auth_address, expected_reward2, 0); // undelegated
+
+    check_delegator_c_state(
+        val1, auth_address, MIN_VALIDATE_STAKE + reward - 1, 0);
 }
 
 TEST_F(Stake, validator_removes_self)
@@ -2684,14 +2694,14 @@ TEST_F(Stake, delegate_redelegation_refcount_before_activation)
 
     // do a bunch of redelegations before snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, 50).has_error());
+        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
     }
 
     EXPECT_FALSE(syscall_snapshot().has_error());
 
     // and some more in the snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, 50).has_error());
+        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
     }
     inc_epoch();
 
@@ -2739,14 +2749,14 @@ TEST_F(Stake, delegate_redelegation_refcount_after_activation)
 
     // do a bunch of redelegations before snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, 50).has_error());
+        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
     }
 
     EXPECT_FALSE(syscall_snapshot().has_error());
 
     // and some more in the snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, 50).has_error());
+        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
     }
 
     auto acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
@@ -3312,6 +3322,7 @@ TEST_F(Stake, delegate_compound)
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
+    auto const reward = 50 * MON;
 
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
@@ -3326,37 +3337,37 @@ TEST_F(Stake, delegate_compound)
     skip_to_next_epoch();
 
     // epoch 2
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
     EXPECT_FALSE(compound(val.id, d0).has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 2));
+        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 2));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
     EXPECT_FALSE(compound(val.id, d1).has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 3));
+        val, d2, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
@@ -3364,37 +3375,37 @@ TEST_F(Stake, delegate_compound)
 
     EXPECT_FALSE(syscall_snapshot().has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 3));
+        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
     EXPECT_FALSE(compound(val.id, d0).has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 3));
+        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
     EXPECT_FALSE(compound(val.id, d1).has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE, ((REWARD / 4) * 3));
+        val, d2, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
 
@@ -3404,22 +3415,22 @@ TEST_F(Stake, delegate_compound)
 
     // Epoch 3 - compound reward is now active
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 3), 0);
+        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3), 0);
 
     check_delegator_c_state(
         val,
         d0,
-        ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 1),
-        ((REWARD / 4) * 2));
+        ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 1),
+        ((reward / 4) * 2));
 
     check_delegator_c_state(
         val,
         d1,
-        ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 2),
-        ((REWARD / 4) * 1));
+        ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 2),
+        ((reward / 4) * 1));
 
     check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 3), 0);
+        val, d2, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3), 0);
 
     EXPECT_FALSE(compound(val.id, d0).has_error());
 
@@ -3434,24 +3445,25 @@ TEST_F(Stake, delegate_compound)
     pull_delegator_up_to_date(val.id, d2);
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 6), 0);
+        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
     check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 6), 0);
+        val, d0, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 5), 0);
+        val, d1, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 5), 0);
     check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 6), 0);
+        val, d2, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
 
     skip_to_next_epoch();
 
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE + ((REWARD / 4) * 6), 0);
+        val, d1, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
 }
 
 // compound delegators before and after snapshots then withdraw, val remains
 // active
 TEST_F(Stake, undelegate_compound)
 {
+    auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
@@ -3469,15 +3481,15 @@ TEST_F(Stake, undelegate_compound)
 
     // epoch 2
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
     check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
     EXPECT_FALSE(compound(val.id, d0).has_error());
@@ -3490,9 +3502,9 @@ TEST_F(Stake, undelegate_compound)
     check_delegator_c_state(val, d0, 0, 0);
 
     EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 1));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 1));
     check_delegator_c_state(val, d0, 0, 0);
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
@@ -3502,18 +3514,18 @@ TEST_F(Stake, undelegate_compound)
                      .has_error());
 
     check_delegator_c_state(val, d1, 0, 0);
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     inc_epoch();
     // Epoch 3
     check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + ((REWARD / 3) * 2),
-        (REWARD / 3));
+        ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
+        (reward / 3));
 
-    check_delegator_c_state(val, d0, ((REWARD / 3) * 2), 0);
-    check_delegator_c_state(val, d1, ((REWARD / 3) * 2), 0);
+    check_delegator_c_state(val, d0, ((reward / 3) * 2), 0);
+    check_delegator_c_state(val, d1, ((reward / 3) * 2), 0);
 
     skip_to_next_epoch();
     skip_to_next_epoch();
@@ -3521,12 +3533,13 @@ TEST_F(Stake, undelegate_compound)
 
     EXPECT_FALSE(withdraw(val.id, d0, withdrawal_id).has_error());
     EXPECT_FALSE(withdraw(val.id, d1, withdrawal_id).has_error());
-    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE + ((REWARD / 3) * 2));
-    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE + ((REWARD / 3)));
+    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2));
+    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE + ((reward / 3)));
 }
 
 TEST_F(Stake, undelegate_compound_partial)
 {
+    auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
@@ -3544,15 +3557,15 @@ TEST_F(Stake, undelegate_compound_partial)
 
     // epoch 2
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
     check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
     check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 2));
+        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
     EXPECT_FALSE(compound(val.id, d0).has_error());
@@ -3565,11 +3578,11 @@ TEST_F(Stake, undelegate_compound_partial)
     check_delegator_c_state(val, d0, ACTIVE_VALIDATOR_STAKE / 2, 0);
 
     EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((REWARD / 3) * 1));
-    check_delegator_c_state(val, d0, ACTIVE_VALIDATOR_STAKE / 2, (REWARD / 6));
+        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 1));
+    check_delegator_c_state(val, d0, ACTIVE_VALIDATOR_STAKE / 2, (reward / 6));
 
     EXPECT_FALSE(compound(val.id, auth_address).has_error());
     EXPECT_FALSE(compound(val.id, d0).has_error());
@@ -3578,25 +3591,25 @@ TEST_F(Stake, undelegate_compound_partial)
         undelegate(val.id, d1, withdrawal_id, ACTIVE_VALIDATOR_STAKE / 2)
             .has_error());
     check_delegator_c_state(val, d1, ACTIVE_VALIDATOR_STAKE / 2, 0);
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
 
     inc_epoch();
     // Epoch 3
     check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + ((REWARD / 3) * 2),
-        (REWARD / 3));
+        ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
+        (reward / 3));
     check_delegator_c_state(
         val,
         d0,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 3) * 2),
-        ((REWARD / 6)));
+        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
+        ((reward / 6)));
     check_delegator_c_state(
         val,
         d1,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 3) * 2),
-        ((REWARD / 6)));
+        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
+        ((reward / 6)));
 
     skip_to_next_epoch();
     skip_to_next_epoch();
@@ -3604,19 +3617,19 @@ TEST_F(Stake, undelegate_compound_partial)
 
     EXPECT_FALSE(withdraw(val.id, d0, withdrawal_id).has_error());
     EXPECT_FALSE(withdraw(val.id, d1, withdrawal_id).has_error());
-    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 3)));
-    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 6)));
+    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3)));
+    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 6)));
 
     check_delegator_c_state(
         val,
         d0,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 3) * 2) + ((REWARD / 6)),
-        ((REWARD / 6)));
+        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) + ((reward / 6)),
+        ((reward / 6)));
     check_delegator_c_state(
         val,
         d1,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((REWARD / 3) * 2) + ((REWARD / 3)),
-        (REWARD / 6));
+        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) + ((reward / 3)),
+        (reward / 6));
 }
 
 /////////////////////
@@ -4414,4 +4427,142 @@ TEST_F(Stake, withdrawal_state_override)
         STAKING_CA, intx::be::load<uint256_t>(state.get_balance(STAKING_CA)));
 
     EXPECT_THROW((void)withdraw(val.id, auth_address, 1), MonadException);
+}
+
+////////////////
+// Dust Tests //
+////////////////
+
+TEST_F(Stake, dust_hunter)
+{
+    // This test binary searches the space between [0, 10e18] and finds the
+    // largest value that produces 0 rewards.
+    //
+    // To keep each iteration hermetic, a new validator pool is created. A
+    // delegator join with a stake somewhere in the search space. The pool is
+    // rewarded, and success condition is the delegator receieves nonzero
+    // rewards. The tests asserts that our dust threshold is higher than the
+    // minimum value that produces dust in the contract.
+
+    uint256_t lo = 0;
+    uint256_t hi = 10 * MON;
+    uint64_t keydata = 1;
+    auto const auth_address = 0xdeadbeef_address;
+    auto const delegator = 0x1234_address;
+
+    auto const rewards_fn = [this, &auth_address, &delegator](
+                                uint256_t const &stake,
+                                uint64_t &keydata) -> uint256_t {
+        auto const res = add_validator(
+            auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{keydata});
+        EXPECT_FALSE(res.has_error());
+
+        ++keydata; // validator keys cannot be reused
+        auto const val = res.assume_value();
+
+        // set the delegator's stake manually instead of going through
+        // delegation precompile to bypass the dust threshold.
+        contract.vars.delegator(val.id, delegator).stake().store(stake);
+        skip_to_next_epoch();
+        EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+        pull_delegator_up_to_date(val.id, delegator);
+        return contract.vars.delegator(val.id, delegator)
+            .rewards()
+            .load()
+            .native();
+    };
+    while (lo < hi) {
+        uint256_t const mid = lo + ((hi - lo + 1) / 2);
+        uint256_t const rewards = rewards_fn(mid, keydata);
+        if (rewards == 0) {
+            lo = mid;
+        }
+        else {
+            hi = mid - 1;
+        }
+    }
+
+    uint256_t const needle = lo;
+    EXPECT_EQ(rewards_fn(needle, keydata), 0);
+    EXPECT_GT(rewards_fn(needle + 1, keydata), 0);
+    EXPECT_GE(DUST_THRESHOLD, needle);
+}
+
+TEST_F(Stake, delegate_dust)
+{
+    auto const delegator = 0xaaaa_address;
+    auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+    skip_to_next_epoch();
+
+    // delegate
+    EXPECT_EQ(
+        delegate(val.id, delegator, DUST_THRESHOLD / 2).assume_error(),
+        StakingError::DelegationTooSmall);
+    EXPECT_EQ(
+        delegate(val.id, delegator, DUST_THRESHOLD - 1).assume_error(),
+        StakingError::DelegationTooSmall);
+
+    // above the threshold
+    EXPECT_FALSE(delegate(val.id, delegator, DUST_THRESHOLD).has_error());
+
+    // compound (invokes delegate)
+    contract.vars.delegator(val.id, delegator)
+        .rewards()
+        .store(DUST_THRESHOLD / 2);
+    EXPECT_EQ(
+        compound(val.id, delegator).assume_error(),
+        StakingError::DelegationTooSmall);
+    contract.vars.delegator(val.id, delegator)
+        .rewards()
+        .store(DUST_THRESHOLD - 1);
+    EXPECT_EQ(
+        compound(val.id, delegator).assume_error(),
+        StakingError::DelegationTooSmall);
+
+    // above the threshold
+    contract.vars.delegator(val.id, delegator).rewards().store(DUST_THRESHOLD);
+    EXPECT_FALSE(compound(val.id, delegator).has_error());
+}
+
+TEST_F(Stake, undelegate_dust)
+{
+    auto const delegator = 0xaaaa_address;
+    auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+    skip_to_next_epoch();
+
+    // delegate over the dust threshold, with an extra 300 wei dust.
+    EXPECT_FALSE(delegate(val.id, delegator, DUST_THRESHOLD + 300).has_error());
+
+    // activate delegation
+    skip_to_next_epoch();
+    pull_delegator_up_to_date(val.id, delegator);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, delegator).stake().load().native(),
+        DUST_THRESHOLD + 300);
+
+    // undelegate, leaving the 300 wei in the delegator
+    EXPECT_FALSE(
+        undelegate(val.id, delegator, 1 /* withdrawal id */, DUST_THRESHOLD)
+            .has_error());
+
+    // withdrawal request should include the dust
+    auto const withdrawal_request =
+        contract.vars.withdrawal_request(val.id, delegator, 1).load_checked();
+    ASSERT_TRUE(withdrawal_request.has_value());
+    EXPECT_EQ(withdrawal_request->amount.native(), DUST_THRESHOLD + 300);
+
+    // delegator should have zero balance
+    pull_delegator_up_to_date(val.id, delegator);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, delegator).stake().load().native(), 0);
+
+    skip_to_next_epoch(); // undelegation processed
+    skip_to_next_epoch(); // withdrawal available
+    EXPECT_FALSE(
+        withdraw(val.id, delegator, 1 /* withdrawal id */).has_error());
+    EXPECT_EQ(get_balance(delegator), DUST_THRESHOLD + 300);
 }

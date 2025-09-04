@@ -828,6 +828,18 @@ Result<void> StakingContract::delegate(
         return StakingError::UnknownValidator;
     }
 
+    if (MONAD_UNLIKELY(stake < DUST_THRESHOLD)) {
+        // Each individual delegation must be greater than a dust threshold.
+        // While it may seem more intuitive to fail only if the delegator's
+        // total stake less than the dust threshold. But a delegator could, for
+        // instance, compound dust then undelegate their active stake
+        // afterwards.  In the following epoch, the remaining active stake would
+        // be dust.  Therefore, a stricter gate threshold applied to each
+        // delegation is easier to reason about. It's also unlikely anyone would
+        // want to pay to delegate sub-MON amounts.
+        return StakingError::DelegationTooSmall;
+    }
+
     auto del = vars.delegator(val_id, address);
     BOOST_OUTCOME_TRY(pull_delegator_up_to_date(val_id, del));
 
@@ -929,7 +941,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
     byte_string_view reader = input;
     auto const val_id =
         unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    uint256_t const amount =
+    uint256_t amount =
         unaligned_load<u256_be>(consume_bytes(reader, sizeof(u256_be)).data())
             .native();
     auto const withdrawal_id =
@@ -962,6 +974,13 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     BOOST_OUTCOME_TRY(val_stake, checked_sub(val_stake, amount));
     BOOST_OUTCOME_TRY(del_stake, checked_sub(del_stake, amount));
+    if (MONAD_UNLIKELY(del_stake < DUST_THRESHOLD)) {
+        // if all that remains is dust, send the rest of the delegator's balance
+        // with this withdrawal.
+        BOOST_OUTCOME_TRY(amount, checked_add(amount, del_stake));
+        BOOST_OUTCOME_TRY(val_stake, checked_sub(val_stake, del_stake));
+        del_stake = 0;
+    }
     val.stake().store(val_stake);
     del.stake().store(del_stake);
     u64_be const withdrawal_epoch = get_activation_epoch();

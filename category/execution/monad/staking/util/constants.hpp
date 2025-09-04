@@ -39,6 +39,7 @@ inline constexpr uint256_t MIN_VALIDATE_STAKE{1'000'000 * MON};
 inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{50'000'000 * MON};
 inline constexpr uint256_t UNIT_BIAS{
     1000000000000000000000000000000000000_u256}; // 1e36
+inline constexpr uint256_t DUST_THRESHOLD{1000000000}; // 1e9
 
 inline constexpr Address STAKING_CA{0x1000};
 inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};

@@ -56,6 +56,7 @@ enum class StakingError
     RequiresAuthAddress,
     CommissionTooHigh,
     ValueNonZero,
+    DelegationTooSmall,
 };
 
 MONAD_STAKING_NAMESPACE_END

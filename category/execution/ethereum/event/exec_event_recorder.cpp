@@ -104,21 +104,41 @@ ExecutionEventRecorder::setup_record_error_event(
     switch (error_type) {
     case MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB:
         [[fallthrough]];
-    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE:
-        error_payload->truncated_payload_size = RECORD_ERROR_TRUNCATED_SIZE;
-        {
-            size_t residual_size = error_payload->truncated_payload_size;
-            void *p = payload_buf + sizeof *error_payload + header_payload_size;
-            for (std::span<std::byte const> buf : trailing_payload_bufs) {
-                size_t const copy_len = std::min(residual_size, size(buf));
-                p = mempcpy(p, data(buf), copy_len);
-                residual_size -= copy_len;
-                if (residual_size == 0) {
-                    break;
-                }
+    case MONAD_EVENT_RECORD_ERROR_OVERFLOW_EXPIRE: {
+        // In these cases, the payload area is set up like this:
+        //
+        //   .----------------.-----------------------.---------------.
+        //   | *error_payload | event header (type T) | truncated VLT |
+        //   .----------------.-----------------------.---------------.
+        //
+        // The intention here is for the reader to be able to see some of
+        // the event that was discarded; we never expect these to happen,
+        // so they may be important for debugging.
+        //
+        // The event header is written by the call site: we pass a pointer
+        // to it in the return value, and the caller writes to it as though
+        // the recording did not fail. The code below is responsible for
+        // writing the "variable-length trailing" (VLT) data, which is the
+        // only part that is truncated; an earlier assertion ensures that
+        // RECORD_ERROR_TRUNCATED_SIZE is large enough that the event
+        // header is never truncated. We do include the event header's size
+        // in the `error_payload->truncated_payload_size` field, however.
+        error_payload->truncated_payload_size =
+            RECORD_ERROR_TRUNCATED_SIZE - sizeof(*error_payload);
+        size_t const truncated_vlt_offset =
+            sizeof(*error_payload) + header_payload_size;
+        size_t residual_size =
+            RECORD_ERROR_TRUNCATED_SIZE - truncated_vlt_offset;
+        void *p = payload_buf + truncated_vlt_offset;
+        for (std::span<std::byte const> buf : trailing_payload_bufs) {
+            size_t const copy_len = std::min(residual_size, size(buf));
+            p = mempcpy(p, data(buf), copy_len);
+            residual_size -= copy_len;
+            if (residual_size == 0) {
+                break;
             }
         }
-        break;
+    } break;
 
     default:
         error_payload->truncated_payload_size = 0;

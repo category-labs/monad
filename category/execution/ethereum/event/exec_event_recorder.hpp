@@ -74,7 +74,8 @@ public:
 
     /// Reserve resources to record a BLOCK_START event; also sets the
     /// current block flow ID
-    ReservedExecEvent<monad_exec_block_start> reserve_block_start_event();
+    [[nodiscard]] ReservedExecEvent<monad_exec_block_start>
+    reserve_block_start_event();
 
     /// Reserve resources to record an event that occurs at block scope; T is
     /// the type of the "header" payload, and U... is a variadic sequence of
@@ -82,11 +83,12 @@ public:
     /// TXN_LOG records the log header structure `struct monad_exec_txn_log`
     /// and two variadic byte sequences (for topics and log data)
     template <typename T, std::same_as<std::span<std::byte const>>... U>
-    ReservedExecEvent<T> reserve_block_event(monad_exec_event_type, U...);
+    [[nodiscard]] ReservedExecEvent<T>
+    reserve_block_event(monad_exec_event_type, U...);
 
     /// Reserve resources to record a transaction-level event
     template <typename T, std::same_as<std::span<std::byte const>>... U>
-    ReservedExecEvent<T> reserve_txn_event(
+    [[nodiscard]] ReservedExecEvent<T> reserve_txn_event(
         monad_exec_event_type event_type, uint32_t txn_num,
         U &&...trailing_bufs)
     {
@@ -114,9 +116,9 @@ public:
         return &exec_ring_;
     }
 
-private:
     static constexpr size_t RECORD_ERROR_TRUNCATED_SIZE = 1UL << 13;
 
+private:
     /// Helper for creating a RECORD_ERROR event in place of the requested
     /// event, which could not be recorded
     std::tuple<monad_event_descriptor *, std::byte *, uint64_t>

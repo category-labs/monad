@@ -866,3 +866,100 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
         EXPECT_EQ(result.status_code, EVMC_FAILURE);
     }
 }
+
+TEST(Evm, nested_call_to_delegated_precompile)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    // `from` calls `contract`, which delegatecalls `eoa`, which has delegated
+    // its code to a precompile.
+    static constexpr auto eoa{
+        0x00000000000000000000000000000000aaaaaaaa_address};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto contract{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    // Delegated to ecRecover
+    auto const eoa_code =
+        evmc::from_hex("0xEF01000000000000000000000000000000000000000001")
+            .value();
+    auto const eoa_icode = vm::make_shared_intercode(eoa_code);
+    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
+
+    // Make a delegatecall to the EOA account with 100 gas, and fail execution
+    // if that call failed.
+    //
+    // PUSH0; PUSH0; PUSH0; PUSH0; PUSH20 eoa; PUSH1 100; DELEGATECALL;
+    // PUSH1 0x20; JUMPI; INVALID; JUMPDEST[20]
+    auto const contract_code =
+        evmc::from_hex("5f5f5f5f7300000000000000000000000000000000aaaaaaaa6064f"
+                       "4602057fe5b")
+            .value();
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {eoa,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = eoa_code_hash,
+                      }}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = contract_code_hash,
+                      }}}}},
+        Code{
+            {eoa_code_hash, eoa_icode},
+            {contract_code_hash, contract_icode},
+        },
+        BlockHeader{});
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .gas = 1'000'000,
+        .recipient = contract,
+        .sender = from,
+        .code_address = contract,
+    };
+
+    {
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        MonadDevnet chain{};
+        EvmcHost<MonadTraits<MONAD_FOUR>> h{
+            chain,
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            MAX_CODE_SIZE_EIP170,
+            MAX_INITCODE_SIZE_EIP3860};
+        auto const result = h.call(m);
+
+        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    }
+}

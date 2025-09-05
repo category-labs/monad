@@ -28,6 +28,8 @@ template <typename T>
     requires(std::is_integral_v<T> || std::is_same_v<T, uint256_t>)
 struct BigEndian
 {
+    using native_type = T;
+
     unsigned char bytes[sizeof(T)];
 
     BigEndian() = default;
@@ -42,7 +44,7 @@ struct BigEndian
         return 0 == std::memcmp(this, &other, sizeof(BigEndian<T>));
     }
 
-    T native() const noexcept
+    native_type native() const noexcept
     {
         return intx::be::load<T>(bytes);
     }
@@ -59,9 +61,13 @@ using u32_be = BigEndian<uint32_t>;
 using u64_be = BigEndian<uint64_t>;
 using u256_be = BigEndian<uint256_t>;
 static_assert(sizeof(u16_be) == sizeof(uint16_t));
+static_assert(alignof(u16_be) == 1);
 static_assert(sizeof(u32_be) == sizeof(uint32_t));
+static_assert(alignof(u32_be) == 1);
 static_assert(sizeof(u64_be) == sizeof(uint64_t));
+static_assert(alignof(u64_be) == 1);
 static_assert(sizeof(u256_be) == sizeof(uint256_t));
+static_assert(alignof(u256_be) == 1);
 
 template <typename T>
 struct is_big_endian_wrapper : std::false_type

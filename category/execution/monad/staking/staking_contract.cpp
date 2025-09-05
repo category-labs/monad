@@ -911,16 +911,13 @@ Result<void> StakingContract::delegate(
 }
 
 Result<byte_string> StakingContract::precompile_delegate(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
-    // Validate input size
-    if (MONAD_UNLIKELY(input.size() != sizeof(u64_be) /* validator id */)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    auto const val_id =
-        unaligned_load<u64_be>(input.substr(0, sizeof(u64_be)).data());
     auto const stake = intx::be::load<uint256_t>(msg_value);
 
     if (MONAD_LIKELY(stake != 0)) {
@@ -930,26 +927,20 @@ Result<byte_string> StakingContract::precompile_delegate(
 }
 
 Result<byte_string> StakingContract::precompile_undelegate(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
-                                    sizeof(u256_be) /* amount */ +
-                                    sizeof(uint8_t) /* withdrawal id */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(auto const stake, abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(
+        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
 
-    byte_string_view reader = input;
-    auto const val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    uint256_t amount =
-        unaligned_load<u256_be>(consume_bytes(reader, sizeof(u256_be)).data())
-            .native();
-    auto const withdrawal_id =
-        unaligned_load<uint8_t>(consume_bytes(reader, sizeof(uint8_t)).data());
+    auto amount = stake.native();
 
     if (MONAD_UNLIKELY(amount == 0)) {
         return byte_string{abi_encode_bool(true)};
@@ -1028,18 +1019,15 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
 // TODO: No compounds allowed if auth_address is under sufficent amount.
 Result<byte_string> StakingContract::precompile_compound(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validatorId */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    auto const val_id =
-        unaligned_load<u64_be>(input.substr(0, sizeof(u64_be)).data());
 
     auto del = vars.delegator(val_id, msg_sender);
     BOOST_OUTCOME_TRY(pull_delegator_up_to_date(val_id, del));
@@ -1055,22 +1043,17 @@ Result<byte_string> StakingContract::precompile_compound(
 }
 
 Result<byte_string> StakingContract::precompile_withdraw(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE =
-        sizeof(u64_be) /* validator id */ + sizeof(uint8_t) /* withdrawal id */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(
+        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    byte_string_view reader = input;
-    auto const val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    auto const withdrawal_id =
-        unaligned_load<uint8_t>(consume_bytes(reader, sizeof(uint8_t)).data());
 
     auto withdrawal_request_storage =
         vars.withdrawal_request(val_id, msg_sender, withdrawal_id);
@@ -1111,18 +1094,15 @@ Result<byte_string> StakingContract::precompile_withdraw(
 }
 
 Result<byte_string> StakingContract::precompile_claim_rewards(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-    auto const val_id =
-        unaligned_load<u64_be>(input.substr(0, sizeof(u64_be)).data());
-
     auto del = vars.delegator(val_id, msg_sender);
     BOOST_OUTCOME_TRY(pull_delegator_up_to_date(val_id, del));
 
@@ -1137,22 +1117,17 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
 }
 
 Result<byte_string> StakingContract::precompile_change_commission(
-    byte_string_view const input, evmc_address const &msg_sender,
+    byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE =
-        sizeof(u64_be) /* validator id */ + sizeof(u256_be) /* commission */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(
+        auto const new_commission, abi_decode_fixed<u256_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    byte_string_view reader = input;
-    auto const val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    auto const new_commission =
-        unaligned_load<u256_be>(consume_bytes(reader, sizeof(u256_be)).data());
 
     auto validator = vars.val_execution(val_id);
     if (MONAD_UNLIKELY(!validator.exists())) {

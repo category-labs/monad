@@ -216,33 +216,29 @@ namespace
         u64_be const val_id, uint256_t const &amount,
         uint8_t const withdrawal_id)
     {
-        u256_be const value{amount};
-
-        byte_string input;
-        input += to_byte_string_view(val_id.bytes);
-        input += to_byte_string_view(value.bytes);
-        input += withdrawal_id;
-        return input;
+        AbiEncoder encoder;
+        encoder.add_uint(val_id);
+        encoder.add_uint<u256_be>(amount);
+        encoder.add_uint(withdrawal_id);
+        return encoder.encode_final();
     }
 
     byte_string
     craft_withdraw_input(u64_be const val_id, uint8_t const withdrawal_id)
     {
-        byte_string input;
-        input += to_byte_string_view(val_id.bytes);
-        input += withdrawal_id;
-        return input;
+        AbiEncoder encoder;
+        encoder.add_uint(val_id);
+        encoder.add_uint(withdrawal_id);
+        return encoder.encode_final();
     }
 
     byte_string craft_change_commission_input(
         u64_be const val_id, uint256_t const &commission)
     {
-        u256_be const commission_encoded{commission};
-
-        byte_string input;
-        input += to_byte_string_view(val_id.bytes);
-        input += to_byte_string_view(commission_encoded.bytes);
-        return input;
+        AbiEncoder encoder;
+        encoder.add_uint(val_id);
+        encoder.add_uint<u256_be>(commission);
+        return encoder.encode_final();
     }
 }
 
@@ -386,7 +382,7 @@ struct Stake : public ::testing::Test
     Result<void> delegate(
         u64_be const val_id, Address const &del_address, uint256_t const &stake)
     {
-        auto const input = to_byte_string_view(val_id.bytes);
+        auto const input = abi_encode_uint<u64_be>(val_id);
         auto const msg_value = intx::be::store<evmc_uint256be>(stake);
         state.push();
         auto res = contract.precompile_delegate(input, del_address, msg_value);
@@ -423,7 +419,7 @@ struct Stake : public ::testing::Test
 
     Result<void> compound(u64_be const val_id, Address const &address)
     {
-        auto const input = to_byte_string_view(val_id.bytes);
+        auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
         auto res = contract.precompile_compound(input, address, {});
         post_call(res.has_error());
@@ -433,7 +429,7 @@ struct Stake : public ::testing::Test
 
     Result<void> claim_rewards(u64_be const val_id, Address const &address)
     {
-        auto const input = to_byte_string_view(val_id.bytes);
+        auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
         auto res = contract.precompile_claim_rewards(input, address, {});
         post_call(res.has_error());

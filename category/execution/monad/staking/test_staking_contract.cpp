@@ -19,6 +19,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
@@ -163,7 +164,8 @@ namespace
         return secp_pubkey_serialized;
     }
 
-    std::pair<byte_string, Address> craft_add_validator_input(
+    std::tuple<byte_string, byte_string, byte_string, Address>
+    craft_add_validator_input_raw(
         Address const &auth_address, uint256_t const &stake,
         uint256_t const &commission = 0, bytes32_t secret = bytes32_t{0x1000})
     {
@@ -177,26 +179,37 @@ namespace
             return serialized;
         }();
 
-        auto const address = address_from_secpkey(
+        auto const sign_address = address_from_secpkey(
             serialize_secp_pubkey_uncompressed(secp_pubkey));
-        // fmt::println("My value: {}", address);
 
-        byte_string input;
-        input += to_byte_string_view(secp_pubkey_serialized);
-        input += to_byte_string_view(bls_pubkey_serialized);
-        input += to_byte_string_view(auth_address.bytes);
-        input += to_byte_string_view(intx::be::store<bytes32_t>(stake).bytes);
-        input += to_byte_string_view(u256_be{commission}.bytes);
+        byte_string message;
+        message += to_byte_string_view(secp_pubkey_serialized);
+        message += to_byte_string_view(bls_pubkey_serialized);
+        message += to_byte_string_view(auth_address.bytes);
+        message += to_byte_string_view(intx::be::store<bytes32_t>(stake).bytes);
+        message += to_byte_string_view(u256_be{commission}.bytes);
 
         // sign with both keys
-        byte_string_view const message = input;
-        auto const secp_sig_serialized = sign_secp(message, secp_seckey);
-        auto const bls_sig_serialized = sign_bls(message, bls_seckey);
+        byte_string const secp_sig{
+            to_byte_string_view(sign_secp(message, secp_seckey))};
+        byte_string const bls_sig{
+            to_byte_string_view(sign_bls(message, bls_seckey))};
 
-        input += to_byte_string_view(secp_sig_serialized);
-        input += to_byte_string_view(bls_sig_serialized);
+        return {message, secp_sig, bls_sig, sign_address};
+    }
 
-        return {input, address};
+    std::pair<byte_string, Address> craft_add_validator_input(
+        Address const &auth_address, uint256_t const &stake,
+        uint256_t const &commission = 0, bytes32_t secret = bytes32_t{0x1000})
+    {
+        auto const [message, secp_sig, bls_sig, sign_address] =
+            craft_add_validator_input_raw(
+                auth_address, stake, commission, secret);
+        AbiEncoder encoder;
+        encoder.add_bytes(message);
+        encoder.add_bytes(secp_sig);
+        encoder.add_bytes(bls_sig);
+        return {encoder.encode_final(), sign_address};
     }
 
     byte_string craft_undelegate_input(
@@ -695,45 +708,47 @@ TEST_F(Stake, add_validator_revert_invalid_input_size)
 
     byte_string_view too_short{};
     auto res = contract.precompile_add_validator(too_short, sender, value);
-    EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
+    EXPECT_EQ(res.assume_error(), AbiDecodeError::InputTooShort);
 
-    byte_string too_long(2000, 0xa);
-    res = contract.precompile_add_validator(too_short, sender, value);
+    auto [too_long, _] =
+        craft_add_validator_input(sender, MIN_VALIDATE_STAKE, 0);
+    too_long.append({0xFF});
+    res = contract.precompile_add_validator(too_long, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
 TEST_F(Stake, add_validator_revert_bad_signature)
 {
+    auto const [message, good_secp_sig, good_bls_sig, _] =
+        craft_add_validator_input_raw(0xababab_address, MIN_VALIDATE_STAKE);
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
-    auto const [input, address] =
-        craft_add_validator_input(0xababab_address, MIN_VALIDATE_STAKE);
-    auto const message = input.substr(0, 165);
-
-    auto const good_secp_keys = gen_secp_keypair();
-    auto const bad_secp_keys = gen_secp_keypair(bytes32_t{0x2000});
-    auto const good_bls_keys = gen_bls_keypair();
-    auto const bad_bls_keys = gen_bls_keypair(bytes32_t{0x2000});
 
     // bad secp signature
     {
-        byte_string input;
-        input += message;
-        input += to_byte_string_view(sign_secp(message, bad_secp_keys.second));
-        input += to_byte_string_view(sign_bls(message, good_bls_keys.second));
-        auto const res =
-            contract.precompile_add_validator(input, address, value);
+        auto const bad_secp_keys = gen_secp_keypair(bytes32_t{0x2000});
+        auto const bad_secp_sig = sign_secp(message, bad_secp_keys.second);
+
+        AbiEncoder encoder;
+        encoder.add_bytes(message);
+        encoder.add_bytes(to_byte_string_view(bad_secp_sig));
+        encoder.add_bytes(good_bls_sig);
+        auto const res = contract.precompile_add_validator(
+            encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::SecpSignatureVerificationFailed);
     }
 
     // bad bls signature
     {
-        byte_string input;
-        input += message;
-        input += to_byte_string_view(sign_secp(message, good_secp_keys.second));
-        input += to_byte_string_view(sign_bls(message, bad_bls_keys.second));
-        auto const res =
-            contract.precompile_add_validator(input, address, value);
+        auto const bad_bls_keys = gen_bls_keypair(bytes32_t{0x2000});
+        auto const bad_bls_sig = sign_bls(message, bad_bls_keys.second);
+
+        AbiEncoder encoder;
+        encoder.add_bytes(message);
+        encoder.add_bytes(good_secp_sig);
+        encoder.add_bytes(to_byte_string_view(bad_bls_sig));
+        auto const res = contract.precompile_add_validator(
+            encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::BlsSignatureVerificationFailed);
     }

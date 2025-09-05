@@ -19,6 +19,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
@@ -707,7 +708,7 @@ Result<byte_string> StakingContract::precompile_fallback(
 
 // TODO: Track solvency
 Result<byte_string> StakingContract::precompile_add_validator(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     constexpr size_t MESSAGE_SIZE = 33 /* compressed secp pubkey */ +
@@ -715,23 +716,31 @@ Result<byte_string> StakingContract::precompile_add_validator(
                                     sizeof(Address) /* auth address */ +
                                     sizeof(u256_be) /* signed stake */ +
                                     sizeof(u256_be) /* commission rate */;
-    constexpr size_t SIGNATURES_SIZE =
-        64 /* secp signature */ + 96 /* bls signature */;
+    // decode the head
+    BOOST_OUTCOME_TRY(
+        abi_decode_fixed<u256_be>(input)); // skip message tail offset
+    BOOST_OUTCOME_TRY(
+        abi_decode_fixed<u256_be>(input)); // skip secp sig tail offset
+    BOOST_OUTCOME_TRY(
+        abi_decode_fixed<u256_be>(input)); // sip bls sig tail offset
 
-    constexpr size_t EXPECTED_INPUT_SIZE = MESSAGE_SIZE + SIGNATURES_SIZE;
+    // decode bytes with known lengths from the tail
+    BOOST_OUTCOME_TRY(
+        auto const message, abi_decode_bytes_tail<MESSAGE_SIZE>(input));
+    BOOST_OUTCOME_TRY(
+        auto const secp_signature_compressed, abi_decode_bytes_tail<64>(input));
+    BOOST_OUTCOME_TRY(
+        auto const bls_signature_compressed, abi_decode_bytes_tail<96>(input));
 
-    // Validate input size
-    if (MONAD_UNLIKELY(input.size() != EXPECTED_INPUT_SIZE)) {
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
 
-    // extract individual inputs
-    byte_string_view message = input.substr(0, MESSAGE_SIZE);
-
-    byte_string_view reader = input;
-    auto const secp_pubkey_serialized =
+    // extract individual inputs from the message
+    byte_string_view reader = to_byte_string_view(message);
+    auto const secp_pubkey_compressed =
         unaligned_load<byte_string_fixed<33>>(consume_bytes(reader, 33).data());
-    auto const bls_pubkey_serialized =
+    auto const bls_pubkey_compressed =
         unaligned_load<byte_string_fixed<48>>(consume_bytes(reader, 48).data());
     auto const auth_address =
         unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
@@ -739,13 +748,6 @@ Result<byte_string> StakingContract::precompile_add_validator(
         consume_bytes(reader, sizeof(evmc_uint256be)).data());
     auto const commission =
         unaligned_load<u256_be>(consume_bytes(reader, sizeof(u256_be)).data());
-    auto const secp_signature_serialized =
-        unaligned_load<byte_string_fixed<64>>(consume_bytes(reader, 64).data());
-    auto const bls_signature_serialized =
-        unaligned_load<byte_string_fixed<96>>(consume_bytes(reader, 96).data());
-    if (!reader.empty()) {
-        return StakingError::InvalidInput;
-    }
 
     if (MONAD_UNLIKELY(
             0 !=
@@ -760,28 +762,30 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Verify SECP signature
-    Secp256k1Pubkey secp_pubkey(secp_pubkey_serialized);
+    Secp256k1Pubkey secp_pubkey(secp_pubkey_compressed);
     if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
         return StakingError::InvalidSecpPubkey;
     }
-    Secp256k1Signature secp_sig(secp_signature_serialized);
+    Secp256k1Signature secp_sig(secp_signature_compressed);
     if (MONAD_UNLIKELY(!secp_sig.is_valid())) {
         return StakingError::InvalidSecpSignature;
     }
-    if (MONAD_UNLIKELY(!secp_sig.verify(secp_pubkey, message))) {
+    if (MONAD_UNLIKELY(
+            !secp_sig.verify(secp_pubkey, to_byte_string_view(message)))) {
         return StakingError::SecpSignatureVerificationFailed;
     }
 
     // Verify BLS signature
-    BlsPubkey bls_pubkey(bls_pubkey_serialized);
+    BlsPubkey bls_pubkey(bls_pubkey_compressed);
     if (MONAD_UNLIKELY(!bls_pubkey.is_valid())) {
         return StakingError::InvalidBlsPubkey;
     }
-    BlsSignature bls_sig(bls_signature_serialized);
+    BlsSignature bls_sig(bls_signature_compressed);
     if (MONAD_UNLIKELY(!bls_sig.is_valid())) {
         return StakingError::InvalidBlsSignature;
     }
-    if (MONAD_UNLIKELY(!bls_sig.verify(bls_pubkey, message))) {
+    if (MONAD_UNLIKELY(
+            !bls_sig.verify(bls_pubkey, to_byte_string_view(message)))) {
         return StakingError::BlsSignatureVerificationFailed;
     }
 
@@ -808,8 +812,8 @@ Result<byte_string> StakingContract::precompile_add_validator(
     // add validator metadata
     auto val = vars.val_execution(val_id);
     val.keys().store(KeysPacked{
-        .secp_pubkey = secp_pubkey_serialized,
-        .bls_pubkey = bls_pubkey_serialized});
+        .secp_pubkey = secp_pubkey_compressed,
+        .bls_pubkey = bls_pubkey_compressed});
     val.address_flags().store(AddressFlags{
         .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
     val.commission().store(commission);

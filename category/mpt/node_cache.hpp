@@ -40,6 +40,21 @@ class NodeCache final
     size_t max_bytes_;
     size_t used_bytes_{0};
 
+    void evict_until_under_limit()
+    {
+        while (used_bytes_ > max_bytes_ && !active_list_.empty()) {
+            auto list_it = std::prev(active_list_.end());
+            auto &node_to_erase = *list_it;
+            map_.erase(list_it->key);
+            used_bytes_ -= list_it->val.second;
+            // move to empty list
+            active_list_.erase(list_it);
+            node_to_erase.key = virtual_chunk_offset_t::invalid_value();
+            node_to_erase.val = {nullptr, 0};
+            free_list_.push_front(node_to_erase);
+        }
+    }
+
 public:
     static constexpr size_t AVERAGE_NODE_SIZE = 100;
 
@@ -60,21 +75,6 @@ public:
     }
 
     ~NodeCache() = default;
-
-    void evict_until_under_limit()
-    {
-        while (used_bytes_ > max_bytes_ && !active_list_.empty()) {
-            auto list_it = std::prev(active_list_.end());
-            auto &node_to_erase = *list_it;
-            map_.erase(list_it->key);
-            used_bytes_ -= list_it->val.second;
-            // move to empty list
-            active_list_.erase(list_it);
-            node_to_erase.key = virtual_chunk_offset_t::invalid_value();
-            node_to_erase.val = {nullptr, 0};
-            free_list_.push_front(node_to_erase);
-        }
-    }
 
     Map::iterator insert(
         virtual_chunk_offset_t const &virt_offset,

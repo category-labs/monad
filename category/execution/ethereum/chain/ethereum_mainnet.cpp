@@ -184,11 +184,6 @@ GenesisState EthereumMainnet::get_genesis_state() const
     return {header, ETHEREUM_MAINNET_ALLOC};
 }
 
-bool EthereumMainnet::is_system_sender(Address const &) const
-{
-    return false;
-}
-
 Result<void> EthereumMainnet::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,

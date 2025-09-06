@@ -59,8 +59,6 @@ struct Chain
 
     virtual GenesisState get_genesis_state() const = 0;
 
-    virtual bool is_system_sender(Address const &) const = 0;
-
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         Address const &sender, State &, uint256_t const &base_fee_per_gas,

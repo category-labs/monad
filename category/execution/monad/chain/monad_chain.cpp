@@ -29,7 +29,7 @@
 #include <category/execution/monad/chain/monad_transaction_error.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance.h>
-#include <category/execution/monad/validate_system_transaction.hpp>
+#include <category/execution/monad/system_sender.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 
 #include <algorithm>
@@ -193,11 +193,6 @@ size_t MonadChain::get_max_initcode_size(
     }
 }
 
-bool MonadChain::is_system_sender(Address const &sender) const
-{
-    return sender == SYSTEM_TRANSACTION_SENDER;
-}
-
 Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
@@ -224,8 +219,7 @@ Result<void> MonadChain::validate_transaction(
             return MonadTransactionError::InsufficientBalanceForFee;
         }
 
-        if (MONAD_UNLIKELY(std::ranges::contains(
-                authorities, SYSTEM_TRANSACTION_SENDER))) {
+        if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
             return MonadTransactionError::SystemTransactionSenderIsAuthority;
         }
     }

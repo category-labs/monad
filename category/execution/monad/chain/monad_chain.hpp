@@ -72,8 +72,6 @@ struct MonadChain : Chain
     virtual size_t get_max_initcode_size(
         uint64_t block_number, uint64_t timestamp) const override;
 
-    virtual bool is_system_sender(Address const &) const override;
-
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         Address const &sender, State &, uint256_t const &base_fee_per_gas,

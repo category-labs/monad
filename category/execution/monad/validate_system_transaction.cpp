@@ -17,10 +17,13 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
-#include <silkpre/secp256k1n.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/config.hpp>
+#include <silkpre/secp256k1n.hpp>
+
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>
@@ -37,7 +40,7 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 Result<void>
 static_validate_system_transaction(Transaction const &tx, Address const &sender)
 {
-    if (MONAD_UNLIKELY(sender != SYSTEM_TRANSACTION_SENDER)) {
+    if (MONAD_UNLIKELY(sender != SYSTEM_SENDER)) {
         return SystemTransactionError::BadSender;
     }
 

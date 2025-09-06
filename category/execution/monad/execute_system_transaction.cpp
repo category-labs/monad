@@ -196,6 +196,6 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     return staking::StakingError::MethodNotSupported;
 }
 
-EXPLICIT_TRAITS_CLASS(ExecuteSystemTransaction);
+EXPLICIT_MONAD_TRAITS_CLASS(ExecuteSystemTransaction);
 
 MONAD_NAMESPACE_END

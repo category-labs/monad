@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/dao.hpp>
+#include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
@@ -42,7 +43,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/monad/execute_system_transaction.hpp> // TODO: remove when execute block is a functor
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -251,33 +251,19 @@ Result<std::vector<Receipt>> execute_block(
              &revert_transaction = revert_transaction] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
-                    if (chain.is_system_sender(sender)) {
-                        results[i] = ExecuteSystemTransaction<traits>{
-                            chain,
-                            i,
-                            transaction,
-                            sender,
-                            header,
-                            block_state,
-                            block_metrics,
-                            promises[i],
-                            call_tracer}();
-                    }
-                    else {
-                        results[i] = ExecuteTransaction<traits>{
-                            chain,
-                            i,
-                            transaction,
-                            sender,
-                            authorities,
-                            header,
-                            block_hash_buffer,
-                            block_state,
-                            block_metrics,
-                            promises[i],
-                            call_tracer,
-                            revert_transaction}();
-                    }
+                    results[i] = dispatch_transaction<traits>(
+                        chain,
+                        i,
+                        transaction,
+                        sender,
+                        authorities,
+                        header,
+                        block_hash_buffer,
+                        block_state,
+                        block_metrics,
+                        promises[i],
+                        call_tracer,
+                        revert_transaction);
                     promises[i + 1].set_value();
                     record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
                     record_txn_events(

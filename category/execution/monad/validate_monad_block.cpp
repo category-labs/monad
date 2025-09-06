@@ -16,8 +16,8 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
-#include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <algorithm>
@@ -69,12 +69,12 @@ Result<void> static_validate_monad_senders(std::vector<Address> const &senders)
     // Find the first user txn.
     auto const first_user_sender = std::find_if_not(
         senders.begin(), senders.end(), [](Address const &sender) {
-            return sender == SYSTEM_TRANSACTION_SENDER;
+            return sender == SYSTEM_SENDER;
         });
 
     // No other system txns should come after it.
     auto const bad_system_sender =
-        std::find(first_user_sender, senders.end(), SYSTEM_TRANSACTION_SENDER);
+        std::find(first_user_sender, senders.end(), SYSTEM_SENDER);
     if (MONAD_UNLIKELY(bad_system_sender != senders.end())) {
         return MonadBlockError::SystemTransactionNotFirstInBlock;
     }

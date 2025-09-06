@@ -22,7 +22,6 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/config.hpp>
-#include <silkpre/secp256k1n.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -37,11 +36,20 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
+template <Traits traits>
 Result<void>
 static_validate_system_transaction(Transaction const &tx, Address const &sender)
 {
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+        return SystemTransactionError::SystemTxnBeforeFork;
+    }
+
     if (MONAD_UNLIKELY(sender != SYSTEM_SENDER)) {
         return SystemTransactionError::BadSender;
+    }
+
+    if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
+        return SystemTransactionError::TypeNotLegacy;
     }
 
     if (MONAD_UNLIKELY(!tx.to.has_value())) {
@@ -70,6 +78,8 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
 
     return success();
 }
+
+EXPLICIT_MONAD_TRAITS(static_validate_system_transaction)
 
 Result<void> validate_system_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account)
@@ -101,8 +111,12 @@ quick_status_code_from_enum<monad::SystemTransactionError>::value_mappings()
 
     static std::initializer_list<mapping> const v = {
         {SystemTransactionError::Success, "success", {errc::success}},
+        {SystemTransactionError::SystemTxnBeforeFork,
+         "system transaction before fork",
+         {}},
         {SystemTransactionError::GasNonZero, "gas non zero", {}},
         {SystemTransactionError::ValueNonZero, "value nonzero", {}},
+        {SystemTransactionError::TypeNotLegacy, "type not legacy", {}},
         {SystemTransactionError::BadSender, "bad sender", {}},
         {SystemTransactionError::MissingTo, "missing to", {}},
         {SystemTransactionError::InvalidSystemContract,

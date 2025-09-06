@@ -61,8 +61,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
-    BOOST_OUTCOME_TRY(static_validate_system_transaction(tx_, sender_));
-
+    BOOST_OUTCOME_TRY(static_validate_system_transaction<traits>(tx_, sender_));
     {
         Transaction tx = tx_;
         tx.gas_limit =

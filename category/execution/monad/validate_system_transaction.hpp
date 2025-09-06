@@ -17,6 +17,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/config.hpp>
 // TODO unstable paths between versions
@@ -36,8 +37,10 @@ MONAD_NAMESPACE_BEGIN
 enum class SystemTransactionError
 {
     Success = 0,
+    SystemTxnBeforeFork,
     GasNonZero,
     ValueNonZero,
+    TypeNotLegacy,
     BadSender,
     MissingTo,
     InvalidSystemContract,
@@ -46,6 +49,7 @@ enum class SystemTransactionError
 
 struct Transaction;
 
+template <Traits traits>
 Result<void> static_validate_system_transaction(
     Transaction const &tx, Address const &sender);
 

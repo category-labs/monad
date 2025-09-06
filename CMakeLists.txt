@@ -104,6 +104,7 @@ find_package(Boost REQUIRED COMPONENTS fiber json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
+pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ankerl
 add_library(ankerl_hash INTERFACE)

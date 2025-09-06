@@ -30,10 +30,8 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Boost 1.83 # 1.83 really is the minimum
              CONFIG REQUIRED COMPONENTS context fiber json thread)
 find_package(GTest)
-find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(archive REQUIRED IMPORTED_TARGET libarchive)
-pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ##############################################################################
 # libs

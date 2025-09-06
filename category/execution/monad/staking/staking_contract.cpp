@@ -398,52 +398,46 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
     input.remove_prefix(4);
 
-    using StakingPrecompile = std::pair<PrecompileFunc, uint64_t>;
-    constexpr std::array<StakingPrecompile, 26> dispatch_table{
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_add_validator, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_delegate, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_undelegate, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_compound, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_withdraw, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_claim_rewards, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_change_commission, 0 /* fixme */),
-        /* reserve space for future upgrades */
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        make_pair(&StakingContract::precompile_fallback, 0),
-        /* getters */
-        make_pair(&StakingContract::precompile_get_validator, 0 /* fixme */),
-        make_pair(&StakingContract::precompile_get_delegator, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_consensus_valset, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_snapshot_valset, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_execution_valset, 0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_validators_for_delegator,
-            0 /* fixme */),
-        make_pair(
-            &StakingContract::precompile_get_delegators_for_validator,
-            0 /* fixme */),
-        make_pair(&StakingContract::precompile_get_epoch, 0 /* fixme */),
-    };
-
-    if (MONAD_UNLIKELY(signature >= dispatch_table.size())) {
-        return make_pair(&StakingContract::precompile_fallback, 0);
+    switch (signature) {
+    case 0xf145204c:
+        return {&StakingContract::precompile_add_validator, 0 /* fixme */};
+    case 0x84994fec:
+        return {&StakingContract::precompile_delegate, 0 /* fixme */};
+    case 0x5cf41514:
+        return {&StakingContract::precompile_undelegate, 0 /* fixme */};
+    case 0xb34fea67:
+        return {&StakingContract::precompile_compound, 0 /* fixme */};
+    case 0xaed2ee73:
+        return {&StakingContract::precompile_withdraw, 0 /* fixme */};
+    case 0xa76e2ca5:
+        return {&StakingContract::precompile_claim_rewards, 0 /* fixme */};
+    case 0x9bdcc3c8:
+        return {&StakingContract::precompile_change_commission, 0 /* fixme */};
+    case 0x757991a8:
+        return {&StakingContract::precompile_get_epoch, 0 /* fixme */};
+    case 0x2b6d639a:
+        return {&StakingContract::precompile_get_validator, 0 /* fixme */};
+    case 0x573c1ce0:
+        return {&StakingContract::precompile_get_delegator, 0 /* fixme */};
+    case 0x56fa2045:
+        return {
+            &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */};
+    case 0xfb29b729:
+        return {
+            &StakingContract::precompile_get_consensus_valset, 0 /* fixme */};
+    case 0xde66a368:
+        return {
+            &StakingContract::precompile_get_snapshot_valset, 0 /* fixme */};
+    case 0x7cb074df:
+        return {
+            &StakingContract::precompile_get_execution_valset, 0 /* fixme */};
+    case 0x4fd66050:
+        return {&StakingContract::precompile_get_delegations, 0 /* fixme */};
+    case 0xa0843a26:
+        return {&StakingContract::precompile_get_delegators, 0 /* fixme */};
+    default:
+        return {&StakingContract::precompile_fallback, 0};
     }
-
-    return dispatch_table[signature];
 }
 
 std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
@@ -593,7 +587,7 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
     return get_valset(input, valset);
 }
 
-Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
+Result<byte_string> StakingContract::precompile_get_delegations(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -615,7 +609,7 @@ Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
+Result<byte_string> StakingContract::precompile_get_delegators(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {

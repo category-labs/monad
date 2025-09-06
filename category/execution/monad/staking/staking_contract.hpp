@@ -533,9 +533,9 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_execution_valset(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Result<byte_string> precompile_get_validators_for_delegator(
+    Result<byte_string> precompile_get_delegations(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
-    Result<byte_string> precompile_get_delegators_for_validator(
+    Result<byte_string> precompile_get_delegators(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_epoch(
         byte_string_view, evmc_address const &, evmc_uint256be const &);

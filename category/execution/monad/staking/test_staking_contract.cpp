@@ -817,12 +817,10 @@ TEST_F(Stake, nonpayable_functions_revert)
         contract.precompile_get_execution_valset({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_validators_for_delegator({}, {}, value)
-            .assume_error(),
+        contract.precompile_get_delegations({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_delegators_for_validator({}, {}, value)
-            .assume_error(),
+        contract.precompile_get_delegators({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.precompile_get_epoch({}, {}, value).assume_error(),

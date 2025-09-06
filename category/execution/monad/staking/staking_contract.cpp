@@ -479,15 +479,16 @@ StakingContract::get_validators_for_delegator(
 }
 
 Result<byte_string> StakingContract::precompile_get_validator(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    if (MONAD_UNLIKELY(input.size() != sizeof(u64_be) /* validator id */)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-    auto const val_id = unaligned_load<u64_be>(input.data());
+
     auto val = vars.val_execution(val_id);
     auto consensus_view = vars.consensus_view(val_id);
     auto snapshot_view = vars.snapshot_view(val_id);
@@ -513,18 +514,17 @@ Result<byte_string> StakingContract::precompile_get_validator(
 }
 
 Result<byte_string> StakingContract::precompile_get_delegator(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
-                                    sizeof(Address) /* delegator address */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(auto const address, abi_decode_fixed<Address>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-    auto const val_id = unaligned_load<u64_be>(input.data());
-    auto const address = unaligned_load<Address>(input.data() + sizeof(u64_be));
+
     auto del = vars.delegator(val_id, address);
     BOOST_OUTCOME_TRY(pull_delegator_up_to_date(val_id, del));
 
@@ -543,10 +543,10 @@ Result<byte_string> StakingContract::precompile_get_delegator(
 }
 
 Result<byte_string> StakingContract::get_valset(
-    byte_string_view const input, StorageArray<u64_be> const &valset)
+    byte_string_view input, StorageArray<u64_be> const &valset)
 {
-    constexpr size_t MESSAGE_SIZE = sizeof(u32_be) /* start index */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const start_index, abi_decode_fixed<u32_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
 
@@ -559,13 +559,8 @@ Result<byte_string> StakingContract::get_valset(
         return StakingError::InternalError;
     }
 
-    byte_string_view reader = input;
-    uint32_t const start_index =
-        unaligned_load<u32_be>(consume_bytes(reader, sizeof(u32_be)).data())
-            .native();
-
     auto const [done, next_index, valids] =
-        get_valset(valset, start_index, PAGINATED_RESULTS_SIZE);
+        get_valset(valset, start_index.native(), PAGINATED_RESULTS_SIZE);
     AbiEncoder encoder;
     encoder.add_bool(done);
     encoder.add_uint(next_index);
@@ -599,23 +594,16 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(Address) /* delegator */ +
-                                    sizeof(u64_be) /* start val id to read*/;
-
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const delegator, abi_decode_fixed<Address>(input));
+    BOOST_OUTCOME_TRY(auto const start_val_id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    byte_string_view reader = input;
-    auto const delegator =
-        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
-    auto const start_val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
 
     auto const [done, next_val_id, vals_page] = get_validators_for_delegator(
         delegator, start_val_id, PAGINATED_RESULTS_SIZE);
@@ -628,27 +616,20 @@ Result<byte_string> StakingContract::precompile_get_validators_for_delegator(
 }
 
 Result<byte_string> StakingContract::precompile_get_delegators_for_validator(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE =
-        sizeof(u64_be) /* validator id */ +
-        sizeof(Address) /* start delegator address to read */;
-
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(
+        auto const start_delegator_address, abi_decode_fixed<Address>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
 
-    byte_string_view reader = input;
-    auto const val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    auto const start_del_addr =
-        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
-
     auto const [done, next_del_addr, dels_page] = get_delegators_for_validator(
-        val_id, start_del_addr, PAGINATED_RESULTS_SIZE);
+        val_id, start_delegator_address, PAGINATED_RESULTS_SIZE);
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -670,25 +651,18 @@ Result<byte_string> StakingContract::precompile_get_epoch(
 }
 
 Result<byte_string> StakingContract::precompile_get_withdrawal_request(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
-    constexpr size_t MESSAGE_SIZE = sizeof(u64_be) /* validator id */ +
-                                    sizeof(Address) /* delegator */ +
-                                    sizeof(uint8_t) /* withdrawal id */;
-    if (MONAD_UNLIKELY(input.size() != MESSAGE_SIZE)) {
+    BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(auto const delegator, abi_decode_fixed<Address>(input));
+    BOOST_OUTCOME_TRY(
+        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-
-    byte_string_view reader = input;
-    auto const val_id =
-        unaligned_load<u64_be>(consume_bytes(reader, sizeof(u64_be)).data());
-    auto const delegator =
-        unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
-    auto const withdrawal_id =
-        unaligned_load<uint8_t>(consume_bytes(reader, sizeof(uint8_t)).data());
 
     auto const request =
         vars.withdrawal_request(val_id, delegator, withdrawal_id).load();

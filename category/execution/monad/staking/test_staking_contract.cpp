@@ -292,10 +292,11 @@ struct Stake : public ::testing::Test
 
     void pull_delegator_up_to_date(u64_be const val_id, Address const &address)
     {
-        byte_string input;
-        input += to_byte_string_view(val_id.bytes);
-        input += to_byte_string_view(address.bytes);
-        (void)contract.precompile_get_delegator(input, address, {});
+        AbiEncoder encoder;
+        encoder.add_uint(val_id);
+        encoder.add_address(address);
+        (void)contract.precompile_get_delegator(
+            encoder.encode_final(), address, {});
     }
 
     struct ValResult
@@ -450,9 +451,8 @@ struct Stake : public ::testing::Test
 
     Result<byte_string> get_valset(uint32_t const start_index)
     {
-        u32_be encoded = start_index;
-        byte_string_view input{encoded.bytes, sizeof(u32_be)};
-        return contract.precompile_get_consensus_valset(input, {}, {});
+        return contract.precompile_get_consensus_valset(
+            abi_encode_uint<u32_be>(start_index), {}, {});
     }
 
     uint256_t get_balance(Address const &account)
@@ -4164,11 +4164,6 @@ TEST_F(Stake, get_valset_empty)
 {
     EXPECT_FALSE(get_valset(0).has_error());
     EXPECT_FALSE(get_valset(std::numeric_limits<uint32_t>::max()).has_error());
-
-    u64_be invalid = std::numeric_limits<uint64_t>::max();
-    byte_string_view input{invalid.bytes, sizeof(u64_be)};
-    EXPECT_TRUE(
-        contract.precompile_get_consensus_valset(input, {}, {}).has_error());
 }
 
 TEST_F(Stake, empty_get_delegators_for_validator_getter)

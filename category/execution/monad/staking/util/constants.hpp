@@ -55,9 +55,9 @@ static_assert(MAX_COMMISSION <= MON);
 
 enum class SyscallSelector : uint32_t
 {
-    REWARD = 100,
-    SNAPSHOT = 101,
-    EPOCH_CHANGE = 102,
+    REWARD = 0x791bdcf3,
+    SNAPSHOT = 0x157eeb21,
+    EPOCH_CHANGE = 0x1d4e9f02,
 };
 
 enum

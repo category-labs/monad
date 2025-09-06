@@ -1128,14 +1128,13 @@ Result<byte_string> StakingContract::precompile_change_commission(
 //  System Calls  //
 ////////////////////
 
-Result<void>
-StakingContract::syscall_on_epoch_change(byte_string_view const input)
+Result<void> StakingContract::syscall_on_epoch_change(byte_string_view input)
 {
-    if (MONAD_UNLIKELY(input.size() != sizeof(u64_be))) {
+    BOOST_OUTCOME_TRY(u64_be const next_epoch, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
 
-    u64_be const next_epoch = unaligned_load<u64_be>(input.data());
     u64_be const next_next_epoch = next_epoch.native() + 1;
     u64_be const last_epoch = vars.epoch.load();
     if (MONAD_UNLIKELY(next_epoch.native() <= last_epoch.native())) {
@@ -1182,12 +1181,13 @@ StakingContract::syscall_on_epoch_change(byte_string_view const input)
 
 // update rewards for leader only if in active validator set
 Result<void> StakingContract::syscall_reward(
-    byte_string_view const input, uint256_t const &raw_reward)
+    byte_string_view input, uint256_t const &raw_reward)
 {
-    if (MONAD_UNLIKELY(input.size() != sizeof(Address))) {
+    BOOST_OUTCOME_TRY(
+        auto const block_author, abi_decode_fixed<Address>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-    auto const block_author = unaligned_load<Address>(input.data());
 
     // 1. get validator information
     auto const val_id = vars.val_id(block_author).load_checked();

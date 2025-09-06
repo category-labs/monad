@@ -341,8 +341,7 @@ struct Stake : public ::testing::Test
 
     Result<void> syscall_on_epoch_change(uint64_t const epoch)
     {
-        u64_be const epoch_encoded = epoch;
-        byte_string_view input{epoch_encoded.bytes, sizeof(epoch_encoded)};
+        auto const input = abi_encode_uint<u64_be>(epoch);
         state.push();
         auto res = contract.syscall_on_epoch_change(input);
         post_call(res.has_error());
@@ -353,7 +352,7 @@ struct Stake : public ::testing::Test
     Result<void>
     syscall_reward(Address const &address, uint256_t const &raw_reward = REWARD)
     {
-        byte_string_view input{address.bytes, sizeof(Address)};
+        auto const input = abi_encode_address(address);
         state.push();
         auto res = contract.syscall_reward(input, raw_reward);
         post_call(res.has_error());

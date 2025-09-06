@@ -147,7 +147,7 @@ bool validate_delayed_execution_results(
     return true;
 }
 
-template <class MonadConsensusBlockHeader>
+template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
@@ -160,194 +160,196 @@ Result<BlockExecOutput> propose_block(
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_id());
 
+    // Block input validation
     BOOST_OUTCOME_TRY(static_validate_consensus_header(consensus_header));
-
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
-    auto const rev = chain.get_monad_revision(block.header.timestamp);
-
-    auto body = [&]<Traits traits>() -> Result<BlockExecOutput> {
-        BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
-
-        db.set_block_and_prefix(
-            block.header.number - 1,
-            is_first_block ? bytes32_t{} : consensus_header.parent_id());
-
-        auto const sender_recovery_begin = std::chrono::steady_clock::now();
-        auto const recovered_senders =
-            recover_senders(block.transactions, priority_pool);
-        auto const recovered_authorities =
-            recover_authorities(block.transactions, priority_pool);
-        [[maybe_unused]] auto const sender_recovery_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - sender_recovery_begin);
-        std::vector<Address> senders(block.transactions.size());
-        for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-            if (recovered_senders[i].has_value()) {
-                senders[i] = recovered_senders[i].value();
-            }
-            else {
-                return TransactionError::MissingSender;
-            }
+    // Sender and EIP-7702 authorities recovery
+    auto const sender_recovery_begin = std::chrono::steady_clock::now();
+    auto const recovered_senders =
+        recover_senders(block.transactions, priority_pool);
+    auto const recovered_authorities =
+        recover_authorities(block.transactions, priority_pool);
+    [[maybe_unused]] auto const sender_recovery_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - sender_recovery_begin);
+    std::vector<Address> senders(block.transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        if (recovered_senders[i].has_value()) {
+            senders[i] = recovered_senders[i].value();
         }
-        ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-        for (Address const &sender : senders) {
-            senders_and_authorities.insert(sender);
+        else {
+            return TransactionError::MissingSender;
         }
-        for (std::vector<std::optional<Address>> const &authorities :
-             recovered_authorities) {
-            for (std::optional<Address> const &authority : authorities) {
-                if (authority.has_value()) {
-                    senders_and_authorities.insert(authority.value());
-                }
+    }
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
             }
         }
-        MONAD_ASSERT(block_cache
-                         .emplace(
-                             block_id,
-                             BlockCacheEntry{
-                                 .block_number = block.header.number,
-                                 .parent_id = consensus_header.parent_id(),
-                                 .senders_and_authorities =
-                                     std::move(senders_and_authorities)})
-                         .second);
+    }
+    MONAD_ASSERT(block_cache
+                     .emplace(
+                         block_id,
+                         BlockCacheEntry{
+                             .block_number = block.header.number,
+                             .parent_id = consensus_header.parent_id(),
+                             .senders_and_authorities =
+                                 std::move(senders_and_authorities)})
+                     .second);
+    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
 
-        BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
+    // Create call frames vectors for tracers
+    std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
+        block.transactions.size()};
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_tracers[i] =
+            enable_tracing
+                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
+                      block.transactions[i], call_frames[i])}
+                : std::unique_ptr<CallTracerBase>{
+                      std::make_unique<NoopCallTracer>()};
+    }
 
-        // Create call frames vectors for tracers
-        std::vector<std::vector<CallFrame>> call_frames{
-            block.transactions.size()};
-        std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-            block.transactions.size()};
-        for (unsigned i = 0; i < block.transactions.size(); ++i) {
-            call_tracers[i] =
-                enable_tracing
-                    ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                          CallTracer>(block.transactions[i], call_frames[i])}
-                    : std::unique_ptr<CallTracerBase>{
-                          std::make_unique<NoopCallTracer>()};
+    MonadChainContext chain_context{
+        .grandparent_senders_and_authorities = nullptr,
+        .parent_senders_and_authorities = nullptr,
+        .senders_and_authorities =
+            block_cache.at(block_id).senders_and_authorities,
+        .senders = senders,
+        .authorities = recovered_authorities};
+
+    if (block.header.number > 1) {
+        bytes32_t const &parent_id = consensus_header.parent_id();
+        MONAD_ASSERT(block_cache.contains(parent_id));
+        BlockCacheEntry const &parent_entry = block_cache.at(parent_id);
+        chain_context.parent_senders_and_authorities =
+            &parent_entry.senders_and_authorities;
+        if (block.header.number > 2) {
+            bytes32_t const &grandparent_id = parent_entry.parent_id;
+            MONAD_ASSERT(block_cache.contains(grandparent_id));
+            BlockCacheEntry const &grandparent_entry =
+                block_cache.at(grandparent_id);
+            chain_context.grandparent_senders_and_authorities =
+                &grandparent_entry.senders_and_authorities;
         }
+    }
 
-        BlockExecOutput exec_output;
-        MonadChainContext chain_context{
-            .grandparent_senders_and_authorities = nullptr,
-            .parent_senders_and_authorities = nullptr,
-            .senders_and_authorities =
-                block_cache.at(block_id).senders_and_authorities,
-            .senders = senders,
-            .authorities = recovered_authorities};
+    // Core execution: transaction-level EVM execution that tracks state
+    // changes but does not commit them
+    db.set_block_and_prefix(
+        block.header.number - 1,
+        is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
-        if (block.header.number > 1) {
-            bytes32_t const &parent_id = consensus_header.parent_id();
-            MONAD_ASSERT(block_cache.contains(parent_id));
-            BlockCacheEntry const &parent_entry = block_cache.at(parent_id);
-            chain_context.parent_senders_and_authorities =
-                &parent_entry.senders_and_authorities;
-            if (block.header.number > 2) {
-                bytes32_t const &grandparent_id = parent_entry.parent_id;
-                MONAD_ASSERT(block_cache.contains(grandparent_id));
-                BlockCacheEntry const &grandparent_entry =
-                    block_cache.at(grandparent_id);
-                chain_context.grandparent_senders_and_authorities =
-                    &grandparent_entry.senders_and_authorities;
-            }
-        }
-
-        BlockMetrics block_metrics;
-        BlockState block_state(db, vm);
-        record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
-        BOOST_OUTCOME_TRY(
-            auto const results,
-            execute_block<traits>(
-                chain,
-                block,
-                senders,
-                recovered_authorities,
-                block_state,
-                block_hash_buffer,
-                priority_pool,
-                block_metrics,
-                call_tracers,
-                [&chain, &block, &chain_context](
-                    Address const &sender,
-                    Transaction const &tx,
-                    uint64_t const i,
-                    State &state) {
-                    return chain.revert_transaction(
-                        block.header.number,
-                        block.header.timestamp,
-                        sender,
-                        tx,
-                        block.header.base_fee_per_gas.value_or(0),
-                        i,
-                        state,
-                        chain_context);
-                    return false;
-                }));
-
-        record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
-
-        block_state.log_debug();
-
-        auto const commit_begin = std::chrono::steady_clock::now();
-        block_state.commit(
-            block_id,
-            consensus_header.execution_inputs,
-            results,
-            call_frames,
+    BlockExecOutput exec_output;
+    BlockMetrics block_metrics;
+    BlockState block_state(db, vm);
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
+    BOOST_OUTCOME_TRY(
+        auto const results,
+        execute_block<traits>(
+            chain,
+            block,
             senders,
-            block.transactions,
-            block.ommers,
-            block.withdrawals);
-        [[maybe_unused]] auto const commit_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - commit_begin);
-        exec_output.eth_header = db.read_eth_header();
-        BOOST_OUTCOME_TRY(
-            chain.validate_output_header(block.header, exec_output.eth_header));
+            recovered_authorities,
+            block_state,
+            block_hash_buffer,
+            priority_pool,
+            block_metrics,
+            call_tracers,
+            [&chain, &block, &chain_context](
+                Address const &sender,
+                Transaction const &tx,
+                uint64_t const i,
+                State &state) {
+                return chain.revert_transaction(
+                    block.header.number,
+                    block.header.timestamp,
+                    sender,
+                    tx,
+                    block.header.base_fee_per_gas.value_or(0),
+                    i,
+                    state,
+                    chain_context);
+                return false;
+            }));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
-        exec_output.eth_block_hash = to_bytes(
-            keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    // Database commit of state changes (incl. Merkle root calculations)
+    block_state.log_debug();
+    auto const commit_begin = std::chrono::steady_clock::now();
+    block_state.commit(
+        block_id,
+        consensus_header.execution_inputs,
+        results,
+        call_frames,
+        senders,
+        block.transactions,
+        block.ommers,
+        block.withdrawals);
+    [[maybe_unused]] auto const commit_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - commit_begin);
 
-        [[maybe_unused]] auto const block_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - block_begin);
-        LOG_INFO(
-            "__exec_block,bl={:8},id={},ts={}"
-            ",tx={:5},rt={:4},rtp={:5.2f}%"
-            ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-            ",gas={:9},gpse={:4},gps={:3}{}{}{}",
-            block.header.number,
-            block_id,
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                block_start.time_since_epoch())
-                .count(),
-            block.transactions.size(),
-            block_metrics.num_retries(),
-            100.0 * (double)block_metrics.num_retries() /
-                std::max(1.0, (double)block.transactions.size()),
-            sender_recovery_time,
-            block_metrics.tx_exec_time(),
-            commit_time,
-            block_time,
-            block.transactions.size() * 1'000'000 /
-                (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-            block.transactions.size() * 1'000'000 /
-                (uint64_t)std::max(1L, block_time.count()),
-            exec_output.eth_header.gas_used,
-            exec_output.eth_header.gas_used /
-                (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
-            exec_output.eth_header.gas_used /
-                (uint64_t)std::max(1L, block_time.count()),
-            db.print_stats(),
-            vm.print_and_reset_block_counts(),
-            vm.print_compiler_stats());
+    // Post-commit validation of header, with Merkle root fields filled in
+    exec_output.eth_header = db.read_eth_header();
+    BOOST_OUTCOME_TRY(
+        chain.validate_output_header(block.header, exec_output.eth_header));
 
-        return exec_output;
-    };
+    // Commit prologue: computation of the Ethereum block hash to append to
+    // the circular hash buffer
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    block_hash_chain.propose(
+        exec_output.eth_block_hash,
+        block.header.number,
+        block_id,
+        consensus_header.parent_id());
 
-    SWITCH_MONAD_TRAITS(body.template operator());
-    MONAD_ASSERT(false);
+    // Emit the block metrics log line
+    [[maybe_unused]] auto const block_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - block_begin);
+    LOG_INFO(
+        "__exec_block,bl={:8},id={},ts={}"
+        ",tx={:5},rt={:4},rtp={:5.2f}%"
+        ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
+        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        block.header.number,
+        block_id,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            block_start.time_since_epoch())
+            .count(),
+        block.transactions.size(),
+        block_metrics.num_retries(),
+        100.0 * (double)block_metrics.num_retries() /
+            std::max(1.0, (double)block.transactions.size()),
+        sender_recovery_time,
+        block_metrics.tx_exec_time(),
+        commit_time,
+        block_time,
+        block.transactions.size() * 1'000'000 /
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+        block.transactions.size() * 1'000'000 /
+            (uint64_t)std::max(1L, block_time.count()),
+        exec_output.eth_header.gas_used,
+        exec_output.eth_header.gas_used /
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+        exec_output.eth_header.gas_used /
+            (uint64_t)std::max(1L, block_time.count()),
+        db.print_stats(),
+        vm.print_and_reset_block_counts(),
+        vm.print_compiler_stats());
+
+    return exec_output;
 }
 
 template <class MonadConsensusBlockHeader, class Fn>
@@ -623,9 +625,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             MONAD_ASSERT(validate_delayed_execution_results(
                 block_hash_buffer, header.delayed_execution_results));
 
-            BOOST_OUTCOME_TRY(
-                BlockExecOutput const exec_output,
-                record_block_result(propose_block(
+            auto propose_dispatch = [&]() -> Result<BlockExecOutput> {
+                auto const rev =
+                    chain.get_monad_revision(header.execution_inputs.timestamp);
+                SWITCH_MONAD_TRAITS(
+                    propose_block,
                     block_id,
                     header,
                     Block{
@@ -640,12 +644,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     priority_pool,
                     block_number == start_block_num,
                     enable_tracing,
-                    block_cache)));
-            block_hash_chain.propose(
-                exec_output.eth_block_hash,
-                block_number,
-                block_id,
-                header.parent_id());
+                    block_cache);
+                MONAD_ABORT_PRINTF("handled rev value %d", rev);
+            };
+            BOOST_OUTCOME_TRY(
+                BlockExecOutput const exec_output,
+                record_block_result(propose_dispatch()));
 
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
 

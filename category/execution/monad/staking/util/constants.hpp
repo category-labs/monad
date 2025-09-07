@@ -45,9 +45,20 @@ inline constexpr Address STAKING_CA{0x1000};
 inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};
 inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
 
+inline constexpr uint64_t WARM_SLOAD = 100;
+inline constexpr uint64_t COLD_SLOAD = 8100;
+inline constexpr uint64_t WARM_SSTORE = 2900;
+inline constexpr uint64_t WARM_SSTORE_NONZERO = 2900;
+inline constexpr uint64_t COLD_SSTORE = 2900 + 8000;
+inline constexpr uint64_t EVENT_COSTS = 4275;
+inline constexpr uint64_t TRANSFER_COSTS = 11800;
+inline constexpr uint64_t EC_RECOVERY_COST = 3000;
+inline constexpr uint64_t BLS_VERIFY_COST = 150000;
+inline constexpr uint64_t MEMORY_EXPANSION_COST = 4000;
+
 // Results for get_valset, get_delegators_for_validator, and
 // get_validators_for_delegator are paginated
-inline constexpr uint64_t PAGINATED_RESULTS_SIZE{500};
+inline constexpr uint64_t PAGINATED_RESULTS_SIZE{100};
 
 // sanity check: commission rate doesn't exceed 100% (1e18)
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18

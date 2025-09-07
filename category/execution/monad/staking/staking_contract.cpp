@@ -94,6 +94,26 @@ static_assert(PrecompileSelector::GET_EXECUTION_VALIDATOR_SET == 0x7cb074df);
 static_assert(PrecompileSelector::GET_DELEGATIONS == 0x4fd66050);
 static_assert(PrecompileSelector::GET_DELEGATORS == 0xa0843a26);
 
+struct OpCount
+{
+    uint64_t warm_sloads;
+    uint64_t cold_sloads;
+    uint64_t warm_sstores;
+    uint64_t warm_sstore_nonzero;
+    uint64_t cold_sstores;
+    uint64_t events;
+    uint64_t transfers;
+};
+
+constexpr uint64_t compute_costs(OpCount const &ops)
+{
+    return WARM_SLOAD * ops.warm_sloads + COLD_SLOAD * ops.cold_sloads +
+           WARM_SSTORE * ops.warm_sstores +
+           WARM_SSTORE_NONZERO * ops.warm_sstore_nonzero +
+           COLD_SSTORE * ops.cold_sstores + EVENT_COSTS * ops.events +
+           TRANSFER_COSTS * ops.transfers;
+}
+
 byte_string_view consume_bytes(byte_string_view &data, size_t const num_bytes)
 {
     byte_string_view ret = data.substr(0, num_bytes);
@@ -468,11 +488,166 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
 //  Precompiles  //
 ///////////////////
 
+// The gas for the staking precompile are determined by sloads ,sstores,
+// transfers, events and cryptography operations. The operations are given as
+// the following:
+//
+// operations = [
+//   number_of_warm_sloads,
+//   number_of_cold_sloads,
+//   number_of_warm_zero_to_nonzero_sstores,
+//   number_of_warm_nonzero_sstores,
+//   number_of_cold_zero_to_nonzero_sstores,
+//   number_of_events,
+//   number_of_transfers,
+//   ]
+//
+// The gas cost is calculated as:
+// gas = WARM_SLOAD_COST * operations[0]  +
+//       COLD_SLOAD_COST * operations[1] +
+//       WARM_ZERO_TO_NONZERO_SSTORE_COST * operations[2] +
+//       WARM_NONZERO_SSTORE_COST * operations[3] +
+//       COLD_ZERO_TO_NONZERO_SSTORE_COST * operations[4] +
+//       EVENT_COST * operations[5] +
+//       TRANSFER_COST * operations[6] +
+//       cryptography_gas
+//
+constexpr OpCount add_validator_ops = {
+    .warm_sloads = 21,
+    .cold_sloads = 22,
+    .warm_sstores = 6,
+    .warm_sstore_nonzero = 15,
+    .cold_sstores = 9,
+    .events = 3,
+    .transfers = 0};
+
+constexpr OpCount delegate_ops = {
+    .warm_sloads = 21,
+    .cold_sloads = 17,
+    .warm_sstores = 6,
+    .warm_sstore_nonzero = 14,
+    .cold_sstores = 5,
+    .events = 2,
+    .transfers = 0};
+
+constexpr OpCount undelegate_ops = {
+    .warm_sloads = 15,
+    .cold_sloads = 11,
+    .warm_sstores = 8,
+    .warm_sstore_nonzero = 5,
+    .cold_sstores = 1,
+    .events = 2,
+    .transfers = 0};
+
+constexpr OpCount withdraw_ops = {
+    .warm_sloads = 11,
+    .cold_sloads = 6,
+    .warm_sstores = 1,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 1,
+    .transfers = 1};
+
+constexpr OpCount compound_ops = {
+    .warm_sloads = 46,
+    .cold_sloads = 17,
+    .warm_sstores = 6,
+    .warm_sstore_nonzero = 29,
+    .cold_sstores = 3,
+    .events = 2,
+    .transfers = 0};
+
+constexpr OpCount claim_rewards_ops = {
+    .warm_sloads = 16,
+    .cold_sloads = 11,
+    .warm_sstores = 2,
+    .warm_sstore_nonzero = 11,
+    .cold_sstores = 1,
+    .events = 1,
+    .transfers = 1};
+
+constexpr OpCount change_commission_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 3,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 1,
+    .events = 1,
+    .transfers = 0};
+
+constexpr OpCount get_epoch_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 2,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0};
+
+constexpr OpCount get_validator_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 12,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0};
+
+constexpr OpCount get_delegator_ops = {
+    .warm_sloads = 15,
+    .cold_sloads = 17,
+    .warm_sstores = 1,
+    .warm_sstore_nonzero = 11,
+    .cold_sstores = 1,
+    .events = 0,
+    .transfers = 0};
+
+constexpr OpCount get_withdrawal_request_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 3,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0};
+
+constexpr OpCount get_valset_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 100,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0};
+
+constexpr OpCount get_delegations_ops = {
+    .warm_sloads = 0,
+    .cold_sloads = 100,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0};
+
+static_assert(compute_costs(add_validator_ops) == 352125);
+static_assert(compute_costs(delegate_ops) == 260850);
+static_assert(compute_costs(undelegate_ops) == 147750);
+static_assert(compute_costs(withdraw_ops) == 68675);
+static_assert(compute_costs(compound_ops) == 285050);
+static_assert(compute_costs(claim_rewards_ops) == 155375);
+static_assert(compute_costs(change_commission_ops) == 39475);
+static_assert(compute_costs(get_epoch_ops) == 16200);
+static_assert(compute_costs(get_validator_ops) == 97200);
+static_assert(compute_costs(get_delegator_ops) == 184900);
+static_assert(compute_costs(get_withdrawal_request_ops) == 24300);
+static_assert(compute_costs(get_valset_ops) == 810000);
+static_assert(compute_costs(get_delegations_ops) == 810000);
+
 std::pair<StakingContract::PrecompileFunc, uint64_t>
 StakingContract::precompile_dispatch(byte_string_view &input)
 {
     if (MONAD_UNLIKELY(input.size() < 4)) {
-        return make_pair(&StakingContract::precompile_fallback, 0);
+        return make_pair(&StakingContract::precompile_fallback, 40000);
     }
 
     auto const signature =
@@ -481,43 +656,85 @@ StakingContract::precompile_dispatch(byte_string_view &input)
 
     switch (signature) {
     case PrecompileSelector::ADD_VALIDATOR:
-        return {&StakingContract::precompile_add_validator, 0 /* fixme */};
+        // [21, 22, 6, 15, 9, 3, 0]
+        return {
+            &StakingContract::precompile_add_validator,
+            compute_costs(add_validator_ops) + EC_RECOVERY_COST +
+                BLS_VERIFY_COST};
     case PrecompileSelector::DELEGATE:
-        return {&StakingContract::precompile_delegate, 0 /* fixme */};
+        // [21, 17, 6, 14, 5, 2, 0]
+        return {
+            &StakingContract::precompile_delegate, compute_costs(delegate_ops)};
     case PrecompileSelector::UNDELEGATE:
-        return {&StakingContract::precompile_undelegate, 0 /* fixme */};
+        // [15, 11, 8, 5, 1, 2, 0]
+        return {
+            &StakingContract::precompile_undelegate,
+            compute_costs(undelegate_ops)};
     case PrecompileSelector::COMPOUND:
-        return {&StakingContract::precompile_compound, 0 /* fixme */};
+        // [46, 17, 6, 29, 3, 2, 0]
+        return {
+            &StakingContract::precompile_compound, compute_costs(compound_ops)};
     case PrecompileSelector::WITHDRAW:
-        return {&StakingContract::precompile_withdraw, 0 /* fixme */};
+        // [11, 6, 1, 0, 0, 1, 1]
+        return {
+            &StakingContract::precompile_withdraw, compute_costs(withdraw_ops)};
     case PrecompileSelector::CLAIM_REWARDS:
-        return {&StakingContract::precompile_claim_rewards, 0 /* fixme */};
+        // [16, 11, 2, 11, 1, 1, 1]
+        return {
+            &StakingContract::precompile_claim_rewards,
+            compute_costs(claim_rewards_ops)};
     case PrecompileSelector::CHANGE_COMMISSION:
-        return {&StakingContract::precompile_change_commission, 0 /* fixme */};
+        // [0, 3, 0, 0, 1, 1, 0]
+        return {
+            &StakingContract::precompile_change_commission,
+            compute_costs(change_commission_ops)};
     case PrecompileSelector::GET_EPOCH:
-        return {&StakingContract::precompile_get_epoch, 0 /* fixme */};
+        // [0, 2, 0, 0, 0, 0, 0]
+        return {
+            &StakingContract::precompile_get_epoch,
+            compute_costs(get_epoch_ops)};
     case PrecompileSelector::GET_VALIDATOR:
-        return {&StakingContract::precompile_get_validator, 0 /* fixme */};
+        // [0, 12, 0, 0, 0, 0, 0]
+        return {
+            &StakingContract::precompile_get_validator,
+            compute_costs(get_validator_ops)};
     case PrecompileSelector::GET_DELEGATOR:
-        return {&StakingContract::precompile_get_delegator, 0 /* fixme */};
+        // [15, 17, 1, 11, 1, 0, 0]
+        return {
+            &StakingContract::precompile_get_delegator,
+            compute_costs(get_delegator_ops)};
     case PrecompileSelector::GET_WITHDRAWAL_REQUEST:
+        // [0, 3, 0, 0, 0, 0, 0]
         return {
-            &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */};
+            &StakingContract::precompile_get_withdrawal_request,
+            compute_costs(get_withdrawal_request_ops)};
     case PrecompileSelector::GET_CONSENSUS_VALIDATOR_SET:
+        // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_consensus_valset, 0 /* fixme */};
+            &StakingContract::precompile_get_consensus_valset,
+            compute_costs(get_valset_ops) + MEMORY_EXPANSION_COST};
     case PrecompileSelector::GET_SNAPSHOT_VALIDATOR_SET:
+        // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_snapshot_valset, 0 /* fixme */};
+            &StakingContract::precompile_get_snapshot_valset,
+            compute_costs(get_valset_ops) + MEMORY_EXPANSION_COST};
     case PrecompileSelector::GET_EXECUTION_VALIDATOR_SET:
+        // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_execution_valset, 0 /* fixme */};
+            &StakingContract::precompile_get_execution_valset,
+            compute_costs(get_valset_ops) + MEMORY_EXPANSION_COST};
     case PrecompileSelector::GET_DELEGATIONS:
-        return {&StakingContract::precompile_get_delegations, 0 /* fixme */};
+        // [0,100,0,0,0,0,0]
+        return {
+            &StakingContract::precompile_get_delegations,
+            compute_costs(get_delegations_ops) + MEMORY_EXPANSION_COST};
     case PrecompileSelector::GET_DELEGATORS:
-        return {&StakingContract::precompile_get_delegators, 0 /* fixme */};
+        // [0,100,0,0,0,0,0]
+        return {
+            &StakingContract::precompile_get_delegators,
+            compute_costs(get_delegations_ops) + MEMORY_EXPANSION_COST};
     default:
-        return {&StakingContract::precompile_fallback, 0};
+        return {&StakingContract::precompile_fallback, 40000};
     }
 }
 
@@ -860,11 +1077,13 @@ Result<byte_string> StakingContract::precompile_add_validator(
 
     // add validator metadata
     auto val = vars.val_execution(val_id);
-    val.keys().store(KeysPacked{
-        .secp_pubkey = secp_pubkey_compressed,
-        .bls_pubkey = bls_pubkey_compressed});
-    val.address_flags().store(AddressFlags{
-        .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
+    val.keys().store(
+        KeysPacked{
+            .secp_pubkey = secp_pubkey_compressed,
+            .bls_pubkey = bls_pubkey_compressed});
+    val.address_flags().store(
+        AddressFlags{
+            .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
     val.commission().store(commission);
 
     emit_validator_created_event(val_id, auth_address);
@@ -1046,10 +1265,11 @@ Result<byte_string> StakingContract::precompile_undelegate(
     // each withdrawal request can be thought of as an independent delegator
     // whose stake is the amount being withdrawn.
     vars.withdrawal_request(val_id, msg_sender, withdrawal_id)
-        .store(WithdrawalRequest{
-            .amount = amount,
-            .acc = del.accumulated_reward_per_token().load(),
-            .epoch = withdrawal_epoch});
+        .store(
+            WithdrawalRequest{
+                .amount = amount,
+                .acc = del.accumulated_reward_per_token().load(),
+                .epoch = withdrawal_epoch});
     increment_accumulator_refcount(val_id);
 
     if (del.stake().load().native() == 0) {

@@ -468,7 +468,7 @@ TEST_F(Stake, invoke_fallback)
     byte_string_fixed<8> const signature_bytes = {0xff, 0xff, 0xff, 0xff};
     auto signature = to_byte_string_view(signature_bytes);
     auto const [func, cost] = contract.precompile_dispatch(signature);
-    EXPECT_EQ(cost, 0);
+    EXPECT_EQ(cost, 40000);
 
     auto const res = (contract.*func)(byte_string_view{}, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::MethodNotSupported);

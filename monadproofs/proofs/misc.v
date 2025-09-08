@@ -1743,7 +1743,7 @@ From Ltac2 Require Import Ltac2 String.
   Ltac2 newlines () : string := String.concat (string.String.newline ()) [string.String.newline (); string.String.newline ()].
 
 Ltac2 missingSpecs tu s :=
-  match cpp_proof.parse_fn_spec s with
+  match cpp_proof.parse_fn_spec tu s with
   | (sp_parsed, nm, sp) =>
       let (missing, deps) := cpp_proof.bundle_deps tu nm sp in
       printf "%a"

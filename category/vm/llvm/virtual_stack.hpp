@@ -29,23 +29,35 @@ namespace monad::vm::llvm
             virt_stack.clear();
         };
 
-        std::tuple<std::int64_t, std::int64_t> deltas(Block const &blk)
-        {
-            auto [low0, _delta, high0] = blk.stack_deltas();
-            auto low = static_cast<std::int64_t>(virt_stack.size()) + low0;
-            auto high = static_cast<std::int64_t>(virt_stack.size()) + high0;
-            return std::make_tuple(low, high);
-        };
-
         void push(Value *v)
         {
-            MONAD_VM_ASSERT(virt_stack.size() < 1024);
+            MONAD_VM_ASSERT(size() < 1024);
             virt_stack.push_back(v);
+        };
+
+        void push_front(Value *v)
+        {
+            MONAD_VM_ASSERT(size() < 1024);
+            virt_stack.insert(virt_stack.begin(), v);
+        };
+
+        int64_t size() const
+        {
+            return static_cast<int64_t>(virt_stack.size());
+        };
+
+        Value *peek(int64_t i) const
+        {
+            int64_t const sz = size();
+            int64_t const ix = sz + i;
+            MONAD_VM_ASSERT(ix >= 0);
+            MONAD_VM_ASSERT(ix < sz);
+            return virt_stack[static_cast<size_t>(ix)];
         };
 
         Value *pop()
         {
-            MONAD_VM_ASSERT(virt_stack.size() > 0);
+            MONAD_VM_ASSERT(size() > 0);
             auto *v = virt_stack.back();
             virt_stack.pop_back();
             return v;
@@ -54,15 +66,17 @@ namespace monad::vm::llvm
         void swap(uint8_t i)
         {
             MONAD_VM_ASSERT(i >= 1);
-            auto a = virt_stack.size() - 1;
-            auto b = a - i;
-            std::swap(virt_stack[a], virt_stack[b]);
+            int64_t const a = size() - 1;
+            int64_t const b = a - i;
+            std::swap(
+                virt_stack[static_cast<size_t>(a)],
+                virt_stack[static_cast<size_t>(b)]);
         };
 
         void dup(uint8_t i)
         {
             MONAD_VM_ASSERT(i >= 1);
-            auto *v = virt_stack[virt_stack.size() - i];
+            auto *v = virt_stack[static_cast<size_t>(size() - i)];
             push(v);
         };
 

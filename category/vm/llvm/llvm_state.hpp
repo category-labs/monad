@@ -71,8 +71,17 @@ namespace monad::vm::llvm
             out.close();
         }
 
+        void debug(std::string msg)
+        {
+            if (debug_on) {
+                std::cerr << msg;
+                comment(msg);
+            }
+        };
+
         void set_contract_addr(std::string const &dbg_nm = "")
         {
+            debug_on = dbg_nm != "";
             LoopAnalysisManager LAM;
             FunctionAnalysisManager FAM;
             CGSCCAnalysisManager CGAM;
@@ -95,7 +104,7 @@ namespace monad::vm::llvm
                 MPM.run(*llvm_module, MAM);
             }
 
-            if (dbg_nm != "") {
+            if (debug_on) {
                 if (do_optimize) {
                     dump_module(dbg_nm + "_opt.ll");
                 }
@@ -157,7 +166,7 @@ namespace monad::vm::llvm
 
         Value *call(Function *f, std::vector<Value *> const &args)
         {
-            return ir.CreateCall(f, args, "call");
+            return ir.CreateCall(f, args, "r");
         };
 
         void insert_symbol(std::string const &nm, void const *f)
@@ -204,6 +213,28 @@ namespace monad::vm::llvm
         Value *alloca_(Type *ty, std::string_view nm)
         {
             return ir.CreateAlloca(ty, nullptr, nm);
+        }
+
+        Value *no_op()
+        {
+            return alloca_(int_ty(1), "unused_comment");
+        };
+
+        void comment(std::string const &s)
+        {
+            Value *v = no_op();
+            Instruction *instr = dyn_cast<Instruction>(v);
+            MDString *comment_str = MDString::get(context, "comment");
+            MDNode *comment_node = MDNode::get(context, comment_str);
+
+            std::string sanitized = s;
+
+            for (char &c : sanitized) {
+                if (!std::isalnum(c)) {
+                    c = '_';
+                }
+            };
+            instr->setMetadata(sanitized, comment_node);
         }
 
         void br(BasicBlock *blk)
@@ -383,6 +414,16 @@ namespace monad::vm::llvm
             return ConstantInt::get(int_ty(sz), x);
         };
 
+        Constant *u64(uint64_t x)
+        {
+            return ConstantInt::get(int_ty(64), x);
+        };
+
+        Constant *i64(int64_t x)
+        {
+            return u64(static_cast<uint64_t>(x));
+        };
+
         ConstantInt *lit_word(uint256_t x)
         {
             std::array<uint64_t, 4> const words{
@@ -470,6 +511,8 @@ namespace monad::vm::llvm
 
         std::vector<BasicBlock *> insert_lbls;
         SymbolMap opcode_syms;
+
+        bool debug_on = false;
 
     public:
         void (*contract_addr)() = nullptr;

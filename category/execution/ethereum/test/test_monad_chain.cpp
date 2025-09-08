@@ -36,6 +36,8 @@
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/mpt/db.hpp>
 
+#include <bitset>
+
 #include <gtest/gtest.h>
 
 using namespace monad;
@@ -135,8 +137,23 @@ TEST(MonadChain, Genesis)
     }
 }
 
+enum PreventDipBits
+{
+    IsDelegated = 0,
+    SenderOrAuthorityInGrandparent = 1,
+    SenderOrAuthorityInParent = 2,
+    SenderInBlock = 3,
+    AuthorityInBlock = 4,
+    AuthorityInTransaction = 5,
+};
+
+constexpr uint8_t PREVENT_DIP_BITS_POWERSET_SIZE = 64;
+
+static_assert(
+    (1 << (AuthorityInTransaction + 1)) == PREVENT_DIP_BITS_POWERSET_SIZE);
+
 void run_revert_transaction_test(
-    bool const can_dip, uint64_t const initial_balance_mon,
+    uint8_t const prevent_dip_bitset, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)
 {
     constexpr uint256_t BASE_FEE_PER_GAS = 10;
@@ -157,6 +174,14 @@ void run_revert_transaction_test(
         uint256_t const initial_balance =
             uint256_t{initial_balance_mon} * 1000000000000000000ULL;
         state.add_to_balance(SENDER, initial_balance);
+        if (prevent_dip_bitset & (1 << IsDelegated)) {
+            byte_string const code{
+                0xef, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02,
+                0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+                0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+            };
+            state.set_code(SENDER, code);
+        }
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);
     }
@@ -174,27 +199,52 @@ void run_revert_transaction_test(
         .max_priority_fee_per_gas = 0,
     };
 
-    std::vector<Address> const senders = {SENDER};
-    std::vector<std::vector<std::optional<Address>>> authorities = {{}};
+    std::vector<Address> senders;
+    if (prevent_dip_bitset & (1 << SenderInBlock)) {
+        senders.push_back(SENDER);
+    }
+    else {
+        senders.push_back(Address{2});
+    }
+    senders.emplace_back(SENDER);
+    std::vector<std::vector<std::optional<Address>>> authorities = {};
+    if (prevent_dip_bitset & (1 << AuthorityInBlock)) {
+        authorities.push_back({SENDER});
+    }
+    else {
+        authorities.push_back({});
+    }
+    if (prevent_dip_bitset & (1 << AuthorityInTransaction)) {
+        authorities.push_back({SENDER});
+    }
+    else {
+        authorities.push_back({});
+    }
 
     // Create sets for the new MonadChainContext structure
     ankerl::unordered_dense::segmented_set<Address>
+        grandparent_senders_and_authorities;
+    if (prevent_dip_bitset & (1 << SenderOrAuthorityInGrandparent)) {
+        grandparent_senders_and_authorities.insert(SENDER);
+    }
+    ankerl::unordered_dense::segmented_set<Address>
         parent_senders_and_authorities;
-    if (!can_dip) {
+    if (prevent_dip_bitset & (1 << SenderOrAuthorityInParent)) {
         parent_senders_and_authorities.insert(SENDER);
     }
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {SENDER};
 
     MonadChainContext chain_context{
-        .grandparent_senders_and_authorities = nullptr,
+        .grandparent_senders_and_authorities =
+            &grandparent_senders_and_authorities,
         .parent_senders_and_authorities = &parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
         .authorities = authorities};
 
     {
-        State state{bs, Incarnation{1, 0}};
+        State state{bs, Incarnation{1, 1}};
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
@@ -204,68 +254,75 @@ void run_revert_transaction_test(
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
-            0, // transaction index
+            1, // transaction index
             state,
             chain_context);
 
-        EXPECT_EQ(should_revert, expected);
+        EXPECT_EQ(should_revert, expected)
+            << std::bitset<64>{prevent_dip_bitset};
     }
 }
 
 TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
 {
-    run_revert_transaction_test(
-        false, // can_dip
-        10, // initial balance (MON)
-        2, // gas fee (MON)
-        0, // value (MON)
-        false // expected should_revert
-    );
+    for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
+        run_revert_transaction_test(
+            i, // prevent_dip_bitset
+            10, // initial balance (MON)
+            2, // gas fee (MON)
+            0, // value (MON)
+            false // expected should_revert
+        );
 
-    // now spend whole reserve
-    run_revert_transaction_test(
-        false, // can_dip
-        10, // initial balance (MON)
-        10, // gas fee (MON)
-        0, // value (MON)
-        false // expected should_revert
-    );
+        // now spend whole reserve
+        run_revert_transaction_test(
+            i, // prevent_dip_bitset
+            10, // initial balance (MON)
+            10, // gas fee (MON)
+            0, // value (MON)
+            false // expected should_revert
+        );
+    }
 }
 
 TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_true)
 {
-    run_revert_transaction_test(
-        false, // can_dip
-        10, // initial balance (MON)
-        2, // gas fee (MON)
-        1, // value (MON)
-        true // expected should_revert
-    );
+    for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
+        run_revert_transaction_test(
+            i, // prevent_dip_bitset
+            10, // initial balance (MON)
+            2, // gas fee (MON)
+            1, // value (MON)
+            true // expected should_revert
+        );
 
-    run_revert_transaction_test(
-        false, // can_dip
-        15, // initial balance (MON)
-        5, // gas fee (MON)
-        6, // value (MON)
-        true // expected should_revert
-    );
+        run_revert_transaction_test(
+            i, // prevent_dip_bitset
+            15, // initial balance (MON)
+            5, // gas fee (MON)
+            6, // value (MON)
+            true // expected should_revert
+        );
+    }
 }
 
 TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_false)
 {
-    run_revert_transaction_test(
-        false, // can_dip
-        15, // initial balance (MON)
-        5, // gas fee (MON)
-        5, // value (MON)
-        false // expected should_revert
-    );
+    for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
+        run_revert_transaction_test(
+            i, // prevent_dip_bitset
+            15, // initial balance (MON)
+            5, // gas fee (MON)
+            5, // value (MON)
+            false // expected should_revert
+        );
+    }
 }
 
 TEST(MonadChain, revert_transaction_dip_false)
 {
     run_revert_transaction_test(
-        true, // can_dip
+        0, // prevent_dip_bitset
         10, // initial balance (MON)
         10, // gas fee (MON)
         0, // value (MON)
@@ -273,7 +330,7 @@ TEST(MonadChain, revert_transaction_dip_false)
     );
 
     run_revert_transaction_test(
-        true, // can_dip
+        0, // prevent_dip_bitset
         10, // initial balance (MON)
         1, // gas fee (MON)
         9, // value (MON)

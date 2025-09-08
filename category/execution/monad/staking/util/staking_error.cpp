@@ -57,7 +57,7 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
         {StakingError::BlsSignatureVerificationFailed,
          "bls signature verification failed",
          {}},
-        {StakingError::BlockAuthorNotInSet, "block author not in set", {}},
+        {StakingError::NotInValidatorSet, "not in validator set", {}},
         {StakingError::SolvencyError, "solvency error", {}},
         {StakingError::SnapshotInBoundary,
          "called snapshot while in boundary",
@@ -67,6 +67,8 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
         {StakingError::CommissionTooHigh, "commission too high", {}},
         {StakingError::ValueNonZero, "value is nonzero", {}},
         {StakingError::DelegationTooSmall, "delegation is too small", {}},
+        {StakingError::ExternalRewardTooSmall, "external reward too small", {}},
+        {StakingError::ExternalRewardTooLarge, "external reward too large", {}},
     };
 
     return v;

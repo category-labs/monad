@@ -448,6 +448,20 @@ struct Stake : public ::testing::Test
         return outcome::success();
     }
 
+    Result<void> external_reward(
+        u64_be const val_id, Address const &sender, uint256_t const &reward)
+    {
+        auto const input = abi_encode_uint<u64_be>(val_id);
+        auto const msg_value = intx::be::store<evmc_uint256be>(reward);
+        state.push();
+        auto res =
+            contract.precompile_external_reward(input, sender, msg_value);
+        post_call(res.has_error());
+        state.add_to_balance(STAKING_CA, reward);
+        BOOST_OUTCOME_TRYV(std::move(res));
+        return outcome::success();
+    }
+
     Result<byte_string> get_valset(uint32_t const start_index)
     {
         return contract.precompile_get_consensus_valset(
@@ -947,7 +961,7 @@ TEST_F(Stake, add_validator_insufficent_balance)
     inc_epoch();
 
     EXPECT_EQ(
-        StakingError::BlockAuthorNotInSet,
+        StakingError::NotInValidatorSet,
         syscall_reward(val1.value().sign_address).assume_error());
 
     EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
@@ -959,7 +973,7 @@ TEST_F(Stake, add_validator_insufficent_balance)
     skip_to_next_epoch();
 
     EXPECT_EQ(
-        StakingError::BlockAuthorNotInSet,
+        StakingError::NotInValidatorSet,
         syscall_reward(val2.value().sign_address).assume_error());
 
     EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
@@ -1845,7 +1859,7 @@ TEST_F(Stake, validator_removes_self)
     // consensus view doesn't include this validator, and reward fails
     EXPECT_EQ(
         syscall_reward(val.sign_address).assume_error(),
-        StakingError::BlockAuthorNotInSet);
+        StakingError::NotInValidatorSet);
 }
 
 TEST_F(Stake, two_validators_remove_self)
@@ -1988,7 +2002,7 @@ TEST_F(Stake, validator_joining_boundary_rewards)
     unsigned DELAY_WINDOW = 6000;
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
-            StakingError::BlockAuthorNotInSet,
+            StakingError::NotInValidatorSet,
             syscall_reward(val1.sign_address).assume_error());
 
         if (i == (DELAY_WINDOW - 100)) {
@@ -2004,7 +2018,7 @@ TEST_F(Stake, validator_joining_boundary_rewards)
 
     // joined after the boundary, not active
     EXPECT_EQ(
-        StakingError::BlockAuthorNotInSet,
+        StakingError::NotInValidatorSet,
         syscall_reward(val2.sign_address).assume_error());
     inc_epoch();
 
@@ -2057,6 +2071,65 @@ TEST_F(Stake, validator_miss_snapshot_miss_deactivation)
         contract.vars.this_epoch_view(1).stake().load().native(),
         ACTIVE_VALIDATOR_STAKE);
     EXPECT_EQ(contract.vars.val_execution(1).stake().load().native(), 0);
+}
+
+TEST_F(Stake, validator_external_rewards_failure_conditions)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    EXPECT_EQ(
+        external_reward(val.id, auth_address, 20 * MON).assume_error(),
+        StakingError::NotInValidatorSet);
+    skip_to_next_epoch(); // validator in set
+
+    EXPECT_EQ(
+        external_reward(20 /* val id */, auth_address, 20 * MON).assume_error(),
+        StakingError::UnknownValidator);
+
+    EXPECT_EQ(
+        external_reward(val.id, auth_address, MON - 1).assume_error(),
+        StakingError::ExternalRewardTooSmall);
+
+    EXPECT_EQ(
+        external_reward(val.id, auth_address, MAX_EXTERNAL_REWARD + 1)
+            .assume_error(),
+        StakingError::ExternalRewardTooLarge);
+
+    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+}
+
+TEST_F(Stake, validator_external_rewards_uniform_reward_pool)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    std::array<Address, 5> delegators = {
+        auth_address,
+        0xaaaa_address,
+        0xbbbb_address,
+        0xcccc_address,
+        0xdddd_address};
+    for (auto const &d : delegators) {
+        if (d != auth_address) {
+            EXPECT_FALSE(
+                delegate(val.id, d, ACTIVE_VALIDATOR_STAKE).has_error());
+        }
+    }
+    skip_to_next_epoch(); // validator in set, all delegators active.
+
+    // external reward distributed uniformly
+    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+    for (auto const &d : delegators) {
+        pull_delegator_up_to_date(val.id, d);
+        EXPECT_EQ(
+            contract.vars.delegator(val.id, d).rewards().load().native(),
+            4 * MON);
+    }
 }
 
 /////////////////////
@@ -3916,7 +3989,7 @@ TEST_F(Stake, reward_unknown_validator)
     auto const unknown = Address{0xabcdef};
     EXPECT_EQ(
         syscall_reward(unknown).assume_error(),
-        StakingError::BlockAuthorNotInSet);
+        StakingError::NotInValidatorSet);
 }
 
 TEST_F(Stake, reward_crash_no_snapshot_missing_validator)
@@ -3927,7 +4000,7 @@ TEST_F(Stake, reward_crash_no_snapshot_missing_validator)
     inc_epoch();
     EXPECT_EQ(
         syscall_reward(val.value().sign_address).assume_error(),
-        StakingError::BlockAuthorNotInSet);
+        StakingError::NotInValidatorSet);
 }
 
 ////////////////////////

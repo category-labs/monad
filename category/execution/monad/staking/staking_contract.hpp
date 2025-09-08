@@ -492,6 +492,11 @@ private:
     // stake.
     Result<void> pull_delegator_up_to_date(u64_be, Delegator &);
 
+    // Updates a validator's additive accumulator with the new reward, which
+    // goes to every active delegator in the pool.
+    Result<void> apply_reward(
+        ValExecution &, uint256_t const &reward, uint256_t const &active_stake);
+
     // helper function for delegate. used by three compiles:
     //  1. add_validator
     //  2. delegate
@@ -555,6 +560,8 @@ public:
     Result<byte_string> precompile_claim_rewards(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_change_commission(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_external_reward(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     ////////////////////

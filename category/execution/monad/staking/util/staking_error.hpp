@@ -49,7 +49,7 @@ enum class StakingError
     InvalidBlsSignature,
     SecpSignatureVerificationFailed,
     BlsSignatureVerificationFailed,
-    BlockAuthorNotInSet,
+    NotInValidatorSet,
     SolvencyError,
     SnapshotInBoundary,
     InvalidEpochChange,
@@ -57,6 +57,8 @@ enum class StakingError
     CommissionTooHigh,
     ValueNonZero,
     DelegationTooSmall,
+    ExternalRewardTooSmall,
+    ExternalRewardTooLarge,
 };
 
 MONAD_STAKING_NAMESPACE_END

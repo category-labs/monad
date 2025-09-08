@@ -165,10 +165,7 @@ Definition isAllowedToEmpty
                    || existsDelUndelTxWithinK state tx
                    || bool_decide  ((sender tx) ∈ flat_map addrsDelUndelByTx (tx::intermediateTxsSinceState))
   in
-  let existsSameSenderTxInWindow :=
-    (existsTxWithinK state tx)
-    || bool_decide ((sender tx) ∈ map sender intermediateTxsSinceState) in
-  (negb delegated) && (negb existsSameSenderTxInWindow).
+  (negb delegated).
 
 
 
@@ -616,7 +613,6 @@ Proof using.
     
 Qed.
 
-
 Lemma execTxSenderBal tx s:
   maxTxFee tx <= balanceOfAc s.1 (sender tx) -> 
   let ReserveBal := configuredReserveBalOfAddr s.2 (sender tx) in
@@ -670,12 +666,8 @@ Proof.
   {
     autorewrite with syntactic in *.
     rememberForallb.
-    destruct (~~ (existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)) && ~~ existsTxWithinK s tx);
+    destruct ((existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)));
       simpl in *.
-    {
-      destruct fb; simpl in *; auto; try lia.
-      rewrite balanceOfRevertSender; auto.
-    }
     {
       destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
         try (rewrite balanceOfRevertSender;auto;[]);
@@ -697,6 +689,10 @@ Proof.
         lia.
       }
       
+    }
+    {
+      destruct fb; simpl in *; auto; try lia.
+      rewrite balanceOfRevertSender; auto.
     }
 
   }
@@ -887,21 +883,11 @@ Set Nested Proofs Allowed.
 
 Lemma isAllowedToEmptyImpl s tx inter a:
   isAllowedToEmpty s (tx::inter) a = true
-  -> sender tx <> sender a
-     /\ addrDelegated (execValidatedTx s tx).1 (sender a) = false.
+  -> addrDelegated (execValidatedTx s tx).1 (sender a) = false.
 Proof using.
   intros  Hae.
   unfold isAllowedToEmpty in *.
   simpl in *.
-  destruct (decide (sender a = sender tx)).
-  {
-    assert (bool_decide (sender a ∈ sender tx :: map sender inter)= true) as Heq.
-    { rewrite bool_decide_true; set_solver. }
-    rewrite Heq in Hae.
-    autorewrite with syntactic in Hae.
-    congruence.
-  }
-  split_and; auto.
   rewrite <- not_true_iff_false.
   intros Hc.
   pose proof (execTxDelegationUpd tx s) as Hdel.
@@ -915,12 +901,14 @@ Proof using.
     rewrite Hdel in Hae.
     simpl.
     autorewrite with syntactic in Hae.
+    simpl in Hae.
     congruence.
   }
   {
     rewrite bool_decide_eq_true in Hdel.
     case_bool_decide; try set_solver.
     autorewrite with syntactic in Hae.
+    simpl in *.
     congruence.
   }
 Qed.

@@ -70,13 +70,6 @@ namespace monad::vm::llvm
 
         Emitter<traits> emitter{llvm, ir};
 
-        if (dbg_nm != "") {
-            std::ofstream out(std::format("{}_opt.ir", dbg_nm));
-            auto ir_str = std::format("{}", ir);
-            out << ir_str;
-            out.close();
-        }
-
         emitter.emit_contract();
 
         if (dbg_nm != "") {

@@ -20,32 +20,7 @@
 #include <span>
 #include <string_view>
 
-#include <cthash/sha3/common.hpp>
-
-// cthash only provides sha3 and not keccak. this function modifies the suffix
-// in the trait to return keccaked values
-namespace cthash
-{
-    struct keccak_config
-    {
-        static constexpr size_t digest_length_bit = 256u;
-        static constexpr size_t capacity_bit = 512u;
-        static constexpr size_t rate_bit = 1600u - capacity_bit;
-
-        // Note that the library uses this trait internally as such:
-        //
-        // constexpr std::byte suffix_and_start_of_padding =
-        //      (suffix.values[0] | (std::byte{0b0000'0001u} << suffix.bits));
-        //
-        // So this yields domain bit = 0x01
-        static constexpr auto suffix = keccak_suffix(0, 0x00);
-    };
-
-    static_assert(
-        keccak_config::rate_bit + keccak_config::capacity_bit == 1600u);
-
-    using keccak_256 = keccak_hasher<keccak_config>;
-}
+#include <cthash/sha3/keccak.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

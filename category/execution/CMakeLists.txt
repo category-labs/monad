@@ -48,6 +48,7 @@ add_library(
   "ethereum/core/contract/abi_decode_error.hpp"
   "ethereum/core/contract/abi_decode.hpp"
   "ethereum/core/contract/abi_encode.hpp"
+  "ethereum/core/contract/abi_signatures.hpp"
   "ethereum/core/contract/big_endian.hpp"
   "ethereum/core/contract/checked_math.cpp"
   "ethereum/core/contract/checked_math.hpp"
@@ -250,6 +251,7 @@ target_include_directories(
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS}
+  PUBLIC ${cthash_SOURCE_DIR}/include
   PUBLIC ${silkpre_SOURCE_DIR}/lib)
 
 target_include_directories(

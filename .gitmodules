@@ -50,3 +50,6 @@
 [submodule "libs/vm/third_party/evmone"]
 	path = third_party/evmone
 	url = git@github.com:category-labs/evmone.git
+[submodule "third_party/cthash"]
+	path = third_party/cthash
+	url = https://github.com/hanickadot/cthash.git

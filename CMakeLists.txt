@@ -125,6 +125,9 @@ find_package(CLI11 REQUIRED)
 # concurrentqueue
 add_subdirectory("third_party/concurrentqueue")
 
+# cthash
+add_subdirectory("third_party/cthash")
+
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")

@@ -147,8 +147,12 @@ void StakingContract::emit_validator_created_event(
     u64_be const val_id, Address const &auth_delegator)
 
 {
-    constexpr bytes32_t signature{
-        0xab6f199d07fd15c571140b120b4b414ab3baa8b5a543b4d4f78c8319d6634974_bytes32};
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("ValidatorCreated(uint64,address)");
+    static_assert(
+        signature ==
+        0xab6f199d07fd15c571140b120b4b414ab3baa8b5a543b4d4f78c8319d6634974_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(auth_delegator))
@@ -159,8 +163,12 @@ void StakingContract::emit_validator_created_event(
 void StakingContract::emit_validator_status_changed_event(
     u64_be const val_id, u64_be const flags)
 {
-    constexpr bytes32_t signature{
-        0xc95966754e882e03faffaf164883d98986dda088d09471a35f9e55363daf0c53_bytes32};
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("ValidatorStatusChanged(uint64,uint64)");
+    static_assert(
+        signature ==
+        0xc95966754e882e03faffaf164883d98986dda088d09471a35f9e55363daf0c53_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_data(abi_encode_uint(flags))
@@ -173,8 +181,12 @@ void StakingContract::emit_delegation_event(
     u64_be const active_epoch)
 
 {
-    constexpr bytes32_t signature{
-        0xe4d4df1e1827dd28252fd5c3cd7ebccd3da6e0aa31f74c828f3c8542af49d840_bytes32};
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("Delegate(uint64,address,uint256,uint64)");
+    static_assert(
+        signature ==
+        0xe4d4df1e1827dd28252fd5c3cd7ebccd3da6e0aa31f74c828f3c8542af49d840_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(delegator))
@@ -188,8 +200,12 @@ void StakingContract::emit_undelegate_event(
     u64_be const val_id, Address const &delegator, uint8_t withdrawal_id,
     u256_be const &amount, u64_be const activation_epoch)
 {
-    constexpr bytes32_t signature{
-        0x3e53c8b91747e1b72a44894db10f2a45fa632b161fdcdd3a17bd6be5482bac62_bytes32};
+    constexpr bytes32_t signature = abi_encode_event_signature(
+        "Undelegate(uint64,address,uint8,uint256,uint64)");
+    static_assert(
+        signature ==
+        0x3e53c8b91747e1b72a44894db10f2a45fa632b161fdcdd3a17bd6be5482bac62_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(delegator))
@@ -204,8 +220,12 @@ void StakingContract::emit_withdraw_event(
     u64_be const val_id, Address const &delegator, uint8_t const withdrawal_id,
     u256_be const &amount)
 {
-    constexpr bytes32_t signature =
-        0x63030e4238e1146c63f38f4ac81b2b23c8be28882e68b03f0887e50d0e9bb18f_bytes32;
+    constexpr bytes32_t signature = abi_encode_event_signature(
+        "Withdraw(uint64,address,uint8,uint256,uint64)");
+    static_assert(
+        signature ==
+        0x63030e4238e1146c63f38f4ac81b2b23c8be28882e68b03f0887e50d0e9bb18f_bytes32);
+
     u64_be const withdraw_epoch = vars.epoch.load();
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
@@ -220,8 +240,12 @@ void StakingContract::emit_withdraw_event(
 void StakingContract::emit_claim_rewards_event(
     u64_be const val_id, Address const &delegator, u256_be const &amount)
 {
-    constexpr bytes32_t signature{
-        0x3170ba953fe3e068954fcbc93913a05bf457825d4d4d86ec9b72ce2186cd8109_bytes32};
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("ClaimRewards(uint64,address,uint256)");
+    static_assert(
+        signature ==
+        0x3170ba953fe3e068954fcbc93913a05bf457825d4d4d86ec9b72ce2186cd8109_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(delegator))
@@ -234,8 +258,12 @@ void StakingContract::emit_commission_changed_event(
     u64_be const val_id, u256_be const &old_commission,
     u256_be const &new_commission)
 {
-    constexpr bytes32_t signature{
-        0xd1698d3454c5b5384b70aaae33f1704af7c7e055f0c75503ba3146dc28995920_bytes32};
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("CommissionChanged(uint64,uint256,uint256)");
+    static_assert(
+        signature ==
+        0xd1698d3454c5b5384b70aaae33f1704af7c7e055f0c75503ba3146dc28995920_bytes32);
+
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_data(abi_encode_uint(old_commission))

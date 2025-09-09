@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
+
 #include <span>
 #include <string_view>
 
@@ -56,6 +58,13 @@ consteval uint32_t abi_encode_selector(std::string_view const function_name)
     return (static_cast<uint32_t>(h[0]) << 24) |
            (static_cast<uint32_t>(h[1]) << 16) |
            (static_cast<uint32_t>(h[2]) << 8) | static_cast<uint32_t>(h[3]);
+}
+
+consteval bytes32_t
+abi_encode_event_signature(std::string_view const event_name)
+{
+    auto const h = cthash::keccak_256{}.update(std::span{event_name}).final();
+    return std::bit_cast<bytes32_t>(h);
 }
 
 MONAD_NAMESPACE_END

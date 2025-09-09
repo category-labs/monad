@@ -17,14 +17,13 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/unordered_map.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_protocol.hpp>
-
-#include <ankerl/unordered_dense.h>
 
 #include <array>
 #include <filesystem>
@@ -39,7 +38,7 @@ struct monad_sync_request;
 struct monad_statesync_client_context
 {
     template <class K, class V>
-    using Map = ankerl::unordered_dense::segmented_map<K, V>;
+    using Map = monad::unordered_dense_map<K, V>;
 
     using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
 
@@ -54,7 +53,11 @@ struct monad_statesync_client_context
     monad::BlockHeader tgrt;
     uint64_t current;
     Map<monad::Address, StorageDeltas> buffered;
-    ankerl::unordered_dense::segmented_set<monad::bytes32_t> seen_code;
+    monad::unordered_dense_set<monad::bytes32_t> seen_code;
+    Map<monad::bytes32_t, bool> code_delegation;
+    monad::unordered_dense_map<monad::Address, monad::bytes32_t>
+        unresolved_account_delegation;
+
     Map<monad::bytes32_t, monad::byte_string> code;
     Map<monad::Address, std::optional<StateDelta>> deltas;
     uint64_t n_upserts;

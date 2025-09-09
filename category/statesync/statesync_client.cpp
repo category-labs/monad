@@ -22,12 +22,14 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/mpt/update.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 #include <category/statesync/statesync_version.h>
 
 #include <algorithm>
+#include <deque>
 #include <filesystem>
 #include <optional>
 
@@ -155,6 +157,67 @@ void monad_statesync_client_handle_done(
     }
 }
 
+void update_account_delegations_at_finalization(
+    monad_statesync_client_context *const ctx)
+{
+    std::deque<mpt::Update> alloc;
+    std::deque<hash256> hash_alloc;
+    std::deque<byte_string> bytes_alloc;
+
+    UpdateList accounts;
+
+    constexpr size_t BATCH_SIZE = 5'000'000;
+
+    for (auto it = ctx->unresolved_account_delegation.begin();
+         it != ctx->unresolved_account_delegation.end();
+         ++it) {
+        auto const &[addr, hash] = *it;
+        auto acct = ctx->tdb.read_account(addr);
+        MONAD_ASSERT(acct.has_value());
+        MONAD_ASSERT(acct->code_hash == hash && hash != NULL_HASH);
+        auto const code_it = ctx->code_delegation.find(acct->code_hash);
+        MONAD_ASSERT(code_it != ctx->code_delegation.end());
+        if (acct->delegated == code_it->second) {
+            continue; // skip if no change
+        }
+        acct->delegated = code_it->second;
+        accounts.push_front(alloc.emplace_back(Update{
+            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+            .value = bytes_alloc.emplace_back(encode_account_db(addr, *acct)),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(ctx->current)}));
+        if ((alloc.size() % BATCH_SIZE) == 0 ||
+            std::next(it) == ctx->unresolved_account_delegation.end()) {
+            UpdateList updates;
+            Update state_update{
+                .key = state_nibbles,
+                .value = byte_string_view{},
+                .incarnation = false,
+                .next = std::move(accounts),
+                .version = static_cast<int64_t>(ctx->current)};
+            updates.push_front(state_update);
+
+            UpdateList finalized_updates;
+            Update finalized{
+                .key = finalized_nibbles,
+                .value = byte_string_view{},
+                .incarnation = false,
+                .next = std::move(updates),
+                .version = static_cast<int64_t>(ctx->current)};
+            finalized_updates.push_front(finalized);
+
+            ctx->db.upsert(
+                std::move(finalized_updates), ctx->current, false, false);
+            // reset for next batch
+            accounts.clear();
+            alloc.clear();
+            hash_alloc.clear();
+            bytes_alloc.clear();
+        }
+    }
+}
+
 bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 {
     auto const &tgrt = ctx->tgrt;
@@ -175,6 +238,8 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
         // missing code
         return false;
     }
+
+    update_account_delegations_at_finalization(ctx);
 
     if (latest_version != tgrt.number) {
         ctx->db.move_trie_version_forward(latest_version, tgrt.number);

@@ -23,6 +23,7 @@
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
+#include <category/vm/evm/delegation.hpp>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -41,13 +42,6 @@ void account_update(
     std::optional<Account> const &acct)
 {
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
-
-    if (acct.has_value()) {
-        auto const &hash = acct.value().code_hash;
-        if (hash != NULL_HASH) {
-            ctx.seen_code.emplace(hash);
-        }
-    }
 
     auto const it = ctx.deltas.find(addr);
     auto const updated = it != ctx.deltas.end();
@@ -187,7 +181,10 @@ bool StatesyncProtocolV1::handle_upsert(
     byte_string_view raw{val, size};
     if (type == SYNC_TYPE_UPSERT_CODE) {
         // code is immutable once inserted - no deletions
-        ctx->code.emplace(std::bit_cast<bytes32_t>(keccak256(raw)), raw);
+        auto const code_hash = std::bit_cast<bytes32_t>(keccak256(raw));
+        ctx->code.emplace(code_hash, raw);
+        bool const is_delegated = vm::evm::is_delegated(raw);
+        ctx->code_delegation.emplace(code_hash, is_delegated);
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);
@@ -196,6 +193,30 @@ bool StatesyncProtocolV1::handle_upsert(
         }
         auto [addr, acct] = res.value();
         acct.incarnation = Incarnation{0, 0};
+        MONAD_ASSERT(acct.delegated == false);
+
+        auto const &hash = acct.code_hash;
+        if (hash != NULL_HASH) {
+            ctx->seen_code.emplace(hash);
+            // update delegation trackers
+            if (auto it = ctx->code_delegation.find(hash);
+                it != ctx->code_delegation.end()) {
+                acct.delegated = it->second;
+            }
+            else if (auto const code = ctx->tdb.read_code(hash);
+                     code->size() > 0) {
+                bool const is_delegated =
+                    vm::evm::is_delegated(code->code_span());
+                ctx->code_delegation.emplace(hash, is_delegated);
+                acct.delegated = is_delegated;
+            }
+            else {
+                ctx->unresolved_account_delegation[addr] = hash;
+            }
+        }
+        else {
+            ctx->unresolved_account_delegation.erase(addr);
+        }
         account_update(*ctx, addr, acct);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE) {
@@ -214,7 +235,9 @@ bool StatesyncProtocolV1::handle_upsert(
         if (size != sizeof(Address)) {
             return false;
         }
-        account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
+        auto const addr = unaligned_load<Address>(val);
+        ctx->unresolved_account_delegation.erase(addr);
+        account_update(*ctx, addr, std::nullopt);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE_DELETE) {
         if (size < sizeof(Address)) {

@@ -715,6 +715,20 @@ byte_string encode_account_db(Address const &address, Account const &account)
     return rlp::encode_list2(encoded_account);
 }
 
+byte_string
+encode_account_no_derived(Address const &address, Account const &account)
+{
+    byte_string encoded_account;
+    encoded_account += rlp::encode_address(address);
+    encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
+    encoded_account += rlp::encode_unsigned(account.nonce);
+    encoded_account += rlp::encode_unsigned(account.balance);
+    if (account.code_hash != NULL_HASH) {
+        encoded_account += rlp::encode_bytes32(account.code_hash);
+    }
+    return rlp::encode_list2(encoded_account);
+}
+
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &enc)
 {

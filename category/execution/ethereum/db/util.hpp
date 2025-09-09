@@ -135,7 +135,11 @@ inline constexpr unsigned char FINALIZED_NIBBLE = 1;
 inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
+// Both encode_account_db() and encode_account_no_derived()
+// produce encodings that can be decoded by decode_account_db().
 byte_string encode_account_db(Address const &, Account const &);
+byte_string encode_account_no_derived(Address const &, Account const &);
+
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
 Result<std::pair<byte_string_view, byte_string_view>>

@@ -185,31 +185,34 @@ bool statesync_server_handle_request(
 
             if (node.has_value() && v <= until) {
                 auto const send_upsert = [&](monad_sync_type const type,
+                                             byte_string_view const bytes,
                                              unsigned char const *const v1 =
                                                  nullptr,
                                              uint64_t const size1 = 0) {
                     sync->statesync_server_send_upsert(
-                        sync->net,
-                        type,
-                        v1,
-                        size1,
-                        node.value().data(),
-                        node.value().size());
+                        sync->net, type, v1, size1, bytes.data(), bytes.size());
                 };
 
                 if (nibble == CODE_NIBBLE) {
                     MONAD_ASSERT(depth == HASH_SIZE);
-                    send_upsert(SYNC_TYPE_UPSERT_CODE);
+                    send_upsert(SYNC_TYPE_UPSERT_CODE, node.value());
                 }
                 else {
                     MONAD_ASSERT(nibble == STATE_NIBBLE);
                     if (depth == HASH_SIZE) {
-                        send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
+                        auto raw = node.value();
+                        auto const res = decode_account_db(raw);
+                        MONAD_ASSERT(res.has_value());
+                        auto const &[this_addr, acct] = res.assume_value();
+                        auto const enc =
+                            encode_account_no_derived(this_addr, acct);
+                        send_upsert(SYNC_TYPE_UPSERT_ACCOUNT, enc);
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
                         send_upsert(
                             SYNC_TYPE_UPSERT_STORAGE,
+                            node.value(),
                             reinterpret_cast<unsigned char *>(&addr),
                             sizeof(addr));
                     }

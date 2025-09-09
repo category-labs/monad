@@ -53,13 +53,6 @@ inline constexpr uint64_t PAGINATED_RESULTS_SIZE{500};
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18
 static_assert(MAX_COMMISSION <= MON);
 
-enum class SyscallSelector : uint32_t
-{
-    REWARD = 0x791bdcf3,
-    SNAPSHOT = 0x157eeb21,
-    EPOCH_CHANGE = 0x1d4e9f02,
-};
-
 enum
 {
     ValidatorFlagsOk = 0,

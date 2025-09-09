@@ -17,6 +17,7 @@
 #include <boost/outcome/try.hpp>
 #include <category/core/assert.h>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -33,6 +34,24 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <optional>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+struct SyscallSelector
+{
+    static constexpr uint32_t REWARD =
+        abi_encode_selector("syscallReward(address)");
+    static constexpr uint32_t SNAPSHOT =
+        abi_encode_selector("syscallSnapshot()");
+    static constexpr uint32_t ON_EPOCH_CHANGE =
+        abi_encode_selector("syscallOnEpochChange(uint64)");
+};
+
+static_assert(SyscallSelector::REWARD == 0x791bdcf3);
+static_assert(SyscallSelector::SNAPSHOT == 0x157eeb21);
+static_assert(SyscallSelector::ON_EPOCH_CHANGE == 0x1d4e9f02);
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -184,12 +203,12 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
         intx::be::unsafe::load<uint32_t>(calldata.substr(0, 4).data());
     calldata.remove_prefix(4);
 
-    switch (static_cast<staking::SyscallSelector>(signature)) {
-    case staking::SyscallSelector::REWARD:
+    switch (signature) {
+    case SyscallSelector::REWARD:
         return contract.syscall_reward(calldata, value);
-    case staking::SyscallSelector::SNAPSHOT:
+    case SyscallSelector::SNAPSHOT:
         return contract.syscall_snapshot(calldata);
-    case staking::SyscallSelector::EPOCH_CHANGE:
+    case SyscallSelector::ON_EPOCH_CHANGE:
         return contract.syscall_on_epoch_change(calldata);
     }
     return staking::StakingError::MethodNotSupported;

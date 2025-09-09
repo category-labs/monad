@@ -251,6 +251,58 @@ namespace
 
         return execution_result;
     }
+
+    Result<evmc::Result> eth_call_impl(
+        Chain const &chain,
+        std::variant<evmc_revision, monad_revision> either_rev,
+        Transaction const &txn, BlockHeader const &header,
+        uint64_t const block_number, bytes32_t const &block_id,
+        Address const &sender,
+        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
+        vm::VM &vm, BlockHashBufferFinalized const buffer,
+        monad_state_override const &state_overrides,
+        CallTracerBase &call_tracer, trace::StateTracer state_tracer)
+    {
+        if (std::holds_alternative<evmc_revision>(either_rev)) {
+            auto const rev = std::get<evmc_revision>(either_rev);
+            SWITCH_EVM_TRAITS(
+                eth_call_impl,
+                chain,
+                txn,
+                header,
+                block_number,
+                block_id,
+                sender,
+                authorities,
+                tdb,
+                vm,
+                buffer,
+                state_overrides,
+                call_tracer,
+                state_tracer);
+            MONAD_ASSERT(false);
+        }
+        else {
+            MONAD_ASSERT(std::holds_alternative<monad_revision>(either_rev));
+            auto const rev = std::get<monad_revision>(either_rev);
+            SWITCH_MONAD_TRAITS(
+                eth_call_impl,
+                chain,
+                txn,
+                header,
+                block_number,
+                block_id,
+                sender,
+                authorities,
+                tdb,
+                vm,
+                buffer,
+                state_overrides,
+                call_tracer,
+                state_tracer);
+            MONAD_ASSERT(false);
+        }
+    }
 }
 
 namespace monad
@@ -622,6 +674,22 @@ struct monad_eth_call_executor
                         MONAD_ASSERT(false);
                     }();
 
+                    auto const rev = [&chain, chain_config, &block_header]
+                        -> std::variant<evmc_revision, monad_revision> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                        case CHAIN_CONFIG_MONAD_TESTNET2:
+                            return dynamic_cast<MonadChain *>(chain.get())
+                                ->get_monad_revision(block_header.timestamp);
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
                     auto const block_hash_buffer =
                         create_blockhash_buffer(block_number);
                     if (block_hash_buffer == nullptr) {
@@ -654,50 +722,21 @@ struct monad_eth_call_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const res = [&]() -> Result<evmc::Result> {
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
-                            evmc_revision const rev = chain->get_revision(
-                                block_header.number, block_header.timestamp);
-                            SWITCH_EVM_TRAITS(
-                                eth_call_impl,
-                                *chain,
-                                transaction,
-                                block_header,
-                                block_number,
-                                block_id,
-                                sender,
-                                authorities,
-                                tdb,
-                                vm_,
-                                *block_hash_buffer,
-                                *state_overrides,
-                                *call_tracer,
-                                state_tracer);
-                            std::unreachable();
-                        }
-                        else {
-                            auto const rev =
-                                dynamic_cast<MonadChain *>(chain.get())
-                                    ->get_monad_revision(
-                                        block_header.timestamp);
-                            SWITCH_MONAD_TRAITS(
-                                eth_call_impl,
-                                *chain,
-                                transaction,
-                                block_header,
-                                block_number,
-                                block_id,
-                                sender,
-                                authorities,
-                                tdb,
-                                vm_,
-                                *block_hash_buffer,
-                                *state_overrides,
-                                *call_tracer,
-                                state_tracer);
-                            std::unreachable();
-                        }
-                    }();
+                    auto const res = eth_call_impl(
+                        *chain,
+                        rev,
+                        transaction,
+                        block_header,
+                        block_number,
+                        block_id,
+                        sender,
+                        authorities,
+                        tdb,
+                        vm_,
+                        *block_hash_buffer,
+                        *state_overrides,
+                        *call_tracer,
+                        state_tracer);
 
                     if (override_with_low_gas_retry_if_oog &&
                         ((res.has_value() &&

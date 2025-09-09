@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
@@ -40,6 +41,58 @@
 #include <memory>
 
 MONAD_STAKING_ANONYMOUS_NAMESPACE_BEGIN
+
+struct PrecompileSelector
+{
+    static constexpr uint32_t ADD_VALIDATOR =
+        abi_encode_selector("addValidator(bytes,bytes,bytes)");
+    static constexpr uint32_t DELEGATE =
+        abi_encode_selector("delegate(uint64)");
+    static constexpr uint32_t UNDELEGATE =
+        abi_encode_selector("undelegate(uint64,uint256,uint8)");
+    static constexpr uint32_t COMPOUND =
+        abi_encode_selector("compound(uint64)");
+    static constexpr uint32_t WITHDRAW =
+        abi_encode_selector("withdraw(uint64,uint8)");
+    static constexpr uint32_t CLAIM_REWARDS =
+        abi_encode_selector("claimRewards(uint64)");
+    static constexpr uint32_t CHANGE_COMMISSION =
+        abi_encode_selector("changeCommission(uint64,uint256)");
+    static constexpr uint32_t GET_EPOCH = abi_encode_selector("getEpoch()");
+    static constexpr uint32_t GET_VALIDATOR =
+        abi_encode_selector("getValidator(uint64)");
+    static constexpr uint32_t GET_DELEGATOR =
+        abi_encode_selector("getDelegator(uint64,address)");
+    static constexpr uint32_t GET_WITHDRAWAL_REQUEST =
+        abi_encode_selector("getWithdrawalRequest(uint64,address,uint8)");
+    static constexpr uint32_t GET_CONSENSUS_VALIDATOR_SET =
+        abi_encode_selector("getConsensusValidatorSet(uint32)");
+    static constexpr uint32_t GET_SNAPSHOT_VALIDATOR_SET =
+        abi_encode_selector("getSnapshotValidatorSet(uint32)");
+    static constexpr uint32_t GET_EXECUTION_VALIDATOR_SET =
+        abi_encode_selector("getExecutionValidatorSet(uint32)");
+    static constexpr uint32_t GET_DELEGATIONS =
+        abi_encode_selector("getDelegations(address,uint64)");
+    static constexpr uint32_t GET_DELEGATORS =
+        abi_encode_selector("getDelegators(uint64,address)");
+};
+
+static_assert(PrecompileSelector::ADD_VALIDATOR == 0xf145204c);
+static_assert(PrecompileSelector::DELEGATE == 0x84994fec);
+static_assert(PrecompileSelector::UNDELEGATE == 0x5cf41514);
+static_assert(PrecompileSelector::COMPOUND == 0xb34fea67);
+static_assert(PrecompileSelector::WITHDRAW == 0xaed2ee73);
+static_assert(PrecompileSelector::CLAIM_REWARDS == 0xa76e2ca5);
+static_assert(PrecompileSelector::CHANGE_COMMISSION == 0x9bdcc3c8);
+static_assert(PrecompileSelector::GET_EPOCH == 0x757991a8);
+static_assert(PrecompileSelector::GET_VALIDATOR == 0x2b6d639a);
+static_assert(PrecompileSelector::GET_DELEGATOR == 0x573c1ce0);
+static_assert(PrecompileSelector::GET_WITHDRAWAL_REQUEST == 0x56fa2045);
+static_assert(PrecompileSelector::GET_CONSENSUS_VALIDATOR_SET == 0xfb29b729);
+static_assert(PrecompileSelector::GET_SNAPSHOT_VALIDATOR_SET == 0xde66a368);
+static_assert(PrecompileSelector::GET_EXECUTION_VALIDATOR_SET == 0x7cb074df);
+static_assert(PrecompileSelector::GET_DELEGATIONS == 0x4fd66050);
+static_assert(PrecompileSelector::GET_DELEGATORS == 0xa0843a26);
 
 byte_string_view consume_bytes(byte_string_view &data, size_t const num_bytes)
 {
@@ -399,41 +452,41 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
-    case 0xf145204c:
+    case PrecompileSelector::ADD_VALIDATOR:
         return {&StakingContract::precompile_add_validator, 0 /* fixme */};
-    case 0x84994fec:
+    case PrecompileSelector::DELEGATE:
         return {&StakingContract::precompile_delegate, 0 /* fixme */};
-    case 0x5cf41514:
+    case PrecompileSelector::UNDELEGATE:
         return {&StakingContract::precompile_undelegate, 0 /* fixme */};
-    case 0xb34fea67:
+    case PrecompileSelector::COMPOUND:
         return {&StakingContract::precompile_compound, 0 /* fixme */};
-    case 0xaed2ee73:
+    case PrecompileSelector::WITHDRAW:
         return {&StakingContract::precompile_withdraw, 0 /* fixme */};
-    case 0xa76e2ca5:
+    case PrecompileSelector::CLAIM_REWARDS:
         return {&StakingContract::precompile_claim_rewards, 0 /* fixme */};
-    case 0x9bdcc3c8:
+    case PrecompileSelector::CHANGE_COMMISSION:
         return {&StakingContract::precompile_change_commission, 0 /* fixme */};
-    case 0x757991a8:
+    case PrecompileSelector::GET_EPOCH:
         return {&StakingContract::precompile_get_epoch, 0 /* fixme */};
-    case 0x2b6d639a:
+    case PrecompileSelector::GET_VALIDATOR:
         return {&StakingContract::precompile_get_validator, 0 /* fixme */};
-    case 0x573c1ce0:
+    case PrecompileSelector::GET_DELEGATOR:
         return {&StakingContract::precompile_get_delegator, 0 /* fixme */};
-    case 0x56fa2045:
+    case PrecompileSelector::GET_WITHDRAWAL_REQUEST:
         return {
             &StakingContract::precompile_get_withdrawal_request, 0 /* fixme */};
-    case 0xfb29b729:
+    case PrecompileSelector::GET_CONSENSUS_VALIDATOR_SET:
         return {
             &StakingContract::precompile_get_consensus_valset, 0 /* fixme */};
-    case 0xde66a368:
+    case PrecompileSelector::GET_SNAPSHOT_VALIDATOR_SET:
         return {
             &StakingContract::precompile_get_snapshot_valset, 0 /* fixme */};
-    case 0x7cb074df:
+    case PrecompileSelector::GET_EXECUTION_VALIDATOR_SET:
         return {
             &StakingContract::precompile_get_execution_valset, 0 /* fixme */};
-    case 0x4fd66050:
+    case PrecompileSelector::GET_DELEGATIONS:
         return {&StakingContract::precompile_get_delegations, 0 /* fixme */};
-    case 0xa0843a26:
+    case PrecompileSelector::GET_DELEGATORS:
         return {&StakingContract::precompile_get_delegators, 0 /* fixme */};
     default:
         return {&StakingContract::precompile_fallback, 0};

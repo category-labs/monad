@@ -246,9 +246,9 @@ BEGIN
   RETURN
     (SELECT
       CONCAT_WS('/',
-        CASE (literal IS NOT NULL AND (literal_bound != -1 AND literal::float::numeric > literal_bound))
+        CASE (literal IS NOT NULL AND (literal_bound != -1 AND literal::float::numeric >= literal_bound))
           WHEN true THEN 'literal' ELSE NULL END,
-        CASE (literal IS NOT NULL AND (literal_bound = -1 OR literal::float::numeric <= literal_bound))
+        CASE (literal IS NOT NULL AND (literal_bound = -1 OR literal::float::numeric < literal_bound))
           WHEN true THEN literal::text ELSE NULL END,
         CASE (avx_reg IS NOT NULL
           AND literal IS NULL)

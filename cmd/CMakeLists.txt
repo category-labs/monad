@@ -62,3 +62,7 @@ add_subdirectory(vm/parser)
 if(MONAD_COMPILER_BENCHMARKS)
     add_subdirectory(vm/mce)
 endif()
+
+if(MONAD_COMPILER_TESTING)
+  add_subdirectory(vm/type-check)
+endif()

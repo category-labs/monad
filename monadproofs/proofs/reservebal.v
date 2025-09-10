@@ -348,11 +348,11 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
      let balCheck (a: EvmAddr) :=
        let ReserveBal := configuredReserveBalOfAddr s.2 a in
        let erb:N := ReserveBal `min` (balanceOfAcA s a) in
-       if hasCode si a (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
+       if hasCode si a || isAllowedToEmptyExec s t (* important that si is not s, making it more liberal: allow just deployed contracts to empty *)
        then true
        else
          if bool_decide (sender t =a)
-         then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
+         then bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck : bool := (forallb balCheck changedAccounts) in (* in impl, only do for updates *)
      if (allBalCheck)
@@ -582,7 +582,10 @@ Lemma execTxOtherBalanceLB tx s:
       (ac <> sender tx)
        -> if (hasCode sf.1 ac)
           then True
-          else ReserveBal `min` (balanceOfAcA s ac) <= (balanceOfAcA sf ac)).
+          else
+            (if isAllowedToEmptyExec s tx
+            then balanceOfAcA s ac
+            else ReserveBal `min` (balanceOfAcA s ac)) <= (balanceOfAcA sf ac)).
 Proof using.
   intros.
   subst ReserveBal.
@@ -594,18 +597,18 @@ Proof using.
   1:{  subst sf. unfold balanceOfAcA.  simpl.
        rewrite balanceOfUpd. case_match; auto. try lia.
        case_bool_decide; try lia.
+       case_match; lia.
   }
   pose proof (changedAccountSetSound tx s.1 ltac:(auto)) as Hsnd.
   rdestruct (evmExecTxCore s.1 tx) as [si changed].
   remember (hasCode sf.1 ac) as sac.
-  destruct sac; auto.
+  destruct sac; simpl; auto.
   rememberForallb.
   unfold balanceOfAcA in *.
   destruct fb; simpl in *.
   2:{ subst sf.
       rewrite balanceOfRevertOther; auto;[].
-      resolveDecide congruence.
-      lia.
+      case_match_concl; lia.
   }
   symmetry in Heqfb.
   rewrite  forallb_spec in Heqfb.
@@ -614,7 +617,17 @@ Proof using.
     specialize (Heqfb ac ltac:(auto)).
     rewrite <- Heqsac in Heqfb.
     resolveDecide congruence.
-    case_bool_decide; try lia.
+    simpl in *.
+    pose proof (execTxCannotDebitNonDelegatedNonContractAccountsCore tx si) as Ho.
+    case_match; auto; try lia;
+      autorewrite with iff in *; try lia.
+    
+    unfold isAllowedToEmptyExec, isAllowedToEmpty in H1.
+    Hint Rewrite orb_false_iff : iff.
+    autorewrite with iff in H1.
+    forward_reason.
+    simpl in H1r.
+    Search orb false (_=_).
   }
   {
     unfold balanceOfAc.
@@ -671,7 +684,7 @@ Proof.
     resolveDecide congruence.
     simpl in *.
     rewrite -> Hsc in Heqfb.
-    case_bool_decide; try lia.
+    case_bool_decide; simpl in *; try lia.
   }
   {
     autorewrite with syntactic in *.
@@ -690,7 +703,7 @@ Proof.
         rewrite Hsc in Heqfb.
         resolveDecide congruence.
         simpl in *.
-        case_bool_decide; try lia.
+        congruence.
       }
       {
         unfold balanceOfAc in *.
@@ -781,7 +794,7 @@ Lemma execBalLb ac s tx:
   else
     if (hasCode sf.1 ac)
     then True
-    else (if addrDelegated (fst sf) ac then ReserveBal `min` (balanceOfAcA s ac) else balanceOfAcA s ac)
+    else (if addrDelegated (fst sf) ac && negb (isAllowedToEmptyExec s tx) then ReserveBal `min` (balanceOfAcA s ac) else balanceOfAcA s ac)
          <= (balanceOfAcA sf ac).
 Proof using.
   simpl. intros.
@@ -790,7 +803,8 @@ Proof using.
   pose proof (execTxCannotDebitNonDelegatedNonContractAccounts tx s ac ltac:(auto)).
   destruct (hasCode (execValidatedTx s tx).1 ac); auto;[].
   autorewrite with syntactic in *.
-  case_match; lia.
+  destruct (isAllowedToEmptyExec s tx); simpl in *; autorewrite with syntactic in *;
+  case_match; simpl in * ; try lia.
 Qed.
 
 Lemma execS2 s txlast:

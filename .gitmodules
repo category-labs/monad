@@ -47,9 +47,9 @@
 [submodule "libs/vm/third_party/asmjit"]
 	path = third_party/asmjit
 	url = git@github.com:asmjit/asmjit.git
-[submodule "libs/vm/third_party/evmone"]
-	path = third_party/evmone
-	url = git@github.com:category-labs/evmone.git
+[submodule "third_party/evmc"]
+	path = third_party/evmc
+	url = https://github.com/ipsilon/evmc.git
 [submodule "third_party/cthash"]
 	path = third_party/cthash
 	url = https://github.com/hanickadot/cthash.git

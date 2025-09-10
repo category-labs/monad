@@ -135,8 +135,14 @@ add_subdirectory("third_party/ethash")
 # intx
 add_subdirectory("third_party/intx")
 
+# evmc
+set(HUNTER_ENABLED OFF)
+add_subdirectory("third_party/evmc")
+
 # evmone
-include(cmake/evmone.cmake)
+if (MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
+  include(cmake/evmone.cmake)
+endif()
 
 # komihash
 add_library(komihash INTERFACE)

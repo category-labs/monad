@@ -25,7 +25,6 @@ target_include_directories(parser-tool
 target_link_libraries(parser-tool
   PRIVATE monad_execution
   PRIVATE evmc::evmc
-  PRIVATE evmone
   PRIVATE CLI11::CLI11
 )
 

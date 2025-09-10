@@ -39,7 +39,8 @@ namespace monad::vm::runtime
         auto first_allowed_block = std::max(tx_context.block_number - 256, 0L);
         if (block_number >= first_allowed_block &&
             block_number < tx_context.block_number) {
-            auto hash = ctx->host->get_block_hash(ctx->context, block_number);
+            auto const hash =
+                ctx->host->get_block_hash(ctx->context, block_number);
             *result_ptr = uint256_from_bytes32(hash);
         }
         else {

@@ -72,7 +72,7 @@ namespace
             Cases{
                 [&state, &su, &kinds](ContVar const &cv) {
                     VarName new_v;
-                    auto it = su.cont_map.find(cv.var);
+                    auto const it = su.cont_map.find(cv.var);
                     if (it != su.cont_map.end()) {
                         new_v = it->second;
                     }
@@ -99,7 +99,7 @@ namespace
                 [](Any const &) { return any; },
                 [&state, &su](KindVar const &kv) {
                     VarName new_v;
-                    auto it = su.kind_map.find(kv.var);
+                    auto const it = su.kind_map.find(kv.var);
                     if (it != su.kind_map.end()) {
                         new_v = it->second;
                     }

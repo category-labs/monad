@@ -33,7 +33,7 @@ namespace monad::vm::runtime
         auto key = bytes32_from_uint256(*key_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status = ctx->host->access_storage(
+            auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2000);

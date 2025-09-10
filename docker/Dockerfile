@@ -30,6 +30,7 @@ RUN apt update && apt install -y \
   libarchive-dev \
   libbrotli-dev \
   libcap-dev \
+  libclang-19-dev \
   libcli11-dev \
   libgmp-dev \
   libtbb-dev \
@@ -73,7 +74,10 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_LLVM=On        \
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_C_COMPILER=clang-19     \
-  -DCMAKE_CXX_COMPILER=clang++-19
+  -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DUTILS_CLANG_TIDY_AUTO_CONST=On
+
+RUN cd src && cmake --build build -t ConstCorrectnessChecks
 
 RUN cd src && ./scripts/vm/check-clang-tidy.sh
 

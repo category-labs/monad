@@ -89,7 +89,7 @@ namespace monad::vm::compiler::poly_typed
             }
             __attribute__((unused)) bool const ins = literal_map.put(v, t);
             MONAD_VM_DEBUG_ASSERT(ins || t == LiteralType::Word);
-            auto lit = literal_links.find(v);
+            auto const lit = literal_links.find(v);
             if (lit != literal_links.end()) {
                 for (auto w : lit->second) {
                     work_stack.push_back(w);
@@ -106,7 +106,7 @@ namespace monad::vm::compiler::poly_typed
         std::vector<Kind> kinds = cont->front;
         ContTailKind t = cont->tail;
         while (std::holds_alternative<ContVar>(t)) {
-            auto new_c = cont_map.find(std::get<ContVar>(t).var);
+            auto const new_c = cont_map.find(std::get<ContVar>(t).var);
             if (new_c == cont_map.end()) {
                 break;
             }
@@ -130,7 +130,7 @@ namespace monad::vm::compiler::poly_typed
         increment_kind_depth(depth, 1);
 
         while (std::holds_alternative<KindVar>(*kind)) {
-            auto new_k = kind_map.find(std::get<KindVar>(*kind).var);
+            auto const new_k = kind_map.find(std::get<KindVar>(*kind).var);
             if (new_k == kind_map.end()) {
                 return kind;
             }
@@ -147,10 +147,10 @@ namespace monad::vm::compiler::poly_typed
                     std::terminate();
                 },
                 [this, depth, &ticks](LiteralVar const &lv) {
-                    auto t = literal_map.find(lv.var);
+                    auto const t = literal_map.find(lv.var);
                     if (t == literal_map.end()) {
                         increment_kind_ticks(ticks, 1);
-                        auto v = subst_literal_var_name(lv.var);
+                        auto const v = subst_literal_var_name(lv.var);
                         return literal_var(v, subst(lv.cont, depth, ticks));
                     }
                     switch (t->second) {
@@ -220,7 +220,7 @@ namespace monad::vm::compiler::poly_typed
             if (!std::holds_alternative<ContVar>(cont->tail)) {
                 break;
             }
-            auto new_c = cont_map.find(std::get<ContVar>(cont->tail).var);
+            auto const new_c = cont_map.find(std::get<ContVar>(cont->tail).var);
             if (new_c == cont_map.end()) {
                 break;
             }
@@ -277,7 +277,7 @@ namespace monad::vm::compiler::poly_typed
                 continue;
             }
             min_var_name = std::min(min_var_name, v);
-            auto lit = literal_links.find(v);
+            auto const lit = literal_links.find(v);
             if (lit != literal_links.end()) {
                 for (auto w : lit->second) {
                     work_stack.push_back(w);

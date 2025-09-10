@@ -280,7 +280,7 @@ namespace
                     std::visit(
                         Cases{
                             [&su, &lv1](Word const &) {
-                                auto t1 = su.get_literal_type(lv1.var);
+                                auto const t1 = su.get_literal_type(lv1.var);
                                 if (t1.has_value()) {
                                     if (t1 != LiteralType::Word) {
                                         throw UnificationException{};
@@ -301,7 +301,7 @@ namespace
                             },
                             [&su, &lv1, depth, &ticks](WordCont const &wc2) {
                                 increment_kind_ticks(ticks, 1);
-                                auto t1 = su.get_literal_type(lv1.var);
+                                auto const t1 = su.get_literal_type(lv1.var);
                                 if (t1.has_value()) {
                                     if (t1 != LiteralType::WordCont) {
                                         throw UnificationException{};
@@ -316,7 +316,7 @@ namespace
                             },
                             [&su, &lv1, depth, &ticks](Cont const &c2) {
                                 increment_kind_ticks(ticks, 1);
-                                auto t1 = su.get_literal_type(lv1.var);
+                                auto const t1 = su.get_literal_type(lv1.var);
                                 if (t1.has_value()) {
                                     if (t1 != LiteralType::Cont) {
                                         throw UnificationException{};
@@ -523,7 +523,7 @@ namespace
     {
         for (uint64_t stack_index = 0; stack_index < param_vars.size();
              ++stack_index) {
-            auto param_it = param_map.find(stack_index);
+            auto const param_it = param_map.find(stack_index);
             if (param_it == param_map.end()) {
                 continue;
             }

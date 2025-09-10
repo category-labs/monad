@@ -34,7 +34,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2500);
@@ -132,14 +132,14 @@ namespace monad::vm::runtime
 
             ctx->expand_memory(dest_offset + size);
 
-            auto size_in_words = shr_ceil<5>(size);
+            auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
         }
 
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2500);
@@ -147,10 +147,10 @@ namespace monad::vm::runtime
         }
 
         if (*size > 0) {
-            auto offset = clamp_cast<std::uint32_t>(*offset_ptr);
+            auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
-            auto n = ctx->host->copy_code(
+            auto const n = ctx->host->copy_code(
                 ctx->context, &address, offset, dest_ptr, *size);
 
             auto *begin = dest_ptr + static_cast<std::uint32_t>(n);
@@ -175,11 +175,11 @@ namespace monad::vm::runtime
         }
 
         if (*size > 0) {
-            auto dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
+            auto const dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
 
             ctx->expand_memory(dest_offset + size);
 
-            auto size_in_words = shr_ceil<5>(size);
+            auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
 
             std::copy_n(
@@ -196,7 +196,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2500);
@@ -214,7 +214,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2500);

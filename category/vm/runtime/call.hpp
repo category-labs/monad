@@ -65,7 +65,7 @@ namespace monad::vm::runtime
         auto const dest_address = address_from_uint256(address);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->gas_remaining -= 2500;
@@ -103,7 +103,7 @@ namespace monad::vm::runtime
         if (call_kind == EVMC_CALL) {
             if (MONAD_VM_UNLIKELY(
                     has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
-                auto error_code =
+                auto const error_code =
                     ctx->gas_remaining + remaining_block_base_gas < 0
                         ? StatusCode::OutOfGas
                         : StatusCode::Error;

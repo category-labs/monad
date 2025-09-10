@@ -426,9 +426,9 @@ namespace monad::vm::llvm
 
             default:
                 Function *f;
-                auto nm = instr_name(instr);
+                auto const nm = instr_name(instr);
 
-                auto item = llvm_opcode_tbl.find(nm);
+                auto const item = llvm_opcode_tbl.find(nm);
                 if (item != llvm_opcode_tbl.end()) {
                     f = item->second;
                 }

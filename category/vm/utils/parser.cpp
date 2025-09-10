@@ -134,13 +134,13 @@ namespace monad::vm::utils
         input = drop_spaces(input);
         auto const *p = try_parse_hex_constant(input);
         if (p != input) {
-            auto s = std::string(input, p);
+            auto const s = std::string(input, p);
             return std::make_pair(p, runtime::uint256_t::from_string(s));
         }
 
         p = try_parse_decimal_constant(input);
         if (p != input) {
-            auto s = std::string(input, p);
+            auto const s = std::string(input, p);
             return std::make_pair(p, runtime::uint256_t::from_string(s));
         }
         p = try_parse_label(input);
@@ -287,7 +287,7 @@ namespace monad::vm::utils
                             [&](runtime::uint256_t const &imm) -> void {
                                 auto const *const pushops =
                                     push_ops_with_arg.data();
-                                auto d = std::distance(
+                                auto const d = std::distance(
                                     pushops,
                                     std::find(pushops, pushops + 33, op));
                                 MONAD_VM_ASSERT(d >= 0);

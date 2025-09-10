@@ -227,7 +227,7 @@ namespace monad::vm::runtime
         void expand_memory(Bin<30> min_size)
         {
             if (memory.size < *min_size) {
-                auto wsize = shr_ceil<5>(min_size);
+                auto const wsize = shr_ceil<5>(min_size);
                 std::int64_t const new_cost =
                     memory_cost_from_word_count(wsize);
                 Bin<31> const new_size = shl<5>(wsize);

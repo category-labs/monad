@@ -189,7 +189,7 @@ namespace monad::vm::runtime
             std::memcpy(output_buf, memory.data + *offset, *size);
         }
         else {
-            auto memory_cost =
+            auto const memory_cost =
                 Context::memory_cost_from_word_count(shr_ceil<5>(memory_end));
             gas_remaining -= memory_cost - memory.cost;
 
@@ -200,7 +200,7 @@ namespace monad::vm::runtime
             output_buf = allocate_output_buf();
 
             if (*offset < memory.size) {
-                auto n = memory.size - *offset;
+                auto const n = memory.size - *offset;
                 std::memcpy(output_buf, memory.data + *offset, n);
                 std::memset(output_buf + n, 0, *memory_end - memory.size);
             }

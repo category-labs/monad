@@ -486,7 +486,7 @@ namespace monad::vm::compiler::basic_blocks
                         // the block as being a jumpdest
                         if (current_offset < *byte_count) {
                             auto next_offset = current_offset;
-                            auto next_inst = scan_from<traits>(
+                            auto const next_inst = scan_from<traits>(
                                 {bytes, *byte_count}, next_offset);
                             if (std::holds_alternative<JumpDest>(next_inst)) {
                                 current_offset += 1;

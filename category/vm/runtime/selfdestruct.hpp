@@ -35,7 +35,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(2600);
@@ -43,17 +43,18 @@ namespace monad::vm::runtime
         }
 
         if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            auto non_zero_transfer = [ctx] {
+            auto const non_zero_transfer = [ctx] {
                 if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
                     return true;
                 }
-                auto balance =
+                auto const balance =
                     ctx->host->get_balance(ctx->context, &ctx->env.recipient);
                 return balance != evmc::bytes32{};
             }();
 
             if (non_zero_transfer) {
-                auto exists = ctx->host->account_exists(ctx->context, &address);
+                auto const exists =
+                    ctx->host->account_exists(ctx->context, &address);
 
                 if (!exists) {
                     ctx->deduct_gas(25000);

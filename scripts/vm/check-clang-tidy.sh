@@ -37,16 +37,27 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
+
+CUSTOM_PASS_OPTIONS=( )
+
+CONST_CORRECTNESS_PLUGIN="${BUILD_DIR}/utils/clang-tidy-auto-const/libConstCorrectnessChecks.so"
+
+if [ -f $CONST_CORRECTNESS_PLUGIN ]; then
+  CUSTOM_PASS_OPTIONS=( -load $CONST_CORRECTNESS_PLUGIN \
+                        -checks='-misc-const-correctness,misc-auto-const-correctness,misc-arg-const-correctness' )
+fi
+
 mapfile -t inputs < <(\
   find \
     category/vm \
     \( -name '*.cpp' -or -name '*.c' \) \
     -and -not -path '*third_party*')
 
-"${RUN_CLANG_TIDY}"                               \
-  "${inputs[@]}"                                  \
-  -header-filter "category/vm/.*"                \
-  -j "$(nproc)"                                   \
-  -p "${BUILD_DIR}" "$@"                          \
-  -extra-arg='-Wno-unknown-warning-option'        \
+"${RUN_CLANG_TIDY}"                                                               \
+  "${inputs[@]}"                                                                  \
+  "${CUSTOM_PASS_OPTIONS[@]}"                                                     \
+  -header-filter "category/vm/.*"                                                 \
+  -j "$(nproc)"                                                                   \
+  -p "${BUILD_DIR}" "$@"                                                          \
+  -extra-arg='-Wno-unknown-warning-option'                                        \
   -quiet

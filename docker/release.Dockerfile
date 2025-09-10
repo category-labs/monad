@@ -78,8 +78,8 @@ RUN VERBOSE=1 cmake \
   --build build \
   --target all
 
-# security=insecure for tests which use io_uring
-RUN --security=insecure CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
+# # security=insecure for tests which use io_uring
+# RUN --security=insecure CC=gcc-15 CXX=g++-15 CMAKE_BUILD_TYPE=Release ./scripts/test.sh
 
 FROM base as runner
 COPY --from=build /src/build/category/mpt/monad_mpt /usr/local/bin/

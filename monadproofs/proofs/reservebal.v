@@ -168,8 +168,6 @@ Definition isAllowedToEmpty
   (negb delegated).
 
 
-
-
 (** The effective reserve map:
 
     Consensus reasons about *how much of the protected (reserve) slice of the balance
@@ -182,7 +180,7 @@ Definition isAllowedToEmpty
 
     Notice the type is [Z]: negative entries encode an *over-consumption* that
     should make the proposal unacceptable. *)
-Definition EffReserveBals := EvmAddr -> Z.
+Definition EffReserveBals := EvmAddr -> (Z * N). (* 2nd item is the configured reserve balance *)
 
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
                       
@@ -197,7 +195,8 @@ Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) 
 Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc  s.1 ac.
 
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
-  fun addr =>  (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr).
+  fun addr =>  (Z.of_N (balanceOfAc s.1 addr)
+                 , configuredReserveBalOfAddr s.2 addr).
 
 (** Consensus’ decrement step:
 
@@ -208,6 +207,8 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
     In the defn of [newBal] (let binding), the subtraction is capped below at 0: the result is a natural number ([N]).
     So, if if [sbal < maxTxFee next + value next] but  [maxTxFee next <= sbal], this transaction ([next]) will be accepted but all
     subsequent ones from the same sender will be rejected as the remaining effective reserve balance becomes 0.
+
+TODO: move updateKey preTxResBalances addr to the top
  *)
 
 Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (next: TxWithHdr)
@@ -216,18 +217,22 @@ Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (pre
   let addr := sender next in
   match reserveBalUpdateOfTx next with
   | Some newRb =>
-      updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next) `min` newRb)
+      updateKey preTxResBalances addr (fun prevErb =>
+        if isAllowedToEmpty s intermediates next
+        then (prevErb.1 - maxTxFee next, newRb)
+        else ((prevErb.1 - maxTxFee next) `min` newRb, newRb)
+        )
   | None  => 
       (** regular tx, not one that sets reserve balance *)
       if isAllowedToEmpty s intermediates next
       then
-        let sbal := balanceOfAc s.1 addr in
-        let newBal:N := (sbal - maxTxFee next - value next)%N in (* this subtraction is done in N: capped at 0*)
-        if bool_decide (maxTxFee next <= sbal)
-        then updateKey preTxResBalances addr (fun prevErb => newBal `min` (configuredReserveBalOfAddr s.2 addr)) 
-        else updateKey preTxResBalances addr (fun _ => -1) (* -ve =>  this tx cannot be accepted *)
+        updateKey preTxResBalances addr (fun prevErb =>
+        let newBal := (prevErb.1 - maxTxFee next - value next) `max` 0 in (* this subtraction is done in N: capped at 0. TODO: use max 0 and Zminus to be more accessible*)
+        if bool_decide (maxTxFee next <= prevErb.1)
+        then (newBal, prevErb.2)
+        else (-1, prevErb.2)) (* -ve =>  this tx cannot be accepted *)
           
-      else (updateKey preTxResBalances addr (fun prevErb => (prevErb - maxTxFee next)%Z)) (* -ve =>  this tx cannot be accepted *)
+      else updateKey preTxResBalances addr (fun prevErb => (((prevErb.1 - maxTxFee next) `min` prevErb.2)%Z, prevErb.2)) (* -ve =>  this tx cannot be accepted *)
   end.
   
 
@@ -253,7 +258,7 @@ Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBala
     However, when the next pending (already proposed) block is executed, we need to derive that the remaining already proposed transactions are still valid on top of the more recent state: this is what the main soundness lemma [fullBlockStep] proves, in addition to proving that [postStateSuffix] will execute without running out of fees to pay. *)
 Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
   forall addr,  addr ∈ map sender postStateSuffix ->
-   0<= (remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr.
+   0<= ((remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr).1.
 
 
 (** * Execution Check (algo 2)
@@ -912,8 +917,8 @@ Proof using.
     congruence.
   }
 Qed.
-  
-
+   
+(* does not hold anymore
 Lemma emptyBalanceUb s tx inter a:
   hasCode (execValidatedTx s tx).1 (sender a) = false
   -> isAllowedToEmpty s (tx :: inter) a = true
@@ -931,7 +936,7 @@ Proof.
   simpl in *.
   lia.
 Qed.
-
+*)
 Definition rbAfterTx s tx :=
   match reserveBalUpdateOfTx tx with
   | Some rb => rb
@@ -965,6 +970,7 @@ Proof using.
   case_bool_decide; try congruence.
 Qed.
 
+(* does not hold anymore
 Lemma configuredReserveBalOfAddrSame2 s tx inter a:
   isAllowedToEmpty s (tx :: inter) a = true
   -> (configuredReserveBalOfAddr (execValidatedTx s tx).2 (sender a)
@@ -976,7 +982,7 @@ Proof using.
   apply isAllowedToEmptyImpl in Hae; auto.
   tauto.
 Qed.
-
+*)
 
 Lemma hasCodeFalsePresExec l s tx:
   (forall txext, txext ∈ (tx::l) ->  txCannotCreateContractAtAddrs txext (map sender (tx::l)))
@@ -993,8 +999,8 @@ Qed.
 
 Open Scope Z_scope.
 Lemma initResBal s addr:
-  (initialEffReserveBals s)  addr =
-    balanceOfAcA s addr `min` configuredReserveBalOfAddr s.2 addr.
+  ((initialEffReserveBals s)  addr) =
+    (Z.of_N (balanceOfAcA s addr), configuredReserveBalOfAddr s.2 addr).
 Proof.
   reflexivity.
 Qed.
@@ -1023,83 +1029,43 @@ Proof using.
   unfold isAllowedToEmpty.
   simpl.
   autorewrite with syntactic.
-  destruct (decide (sender txnext = sender txInterfirst)).
+  f_equiv.
   {
-    assert ((bool_decide (sender txnext ∈ sender txInterfirst :: map sender rest)) = true) as Hf.
+    destruct (decide (sender txnext ∈ addrsDelUndelByTx txInterfirst)).
     {
-      rewrite bool_decide_true; auto.
-      set_solver.
-    }
-
-    rewrite Hf.
-    autorewrite with syntactic.
-    match goal with
-    |  |-  _ && ?r = false =>
-         assert (r=false) as Hrf
-    end;
-    [|  rewrite Hrf; autorewrite with syntactic; reflexivity].
-    unfold existsTxWithinK.
-    unfold indexWithinK.
-    rwHyps.
-    rewrite lastTxInBlockIndexUpd.
-    rewrite bool_decide_true;[reflexivity|].
-    split_and !; try lia.
-  }
-  {
-    f_equiv.
-    2:{
-      f_equiv.
-      f_equiv.
-      2:{
-        apply bool_decide_ext.
-        autorewrite with syntactic.
-        tauto.
-      }
-      {
-        unfold existsTxWithinK.
-        unfold indexWithinK.
-        subst sf.
-        rewrite otherTxLstSenderLkp; auto.
-      }
+      symmetry.
+      Hint Rewrite @elem_of_app: iff.
+      rewrite bool_decide_true;
+        [ | autorewrite with iff; tauto].
+      autorewrite with syntactic; simpl.
+      unfold existsDelUndelTxWithinK.
+      unfold indexWithinK.
+      rewrite delgUndelgUpdTx; auto;[].
+      resolveDecide lia.
+      autorewrite with syntactic.
+      rewrite bool_decide_true;[| lia].
+      autorewrite with syntactic.
+      reflexivity.
     }
     {
-      destruct (decide (sender txnext ∈ addrsDelUndelByTx txInterfirst)).
-      {
-        symmetry.
-          Hint Rewrite @elem_of_app: iff.
-        rewrite bool_decide_true;
-          [ | autorewrite with iff; tauto].
-        autorewrite with syntactic; simpl.
-        unfold existsDelUndelTxWithinK.
-        unfold indexWithinK.
-        rewrite delgUndelgUpdTx; auto;[].
-        resolveDecide lia.
-        autorewrite with syntactic.
-        rewrite bool_decide_true;[| lia].
-        autorewrite with syntactic.
-        reflexivity.
-      }
-      {
-        f_equiv.
-        f_equiv;[
-            |apply bool_decide_ext;
-             autorewrite with iff; tauto].
-        unfold existsDelUndelTxWithinK.
-        unfold indexWithinK.
-        rewrite otherDelUndelLkp; auto.
-        f_equiv.
+      f_equiv;[
+        |apply bool_decide_ext;
+         autorewrite with iff; tauto].
+      unfold existsDelUndelTxWithinK.
+      unfold indexWithinK.
+      rewrite otherDelUndelLkp; auto.
+      f_equiv.
       
-        apply otherDelUndelDelegationStatusUnchanged; auto.
-      }
-
+      apply otherDelUndelDelegationStatusUnchanged; auto.
     }
+    
   }
 Qed.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
 
 Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
-  forall addr, addr ∈ eoas -> rb1 addr <= rb2 addr.
+  forall addr, addr ∈ eoas -> (rb1 addr).1 <= (rb2 addr).1 /\ (rb1 addr).2 = (rb2 addr).2.
 
 (** ** lemmas about [remainingEffReserveBals] 
 
@@ -1107,7 +1073,9 @@ Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
     function is monotone: if you start from a pointwise larger map, you end at a
     pointwise larger map. [rbLe] is defined right above.
 
-*)
+ *)
+
+(* this lemma was never needed anyway 
 Lemma mono eoas s rb1 rb2 inter tx:
   rbLe eoas rb1 rb2
   -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
@@ -1119,11 +1087,11 @@ Proof using.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  {case_bool_decide; subst; try lia. }
+  {case_bool_decide; subst; try lia.  case_match_concl; auto; simpl in *; try lia. }
   case_match_concl;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; try lia. }
+  2:{ case_bool_decide; subst; simpl in *; try lia.  }
   case_bool_decide;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
@@ -1132,6 +1100,7 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *; try lia.
 Qed.
+ *)
 
 (** In the proof of the main correctness theorem, we use a slightly different
 variant of monotoncity, where in the RHS of [<=], remainingEffReserveBals starts
@@ -1141,47 +1110,49 @@ and the candidate transaction [txc].
 The proof follows from the definition of [remainingEffReserveBals]
 and the execution lemmas above.
 *)
-Lemma mono2 tx txc extension s (eoas: list EvmAddr) rb1 rb2 inter:
+Lemma mono2 tx txc extension s (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) inter:
   (∀ ac : EvmAddr,
       ac ∈ sender tx :: sender txc :: map sender extension
       -> hasCode (execValidatedTx s tx).1 ac = false)
-  -> (∀ addr : EvmAddr, addr ∈ eoas → rb1 addr ≤ rb2 addr)
+  -> (∀ addr : EvmAddr, addr ∈ eoas → (rb1 addr).1 ≤ (rb2 addr).1 /\ (rb1 addr).2 = (rb2 addr).2)
   -> txBlockNum txc - K ≤ txBlockNum tx  ≤ txBlockNum txc
   -> ∀ addr : EvmAddr,
-      addr ∈ eoas
-      -> remainingEffReserveBals s rb1 (tx :: inter) txc addr
-          <= remainingEffReserveBals (execValidatedTx s tx) rb2 inter txc addr.
+      addr ∈ eoas->
+      let rbf1 := remainingEffReserveBals s rb1 (tx :: inter) txc addr in
+      let rbf2 := remainingEffReserveBals (execValidatedTx s tx) rb2 inter txc addr in
+      rbf1.1  <=  rbf2.1 /\ rbf1.2 = rbf2.2.
 Proof using.
   intros Hsc Hrb Hrangel.
   intros addr Hin.
   simpl.
   unfold remainingEffReserveBals.
   pose proof (Hrb addr Hin).
-  case_match_concl; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  { case_bool_decide; subst; try lia. }
   rewrite execPresservesIsAllowedToEmpty; try lia.
   case_match_concl; auto;
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; try lia. }
+  { case_bool_decide; subst; simpl in *; try lia. case_match_concl; simpl in *; try lia. }
+  case_match_concl; auto;
+    repeat rewrite updateKeyLkp3;
+    fold EffReserveBals in *.
+  2:{ case_bool_decide; subst; simpl in *; try lia. }
   specialize (Hsc (sender txc) ltac:(set_solver)).
-  pose proof (emptyBalanceUb _ _ _ _ Hsc Heqb) as Hle.
-  case_bool_decide.
+  case_bool_decide; auto;[].
+  case_bool_decide; subst.
   {
-    rewrite bool_decide_true; [|lia].
+    rewrite bool_decide_true; [| simpl in *; try lia].
     repeat rewrite updateKeyLkp3;
       fold EffReserveBals in *.
-    case_bool_decide; try lia.
-    pose proof (configuredReserveBalOfAddrSame2 _ _ _ _ Heqb) as Hlle.
-    rewrite Hlle.
+    forward_reason.
+    rwHypsA.
+    split_and; auto.
+    simpl in *.
     lia.
   }
+  simpl in *.
   case_bool_decide; 
     repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *;
-    case_bool_decide; try lia.
+    fold EffReserveBals in *; simpl in *; try lia.
 Qed.  
 
 
@@ -1189,6 +1160,7 @@ Qed.
 proof follows a straightforward induction on the list [extension],
 using [mono] to fulfil the obligations of the induction hypothesis
  *)
+(* this lemma was never needed anyway 
 Lemma monoL eoas s rb1 rb2 inter extension:
   map sender extension ⊆ eoas
   -> rbLe eoas rb1 rb2
@@ -1204,6 +1176,7 @@ Proof using.
   apply mono.
   assumption.
 Qed.
+ *)
 
 (** Similarly, lifts [mono2] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
 proof follows a straightforward induction on the list [extension],
@@ -1244,8 +1217,9 @@ Lemma exec1 tx extension s :
      (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
      -> (∀ addr : EvmAddr,
             addr ∈ sender tx :: map sender extension
-            -> remainingEffReserveBals s (initialEffReserveBals s) [] tx addr
-              ≤ initialEffReserveBals sf addr).
+            -> let rba := remainingEffReserveBals s (initialEffReserveBals s) [] tx addr in
+               let initEff := initialEffReserveBals sf addr in
+              rba.1 <= initEff.1 /\ rba.2 = initEff.2).
 Proof using.
   intros Hfee ? Hscf.
   intros ? Hin.
@@ -1267,7 +1241,9 @@ Proof using.
     rwHyps.
     case_bool_decide;
       resolveDecide congruence; simpl in *; try lia.
+    case_match; simpl in *; try lia.
   }
+  
   pose proof (execBalLb addr s tx ltac:(lia)) as Hlb.
   simpl in Hlb. fold sf in Hlb.
   rewrite Hscf in Hlb;[|set_solver].
@@ -1281,8 +1257,14 @@ Proof using.
     autorewrite with syntactic in *.
       unfold balanceOfAcA, rbAfterTx in *.
       rwHyps.
-      case_bool_decide; resolveDecide congruence; try lia;
-        [| case_match; lia].
+      case_bool_decide; subst; simpl in *; resolveDecide congruence; try lia.
+      2:{ split_and; auto.
+          case_match; try lia.
+          apply False_rect.
+          unfold isAllowedToEmpty
+        }
+      
+        [| case_match; try lia].
       specialize (Hlb ltac:(auto)).
       subst.
       destruct Hlb; subst; try lia.

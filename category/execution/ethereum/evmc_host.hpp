@@ -35,6 +35,7 @@
 #include <evmc/evmc.hpp>
 
 #include <functional>
+#include <memory>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -46,7 +47,7 @@ class BlockHashBuffer;
 
 class EvmcHostBase : public vm::Host
 {
-    BlockHashBuffer const &block_hash_buffer_;
+    BlockHashBuffer const *block_hash_buffer_;
 
 protected:
     evmc_tx_context const &tx_context_;
@@ -60,7 +61,7 @@ protected:
 public:
     EvmcHostBase(
         Chain const &, CallTracerBase &, evmc_tx_context const &,
-        BlockHashBuffer const &, State &, size_t max_code_size,
+        BlockHashBuffer const *, State &, size_t max_code_size,
         size_t max_init_code_size,
         std::function<bool()> const &revert_transaction = [] {
             return false;

@@ -56,7 +56,7 @@ namespace
         vm::VM vm;
         BlockState block_state;
         State state;
-        BlockHashBufferFinalized block_hash_buffer;
+        std::unique_ptr<BlockHashBufferFinalized> block_hash_buffer;
         static constexpr Address blockhash_opcode_addr =
             0x00000000000000000000000000000000000123_address;
 
@@ -65,7 +65,7 @@ namespace
             , tdb{db}
             , block_state{tdb, vm}
             , state{block_state, Incarnation{0, 0}}
-            , block_hash_buffer{}
+            , block_hash_buffer(nullptr)
         {
         }
 
@@ -95,7 +95,7 @@ namespace
             chain,
             call_tracer,
             tx_context,
-            block_hash_buffer,
+            block_hash_buffer.get(),
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -245,7 +245,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -312,7 +312,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -350,7 +350,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -439,7 +439,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -482,7 +482,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -549,8 +549,9 @@ TEST_F(BlockHistoryFixture, blockhash_opcode)
     deploy_history_contract();
     deploy_contract_that_uses_blockhash();
 
+    block_hash_buffer = std::make_unique<BlockHashBufferFinalized>();
     for (uint64_t i = 0; i < 256; i++) {
-        block_hash_buffer.set(i, to_bytes(0xBB));
+        block_hash_buffer->set(i, to_bytes(0xBB));
     }
 
     // Initially the storage of the block history contract will be empty.
@@ -566,7 +567,7 @@ TEST_F(BlockHistoryFixture, blockhash_opcode)
     // Fill some of the block history.
     fill_history_fixed(0, 128, to_bytes(0xAA));
 
-    // Since the history has less than 256 entries, we still expect to do some
+    // Since the history has less than 256 entries, we still expect to do
     // reads from the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = call_blockhash_opcode(i, 256);
@@ -574,16 +575,12 @@ TEST_F(BlockHistoryFixture, blockhash_opcode)
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
-        if (i < 128) {
-            EXPECT_EQ(actual, to_bytes(0xAA));
-        }
-        else {
-            EXPECT_EQ(actual, to_bytes(0xBB));
-        }
+        EXPECT_EQ(actual, to_bytes(0xBB));
     }
 
     // Fill enough entries to direct all reads to the block history
     // storage.
+    block_hash_buffer.reset();
     fill_history_fixed(128, 256, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = call_blockhash_opcode(i, 256);
@@ -622,8 +619,9 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_late_deploy)
     deploy_history_contract();
     deploy_contract_that_uses_blockhash();
 
+    block_hash_buffer = std::make_unique<BlockHashBufferFinalized>();
     for (uint64_t i = 0; i < 256; i++) {
-        block_hash_buffer.set(i, to_bytes(0xBB));
+        block_hash_buffer->set(i, to_bytes(0xBB));
     }
 
     // Initially the storage of the block history contract will be empty.
@@ -640,24 +638,20 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_late_deploy)
     uint64_t const start_block = 256;
     fill_history_fixed(start_block, start_block + 128, to_bytes(0xAA));
 
-    // Since the history has less than 256 entries, we still expect to do some
-    // reads from the block hash buffer.
+    // Since the history has less than 256 entries, we still expect to read from
+    // the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = call_blockhash_opcode(i, 256);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
-        if (i >= start_block - 1) {
-            EXPECT_EQ(actual, to_bytes(0xAA));
-        }
-        else {
-            EXPECT_EQ(actual, to_bytes(0xBB));
-        }
+        EXPECT_EQ(actual, to_bytes(0xBB));
     }
 
     // Fill enough entries to direct all reads to the block history
     // storage.
+    block_hash_buffer.reset();
     fill_history_fixed(0, start_block, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = call_blockhash_opcode(i, 256);
@@ -675,8 +669,9 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_buffer_history_agreement)
     deploy_contract_that_uses_blockhash();
 
     // Identity mapping
+    block_hash_buffer = std::make_unique<BlockHashBufferFinalized>();
     for (uint64_t i = 0; i < 256; i++) {
-        block_hash_buffer.set(
+        block_hash_buffer->set(
             i, to_bytes(i + 1)); // i + 1 to avoid throw on zero.
     }
 
@@ -690,9 +685,9 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_buffer_history_agreement)
     }
 
     // Reset
-    block_hash_buffer = BlockHashBufferFinalized{};
+    block_hash_buffer.reset(new BlockHashBufferFinalized{});
     for (uint64_t i = 0; i < 256; i++) {
-        block_hash_buffer.set(i, bytes32_t{0xFF});
+        block_hash_buffer->set(i, bytes32_t{0xFF});
     }
 
     for (uint64_t i = 0; i < 256; i++) {
@@ -705,6 +700,7 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_buffer_history_agreement)
     }
 
     // Identity mapping again
+    block_hash_buffer.reset();
     for (uint64_t i = 0; i < 256; i++) {
         set_block_hash_history(
             state,

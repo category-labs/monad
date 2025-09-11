@@ -20,6 +20,7 @@
 #include <category/core/lru/lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -81,11 +82,93 @@ struct monad_state_override
     std::map<byte_string, monad_state_override_object> override_sets;
 };
 
+struct BlockHashBufferFinalizedException : std::exception
+{
+    char const *what() const noexcept override
+    {
+        return "failure to initialize block hash buffer";
+    }
+};
+
+// A lazy loader for BlockHashBufferFinalized, which is supposed to be used when
+// the block hash history is unavailable. Throws
+// BlockHashBufferFinalizedException when the block hash buffer cannot be
+// initialized.
+struct monad_lazy_block_hash_buffer
+{
+    using BlockHashCache = LruCache<uint64_t, bytes32_t>;
+
+    monad_lazy_block_hash_buffer(
+        uint64_t block_number, BlockHashCache &cache, mpt::RODb &db)
+        : block_number_(block_number)
+        , buffer_(nullptr)
+        , cache_(cache)
+        , db_(db)
+    {
+    }
+
+    BlockHashBufferFinalized const *get()
+    {
+        if (buffer_ == nullptr) {
+            load();
+        }
+        MONAD_ASSERT(buffer_ != nullptr);
+        return buffer_.get();
+    }
+
+private:
+    uint64_t const block_number_;
+    std::unique_ptr<BlockHashBufferFinalized> buffer_;
+    BlockHashCache &cache_;
+    mpt::RODb &db_;
+
+    void load()
+    {
+        std::unique_ptr<BlockHashBufferFinalized> buffer{
+            new BlockHashBufferFinalized{}};
+
+        auto const get_block_hash_from_db =
+            [&db = db_](uint64_t const b) -> Result<bytes32_t> {
+            BOOST_OUTCOME_TRY(
+                auto header_cursor,
+                db.find(
+                    mpt::concat(
+                        FINALIZED_NIBBLE,
+                        mpt::NibblesView{block_header_nibbles}),
+                    b));
+            return to_bytes(keccak256(header_cursor.node->value()));
+        };
+        for (uint64_t b = block_number_ < 256 ? 0 : block_number_ - 256;
+             b < block_number_;
+             ++b) {
+            {
+                BlockHashCache::ConstAccessor acc;
+                if (cache_.find(acc, b)) {
+                    buffer->set(b, acc->second.value_);
+                    continue;
+                }
+            }
+            auto const h = get_block_hash_from_db(b);
+            if (h.has_value()) {
+                buffer->set(b, h.value());
+                cache_.insert(b, h.value());
+            }
+            else {
+                LOG_WARNING(
+                    "Could not query block header {} from TrieRODb -- "
+                    "{}",
+                    b,
+                    h.assume_error().message().c_str());
+                throw BlockHashBufferFinalizedException{};
+            }
+        }
+        buffer_ = std::move(buffer);
+    }
+};
+
 namespace
 {
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
-    char const *const BLOCKHASH_ERR_MSG =
-        "failure to initialize block hash buffer";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_call to thread pool: queue size exceeded";
     char const *const TIMEOUT_ERR_MSG =
@@ -96,10 +179,9 @@ namespace
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
-        Address const &sender,
+        Address const &sender, monad_lazy_block_hash_buffer &block_hash_buffer,
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
-        vm::VM &vm, BlockHashBufferFinalized const buffer,
-        monad_state_override const &state_overrides,
+        vm::VM &vm, monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer state_tracer)
     {
         Transaction enriched_txn{txn};
@@ -127,6 +209,21 @@ namespace
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         State state{block_state, incarnation};
+
+        BlockHashBufferFinalized const *buffer =
+            [&]() -> BlockHashBufferFinalized const * {
+            // NOTE: We need a local copy of the state, because
+            // the `get_block_hash_history` invocation may leak through the
+            // prestate/statediff traces as `state.account_exists` may bring the
+            // account into existence.
+            State state{block_state, incarnation};
+            if (get_block_hash_history(
+                    state, block_number - BLOCK_HISTORY_LENGTH) !=
+                bytes32_t{}) {
+                return nullptr;
+            }
+            return block_hash_buffer.get();
+        }();
 
         for (auto const &[addr, state_delta] : state_overrides.override_sets) {
             // address
@@ -454,50 +551,6 @@ struct monad_eth_call_executor
     monad_eth_call_executor &
     operator=(monad_eth_call_executor const &) = delete;
 
-    std::unique_ptr<BlockHashBufferFinalized>
-    create_blockhash_buffer(uint64_t const block_number)
-    {
-        std::unique_ptr<BlockHashBufferFinalized> buffer{
-            new BlockHashBufferFinalized{}};
-
-        auto const get_block_hash_from_db =
-            [&db = db_](uint64_t const b) -> Result<bytes32_t> {
-            BOOST_OUTCOME_TRY(
-                auto header_cursor,
-                db.find(
-                    mpt::concat(
-                        FINALIZED_NIBBLE,
-                        mpt::NibblesView{block_header_nibbles}),
-                    b));
-            return to_bytes(keccak256(header_cursor.node->value()));
-        };
-        for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
-             b < block_number;
-             ++b) {
-            {
-                BlockHashCache::ConstAccessor acc;
-                if (blockhash_cache_.find(acc, b)) {
-                    buffer->set(b, acc->second.value_);
-                    continue;
-                }
-            }
-            auto const h = get_block_hash_from_db(b);
-            if (h.has_value()) {
-                buffer->set(b, h.value());
-                blockhash_cache_.insert(b, h.value());
-            }
-            else {
-                LOG_WARNING(
-                    "Could not query block header {} from TrieRODb -- "
-                    "{}",
-                    b,
-                    h.assume_error().message().c_str());
-                return nullptr;
-            }
-        }
-        return buffer;
-    }
-
     void execute_eth_call(
         monad_chain_config const chain_config, Transaction const &txn,
         BlockHeader const &block_header, Address const &sender,
@@ -620,15 +673,8 @@ struct monad_eth_call_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const block_hash_buffer =
-                        create_blockhash_buffer(block_number);
-                    if (block_hash_buffer == nullptr) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(BLOCKHASH_ERR_MSG);
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
-                    }
+                    monad_lazy_block_hash_buffer block_hash_buffer(
+                        block_number, blockhash_cache_, db);
 
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
@@ -664,10 +710,10 @@ struct monad_eth_call_executor
                                 block_number,
                                 block_id,
                                 sender,
+                                block_hash_buffer,
                                 authorities,
                                 tdb,
                                 vm_,
-                                *block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);
@@ -686,10 +732,10 @@ struct monad_eth_call_executor
                                 block_number,
                                 block_id,
                                 sender,
+                                block_hash_buffer,
                                 authorities,
                                 tdb,
                                 vm_,
-                                *block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);
@@ -735,6 +781,12 @@ struct monad_eth_call_executor
                         user,
                         call_frames,
                         state_trace);
+                }
+                catch (BlockHashBufferFinalizedException const &e) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(e.what());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
                 }
                 catch (MonadException const &e) {
                     result->status_code = EVMC_INTERNAL_ERROR;

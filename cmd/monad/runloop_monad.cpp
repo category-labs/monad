@@ -24,6 +24,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -36,6 +37,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -57,6 +59,7 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <variant>
@@ -157,8 +160,6 @@ Result<BlockExecOutput> propose_block(
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
-    auto const &block_hash_buffer =
-        block_hash_chain.find_chain(consensus_header.parent_id());
 
     // Block input validation
     BOOST_OUTCOME_TRY(static_validate_consensus_header(consensus_header));
@@ -252,6 +253,19 @@ Result<BlockExecOutput> propose_block(
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+
+    BlockHashBuffer const *block_hash_buffer =
+        [&]() -> BlockHashBuffer const * {
+        State state{block_state, Incarnation{block.header.number, 0}};
+        if (get_block_hash_history(
+                state, block.header.number - BLOCK_HISTORY_LENGTH) !=
+            bytes32_t{}) {
+            return nullptr;
+        }
+
+        return &block_hash_chain.find_chain(consensus_header.parent_id());
+    }();
+
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,

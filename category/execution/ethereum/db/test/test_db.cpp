@@ -962,7 +962,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         senders,
         recovered_authorities,
         bs,
-        block_hash_buffer,
+        &block_hash_buffer,
         pool,
         metrics,
         call_tracers);
@@ -1066,7 +1066,7 @@ TYPED_TEST(DBTest, assertion_exception)
                 senders,
                 recovered_authorities,
                 bs,
-                block_hash_buffer,
+                &block_hash_buffer,
                 pool,
                 metrics,
                 call_tracers);
@@ -1160,7 +1160,7 @@ TYPED_TEST(DBTest, call_frames_refund)
         senders,
         recovered_authorities,
         bs,
-        block_hash_buffer,
+        &block_hash_buffer,
         pool,
         metrics,
         call_tracers);

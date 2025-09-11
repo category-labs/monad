@@ -22,6 +22,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -31,6 +32,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -81,7 +83,7 @@ void log_tps(
 template <Traits traits>
 Result<void> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm,
-    BlockHashBufferFinalized &block_hash_buffer,
+    BlockHashBufferFinalized &block_hash_buffer2,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
@@ -129,6 +131,17 @@ Result<void> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+    BlockHashBufferFinalized *block_hash_buffer =
+        [&]() -> BlockHashBufferFinalized * {
+        State state{block_state, Incarnation{block.header.number, 0}};
+        if (get_block_hash_history(
+                state, block.header.number - BLOCK_HISTORY_LENGTH) !=
+            bytes32_t{}) {
+            return nullptr;
+        }
+
+        return &block_hash_buffer2;
+    }();
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -169,7 +182,9 @@ Result<void> process_ethereum_block(
     db.update_verified_block(block.header.number);
     auto const eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(output_header)));
-    block_hash_buffer.set(block.header.number, eth_block_hash);
+    if (block_hash_buffer != nullptr) {
+        block_hash_buffer->set(block.header.number, eth_block_hash);
+    }
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =

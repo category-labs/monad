@@ -10,6 +10,7 @@ if [ $# -lt 1 ]; then
 fi
 
 sub_command=$1
+log_contracts=0
 shift
 
 if [ "$sub_command" = start ]; then
@@ -24,6 +25,10 @@ if [ "$sub_command" = start ]; then
                 ;;
             --base-seed=*)
                 base_seed="${1#*=}"
+                shift
+                ;;
+            --debug)
+                log_contracts=1
                 shift
                 ;;
             *)
@@ -42,6 +47,11 @@ fi
 compiler_sessions=11
 interpreter_sessions=2
 
+fuzzer_sh_options=""
+if [ $log_contracts -ne 0 ]; then
+    fuzzer_sh_options="$fuzzer_sh_options --contract-log-dir $log_dir"
+fi
+
 start_command() {
     if [ -z "$base_seed" ]; then
         exit 1
@@ -53,7 +63,7 @@ start_command() {
     for i in `seq 1 $compiler_sessions`; do
         s=fuzzer_compiler_$i
         tmux new-session -d -s $s \
-            "$script_dir/fuzzer.sh --implementation compiler --seed $seed > \"$log_dir/$s\" 2>&1"
+            "$script_dir/fuzzer.sh --implementation compiler --seed $seed $fuzzer_sh_options > \"$log_dir/$s\" 2>&1"
         if [ $? -ne 0 ]; then
             echo Unable to start Tmux session $s
         else
@@ -65,7 +75,7 @@ start_command() {
     for i in `seq 1 $interpreter_sessions`; do
         s=fuzzer_interpreter_$i
         tmux new-session -d -s $s \
-            "$script_dir/fuzzer.sh --implementation interpreter --seed $seed > \"$log_dir/$s\" 2>&1"
+            "$script_dir/fuzzer.sh --implementation interpreter --seed $seed $fuzzer_sh_options > \"$log_dir/$s\" 2>&1"
         if [ $? -ne 0 ]; then
             echo Unable to start Tmux session $s
         else

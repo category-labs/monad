@@ -178,6 +178,19 @@ Definition isAllowedToEmpty
   in
   (negb consideredDelegated).
 
+(** the number is just the effective reserve balance.
+
+ TODO: tell coqdoc to print Set as Type*)
+Record NotDelCaseExecRes  : Set := mkNotDelCase
+  {
+    balanceLb: N;
+    configuredRB: N;
+    feeSolvent: bool (* sometimes,  *)
+  }.
+Definition DelCaseShallowExecRes : Set := Z.
+    
+
+Definition ShallowExecRes : Set := DelCaseShallowExecRes+NotDelCaseExecRes.
 
 (** The effective reserve map:
 
@@ -190,8 +203,10 @@ Definition isAllowedToEmpty
       for [value + fee] in one shot.
 
     Notice the type is [Z]: negative entries encode an *over-consumption* that
-    should make the proposal unacceptable. *)
-Definition EffReserveBals := EvmAddr -> (Z * N). (* 2nd item is the configured reserve balance *)
+    should make the proposal unacceptable.
+TODO: rename to ShallowExecResults
+ *)
+Definition EffReserveBals := EvmAddr -> ShallowExecRes. (* 2nd item is the configured reserve balance *)
 
 Definition configuredReserveBalOfAddr (s: ExtraAcStates) addr := configuredReserveBal (s addr).
 
@@ -214,10 +229,9 @@ Definition consideredDelegated
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
   fun addr =>
     let crb := configuredReserveBalOfAddr s.2 addr in 
-    (  (if addrDelegated s.1 addr
-              then balanceOfAc s.1 addr `min` crb else
-                Z.of_N (balanceOfAc s.1 addr))
-      , configuredReserveBalOfAddr s.2 addr).
+    (if addrDelegated s.1 addr
+              then inl (balanceOfAc s.1 addr `min` crb) else
+                inr {| balanceLb := balanceOfAc s.1 addr; configuredRB := crb; feeSolvent := true |}).
 
 (** Consensus’ decrement step:
 
@@ -235,39 +249,42 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
 TODO: move updateKey preTxResBalances addr to the top
  *)
 
-Definition remainingEffReserveBals (preIntermediatesState : AugmentedState) (preCandidateTxResBalances: EffReserveBals) (intermediates: list TxWithHdr) (candidateTx: TxWithHdr)
+Notation delegated := inl.
+Notation notdelegated := inr.
+(* TODO: rename to shallowExecTx *)
+Definition remainingEffReserveBals (preCandidateTxRes: EffReserveBals) (intermediates: list TxWithHdr) (candidateTx: TxWithHdr)
   : EffReserveBals :=
-  let s := preIntermediatesState in
-  let addr := sender candidateTx in
-  match reserveBalUpdateOfTx candidateTx with
-  | Some newRb =>
-      updateKey preCandidateTxResBalances addr (fun prevErb =>
-        if isAllowedToEmpty s intermediates candidateTx
-        then (prevErb.1 - maxTxFee candidateTx, newRb)
-        else ((prevErb.1 - maxTxFee candidateTx) `min` newRb, newRb)
-        )
-  | None  => 
-      (** regular tx, not one that sets reserve balance *)
-      if isAllowedToEmpty s intermediates candidateTx
-      then
-        updateKey preCandidateTxResBalances addr (fun prevErb =>
-        let newBal := (prevErb.1 - maxTxFee candidateTx - value candidateTx) `max` 0 in (* this subtraction is done in N: capped at 0. TODO: use max 0 and Zminus to be more accessible*)
-        if bool_decide (maxTxFee candidateTx <= prevErb.1)
-        then (newBal, prevErb.2)
-        else (-1, prevErb.2)) (* -ve =>  this tx cannot be accepted *)
-          
-      else updateKey preCandidateTxResBalances addr (fun prevErb => (((prevErb.1 - maxTxFee candidateTx) `min` prevErb.2)%Z, prevErb.2)) (* -ve =>  this tx cannot be accepted *)
-  end.
+  let maxTxFee := maxTxFee candidateTx in
+  fun addr =>
+    match preCandidateTxRes addr with
+    | delegated erb => delegated(
+        if bool_decide (sender candidateTx <> addr)
+        then erb
+        else
+          match reserveBalUpdateOfTx candidateTx with
+          | Some newRb =>
+              (erb - maxTxFee) `min` newRb
+          | None => (erb - maxTxFee)
+          end)
+    | notdelegated {| balanceLb := balLb; configuredRB := crb; feeSolvent := fs|} =>
+        if bool_decide (addr ∈ dels candidateTx.1.2)
+        then delegated ((balLb - maxTxFee) `min` crb)
+        else if bool_decide (sender candidateTx <> addr)
+             then preCandidateTxRes addr
+             else notdelegated
+                    {| balanceLb := balLb - value candidateTx - maxTxFee;
+                      configuredRB := crb;
+                      feeSolvent := fs && bool_decide (maxTxFee <= balLb)|}
+    end.
 
-
-Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBalances: EffReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
+Fixpoint remainingEffReserveBalsL (preRestResBalances: EffReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
   : EffReserveBals:=
   match rest with
   | [] => preRestResBalances
   | hrest::tlrest =>
       let remainingReserves :=
-        remainingEffReserveBals latestState preRestResBalances postStateAccountedSuffix hrest in
-      remainingEffReserveBalsL latestState remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
+        remainingEffReserveBals preRestResBalances postStateAccountedSuffix hrest in
+      remainingEffReserveBalsL remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
   end.
 
 (** ** Algorithm 1 (consensus): acceptability of a suffix
@@ -280,9 +297,17 @@ Fixpoint remainingEffReserveBalsL (latestState : AugmentedState) (preRestResBala
     When evaluating a new tx at block number N to add at the end of [postStateSuffix],
     [latestState] must be the state after N-K block when proposing a new block.
     However, when the next pending (already proposed) block is executed, we need to derive that the remaining already proposed transactions are still valid on top of the more recent state: this is what the main soundness lemma [fullBlockStep] proves, in addition to proving that [postStateSuffix] will execute without running out of fees to pay. *)
-Definition consensusAcceptableTxs (latestState : AugmentedState) (postStateSuffix: list TxWithHdr) : Prop :=
-  forall addr,  addr ∈ map sender postStateSuffix ->
-   0<= ((remainingEffReserveBalsL latestState (initialEffReserveBals latestState) [] postStateSuffix) addr).1.
+Definition consensusAcceptableTxs (latestState : AugmentedState) (proposedTxs: list TxWithHdr) : Prop :=
+  forall addr,
+    addr ∈ map sender proposedTxs
+    -> match remainingEffReserveBalsL
+               (initialEffReserveBals latestState) [] proposedTxs addr with
+       | delegated erb => 0 <= erb                                                                     | notdelegated res => feeSolvent res = true
+       end.
+
+                                                                                          
+                                                                                              
+  
 
 
 (** * Execution Check (algo 2)
@@ -1025,9 +1050,15 @@ Open Scope Z_scope.
 (* TODO: delete and inline *)
 Lemma initResBal s addr:
   ((initialEffReserveBals s)  addr) =
-    (if addrDelegated s.1 addr
-   then balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr
-   else balanceOfAc s.1 addr, configuredReserveBalOfAddr s.2 addr).
+(if addrDelegated s.1 addr
+   then delegated (balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr)
+   else
+    notdelegated
+      {|
+        balanceLb := balanceOfAc s.1 addr;
+        configuredRB := configuredReserveBalOfAddr s.2 addr;
+        feeSolvent := true
+      |}).
 Proof.
   reflexivity.
 Qed.
@@ -1092,8 +1123,20 @@ Qed.
 
 Hint Rewrite @updateKeyLkp3 : syntactic.
 
+Definition sresLe (rb1 rb2: ShallowExecRes) :=
+  match rb1, rb2 with
+  | notdelegated (mkNotDelCase balLb crb fs), notdelegated (mkNotDelCase balLb2 crb2 fs2)
+    => balLb <= balLb2 /\ crb = crb2 /\ (implb fs fs2)
+  | delegated erb, notdelegated (mkNotDelCase balLb crb _)
+    => (balLb `min` crb) <= erb
+  | delegated erb, delegated erb2 => erb <= erb2
+  | notdelegated _, delegated _ => False
+  end.
+
+Notation "l '`resLe`' r" := (sresLe l r) (at level 50).
+
 Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
-  forall addr, addr ∈ eoas -> (rb1 addr).1 <= (rb2 addr).1 /\ (rb1 addr).2 = (rb2 addr).2.
+  forall addr, addr ∈ eoas -> (rb1 addr) `resLe` (rb2 addr).
 
 (** ** lemmas about [remainingEffReserveBals]
 
@@ -1142,13 +1185,13 @@ Lemma mono2 tx txc extension s (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) in
   (∀ ac : EvmAddr,
       ac ∈ sender tx :: sender txc :: map sender extension
       -> hasCode (execValidatedTx s tx).1 ac = false)
-  -> (∀ addr : EvmAddr, addr ∈ eoas → (rb1 addr).1 ≤ (rb2 addr).1 /\ (rb1 addr).2 = (rb2 addr).2)
+  -> (∀ addr : EvmAddr, addr ∈ eoas → (rb1 addr) `resLe` (rb2 addr))
   -> txBlockNum txc - K ≤ txBlockNum tx  ≤ txBlockNum txc
   -> ∀ addr : EvmAddr,
       addr ∈ eoas->
-      let rbf1 := remainingEffReserveBals s rb1 (tx :: inter) txc addr in
+      let rbf1 := remainingEffReserveBals rb1 (tx :: inter) txc addr in
       let rbf2 := remainingEffReserveBals (execValidatedTx s tx) rb2 inter txc addr in
-      rbf1.1  <=  rbf2.1 /\ rbf1.2 = rbf2.2.
+      rbf1 `resLe`  rbf2.
 Proof using.
   intros Hsc Hrb Hrangel.
   intros addr Hin.

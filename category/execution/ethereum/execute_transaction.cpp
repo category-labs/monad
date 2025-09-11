@@ -238,6 +238,11 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
+    if constexpr (!traits::eip_7702_refund_active()) {
+        // monad doesn't give authorization refunds
+        auth_refund = 0;
+    }
+
     // EIP-3651
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         host.access_account(header_.beneficiary);

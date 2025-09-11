@@ -38,6 +38,7 @@ namespace monad
 
         // Monad specification §2.3: Payment Rule for User
         { T::should_refund_reduce_gas_used() } -> std::same_as<bool>;
+        { T::eip_7702_refund_active() } -> std::same_as<bool>;
 
         // Pricing version 1 activates the changes in:
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
@@ -93,6 +94,11 @@ namespace monad
         static constexpr bool should_refund_reduce_gas_used() noexcept
         {
             return true;
+        }
+
+        static constexpr bool eip_7702_refund_active() noexcept
+        {
+            return Rev >= EVMC_PRAGUE;
         }
 
         static constexpr int64_t cold_account_cost() noexcept
@@ -163,6 +169,11 @@ namespace monad
         static constexpr bool should_refund_reduce_gas_used() noexcept
         {
             return Rev < MONAD_FOUR;
+        }
+
+        static constexpr bool eip_7702_refund_active() noexcept
+        {
+            return false;
         }
 
         static constexpr int64_t cold_account_cost() noexcept

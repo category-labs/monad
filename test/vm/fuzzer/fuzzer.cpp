@@ -25,6 +25,10 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
@@ -50,6 +54,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -67,6 +72,7 @@ using namespace evmc::literals;
 using namespace monad;
 using namespace monad::vm::fuzzing;
 using namespace std::chrono_literals;
+using namespace std::filesystem;
 
 using enum monad::vm::compiler::EvmOpCode;
 
@@ -313,6 +319,7 @@ namespace
         seed_t seed = default_seed;
         std::size_t runs = std::numeric_limits<std::size_t>::max();
         bool print_stats = false;
+        std::optional<std::string> contract_log_dir = std::nullopt;
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
         evmc_revision revision = EVMC_CANCUN;
@@ -366,6 +373,11 @@ static arguments parse_args(int const argc, char **const argv)
         "--print-stats",
         args.print_stats,
         "Print message result statistics when logging");
+
+    app.add_option(
+        "--contract-log-dir",
+        args.contract_log_dir,
+        "Directory to write contracts to (disabled by default)");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
         {"FRONTIER", EVMC_FRONTIER},
@@ -545,11 +557,35 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 continue;
             }
 
+            auto const code_hash = keccak256(to_byte_string_view(contract));
+            auto const code_hash_str =
+                intx::hex(intx::be::load<intx::uint256>(code_hash.bytes));
+            if (args.contract_log_dir) {
+                auto const code_hash_dir =
+                    path(*args.contract_log_dir) / "code_hash";
+                auto const code_buf = contract.data();
+                auto const code_len = contract.size();
+                create_directories(code_hash_dir);
+
+                auto contract_path =
+                    code_hash_dir / fmt::format("{}", code_hash_str);
+
+                auto os = std::ofstream(contract_path);
+                os.write(
+                    reinterpret_cast<char const *>(code_buf),
+                    static_cast<std::streamsize>(code_len));
+            }
+
             auto const a =
                 deploy_contract(evmone_state, genesis_address, contract);
             auto const a1 =
                 deploy_contract(monad_state, genesis_address, contract);
             MONAD_VM_ASSERT(a == a1);
+            std::cerr << fmt::format(
+                "Deployed contract (hash {}) at address {} (size: {} bytes)\n",
+                code_hash_str,
+                a,
+                contract.size());
 
             assert_equal(evmone_state, monad_state);
 

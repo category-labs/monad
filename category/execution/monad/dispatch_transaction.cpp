@@ -31,7 +31,7 @@ Result<Receipt> dispatch_transaction(
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     RevertTransactionFn const &revert_transaction)
 {
-    if (sender == SYSTEM_SENDER) {
+    if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
         // communicate state changes to execution this code handles these in a
         // separate executor.

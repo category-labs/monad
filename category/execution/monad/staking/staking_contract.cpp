@@ -1876,6 +1876,11 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
     else {
         ptr = start_ptr;
     }
+    if (MONAD_UNLIKELY(
+            Trait::prev(Trait::load_node(*this, key, ptr)) == Trait::empty())) {
+        // bogus pointer, not in list.
+        return {true, ptr, {}};
+    }
 
     std::vector<Ptr> results;
     uint32_t nodes_read = 0;

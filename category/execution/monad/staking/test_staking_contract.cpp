@@ -4165,18 +4165,56 @@ TEST_F(Stake, get_valset_empty)
 
 TEST_F(Stake, empty_get_delegators_for_validator_getter)
 {
-    auto const [done, _, delegators] = contract.get_delegators_for_validator(
-        u64_be{1}, Address{}, std::numeric_limits<uint32_t>::max());
-    EXPECT_TRUE(done);
-    EXPECT_TRUE(delegators.empty());
+    {
+        // validator doesn't exist
+        auto const [done, _, delegators] =
+            contract.get_delegators_for_validator(
+                u64_be{1}, Address{}, std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_TRUE(delegators.empty());
+    }
+
+    {
+        // validator exists, bogus delegator start pointer provided
+        auto const res =
+            add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+        ASSERT_FALSE(res.has_error());
+        auto const [done, _, delegators] =
+            contract.get_delegators_for_validator(
+                res.value().id,
+                0x1337_address,
+                std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_TRUE(delegators.empty());
+    }
 }
 
 TEST_F(Stake, empty_get_validators_for_delegator_getter)
 {
-    auto const [done, _, validators] = contract.get_validators_for_delegator(
-        Address{0x1337}, u64_be{}, std::numeric_limits<uint32_t>::max());
-    EXPECT_TRUE(done);
-    EXPECT_TRUE(validators.empty());
+    {
+        // validator doesn't exist
+        auto const [done, _, validators] =
+            contract.get_validators_for_delegator(
+                Address{0x1337},
+                u64_be{},
+                std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_TRUE(validators.empty());
+    }
+
+    {
+        // validator exists, bogus val_id start pointer provided
+        auto const res =
+            add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+        ASSERT_FALSE(res.has_error());
+        auto const [done, _, delegators] =
+            contract.get_validators_for_delegator(
+                0xdeadbeef_address,
+                u64_be{200},
+                std::numeric_limits<uint32_t>::max());
+        EXPECT_TRUE(done);
+        EXPECT_TRUE(delegators.empty());
+    }
 }
 
 TEST_F(Stake, get_delegators_for_validator)

@@ -111,6 +111,15 @@ Definition ExtraAcStates := (EvmAddr -> ExtraAcState).
 (** Our modified execution function which does reserve balance checks will use the following type as input/output. Consensus checks also take this as input, where the [Augmentedstate] is the state after N-K block when proposing a new block. However, when next pending (already proposed) block is executed, it can be a later state. *)
 Definition AugmentedState : Type := StateOfAccounts * ExtraAcStates.
 
+Definition indexWithinKOf (projLastEventIndex: ExtraAcState -> option N) (state : ExtraAcStates) (blockIndex: N) addr : bool :=
+  let startIndex :=  blockIndex -K  in
+  match projLastEventIndex (state addr)  with
+  | Some index =>
+      bool_decide (startIndex <= index <= blockIndex)
+  | None => false
+  end.
+
+(* TODO: use [indexWithinKOf] *)
 Definition indexWithinK (proj: ExtraAcState -> option N) (state : ExtraAcStates)  (tx: TxWithHdr) : bool :=
   let startIndex :=  txBlockNum tx -K  in
   match proj (state (sender tx))  with
@@ -195,10 +204,20 @@ Definition updateBalanceOfAc (s: StateOfAccounts) (addr: EvmAddr) (upd: N -> N) 
   updateKey s addr (fun old => old &: _balance %= upd).
 
 Definition balanceOfAcA (s: AugmentedState) (ac: EvmAddr) := balanceOfAc  s.1 ac.
-
+(*
+where do we get the block index of the block being built ? we have no tx here 
+Definition consideredDelegated
+  (state : AugmentedState) addr: bool :=
+  let consideredDelegated := (addrDelegated state.1 addr)
+                   || indexWithinKOf state.2 
+*)
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
-  fun addr =>  (Z.of_N (balanceOfAc s.1 addr)
-                 , configuredReserveBalOfAddr s.2 addr).
+  fun addr =>
+    let crb := configuredReserveBalOfAddr s.2 addr in 
+    (  (if addrDelegated s.1 addr
+              then balanceOfAc s.1 addr `min` crb else
+                Z.of_N (balanceOfAc s.1 addr))
+      , configuredReserveBalOfAddr s.2 addr).
 
 (** Consensus’ decrement step:
 
@@ -1003,9 +1022,12 @@ Qed.
 
 
 Open Scope Z_scope.
+(* TODO: delete and inline *)
 Lemma initResBal s addr:
   ((initialEffReserveBals s)  addr) =
-    (Z.of_N (balanceOfAcA s addr), configuredReserveBalOfAddr s.2 addr).
+    (if addrDelegated s.1 addr
+   then balanceOfAc s.1 addr `min` configuredReserveBalOfAddr s.2 addr
+   else balanceOfAc s.1 addr, configuredReserveBalOfAddr s.2 addr).
 Proof.
   reflexivity.
 Qed.
@@ -1212,7 +1234,7 @@ Proof using.
 Qed.
 
 
-Hint Rewrite initResBal configuredReserveBalOfAddrSpec: syntactic.
+Hint Rewrite initResBal configuredReserveBalOfAddrSpec addrDelegatedUnchangedByBalUpd: syntactic.
 
 (** This lemma captures a key property of [remainingEffReserveBals]: it underapproximates
 the resultant effective balance after execution of the transaction
@@ -1245,9 +1267,21 @@ Proof using.
     rewrite balanceOfUpd.
     unfold rbAfterTx.
     rwHyps.
-    case_bool_decide;
+    autorewrite with syntactic.
+    case_bool_decide_concl;
       resolveDecide congruence; simpl in *; try lia.
-    case_match; simpl in *; try lia.
+    subst.
+    autorewrite with syntactic. case_match_concl; simpl in *; try lia;
+    split_and; auto.
+    {
+      assert (addrDelegated s.1 (sender tx) = false) as Heq by admit.
+      subst.
+      rewrite Heq.
+      lia.
+    }
+    {
+      case_match; try lia.
+    }
   }
   
   pose proof (execBalLb addr s tx ltac:(lia)) as Hlb.
@@ -1265,9 +1299,14 @@ Proof using.
       rwHyps.
       case_bool_decide; subst; simpl in *; resolveDecide congruence; try lia.
       2:{ split_and; auto.
-          case_match; try lia.
+          
+          case_match; simpl in *;case_match; simpl in *; try lia.
           apply False_rect.
-          unfold isAllowedToEmpty
+          Lemma delg s tx addr:
+            isAllowedToEmpty s [] tx = true
+            -> addrDelegated s.1 addr = false
+            -> addrDelegated (execValidatedTx s tx).1 addr = false.                             
+          admit.
         }
       
         [| case_match; try lia].

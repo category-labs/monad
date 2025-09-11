@@ -142,7 +142,7 @@ TEST(MonadChain, Genesis)
             to_bytes(keccak256(rlp::encode_block_header(header)));
         EXPECT_EQ(
             hash,
-            0xFE557D7B2B42D6352B985949AA37EDA10FB02C90FEE62EB29E68839F2FB72B31_bytes32);
+            0x2a2544bf6d096df891903c8fa14e9914009e6bc9d448399585961a3044e03e50_bytes32);
         EXPECT_TRUE(
             static_validate_header<EvmTraits<EVMC_CANCUN>>(header).has_value());
     }

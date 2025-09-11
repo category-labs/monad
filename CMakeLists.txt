@@ -304,7 +304,4 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
-
-if(MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
-  add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
-endif()
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)

@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-add_executable(vm-unit-tests
+add_executable(vm-unit-tests)
+
+target_sources(vm-unit-tests PRIVATE
     async_compile_tests.cpp
     bin_tests.cpp
     compiler_tests.cpp
-    evm_fixture.cpp
-    evm_tests.cpp
     evm-as_tests.cpp
     monad_vm_interface_tests.cpp
     utils_tests.cpp
@@ -49,6 +49,13 @@ add_executable(vm-unit-tests
     main.cpp
 )
 
+if(MONAD_COMPILER_TESTING)
+    target_sources(vm-unit-tests PRIVATE
+        evm_fixture.cpp
+        evm_tests.cpp
+    )
+endif()
+
 if(MONAD_COMPILER_COVERAGE)
     target_compile_options(vm-unit-tests PRIVATE -coverage)
     target_link_options(vm-unit-tests PRIVATE -coverage)
@@ -56,7 +63,6 @@ endif()
 
 monad_compile_options(vm-unit-tests)
 target_link_libraries(vm-unit-tests
-    PRIVATE evmone
     PRIVATE monad-vm::monad-vm-test-utils
     PRIVATE monad-vm::monad-vm-fuzzing
     PRIVATE monad-vm::monad-vm-interpreter
@@ -67,6 +73,12 @@ target_link_libraries(vm-unit-tests
     PRIVATE monad_core
     PRIVATE quill::quill
 )
+
+if(MONAD_COMPILER_TESTING)
+    target_link_libraries(vm-unit-tests
+        PRIVATE evmone
+    )
+endif()
 
 target_include_directories(vm-unit-tests
     PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"

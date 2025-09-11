@@ -33,13 +33,11 @@ endif()
 if(MONAD_COMPILER_TESTING)
   add_subdirectory(blockchain)
   add_subdirectory(fuzzer)
-  add_subdirectory(unit)
 endif()
 
 if(MONAD_COMPILER_BENCHMARKS OR MONAD_COMPILER_TESTING)
-  add_subdirectory(utils)
+  add_subdirectory(vm)
 endif()
 
-# The testing VM is shared between both the testing and benchmark setups, so we
-# build it in both scenarios.
-add_subdirectory(vm)
+add_subdirectory(utils)
+add_subdirectory(unit)

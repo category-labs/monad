@@ -24,8 +24,8 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance.h>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>

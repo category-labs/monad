@@ -581,11 +581,13 @@ static void do_run(std::size_t const run_index, arguments const &args)
             auto const a1 =
                 deploy_contract(monad_state, genesis_address, contract);
             MONAD_VM_ASSERT(a == a1);
-            std::cerr << fmt::format(
-                "Deployed contract (hash {}) at address {} (size: {} bytes)\n",
-                code_hash_str,
-                a,
-                contract.size());
+            if (args.contract_log_dir) {
+                std::cerr << fmt::format(
+                    "Deployed contract (hash {}) at address {} (size: {} bytes)\n",
+                    code_hash_str,
+                    a,
+                    contract.size());
+            }
 
             assert_equal(evmone_state, monad_state);
 

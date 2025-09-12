@@ -71,8 +71,8 @@ using namespace evmone::state;
 using namespace evmc::literals;
 using namespace monad;
 using namespace monad::vm::fuzzing;
-using namespace std::chrono_literals;
-using namespace std::filesystem;
+
+namespace fs = std::filesystem;
 
 using enum monad::vm::compiler::EvmOpCode;
 
@@ -562,10 +562,10 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 intx::hex(intx::be::load<intx::uint256>(code_hash.bytes));
             if (args.contract_log_dir) {
                 auto const code_hash_dir =
-                    path(*args.contract_log_dir) / "code_hash";
+                    fs::path(*args.contract_log_dir) / "code_hash";
                 auto const code_buf = contract.data();
                 auto const code_len = contract.size();
-                create_directories(code_hash_dir);
+                fs::create_directories(code_hash_dir);
 
                 auto contract_path =
                     code_hash_dir / fmt::format("{}", code_hash_str);

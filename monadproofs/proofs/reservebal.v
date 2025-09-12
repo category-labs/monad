@@ -183,7 +183,7 @@ Definition isAllowedToEmpty
  TODO: tell coqdoc to print Set as Type*)
 Record NotDelCaseExecRes  : Set := mkNotDelCase
   {
-    balanceLb: N;
+    balanceLb: Z;
     configuredRB: N;
     feeSolvent: bool (* sometimes,  *)
   }.
@@ -252,39 +252,45 @@ TODO: move updateKey preTxResBalances addr to the top
 Notation delegated := inl.
 Notation notdelegated := inr.
 (* TODO: rename to shallowExecTx *)
-Definition remainingEffReserveBals (preCandidateTxRes: EffReserveBals) (intermediates: list TxWithHdr) (candidateTx: TxWithHdr)
-  : EffReserveBals :=
+Open Scope Z_scope.
+Definition remainingEffReserveBals (preCandidateTxRes: EffReserveBals) (candidateTx: TxWithHdr)
+  : EffReserveBals := fun addr =>
   let maxTxFee := maxTxFee candidateTx in
-  fun addr =>
-    match preCandidateTxRes addr with
-    | delegated erb => delegated(
-        if bool_decide (sender candidateTx <> addr)
-        then erb
-        else
-          match reserveBalUpdateOfTx candidateTx with
-          | Some newRb =>
-              (erb - maxTxFee) `min` newRb
-          | None => (erb - maxTxFee)
-          end)
-    | notdelegated {| balanceLb := balLb; configuredRB := crb; feeSolvent := fs|} =>
-        if bool_decide (addr ∈ dels candidateTx.1.2)
-        then delegated ((balLb - maxTxFee) `min` crb)
-        else if bool_decide (sender candidateTx <> addr)
-             then preCandidateTxRes addr
-             else notdelegated
-                    {| balanceLb := balLb - value candidateTx - maxTxFee;
-                      configuredRB := crb;
-                      feeSolvent := fs && bool_decide (maxTxFee <= balLb)|}
-    end.
+  match preCandidateTxRes addr with
+  | delegated erb =>
+      delegated(
+          if bool_decide (sender candidateTx <> addr)
+          then erb
+          else
+            match reserveBalUpdateOfTx candidateTx with
+            | Some newRb =>
+                (erb - maxTxFee) `min` newRb
+            | None => (erb - maxTxFee)
+            end)
+  | notdelegated sres =>
+      if bool_decide (addr ∈ dels candidateTx.1.2)
+      then delegated
+            ((if bool_decide (sender candidateTx <> addr)
+              then (balanceLb sres)
+              else (balanceLb sres - maxTxFee)) `min` configuredRB sres)
+      else if bool_decide (sender candidateTx <> addr)
+           then preCandidateTxRes addr
+           else notdelegated
+                  (* because [balanceLb] is just a lowerbound and not exact, we cannot determine whether the tx will revert thus we need to subtract [value candidateTx] unconditionally. EVM execution is not monotone *)
+                  {| balanceLb := balanceLb sres - value candidateTx - maxTxFee;
+                    configuredRB := configuredRB sres;
+                    feeSolvent := feeSolvent sres
+                                  && bool_decide (maxTxFee <= balanceLb sres)|}
+  end.
 
-Fixpoint remainingEffReserveBalsL (preRestResBalances: EffReserveBals) (postStateAccountedSuffix rest: list TxWithHdr)
+Fixpoint remainingEffReserveBalsL (preRestResBalances: EffReserveBals) (rest: list TxWithHdr)
   : EffReserveBals:=
   match rest with
   | [] => preRestResBalances
   | hrest::tlrest =>
       let remainingReserves :=
-        remainingEffReserveBals preRestResBalances postStateAccountedSuffix hrest in
-      remainingEffReserveBalsL remainingReserves (postStateAccountedSuffix++[hrest]) tlrest
+        remainingEffReserveBals preRestResBalances hrest in
+      remainingEffReserveBalsL remainingReserves tlrest
   end.
 
 (** ** Algorithm 1 (consensus): acceptability of a suffix
@@ -301,7 +307,7 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (proposedTxs: l
   forall addr,
     addr ∈ map sender proposedTxs
     -> match remainingEffReserveBalsL
-               (initialEffReserveBals latestState) [] proposedTxs addr with
+               (initialEffReserveBals latestState) proposedTxs addr with
        | delegated erb => 0 <= erb                                                                     | notdelegated res => feeSolvent res = true
        end.
 
@@ -396,6 +402,7 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
        then true
        else
          if bool_decide (sender t =a)
+         (* TODO: figure out what breaks if [isAllowedToEmptyExec] is changed to addrDelegated s (sender t) || (sender t) ∈ dels t *)
          then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck : bool := (forallb balCheck changedAccounts) in (* in impl, only do for updates *)
@@ -1125,12 +1132,12 @@ Hint Rewrite @updateKeyLkp3 : syntactic.
 
 Definition sresLe (rb1 rb2: ShallowExecRes) :=
   match rb1, rb2 with
-  | notdelegated (mkNotDelCase balLb crb fs), notdelegated (mkNotDelCase balLb2 crb2 fs2)
-    => balLb <= balLb2 /\ crb = crb2 /\ (implb fs fs2)
-  | delegated erb, notdelegated (mkNotDelCase balLb crb _)
-    => (balLb `min` crb) <= erb
+  | notdelegated res1, notdelegated res2
+    => balanceLb res1 <= balanceLb res2
+       /\ configuredRB res1 = configuredRB res2
+       /\ (feeSolvent res1 = true -> feeSolvent res2 = true)
   | delegated erb, delegated erb2 => erb <= erb2
-  | notdelegated _, delegated _ => False
+  | _, _ => False
   end.
 
 Notation "l '`resLe`' r" := (sresLe l r) (at level 50).
@@ -1146,32 +1153,49 @@ Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
 
  *)
 
-(* this lemma was never needed anyway 
-Lemma mono eoas s rb1 rb2 inter tx:
+Lemma rbLeImpl a b :
+  a `resLe` b ->
+  match a with
+  | delegated erb => 0 ≤ erb
+  | notdelegated res => feeSolvent res = true
+  end ->
+  match b with
+  | delegated erb => 0 ≤ erb
+  | notdelegated res => feeSolvent res = true
+  end.
+Proof.
+  intros Hr.
+  hnf in Hr.
+  destruct a, b; simpl in *; try lia; try case_match; try tauto.
+Qed.
+Ltac sauto := simpl in *; autorewrite with syntactic in *; try lia; try congruence; try eauto.
+
+Lemma mono eoas rb1 rb2 tx:
   rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingEffReserveBals s rb1 inter tx)
-       (remainingEffReserveBals s rb2 inter tx).
+  -> rbLe eoas (remainingEffReserveBals rb1 tx)
+       (remainingEffReserveBals rb2 tx).
 Proof using.
   intros Hrb addr Hin.
   unfold remainingEffReserveBals.
-  pose proof (Hrb addr Hin).
-  case_match_concl; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  {case_bool_decide; subst; try lia.  case_match_concl; auto; simpl in *; try lia. }
-  case_match_concl;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; simpl in *; try lia.  }
-  case_bool_decide;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; subst; try lia. }
-  case_bool_decide;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *; try lia.
+  pose proof (Hrb addr Hin) as Hrba.
+  unfold sresLe in Hrba.
+  case_match_concl; auto; rdestruct (rb2 addr); sauto.
+  { (* rb1 and rb2 are delegated *)
+    simpl.
+    case_bool_decide; auto.
+    case_match; try lia.
+  }
+  {
+    case_bool_decide; case_bool_decide; try sauto.
+    forward_reason.
+    autorewrite with iff.
+    split_and !; try sauto.
+    intros.
+    forward_reason.
+    rwHyps.
+    lia.
+  }
 Qed.
- *)
 
 (** In the proof of the main correctness theorem, we use a slightly different
 variant of monotoncity, where in the RHS of [<=], remainingEffReserveBals starts
@@ -1180,7 +1204,6 @@ is dropped from the list of intermediate transactions between the state
 and the candidate transaction [txc].
 The proof follows from the definition of [remainingEffReserveBals]
 and the execution lemmas above.
-*)
 Lemma mono2 tx txc extension s (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) inter:
   (∀ ac : EvmAddr,
       ac ∈ sender tx :: sender txc :: map sender extension
@@ -1225,35 +1248,34 @@ Proof using.
     repeat rewrite updateKeyLkp3;
     fold EffReserveBals in *; simpl in *; try lia.
 Qed.  
+*)
 
 
 (** lifts [mono] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
 proof follows a straightforward induction on the list [extension],
 using [mono] to fulfil the obligations of the induction hypothesis
  *)
-(* this lemma was never needed anyway 
-Lemma monoL eoas s rb1 rb2 inter extension:
+Lemma monoL eoas rb1 rb2 extension:
   map sender extension ⊆ eoas
   -> rbLe eoas rb1 rb2
-  -> rbLe eoas (remainingEffReserveBalsL s rb1 inter extension)
-          (remainingEffReserveBalsL s rb2 inter extension).
+  -> rbLe eoas (remainingEffReserveBalsL rb1 extension)
+          (remainingEffReserveBalsL rb2 extension).
 Proof using.
-  revert rb1 rb2 inter.
+  revert rb1 rb2.
   induction extension; auto;[].
   unfold rbLe in *.
-  intros ? ? ? Hs Hrb addr Hin. simpl in *.
+  intros ? ?  Hs Hrb addr Hin. simpl in *.
   simpl.
   apply IHextension;[set_solver | | set_solver].
   apply mono.
   assumption.
 Qed.
- *)
 
 (** Similarly, lifts [mono2] from [remainingEffReserveBals] to [remainingEffReserveBalsL]:
 proof follows a straightforward induction on the list [extension],
 using [mono2] to fulfil the obligations of the induction hypothesis.
  *)
-
+(*
 Lemma monoL2 eoas s rb1 rb2 inter extension tx:
   (map sender extension) ⊆ eoas
   -> rbLe eoas rb1 rb2
@@ -1275,9 +1297,42 @@ Proof using.
   clear Hin. clear addr.
   eapply mono2; eauto.
 Qed.
-
+*)
 
 Hint Rewrite initResBal configuredReserveBalOfAddrSpec addrDelegatedUnchangedByBalUpd: syntactic.
+
+Lemma execPreservesConsensusChecks tx extension s:
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
+  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
+  -> consensusAcceptableTxs s (tx::extension)
+  -> consensusAcceptableTxs (execValidatedTx s tx) extension.
+Proof using.
+  intros Hfee Hext Heoac Hsc.
+  clear Hext. execTx
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
+  set (sf:=(execValidatedTx s tx).1).
+  intros Hc.
+  simpl in *.
+  intros ac Hin.
+  specialize (Hc ac).
+  forward_reason.
+  simpl in *.
+  specialize (Hc ltac:(set_solver)).
+  revert Hc.
+  apply rbLeImpl.
+  pose proof (monoL (map sender (tx::extension))) as Hm.
+  unfold rbLe in Hm.
+  apply Hm; auto; simpl in *; auto; [ set_solver | | set_solver].
+  intros.
+  clear Hm.
+  clear Hc. clear Hin. clear ac.
+  hnf.
+  clear Hsc.
+  clear Hext.
+  apply exec1; auto.
+Qed.
 
 (** This lemma captures a key property of [remainingEffReserveBals]: it underapproximates
 the resultant effective balance after execution of the transaction
@@ -1286,11 +1341,10 @@ Lemma exec1 tx extension s :
   maxTxFee tx <= balanceOfAc s.1 (sender tx)
   -> let sf := (execValidatedTx s tx) in
      (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
-     -> (∀ addr : EvmAddr,
-            addr ∈ sender tx :: map sender extension
-            -> let rba := remainingEffReserveBals s (initialEffReserveBals s) [] tx addr in
-               let initEff := initialEffReserveBals sf addr in
-              rba.1 <= initEff.1 /\ rba.2 = initEff.2).
+     -> ∀ addr : EvmAddr,
+         addr ∈ sender tx :: map sender extension
+         -> (remainingEffReserveBals (initialEffReserveBals s) tx addr)
+              `resLe` (initialEffReserveBals sf addr).
 Proof using.
   intros Hfee ? Hscf.
   intros ? Hin.

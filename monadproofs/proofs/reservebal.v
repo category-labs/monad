@@ -1438,41 +1438,60 @@ Proof using.
   }
 Qed.
 
-(** for any account that is a sender of one of the intermediate transactions (between [s] and the candidate transaction [txc]), [remainingEffReserveBals] is a non-increasing function.
- *)
-Lemma decreasingRemTxSender s irb proc tx txc:
-  remainingEffReserveBals s irb (tx :: proc) txc (sender tx) ≤ irb (sender tx).
+
+(** you can pick the first tx in the proposed extension and the consensus checks would
+    still hold on the resultant state for the remaining transactions in the proposal.
+*)
+Lemma execPreservesConsensusChecks tx extension s:
+  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
+  (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
+  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
+  -> consensusAcceptableTxs s (tx::extension)
+  -> consensusAcceptableTxs (execValidatedTx s tx) extension.
 Proof using.
-  unfold remainingEffReserveBals.
-  case_match_concl; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  { case_bool_decide; rwHyps; try lia. }
-  case_match_concl; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; rwHyps; try lia. }
-  apply isAllowedToEmptyImpl in Heqb.
+  intros Hfee Heoac Hsc.
+  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
+  clear Heoac.
+  set (sf:=(execValidatedTx s tx).1).
+  intros Hc.
+  simpl in *.
+  intros ac Hin.
+  specialize (Hc ac).
   forward_reason.
-  case_bool_decide; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *.
-  2:{ case_bool_decide; rwHyps; try lia.  }
-  case_bool_decide; auto;
-    repeat rewrite updateKeyLkp3;
-    fold EffReserveBals in *; try lia.
+  simpl in *.
+  specialize (Hc ltac:(set_solver)).
+  revert Hc.
+  apply rbLeImpl.
+  pose proof (monoL (map sender (tx::extension))) as Hm.
+  unfold rbLe in Hm.
+  apply Hm; auto; simpl in *; auto; [ set_solver | | set_solver].
+  intros.
+  clear Hm.
+  apply exec1 with (extension := extension); auto.
+Qed.
+
+(** TODO: fix name *)
+Lemma decreasingRemTxSender irb txc addr:
+  feeSolvent (remainingEffReserveBals irb txc addr) = true
+  -> feeSolvent (irb addr) = true.
+Proof using.
+  simpl.
+  intros Hp.
+  autorewrite with iff in Hp.
+  tauto.
 Qed.
 
 (** lifts the previous lemma from [remainingEffReserveBals] to [remainingEffReserveBals]. induction on [nextL] *)
-Lemma decreasingRemL s irb proc (nextL: list TxWithHdr) tx:
-  (remainingEffReserveBalsL s irb (tx::proc) nextL) (sender tx) <=  (irb (sender tx)).
+Lemma decreasingRemL irb  (nextL: list TxWithHdr) addr:
+  feeSolvent (remainingEffReserveBalsL irb nextL addr) = true
+  -> feeSolvent (irb addr) = true.
 Proof using.
-  revert proc irb.
-  induction nextL; simpl; [lia|].
+  revert  irb.
+  induction nextL; simpl; [ auto; fail|].
   intros.
-  pose proof (IHnextL (proc++[a]) (remainingEffReserveBals s irb (tx::proc) a)).
-  etransitivity;[apply H|].
-  apply decreasingRemTxSender.
+  pose proof (IHnextL (remainingEffReserveBals irb a)).
+  forward_reason.
+  eapply decreasingRemTxSender; eauto.
 Qed.
 
 (** Finally, here is one of the key stepping stones to the main theorem, it says that
@@ -1495,74 +1514,19 @@ Proof using.
   autorewrite with syntactic in Hc.
   rewrite updateKeyLkp3 in Hc.
   resolveDecide ltac:(congruence). *)
-
   unfold validateTx.
   autorewrite with iff.
-  match type of Hc with
-    context[ remainingEffReserveBalsL _ ?irb _ _ ]
-    => assert (0<= irb (sender tx)) as Hr
-  end.
-  {
-    etransitivity;[ apply Hc|].
-    apply decreasingRemL.
-  }
-  clear Hc.
-  unfold remainingEffReserveBals in Hr.
-  case_match; auto;
-    repeat rewrite updateKeyLkp3 in Hr;
-    autorewrite with syntactic in Hr;
-    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
-  case_match; auto;
-    repeat rewrite updateKeyLkp3 in Hr;
-    autorewrite with syntactic in Hr;
-    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
-  case_match; auto;
-    repeat rewrite updateKeyLkp3 in Hr;
-    autorewrite with syntactic in Hr;
-    fold EffReserveBals balanceOfAcA in *; unfold balanceOfAcA in *; simpl in *; try lia;[].
-  autorewrite with iff in *.
-  lia.
+  apply decreasingRemL in Hc.
+  simpl in Hc.
+  autorewrite with iff in Hc.
+  case_match; try lia.
 Qed.
 
 
-(** you can pick the first tx in the proposed extension and the consensus checks would
-    still hold on the resultant state for the remaining transactions in the proposal.
-*)
-Lemma execPreservesConsensusChecks tx extension s:
-  maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
-  (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
-  -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode s.1 ac = false)
-  -> consensusAcceptableTxs s (tx::extension)
-  -> consensusAcceptableTxs (execValidatedTx s tx) extension.
-Proof using.
-  intros Hfee Hext Heoac Hsc.
-  pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
-  clear Heoac.
-  set (sf:=(execValidatedTx s tx).1).
-  intros Hc.
-  simpl in *.
-  intros ac Hin.
-  specialize (Hc ac).
-  forward_reason.
-  simpl in *.
-  specialize (Hc ltac:(set_solver)).
-  etransitivity.
-  { apply Hc. }
-  pose proof (monoL2 (map sender (tx::extension))) as Hm.
-  unfold rbLe in Hm.
-  apply Hm; auto; simpl in *; auto; [ set_solver | | set_solver].
-  clear Hm.
-  clear Hc. clear Hin. clear ac.
-  hnf.
-  clear Hsc.
-  clear Hext.
-  apply exec1; auto.
-Qed.
 
 (** the above 2 lemmas can be combined to yield the following: *)
 Lemma inductiveStep  (latestState : AugmentedState) (tx: TxWithHdr) (extension: list TxWithHdr) :
   maxTxFee tx <= balanceOfAc latestState.1 (sender tx)
-  -> (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)
   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
   -> (forall ac, ac ∈ (map sender (tx::extension)) -> hasCode latestState.1 ac = false)
  ->  consensusAcceptableTxs latestState (tx::extension)
@@ -1679,6 +1643,7 @@ Qed.
 Print Assumptions fullBlockStep.
 (** All assumptions of the proof:
 [[
+
 Section Variables:
 K
 : N
@@ -1688,14 +1653,14 @@ revertTxDelegationUpdCore :
     reserveBalUpdateOfTx tx = None
     → ∀ (sf := revertTx s tx) (ac : EvmAddr),
         addrDelegated sf ac =
-        addrDelegated s ac && bool_decide (ac ∉ undels tx.1.2) || bool_decide (ac ∈ dels tx.1.2)
+        addrDelegated s ac && asbool (ac ∉ undels tx.1.2) || asbool (ac ∈ dels tx.1.2)
 revertTx : StateOfAccounts → TxWithHdr → StateOfAccounts
 execTxSenderBalCore :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
     (maxTxFee tx ≤ balanceOfAc s (sender tx))%N
     → reserveBalUpdateOfTx tx = None
       → let sf := (evmExecTxCore s tx).1 in
-        addrDelegated s (sender tx) = false
+        senderDelegatedAfterTx s tx = false
         → balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - (maxTxFee tx + value tx))%N
           ∨ balanceOfAc sf (sender tx) = (balanceOfAc s (sender tx) - maxTxFee tx)%N
 execTxDelegationUpdCore :
@@ -1703,7 +1668,7 @@ execTxDelegationUpdCore :
     reserveBalUpdateOfTx tx = None
     → ∀ (sf := (evmExecTxCore s tx).1) (ac : EvmAddr),
         addrDelegated sf ac =
-        addrDelegated s ac && bool_decide (ac ∉ undels tx.1.2) || bool_decide (ac ∈ dels tx.1.2)
+        addrDelegated s ac && asbool (ac ∉ undels tx.1.2) || asbool (ac ∈ dels tx.1.2)
 execTxCannotDebitNonDelegatedNonContractAccountsCore :
   ∀ (tx : TxWithHdr) (s : StateOfAccounts),
     reserveBalUpdateOfTx tx = None
@@ -1726,6 +1691,8 @@ balanceOfRevertOther :
   ∀ (s : StateOfAccounts) (tx : TxWithHdr) (ac : EvmAddr),
     reserveBalUpdateOfTx tx = None
     → ac ≠ sender tx → balanceOfAc (revertTx s tx) ac = balanceOfAc s ac
+
+
 ]]
  *)
 
@@ -1754,8 +1721,7 @@ Proof using.
   unfold consensusAcceptableTxs.
   intros.
   simpl.
-  rewrite initResBal.
-  lia.
+  reflexivity.
 Qed.
 
 (* Consensus Invariant and how its steps preserve the invariant

@@ -36,12 +36,12 @@ struct fmt::formatter<monad::Account> : public monad::BasicFormatter
             ctx.out(),
             "Account{{"
             "balance={}, "
-            "code_hash={}, "
+            "code_or_hash={}, "
             "nonce={}, "
             "incarnation={}"
             "}}",
             a.balance,
-            a.code_hash,
+            monad::to_bytes(a.code_view()),
             a.nonce,
             a.incarnation);
         return ctx.out();

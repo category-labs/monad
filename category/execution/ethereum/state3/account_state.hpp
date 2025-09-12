@@ -50,9 +50,6 @@ public: // TODO
     template <class Key, class T>
     using Map = ankerl::unordered_dense::segmented_map<Key, T>;
 
-protected:
-    std::optional<Account> account_{};
-
 private:
     friend class State;
     friend class BlockState;
@@ -64,6 +61,7 @@ private:
     friend struct trace::StateDiffTracer;
 
 public:
+    std::optional<Account> account_{};
     Map<bytes32_t, bytes32_t> storage_{};
     Map<bytes32_t, bytes32_t> transient_storage_{};
 
@@ -99,7 +97,7 @@ public:
     [[nodiscard]] bytes32_t get_code_hash() const
     {
         if (account_.has_value()) {
-            return account_->code_hash;
+            return account_->get_code_hash();
         }
         return NULL_HASH;
     }

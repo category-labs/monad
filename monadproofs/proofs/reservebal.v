@@ -283,12 +283,13 @@ Definition remainingEffReserveBals (preRes: EffReserveBals) (candTx: TxWithHdr)
       end in
   let newDelegated := delegatedAfterTx (delegated prev) candTx addr
  in
-  let isNotSender := asbool (sender candTx <> addr) in
+ let isNotSender := asbool (sender candTx <> addr) in
+ let startingRb := balanceLb prev `min` newCrb in
   {|
     balanceLb :=
       if newDelegated
-      then (if isNotSender then balanceLb prev else balanceLb prev - maxTxFee)
-             `min` newCrb
+      then (if isNotSender then startingRb else startingRb - maxTxFee)
+             
       else
         if isNotSender
         then balanceLb prev
@@ -1423,104 +1424,19 @@ Proof using.
         set_solver.
       }
       rewrite Hn.
-      Set Printing 
-      lia.
-      
-      case_match; try sauto.
-      2:{
-        
-      
-    
-    Lemma minIdemp (a b : Z):
-      (a `min` b) `min` b = (a `min` b).
-    Proof using.
-      lia.
-    Qed.
-    { case_match_concl; try sauto.
-      { rewrite minIdemp.
-      lia.
-    { try sauto.
-    try sauto.
-    unfold rbAfterTx.
-    
-    {   r congruence.
-        case_bool_decide; try congruence.
-  Search configuredReserveBalOfAddr.
-    Search addrDelegated execValidatedTx.
-    Lemma delUpd:
-      delegatedAfterTx (addrDelegated s.1 addr) tx addr =
-  addrDelegated (execValidatedTx s tx).1 addr  
-  case_match.
-  { (* this tx updates the reserve balance *)
-    rename n into nrb.
-    rewrite updateKeyLkp3.
-    unfold sf.
-    repeat rewrite initResBal.
-    rewrite configuredReserveBalOfAddrSpec.
-    unfold execValidatedTx.
-    rwHyps.
-    simpl.
-    simpl.
-    unfold balanceOfAcA in *.
-    rewrite balanceOfUpd.
-    unfold rbAfterTx.
-    rwHyps.
-    autorewrite with syntactic.
-    case_bool_decide_concl;
-      resolveDecide congruence; simpl in *; try lia.
-    subst.
-    autorewrite with syntactic. case_match_concl; simpl in *; try lia;
-    split_and; auto.
-    {
-      assert (addrDelegated s.1 (sender tx) = false) as Heq by admit.
-      subst.
-      rewrite Heq.
       lia.
     }
-    {
-      case_match; try lia.
-    }
-  }
-  
-  pose proof (execBalLb addr s tx ltac:(lia)) as Hlb.
-  simpl in Hlb. fold sf in Hlb.
-  rewrite Hscf in Hlb;[|set_solver].
-  rewrite Hscf in Hlb;[|set_solver].
-  case_match_concl.
-  { (* isAllowedToEmpty *)
-    match goal with
-    | H: isAllowedToEmpty _ _ _ = _ |- _ => rename H into Hae
-    end.
-    subst sf.
-    autorewrite with syntactic in *.
-      unfold balanceOfAcA, rbAfterTx in *.
-      rwHyps.
-      case_bool_decide; subst; simpl in *; resolveDecide congruence; try lia.
-      2:{ split_and; auto.
-          
-          case_match; simpl in *;case_match; simpl in *; try lia.
-          apply False_rect.
-          Lemma delg s tx addr:
-            isAllowedToEmpty s [] tx = true
-            -> addrDelegated s.1 addr = false
-            -> addrDelegated (execValidatedTx s tx).1 addr = false.                             
-          admit.
-        }
-      
-        [| case_match; try lia].
-      specialize (Hlb ltac:(auto)).
-      subst.
-      destruct Hlb; subst; try lia.
-  }
-  rewrite updateKeyLkp3.
-  subst sf.
-  autorewrite with syntactic in *.
-  unfold balanceOfAcA, rbAfterTx in *.
-  rwHyps.
-  case_bool_decide; subst; resolveDecide congruence; try lia.
-  case_match; lia.
-Qed.
 
+  }
+  { (* delegatedAfterTx (addrDelegated s.1 addr) tx addr = false *)
+    case_bool_decide_concl; resdec congruence; try lia.
+    { case_match; try sauto. }
+    subst. rewrite  Heqb in Hlb.
+    simpl in *.
+    forward_reason.
+    case_match; lia.
+  }
+Qed.
 
 (** for any account that is a sender of one of the intermediate transactions (between [s] and the candidate transaction [txc]), [remainingEffReserveBals] is a non-increasing function.
  *)

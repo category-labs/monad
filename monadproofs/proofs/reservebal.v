@@ -67,6 +67,7 @@ Definition maxTxFee (t: TxWithHdr) : N :=
 
 (** The proofs in this file never unfold the definition of [maxTxFee], so nothing will break if this definition is changed.  *)
 Opaque maxTxFee.
+Ltac sauto := intros; forward_reason; rwHyps; simpl in *; autorewrite with syntactic in *; try lia; try congruence; try eauto;(case_match_concl; simpl in *; autorewrite with syntactic; try lia; try congruence; fail).
 
 Section K.
 (** Parameterization by the lookahead window [K]:
@@ -254,6 +255,11 @@ TODO: move updateKey preTxResBalances addr to the top
 (* TODO: rename to shallowExecTx *)
 Open Scope Z_scope.
 Notation asbool := bool_decide.
+
+Definition delegatedAfterTx prevDelegated (tx: TxWithHdr) (addr: EvmAddr) : bool :=
+      (prevDelegated && asbool (addr ∉ undels tx.1.2))
+      || asbool (addr ∈ dels tx.1.2).
+
 Definition remainingEffReserveBals (preRes: EffReserveBals) (candTx: TxWithHdr)
   : EffReserveBals := fun addr =>
   let prev := preRes addr in
@@ -263,9 +269,8 @@ Definition remainingEffReserveBals (preRes: EffReserveBals) (candTx: TxWithHdr)
     | Some newRb => newRb
     | None => configuredRB prev
     end in
-  let newDelegated :=
-    (delegated prev && asbool (addr ∉ undels candTx.1.2))
-    || asbool (addr ∈ dels candTx.1.2) in
+  let newDelegated := delegatedAfterTx (delegated prev) candTx addr
+ in
   let isNotSender := asbool (sender candTx <> addr) in
   {|
     balanceLb :=
@@ -316,9 +321,14 @@ Definition consensusAcceptableTxs (latestState : AugmentedState) (proposedTxs: l
 [isAllowedToEmptyExec] is a trivial wrapper used in execution, where there are intermediate transactions between the current transaction and the last known fully executed state.
  *)
 
+Definition senderDelegatedAfterTx s tx :=
+  delegatedAfterTx (addrDelegated s (sender tx)) tx (sender tx).
+
+(* TODO: inline *)
 Definition isAllowedToEmptyExec
-  (state : AugmentedState)  (tx: TxWithHdr) : bool :=
-  isAllowedToEmpty state [] tx.
+  (s : AugmentedState)  (t: TxWithHdr) : bool :=
+  negb (senderDelegatedAfterTx s.1 t).
+
 
 
 (** [updateExtraState] is the execution-time maintenance of the tiny history we
@@ -395,7 +405,9 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
        else
          if bool_decide (sender t =a)
          (* TODO: figure out what breaks if [isAllowedToEmptyExec] is changed to addrDelegated s (sender t) || (sender t) ∈ dels t *)
-         then if isAllowedToEmptyExec s t then true else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
+         then if isAllowedToEmptyExec s t
+              then true
+              else bool_decide ((erb  - maxTxFee t) <= balanceOfAc si a)
          else bool_decide (erb <= balanceOfAc si a) in
      let allBalCheck : bool := (forallb balCheck changedAccounts) in (* in impl, only do for updates *)
      if (allBalCheck)
@@ -527,11 +539,12 @@ Axiom execTxDelegationUpdCore: forall tx s,
                 (addrDelegated s ac && bool_decide (ac ∉ (undels tx.1.2)))
                 || bool_decide (ac ∈ (dels tx.1.2))).
 
+
 Axiom execTxSenderBalCore: forall tx s,
   maxTxFee tx <= balanceOfAc s (sender tx) ->
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
-  addrDelegated s (sender tx) = false
+  senderDelegatedAfterTx s tx = false
    ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
 
@@ -671,7 +684,7 @@ Lemma execTxSenderBal tx s:
   let ReserveBal := configuredReserveBalOfAddr s.2 (sender tx) in
   let sf :=  (execValidatedTx s tx) in
   hasCode sf.1 (sender tx) = false->
-  (if isAllowedToEmpty s [] tx
+  (if isAllowedToEmptyExec s tx
    then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
   else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx))).
@@ -694,10 +707,10 @@ Proof.
   specialize (Hc ltac:(auto)).
   pose proof (changedAccountSetSound tx s.1 ltac:(auto)) as Hsnd.
   rdestruct (evmExecTxCore s.1 tx) as [si changed].
-  unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
+  unfold isAllowedToEmptyExec, delegatedAfterTx.
   intros.
   unfold balanceOfAcA in *.
-  destruct (addrDelegated s.1 (sender tx)); simpl in *.
+  destruct (senderDelegatedAfterTx s.1 tx); simpl in *.
   {
     rememberForallb.
     unfold balanceOfAcA in *.
@@ -708,8 +721,9 @@ Proof.
     }
     symmetry in Heqfb.
     rewrite  forallb_spec in Heqfb.
+    rwHyps.
     destruct (decide (sender tx ∈ changed));
-      [| unfold balanceOfAc; simpl; rewrite Hsnd; auto; lia].
+      [| unfold balanceOfAc; simpl; rewrite Hsnd;try sauto].
     specialize (Heqfb (sender tx) ltac:(auto)).
     resolveDecide congruence.
     simpl in *.
@@ -719,37 +733,14 @@ Proof.
   {
     autorewrite with syntactic in *.
     rememberForallb.
-    destruct ((existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)));
-      simpl in *.
-    {
-      destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
-        try (rewrite balanceOfRevertSender;auto;[]);
+    forward_reason.
+    destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
+      repeat (rewrite balanceOfRevertSender;sauto);
         try resolveDecide congruence; try auto;
-        try lia;[].
-      rewrite  forallb_spec in Heqfb.
-      destruct (decide (sender tx ∈ changed)).
-      {
-        specialize (Heqfb (sender tx) ltac:(auto)).
-        rewrite Hsc in Heqfb.
-        resolveDecide congruence.
-        simpl in *.
-        case_bool_decide; try lia.
-      }
-      {
-        unfold balanceOfAc in *.
-        forward_reason.
-        rewrite Hsnd in H0;auto.
-        lia.
-      }
-
-    }
-    {
-      destruct fb; simpl in *; auto; try lia.
-      rewrite balanceOfRevertSender; auto.
-    }
-
+      try lia.
   }
 Qed.
+
 
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx) in
@@ -817,7 +808,7 @@ Lemma execBalLb ac s tx:
   let ReserveBal := configuredReserveBalOfAddr s.2 ac in
   if (bool_decide (ac=sender tx)) then
     hasCode sf.1 (sender tx) = false->
-    (if isAllowedToEmpty s [] tx
+    (if isAllowedToEmptyExec s tx
      then balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - ( maxTxFee tx + value tx)
           \/  balanceOfAcA sf (sender tx) =  balanceOfAcA s (sender tx) - (maxTxFee tx)
      else ReserveBal `min` (balanceOfAcA s (sender tx)) - maxTxFee tx <= (balanceOfAcA sf (sender tx)))
@@ -1151,7 +1142,6 @@ Proof.
   tauto.
 Qed.
 
-Ltac sauto := intros; forward_reason; rwHyps; simpl in *; autorewrite with syntactic in *; try lia; try congruence; try eauto;(case_match_concl; simpl in *; autorewrite with syntactic; try lia; try congruence; fail).
 
 Lemma mono eoas rb1 rb2 tx:
   rbLe eoas rb1 rb2
@@ -1282,7 +1272,7 @@ Lemma execPreservesConsensusChecks tx extension s:
   -> consensusAcceptableTxs (execValidatedTx s tx) extension.
 Proof using.
   intros Hfee Hext Heoac Hsc.
-  clear Hext. execValidatedTx
+  clear Hext.
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
   clear Heoac.
   set (sf:=(execValidatedTx s tx).1).

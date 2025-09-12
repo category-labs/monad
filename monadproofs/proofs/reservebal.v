@@ -789,13 +789,12 @@ Qed.
 Hint Rewrite @app_nil : iff.
 Lemma execTxDelegationUpdDerived: forall tx s,
   let sf :=  (execValidatedTx s tx).1 in
-  (forall ac, addrDelegated sf ac  =
-                (addrDelegated s.1 ac && bool_decide (ac ∉ (undels tx.1.2)))
-                || bool_decide (ac ∈ (dels tx.1.2))).
+  forall ac, addrDelegated sf ac  =
+                delegatedAfterTx (addrDelegated s.1 ac) tx ac.
 Proof using.
   intros ? ? ? ?.
   subst sf.
-  unfold execValidatedTx.
+  unfold execValidatedTx, delegatedAfterTx.
   simpl in *.
   remember (reserveBalUpdateOfTx tx) as rb.
   destruct rb; simpl in *; try congruence.
@@ -1383,8 +1382,65 @@ Proof using.
     case_bool_decide; resdec congruence;[].
     subst. reflexivity.
   }
-  
-  
+
+  (* core balanceLb goal *)
+  pose proof (execBalLb addr s tx ltac:(lia)) as Hlb.
+  rewrite execTxDelegationUpdDerived.
+  simpl in Hlb. fold sf in Hlb.
+  unfold isAllowedToEmptyExec, senderDelegatedAfterTx in Hlb.
+  repeat rewrite execTxDelegationUpdDerived in Hlb.
+  rewrite Hscf in Hlb;[|set_solver].
+  rewrite Hscf in Hlb;[|set_solver].
+  unfold balanceOfAcA in *.
+  rewrite configuredReserveBalOfAddrSpec.
+  autorewrite with syntactic.
+  case_match_concl.
+  { (*  delegatedAfterTx (addrDelegated s.1 addr) tx addr = true *)
+    case_bool_decide_concl; resdec congruence; try lia.
+    { (* addr <> sendr *)
+      case_match; try lia.
+    }
+    {
+      forward_reason.
+      subst.
+      rewrite Heqb in Hlb.
+      simpl in *.
+      unfold rbAfterTx.
+      case_match_concl; try lia;[].
+      (* addrDelegated s.1 (sender tx) = false *)
+      assert (reserveBalUpdateOfTx tx = None) as Hn.
+      {
+        unfold reserveBalUpdateOfTx.
+        unfold reserveBalUpdate.
+        unfold delegatedAfterTx in *.
+        simpl in *.
+        autorewrite with iff in *.
+        case_match; auto.
+        applyToSomeHyp @isEmptyImpl.
+        autorewrite with iff in *.
+        forward_reason.
+        rewrite autogenhypl in Heqb.
+        set_solver.
+      }
+      rewrite Hn.
+      Set Printing 
+      lia.
+      
+      case_match; try sauto.
+      2:{
+        
+      
+    
+    Lemma minIdemp (a b : Z):
+      (a `min` b) `min` b = (a `min` b).
+    Proof using.
+      lia.
+    Qed.
+    { case_match_concl; try sauto.
+      { rewrite minIdemp.
+      lia.
+    { try sauto.
+    try sauto.
     unfold rbAfterTx.
     
     {   r congruence.

@@ -285,11 +285,16 @@ namespace trace
         else {
             res["balance"] =
                 std::format("0x{}", intx::to_string(account->balance, 16));
-            if (account->code_hash != NULL_HASH) {
-                auto const icode =
-                    state.read_code(account->code_hash)->intercode();
-                res["code"] = byte_string_to_hex(
-                    byte_string_view(icode->code(), *icode->code_size()));
+            if (account->has_code()) {
+                if (account->inline_delegated_code()) {
+                    res["code"] = byte_string_to_hex(account->code_view());
+                }
+                else {
+                    auto const icode =
+                        state.read_code(account->get_code_hash())->intercode();
+                    res["code"] = byte_string_to_hex(
+                        byte_string_view(icode->code(), *icode->code_size()));
+                }
             }
             // nonce == 0 is not included in the output.
             if (account->nonce != 0) {
@@ -423,14 +428,21 @@ namespace trace
                             "0x{}",
                             intx::to_string(current_account->balance, 16));
                     }
-                    if (original_account->code_hash !=
-                        current_account->code_hash) {
-                        auto const icode =
-                            state.read_code(current_account->code_hash)
-                                ->intercode();
-                        post[address_key]["code"] =
-                            byte_string_to_hex(byte_string_view(
-                                icode->code(), *icode->code_size()));
+                    if (original_account->code_or_hash !=
+                        current_account->code_or_hash) {
+                        if (current_account->inline_delegated_code()) {
+                            post[address_key]["code"] = byte_string_to_hex(
+                                current_account->code_view());
+                        }
+                        else {
+                            auto const icode =
+                                state
+                                    .read_code(current_account->get_code_hash())
+                                    ->intercode();
+                            post[address_key]["code"] =
+                                byte_string_to_hex(byte_string_view(
+                                    icode->code(), *icode->code_size()));
+                        }
                     }
                     // TODO: Geth has begun including code_hash aswell.
                     if (original_account->nonce != current_account->nonce) {

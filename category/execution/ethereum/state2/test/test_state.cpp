@@ -89,6 +89,7 @@ namespace
     constexpr auto code1 =
         byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
     auto const icode1 = vm::make_shared_intercode(code1);
+    auto const code1_hash = to_bytes(keccak256(code1));
     constexpr auto code2 =
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
     auto const icode2 = vm::make_shared_intercode(code2);
@@ -261,7 +262,7 @@ TEST_F(InMemoryStateTest, get_code_hash)
         StateDeltas{
             {a,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = hash1}}}}},
+                 .account = {std::nullopt, Account{.code_or_hash = hash1}}}}},
         Code{},
         BlockHeader{});
 
@@ -1002,7 +1003,7 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
 TEST_F(InMemoryStateTest, get_code_size)
 {
     BlockState bs{this->tdb, this->vm};
-    Account acct{.code_hash = code_hash1};
+    Account acct{.code_or_hash = code_hash1};
     commit_sequential(
         this->tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
@@ -1016,8 +1017,8 @@ TEST_F(InMemoryStateTest, get_code_size)
 TEST_F(InMemoryStateTest, copy_code)
 {
     BlockState bs{this->tdb, this->vm};
-    Account acct_a{.code_hash = code_hash1};
-    Account acct_b{.code_hash = code_hash2};
+    Account acct_a{.code_or_hash = code_hash1};
+    Account acct_b{.code_or_hash = code_hash2};
 
     commit_sequential(
         this->tdb,
@@ -1076,7 +1077,8 @@ TEST_F(InMemoryStateTest, get_code)
         StateDeltas{
             {a,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
+                 .account =
+                     {std::nullopt, Account{.code_or_hash = code_hash1}}}}},
         Code{{code_hash1, vm::make_shared_intercode(contract)}},
         BlockHeader{});
 

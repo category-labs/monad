@@ -188,7 +188,8 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
                       Account{.balance = 10'000'000'000, .nonce = 7}}}},
             {to,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
+                 .account =
+                     {std::nullopt, Account{.code_or_hash = code_hash}}}}},
         Code{},
         BlockHeader{});
 
@@ -409,7 +410,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = good_code_hash,
+                          .code_or_hash = good_code_hash,
                       }}}},
             {bad_code_address,
              StateDelta{
@@ -417,7 +418,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = bad_code_hash,
+                          .code_or_hash = bad_code_hash,
                       }}}},
         },
         Code{
@@ -518,7 +519,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = good_code_hash,
+                          .code_or_hash = good_code_hash,
                       }}}},
             {bad_code_address,
              StateDelta{
@@ -526,7 +527,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = bad_code_hash,
+                          .code_or_hash = bad_code_hash,
                       }}}},
         },
         Code{
@@ -711,7 +712,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
     }
 }
 
-TYPED_TEST(TraitsTest, create_inside_delegated_call)
+TYPED_TEST(TraitsTest, create_inside_delegated_call_old_account_format)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -748,7 +749,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash = eoa_code_hash,
                       }}}},
             {from,
              StateDelta{
@@ -763,7 +764,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
+                          .code_or_hash = delegated_code_hash,
                       }}}}},
         Code{
             {eoa_code_hash, eoa_icode},
@@ -782,6 +783,93 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
         .memory_capacity = vm.message_memory_capacity(),
+    };
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+        auto const result = h.call(m);
+        // CREATE should fail on Monad chains and succeed on Ethereum chains
+        if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
+            static_assert(TestFixture::is_evm_trait());
+            EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+        }
+        else {
+            static_assert(TestFixture::is_monad_trait());
+            EXPECT_EQ(result.status_code, EVMC_FAILURE);
+        }
+    }
+}
+
+TYPED_TEST(TraitsTest, create_inside_delegated_call)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto eoa{
+        0x00000000000000000000000000000000aaaaaaaa_address};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto delegated{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(delegated.bytes, 20, &eoa_code[3]);
+    auto const eoa_icode = vm::make_shared_intercode(eoa_code);
+
+    // PUSH0; PUSH0; PUSH0; CREATE
+    auto const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    auto const delegated_icode = vm::make_shared_intercode(delegated_code);
+    auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {eoa,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_or_hash =
+                              byte_string_view{eoa_code, sizeof(eoa_code)},
+                      }}}},
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {delegated,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_or_hash = delegated_code_hash,
+                      }}}}},
+        Code{
+            {delegated_code_hash, delegated_icode},
+        },
+        BlockHeader{});
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .flags = EVMC_DELEGATED,
+        .gas = 1'000'000,
+        .recipient = eoa,
+        .sender = from,
+        .code_address = delegated,
     };
 
     BlockHashBufferFinalized const block_hash_buffer;
@@ -829,7 +917,6 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
     uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
     std::copy_n(delegated.bytes, 20, &eoa_code[3]);
     auto const eoa_icode = vm::make_shared_intercode(eoa_code);
-    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
 
     // Make a delegatecall to the creator contract, and fail execution if that
     // call failed.
@@ -857,7 +944,8 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash =
+                              byte_string_view{eoa_code, sizeof(eoa_code)},
                       }}}},
             {from,
              StateDelta{
@@ -872,7 +960,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
+                          .code_or_hash = delegated_code_hash,
                       }}}},
             {creator,
              StateDelta{
@@ -880,10 +968,9 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = creator_code_hash,
+                          .code_or_hash = creator_code_hash,
                       }}}}},
         Code{
-            {eoa_code_hash, eoa_icode},
             {delegated_code_hash, delegated_icode},
             {creator_code_hash, creator_icode},
         },
@@ -946,7 +1033,6 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
         evmc::from_hex("0xEF01000000000000000000000000000000000000000001")
             .value();
     auto const eoa_icode = vm::make_shared_intercode(eoa_code);
-    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
 
     // Make a delegatecall to the EOA account with 100 gas, and fail execution
     // if that call failed.
@@ -969,7 +1055,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash = eoa_code,
                       }}}},
             {from,
              StateDelta{
@@ -984,10 +1070,9 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = contract_code_hash,
+                          .code_or_hash = contract_code_hash,
                       }}}}},
         Code{
-            {eoa_code_hash, eoa_icode},
             {contract_code_hash, contract_icode},
         },
         BlockHeader{});
@@ -1053,7 +1138,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
                  .account =
                      {std::nullopt,
                       Account{
-                          .code_hash = code_hash,
+                          .code_or_hash = code_hash,
                       }}}}},
         Code{
             {code_hash, icode},
@@ -1162,7 +1247,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = short_code_hash,
+                          .code_or_hash = short_code_hash,
                       }}}},
             {falsely_delegated_2,
              StateDelta{
@@ -1170,7 +1255,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = bad_code_hash2,
+                          .code_or_hash = bad_code_hash2,
                       }}}},
             {falsely_delegated_3,
              StateDelta{
@@ -1178,7 +1263,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = bad_code_hash,
+                          .code_or_hash = bad_code_hash,
                       }}}},
             {correctly_delegated,
              StateDelta{
@@ -1186,7 +1271,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = good_code_hash,
+                          .code_or_hash = good_code_hash,
                       }}}}},
         Code{
             {bad_code_hash, bad_icode},

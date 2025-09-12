@@ -489,8 +489,9 @@ namespace monad::vm::llvm
         {
             // rewrite from the bottom up so we can take advantage of previous
             // rewrites
-            auto max_idx = ir.blocks().size() - 1;
-            for (auto i = max_idx; i >= 0 && i <= max_idx; --i) {
+            uint64_t i = ir.blocks().size();
+            while (i > 0) {
+                --i;
                 Block &blk = ir.blocks()[i];
                 if (blk.terminator == Terminator::FallThrough) {
                     Block const &dest = ir.blocks()[blk.fallthrough_dest];

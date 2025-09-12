@@ -27,8 +27,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
-#include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance.h>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 

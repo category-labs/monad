@@ -155,6 +155,16 @@ namespace monad::vm
             return compiler_config_;
         }
 
+        runtime::EvmStackAllocator &stack_allocator()
+        {
+            return stack_allocator_;
+        }
+
+        runtime::EvmMemoryAllocator &memory_allocator()
+        {
+            return memory_allocator_;
+        };
+
         /// Execute varcode. The function will execute the nativecode in
         /// the varcode if set. Otherwise execute the intercode with
         /// interpreter and potentially start async compilation.

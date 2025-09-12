@@ -149,6 +149,9 @@ evmc::Result BlockchainTestVM::execute(
         return execute_llvm(host, context, rev, msg, code, code_size);
     }
 #endif
+    else if (impl_ == Implementation::UntypedIR) {
+        return execute_untyped_ir(host, context, rev, msg, code, code_size);
+    }
     else {
         MONAD_VM_ASSERT(impl_ == Implementation::Interpreter);
         return execute_interpreter(host, context, rev, msg, code, code_size);
@@ -309,5 +312,25 @@ evmc::Result BlockchainTestVM::execute_interpreter(
         context,
         msg,
         icode);
+    MONAD_VM_ASSERT(false);
+}
+
+evmc::Result BlockchainTestVM::execute_untyped_ir(
+    evmc_host_interface const *host, evmc_host_context *context,
+    evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+    size_t code_size)
+{
+    auto const icode =
+        monad::vm::interpreter::IntercodeUntypedIR{code, code_size};
+
+    auto rt_ctx = monad::vm::runtime::Context::from(
+        monad_vm_.memory_allocator(),
+        chain_params(),
+        host,
+        context,
+        msg,
+        icode.code_span());
+
+    SWITCH_EVM_TRAITS(execute_untyped_ir_raw, rt_ctx, icode);
     MONAD_VM_ASSERT(false);
 }

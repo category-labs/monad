@@ -59,6 +59,20 @@ struct BigEndian
         unaligned_store(bytes, be);
         return *this;
     }
+
+    bool is_zero() const
+    {
+        return std::ranges::all_of(bytes, [](auto b) { return b == 0; });
+    }
+
+    template <typename BytesWrapper>
+        requires(sizeof(BytesWrapper) == sizeof(BigEndian<T>))
+    static BigEndian<T> from_bytes(BytesWrapper const &b) noexcept
+    {
+        BigEndian<T> result;
+        std::memcpy(result.bytes, b.bytes, sizeof(BigEndian<T>));
+        return result;
+    }
 };
 
 using u8_be = BigEndian<uint8_t>;

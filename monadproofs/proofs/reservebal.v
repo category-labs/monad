@@ -181,16 +181,13 @@ Definition isAllowedToEmpty
 (** the number is just the effective reserve balance.
 
  TODO: tell coqdoc to print Set as Type*)
-Record NotDelCaseExecRes  : Set := mkNotDelCase
+Record ShallowExecRes  : Set := mkNotDelCase
   {
     balanceLb: Z;
     configuredRB: N;
-    feeSolvent: bool (* sometimes,  *)
+    delegated: bool;
+    feeSolvent: bool (* if not delegated, balanceLb being negative does not necessarily mean fee insolvency, e.g when the balanceLb is sufficient to cover fees but not enough to cover value transfer of an emptying tx  *)
   }.
-Definition DelCaseShallowExecRes : Set := Z.
-    
-
-Definition ShallowExecRes : Set := DelCaseShallowExecRes+NotDelCaseExecRes.
 
 (** The effective reserve map:
 
@@ -229,9 +226,14 @@ Definition consideredDelegated
 Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
   fun addr =>
     let crb := configuredReserveBalOfAddr s.2 addr in 
-    (if addrDelegated s.1 addr
-              then inl (balanceOfAc s.1 addr `min` crb) else
-                inr {| balanceLb := balanceOfAc s.1 addr; configuredRB := crb; feeSolvent := true |}).
+    let del := addrDelegated s.1 addr in
+    let bal := balanceOfAc s.1 addr in 
+    {|
+      balanceLb := if del then bal `min` crb else bal;
+      configuredRB := crb;
+      feeSolvent := true; (* the caller ensures that this state is obtained after successful execution, so it must be feeSolvent *)
+      delegated := del; 
+    |}.
 
 (** Consensus’ decrement step:
 
@@ -249,39 +251,35 @@ Definition initialEffReserveBals (s: AugmentedState) : EffReserveBals :=
 TODO: move updateKey preTxResBalances addr to the top
  *)
 
-Notation delegated := inl.
-Notation notdelegated := inr.
 (* TODO: rename to shallowExecTx *)
 Open Scope Z_scope.
-Definition remainingEffReserveBals (preCandidateTxRes: EffReserveBals) (candidateTx: TxWithHdr)
+Notation asbool := bool_decide.
+Definition remainingEffReserveBals (preRes: EffReserveBals) (candTx: TxWithHdr)
   : EffReserveBals := fun addr =>
-  let maxTxFee := maxTxFee candidateTx in
-  match preCandidateTxRes addr with
-  | delegated erb =>
-      delegated(
-          if bool_decide (sender candidateTx <> addr)
-          then erb
-          else
-            match reserveBalUpdateOfTx candidateTx with
-            | Some newRb =>
-                (erb - maxTxFee) `min` newRb
-            | None => (erb - maxTxFee)
-            end)
-  | notdelegated sres =>
-      if bool_decide (addr ∈ dels candidateTx.1.2)
-      then delegated
-            ((if bool_decide (sender candidateTx <> addr)
-              then (balanceLb sres)
-              else (balanceLb sres - maxTxFee)) `min` configuredRB sres)
-      else if bool_decide (sender candidateTx <> addr)
-           then preCandidateTxRes addr
-           else notdelegated
-                  (* because [balanceLb] is just a lowerbound and not exact, we cannot determine whether the tx will revert thus we need to subtract [value candidateTx] unconditionally. EVM execution is not monotone *)
-                  {| balanceLb := balanceLb sres - value candidateTx - maxTxFee;
-                    configuredRB := configuredRB sres;
-                    feeSolvent := feeSolvent sres
-                                  && bool_decide (maxTxFee <= balanceLb sres)|}
-  end.
+  let prev := preRes addr in
+  let maxTxFee := maxTxFee candTx in
+  let newCrb :=
+    match reserveBalUpdateOfTx candTx with
+    | Some newRb => newRb
+    | None => configuredRB prev
+    end in
+  let newDelegated :=
+    (delegated prev && asbool (addr ∉ undels candTx.1.2))
+    || asbool (addr ∈ dels candTx.1.2) in
+  let isNotSender := asbool (sender candTx <> addr) in
+  {|
+    balanceLb :=
+      if newDelegated
+      then (if isNotSender then balanceLb prev else balanceLb prev - maxTxFee)
+             `min` newCrb
+      else
+        if isNotSender
+        then balanceLb prev
+        else balanceLb prev - maxTxFee - value candTx; 
+    configuredRB := newCrb ;
+    feeSolvent := feeSolvent prev && asbool (maxTxFee <= balanceLb prev);
+    delegated := newDelegated; 
+  |}.
 
 Fixpoint remainingEffReserveBalsL (preRestResBalances: EffReserveBals) (rest: list TxWithHdr)
   : EffReserveBals:=
@@ -306,15 +304,9 @@ Fixpoint remainingEffReserveBalsL (preRestResBalances: EffReserveBals) (rest: li
 Definition consensusAcceptableTxs (latestState : AugmentedState) (proposedTxs: list TxWithHdr) : Prop :=
   forall addr,
     addr ∈ map sender proposedTxs
-    -> match remainingEffReserveBalsL
-               (initialEffReserveBals latestState) proposedTxs addr with
-       | delegated erb => 0 <= erb                                                                     | notdelegated res => feeSolvent res = true
-       end.
-
-                                                                                          
-                                                                                              
-  
-
+    -> feeSolvent
+         (remainingEffReserveBalsL
+            (initialEffReserveBals latestState) proposedTxs addr) = true.
 
 (** * Execution Check (algo 2)
 
@@ -1054,7 +1046,7 @@ Qed.
 
 
 Open Scope Z_scope.
-(* TODO: delete and inline *)
+(* TODO: delete and inline 
 Lemma initResBal s addr:
   ((initialEffReserveBals s)  addr) =
 (if addrDelegated s.1 addr
@@ -1070,7 +1062,7 @@ Proof.
   reflexivity.
 Qed.
 
-
+*)
 
 (** **  [isAllowedToEmpty] lemmas
 
@@ -1131,14 +1123,10 @@ Qed.
 Hint Rewrite @updateKeyLkp3 : syntactic.
 
 Definition sresLe (rb1 rb2: ShallowExecRes) :=
-  match rb1, rb2 with
-  | notdelegated res1, notdelegated res2
-    => balanceLb res1 <= balanceLb res2
-       /\ configuredRB res1 = configuredRB res2
-       /\ (feeSolvent res1 = true -> feeSolvent res2 = true)
-  | delegated erb, delegated erb2 => erb <= erb2
-  | _, _ => False
-  end.
+  delegated rb1 = delegated rb2
+  /\ balanceLb rb1 <= balanceLb rb2
+  /\ configuredRB rb1 = configuredRB rb2
+  /\ (feeSolvent rb1 = true -> feeSolvent rb2 = true).
 
 Notation "l '`resLe`' r" := (sresLe l r) (at level 50).
 
@@ -1155,20 +1143,15 @@ Definition rbLe (eoas: list EvmAddr) (rb1 rb2: EffReserveBals) :=
 
 Lemma rbLeImpl a b :
   a `resLe` b ->
-  match a with
-  | delegated erb => 0 ≤ erb
-  | notdelegated res => feeSolvent res = true
-  end ->
-  match b with
-  | delegated erb => 0 ≤ erb
-  | notdelegated res => feeSolvent res = true
-  end.
+   feeSolvent a = true
+   -> feeSolvent b = true.
 Proof.
   intros Hr.
   hnf in Hr.
-  destruct a, b; simpl in *; try lia; try case_match; try tauto.
+  tauto.
 Qed.
-Ltac sauto := simpl in *; autorewrite with syntactic in *; try lia; try congruence; try eauto.
+
+Ltac sauto := intros; forward_reason; rwHyps; simpl in *; autorewrite with syntactic in *; try lia; try congruence; try eauto;(case_match_concl; simpl in *; autorewrite with syntactic; try lia; try congruence; fail).
 
 Lemma mono eoas rb1 rb2 tx:
   rbLe eoas rb1 rb2
@@ -1179,22 +1162,12 @@ Proof using.
   unfold remainingEffReserveBals.
   pose proof (Hrb addr Hin) as Hrba.
   unfold sresLe in Hrba.
-  case_match_concl; auto; rdestruct (rb2 addr); sauto.
-  { (* rb1 and rb2 are delegated *)
-    simpl.
-    case_bool_decide; auto.
-    case_match; try lia.
-  }
-  {
-    case_bool_decide; case_bool_decide; try sauto.
-    forward_reason.
-    autorewrite with iff.
-    split_and !; try sauto.
-    intros.
-    forward_reason.
-    rwHyps.
-    lia.
-  }
+  forward_reason.
+  unfold sresLe. simpl.
+  autorewrite with iff in *.
+  split_and !; try sauto;[].
+  rwHyps.
+  case_match_concl; case_bool_decide_concl; sauto.
 Qed.
 
 (** In the proof of the main correctness theorem, we use a slightly different
@@ -1299,7 +1272,7 @@ Proof using.
 Qed.
 *)
 
-Hint Rewrite initResBal configuredReserveBalOfAddrSpec addrDelegatedUnchangedByBalUpd: syntactic.
+Hint Rewrite configuredReserveBalOfAddrSpec addrDelegatedUnchangedByBalUpd: syntactic.
 
 Lemma execPreservesConsensusChecks tx extension s:
   maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
@@ -1309,7 +1282,7 @@ Lemma execPreservesConsensusChecks tx extension s:
   -> consensusAcceptableTxs (execValidatedTx s tx) extension.
 Proof using.
   intros Hfee Hext Heoac Hsc.
-  clear Hext. execTx
+  clear Hext. execValidatedTx
   pose proof (hasCodeFalsePresExec _ _ _ Heoac Hsc) as Hscf.
   clear Heoac.
   set (sf:=(execValidatedTx s tx).1).

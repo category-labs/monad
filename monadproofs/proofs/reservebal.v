@@ -50,10 +50,19 @@ Record TxExtra :=
     undels: list EvmAddr;
 
     (** The fields above should ultimately come from EVM semantics and not here. The fields below are monad-specific. *)
-    reserveBalUpdate: option N
+    reserveBalUpdate': option N
    (** ^ updates the reserve balance of the sender if Some. In that case, the transaction does nothing else, e.g., smart contract invocation or transfer. *)
   }.
 
+Definition isEmpty {T} (t:list T) : bool :=
+  match t with
+  | [] => true
+  | _ => false
+  end.
+    
+    
+Definition reserveBalUpdate (t: TxExtra) : option N :=
+  if isEmpty (dels t ++ undels t) then reserveBalUpdate' t else None.
 
 Definition TxWithHdr : Type := (BlockHeader * TxExtra) * (Transaction).
 
@@ -265,10 +274,13 @@ Definition remainingEffReserveBals (preRes: EffReserveBals) (candTx: TxWithHdr)
   let prev := preRes addr in
   let maxTxFee := maxTxFee candTx in
   let newCrb :=
-    match reserveBalUpdateOfTx candTx with
-    | Some newRb => newRb
-    | None => configuredRB prev
-    end in
+    if bool_decide (sender candTx <> addr)
+    then configuredRB prev
+    else
+      match reserveBalUpdateOfTx candTx with
+      | Some newRb => newRb
+      | None => configuredRB prev
+      end in
   let newDelegated := delegatedAfterTx (delegated prev) candTx addr
  in
   let isNotSender := asbool (sender candTx <> addr) in
@@ -584,6 +596,8 @@ Proof.
 Qed.
 
 
+    
+
 Lemma execTxDelegationUpdCoreImpl tx s:
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
@@ -741,7 +755,13 @@ Proof.
   }
 Qed.
 
-
+Lemma isEmptyImpl {T} (t:list T) :
+  isEmpty t = true -> t=[].
+Proof using.
+  unfold isEmpty.
+  destruct t; sauto.
+Qed.
+  
 Lemma execTxDelegationUpd tx s:
   let sf :=  (execValidatedTx s tx) in
   (forall ac, addrDelegated (fst sf) ac  -> addrDelegated (fst s) ac || bool_decide (ac ∈ (addrsDelUndelByTx tx))).
@@ -766,6 +786,38 @@ Proof.
   }
 Qed.
 
+Hint Rewrite @app_nil : iff.
+Lemma execTxDelegationUpdDerived: forall tx s,
+  let sf :=  (execValidatedTx s tx).1 in
+  (forall ac, addrDelegated sf ac  =
+                (addrDelegated s.1 ac && bool_decide (ac ∉ (undels tx.1.2)))
+                || bool_decide (ac ∈ (dels tx.1.2))).
+Proof using.
+  intros ? ? ? ?.
+  subst sf.
+  unfold execValidatedTx.
+  simpl in *.
+  remember (reserveBalUpdateOfTx tx) as rb.
+  destruct rb; simpl in *; try congruence.
+  1:{  unfold balanceOfAcA. simpl in *.  intros.
+       repeat rewrite addrDelegatedUnchangedByBalUpd.
+       unfold reserveBalUpdateOfTx in Heqrb.
+       unfold reserveBalUpdate in Heqrb.
+       case_match; try 
+                     congruence.
+       applyToSomeHyp @isEmptyImpl.
+       autorewrite with iff in *.
+       sauto.
+  }
+  rewrite pairEta. simpl.
+  case_match.
+  {
+    rewrite execTxDelegationUpdCore; auto.
+  }
+  {
+    rewrite revertTxDelegationUpdCore; auto.
+  }
+Qed.
 
 Lemma execTxCannotDebitNonDelegatedNonContractAccounts tx s:
   let sf :=  (execValidatedTx s tx) in
@@ -1263,7 +1315,17 @@ Qed.
 *)
 
 Hint Rewrite configuredReserveBalOfAddrSpec addrDelegatedUnchangedByBalUpd: syntactic.
-
+(*
+Lemma exec1 tx extension s :
+  maxTxFee tx <= balanceOfAc s.1 (sender tx)
+  -> let sf := (execValidatedTx s tx) in
+     (∀ ac : EvmAddr, ac ∈ sender tx :: map sender extension → hasCode sf.1 ac = false)
+     -> ∀ addr : EvmAddr,
+         addr ∈ sender tx :: map sender extension
+         -> (remainingEffReserveBals (initialEffReserveBals s) tx addr)
+              `resLe` (initialEffReserveBals sf addr).
+Proof using.
+Admitted.
 Lemma execPreservesConsensusChecks tx extension s:
   maxTxFee tx <= balanceOfAc s.1 (sender tx) ->
   (forall txext, txext ∈ extension ->  txBlockNum txext - K ≤ txBlockNum tx ≤ txBlockNum txext)   -> (forall txext, txext ∈ tx::extension ->  txCannotCreateContractAtAddrs txext (map sender (tx::extension)))
@@ -1290,12 +1352,9 @@ Proof using.
   apply Hm; auto; simpl in *; auto; [ set_solver | | set_solver].
   intros.
   clear Hm.
-  clear Hc. clear Hin. clear ac.
-  hnf.
-  clear Hsc.
-  clear Hext.
-  apply exec1; auto.
+  apply exec1 with (extension := extension); auto.
 Qed.
+ *)
 
 (** This lemma captures a key property of [remainingEffReserveBals]: it underapproximates
 the resultant effective balance after execution of the transaction
@@ -1312,6 +1371,29 @@ Proof using.
   intros Hfee ? Hscf.
   intros ? Hin.
   unfold remainingEffReserveBals.
+  unfold initialEffReserveBals. unfold sresLe. simpl.
+  split_and !; try sauto.
+  { subst sf. simpl.
+    rewrite execTxDelegationUpdDerived.
+    reflexivity.
+  }
+
+  2:{
+    rewrite configuredReserveBalOfAddrSpec.
+    case_bool_decide; resdec congruence;[].
+    subst. reflexivity.
+  }
+  
+  
+    unfold rbAfterTx.
+    
+    {   r congruence.
+        case_bool_decide; try congruence.
+  Search configuredReserveBalOfAddr.
+    Search addrDelegated execValidatedTx.
+    Lemma delUpd:
+      delegatedAfterTx (addrDelegated s.1 addr) tx addr =
+  addrDelegated (execValidatedTx s tx).1 addr  
   case_match.
   { (* this tx updates the reserve balance *)
     rename n into nrb.

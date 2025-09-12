@@ -78,7 +78,7 @@ TEST(Validation, validate_deployed_code)
     Transaction const tx{.gas_limit = 60'500};
     Account const sender_account{
         .balance = 56'939'568'773'815'811,
-        .code_hash = some_non_null_hash,
+        .code_or_hash = some_non_null_hash,
         .nonce = 24};
 
     auto const result =
@@ -94,7 +94,7 @@ TEST(Validation, validate_deployed_code_delegated)
 
     Transaction const tx{.gas_limit = 60'500};
     Account const sender_account{
-        .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
+        .balance = 56'939'568'773'815'811, .code_or_hash = some_non_null_hash};
 
     auto const result = validate_transaction<EvmTraits<EVMC_PRAGUE>>(
         tx,

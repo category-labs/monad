@@ -36,7 +36,7 @@ TEST(Rlp_Account, Encode)
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
     static constexpr bytes32_t code_hash{
         0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32};
-    Account const a{.balance = b, .code_hash = code_hash};
+    Account const a{.balance = b, .code_or_hash = code_hash};
     byte_string const rlp_account{
         0xf8, 0x48, 0x80, 0x84, 0x01, 0x6e, 0x36, 0x00, 0xa0, 0xbe, 0xa3,
         0x4d, 0xd0, 0x4b, 0x09, 0xad, 0x3b, 0x60, 0x14, 0x25, 0x1e, 0xe2,
@@ -57,5 +57,5 @@ TEST(Rlp_Account, Encode)
 
     EXPECT_EQ(storage_root, decoded_storage_root);
     EXPECT_EQ(a.balance, decoded_account.value().balance);
-    EXPECT_EQ(a.code_hash, decoded_account.value().code_hash);
+    EXPECT_EQ(a.code_or_hash, decoded_account.value().code_or_hash);
 }

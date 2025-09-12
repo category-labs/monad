@@ -209,7 +209,7 @@ namespace
         // for validation
         std::optional<Account> eoa = acct;
         if (eoa.has_value()) {
-            eoa.value().code_hash = NULL_HASH;
+            eoa.value().code_or_hash = NULL_HASH;
         }
 
         // Safe to pass empty code to validation here because the above override

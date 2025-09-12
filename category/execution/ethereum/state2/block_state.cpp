@@ -189,8 +189,9 @@ void BlockState::merge(State const &state)
         MONAD_ASSERT(stack.version() == 0);
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
-        if (account.has_value()) {
-            code_hashes.insert(account.value().code_hash);
+        if (account.has_value() && account.value().code_or_hash.is_hash()) {
+            // DO NOT insert delegated code into block state or db
+            code_hashes.insert(account.value().get_code_hash());
         }
     }
 

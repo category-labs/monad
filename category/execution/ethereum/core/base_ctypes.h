@@ -36,13 +36,12 @@
 
 #include <array>
 #include <cstdint>
-#include <cstring>
 
-#if __has_include(<evmc/evmc.hpp>)
+#if MONAD_CXX_CTYPES_USE_EVMC_HPP
     #include <evmc/evmc.hpp>
     using monad_c_address = evmc::address;
     using monad_c_bytes32 = evmc::bytes32;
-#elif __has_include(<evmc/evmc.h>)
+#elif MONAD_CXX_CTYPES_USE_EVMC
     #include <evmc/evmc.h>
     using monad_c_address = evmc_address;
     using monad_c_bytes32 = evmc_bytes32;
@@ -51,22 +50,16 @@
     using monad_c_bytes32 = std::array<std::uint8_t, 32>;
 #endif
 
-#if __has_include(<intx/intx.hpp>)
+#if MONAD_CXX_CTYPES_USE_INTX
     #include <intx/intx.hpp>
     using monad_c_uint256_ne = intx::uint256;
 #else
     // See comment in the C version of this below
-    struct monad_exec_uint256_ne
+    struct monad_c_uint256_ne
     {
         std::uint64_t limbs[4];
-
-        monad_exec_uint256_ne &operator=(monad_c_bytes32 const &rhs)
-        {
-            std::memcpy(this, &rhs, sizeof *this);
-            return *this;
-        }
     };
-#endif // __has_include(<intx/intx.hpp>)
+#endif
 
 using monad_c_b64 = std::array<std::uint8_t, 8>;
 using monad_c_bloom256 = std::array<std::uint8_t, 256>;
@@ -84,11 +77,11 @@ typedef struct monad_c_b64
     uint8_t bytes[8];
 } monad_c_b64;
 
-#if __has_include(<evmc/evmc.h>)
+#if MONAD_C_CTYPES_USE_EVMC
     #include <evmc/evmc.h>
     typedef evmc_address monad_c_address;
     typedef evmc_bytes32 monad_c_bytes32;
-#else // __has_include(<evmc/evmc.h>)
+#else
     typedef struct monad_c_address
     {
         uint8_t bytes[20];
@@ -98,7 +91,7 @@ typedef struct monad_c_b64
     {
         uint8_t bytes[32];
     } monad_c_bytes32;
-#endif // __has_include(<evmc/evmc.h>)
+#endif
 
 // 256-bit integer stored in native endian byte order; the rationale for the
 // storage layout as `uint64_t[4]` instead of `uint8_t[32]` is that this ensures

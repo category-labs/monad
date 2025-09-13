@@ -265,6 +265,16 @@ target_include_directories(
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS})
 
+target_compile_definitions(
+  monad_execution_ethereum PUBLIC
+  MONAD_CXX_CTYPES_USE_EVMC_HPP
+  MONAD_CXX_CTYPES_USE_INTX)
+
+target_compile_definitions(
+  monad_execution_native PUBLIC
+  MONAD_CXX_CTYPES_USE_EVMC_HPP
+  MONAD_CXX_CTYPES_USE_INTX)
+
 target_link_libraries(
   monad_execution_ethereum
   PUBLIC monad-vm

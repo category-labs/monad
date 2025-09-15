@@ -575,7 +575,12 @@ TEST_F(BlockHistoryFixture, blockhash_opcode)
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
-        EXPECT_EQ(actual, to_bytes(0xBB));
+        if (i < 128) {
+            EXPECT_EQ(actual, to_bytes(0xAA));
+        }
+        else {
+            EXPECT_EQ(actual, to_bytes(0xBB));
+        }
     }
 
     // Fill enough entries to direct all reads to the block history
@@ -646,7 +651,12 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_late_deploy)
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
-        EXPECT_EQ(actual, to_bytes(0xBB));
+        if (i < 255) {
+            EXPECT_EQ(actual, to_bytes(0xBB));
+        }
+        else {
+            EXPECT_EQ(actual, to_bytes(0xAA));
+        }
     }
 
     // Fill enough entries to direct all reads to the block history

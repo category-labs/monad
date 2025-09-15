@@ -136,16 +136,14 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
     try {
         MONAD_ASSERT(block_number >= 0);
-        bytes32_t const block_hash = [&]() -> bytes32_t {
-            if (MONAD_LIKELY(block_hash_buffer_ == nullptr)) {
-                return get_block_hash_history(
-                    state_, static_cast<uint64_t>(block_number));
-            }
-            else {
-                return block_hash_buffer_->get(
-                    static_cast<uint64_t>(block_number));
-            }
-        }();
+        bytes32_t block_hash =
+            get_block_hash_history(state_, static_cast<uint64_t>(block_number));
+        if (MONAD_LIKELY(block_hash != bytes32_t{})) {
+            return block_hash;
+        }
+        MONAD_ASSERT_THROW(block_hash_buffer_, "unable to retrieve block hash");
+        block_hash =
+            block_hash_buffer_->get(static_cast<uint64_t>(block_number));
         MONAD_ASSERT(block_hash != bytes32_t{});
         return block_hash;
     }

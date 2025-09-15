@@ -128,7 +128,7 @@ inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
 
 //////////////////////////////////////////////////////////
-// Proposed and finialized subtries. Active on all tables.
+// Proposed and finalized subtries. Active on all tables.
 //////////////////////////////////////////////////////////
 inline constexpr unsigned char PROPOSAL_NIBBLE = 0;
 inline constexpr unsigned char FINALIZED_NIBBLE = 1;

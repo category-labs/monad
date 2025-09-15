@@ -157,6 +157,7 @@ Below, we build up the definition of the consensus check [consensusAcceptableTxs
 (** the number is just the effective reserve balance.
 
  TODO: tell coqdoc to print Set as Type*)
+(* shallow exec info for 1 account *)
 Record ShallowExecRes  : Set := mkNotDelCase
   {
     balanceLb: Z;
@@ -211,6 +212,22 @@ Definition initialShallowExecResults (s: AugmentedState) : ShallowExecResults :=
       delegated := del; 
     |}.
 
+(*
+AA: balance 10
+reservebal:=5
+newtx: value 6, fee 1
+undelegated.
+
+ *)
+
+(*
+AA: balance 10
+reservebal:=5
+newtx: value 1, fee 6
+undelegated: accepted
+delegated: rejected
+*)
+
 (** Consensus’ decrement step:
 
     [shallowExectTx] is the algebraic heart of consensus check algorithm:
@@ -262,8 +279,14 @@ Definition shallowExecTx (preRes: ShallowExecResults) (candTx: TxWithHdr)
         else balanceLb prev - maxTxFee - value candTx; 
     configuredRB := newCrb ;
     feeSolvent := feeSolvent prev && asbool (maxTxFee <= balanceLb prev);
+    (* feeSolvent <> balanceLb >=0 *)
     delegated := newDelegated; 
   |}.
+
+(*
+Alice 100MON, undelegated
+Alice, value 100, fee 1
+ *)
 
 Fixpoint shallowExecTxL (preRestResBalances: ShallowExecResults) (rest: list TxWithHdr)
   : ShallowExecResults:=
@@ -394,6 +417,33 @@ Definition execValidatedTx  (s: AugmentedState) (t: TxWithHdr)
      else (revertTx s.1 t, updateExtraState s.2 t)
   end
 .
+
+(* accepted in new, not in old
+Alice: bal 100, reserve 5, undelegated
+tx1: alice, fee 6, value 1
+tx2: alice, fee 6, value 1
+ *)
+
+
+(* old consensus accept, new reject
+   old execution: unexpected revert possible,  
+Alice: bal 100, reserve 5, undelegated
+tx1: alice, fee 6, value 1
+93 min 5=5
+balanceLb := 93
+tx2: alice, fee 2, value 92
+balanceLb := 0
+ *)
+
+
+(* 
+Alice: bal 100, reserve 5, undelegated
+tx1: alice, fee 6, value 1
+93 min 5=5
+balanceLb := 93
+tx2: alice, fee 6, value 1
+balanceLb := 0
+ *)
 
 (** Note that because the [hasCode] check is done on [si] (the result of running the EVM blackbox to execute [t]), not [s] (the pre-exec state), the following scenario is allowed.
 
@@ -1524,3 +1574,15 @@ Section consensusInvariantsAndPreservation.
 End consensusInvariantsAndPreservation.
 (* end hide *)
 End K.
+
+(* consensus: both new and old will accept
+   execution: only old will unnecessarily revert tx4
+
+Alice 100, undelegated, reservebal =5
+tx1: sender Alice, delegates Alice, value 10, fee 1
+tx2: Bob sends to Alice, Alice balance debited by 20.
+tx3: sender Alice, undelegates Alice, value 0, fee 1
+tx4: sender Alice, value 67, fee 1
+*)
+
+

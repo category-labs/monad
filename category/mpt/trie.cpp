@@ -977,7 +977,7 @@ void dispatch_updates_impl_(
     fillin_entry(aux, sm, std::move(tnode), parent, entry);
 }
 
-// Split `old` at old_prefix_index, `updates` are already splitted at
+// Split `old` at old_prefix_index, `updates` are already split at
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,

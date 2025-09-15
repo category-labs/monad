@@ -15,14 +15,17 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp> // little endian
 #include <category/core/unaligned.hpp>
+#include <category/core/unordered_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/evm/delegation.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <quill/Quill.h>
@@ -43,6 +46,7 @@ struct monad_db_snapshot_loader
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
+    std::deque<monad::byte_string> bytes_alloc;
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
@@ -50,6 +54,7 @@ struct monad_db_snapshot_loader
     monad::mpt::UpdateList state_updates;
     monad::mpt::UpdateList code_updates;
     uint64_t bytes_read;
+    monad::unordered_dense_set<monad::bytes32_t> delegated_code;
 
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
@@ -136,17 +141,21 @@ uint64_t monad_db_snapshot_loader_read_account(
     using namespace monad::mpt;
     byte_string_view bytes{accounts.substr(account_offset)};
     byte_string_view const before{bytes};
-    auto const res = decode_account_db_raw(bytes);
+    auto res = decode_account_db(bytes);
     MONAD_ASSERT(res.has_value());
-    auto const [address, account] = res.value();
-    MONAD_ASSERT(address.size() == sizeof(Address));
+    auto [address, account] = res.value();
+    MONAD_ASSERT(account.delegated == false);
+    if (account.code_hash != NULL_HASH) {
+        account.delegated = loader->delegated_code.contains(account.code_hash);
+    }
     uint64_t const bytes_consumed = before.size() - bytes.size();
     auto const [it, success] =
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
             Update{
                 .key = loader->hash_alloc.emplace_back(keccak256(address)),
-                .value = before.substr(0, bytes_consumed),
+                .value = loader->bytes_alloc.emplace_back(
+                    encode_account_db(address, account)),
                 .incarnation = false,
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(loader->block)});
@@ -226,7 +235,17 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
             if (path.nibble_size() == HASH_SIZE) {
                 type = MONAD_SNAPSHOT_ACCOUNT;
                 account_offset = account_bytes_written.at(shard);
-                account_bytes_written.at(shard) += val.size();
+                auto raw = val;
+                auto const res = decode_account_db(raw);
+                MONAD_ASSERT(res.has_value());
+                auto const &[addr, acct] = res.value();
+                auto const acct_enc = encode_account_no_derived(addr, acct);
+                MONAD_ASSERT(
+                    write(
+                        shard, type, acct_enc.data(), acct_enc.size(), user) ==
+                    acct_enc.size());
+
+                account_bytes_written.at(shard) += acct_enc.size();
             }
             else {
                 MONAD_ASSERT(path.nibble_size() == (HASH_SIZE * 2));
@@ -239,10 +258,10 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
                             &account_offset),
                         sizeof(account_offset),
                         user) == sizeof(account_offset));
+                MONAD_ASSERT(
+                    write(shard, type, val.data(), val.size(), user) ==
+                    val.size());
             }
-
-            MONAD_ASSERT(
-                write(shard, type, val.data(), val.size(), user) == val.size());
         }
 
         return true;
@@ -422,9 +441,15 @@ void monad_db_snapshot_loader_load(
             code_view.remove_prefix(sizeof(uint64_t));
             MONAD_ASSERT(code_view.size() >= size);
             byte_string_view const val = code_view.substr(0, size);
+            auto const &code_hash =
+                loader->hash_alloc.emplace_back(keccak256(val));
+            if (vm::evm::is_delegated(val)) {
+                loader->delegated_code.emplace(
+                    std::bit_cast<bytes32_t>(code_hash));
+            }
             loader->code_updates.push_front(
                 loader->update_alloc.emplace_back(Update{
-                    .key = loader->hash_alloc.emplace_back(keccak256(val)),
+                    .key = code_hash,
                     .value = val,
                     .incarnation = false,
                     .next = UpdateList{},

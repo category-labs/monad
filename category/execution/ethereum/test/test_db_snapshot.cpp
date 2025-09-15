@@ -60,6 +60,15 @@ TEST(DbBinarySnapshot, Basic)
 
     auto const src_db = tmp_dbname();
 
+    constexpr uint64_t delegated_idx = 88;
+    static constexpr Address delegated_addr{delegated_idx};
+    auto const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
+    // all multiple of 100 accounts are eoa with delegation
+    uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(delegated_addr.bytes, 20, &eoa_code[3]);
+    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
+
     bytes32_t root;
     Code code_delta;
     BlockHeader last_header;
@@ -73,19 +82,26 @@ TEST(DbBinarySnapshot, Basic)
         StateDeltas deltas;
         for (uint64_t i = 0; i < 100'000; ++i) {
             StorageDeltas storage;
+            Account acct{.balance = i, .nonce = i};
             if ((i % 100) == 0) {
+                acct.code_hash = eoa_code_hash;
                 for (uint64_t j = 0; j < 10; ++j) {
                     storage.emplace(
                         bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
                 }
             }
+            if (i == delegated_idx) {
+                acct.code_hash = delegated_code_hash;
+            }
             deltas.emplace(
                 Address{i},
                 StateDelta{
-                    .account =
-                        {std::nullopt, Account{.balance = i, .nonce = i}},
-                    .storage = storage});
+                    .account = {std::nullopt, acct}, .storage = storage});
         }
+
+        code_delta.emplace(eoa_code_hash, vm::make_shared_intercode(eoa_code));
+        code_delta.emplace(
+            delegated_code_hash, vm::make_shared_intercode(delegated_code));
         for (uint64_t i = 0; i < 1'000; ++i) {
             std::vector<uint64_t> const bytes(100, i);
             byte_string_view const code{
@@ -139,6 +155,18 @@ TEST(DbBinarySnapshot, Basic)
         tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
         EXPECT_EQ(tdb.state_root(), root);
+
+        for (uint64_t i = 100; i < 100'000; i += 100) {
+            auto const acct = tdb.read_account(Address{i});
+            ASSERT_TRUE(acct.has_value());
+            EXPECT_EQ(acct->code_hash, eoa_code_hash);
+            EXPECT_TRUE(acct->delegated);
+        }
+        auto const acct = tdb.read_account(delegated_addr);
+        ASSERT_TRUE(acct.has_value());
+        EXPECT_EQ(acct->code_hash, delegated_code_hash);
+        EXPECT_FALSE(acct->delegated);
+
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);

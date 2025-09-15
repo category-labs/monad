@@ -141,10 +141,11 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         state.access_account(*authority);
 
         // 5. Verify the code of authority is empty or already delegated.
-        auto const &icode = state.get_code(*authority)->intercode();
-        auto const code = std::span{icode->code(), *icode->code_size()};
-        if (!(code.empty() || vm::evm::is_delegated(code))) {
-            continue;
+        auto const &account = state.recent_account(*authority);
+        if (account.has_value()) {
+            if (!(account->code_hash == NULL_HASH || account->delegated)) {
+                continue;
+            }
         }
 
         // 6. Verify the nonce of authority is equal to nonce.
@@ -178,11 +179,13 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
                 byte_string(
                     auth_entry.address.bytes, auth_entry.address.bytes + 20);
             state.set_code(*authority, new_code);
+            state.set_account_delegation(*authority, true);
         }
         else {
             // If address is 0x0000000000000000000000000000000000000000, do not
             // write the delegation indicator. Clear the account’s code
             state.set_code(*authority, {});
+            state.set_account_delegation(*authority, false);
         }
 
         // 9. Increase the nonce of authority by one.

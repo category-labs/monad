@@ -192,6 +192,7 @@ void run_revert_transaction_test(
                 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
             };
             state.set_code(SENDER, code);
+            state.set_account_delegation(SENDER, true);
         }
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);

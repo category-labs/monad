@@ -191,8 +191,7 @@ EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
 Result<void> validate_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account,
-    std::span<uint8_t const> code)
+    Transaction const &tx, std::optional<Account> const &sender_account)
 {
     // YP (70)
     uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
@@ -216,7 +215,7 @@ Result<void> validate_transaction(
     bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702
-        sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
+        sender_is_eoa = sender_is_eoa || sender_account->delegated;
     }
 
     if (MONAD_UNLIKELY(!sender_is_eoa)) {
@@ -247,10 +246,9 @@ EXPLICIT_TRAITS(validate_transaction);
 
 Result<void> validate_transaction(
     evmc_revision const rev, Transaction const &tx,
-    std::optional<Account> const &sender_account,
-    std::span<uint8_t const> const code)
+    std::optional<Account> const &sender_account)
 {
-    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
+    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account);
     MONAD_ABORT("invalid revision");
 }
 

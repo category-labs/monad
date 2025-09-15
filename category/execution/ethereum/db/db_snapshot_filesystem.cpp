@@ -168,6 +168,17 @@ void monad_db_snapshot_load_filesystem(
             fd, reinterpret_cast<unsigned char const *>(data), size);
     };
 
+    // load code first
+    for (auto const &dir : std::filesystem::directory_iterator{root}) {
+        uint64_t const shard = std::stoull(dir.path().stem());
+        auto const [code_fd, code, code_len] = do_mmap(dir.path() / "code");
+        monad_db_snapshot_loader_load(
+            loader, shard, nullptr, 0, nullptr, 0, nullptr, 0, code, code_len);
+        if (code) {
+            munmap((void *)code, code_len);
+        }
+        close(code_fd);
+    }
     for (auto const &dir : std::filesystem::directory_iterator{root}) {
         uint64_t const shard = std::stoull(dir.path().stem());
         auto const [eth_header_fd, eth_header, eth_header_len] =
@@ -176,7 +187,6 @@ void monad_db_snapshot_load_filesystem(
             do_mmap(dir.path() / "account");
         auto const [storage_fd, storage, storage_len] =
             do_mmap(dir.path() / "storage");
-        auto const [code_fd, code, code_len] = do_mmap(dir.path() / "code");
         monad_db_snapshot_loader_load(
             loader,
             shard,
@@ -186,8 +196,8 @@ void monad_db_snapshot_load_filesystem(
             account_len,
             storage,
             storage_len,
-            code,
-            code_len);
+            nullptr,
+            0);
         if (eth_header) {
             munmap((void *)eth_header, eth_header_len);
         }
@@ -197,13 +207,9 @@ void monad_db_snapshot_load_filesystem(
         if (storage) {
             munmap((void *)storage, storage_len);
         }
-        if (code) {
-            munmap((void *)code, code_len);
-        }
         close(eth_header_fd);
         close(account_fd);
         close(storage_fd);
-        close(code_fd);
     }
 
     monad_db_snapshot_loader_destroy(loader);

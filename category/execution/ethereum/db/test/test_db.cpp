@@ -391,21 +391,26 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account const orig_acct{
+        .balance = 1'000'000,
+        .code_hash = {},
+        .nonce = 1337,
+        .delegated = true};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {std::nullopt, acct},
+                 .account = {std::nullopt, orig_acct},
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
                       {key2, {bytes32_t{}, value2}}}}}},
         Code{},
         BlockHeader{.number = 0});
 
-    acct = tdb.read_account(ADDR_A).value();
+    Account acct = tdb.read_account(ADDR_A).value();
+    EXPECT_EQ(acct, orig_acct);
     commit_sequential(
         tdb,
         StateDeltas{

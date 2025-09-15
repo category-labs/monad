@@ -112,7 +112,7 @@ itself also the root of the trie underneath, for example a leaf of an
 account trie, where the account has an underlying storage trie. It can also
 simply mean it's a branch node inside an internal trie, for example a branch
 node with value in a receipt trie (var key length). Such branch node with leaf
-will cache an intemediate hash inline.
+will cache an intermediate hash inline.
 
 Similar like a merkle patricia trie, each node's data is computed from its child
 nodes data. Triedb is divided into different sections, indexed by unique

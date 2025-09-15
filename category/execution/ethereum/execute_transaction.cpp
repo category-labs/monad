@@ -250,9 +250,19 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     state.access_account(sender_);
     for (auto const &ae : tx_.access_list) {
-        state.access_account(ae.a);
-        for (auto const &keys : ae.keys) {
-            state.access_storage(ae.a, keys);
+        if (state.is_in_current(ae.a)) {
+            state.access_account(ae.a);
+            for (auto const &key : ae.keys) {
+                state.access_storage(ae.a, key);
+            }
+        }
+        else {
+            OriginalAccountState &account_state =
+                state.original_account_state(ae.a);
+            account_state.access();
+            for (auto const &key : ae.keys) {
+                account_state.access_storage(key);
+            }
         }
     }
     if (MONAD_LIKELY(tx_.to)) {

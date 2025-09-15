@@ -686,6 +686,11 @@ public:
         original->balance = actual->balance;
         return true;
     }
+
+    bool is_in_current(Address const &address) const
+    {
+        return current_.find(address) != current_.end();
+    }
 };
 
 MONAD_NAMESPACE_END

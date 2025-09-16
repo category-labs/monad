@@ -171,9 +171,6 @@ struct EvmcHost final : public EvmcHostBase
     access_account(Address const &address) noexcept override
     {
         try {
-            // NOTE: we deliberately do not check the monad precompiles here.
-            // They are stateful and stateful precompiles should pay the COLD
-            // account access like any other contract.
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }

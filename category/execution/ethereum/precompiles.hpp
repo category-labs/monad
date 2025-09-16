@@ -33,6 +33,9 @@ bool init_trusted_setup();
 inline constexpr Address ripemd_address{3};
 
 template <Traits traits>
+bool is_eth_precompile(Address const &);
+
+template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>

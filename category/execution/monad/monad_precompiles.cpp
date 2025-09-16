@@ -70,6 +70,15 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
+bool is_precompile(Address const &address)
+{
+    return is_eth_precompile<traits>(address) ||
+           (address == staking::STAKING_CA);
+}
+
+EXPLICIT_MONAD_TRAITS(is_precompile);
+
+template <Traits traits>
 std::optional<evmc::Result>
 check_call_precompile(State &state, evmc_message const &msg)
 {

@@ -109,12 +109,20 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 EXPLICIT_TRAITS(resolve_precompile);
 
 template <Traits traits>
-bool is_precompile(Address const &address)
+bool is_eth_precompile(Address const &address)
 {
     return resolve_precompile<traits>(address).has_value();
 }
 
-EXPLICIT_TRAITS(is_precompile);
+EXPLICIT_TRAITS(is_eth_precompile);
+
+template <Traits traits>
+bool is_precompile(Address const &address)
+{
+    return is_eth_precompile<traits>(address);
+}
+
+EXPLICIT_EVM_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)

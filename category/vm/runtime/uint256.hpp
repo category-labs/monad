@@ -929,7 +929,7 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     inline words_t<R>
     truncating_mul_runtime(words_t<M> const &x, words_t<N> const &y) noexcept
-        requires(0 < R && R <= M + N)
+        requires(0 < R && 0 < M && 0 < N && R <= M + N)
     {
         words_t<R> result;
         mul_line<R>(x, y[0], result);
@@ -971,7 +971,7 @@ namespace monad::vm::runtime
     MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
     inline constexpr words_t<R>
     truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
-        requires(0 < R && R <= M + N)
+        requires(0 < R && 0 < M && 0 < N && R <= M + N)
     {
         if consteval {
             return truncating_mul_constexpr<R>(x, y);

@@ -77,5 +77,3 @@ add_executable(read_only_db_stress_test "read_only_db_stress_test.cpp")
 monad_compile_options(read_only_db_stress_test)
 target_link_libraries(
   read_only_db_stress_test PUBLIC monad_execution CLI11::CLI11 quill::quill)
-
-add_subdirectory("geth_freezer_db_analyzer")

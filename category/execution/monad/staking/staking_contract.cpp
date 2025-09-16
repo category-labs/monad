@@ -36,6 +36,8 @@
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <quill/Quill.h>
+
 #include <algorithm>
 #include <cstring>
 #include <memory>

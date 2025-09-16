@@ -19,6 +19,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <evmc/evmc.h>

@@ -17,6 +17,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>

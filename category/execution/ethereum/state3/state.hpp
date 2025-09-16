@@ -15,19 +15,12 @@
 
 #pragma once
 
-#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
-#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
-#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -38,17 +31,14 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <quill/detail/LogMacros.h>
-
-#include <algorithm>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
-#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+class BlockState;
 
 class State
 {
@@ -72,515 +62,113 @@ class State
     bool const relaxed_validation_{false};
 
 public:
-    OriginalAccountState &original_account_state(Address const &address)
-    {
-        auto it = original_.find(address);
-        if (it == original_.end()) {
-            // block state
-            auto const account = block_state_.read_account(address);
-            it = original_.try_emplace(address, account).first;
-        }
-        return it->second;
-    }
+    OriginalAccountState &original_account_state(Address const &);
 
 private:
-    AccountState const &recent_account_state(Address const &address)
-    {
-        // current
-        auto const it = current_.find(address);
-        if (it != current_.end()) {
-            return it->second.recent();
-        }
-        // original
-        return original_account_state(address);
-    }
+    AccountState const &recent_account_state(Address const &);
 
-    AccountState &current_account_state(Address const &address)
-    {
-        // current
-        auto it = current_.find(address);
-        if (MONAD_UNLIKELY(it == current_.end())) {
-            // original
-            auto const &account_state = original_account_state(address);
-            it = current_.try_emplace(address, account_state, version_).first;
-        }
-        return it->second.current(version_);
-    }
+    AccountState &current_account_state(Address const &);
 
-    std::optional<Account> &current_account(Address const &address)
-    {
-        return current_account_state(address).account_;
-    }
+    std::optional<Account> &current_account(Address const &);
 
 public:
-    State(
-        BlockState &block_state, Incarnation const incarnation,
-        bool relaxed_validation = false)
-        : block_state_{block_state}
-        , incarnation_{incarnation}
-        , relaxed_validation_{relaxed_validation}
-    {
-    }
+    State(BlockState &, Incarnation, bool relaxed_validation = false);
 
     State(State &&) = delete;
     State(State const &) = delete;
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
 
-    Map<Address, OriginalAccountState> const &original() const
-    {
-        return original_;
-    }
+    Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, OriginalAccountState> &original()
-    {
-        return original_;
-    }
+    Map<Address, OriginalAccountState> &original();
 
-    Map<Address, VersionStack<AccountState>> const &current() const
-    {
-        return current_;
-    }
+    Map<Address, VersionStack<AccountState>> const &current() const;
 
-    Map<bytes32_t, vm::SharedVarcode> const &code() const
-    {
-        return code_;
-    }
+    Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
-    void push()
-    {
-        ++version_;
-    }
+    void push();
 
-    void pop_accept()
-    {
-        MONAD_ASSERT(version_);
+    void pop_accept();
 
-        for (auto it = current_.begin(); it != current_.end(); ++it) {
-            it->second.pop_accept(version_);
-        }
-
-        logs_.pop_accept(version_);
-
-        --version_;
-    }
-
-    void pop_reject()
-    {
-        MONAD_ASSERT(version_);
-
-        std::vector<Address> removals;
-
-        for (auto it = current_.begin(); it != current_.end(); ++it) {
-            if (it->second.pop_reject(version_)) {
-                removals.push_back(it->first);
-            }
-        }
-
-        logs_.pop_reject(version_);
-
-        while (removals.size()) {
-            current_.erase(removals.back());
-            removals.pop_back();
-        }
-
-        --version_;
-    }
+    void pop_reject();
 
     ////////////////////////////////////////
 
-    vm::VM &vm()
-    {
-        return block_state_.vm();
-    }
+    vm::VM &vm();
 
-    std::optional<Account> const &recent_account(Address const &address)
-    {
-        return recent_account_state(address).account_;
-    }
+    std::optional<Account> const &recent_account(Address const &);
 
-    void set_original_nonce(Address const &address, uint64_t const nonce)
-    {
-        auto &account_state = original_account_state(address);
-        auto &account = account_state.account_;
-        if (!account.has_value()) {
-            account = Account{};
-        }
-        account->nonce = nonce;
-    }
+    void set_original_nonce(Address const &, uint64_t nonce);
 
     ////////////////////////////////////////
 
-    bool account_exists(Address const &address)
-    {
-        return recent_account(address).has_value();
-    }
+    bool account_exists(Address const &);
 
-    bool account_is_dead(Address const &address)
-    {
-        return is_dead(recent_account(address));
-    }
+    bool account_is_dead(Address const &);
 
-    uint64_t get_nonce(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        if (MONAD_LIKELY(account.has_value())) {
-            return account.value().nonce;
-        }
-        return 0;
-    }
+    uint64_t get_nonce(Address const &);
 
-    bytes32_t get_balance(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        original_account_state(address).set_validate_exact_balance();
-        if (MONAD_LIKELY(account.has_value())) {
-            return intx::be::store<bytes32_t>(account.value().balance);
-        }
-        return {};
-    }
+    bytes32_t get_balance(Address const &);
 
-    bytes32_t get_code_hash(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        if (MONAD_LIKELY(account.has_value())) {
-            return account.value().code_hash;
-        }
-        return NULL_HASH;
-    }
+    bytes32_t get_code_hash(Address const &);
 
-    bytes32_t get_storage(Address const &address, bytes32_t const &key)
-    {
-        auto const it = current_.find(address);
-        if (it == current_.end()) {
-            auto const it2 = original_.find(address);
-            MONAD_ASSERT(it2 != original_.end());
-            auto &account_state = it2->second;
-            auto const &account = account_state.account_;
-            MONAD_ASSERT(account.has_value());
-            auto &storage = account_state.storage_;
-            auto it3 = storage.find(key);
-            if (it3 == storage.end()) {
-                bytes32_t const value = block_state_.read_storage(
-                    address, account.value().incarnation, key);
-                it3 = storage.try_emplace(key, value).first;
-            }
-            return it3->second;
-        }
-        else {
-            auto const &account_state = it->second.recent();
-            auto const &account = account_state.account_;
-            MONAD_ASSERT(account.has_value());
-            auto const &storage = account_state.storage_;
-            if (auto const it2 = storage.find(key); it2 != storage.end()) {
-                return it2->second;
-            }
-            auto const it2 = original_.find(address);
-            MONAD_ASSERT(it2 != original_.end());
-            auto &original_account_state = it2->second;
-            auto const &original_account = original_account_state.account_;
-            if (!original_account.has_value() ||
-                account.value().incarnation !=
-                    original_account.value().incarnation) {
-                return {};
-            }
-            auto &original_storage = original_account_state.storage_;
-            auto it3 = original_storage.find(key);
-            if (it3 == original_storage.end()) {
-                bytes32_t const value = block_state_.read_storage(
-                    address, account.value().incarnation, key);
-                it3 = original_storage.try_emplace(key, value).first;
-            }
-            return it3->second;
-        }
-    }
+    bytes32_t get_storage(Address const &, bytes32_t const &key);
 
-    bytes32_t
-    get_transient_storage(Address const &address, bytes32_t const &key)
-    {
-        return recent_account_state(address).get_transient_storage(key);
-    }
+    bytes32_t get_transient_storage(Address const &, bytes32_t const &key);
 
-    bool is_touched(Address const &address)
-    {
-        auto const &account_state = recent_account_state(address);
-        return account_state.is_touched();
-    }
+    bool is_touched(Address const &);
 
     ////////////////////////////////////////
 
-    void set_nonce(Address const &address, uint64_t const nonce)
-    {
-        auto &account = current_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{.incarnation = incarnation_};
-        }
-        account.value().nonce = nonce;
-    }
+    void set_nonce(Address const &, uint64_t nonce);
 
-    void add_to_balance(Address const &address, uint256_t const &delta)
-    {
-        auto &account_state = current_account_state(address);
-        auto &account = account_state.account_;
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{.incarnation = incarnation_};
-        }
+    void add_to_balance(Address const &, uint256_t const &delta);
 
-        MONAD_ASSERT_THROW(
-            std::numeric_limits<uint256_t>::max() - delta >=
-                account.value().balance,
-            "balance overflow");
+    void subtract_from_balance(Address const &, uint256_t const &delta);
 
-        account.value().balance += delta;
-        account_state.touch();
-    }
+    void set_code_hash(Address const &, bytes32_t const &hash);
 
-    void subtract_from_balance(Address const &address, uint256_t const &delta)
-    {
-        auto &account_state = current_account_state(address);
-        auto &account = account_state.account_;
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{.incarnation = incarnation_};
-        }
-
-        MONAD_ASSERT(delta <= account.value().balance);
-
-        account.value().balance -= delta;
-        account_state.touch();
-    }
-
-    void set_code_hash(Address const &address, bytes32_t const &hash)
-    {
-        auto &account = current_account(address);
-        MONAD_ASSERT(account.has_value());
-        account.value().code_hash = hash;
-    }
-
-    evmc_storage_status set_storage(
-        Address const &address, bytes32_t const &key, bytes32_t const &value)
-    {
-        bytes32_t original_value;
-        auto &account_state = current_account_state(address);
-        MONAD_ASSERT(account_state.account_);
-        // original
-        {
-            auto &orig_account_state = original_account_state(address);
-            auto &storage = orig_account_state.storage_;
-            auto it = storage.find(key);
-            if (it == storage.end()) {
-                Incarnation const incarnation =
-                    account_state.account_->incarnation;
-                bytes32_t const value =
-                    block_state_.read_storage(address, incarnation, key);
-                it = storage.try_emplace(key, value).first;
-            }
-            original_value = it->second;
-        }
-        // state
-        {
-            auto const result =
-                account_state.set_storage(key, value, original_value);
-            return result;
-        }
-    }
+    evmc_storage_status
+    set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
 
     void set_transient_storage(
-        Address const &address, bytes32_t const &key, bytes32_t const &value)
-    {
-        current_account_state(address).set_transient_storage(key, value);
-    }
+        Address const &, bytes32_t const &key, bytes32_t const &value);
 
-    void touch(Address const &address)
-    {
-        auto &account_state = current_account_state(address);
-        account_state.touch();
-    }
+    void touch(Address const &);
 
-    evmc_access_status access_account(Address const &address)
-    {
-        auto &account_state = current_account_state(address);
-        return account_state.access();
-    }
+    evmc_access_status access_account(Address const &);
 
-    evmc_access_status
-    access_storage(Address const &address, bytes32_t const &key)
-    {
-        auto &account_state = current_account_state(address);
-        return account_state.access_storage(key);
-    }
+    evmc_access_status access_storage(Address const &, bytes32_t const &key);
 
     ////////////////////////////////////////
 
     template <Traits traits>
-    bool selfdestruct(Address const &address, Address const &beneficiary)
-    {
-        auto &account_state = current_account_state(address);
-        auto &account = account_state.account_;
-        MONAD_ASSERT(account.has_value());
-
-        if constexpr (traits::evm_rev() < EVMC_CANCUN) {
-            add_to_balance(beneficiary, account.value().balance);
-            account.value().balance = 0;
-            original_account_state(address).set_validate_exact_balance();
-        }
-        else {
-            if (address != beneficiary ||
-                account->incarnation == incarnation_) {
-                add_to_balance(beneficiary, account.value().balance);
-                account.value().balance = 0;
-                original_account_state(address).set_validate_exact_balance();
-            }
-        }
-
-        return account_state.destruct();
-    }
+    bool selfdestruct(Address const &, Address const &beneficiary);
 
     // YP (87)
     template <Traits traits>
-    void destruct_suicides()
-    {
-        MONAD_ASSERT(!version_);
-
-        for (auto it = current_.begin(); it != current_.end(); ++it) {
-            auto &stack = it->second;
-            MONAD_ASSERT(stack.size() == 1);
-            MONAD_ASSERT(stack.version() == 0);
-            auto &account_state = stack.current(0);
-            if (account_state.is_destructed()) {
-                auto &account = account_state.account_;
-                if constexpr (traits::evm_rev() < EVMC_CANCUN) {
-                    account.reset();
-                }
-                else {
-                    if (account->incarnation == incarnation_) {
-                        account.reset();
-                    }
-                }
-            }
-        }
-    }
+    void destruct_suicides();
 
     // YP (88)
-    void destruct_touched_dead()
-    {
-        MONAD_ASSERT(!version_);
-
-        for (auto it = current_.begin(); it != current_.end(); ++it) {
-            auto &stack = it->second;
-            MONAD_ASSERT(stack.size() == 1);
-            MONAD_ASSERT(stack.version() == 0);
-            auto &account_state = stack.current(0);
-            if (MONAD_LIKELY(!account_state.is_touched())) {
-                continue;
-            }
-            auto &account = account_state.account_;
-            if (is_dead(account)) {
-                account.reset();
-            }
-        }
-    }
+    void destruct_touched_dead();
 
     ////////////////////////////////////////
 
-    vm::SharedVarcode read_code(bytes32_t const &code_hash)
-    {
-        {
-            auto const it = code_.find(code_hash);
-            if (it != code_.end()) {
-                return it->second;
-            }
-        }
-        return block_state_.read_code(code_hash);
-    }
+    vm::SharedVarcode read_code(bytes32_t const &code_hash);
 
-    vm::SharedVarcode get_code(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            return block_state_.read_code(NULL_HASH);
-        }
-        return read_code(account.value().code_hash);
-    }
+    vm::SharedVarcode get_code(Address const &);
 
-    size_t get_code_size(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            return 0;
-        }
-        bytes32_t const &code_hash = account.value().code_hash;
-        {
-            auto const it = code_.find(code_hash);
-            if (it != code_.end()) {
-                auto const &vcode = it->second;
-                MONAD_ASSERT(vcode);
-                return vcode->intercode()->size();
-            }
-        }
-        auto const vcode = block_state_.read_code(code_hash);
-        MONAD_ASSERT(vcode);
-        return vcode->intercode()->size();
-    }
+    size_t get_code_size(Address const &);
 
     size_t copy_code(
-        Address const &address, size_t const offset, uint8_t *const buffer,
-        size_t const buffer_size)
-    {
-        auto const &account = recent_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            return 0;
-        }
-        bytes32_t const &code_hash = account.value().code_hash;
-        vm::SharedVarcode vcode{};
-        {
-            auto const it = code_.find(code_hash);
-            if (it != code_.end()) {
-                vcode = it->second;
-            }
-            else {
-                vcode = block_state_.read_code(code_hash);
-            }
-        }
-        MONAD_ASSERT(vcode);
-        auto const &icode = vcode->intercode();
-        auto const code_size = icode->size();
-        if (offset > code_size) {
-            return 0;
-        }
-        auto const n = std::min(code_size - offset, buffer_size);
-        std::copy_n(icode->code() + offset, n, buffer);
-        return n;
-    }
+        Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
-    void set_code(Address const &address, byte_string_view const code)
-    {
-        auto &account = current_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            return;
-        }
-
-        auto const code_hash = to_bytes(keccak256(code));
-        code_[code_hash] =
-            vm().try_insert_varcode(code_hash, vm::make_shared_intercode(code));
-        account.value().code_hash = code_hash;
-    }
+    void set_code(Address const &, byte_string_view code);
 
     ////////////////////////////////////////
 
-    void create_contract(Address const &address)
-    {
-        auto &account = current_account(address);
-        if (MONAD_UNLIKELY(account.has_value())) {
-            // EIP-684
-            MONAD_ASSERT(account->nonce == 0);
-            MONAD_ASSERT(account->code_hash == NULL_HASH);
-            // keep the balance, per chapter 7 of the YP
-            account->incarnation = incarnation_;
-        }
-        else {
-            account = Account{.incarnation = incarnation_};
-        }
-    }
+    void create_contract(Address const &);
 
     /**
      * Creates an account that cannot be selfdestructed after Cancun.
@@ -594,98 +182,24 @@ public:
      * authority processing; changes to the state during that step are specified
      * to take place before any of the actual transactions in a block.
      */
-    void create_account_no_rollback(Address const &address)
-    {
-        auto &account = current_account(address);
-        MONAD_ASSERT(!account.has_value());
-        account = Account{
-            .incarnation = Incarnation{
-                incarnation_.get_block(),
-                Incarnation::LAST_TX,
-            }};
-    }
+    void create_account_no_rollback(Address const &);
 
     ////////////////////////////////////////
 
-    std::vector<Receipt::Log> const &logs()
-    {
-        return logs_.recent();
-    }
+    std::vector<Receipt::Log> const &logs();
 
-    void store_log(Receipt::Log const &log)
-    {
-        auto &logs = logs_.current(version_);
-        logs.push_back(log);
-    }
+    void store_log(Receipt::Log const &);
 
     ////////////////////////////////////////
 
-    void set_to_state_incarnation(Address const &address)
-    {
-        auto &account = current_account(address);
-        if (MONAD_UNLIKELY(!account.has_value())) {
-            account = Account{.incarnation = incarnation_};
-        }
-        account.value().incarnation = incarnation_;
-    }
+    void set_to_state_incarnation(Address const &);
 
     // RELAXED MERGE
     // if original and current can be adjusted to satisfy min balance, adjust
     // both values for merge
     bool try_fix_account_mismatch(
-        Address const &address, OriginalAccountState &original_state,
-        std::optional<Account> const &actual)
-    {
-        auto &original = original_state.account_;
-        // verify original used and original found are otherwise the same
-        if (is_dead(original)) {
-            return false;
-        }
-        if (is_dead(actual)) {
-            return false;
-        }
-        if (original->code_hash != actual->code_hash) {
-            return false;
-        }
-        if (original->incarnation != actual->incarnation) {
-            return false;
-        }
-        if (original->nonce != actual->nonce) {
-            return false;
-        }
-        MONAD_ASSERT(original->balance != actual->balance);
-        // is relaxed merge disabled
-        if (!relaxed_validation_) {
-            return false;
-        }
-        if (original_state.validate_exact_balance()) {
-            return false;
-        }
-        // original balance does not meet min required
-        if (actual->balance < original_state.min_balance()) {
-            return false;
-        }
-        // adjust balances
-        auto it = current_.find(address);
-        if (it != current_.end()) {
-            MONAD_ASSERT(it->second.size() == 1);
-            auto &recent_state = it->second.recent();
-            auto &recent = recent_state.account_;
-            if (!recent) {
-                return false;
-            }
-            if (actual->balance > original->balance) {
-                recent->balance += actual->balance - original->balance;
-            }
-            else {
-                MONAD_ASSERT(
-                    recent->balance >= (original->balance - actual->balance));
-                recent->balance -= original->balance - actual->balance;
-            }
-        }
-        original->balance = actual->balance;
-        return true;
-    }
+        Address const &, OriginalAccountState &,
+        std::optional<Account> const &actual);
 };
 
 MONAD_NAMESPACE_END

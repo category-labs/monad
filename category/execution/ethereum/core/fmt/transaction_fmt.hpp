@@ -16,6 +16,9 @@
 #pragma once
 
 #include <category/core/basic_formatter.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/signature_fmt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 

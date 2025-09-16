@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>

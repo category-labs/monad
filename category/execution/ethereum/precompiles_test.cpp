@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>

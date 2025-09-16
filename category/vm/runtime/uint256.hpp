@@ -31,6 +31,12 @@
     #error "Target architecture must support AVX2"
 #endif
 
+// GCC's overeager SLP vectorizer sometimes pessimizes code. For functions that
+// are particularly sensitive about this (such as multiplication), the
+// vectorizer can be turned off with the MONAD_VM_NO_VECTORIZE pragma.
+// Since optimization pragmas are not applied to inlined functions, any function
+// that is annotated as MONAD_VM_NO_VECTORIZE should either be marked as
+// noinline or only called from other MONAD_VM_NO_VECTORIZE functions.
 #if defined(__GNUC__) && !defined(__clang__)
     #define MONAD_VM_NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
 #else
@@ -391,16 +397,6 @@ namespace monad::vm::runtime
         operator-(uint256_t const &lhs, uint256_t const &rhs) noexcept
         {
             return subb(lhs, rhs).value;
-        }
-
-        friend inline constexpr uint256_t
-        operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept;
-
-        MONAD_VM_NO_VECTORIZE
-        [[gnu::always_inline]]
-        inline constexpr uint256_t &operator*=(uint256_t const &rhs) noexcept
-        {
-            return *this = rhs * (*this);
         }
 
         [[gnu::always_inline]]
@@ -929,7 +925,7 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     inline words_t<R>
     truncating_mul_runtime(words_t<M> const &x, words_t<N> const &y) noexcept
-        requires(0 < R && R <= M + N)
+        requires(0 < R && 0 < M && 0 < N && R <= M + N)
     {
         words_t<R> result;
         mul_line<R>(x, y[0], result);
@@ -971,7 +967,7 @@ namespace monad::vm::runtime
     MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
     inline constexpr words_t<R>
     truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
-        requires(0 < R && R <= M + N)
+        requires(0 < R && 0 < M && 0 < N && R <= M + N)
     {
         if consteval {
             return truncating_mul_constexpr<R>(x, y);
@@ -981,13 +977,20 @@ namespace monad::vm::runtime
         }
     }
 
+    MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
+    inline constexpr uint256_t
+    truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        return uint256_t{
+            truncating_mul<uint256_t::num_words>(x.as_words(), y.as_words())};
+    }
+
     MONAD_VM_NO_VECTORIZE
-    [[gnu::always_inline]]
+    [[gnu::noinline]]
     inline constexpr uint256_t
     operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
-        return uint256_t{truncating_mul<uint256_t::num_words>(
-            lhs.as_words(), rhs.as_words())};
+        return truncating_mul(lhs, rhs);
     }
 
     [[gnu::always_inline]]
@@ -1217,7 +1220,8 @@ namespace monad::vm::runtime
         return uint256_t{udivrem(sum, mod.as_words()).rem};
     }
 
-    [[gnu::always_inline]]
+    MONAD_VM_NO_VECTORIZE
+    [[gnu::noinline]]
     inline constexpr uint256_t mulmod(
         uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
     {
@@ -1270,7 +1274,8 @@ namespace monad::vm::runtime
         return (~diff & (x < y)) | (x_neg & ~y_neg);
     }
 
-    [[gnu::always_inline]] inline constexpr uint256_t
+    MONAD_VM_NO_VECTORIZE
+    [[gnu::noinline]] inline constexpr uint256_t
     exp(uint256_t base, uint256_t const &exponent) noexcept
     {
         uint256_t result{1};
@@ -1285,9 +1290,9 @@ namespace monad::vm::runtime
                 w + 1 == sig_words ? 64 - std::countl_zero(word_exp) : 64;
             while (significant_bits) {
                 if (word_exp & 1) {
-                    result *= base;
+                    result = truncating_mul(result, base);
                 }
-                base *= base;
+                base = truncating_mul(base, base);
                 word_exp >>= 1;
                 significant_bits -= 1;
             }
@@ -1492,7 +1497,7 @@ namespace monad::vm::runtime
                     throw std::out_of_range(str);
                 }
                 auto const digit = from_dec(chr);
-                result = (result * 10) + digit;
+                result = (truncating_mul(result, 10)) + digit;
                 if (result < digit) {
                     throw std::out_of_range(str);
                 }

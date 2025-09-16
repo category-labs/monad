@@ -478,38 +478,90 @@ void check_truncating_mul(
     }
 }
 
+template <size_t M, size_t N>
+constexpr words_t<M + N>
+intx_umul_words(words_t<M> const &x, words_t<N> const &y) noexcept
+{
+    auto const x_intx = std::bit_cast<::intx::uint<M * 64>>(x);
+    auto const y_intx = std::bit_cast<::intx::uint<N * 64>>(y);
+    return std::bit_cast<words_t<M + N>>(::intx::umul(x_intx, y_intx));
+}
+
 TEST(uint256, multiplication)
 {
-    for (auto const &x : test_inputs) {
-        for (auto const &y : test_inputs) {
-            auto const intx_product =
-                std::bit_cast<words_t<2 * uint256_t::num_words>>(
-                    ::intx::umul(to_intx(x), to_intx(y)));
+    // 1-word x 1-word
+    constexpr uint64_t single_word_inputs[]{
+        0UL,
+        1UL,
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::min()),
+        0xff,
+        0xabcda1b2c3d41234};
+    for (auto const &x : single_word_inputs) {
+        for (auto const &y : single_word_inputs) {
+            auto const product_u128 = static_cast<uint128_t>(x) * y;
+            words_t<2> product{
+                static_cast<uint64_t>(product_u128),
+                static_cast<uint64_t>(product_u128 >> 64)};
+            check_truncating_mul<1, 1, 1>({x}, {y}, product);
+            check_truncating_mul<2, 1, 1>({x}, {y}, product);
+        }
+    }
+    // 2-word x 1-word
+    std::vector<std::array<uint64_t, 2>> two_word_inputs;
+    for (auto const &w0 : single_word_inputs) {
+        for (auto const &w1 : single_word_inputs) {
+            two_word_inputs.push_back(std::array<uint64_t, 2>{w0, w1});
+        }
+    }
+    for (auto const &x : two_word_inputs) {
+        for (auto const &y0 : single_word_inputs) {
+            // intx does not allow 64-bit numbers, we have to zero-extend y
+            words_t<2> const y{y0, 0UL};
+            auto const intx_product = intx_umul_words(x, y);
+            ASSERT_EQ(intx_product[3], 0UL);
 
-            auto const full_product_rt =
-                truncating_mul_runtime<2 * uint256_t::num_words>(
-                    x.as_words(), y.as_words());
-            ASSERT_EQ(full_product_rt, intx_product);
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
 
-            auto const full_product_ce =
-                truncating_mul_constexpr<2 * uint256_t::num_words>(
-                    x.as_words(), y.as_words());
-            ASSERT_EQ(full_product_ce, intx_product);
+            check_truncating_mul<1>(y, x, intx_product);
+            check_truncating_mul<2>(y, x, intx_product);
+            check_truncating_mul<3>(y, x, intx_product);
+        }
+    }
+    // 2-word x 2-word
+    for (auto const &x : two_word_inputs) {
+        for (auto const &y : two_word_inputs) {
+            auto const intx_product = intx_umul_words(x, y);
 
-            check_truncating_mul<1>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<2>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<3>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<4>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<5>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<6>(
-                x.as_words(), y.as_words(), full_product_rt);
-            check_truncating_mul<7>(
-                x.as_words(), y.as_words(), full_product_rt);
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
+            check_truncating_mul<4>(x, y, intx_product);
+
+            check_truncating_mul<1>(y, x, intx_product);
+            check_truncating_mul<2>(y, x, intx_product);
+            check_truncating_mul<3>(y, x, intx_product);
+            check_truncating_mul<4>(y, x, intx_product);
+        }
+    }
+    // 4-word x 4-word
+    for (auto const &xi : test_inputs) {
+        for (auto const &yi : test_inputs) {
+            auto x = xi.as_words();
+            auto y = yi.as_words();
+
+            auto const intx_product = intx_umul_words(x, y);
+
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
+            check_truncating_mul<4>(x, y, intx_product);
+            check_truncating_mul<5>(x, y, intx_product);
+            check_truncating_mul<6>(x, y, intx_product);
+            check_truncating_mul<7>(x, y, intx_product);
+            check_truncating_mul<8>(x, y, intx_product);
         }
     }
 }

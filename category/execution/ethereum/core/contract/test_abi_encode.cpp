@@ -28,54 +28,52 @@ using namespace intx::literals;
 
 TEST(AbiEncode, boolean)
 {
-    byte_string const expected_false =
-        evmc::from_hex(
+    constexpr auto expected_false =
+        evmc::from_hex<bytes32_t>(
             "0000000000000000000000000000000000000000000000000000000000000000")
             .value();
-    byte_string const expected_true =
-        evmc::from_hex(
+    constexpr auto expected_true =
+        evmc::from_hex<bytes32_t>(
             "0000000000000000000000000000000000000000000000000000000000000001")
             .value();
-    EXPECT_EQ(byte_string{abi_encode_bool(false)}, expected_false);
-    EXPECT_EQ(byte_string{abi_encode_bool(true)}, expected_true);
+    constexpr auto abi_true = abi_encode_bool(true);
+    constexpr auto abi_false = abi_encode_bool(false);
+    EXPECT_EQ(abi_true, expected_true);
+    EXPECT_EQ(abi_false, expected_false);
 }
 
 TEST(AbiEncode, u16)
 {
-    constexpr uint16_t input{65535};
-    byte_string const expected =
-        evmc::from_hex(
+    constexpr u16_be input{65535};
+    constexpr auto expected =
+        evmc::from_hex<bytes32_t>(
             "000000000000000000000000000000000000000000000000000000000000ffff")
             .value();
-
-    u16_be encoded = input;
-    auto const output = byte_string{abi_encode_uint(encoded)};
-    EXPECT_EQ(output, expected);
+    constexpr auto actual = abi_encode_uint(input);
+    EXPECT_EQ(actual, expected);
 }
 
 TEST(AbiEncode, u256)
 {
-    constexpr uint256_t input{15355346523654236542356453_u256};
-    byte_string const expected =
-        evmc::from_hex("0x0000000000000000000000000000000000000000000cb3"
-                       "9f00c54ee156444be5")
+    constexpr u256_be input{15355346523654236542356453_u256};
+    constexpr auto expected =
+        evmc::from_hex<bytes32_t>(
+            "0x0000000000000000000000000000000000000000000cb3"
+            "9f00c54ee156444be5")
             .value();
-
-    u256_be encoded = input;
-    auto const output = byte_string{abi_encode_uint(encoded)};
-    EXPECT_EQ(output, expected);
+    constexpr auto actual = abi_encode_uint(input);
+    EXPECT_EQ(actual, expected);
 }
 
 TEST(AbiEncode, address)
 {
     constexpr Address input{0xDEADBEEF000000000000000000F00D0000000100_address};
-    byte_string const expected =
-        evmc::from_hex(
+    constexpr auto expected =
+        evmc::from_hex<bytes32_t>(
             "000000000000000000000000deadbeef000000000000000000f00d0000000100")
             .value();
-
-    auto const output = byte_string{abi_encode_address(input)};
-    EXPECT_EQ(output, expected);
+    constexpr auto actual = abi_encode_address(input);
+    EXPECT_EQ(actual, expected);
 }
 
 TEST(AbiEncode, bytes)

@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/math.hpp>
+#include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
@@ -37,25 +38,25 @@ MONAD_NAMESPACE_BEGIN
 //
 // https://docs.soliditylang.org/en/latest/abi-spec.html#types
 //////////////////////////////////////////////////////////////
-inline bytes32_t abi_encode_address(Address const &address)
+constexpr bytes32_t abi_encode_address(Address const &address)
 {
     bytes32_t output{};
-    std::memcpy(&output.bytes[12], address.bytes, sizeof(Address));
+    unaligned_store(&output.bytes[12], address);
     return output;
 }
 
 template <BigEndianType I>
-bytes32_t abi_encode_uint(I const &i)
+constexpr bytes32_t abi_encode_uint(I const &i)
 {
     static_assert(sizeof(I) <= sizeof(bytes32_t));
 
     constexpr size_t offset = sizeof(bytes32_t) - sizeof(I);
     bytes32_t output{};
-    std::memcpy(&output.bytes[offset], &i, sizeof(I));
+    unaligned_store(&output.bytes[offset], i);
     return output;
 }
 
-inline bytes32_t abi_encode_bool(bool const b)
+constexpr bytes32_t abi_encode_bool(bool const b)
 {
     u64_be as_int = b ? 1 : 0;
     return abi_encode_uint(as_int);

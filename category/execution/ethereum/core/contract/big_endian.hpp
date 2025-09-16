@@ -16,8 +16,11 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/endian.hpp>
 #include <category/core/int.hpp>
+#include <category/core/unaligned.hpp>
 
+#include <algorithm>
 #include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
@@ -34,24 +37,26 @@ struct BigEndian
 
     BigEndian() = default;
 
-    BigEndian(T const &x) noexcept
+    constexpr BigEndian(T const &x) noexcept
     {
-        intx::be::store(bytes, x);
+        auto const be = intx::bswap(x);
+        unaligned_store(bytes, be);
     }
 
-    bool operator==(BigEndian<T> const &other) const noexcept
+    constexpr bool operator==(BigEndian<T> const &other) const noexcept
     {
-        return 0 == std::memcmp(this, &other, sizeof(BigEndian<T>));
+        return std::ranges::equal(bytes, other.bytes);
     }
 
-    native_type native() const noexcept
+    [[nodiscard]] constexpr native_type native() const noexcept
     {
-        return intx::be::load<T>(bytes);
+        return intx::bswap(std::bit_cast<native_type>(bytes));
     }
 
-    BigEndian<T> &operator=(T const &x) noexcept
+    constexpr BigEndian<T> &operator=(T const &x) noexcept
     {
-        intx::be::store(bytes, x);
+        auto const be = intx::bswap(x);
+        unaligned_store(bytes, be);
         return *this;
     }
 };

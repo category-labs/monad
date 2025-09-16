@@ -176,13 +176,21 @@ else()
   message(WARNING "libgmp is not available; uint256 values > UINT128_MAX will print as hex uint64_t[4]")
 endif()
 
-option(MONAD_EVENT_BUILD_EXAMPLE
-    "Build the example program that shows how to use the API" ON)
+option(MONAD_EVENT_BUILD_EXAMPLES
+    "Build the example programs that show how to use the API" ON)
 
-if (MONAD_EVENT_BUILD_EXAMPLE)
+if (MONAD_EVENT_BUILD_EXAMPLES)
   add_executable(eventwatch "example/eventwatch.c")
   target_compile_options(eventwatch PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_link_libraries(eventwatch PRIVATE monad_event)
+
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    add_executable(event-hist-recovery
+      "example/event-hist-recovery.c"
+      "example/shim-backtrace.c")
+    target_compile_options(event-hist-recovery PRIVATE -Wall -Wextra -Wconversion -Werror)
+    target_link_libraries(event-hist-recovery PRIVATE monad_event)
+  endif()
 endif()
 
 if(APPLE)

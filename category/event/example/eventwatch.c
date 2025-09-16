@@ -274,7 +274,7 @@ static void event_loop(struct monad_event_ring_iter *iter, int pidfd, FILE *out)
     while (g_should_stop == 0) {
         switch (monad_event_ring_iter_try_next(iter, &event)) {
         case MONAD_EVENT_RING_NOT_READY:
-            if ((not_ready_count++ & ((1UL << 25) - 1)) == 0) {
+            if ((++not_ready_count & ((1UL << 25) - 1)) == 0) {
                 // The above guard prevents us from calling process_has_exited
                 // too often: it is orders of magnitude slower than the cost
                 // of an event ring poll
@@ -335,6 +335,20 @@ static void find_initial_iteration_point(struct monad_event_ring_iter *iter)
     // doesn't materially increase the risk that we'll fall behind and gap.
     (void)monad_exec_iter_consensus_prev(
         iter, MONAD_EXEC_BLOCK_START, nullptr, nullptr);
+}
+
+// See the comment in shim-backtrace.c to understand what this function is, and
+// why it is needed; if you see linker errors related to a function named
+// `monad_stack_backtrace_capture_and_print` in your own projects, please read
+// the documentation in shim-backtrace.c
+extern void monad_stack_backtrace_capture_and_print(
+    char *buffer, size_t size, int fd, unsigned indent,
+    bool print_async_unsafe_info)
+{
+    // Supress "unused parameter" warnings
+    (void)buffer, (void)size, (void)fd, (void)indent,
+        (void)print_async_unsafe_info;
+    dprintf(fd, "backtrace not implemented, see comment in shim-backtrace.c\n");
 }
 
 int main(int argc, char **argv)

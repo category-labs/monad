@@ -134,9 +134,7 @@ Result<void> process_ethereum_block(
     BlockHashBufferFinalized *block_hash_buffer =
         [&]() -> BlockHashBufferFinalized * {
         State state{block_state, Incarnation{block.header.number, 0}};
-        if (get_block_hash_history(
-                state, block.header.number - BLOCK_HISTORY_LENGTH) !=
-            bytes32_t{}) {
+        if (can_use_block_hash_history(state, block.header.number)) {
             return nullptr;
         }
 

@@ -257,9 +257,7 @@ Result<BlockExecOutput> propose_block(
     BlockHashBuffer const *block_hash_buffer =
         [&]() -> BlockHashBuffer const * {
         State state{block_state, Incarnation{block.header.number, 0}};
-        if (get_block_hash_history(
-                state, block.header.number - BLOCK_HISTORY_LENGTH) !=
-            bytes32_t{}) {
+        if (can_use_block_hash_history(state, block.header.number)) {
             return nullptr;
         }
 

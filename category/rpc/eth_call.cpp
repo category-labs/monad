@@ -628,12 +628,8 @@ struct monad_eth_call_executor
                         State state{
                             block_state,
                             Incarnation{block_number, INCARNATION_TX}};
-                        if (MONAD_UNLIKELY(
-                                get_block_hash_history(
-                                    state,
-                                    block_number < 256
-                                        ? 0
-                                        : block_number - 256) == bytes32_t{})) {
+                        if (MONAD_UNLIKELY(!can_use_block_hash_history(
+                                state, block_number))) {
                             block_hash_buffer =
                                 create_blockhash_buffer(block_number);
                             if (block_hash_buffer == nullptr) {

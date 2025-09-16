@@ -97,6 +97,15 @@ namespace
             asmjit::Imm{static_cast<int32_t>(lit.value[3])}};
     }
 
+    Emitter::Mem256 const stack_offset_to_mem256(StackOffset const offset)
+    {
+        return {
+            x86::qword_ptr(x86::rbp, offset.offset * 32),
+            x86::qword_ptr(x86::rbp, offset.offset * 32 + 8),
+            x86::qword_ptr(x86::rbp, offset.offset * 32 + 16),
+            x86::qword_ptr(x86::rbp, offset.offset * 32 + 24)};
+    }
+
     x86::Mem stack_offset_to_mem(StackOffset offset)
     {
         return x86::qword_ptr(x86::rbp, offset.offset * 32);
@@ -587,6 +596,8 @@ namespace monad::vm::compiler::native
         , gpq256_regs_{Gpq256{x86::r12, x86::r13, x86::r14, x86::r15}, Gpq256{x86::r8, x86::r9, x86::r10, x86::r11}, Gpq256{x86::rcx, x86::rsi, x86::rdx, x86::rdi}}
         , bytecode_size_{codesize}
         , rodata_{as_.newNamedLabel("ROD")}
+        , exponential_constant_fold_counter_{0}
+        , accumulated_static_work_{0}
     {
 #ifdef MONAD_VM_TESTING
         as_.addDiagnosticOptions(kValidateAssembler);
@@ -998,17 +1009,23 @@ namespace monad::vm::compiler::native
         return block_prologue(b);
     }
 
-    void Emitter::gas_decrement_no_check(int32_t gas)
+    void Emitter::gas_decrement_static_work(int32_t gas)
     {
-        as_.sub(
-            x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
-            gas);
+        if (gas) {
+            gas_decrement_no_check(gas);
+            if (!accumulate_static_work(gas)) {
+                as_.jl(error_label_);
+            }
+        }
     }
 
-    void Emitter::gas_decrement_check_non_negative(int32_t gas)
+    void Emitter::gas_decrement_unbounded_work(int32_t gas)
     {
-        gas_decrement_no_check(gas);
-        as_.jl(error_label_);
+        accumulated_static_work_ = 0;
+        if (gas) {
+            gas_decrement_no_check(gas);
+            as_.jl(error_label_);
+        }
     }
 
     void Emitter::spill_caller_save_regs(bool spill_avx)
@@ -1209,6 +1226,39 @@ namespace monad::vm::compiler::native
     bool Emitter::is_live(GeneralReg reg, std::tuple<LiveSet...> const &live)
     {
         return is_live(reg, live, std::index_sequence_for<LiveSet...>{});
+    }
+
+    void Emitter::gas_decrement_no_check(int32_t gas)
+    {
+        MONAD_VM_DEBUG_ASSERT(gas > 0);
+        as_.sub(
+            x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
+            gas);
+    }
+
+    void Emitter::gas_decrement_no_check(x86::Gpq gas)
+    {
+        as_.sub(
+            x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
+            gas);
+    }
+
+    bool Emitter::accumulate_static_work(int32_t work)
+    {
+        MONAD_VM_DEBUG_ASSERT(work >= 0);
+        MONAD_VM_DEBUG_ASSERT(
+            work <= std::numeric_limits<int32_t>::max() -
+                        STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
+        MONAD_VM_DEBUG_ASSERT(
+            accumulated_static_work_ < STATIC_WORK_GAS_CHECK_THRESHOLD);
+
+        accumulated_static_work_ += work;
+
+        if (accumulated_static_work_ >= STATIC_WORK_GAS_CHECK_THRESHOLD) {
+            accumulated_static_work_ = 0;
+            return false;
+        }
+        return true;
     }
 
     bool Emitter::block_prologue(basic_blocks::Block const &b)
@@ -2890,7 +2940,9 @@ namespace monad::vm::compiler::native
         as_.mov(
             gpq[0],
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining));
-        as_.add(gpq[0], remaining_base_gas);
+        if (remaining_base_gas != 0) {
+            as_.add(gpq[0], remaining_base_gas);
+        }
         as_.xor_(gpq[1].r32(), gpq[1].r32());
         as_.xor_(gpq[2].r32(), gpq[2].r32());
         as_.xor_(gpq[3].r32(), gpq[3].r32());
@@ -5661,7 +5713,7 @@ namespace monad::vm::compiler::native
     }
 
     template <bool Is32Bit, typename LeftOpType>
-    void Emitter::imul_by_gpq(x86::Gpq dst, LeftOpType left, x86::Gpq right)
+    void Emitter::gpr_mul_by_gpq(x86::Gpq dst, LeftOpType left, x86::Gpq right)
     {
         as_.mov(dst, right);
         if constexpr (Is32Bit) {
@@ -5677,9 +5729,12 @@ namespace monad::vm::compiler::native
         }
     }
 
+    // Sets overflow and carry flags according to imul
     template <bool Is32Bit, typename LeftOpType>
-    void Emitter::imul_by_int32(x86::Gpq dst, LeftOpType left, int32_t right)
+    void Emitter::gpr_mul_by_int32_via_imul(
+        x86::Gpq dst, LeftOpType left, int32_t right)
     {
+        MONAD_VM_DEBUG_ASSERT(right != 0 && right != 1);
         if constexpr (Is32Bit) {
             if constexpr (std::is_same_v<LeftOpType, x86::Gpq>) {
                 as_.imul(dst.r32(), left.r32(), right);
@@ -5694,20 +5749,83 @@ namespace monad::vm::compiler::native
     }
 
     template <bool Is32Bit, typename LeftOpType>
-    void Emitter::imul_by_rax_or_int32(
-        asmjit::x86::Gpq dst, LeftOpType left, std::optional<int32_t> i)
+    void Emitter::gpr_mul_by_uint64_via_shl(
+        x86::Gpq dst, LeftOpType left, uint64_t right)
     {
-        if (i) {
-            imul_by_int32<Is32Bit>(dst, left, *i);
+        MONAD_VM_DEBUG_ASSERT(std::popcount(right) == 1);
+        if constexpr (Is32Bit) {
+            MONAD_VM_DEBUG_ASSERT(
+                right <= std::numeric_limits<uint32_t>::max());
+            if constexpr (std::is_same_v<LeftOpType, x86::Gpq>) {
+                // Always mov when right == 1 to clear upper 32 bits of dst:
+                if (dst != left || right == 1) {
+                    as_.mov(dst.r32(), left.r32());
+                }
+            }
+            else {
+                as_.mov(dst.r32(), left);
+            }
+            if (right > 1) {
+                as_.shl(dst.r32(), std::bit_width(right) - 1);
+            }
         }
         else {
-            imul_by_gpq<Is32Bit>(dst, left, x86::rax);
+            if constexpr (std::is_same_v<LeftOpType, x86::Gpq>) {
+                if (dst != left) {
+                    as_.mov(dst, left);
+                }
+            }
+            else {
+                as_.mov(dst, left);
+            }
+            if (right > 1) {
+                as_.shl(dst, std::bit_width(right) - 1);
+            }
         }
+    }
+
+    template <bool Is32Bit, typename LeftOpType>
+    void Emitter::gpr_mul_by_uint64(
+        x86::Gpq dst, LeftOpType left, uint64_t pre_right)
+    {
+        uint64_t right = pre_right;
+        if constexpr (Is32Bit) {
+            right = static_cast<uint32_t>(pre_right);
+        }
+        if (right == 0) {
+            as_.xor_(dst.r32(), dst.r32());
+        }
+        else if (std::popcount(right) == 1) {
+            gpr_mul_by_uint64_via_shl<Is32Bit>(dst, left, right);
+        }
+        else {
+            MONAD_VM_DEBUG_ASSERT(Is32Bit || is_uint64_bounded(right));
+            int32_t r;
+            std::memcpy(&r, &right, sizeof(r));
+            gpr_mul_by_int32_via_imul<Is32Bit>(dst, left, r);
+        }
+    }
+
+    template <bool Is32Bit, typename LeftOpType>
+    void Emitter::gpr_mul_by_rax_or_uint64(
+        asmjit::x86::Gpq dst, LeftOpType left, std::optional<uint64_t> i)
+    {
+        if constexpr (Is32Bit) {
+            if (i) {
+                gpr_mul_by_uint64<Is32Bit>(dst, left, *i);
+                return;
+            }
+        }
+        else if (i && (is_uint64_bounded(*i) || std::popcount(*i) == 1)) {
+            gpr_mul_by_uint64<Is32Bit>(dst, left, *i);
+            return;
+        }
+        gpr_mul_by_gpq<Is32Bit>(dst, left, x86::rax);
     }
 
     void Emitter::mul_with_bit_size_by_rax(
         size_t bit_size, x86::Gpq const *dst, Operand const &left,
-        std::optional<int32_t> value_of_rax)
+        std::optional<uint64_t> value_of_rax)
     {
         if ((bit_size & 63) && (bit_size & 63) <= 32) {
             mul_with_bit_size_and_has_32_bit_by_rax<true>(
@@ -5723,7 +5841,7 @@ namespace monad::vm::compiler::native
     template <bool Has32Bit>
     void Emitter::mul_with_bit_size_and_has_32_bit_by_rax(
         size_t bit_size, x86::Gpq const *dst, Operand const &left,
-        std::optional<int32_t> value_of_rax)
+        std::optional<uint64_t> value_of_rax)
     {
         MONAD_VM_DEBUG_ASSERT(bit_size > 0 && bit_size <= 256);
 
@@ -5766,7 +5884,7 @@ namespace monad::vm::compiler::native
 
         if (std::holds_alternative<Gpq256>(left)) {
             auto const &lgpq = std::get<Gpq256>(left);
-            imul_by_rax_or_int32<Has32Bit>(
+            gpr_mul_by_rax_or_uint64<Has32Bit>(
                 dst[last_ix], lgpq[last_ix], value_of_rax);
             for (size_t i = 0; i < last_ix; ++i) {
                 auto [dst1, dst2] = next_dst_pair(i);
@@ -5778,7 +5896,7 @@ namespace monad::vm::compiler::native
             MONAD_VM_ASSERT(std::holds_alternative<x86::Mem>(left));
             auto mem = std::get<x86::Mem>(left);
             mem.addOffset(static_cast<int64_t>(last_ix) * 8);
-            imul_by_rax_or_int32<Has32Bit>(dst[last_ix], mem, value_of_rax);
+            gpr_mul_by_rax_or_uint64<Has32Bit>(dst[last_ix], mem, value_of_rax);
             mem.addOffset(-(static_cast<int64_t>(last_ix) * 8));
             for (size_t i = 0; i < last_ix; ++i) {
                 auto [dst1, dst2] = next_dst_pair(i);
@@ -5861,21 +5979,16 @@ namespace monad::vm::compiler::native
                     [&](uint256_t const &r) {
                         auto x = r[word_count - N];
                         em_.as_.mov(x86::rax, x);
-                        if (!is_uint64_bounded(x)) {
-                            return std::optional<int32_t>{};
-                        }
-                        int32_t y;
-                        std::memcpy(&y, &x, sizeof(int32_t));
-                        return std::optional{y};
+                        return std::optional{x};
                     },
                     [&](Gpq256 const &r) {
                         em_.as_.mov(x86::rax, r[word_count - N]);
-                        return std::optional<int32_t>{};
+                        return std::optional<uint64_t>{};
                     },
                     [&](x86::Mem r) {
                         r.addOffset(static_cast<int64_t>((word_count - N) * 8));
                         em_.as_.mov(x86::rax, r);
-                        return std::optional<int32_t>{};
+                        return std::optional<uint64_t>{};
                     },
                 },
                 right_);
@@ -5888,10 +6001,12 @@ namespace monad::vm::compiler::native
                     [&](uint256_t const &r) {
                         auto x = r[word_count - N];
                         if constexpr (Has32Bit) {
-                            em_.as_.imul(mul_dst[0].r32(), lgpq[0].r32(), x);
+                            em_.gpr_mul_by_uint64<true>(mul_dst[0], lgpq[0], x);
                         }
-                        else if (is_uint64_bounded(x)) {
-                            em_.as_.imul(mul_dst[0], lgpq[0], x);
+                        else if (
+                            is_uint64_bounded(x) || std::popcount(x) == 1) {
+                            em_.gpr_mul_by_uint64<false>(
+                                mul_dst[0], lgpq[0], x);
                         }
                         else {
                             em_.as_.mov(mul_dst[0], x);
@@ -5931,10 +6046,11 @@ namespace monad::vm::compiler::native
                     [&](uint256_t const &r) {
                         auto x = r[word_count - N];
                         if constexpr (Has32Bit) {
-                            em_.as_.imul(mul_dst[0].r32(), lmem, x);
+                            em_.gpr_mul_by_uint64<true>(mul_dst[0], lmem, x);
                         }
-                        else if (is_uint64_bounded(x)) {
-                            em_.as_.imul(mul_dst[0], lmem, x);
+                        else if (
+                            is_uint64_bounded(x) || std::popcount(x) == 1) {
+                            em_.gpr_mul_by_uint64<false>(mul_dst[0], lmem, x);
                         }
                         else {
                             em_.as_.mov(mul_dst[0], x);
@@ -7407,5 +7523,239 @@ namespace monad::vm::compiler::native
             MONAD_VM_DEBUG_ASSERT(last_ix == 2);
             as_.mov(res_mem, 0);
         }
+    }
+
+    // Performs byte_width operation on array of operands. Assumes that the
+    // operands are ordered from least significant to most significant.
+    template <typename T, size_t N>
+    void Emitter::array_byte_width(std::array<T, N> const &arr)
+    {
+        auto const scratch_reg = [this] {
+            if (stack_.has_free_general_reg()) {
+                auto [e, _] = alloc_general_reg();
+                return general_reg_to_gpq256(*e->general_reg())[0];
+            }
+            else {
+                as_.push(reg_context);
+                return reg_context;
+            }
+        }();
+
+        // The operands are traversed from least significant to most significant
+        // so that the last non-zero operand determines the bit width.
+        for (size_t i = 0; i < N; ++i) {
+            auto const word_offset = static_cast<int32_t>(64 * (i + 1));
+            // Compute operand bit width (negative). CF == 1 iff arr[i] == 0
+            as_.lzcnt(scratch_reg, arr[i]);
+            as_.lea(
+                scratch_reg.r32(), x86::ptr(scratch_reg.r32(), -word_offset));
+            if (i == 0) {
+                as_.mov(x86::eax, scratch_reg.r32()); // init accumulator
+            }
+            else {
+                as_.cmovnc(x86::eax, scratch_reg.r32()); // if arr[i] != 0
+            }
+        }
+
+        // eax = bit width (negative), byte width = (-eax + 7) / 8
+        as_.neg(x86::eax);
+        as_.add(x86::eax, 7);
+        as_.sar(x86::eax, 3);
+
+        if (scratch_reg == reg_context) {
+            as_.pop(reg_context);
+        }
+    }
+
+    // Compute byte width of stack element, stores the result in x86::eax.
+    void Emitter::stack_elem_byte_width(StackElemRef elem)
+    {
+        if (elem->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            std::array<asmjit::x86::Gpq, 4> const &gpq_r64 = {
+                gpq[0].r64(), gpq[1].r64(), gpq[2].r64(), gpq[3].r64()};
+            array_byte_width(gpq_r64);
+        }
+        else if (elem->stack_offset()) {
+            array_byte_width(stack_offset_to_mem256(*elem->stack_offset()));
+        }
+        else if (elem->avx_reg()) {
+            auto avx_reg = avx_reg_to_ymm(*elem->avx_reg());
+            auto [avx_tmp_elem, _] = alloc_avx_reg();
+            auto avx_tmp = avx_reg_to_ymm(*avx_tmp_elem->avx_reg());
+            as_.vpxor(avx_tmp, avx_tmp, avx_tmp);
+            as_.vpcmpeqb(avx_tmp, avx_reg, avx_tmp); // tmp.b = (reg.b == 0)
+            as_.vpmovmskb(x86::eax, avx_tmp); // eax = mask of zero bytes
+            as_.not_(x86::eax); // eax = mask of non-zero bytes
+            as_.lzcnt(x86::eax, x86::eax);
+            as_.sub(x86::eax, 32);
+            as_.neg(x86::eax); // eax = 32 - lzcnt(mask)
+        }
+        else {
+            MONAD_VM_ASSERT(!elem->literal().has_value());
+        }
+    }
+
+    void Emitter::exp_emit_gas_decrement_by_literal(
+        uint256_t exp, uint32_t gas_factor)
+    {
+        discharge_deferred_comparison();
+
+        auto const exponent_byte_size = runtime::count_significant_bytes(exp);
+        // The static work cost of EXP is already sufficient to cover for
+        // the accumulated static work by an optimized EXP, so no gas check:
+        auto const gas = static_cast<int32_t>(exponent_byte_size * gas_factor);
+        if (gas) {
+            gas_decrement_no_check(gas);
+        }
+    }
+
+    void Emitter::exp_emit_gas_decrement_by_stack_elem(
+        StackElemRef exponent_elem, uint32_t gas_factor)
+    {
+        MONAD_VM_ASSERT(!exponent_elem->literal().has_value());
+
+        RegReserv const reserv{exponent_elem};
+
+        discharge_deferred_comparison();
+
+        stack_elem_byte_width(exponent_elem);
+        gpr_mul_by_uint64<true>(x86::rax, x86::rax, gas_factor);
+        // The static work cost of EXP is already sufficient to cover for
+        // the accumulated static work by an optimized EXP, so no gas check:
+        gas_decrement_no_check(x86::rax);
+    }
+
+    // Discharge via exp_emit_gas_decrement_*.
+    // It is assumed that the work of optimized EXP does not exceed the static
+    // work cost of the EXP instruction. See `static_assert` in `Emitter::exp`.
+    bool Emitter::exp_optimized(int32_t remaining_base_gas, uint32_t gas_factor)
+    {
+        auto base_elem = stack_.get(stack_.top_index());
+        auto exp_elem = stack_.get(stack_.top_index() - 1);
+
+        if (base_elem->literal() && exp_elem->literal()) {
+            auto const base = base_elem->literal()->value;
+            auto const exp = exp_elem->literal()->value;
+            base_elem.reset(); // Locations not needed anymore
+            exp_elem.reset(); // Locations not needed anymore
+
+            // Evaluating exponentiation can be slow, so it's only done in
+            // cases where we can bound the work required.
+            // If the base is a power of 2, exponentiation is a simple shift.
+            // Otherwise, if exponent is not too large.
+            if (popcount(base) == 1) {
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(exp, gas_factor);
+                uint256_t shift{0};
+                uint64_t const b{bit_width(base) - 1};
+                if (MONAD_VM_LIKELY(b)) {
+                    static constexpr uint64_t mask =
+                        std::numeric_limits<uint32_t>::max();
+                    shift = exp;
+                    shift[0] = (exp[0] & ~mask) | b * (exp[0] & mask);
+                }
+                push(uint256_t{1} << shift);
+                return true;
+            }
+            else if (exp <= 512) {
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(exp, gas_factor);
+                push(runtime::exp(base, exp));
+                return true;
+            }
+            else if (exponential_constant_fold_counter_ < 500) {
+                // Limit number of reduction of large exponentiation to guard
+                // against contracts taking too long to compile. In practice,
+                // EXP with large exponents are more or less unexistent, so any
+                // contract hitting this limit is likely malicious.
+                // A limit of 500 limits the time spent on these cases to ~1ms.
+                exponential_constant_fold_counter_ += 1;
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(exp, gas_factor);
+                push(runtime::exp(base, exp));
+                return true;
+            }
+        }
+        else if (base_elem->literal()) {
+            auto const base = base_elem->literal()->value;
+            base_elem.reset(); // Locations are not needed anymore
+            if (base == 0) { // O ** exp semantic: 1 if exp = 0 else 0
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                push_iszero(std::move(exp_elem));
+                return true;
+            }
+            else if (base == 1) { // 1 ** exp == 1
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                stack_.push_literal({1});
+                return true;
+            }
+            else if (popcount(base) == 1) { // (2 ** k) ** n == 1 << (k * n)
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                if (base == 2) {
+                    stack_.push(shl(
+                        std::move(exp_elem), stack_.alloc_literal({1}), {}));
+                    return true;
+                }
+                mov_stack_elem_to_general_reg(exp_elem);
+                auto mul_elem = release_general_reg(std::move(exp_elem), {});
+                auto const &gp =
+                    general_reg_to_gpq256(*mul_elem->general_reg());
+                as_.mov(x86::rax, gp[0]);
+                uint8_t const b = static_cast<uint8_t>(bit_width(base) - 1);
+                if (std::popcount(b) == 1) {
+                    MONAD_VM_DEBUG_ASSERT(b >= 2 && b <= 128);
+                    gpr_mul_by_uint64_via_shl<false>(gp[0], gp[0], b);
+                    constexpr auto mask = std::numeric_limits<int32_t>::min();
+                    as_.test(x86::rax, mask);
+                    as_.cmovnz(gp[0], x86::rax);
+                }
+                else {
+                    gpr_mul_by_int32_via_imul<false>(gp[0], gp[0], b);
+                    as_.cmovo(gp[0], x86::rax);
+                }
+                stack_.push(
+                    shl(std::move(mul_elem), stack_.alloc_literal({1}), {}));
+                return true;
+            }
+        }
+        else if (exp_elem->literal()) {
+            auto const exp = exp_elem->literal()->value;
+            exp_elem.reset(); // Locations are not needed anymore
+            if (exp == 0) { // x ** 0 = 1
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(0, gas_factor);
+                stack_.push_literal({1});
+                return true;
+            }
+            else if (exp == 1) { // x ** 1 = x
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(1, gas_factor);
+                stack_.push(std::move(base_elem));
+                return true;
+            }
+            else if (exp == 2) { // x ** 2 = x * x
+                stack_.pop();
+                stack_.pop();
+                exp_emit_gas_decrement_by_literal(2, gas_factor);
+                stack_.push(std::move(base_elem));
+                dup(1);
+                mul(remaining_base_gas);
+                return true;
+            }
+        }
+
+        return false;
     }
 }

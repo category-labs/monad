@@ -56,7 +56,7 @@ namespace
             emit.add();
             break;
         case Mul:
-            emit.mul<traits>(remaining_base_gas);
+            emit.mul(remaining_base_gas);
             break;
         case Sub:
             emit.sub();
@@ -377,27 +377,13 @@ namespace
 
     void emit_gas_decrement(
         Emitter &emit, BasicBlocksIR const &ir, Block const &block,
-        int32_t block_base_gas, int32_t *accumulated_base_gas)
+        int32_t block_base_gas)
     {
         if (ir.jump_dests().contains(block.offset)) {
-            *accumulated_base_gas = 0;
-            emit.gas_decrement_check_non_negative(block_base_gas + 1);
-            return;
-        }
-
-        // Arbitrary gas threshold for when to emit gas check.
-        // Needs to be big enough to make the gas check insignificant,
-        // and small enough to avoid exploitation of the optimization.
-        constexpr int32_t STATIC_GAS_CHECK_THRESHOLD = 1000;
-
-        int32_t const acc = *accumulated_base_gas + block_base_gas;
-        if (acc < STATIC_GAS_CHECK_THRESHOLD) {
-            *accumulated_base_gas = acc;
-            emit.gas_decrement_no_check(block_base_gas);
+            emit.gas_decrement_unbounded_work(block_base_gas + 1);
         }
         else {
-            *accumulated_base_gas = 0;
-            emit.gas_decrement_check_non_negative(block_base_gas);
+            emit.gas_decrement_static_work(block_base_gas);
         }
     }
 
@@ -450,13 +436,11 @@ namespace monad::vm::compiler::native
         }
         native_code_size_t const max_native_size =
             max_code_size(config.max_code_size_offset, ir.codesize);
-        int32_t accumulated_base_gas = 0;
         for (Block const &block : ir.blocks()) {
             bool const can_enter_block = emit.begin_new_block(block);
             if (can_enter_block) {
                 int32_t const base_gas = block_base_gas<traits>(block);
-                emit_gas_decrement(
-                    emit, ir, block, base_gas, &accumulated_base_gas);
+                emit_gas_decrement(emit, ir, block, base_gas);
                 emit_instrs<traits>(
                     emit, block, base_gas, max_native_size, config);
                 emit_terminator<traits>(emit, ir, block);

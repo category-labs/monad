@@ -265,12 +265,6 @@ namespace
             return;
         }
 #endif
-#if 0
-        std::cout <<
-            std::format("LEFT {} : {}  and  RIGHT {} : {}",
-                    left, Emitter::location_type_to_string(left_loc),
-                    right, Emitter::location_type_to_string(right_loc)) << std::endl;
-#endif
 
         TestEmitter emit{rt, ir.codesize};
         (void)emit.begin_new_block(ir.blocks()[0]);
@@ -309,12 +303,36 @@ namespace
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         if (dup) {
-            ASSERT_EQ(uint256_t::load_le(ret.offset), result);
+            ASSERT_EQ(uint256_t::load_le(ret.offset), result)
+                << std::format(
+                       "Left operand: {} ({}), ",
+                       left,
+                       Emitter::location_type_to_string(left_loc))
+                << std::format(
+                       "Right operand: {} ({})",
+                       right,
+                       Emitter::location_type_to_string(right_loc));
         }
         else {
-            ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
+            ASSERT_EQ(uint256_t::load_le(ret.offset), 0)
+                << std::format(
+                       "Left operand: {} ({}), ",
+                       left,
+                       Emitter::location_type_to_string(left_loc))
+                << std::format(
+                       "Right operand: {} ({})",
+                       right,
+                       Emitter::location_type_to_string(right_loc));
         }
-        ASSERT_EQ(uint256_t::load_le(ret.size), result);
+        ASSERT_EQ(uint256_t::load_le(ret.size), result)
+            << std::format(
+                   "Left operand: {} ({}), ",
+                   left,
+                   Emitter::location_type_to_string(left_loc))
+            << std::format(
+                   "Right operand: {} ({})",
+                   right,
+                   Emitter::location_type_to_string(right_loc));
     }
 
     void pure_una_instr_test_instance(
@@ -419,6 +437,78 @@ namespace
                     result,
                     ir2,
                     true);
+            }
+        }
+    }
+
+    void dynamic_gas_bin_instr_test_instance(
+        asmjit::JitRuntime &rt, PureEmitterInstr instr, uint256_t const &left,
+        Emitter::LocationType left_loc, uint256_t const &right,
+        Emitter::LocationType right_loc, uint256_t const &expected_gas,
+        basic_blocks::BasicBlocksIR const &ir)
+    {
+        TestEmitter emit{rt, ir.codesize};
+        emit.checked_debug_comment("Block prologue:");
+        (void)emit.begin_new_block(ir.blocks()[0]);
+        emit.checked_debug_comment("Initial gas:");
+        emit.gas(0);
+        emit.checked_debug_comment("Place operands in their locations:");
+        emit.push(right);
+        emit.push(left);
+
+        mov_literal_to_location_type(emit, 2, left_loc);
+        mov_literal_to_location_type(emit, 1, right_loc);
+
+        emit.checked_debug_comment("<Instruction>:");
+        instr(emit);
+        emit.swap(1); // result, start gas
+        emit.checked_debug_comment("Final gas:");
+        emit.gas(0); // result, start gas, gas
+        emit.swap(1); // result, gas, start gas
+        emit.sub(); // result, gas used (start gas - gas)
+
+        emit.checked_debug_comment("Return:");
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(uint256_t::load_le(ret.offset), expected_gas)
+            << std::format(
+                   "Left operand: {} ({}), ",
+                   left,
+                   Emitter::location_type_to_string(left_loc))
+            << std::format(
+                   "Right operand: {} ({})",
+                   right,
+                   Emitter::location_type_to_string(right_loc));
+    }
+
+    void dynamic_gas_test(
+        asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
+        uint256_t const &left, uint256_t const &right,
+        uint256_t const &expected_gas)
+    {
+        std::vector<uint8_t> bytecode1{
+            GAS, PUSH0, PUSH0, opcode, SWAP1, GAS, SUB, RETURN};
+        auto ir1 =
+            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode1));
+        for (auto left_loc : all_locations) {
+            for (auto right_loc : all_locations) {
+                dynamic_gas_bin_instr_test_instance(
+                    rt,
+                    instr,
+                    left,
+                    left_loc,
+                    right,
+                    right_loc,
+                    expected_gas,
+                    ir1);
             }
         }
     }
@@ -833,73 +923,12 @@ TEST(Emitter, invalid_instruction)
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
 
-TEST(Emitter, gas_decrement_no_check_1)
+TEST(Emitter, gas_decrement_static_work_no_check_1)
 {
     asmjit::JitRuntime rt;
     TestEmitter emit{rt, code_size_t{}};
-    emit.gas_decrement_no_check(2);
-
-    entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
-
-    entry(&ctx, nullptr);
-
-    ASSERT_EQ(ctx.gas_remaining, 3);
-}
-
-TEST(Emitter, gas_decrement_no_check_2)
-{
-    asmjit::JitRuntime rt;
-    TestEmitter emit{rt, code_size_t{}};
-    emit.gas_decrement_no_check(7);
-
-    entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
-
-    entry(&ctx, nullptr);
-
-    ASSERT_EQ(ctx.gas_remaining, -2);
-}
-
-TEST(Emitter, gas_decrement_check_non_negative_1)
-{
-    asmjit::JitRuntime rt;
-    TestEmitter emit{rt, code_size_t{}};
-    emit.gas_decrement_check_non_negative(6);
-    emit.stop();
-
-    entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
-    auto const &ret = ctx.result;
-
-    entry(&ctx, nullptr);
-
-    ASSERT_EQ(ctx.gas_remaining, -1);
-    ASSERT_EQ(ret.status, runtime::StatusCode::Error);
-}
-
-TEST(Emitter, gas_decrement_check_non_negative_2)
-{
-    asmjit::JitRuntime rt;
-    TestEmitter emit{rt, code_size_t{}};
-    emit.gas_decrement_check_non_negative(5);
-    emit.stop();
-
-    entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
-    auto const &ret = ctx.result;
-
-    entry(&ctx, nullptr);
-
-    ASSERT_EQ(ctx.gas_remaining, 0);
-    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
-}
-
-TEST(Emitter, gas_decrement_check_non_negative_3)
-{
-    asmjit::JitRuntime rt;
-    TestEmitter emit{rt, code_size_t{}};
-    emit.gas_decrement_check_non_negative(4);
+    emit.gas_decrement_static_work(2);
+    emit.gas_decrement_static_work(2);
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
@@ -910,6 +939,104 @@ TEST(Emitter, gas_decrement_check_non_negative_3)
 
     ASSERT_EQ(ctx.gas_remaining, 1);
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+}
+
+TEST(Emitter, gas_decrement_static_work_no_check_2)
+{
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, code_size_t{}};
+    emit.gas_decrement_static_work(
+        Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    emit.gas_decrement_static_work(1);
+    emit.stop();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    auto const &ret = ctx.result;
+
+    entry(&ctx, nullptr);
+
+    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+}
+
+TEST(Emitter, gas_decrement_static_work_check_non_negative_1)
+{
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, code_size_t{}};
+    emit.gas_decrement_static_work(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    emit.gas_decrement_static_work(1);
+    emit.stop();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    auto const &ret = ctx.result;
+
+    entry(&ctx, nullptr);
+
+    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+}
+
+TEST(Emitter, gas_decrement_static_work_check_non_negative_2)
+{
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, code_size_t{}};
+    emit.gas_decrement_static_work(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    emit.gas_decrement_static_work(1);
+    emit.stop();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
+    auto const &ret = ctx.result;
+
+    entry(&ctx, nullptr);
+
+    ASSERT_EQ(ctx.gas_remaining, 0);
+    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+}
+
+TEST(Emitter, gas_decrement_static_work_check_non_negative_3)
+{
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, code_size_t{}};
+    emit.gas_decrement_static_work(
+        Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    emit.gas_decrement_static_work(
+        Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    emit.gas_decrement_static_work(
+        Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    emit.gas_decrement_static_work(13);
+    emit.gas_decrement_static_work(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    emit.stop();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    auto ctx = test_context(4 * Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    auto const &ret = ctx.result;
+
+    entry(&ctx, nullptr);
+
+    ASSERT_EQ(ctx.gas_remaining, -10);
+    ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+}
+
+TEST(Emitter, gas_decrement_unbounded_work)
+{
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, code_size_t{}};
+    emit.gas_decrement_unbounded_work(5);
+    emit.gas_decrement_unbounded_work(1);
+    emit.gas_decrement_unbounded_work(1);
+    emit.stop();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    auto ctx = test_context(5);
+    auto const &ret = ctx.result;
+
+    entry(&ctx, nullptr);
+
+    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
 
 TEST(Emitter, return_)
@@ -1682,18 +1809,18 @@ TEST(Emitter, add_identity_left)
 TEST(Emitter, mul)
 {
     uint256_t bit256{0, 0, 0, static_cast<uint64_t>(1) << 63};
-    uint256_t bit62{static_cast<uint64_t>(1) << 63};
+    uint256_t bit64{static_cast<uint64_t>(1) << 63};
     uint256_t clear_lhs{2, 3, 4, 5};
     uint256_t clear0{
         0x8765432187654321, 0x1234567812345678, 0x8765432187654321, 0x11};
-    uint256_t clear1{0, 0x1234567812345678, 0x8765432187654321, 0x11};
-    uint256_t clear2{0x1234567812345678, 0, 0x8765432187654321, 0x11};
-    uint256_t clear3{0x1234567812345678, 0x8765432187654321, 0, 0x11};
-    uint256_t clear4{0x1234567812345678, 0x8765432187654321, 0x11, 0};
-    uint256_t clear12{0, 0, 0x8765432187654321, 0x1234567812345678};
-    uint256_t clear23{0x8765432187654321, 0, 0, 0x1234567812345678};
-    uint256_t clear34{0x8765432187654321, 0x1234567812345678, 0, 0};
-    uint256_t clear123{0, 0, 0, 0x1234567812345678};
+    uint256_t clear1{0, 0xffffffff80000000, 0x8765432187654321, 0x11};
+    uint256_t clear2{0x1234567812345678, 0, 0x80, 0x11};
+    uint256_t clear3{0x0000000080000000, 0x1000000000000000, 0, 0x11};
+    uint256_t clear4{0xffffffff80000000, 0x8765432187654321, 0x11, 0};
+    uint256_t clear12{0, 0, 0x0000000080000000, 0x1234567812345678};
+    uint256_t clear23{0x8765432187654321, 0, 0, 0xffffffff80000000};
+    uint256_t clear34{0x80, 0x1234567812345678, 0, 0};
+    uint256_t clear123{0, 0, 0, 0xffffffff80000000};
     uint256_t clear234{0x8765432187654321, 0, 0, 0};
     std::vector<std::pair<uint256_t, uint256_t>> const pre_inputs{
         {0, 0},
@@ -1702,11 +1829,11 @@ TEST(Emitter, mul)
         {1, 1},
         {1, bit256},
         {bit256, 1},
-        {bit62, bit256},
-        {bit256, bit62},
+        {bit64, bit256},
+        {bit256, bit64},
         {5, 6},
-        {5, bit62},
-        {bit62, 5},
+        {5, bit64},
+        {bit64, 5},
         {clear_lhs, clear0},
         {clear_lhs, clear1},
         {clear_lhs, clear2},
@@ -1732,10 +1859,7 @@ TEST(Emitter, mul)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.mul<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.mul(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -2135,21 +2259,23 @@ TEST(Emitter, addmod_nonopt)
 TEST(Emitter, mulmod)
 {
     uint256_t const clear0{
-        0x8765432187654321,
-        0x1234567812345678,
-        0x8765432187654321,
-        0x1234567812345678};
-    uint256_t const clear1{0, clear0[1], clear0[2], clear0[3]};
-    uint256_t const clear2{clear0[0], 0, clear0[2], clear0[3]};
-    uint256_t const clear3{clear0[0], clear0[1], 0, clear0[3]};
-    uint256_t const clear4{clear0[0], clear0[1], clear0[2], 0};
-    uint256_t const clear12{0, 0, clear0[2], clear0[3]};
-    uint256_t const clear23{clear0[0], 0, 0, clear0[3]};
+        0x8765432100000001,
+        0x0000000001000000,
+        0xffffffff80000000,
+        0xffffffff87654321};
+    uint256_t const clear1{0, clear0[0], clear0[1], clear0[2]};
+    uint256_t const clear2{clear0[3], 0, clear0[0], clear0[1]};
+    uint256_t const clear3{clear0[2], clear0[3], 0, clear0[0]};
+    uint256_t const clear4{clear0[1], clear0[2], clear0[3], 0};
+    uint256_t const clear12{0, 0, clear0[0], clear0[1]};
+    uint256_t const clear23{clear0[2], 0, 0, clear0[3]};
     uint256_t const clear34{clear0[0], clear0[1], 0, 0};
-    uint256_t const clear14{0, clear0[1], clear0[2], 0};
-    uint256_t const clear123{0, 0, 0, clear0[3]};
-    uint256_t const clear234{clear0[0], 0, 0, 0};
-    uint256_t const x{2, 3, 4, 5};
+    uint256_t const clear14{0, clear0[2], clear0[3], 0};
+    uint256_t const clear123{0, 0, 0, clear0[0]};
+    uint256_t const clear234{clear0[1], 0, 0, 0};
+    uint256_t const clear134{0, clear0[2], 0, 0};
+    uint256_t const clear124{0, 0, clear0[3], 0};
+    uint256_t const x{0x0000000100000000, 2, 3, 4};
 
     std::vector<std::pair<uint256_t, uint256_t>> const pre_inputs{
         {clear0, x},
@@ -2162,7 +2288,9 @@ TEST(Emitter, mulmod)
         {x, clear34},
         {clear14, x},
         {x, clear123},
-        {clear234, x}};
+        {clear234, x},
+        {x, clear134},
+        {clear124, x}};
 
     std::vector<std::pair<uint256_t, uint256_t>> inputs;
     for (auto const &[x, y] : pre_inputs) {
@@ -2243,6 +2371,109 @@ TEST(Emitter, mulmod)
                 a,
                 b,
                 expected);
+        }
+    }
+}
+
+TEST(Emitter, exp)
+{
+    asmjit::JitRuntime rt;
+
+    {
+        // Test exponential_constant_fold_counter_ against the limit.
+        // We do so by creating a long sequence of EXP instructions with
+        // exponent > 512 and base with popcount != 1, which hits the slow
+        // constant folding path that is limited to 500 evaluations.
+        std::vector<std::uint8_t> bytes;
+        constexpr auto rep_count = 750;
+        for (int i = 0; i < rep_count; ++i) {
+            bytes.push_back(PUSH0);
+            bytes.push_back(PUSH0);
+            bytes.push_back(EXP);
+            bytes.push_back(POP);
+        }
+        bytes.push_back(PUSH0);
+        bytes.push_back(PUSH0);
+        bytes.push_back(RETURN);
+        auto ir = basic_blocks::BasicBlocksIR::unsafe_from(std::span{bytes});
+        TestEmitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks()[0]);
+
+        for (int i = 0; i < rep_count; ++i) {
+            emit.push(513); // some exponent over 512
+            emit.push(13); // base (with popcount != 1)
+            emit.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                std::numeric_limits<int32_t>::max());
+            emit.pop();
+            ASSERT_EQ(
+                emit.exponential_constant_fold_counter(),
+                i + 1 >= 500 ? 500 : i + 1);
+        }
+
+        emit.push(0);
+        emit.push(0);
+        emit.return_();
+        entrypoint_t entry = emit.finish_contract(rt);
+        auto ctx = test_context();
+        auto const &ret = ctx.result;
+
+        auto stack_memory = test_stack_memory();
+        entry(&ctx, stack_memory.get());
+
+        ASSERT_EQ(
+            emit.exponential_constant_fold_counter(),
+            500); // Make sure we've hit the limit.
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    }
+
+    std::vector<uint256_t> bases = {0, 1, 2, 3, 4};
+    for (size_t i = 8; i < 256; i += 8) {
+        uint256_t x{uint256_t{1} << i};
+        bases.push_back(x - 1);
+        bases.push_back(x);
+        bases.push_back(x + 1);
+    }
+    {
+        uint256_t x{uint256_t{1} << 255};
+        bases.push_back(x - 1);
+        bases.push_back(x);
+        bases.push_back(x + 1);
+    }
+    bases.push_back(std::numeric_limits<uint256_t>::max());
+
+    std::vector<uint256_t> exps = {0, 1, 2, 3, 511, 512, 513};
+    for (size_t i = 15; i < 256; i += 16) {
+        uint256_t x{uint256_t{1} << i};
+        exps.push_back(x - 1);
+        exps.push_back(x);
+        exps.push_back(x + 1);
+    }
+    exps.push_back(std::numeric_limits<uint256_t>::max());
+
+    for (auto const &b : bases) {
+        for (auto const &e : exps) {
+            pure_bin_instr_test(
+                rt,
+                EXP,
+                [&](Emitter &em) {
+                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                        std::numeric_limits<int32_t>::max()));
+                },
+                {b},
+                {e},
+                exp({b}, {e}));
+            dynamic_gas_test(
+                rt,
+                EXP,
+                [&](Emitter &em) {
+                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                        std::numeric_limits<int32_t>::max()));
+                },
+                {b},
+                {e},
+                runtime::exp_dynamic_gas_cost_multiplier<
+                    EvmTraits<EVMC_LATEST_STABLE_REVISION>>() *
+                    count_significant_bytes(e));
         }
     }
 }

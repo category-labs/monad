@@ -18,6 +18,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/detail.hpp>
@@ -43,6 +44,11 @@ namespace monad::vm::compiler::native
                 asmjit::Error, char const *message,
                 asmjit::BaseEmitter *) override;
         };
+
+        // Arbitrary work threshold for when to emit gas check.
+        // Needs to be big enough to make the gas check insignificant,
+        // and small enough to avoid exploitation of the optimization.
+        static constexpr int32_t STATIC_WORK_GAS_CHECK_THRESHOLD = 1000;
 
         enum class LocationType
         {
@@ -112,6 +118,7 @@ namespace monad::vm::compiler::native
         };
 
         using Gpq256 = std::array<asmjit::x86::Gpq, 4>;
+        using Mem256 = std::array<asmjit::x86::Mem, 4>;
         using Imm256 = std::array<asmjit::Imm, 4>;
 
         using Operand =
@@ -227,6 +234,11 @@ namespace monad::vm::compiler::native
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
 
+        uint32_t exponential_constant_fold_counter() const
+        {
+            return exponential_constant_fold_counter_;
+        }
+
         ////////// Core emit functionality //////////
 
         [[noreturn]] void fail_with_error(asmjit::Error);
@@ -235,8 +247,8 @@ namespace monad::vm::compiler::native
         void add_jump_dest(byte_offset);
         [[nodiscard]]
         bool begin_new_block(basic_blocks::Block const &);
-        void gas_decrement_no_check(int32_t);
-        void gas_decrement_check_non_negative(int32_t);
+        void gas_decrement_static_work(int32_t);
+        void gas_decrement_unbounded_work(int32_t);
         void spill_caller_save_regs(bool spill_avx);
         void spill_all_caller_save_general_regs();
         void spill_avx_reg_range(uint8_t start);
@@ -329,7 +341,6 @@ namespace monad::vm::compiler::native
         void mstore8();
 
         // Revision dependent instructions
-        template <Traits traits>
         void mul(int32_t remaining_base_gas)
         {
             if (mul_optimized()) {
@@ -396,9 +407,29 @@ namespace monad::vm::compiler::native
             call_runtime(remaining_base_gas, true, runtime::mulmod);
         }
 
+        template <typename T, size_t N>
+        void array_byte_width(std::array<T, N> const &);
+
+        bool exp_optimized(int32_t, uint32_t);
+
         template <Traits traits>
         void exp(int32_t remaining_base_gas)
         {
+            // It is assumed that the work of an optimized EXP does not exceed
+            // the static work cost of the EXP instruction. At present, the work
+            // of an optimized EXP is roughly at most the work of a MUL
+            // instruction.
+            static_assert(opcode_table<traits>[MUL].name == "MUL");
+            static_assert(opcode_table<traits>[EXP].name == "EXP");
+            static_assert(
+                opcode_table<traits>[EXP].min_gas >=
+                opcode_table<traits>[MUL].min_gas);
+
+            if (exp_optimized(
+                    remaining_base_gas,
+                    runtime::exp_dynamic_gas_cost_multiplier<traits>())) {
+                return;
+            }
             call_runtime(remaining_base_gas, true, runtime::exp<traits>);
         }
 
@@ -625,6 +656,11 @@ namespace monad::vm::compiler::native
         template <typename... LiveSet>
         bool is_live(GeneralReg, std::tuple<LiveSet...> const &);
 
+        void gas_decrement_no_check(int32_t);
+        void gas_decrement_no_check(asmjit::x86::Gpq);
+
+        bool accumulate_static_work(int32_t work_cost);
+
         bool block_prologue(basic_blocks::Block const &);
         template <bool preserve_eflags>
         void adjust_by_stack_delta();
@@ -816,21 +852,27 @@ namespace monad::vm::compiler::native
             asmjit::x86::Gpq dst1, asmjit::x86::Gpq dst2, LeftOpType left,
             asmjit::x86::Gpq right);
         template <bool Is32Bit, typename LeftOpType>
-        void imul_by_gpq(
+        void gpr_mul_by_gpq(
             asmjit::x86::Gpq dst, LeftOpType left, asmjit::x86::Gpq right);
         template <bool Is32Bit, typename LeftOpType>
-        void
-        imul_by_int32(asmjit::x86::Gpq dst, LeftOpType left, int32_t right);
+        void gpr_mul_by_uint64_via_shl(
+            asmjit::x86::Gpq dst, LeftOpType left, uint64_t right);
         template <bool Is32Bit, typename LeftOpType>
-        void imul_by_rax_or_int32(
-            asmjit::x86::Gpq dst, LeftOpType left, std::optional<int32_t>);
+        void gpr_mul_by_int32_via_imul(
+            asmjit::x86::Gpq dst, LeftOpType left, int32_t right);
+        template <bool Is32Bit, typename LeftOpType>
+        void gpr_mul_by_uint64(
+            asmjit::x86::Gpq dst, LeftOpType left, uint64_t right);
+        template <bool Is32Bit, typename LeftOpType>
+        void gpr_mul_by_rax_or_uint64(
+            asmjit::x86::Gpq dst, LeftOpType left, std::optional<uint64_t>);
         void mul_with_bit_size_by_rax(
             size_t bit_size, asmjit::x86::Gpq const *dst, Operand const &left,
-            std::optional<int32_t> value_of_rax);
+            std::optional<uint64_t> value_of_rax);
         template <bool Has32Bit>
         void mul_with_bit_size_and_has_32_bit_by_rax(
             size_t bit_size, asmjit::x86::Gpq const *dst, Operand const &left,
-            std::optional<int32_t> value_of_rax);
+            std::optional<uint64_t> value_of_rax);
         template <typename... LiveSet>
         StackElemRef mul_with_bit_size(
             size_t bit_size, StackElemRef, MulEmitter::RightMulArg,
@@ -1009,6 +1051,10 @@ namespace monad::vm::compiler::native
         void add_mod2(StackElemRef left, StackElemRef right, size_t exp);
         void mul_mod2(StackElemRef left, StackElemRef right, size_t exp);
 
+        void exp_emit_gas_decrement_by_literal(uint256_t, uint32_t);
+        void exp_emit_gas_decrement_by_stack_elem(StackElemRef, uint32_t);
+        void stack_elem_byte_width(StackElemRef);
+
         using ModOpType = uint256_t (*)(
             uint256_t const &, uint256_t const &, uint256_t const &);
         using ModOpByMaskType =
@@ -1038,5 +1084,7 @@ namespace monad::vm::compiler::native
         std::vector<std::tuple<asmjit::Label, asmjit::x86::Mem, asmjit::Label>>
             load_bounded_le_handlers_;
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
+        uint32_t exponential_constant_fold_counter_;
+        int32_t accumulated_static_work_;
     };
 }

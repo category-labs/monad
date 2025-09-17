@@ -25,7 +25,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
-#include <category/execution/monad/reserve_balance/reserve_balance.h>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -41,11 +41,6 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
-
-unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
-{
-    return 10;
-}
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -85,9 +80,10 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
+            uint256_t const max_reserve =
+                ReserveBalanceContract{state}.get(addr).native();
             uint256_t const orig_balance = state.get_original_balance(addr);
-            uint256_t const reserve =
-                std::min(get_max_reserve<traits>(addr), orig_balance);
+            uint256_t const reserve = std::min(max_reserve, orig_balance);
             if (addr == sender) {
                 if (gas_fees > reserve) { // must be dipping
                     return std::nullopt;
@@ -179,17 +175,5 @@ bool can_sender_dip_into_reserve(
 
     return true; // Allow dipping into reserve if no restrictions found
 }
-
-template <Traits traits>
-uint256_t get_max_reserve(Address const &)
-{
-    // TODO: implement precompile (support reading from orig)
-    constexpr uint256_t WEI_PER_MON{1000000000000000000};
-    return uint256_t{
-               monad_default_max_reserve_balance_mon(traits::monad_rev())} *
-           WEI_PER_MON;
-}
-
-EXPLICIT_MONAD_TRAITS(get_max_reserve);
 
 MONAD_NAMESPACE_END

@@ -77,7 +77,7 @@ set(cancun_excluded_tests
     "BlockchainTests.GeneralStateTests/stCreate2/*"
     "BlockchainTests.GeneralStateTests/stCreateTest/*"
 
-    # misc
+    # EIP-7610
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2Paris.json"
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorageParis.json"
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json"

@@ -967,13 +967,13 @@ namespace monad::vm::interpreter
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
-        check_requirements<GAS, traits>(
+        check_requirements<GASPRICE, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
             runtime::uint256_from_bytes32(ctx.env.tx_context.tx_gas_price));
 
-        MONAD_VM_NEXT(GAS);
+        MONAD_VM_NEXT(GASPRICE);
     }
 
     template <Traits traits>

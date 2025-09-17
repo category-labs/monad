@@ -486,7 +486,7 @@ Axiom execTxSenderBalCore: forall tx s,
   maxTxFee tx <= balanceOfAc s (sender tx) ->
   reserveBalUpdateOfTx tx = None ->
   let sf :=  (evmExecTxCore s tx).1 in
-  addrDelegated s (sender tx) = false
+  addrDelegated sf (sender tx) = false
    ->  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - ( maxTxFee tx + value tx)
         \/  balanceOfAc sf (sender tx) =  balanceOfAc s (sender tx) - (maxTxFee tx).
 
@@ -649,11 +649,13 @@ Proof.
   }
   specialize (Hc ltac:(auto)).
   pose proof (changedAccountSetSound tx s.1 ltac:(auto)) as Hsnd.
+  pose proof (execTxDelegationUpdCore tx s.1 ltac:(auto) (sender tx) ) as Hsf.
   rdestruct (evmExecTxCore s.1 tx) as [si changed].
+  simpl in Hsf.
   unfold isAllowedToEmptyExec. unfold isAllowedToEmpty.
   intros.
   unfold balanceOfAcA in *.
-  destruct (addrDelegated s.1 (sender tx)); simpl in *.
+  rdestruct (addrDelegated s.1 (sender tx)); simpl in *.
   {
     rememberForallb.
     unfold balanceOfAcA in *.
@@ -674,15 +676,23 @@ Proof.
   }
   {
     autorewrite with syntactic in *.
-    rememberForallb.
-    destruct (~~ (existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)) && ~~ existsTxWithinK s tx);
+    rewrite Hsf in Hc.
+      rememberForallb.
+    specialize (Hc ltac:(auto)).
+    remember (~~ (existsDelUndelTxWithinK s tx || bool_decide (sender tx ∈ addrsDelUndelByTx tx)) && ~~ existsTxWithinK s tx) as rd1; destruct rd1;
       simpl in *.
     {
+      symmetry in Heqrd1.
+      Hint Rewrite @orb_false_iff bool_decide_eq_false : iff.
+      autorewrite with iff in *.
+      unfold addrsDelUndelByTx in Heqrd1.
+      forward_reason.
+      specialize (Hc ltac:(set_solver)).
       destruct fb; simpl in *; auto; try lia.
       rewrite balanceOfRevertSender; auto.
     }
     {
-      destruct fb; destruct Hc; simpl in *; orient_rwHyps; simpl in *;
+      destruct fb; simpl in *; orient_rwHyps; simpl in *;
         try (rewrite balanceOfRevertSender;auto;[]);
         try resolveDecide congruence; try auto;
         try lia;[].
@@ -698,7 +708,7 @@ Proof.
       {
         unfold balanceOfAc in *.
         forward_reason.
-        rewrite Hsnd in H0;auto.
+        rewrite Hsnd; auto.
         lia.
       }
 

@@ -18,9 +18,9 @@
 #include <category/core/rlp/config.hpp>
 
 #include <category/core/byte_string.hpp>
-#include <category/core/cmemory.hpp>
 #include <category/core/likely.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <cstring>
@@ -68,7 +68,7 @@ namespace impl
             abort();
 #endif
         }
-        cmemcpy(d.data(), n_be_bytes, sizeof(size_t));
+        std::copy_n(n_be_bytes, sizeof(size_t), d.data());
         return d.subspan((sizeof(size_t) - lz_bytes));
     }
 }

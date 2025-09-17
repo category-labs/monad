@@ -15,8 +15,7 @@
 
 #pragma once
 
-#include <category/core/cmemory.hpp>
-
+#include <algorithm>
 #include <bit>
 
 MONAD_NAMESPACE_BEGIN
@@ -25,7 +24,7 @@ template <class T>
 constexpr T unaligned_load(unsigned char const *const buf)
 {
     unsigned char data[sizeof(T)];
-    cmemcpy(data, buf, sizeof(T));
+    std::copy_n(buf, sizeof(T), data);
     return std::bit_cast<T>(data);
 }
 

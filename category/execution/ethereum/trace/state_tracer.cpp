@@ -187,6 +187,9 @@ namespace trace
     {
         excluded_addresses_.insert(sender);
         excluded_addresses_.insert(beneficiary);
+        // TODO(dhil): Revisit later whether to include/exclude the reserve
+        // balance contract
+        excluded_addresses_.insert(Address{0x1001});
 
         if (to.has_value()) {
             excluded_addresses_.insert(*to);
@@ -326,6 +329,13 @@ namespace trace
             if (address == beneficiary) {
                 continue;
             }
+
+            // TODO(dhil): Revisit later whether to include/exclude the reserve
+            // balance contract
+            if (address == Address{0x1001}) {
+                continue;
+            }
+
             // TODO: Because this address is "touched". Should we keep this for
             // monad?
             if (MONAD_UNLIKELY(address == monad::ripemd_address)) {
@@ -365,6 +375,11 @@ namespace trace
         json pre = json::object();
         json post = json::object();
         for (auto const &[address, state_delta] : state_deltas) {
+            if (address == Address{0x1001}) {
+                // TODO(dhil): Revisit later whether to include/exclude the
+                // reserve balance contract
+                continue;
+            }
             auto const address_key = bytes_to_hex(address.bytes);
             // Account
             {

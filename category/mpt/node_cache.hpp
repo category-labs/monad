@@ -56,7 +56,7 @@ class NodeCache final
     }
 
 public:
-    static constexpr size_t AVERAGE_NODE_SIZE = 100;
+    static constexpr size_t AVERAGE_NODE_SIZE = 104;
 
     using Base::ConstAccessor;
     using Base::list_node;

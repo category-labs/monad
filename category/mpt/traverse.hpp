@@ -76,8 +76,8 @@ namespace detail
         }
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (traverse.should_visit(node, branch)) {
-                auto const *const next = node.next(idx);
-                if (next) {
+                if (Node::SharedPtr const &next = node.next(idx);
+                    next != nullptr) {
                     preorder_traverse_blocking_impl(
                         aux, branch, *next, traverse, version);
                     continue;
@@ -194,7 +194,7 @@ namespace detail
         using result_type = async::result<bool>;
 
         UpdateAuxImpl &aux;
-        Node::UniquePtr traverse_root;
+        Node::SharedPtr traverse_root;
         std::unique_ptr<TraverseMachine> machine;
         uint64_t const version;
         size_t const max_outstanding_reads;
@@ -207,7 +207,7 @@ namespace detail
         bool version_expired_before_complete{false};
 
         TraverseSender(
-            UpdateAuxImpl &aux, Node::UniquePtr traverse_root,
+            UpdateAuxImpl &aux, Node::SharedPtr traverse_root,
             std::unique_ptr<TraverseMachine> machine, uint64_t const version,
             size_t const concurrency_limit)
             : aux(aux)
@@ -301,7 +301,7 @@ namespace detail
         unsigned children_read = 0;
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (machine.should_visit(node, branch)) {
-                auto const *const next = node.next(idx);
+                Node::SharedPtr const &next = node.next(idx);
                 if (next == nullptr) {
                     MONAD_ASSERT(sender.aux.is_on_disk());
                     // verify version before read
@@ -358,6 +358,8 @@ namespace detail
                 }
             }
         }
+        --machine.level;
+        machine.up(branch, node);
     }
 }
 
@@ -371,7 +373,7 @@ inline bool preorder_traverse_blocking(
 }
 
 inline bool preorder_traverse_ondisk(
-    UpdateAuxImpl &aux, Node const &node, TraverseMachine &machine,
+    UpdateAuxImpl &aux, Node::SharedPtr node, TraverseMachine &machine,
     uint64_t const version, size_t const concurrency_limit = 4096)
 {
     MONAD_ASSERT(aux.is_on_disk());
@@ -402,11 +404,7 @@ inline bool preorder_traverse_ondisk(
 
     auto *const state = new auto(async::connect(
         detail::TraverseSender(
-            aux,
-            copy_node<Node>(&node),
-            machine.clone(),
-            version,
-            concurrency_limit),
+            aux, std::move(node), machine.clone(), version, concurrency_limit),
         TraverseReceiver{version_expired_before_traverse_complete}));
     state->initiate();
 

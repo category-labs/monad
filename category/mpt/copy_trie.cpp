@@ -122,9 +122,9 @@ Node::UniquePtr create_node_with_two_children(
         static_cast<int64_t>(new_version));
 }
 
-Node::UniquePtr copy_trie_impl(
-    UpdateAuxImpl &aux, Node &src_root, NibblesView const src_prefix,
-    uint64_t const src_version, Node::UniquePtr root, NibblesView const dest,
+Node::SharedPtr copy_trie_impl(
+    UpdateAuxImpl &aux, NodeCursor src_root, NibblesView const src_prefix,
+    uint64_t const src_version, Node::SharedPtr root, NibblesView const dest,
     uint64_t const dest_version)
 {
     auto [src_cursor, res] =
@@ -149,14 +149,14 @@ Node::UniquePtr copy_trie_impl(
             static_cast<uint16_t>(1u << child.branch),
             {&child, 1},
             {},
-            src_root.value(),
+            src_root.node->value(),
             0,
             static_cast<int64_t>(dest_version));
     }
     // serialize to buffer for each new node created
     Node *parent = nullptr;
     unsigned char branch = INVALID_BRANCH;
-    Node *node = root.get();
+    Node::SharedPtr node = root;
     Node::UniquePtr new_node{};
     unsigned prefix_index = 0;
     unsigned node_prefix_index = 0;
@@ -205,8 +205,9 @@ Node::UniquePtr copy_trie_impl(
                 node_nibble,
                 std::move(node_latter_half),
                 dest_version,
-                node == root.get() ? std::make_optional(src_root.value())
-                                   : std::nullopt);
+                node.get() == root.get()
+                    ? std::make_optional(src_root.node->value())
+                    : std::nullopt);
             break;
         }
         // end of node path
@@ -219,7 +220,7 @@ Node::UniquePtr copy_trie_impl(
                 node->set_next(index, std::move(next_node_ondisk));
             }
             // there is a matched branch, go to next child
-            parent = node;
+            parent = node.get();
             branch = nibble;
             parents_and_indexes.emplace(std::make_pair(parent, index));
             node = node->next(index);
@@ -236,12 +237,13 @@ Node::UniquePtr copy_trie_impl(
             src_node.version);
         new_node = create_node_add_new_branch(
             aux,
-            node,
+            node.get(),
             nibble,
             std::move(dest_node),
             dest_version,
-            node == root.get() ? std::make_optional(src_root.value())
-                               : std::nullopt);
+            node.get() == root.get()
+                ? std::make_optional(src_root.node->value())
+                : std::nullopt);
         break;
     }
 
@@ -253,7 +255,7 @@ Node::UniquePtr copy_trie_impl(
             src_node.opt_value(),
             static_cast<int64_t>(dest_version));
     }
-    if (node == root.get()) {
+    if (node.get() == root.get()) {
         MONAD_ASSERT(parents_and_indexes.empty());
         root = std::move(new_node);
     }
@@ -261,7 +263,6 @@ Node::UniquePtr copy_trie_impl(
         MONAD_ASSERT(parent != nullptr);
         auto const child_index = parent->to_child_index(branch);
         // reset child at `branch` to the new_node
-        parent->move_next(child_index).reset();
         parent->set_next(child_index, std::move(new_node));
         parents_and_indexes.emplace(std::make_pair(parent, child_index));
         // serialize nodes of insert path up until root (excludes root)
@@ -281,13 +282,13 @@ Node::UniquePtr copy_trie_impl(
     return root;
 }
 
-Node::UniquePtr copy_trie_to_dest(
-    UpdateAuxImpl &aux, Node &src_root, NibblesView const src_prefix,
-    uint64_t const src_version, Node::UniquePtr root,
+Node::SharedPtr copy_trie_to_dest(
+    UpdateAuxImpl &aux, NodeCursor src_root, NibblesView const src_prefix,
+    uint64_t const src_version, Node::SharedPtr root,
     NibblesView const dest_prefix, uint64_t const dest_version,
     bool const must_write_to_disk)
 {
-    auto impl = [&]() -> Node::UniquePtr {
+    auto impl = [&]() -> Node::SharedPtr {
         root = copy_trie_impl(
             aux,
             src_root,
@@ -305,7 +306,7 @@ Node::UniquePtr copy_trie_to_dest(
         if (aux.is_on_disk()) {
             MONAD_ASSERT(root->value_len == sizeof(uint32_t) * 2);
         }
-        return std::move(root);
+        return root;
     };
     if (aux.is_current_thread_upserting()) {
         return impl();

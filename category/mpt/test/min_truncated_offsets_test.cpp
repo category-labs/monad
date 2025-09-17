@@ -208,11 +208,10 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 TraverseCalculateAndVerifyMinTruncatedOffsets>(*this);
         }
 
-    } traverse{this->aux};
+    } traverse{aux};
 
     // WARNING: test will fail and there are memory leak using parallel traverse
-    ASSERT_TRUE(
-        preorder_traverse_blocking(this->aux, *this->root, traverse, block_id));
+    ASSERT_TRUE(preorder_traverse_blocking(aux, *root, traverse, block_id));
     EXPECT_EQ(traverse.level, 0);
     EXPECT_EQ(traverse.root_to_node_records.empty(), true);
 }

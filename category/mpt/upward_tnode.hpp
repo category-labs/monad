@@ -85,7 +85,7 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
     // UpdateTNode owns old node's lifetime only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
-    Node::UniquePtr old{};
+    Node::SharedPtr old{};
     std::vector<ChildData> children{};
     Nibbles path{};
     std::optional<byte_string_view> opt_leaf_data{std::nullopt};
@@ -96,7 +96,7 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
         uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
         int64_t const version = 0,
         std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
-        Node::UniquePtr old = {})
+        Node::SharedPtr old = {})
         : Base(
               parent, tnode_type::update,
               static_cast<uint8_t>(std::popcount(orig_mask)), branch, orig_mask)
@@ -146,7 +146,7 @@ inline tnode_unique_ptr make_tnode(
     uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
     int64_t const version = 0,
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
-    Node::UniquePtr old = {})
+    Node::SharedPtr old = {})
 {
     return UpdateTNode::make(UpdateTNode{
         orig_mask,
@@ -158,7 +158,7 @@ inline tnode_unique_ptr make_tnode(
         std::move(old)});
 }
 
-static_assert(sizeof(UpdateTNode) == 96);
+static_assert(sizeof(UpdateTNode) == 104);
 static_assert(alignof(UpdateTNode) == 8);
 
 struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
@@ -175,11 +175,11 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     value is either the node is currently cached in memory or its node is child
     of an update tnode. */
     bool const cache_node{false};
-    Node::UniquePtr node{nullptr};
+    Node::SharedPtr node{nullptr};
 
     template <any_tnode Parent>
     CompactTNode(
-        Parent *const parent, unsigned const index, Node::UniquePtr ptr)
+        Parent *const parent, unsigned const index, Node::SharedPtr ptr)
         : Base(
               (CompactTNode *)parent, tnode_type::compact,
               ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0)
@@ -190,7 +190,7 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
         MONAD_ASSERT(parent != nullptr);
     }
 
-    void update_after_async_read(Node::UniquePtr ptr)
+    void update_after_async_read(Node::SharedPtr ptr)
     {
         npending = static_cast<uint8_t>(ptr->number_of_children());
         node = std::move(ptr);
@@ -216,7 +216,7 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
 
     template <any_tnode Parent>
     static unique_ptr_type
-    make(Parent *const parent, unsigned const index, Node::UniquePtr node)
+    make(Parent *const parent, unsigned const index, Node::SharedPtr node)
     {
         MONAD_DEBUG_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &CompactTNode::pool>(
@@ -224,7 +224,7 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     }
 };
 
-static_assert(sizeof(CompactTNode) == 24);
+static_assert(sizeof(CompactTNode) == 32);
 static_assert(alignof(CompactTNode) == 8);
 
 struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
@@ -239,12 +239,12 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
     bool const cache_node{false};
     // A mask of which child to cache, each bit is a child of original node
     uint16_t cache_mask{0};
-    Node::UniquePtr node{nullptr};
+    Node::SharedPtr node{nullptr};
 
     template <update_or_expire_tnode Parent>
     ExpireTNode(
         Parent *const parent, unsigned const branch, unsigned const index,
-        Node::UniquePtr ptr)
+        Node::SharedPtr ptr)
         : Base(
               (ExpireTNode *)parent, tnode_type::expire,
               ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0,
@@ -256,7 +256,7 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
         MONAD_ASSERT(parent != nullptr);
     }
 
-    void update_after_async_read(Node::UniquePtr ptr)
+    void update_after_async_read(Node::SharedPtr ptr)
     {
         npending = static_cast<uint8_t>(ptr->number_of_children());
         mask = ptr->mask;
@@ -284,7 +284,7 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
     template <update_or_expire_tnode Parent>
     static unique_ptr_type make(
         Parent *const parent, unsigned const branch, unsigned index,
-        Node::UniquePtr node)
+        Node::SharedPtr node)
     {
         MONAD_DEBUG_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
@@ -292,7 +292,7 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
     }
 };
 
-static_assert(sizeof(ExpireTNode) == 32);
+static_assert(sizeof(ExpireTNode) == 40);
 static_assert(alignof(ExpireTNode) == 8);
 
 MONAD_MPT_NAMESPACE_END

@@ -49,7 +49,7 @@ struct inflight_node_hasher
 using AsyncInflightNodes = unordered_dense_map<
     std::pair<virtual_chunk_offset_t, CacheNode *>,
     std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(OwningNodeCursor)>>,
+        std::function<MONAD_ASYNC_NAMESPACE::result<void>(CacheNodeCursor)>>,
     inflight_node_hasher>;
 
 template <class T>
@@ -67,7 +67,7 @@ private:
 
     UpdateAuxImpl &aux_;
     NodeCache &node_cache_;
-    OwningNodeCursor root_;
+    CacheNodeCursor root_;
     uint64_t version_;
     NibblesView key_;
     AsyncInflightNodes &inflights_;
@@ -77,7 +77,7 @@ private:
 
     MONAD_ASYNC_NAMESPACE::result<void> resume_(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
-        OwningNodeCursor root)
+        CacheNodeCursor root)
     {
         if (!root.is_valid()) {
             // Version invalidated during async read
@@ -95,7 +95,7 @@ public:
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, NodeCache &node_cache,
-        AsyncInflightNodes &inflights, OwningNodeCursor root, uint64_t version,
+        AsyncInflightNodes &inflights, CacheNodeCursor root, uint64_t version,
         NibblesView const key, bool const return_value)
         : aux_(aux)
         , node_cache_(node_cache)
@@ -108,7 +108,7 @@ public:
         MONAD_ASSERT(root_.is_valid());
     }
 
-    void reset(OwningNodeCursor root, NibblesView key)
+    void reset(CacheNodeCursor root, NibblesView key)
     {
         root_ = root;
         key_ = key;
@@ -199,7 +199,7 @@ struct find_request_sender<T>::find_receiver
             auto pendings = std::move(it->second);
             sender->inflights_.erase(it);
             for (auto &invoc : pendings) {
-                MONAD_ASSERT(invoc(OwningNodeCursor{sp}));
+                MONAD_ASSERT(invoc(CacheNodeCursor{sp}));
             }
         }
     }
@@ -287,8 +287,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 }
                 tid_checked_ = true;
             }
-            auto cont = [this,
-                         io_state](OwningNodeCursor root) -> result<void> {
+            auto cont = [this, io_state](CacheNodeCursor root) -> result<void> {
                 return this->resume_(io_state, root);
             };
             auto offset_node = std::pair(virt_offset, node);

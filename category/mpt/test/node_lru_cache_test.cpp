@@ -80,7 +80,7 @@ TEST(NodeCache, works)
     memcpy(large_value.data(), "hihi", 4);
     auto node = copy_node<CacheNode>(
         monad::mpt::make_node(0, {}, {}, std::move(large_value), 0, 0).get());
-    EXPECT_EQ(node->get_mem_size(), 268);
+    EXPECT_EQ(node->get_mem_size(), 272);
     node_cache.insert(virtual_chunk_offset_t(6, 0, 1), std::move(node));
     // Everything else should get evicted
     EXPECT_EQ(node_cache.size(), 1);

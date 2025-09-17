@@ -88,7 +88,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
 {
     // Load root of most recent version
     auto const latest_version = state()->aux.db_history_max_version();
-    Node::UniquePtr root = read_node_blocking(
+    Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.get_root_offset_at_version(latest_version),
         latest_version);
@@ -118,7 +118,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
                 root->move_next(idx).reset();
             }
             auto [node_cursor, res] =
-                find_blocking(ro_aux, *root, key, latest_version);
+                find_blocking(ro_aux, NodeCursor{root}, key, latest_version);
             if (res != find_result::success) {
                 ASSERT_EQ(res, find_result::version_no_longer_exist);
                 completion_promise.set_value(count);
@@ -168,7 +168,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
 {
     // Load root of most recent version
     auto const latest_version = state()->aux.db_history_max_version();
-    Node::UniquePtr root = read_node_blocking(
+    Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.get_root_offset_at_version(latest_version),
         latest_version);

@@ -119,12 +119,12 @@ namespace
     key_offset: insert key starting from this number
     nkeys: number of keys to insert in this batch
 */
-Node::UniquePtr batch_upsert_commit(
+Node::SharedPtr batch_upsert_commit(
     std::ostream &csv_writer, uint64_t block_id, uint64_t const vec_idx,
     uint64_t const key_offset, uint64_t const nkeys,
     std::vector<monad::byte_string> &keccak_keys,
     std::vector<monad::byte_string> &keccak_values, bool const erase,
-    bool compaction, Node::UniquePtr prev_root, UpdateAuxImpl &aux,
+    bool compaction, Node::SharedPtr prev_root, UpdateAuxImpl &aux,
     StateMachine &sm)
 {
 
@@ -536,7 +536,7 @@ int main(int argc, char *argv[])
                 in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
-            Node::UniquePtr root{};
+            Node::SharedPtr root{};
             if (append) {
                 root = read_node_blocking(
                     aux,
@@ -676,9 +676,9 @@ int main(int argc, char *argv[])
 
             auto load_db = [&] {
                 auto ret = std::make_unique<
-                    std::tuple<UpdateAux<>, Node::UniquePtr, NodeCursor>>();
+                    std::tuple<UpdateAux<>, Node::SharedPtr, NodeCursor>>();
                 UpdateAux<> &aux = std::get<0>(*ret);
-                Node::UniquePtr &root = std::get<1>(*ret);
+                Node::SharedPtr &root = std::get<1>(*ret);
                 NodeCursor &state_start = std::get<2>(*ret);
                 if (!in_memory) {
                     aux.set_io(&io, history_len);
@@ -688,7 +688,7 @@ int main(int argc, char *argv[])
                     aux.get_latest_root_offset(),
                     aux.db_history_max_version());
                 auto [res, errc] = find_blocking(
-                    aux, *root, state_nibbles, aux.db_history_max_version());
+                    aux, root, state_nibbles, aux.db_history_max_version());
                 MONAD_ASSERT(errc == find_result::success);
                 state_start = res;
                 return ret;
@@ -711,13 +711,13 @@ int main(int argc, char *argv[])
                     bool &done;
                     unsigned const n_slices;
                     find_bytes_request_sender *sender{nullptr};
-                    OwningNodeCursor state_start;
+                    CacheNodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
 
                     explicit receiver_t(
                         uint64_t &ops_, bool &done_, unsigned n_slices_,
-                        OwningNodeCursor begin, uint32_t id)
+                        CacheNodeCursor begin, uint32_t id)
                         : ops(ops_)
                         , done(done_)
                         , n_slices(n_slices_)
@@ -759,7 +759,7 @@ int main(int argc, char *argv[])
                 std::vector<std::unique_ptr<connected_state_type>> states;
                 states.reserve(random_read_benchmark_threads);
                 std::shared_ptr<CacheNode> start_node =
-                    copy_node<CacheNode>(state_start.node);
+                    copy_node<CacheNode>(state_start.node.get());
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
@@ -767,7 +767,7 @@ int main(int argc, char *argv[])
                             aux,
                             node_cache,
                             inflights,
-                            OwningNodeCursor{start_node},
+                            CacheNodeCursor{start_node},
                             aux.db_history_max_version(),
                             NibblesView{},
                             true},
@@ -775,7 +775,7 @@ int main(int argc, char *argv[])
                             ops,
                             signal_done,
                             n_slices,
-                            OwningNodeCursor{start_node},
+                            CacheNodeCursor{start_node},
                             n))));
                 }
 

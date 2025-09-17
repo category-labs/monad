@@ -1057,8 +1057,8 @@ version + 1. However, we do not assume that the version history is continuous
 because user can move_trie_version_forward(), which can invalidate versions in
 the middle of a continuous history.
 */
-Node::UniquePtr UpdateAuxImpl::do_update(
-    Node::UniquePtr prev_root, StateMachine &sm, UpdateList &&updates,
+Node::SharedPtr UpdateAuxImpl::do_update(
+    Node::SharedPtr prev_root, StateMachine &sm, UpdateList &&updates,
     uint64_t const version, bool const compaction, bool const can_write_to_fast,
     bool const write_root)
 {

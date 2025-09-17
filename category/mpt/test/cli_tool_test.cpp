@@ -223,11 +223,11 @@ struct cli_tool_fixture
                         monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                 monad::async::AsyncIO testio(pool, testrwbuf);
                 monad::mpt::UpdateAux<> const aux{&testio};
-                monad::mpt::Node::UniquePtr root_ptr{read_node_blocking(
+                monad::mpt::Node::SharedPtr root_ptr{read_node_blocking(
                     aux,
                     aux.get_latest_root_offset(),
                     aux.db_history_max_version())};
-                monad::mpt::NodeCursor const root(*root_ptr);
+                monad::mpt::NodeCursor const root(root_ptr);
 
                 for (auto &key : this->state()->keys) {
                     auto ret = monad::mpt::find_blocking(
@@ -326,11 +326,11 @@ struct cli_tool_fixture
                             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                     monad::async::AsyncIO testio(pool, testrwbuf);
                     monad::mpt::UpdateAux<> const aux{&testio};
-                    monad::mpt::Node::UniquePtr root_ptr{read_node_blocking(
+                    monad::mpt::Node::SharedPtr root_ptr{read_node_blocking(
                         aux,
                         aux.get_latest_root_offset(),
                         aux.db_history_max_version())};
-                    monad::mpt::NodeCursor const root(*root_ptr);
+                    monad::mpt::NodeCursor const root(root_ptr);
 
                     for (auto &key : this->state()->keys) {
                         auto ret = monad::mpt::find_blocking(

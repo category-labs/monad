@@ -40,7 +40,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     monad::test::StateMachineAlwaysMerkle sm;
     // Load its root
     auto const latest_version = aux.db_history_max_version();
-    monad::mpt::Node::UniquePtr root{monad::mpt::read_node_blocking(
+    monad::mpt::Node::SharedPtr root{monad::mpt::read_node_blocking(
         aux, aux.get_root_offset_at_version(latest_version), latest_version)};
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
@@ -75,7 +75,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
             aux,
             node_cache,
             inflights,
-            OwningNodeCursor{cache_root},
+            CacheNodeCursor{cache_root},
             latest_version,
             key,
             true),
@@ -84,7 +84,8 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 
     // Synchronously load the same key
     EXPECT_EQ(
-        find_blocking(aux, *root, key, latest_version).first.node->value(),
+        find_blocking(aux, NodeCursor{root}, key, latest_version)
+            .first.node->value(),
         value);
 
     // Let the async find of that key complete

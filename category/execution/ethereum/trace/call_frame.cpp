@@ -13,15 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/opcodes.hpp>
 
+#include <evmc/hex.hpp>
+#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
-MONAD_NAMESPACE_BEGIN
+#include <span>
+#include <string_view>
+#include <utility>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 constexpr std::string_view call_kind_to_string(CallType const &type)
 {
@@ -42,6 +49,10 @@ constexpr std::string_view call_kind_to_string(CallType const &type)
         MONAD_ASSERT(false);
     }
 }
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 nlohmann::json to_json(CallFrame const &f)
 {
@@ -75,6 +86,27 @@ nlohmann::json to_json(CallFrame const &f)
     res["calls"] = nlohmann::json::array();
 
     return res;
+}
+
+vm::compiler::EvmOpCode
+get_call_frame_opcode(CallType type, uint32_t call_flags)
+{
+    using enum vm::compiler::EvmOpCode;
+    switch (type) {
+    case CallType::CALL:
+        return call_flags & EVMC_STATIC ? STATICCALL : CALL;
+    case CallType::CALLCODE:
+        return CALLCODE;
+    case CallType::DELEGATECALL:
+        return DELEGATECALL;
+    case CallType::CREATE:
+        return CREATE;
+    case CallType::CREATE2:
+        return CREATE2;
+    case CallType::SELFDESTRUCT:
+        return SELFDESTRUCT;
+    }
+    std::unreachable();
 }
 
 MONAD_NAMESPACE_END

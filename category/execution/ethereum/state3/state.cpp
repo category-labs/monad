@@ -19,32 +19,32 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
-#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
 #include <evmc/evmc.h>
 
+#include <intx/intx.hpp>
+
 #include <ankerl/unordered_dense.h>
 
-#include <quill/Quill.h>
-
 #include <algorithm>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -129,8 +129,8 @@ void State::pop_accept()
 {
     MONAD_ASSERT(version_);
 
-    for (auto it = current_.begin(); it != current_.end(); ++it) {
-        it->second.pop_accept(version_);
+    for (auto &it : current_) {
+        it.second.pop_accept(version_);
     }
 
     logs_.pop_accept(version_);
@@ -144,9 +144,9 @@ void State::pop_reject()
 
     std::vector<Address> removals;
 
-    for (auto it = current_.begin(); it != current_.end(); ++it) {
-        if (it->second.pop_reject(version_)) {
-            removals.push_back(it->first);
+    for (auto &it : current_) {
+        if (it.second.pop_reject(version_)) {
+            removals.push_back(it.first);
         }
     }
 
@@ -407,8 +407,8 @@ void State::destruct_suicides()
 {
     MONAD_ASSERT(!version_);
 
-    for (auto it = current_.begin(); it != current_.end(); ++it) {
-        auto &stack = it->second;
+    for (auto &it : current_) {
+        auto &stack = it.second;
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
@@ -433,8 +433,8 @@ void State::destruct_touched_dead()
 {
     MONAD_ASSERT(!version_);
 
-    for (auto it = current_.begin(); it != current_.end(); ++it) {
-        auto &stack = it->second;
+    for (auto &it : current_) {
+        auto &stack = it.second;
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);

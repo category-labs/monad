@@ -22,14 +22,11 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/storage_pool.hpp>
-#include <category/core/array.hpp>
 #include <category/core/assert.h>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
-#include <chrono>
-#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>

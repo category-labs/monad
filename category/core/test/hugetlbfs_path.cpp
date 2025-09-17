@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cerrno>
-#include <cstdio>
 #include <print>
 
 #include <gtest/gtest.h>

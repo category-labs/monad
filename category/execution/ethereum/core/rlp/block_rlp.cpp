@@ -33,6 +33,7 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -104,7 +105,6 @@ byte_string encode_block(Block const &block)
 {
     byte_string const encoded_block_header = encode_block_header(block.header);
     byte_string encoded_block_transactions;
-    byte_string encoded_block_ommers;
 
     for (auto const &tx : block.transactions) {
         if (tx.type == TransactionType::legacy) {

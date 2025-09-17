@@ -15,7 +15,6 @@
 
 #include <category/async/concepts.hpp>
 #include <category/async/config.hpp>
-#include <category/async/connected_operation.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io.hpp>
@@ -29,10 +28,8 @@
 
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
-#include <csignal>
 #include <cstddef>
 #include <iostream>
-#include <memory>
 #include <utility>
 #include <vector>
 

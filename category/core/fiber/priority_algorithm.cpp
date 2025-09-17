@@ -24,6 +24,9 @@
 #include <boost/fiber/context.hpp>
 #include <boost/fiber/type.hpp>
 
+#include <chrono>
+#include <thread>
+
 MONAD_FIBER_NAMESPACE_BEGIN
 
 PriorityAlgorithm::PriorityAlgorithm(

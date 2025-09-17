@@ -13,31 +13,48 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <test_resource_data.h>
+
+#include <category/core/assert.h>
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <test_resource_data.h>
+#include <category/mpt/util.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
+#include <quill/Quill.h>
+
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
+#include <set>
+#include <string>
+#include <utility>
 
 using namespace monad;
 using namespace monad::test;
@@ -1475,11 +1492,10 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
              .storage = {
                  {key1, {bytes32_t{}, value1}},
                  {key2, {bytes32_t{}, value2}}}}}}};
-    Code code;
     db_cache.set_block_and_prefix(9);
     db_cache.commit(
         std::move(state_deltas),
-        code,
+        Code{},
         bytes32_t{10},
         BlockHeader{.number = 10});
     db_cache.finalize(10, bytes32_t{10});
@@ -1830,12 +1846,12 @@ namespace
                 parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
             BlockState bs1(db1_, vm_);
             BlockState bs2(db2_, vm_);
-            Incarnation inc{block, 1};
+            Incarnation const inc{block, 1};
             State st1(bs1, inc);
             State st2(bs2, inc);
             uint64_t const num = random9();
             for (uint64_t i = 0; i < num; ++i) {
-                Address addr(random_addr());
+                Address const addr(random_addr());
                 uint64_t const action = random100();
                 if (action < RANDOM_ADD) {
                     uint256_t const delta = 10 * random9();
@@ -1896,7 +1912,7 @@ namespace
             // block
             MONAD_ASSERT(!blocks_.empty());
             auto const it = blocks_.begin();
-            uint64_t block = it->first;
+            uint64_t const block = it->first;
             // proposal
             auto &s1 = it->second; // set of proposals
             for (auto it2 = s1.begin(); it2 != s1.end();) {
@@ -1961,7 +1977,7 @@ namespace
         void check()
         {
             for (uint8_t const i : ADDR) {
-                Address addr(i);
+                Address const addr(i);
                 auto account1 = db1_.read_account(addr);
                 auto account2 = db2_.read_account(addr);
                 if (account1) {
@@ -1973,9 +1989,9 @@ namespace
                 }
                 MONAD_ASSERT(account1 == account2);
                 if (account1) {
-                    Incarnation incarnation = account1->incarnation;
+                    Incarnation const incarnation = account1->incarnation;
                     for (uint8_t const j : KEYS) {
-                        bytes32_t key(j);
+                        bytes32_t const key(j);
                         auto const val1 =
                             db1_.read_storage(addr, incarnation, key);
                         auto const val2 =

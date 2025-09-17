@@ -27,10 +27,11 @@ cpu_set_t monad_parse_cpuset(char *const s)
     CPU_ZERO(&set);
 
     // TODO error handling
-    char *state = NULL;
+    char *state = nullptr;
     char *tok = strtok_r(s, ",", &state);
     while (tok) {
-        unsigned m, n;
+        unsigned m;
+        unsigned n;
         char *tok2 = strchr(tok, '-');
         if (tok2) {
             *tok2 = '\0';
@@ -46,7 +47,7 @@ cpu_set_t monad_parse_cpuset(char *const s)
         for (unsigned i = m; i <= n; ++i) {
             CPU_SET(i, &set);
         }
-        tok = strtok_r(NULL, ",", &state);
+        tok = strtok_r(nullptr, ",", &state);
     }
 
     return set;

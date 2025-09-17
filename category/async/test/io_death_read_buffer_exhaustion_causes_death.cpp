@@ -29,7 +29,6 @@
 
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
-#include <csignal>
 #include <cstddef>
 #include <iostream>
 #include <memory>

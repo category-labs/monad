@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <ctype.h>
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +31,7 @@
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
+#include <category/core/srcloc.h>
 
 #if !MONAD_EVENT_DISABLE_LIBHUGETLBFS
     #include <category/core/mem/hugetlb_path.h>
@@ -126,7 +127,8 @@ static bool is_writer_fd(ino_t ring_ino, int fdinfo_entry)
 
     read_buf[n_read] = '\0'; // In case of a short read
     while ((line = strsep(&scan, "\n"))) {
-        char *key, *value = nullptr;
+        char *key = nullptr;
+        char *value = nullptr;
         key = strsep(&line, FDINFO_DELIM);
         while (line != nullptr) {
             value = strsep(&line, FDINFO_DELIM);

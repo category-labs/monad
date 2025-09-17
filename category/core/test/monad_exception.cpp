@@ -78,7 +78,7 @@ namespace
         }
         catch (MonadException const &e) {
             int fds[2];
-            int r = ::pipe(fds);
+            int const r = ::pipe(fds);
             ASSERT_NE(r, -1);
 
             e.print(fds[1]);

@@ -18,8 +18,6 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
-#include <ethash/hash_types.hpp>
-
 #include <intx/intx.hpp>
 
 #include <cstdint>

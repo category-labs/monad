@@ -19,7 +19,6 @@
 
 #include <category/core/assert.h>
 
-#include <linux/mman.h>
 #include <sys/mman.h>
 
 #include <cstddef>

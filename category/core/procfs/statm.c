@@ -48,7 +48,9 @@ bool monad_procfs_self_statm(
 
 long monad_procfs_self_resident()
 {
-    long size, resident, shared;
+    long size;
+    long resident;
+    long shared;
 
     if (MONAD_UNLIKELY(!monad_procfs_self_statm(&size, &resident, &shared))) {
         return -1L;

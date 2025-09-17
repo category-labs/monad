@@ -41,11 +41,12 @@
 #include <limits>
 #include <memory>
 #include <ostream>
-#include <set>
 #include <span>
-#include <system_error>
 #include <utility>
 #include <vector>
+
+#include <stdlib.h>
+#include <string.h>
 
 #include <bits/types/struct_iovec.h>
 #include <fcntl.h>
@@ -53,7 +54,6 @@
 #include <liburing/io_uring.h>
 #include <linux/ioprio.h>
 #include <poll.h>
-#include <stdlib.h>
 #include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
@@ -175,11 +175,11 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         MONAD_ASSERT_PRINTF(
             ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
             "failed due to %s",
-            strerror(errno));
+            std::strerror(errno));
         MONAD_ASSERT_PRINTF(
             ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1,
             "failed due to %s",
-            strerror(errno));
+            std::strerror(errno));
         struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
         MONAD_ASSERT(sqe);
         io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
@@ -245,7 +245,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
             stderr,
             "io_uring_register_files with non-write ring failed due to %d %s\n",
             errno,
-            strerror(errno));
+            std::strerror(errno));
     }
     MONAD_ASSERT(!e);
     if (wr_uring_ != nullptr) {
@@ -259,7 +259,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
                 "io_uring_register_files with write ring failed due to %d "
                 "%s\n",
                 errno,
-                strerror(errno));
+                std::strerror(errno));
         }
         MONAD_ASSERT(!e);
     }
@@ -762,7 +762,8 @@ AsyncIO::io_uring_ring_entries_left(bool for_wr_ring) const noexcept
 void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
 {
     int const tofd = ::creat(path.c_str(), 0600);
-    MONAD_ASSERT_PRINTF(tofd != -1, "creat failed due to %s", strerror(errno));
+    MONAD_ASSERT_PRINTF(
+        tofd != -1, "creat failed due to %s", std::strerror(errno));
     auto untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
     auto fromfd = seq_chunks_[which].ptr->read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
@@ -776,7 +777,7 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
         seq_chunks_[which].ptr->size(),
         0);
     MONAD_ASSERT_PRINTF(
-        copied != -1, "copy_file_range failed due to %s", strerror(errno));
+        copied != -1, "copy_file_range failed due to %s", std::strerror(errno));
 }
 
 unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)

@@ -17,15 +17,18 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -44,6 +47,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 

@@ -16,15 +16,20 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_view.hpp>
 
-#include <quill/LogLevel.h>
 #include <quill/Quill.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

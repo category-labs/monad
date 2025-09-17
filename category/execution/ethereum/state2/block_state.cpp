@@ -19,19 +19,25 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
 
-#include <quill/detail/LogMacros.h>
+#include <quill/Quill.h>
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>

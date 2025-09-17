@@ -46,7 +46,7 @@
 	url = https://github.com/ethereum/c-kzg-4844.git
 [submodule "libs/vm/third_party/asmjit"]
 	path = third_party/asmjit
-	url = git@github.com:asmjit/asmjit.git
+	url = https://github.com/asmjit/asmjit.git
 [submodule "third_party/evmc"]
 	path = third_party/evmc
 	url = https://github.com/ipsilon/evmc.git

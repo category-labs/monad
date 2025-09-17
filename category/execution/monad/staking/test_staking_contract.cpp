@@ -868,8 +868,9 @@ TEST_F(Stake, linked_list_removal_state_override)
 
     // state override invalid validator
     auto validator = contract.vars.val_execution(1u);
-    validator.address_flags().store(ValExecution::AddressFlags_t{
-        .auth_address = sentinel, .flags = ValidatorFlagsOk});
+    validator.address_flags().store(
+        ValExecution::AddressFlags_t{
+            .auth_address = sentinel, .flags = ValidatorFlagsOk});
     validator.stake().store(stake);
 
     // state override that the contract can process this withdrawal
@@ -4426,7 +4427,8 @@ TEST_F(Stake, get_valset_paginated_reads)
             PAGINATED_RESULTS_SIZE);
         std::vector<u64_be> valset_page;
         std::tie(done2, next_index, valset_page) = std::move(paginated_res);
-        valset_paginated.insert_range(valset_paginated.end(), valset_page);
+        valset_paginated.insert(
+            valset_paginated.end(), valset_page.begin(), valset_page.end());
     }
     while (!done2);
 
@@ -4467,8 +4469,10 @@ TEST_F(Stake, get_delegators_for_validator_paginated_reads)
         std::vector<Address> delegators_page;
         std::tie(done2, next_delegator, delegators_page) =
             std::move(paginated_res);
-        delegators_paginated.insert_range(
-            delegators_paginated.end(), delegators_page);
+        delegators_paginated.insert(
+            delegators_paginated.end(),
+            delegators_page.begin(),
+            delegators_page.end());
     }
     while (!done2);
 

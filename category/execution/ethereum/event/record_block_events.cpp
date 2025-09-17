@@ -52,7 +52,7 @@ void record_block_start(
         .epoch = epoch,
         .proposal_epoch_nanos = static_cast<__uint128_t>(epoch_nano_timestamp),
         .chain_id = chain_id,
-        .author = opt_block_author.value_or({}),
+        .author = opt_block_author.value_or(monad_c_secp256k1_pubkey{}),
         .parent_eth_hash = eth_parent_hash,
         .eth_block_input =
             {.ommers_hash = eth_block_header.ommers_hash,
@@ -70,7 +70,8 @@ void record_block_start(
              .withdrawals_root =
                  eth_block_header.withdrawals_root.value_or(evmc_bytes32{}),
              .txn_count = txn_count},
-        .monad_block_input = opt_monad_input.value_or({})};
+        .monad_block_input =
+            opt_monad_input.value_or(monad_c_native_block_input{})};
     memcpy(
         block_start.payload->eth_block_input.extra_data.bytes,
         data(eth_block_header.extra_data),

@@ -130,7 +130,7 @@ void record_txn_events(
                     .r = e.sc.r,
                     .s = e.sc.s,
                 },
-            .authority = authorities[index].value_or({}),
+            .authority = authorities[index].value_or(Address{}),
             .is_valid_authority = authorities[index].has_value()};
         exec_recorder->commit(auth_list_entry);
         ++index;

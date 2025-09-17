@@ -16,8 +16,9 @@
 #pragma once
 
 #include <category/core/assert.h>
-#include <category/core/cmemory.hpp>
+#include <category/core/config.hpp>
 
+#include <algorithm>
 #include <concepts>
 #include <memory>
 #include <span>
@@ -267,7 +268,7 @@ namespace allocators
         if constexpr (!construction_equals_all_bits_zero<
                           typename type_allocator::value_type>::value) {
             // Trap use of region after end of type
-            cmemset(p2, std::byte{0xff}, storagebytes);
+            std::fill_n(p2, storagebytes, std::byte{0xff});
         }
 #endif
         try {

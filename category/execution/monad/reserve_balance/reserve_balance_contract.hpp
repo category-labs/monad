@@ -27,7 +27,8 @@
 MONAD_NAMESPACE_BEGIN
 
 static constexpr auto RESERVE_BALANCE_CA = Address{0x1001};
-static constexpr uint256_t DEFAULT_RESERVE_BALANCE_WEI = 10 * 100'000'000'000;
+static constexpr uint256_t DEFAULT_RESERVE_BALANCE_WEI =
+    10 * uint256_t{1'000'000'000'000'000'000};
 
 class ReserveBalanceContract
 {

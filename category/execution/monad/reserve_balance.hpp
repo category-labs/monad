@@ -43,7 +43,4 @@ bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t i, bool sender_is_delegated,
     MonadChainContext const &);
 
-template <Traits traits>
-uint256_t get_max_reserve(Address const &);
-
 MONAD_NAMESPACE_END

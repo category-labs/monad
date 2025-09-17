@@ -88,7 +88,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
 {
     // Load root of most recent version
     auto const latest_version = state()->aux.db_history_max_version();
-    Node::UniquePtr root = read_node_blocking(
+    Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.get_root_offset_at_version(latest_version),
         latest_version);
@@ -115,10 +115,10 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
         while (!stop_token.stop_requested()) {
             // clear all in memory nodes under root
             for (unsigned idx = 0; idx < root->number_of_children(); ++idx) {
-                root->move_next(idx).reset();
+                root->move_shared_next(idx).reset();
             }
             auto [node_cursor, res] =
-                find_blocking(ro_aux, *root, key, latest_version);
+                find_blocking(ro_aux, NodeCursor{root}, key, latest_version);
             if (res != find_result::success) {
                 ASSERT_EQ(res, find_result::version_no_longer_exist);
                 completion_promise.set_value(count);
@@ -168,7 +168,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
 {
     // Load root of most recent version
     auto const latest_version = state()->aux.db_history_max_version();
-    Node::UniquePtr root = read_node_blocking(
+    Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.get_root_offset_at_version(latest_version),
         latest_version);

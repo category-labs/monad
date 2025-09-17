@@ -38,20 +38,4 @@ inline constexpr T *cmemcpy(T *const dst, T const *const src, size_t const num)
     return dst;
 }
 
-//! \brief A constexpr-capable `memset`
-template <class T>
-    requires(sizeof(T) == 1 && std::is_trivially_copyable_v<T>)
-inline constexpr T *cmemset(T *const dst, T const value, size_t const num)
-{
-    if constexpr (std::is_constant_evaluated()) {
-        for (size_t n = 0; n < num; n++) {
-            dst[n] = value;
-        }
-    }
-    else {
-        std::memset(dst, (int)value, num);
-    }
-    return dst;
-}
-
 MONAD_NAMESPACE_END

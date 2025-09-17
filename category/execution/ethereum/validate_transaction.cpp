@@ -68,6 +68,14 @@ Result<void> static_validate_transaction(
         }
     }
 
+    // EIP-4844
+    if constexpr (!traits::eip_4844_active()) {
+        if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
+            return TransactionError::TypeNotSupported;
+        }
+    }
+
+    // TODO: remove the below logic once we fully migrate over to traits
     // EIP-2930 & EIP-2718
     if constexpr (traits::evm_rev() < EVMC_BERLIN) {
         if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {

@@ -37,10 +37,11 @@ extern "C"
 {
 #endif
 
+#define MAX_SYNC_SPIN 100ULL
+
 static inline uint64_t
 monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
 {
-    uint64_t const MAX_SYNC_SPIN = 100;
     uint64_t write_last_seqno =
         __atomic_load_n(&iter->control->last_seqno, __ATOMIC_ACQUIRE);
     // `write_last_seqno` is the last sequence number the writer has allocated.

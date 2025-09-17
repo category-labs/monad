@@ -1097,7 +1097,7 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
-    OwningNodeCursor &start, NibblesView, uint64_t version);
+    OwningNodeCursor start, NibblesView, uint64_t version);
 
 // rodb load root
 void load_root_notify_fiber_future(

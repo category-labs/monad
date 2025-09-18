@@ -29,7 +29,8 @@ class BigEndianEncodeTest : public ::testing::Test
 {
 };
 
-typedef ::testing::Types<uint16_t, uint32_t, uint64_t, uint256_t> UintTypes;
+typedef ::testing::Types<uint8_t, uint16_t, uint32_t, uint64_t, uint256_t>
+    UintTypes;
 TYPED_TEST_SUITE(BigEndianEncodeTest, UintTypes);
 
 TYPED_TEST(BigEndianEncodeTest, uint_max)
@@ -37,9 +38,15 @@ TYPED_TEST(BigEndianEncodeTest, uint_max)
     using NativeType = TypeParam;
     using BigEndianType = BigEndian<NativeType>;
 
-    constexpr NativeType native = std::numeric_limits<NativeType>::max();
+    constexpr NativeType native = [] {
+        NativeType v{};
+        // generate a sequence that has a different big endian representation
+        for (uint8_t i = 1; i <= sizeof(NativeType); ++i) {
+            v = static_cast<NativeType>((v << 8) | i);
+        }
+        return v;
+    }();
     constexpr NativeType manual_be_conversion = intx::bswap(native);
-
     static_assert(sizeof(BigEndianType) == sizeof(NativeType));
     constexpr BigEndianType be_wrapper = native;
 
@@ -52,4 +59,14 @@ TYPED_TEST(BigEndianEncodeTest, uint_max)
 
     // little endian types are equal
     EXPECT_EQ(be_wrapper.native(), native);
+}
+
+TEST(BigEndian, uint8)
+{
+    // sanity check for uint8. The little and big endian representations should
+    // be the same.
+    uint8_t const native = 100;
+    u8_be const be = native;
+    EXPECT_EQ(0, std::memcmp(&be, &native, sizeof(u8_be)));
+    EXPECT_EQ(be.native(), native);
 }

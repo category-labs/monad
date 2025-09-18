@@ -34,7 +34,7 @@ TEST(Events, build_undelegation_event)
         0xe6a23cc8903fd274e7553a8fdd34f9683db59bbfbad485557ef86cf6fe938589_bytes32;
     u64_be const indexed_val_id = 100;
     auto const indexed_address = Address{0xdeadbeef};
-    uint8_t const data_withdrawal_id = 5;
+    u8_be const data_withdrawal_id = 5;
     u256_be const data_amount = 1000000_u256;
 
     // expected outputs

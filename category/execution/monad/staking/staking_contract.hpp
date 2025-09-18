@@ -94,17 +94,17 @@ public:
 
         // Namespaces for mappings. Each mapping in the "owns" all the address
         // space under the namespace byte.
-        enum Namespace : uint8_t
+        struct Namespace
         {
-            NSConsensusStake = 0x04,
-            NSSnapshotStake = 0x05,
-            NSValIdSecp = 0x06,
-            NSValIdBls = 0x07,
-            NSValBitset = 0x08,
-            NSValExecution = 0x09,
-            NSAccumulator = 0x0A,
-            NSDelegator = 0x0B,
-            NSWithdrawalRequest = 0x0C,
+            static constexpr u8_be ConsensusStake = 0x04;
+            static constexpr u8_be SnapshotStake = 0x05;
+            static constexpr u8_be ValIdSecp = 0x06;
+            static constexpr u8_be ValIdBls = 0x07;
+            static constexpr u8_be ValBitset = 0x08;
+            static constexpr u8_be ValExecution = 0x09;
+            static constexpr u8_be Accumulator = 0x0A;
+            static constexpr u8_be Delegator = 0x0B;
+            static constexpr u8_be WithdrawalRequest = 0x0C;
         };
 
     public:
@@ -167,10 +167,13 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{.ns = NSValIdSecp, .address = secp_eth_address, .slots = {}};
+            } key{
+                .ns = Namespace::ValIdSecp,
+                .address = secp_eth_address,
+                .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -184,10 +187,13 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{.ns = NSValIdBls, .address = bls_eth_address, .slots = {}};
+            } key{
+                .ns = Namespace::ValIdBls,
+                .address = bls_eth_address,
+                .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -202,11 +208,11 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be bucket;
                 uint8_t slots[23];
             } key{
-                .ns = NSValBitset,
+                .ns = Namespace::ValBitset,
                 .bucket = (val_id.native() >> 8),
                 .slots = {}};
 
@@ -222,10 +228,10 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = NSValExecution, .val_id = id, .slots = {}};
+            } key{.ns = Namespace::ValExecution, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -239,10 +245,10 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = NSConsensusStake, .val_id = id, .slots = {}};
+            } key{.ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -255,10 +261,10 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = NSSnapshotStake, .val_id = id, .slots = {}};
+            } key{.ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -285,12 +291,12 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be val_id;
                 Address address;
                 uint8_t slots[3];
             } key{
-                .ns = NSDelegator,
+                .ns = Namespace::Delegator,
                 .val_id = val_id,
                 .address = address,
                 .slots = {}};
@@ -306,17 +312,17 @@ public:
         // ID during undelegate.
         StorageVariable<WithdrawalRequest> withdrawal_request(
             u64_be const val_id, Address const &delegator,
-            uint8_t const withdrawal_id) noexcept
+            u8_be const withdrawal_id) noexcept
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be val_id;
                 Address address;
-                uint8_t withdrawal_id;
+                u8_be withdrawal_id;
                 uint8_t slots[2];
             } key{
-                .ns = NSWithdrawalRequest,
+                .ns = Namespace::WithdrawalRequest,
                 .val_id = val_id,
                 .address = delegator,
                 .withdrawal_id = withdrawal_id,
@@ -337,12 +343,12 @@ public:
         {
             struct
             {
-                uint8_t ns;
+                u8_be ns;
                 u64_be epoch;
                 u64_be val_id;
                 uint8_t slots[15];
             } key{
-                .ns = NSAccumulator,
+                .ns = Namespace::Accumulator,
                 .epoch = epoch,
                 .val_id = val_id,
                 .slots = {}};
@@ -420,7 +426,7 @@ private:
     //      uint256         amount,
     //      uint64          activationEpoch);
     void emit_undelegate_event(
-        u64_be val_id, Address const &delegator, uint8_t withdrawal_id,
+        u64_be val_id, Address const &delegator, u8_be withdrawal_id,
         u256_be const &amount, u64_be activation_epoch);
 
     // event Withdraw(
@@ -430,7 +436,7 @@ private:
     //      uint256         amount,
     //      uint64          withdrawEpoch);
     void emit_withdraw_event(
-        u64_be val_id, Address const &delegator, uint8_t withdrawal_id,
+        u64_be val_id, Address const &delegator, u8_be withdrawal_id,
         u256_be const &amount);
 
     // event ClaimRewards(

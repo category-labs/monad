@@ -35,12 +35,12 @@ class UintDecodeTest : public ::testing::Test
 {
 };
 
-typedef ::testing::Types<u16_be, u32_be, u64_be, u256_be> UintTypes;
+typedef ::testing::Types<u8_be, u16_be, u32_be, u64_be, u256_be> UintTypes;
 TYPED_TEST_SUITE(UintDecodeTest, UintTypes);
 
 TYPED_TEST(UintDecodeTest, uint)
 {
-    TypeParam expected{30000};
+    TypeParam expected{255};
     bytes32_t const encoded = abi_encode_uint<TypeParam>(expected);
     byte_string_view input{encoded};
     auto const decoded_res = abi_decode_fixed<TypeParam>(input);
@@ -51,7 +51,7 @@ TYPED_TEST(UintDecodeTest, uint)
 
 TYPED_TEST(UintDecodeTest, input_too_short)
 {
-    TypeParam expected{30000};
+    TypeParam expected{255};
     bytes32_t const encoded = abi_encode_uint<TypeParam>(expected);
     byte_string_view input = byte_string_view{encoded}.substr(1);
     auto const decoded_res = abi_decode_fixed<TypeParam>(input);
@@ -93,16 +93,6 @@ TYPED_TEST(UintDecodeTest, uint_higher_bits_ignored)
             }(),
             ...);
     }.template operator()<u16_be, u32_be, u64_be, u256_be>();
-}
-
-TEST(AbiDecode, uint8)
-{
-    bytes32_t const encoded = abi_encode_uint<uint8_t>(255);
-    byte_string_view input = byte_string_view{encoded};
-    auto const decoded_res = abi_decode_fixed<uint8_t>(input);
-    EXPECT_TRUE(input.empty());
-    EXPECT_TRUE(decoded_res.has_value());
-    EXPECT_EQ(decoded_res.value(), 255);
 }
 
 TEST(AbiDecode, address)

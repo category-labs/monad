@@ -20,10 +20,10 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/math.hpp>
-#include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -41,7 +41,7 @@ MONAD_NAMESPACE_BEGIN
 constexpr bytes32_t abi_encode_address(Address const &address)
 {
     bytes32_t output{};
-    unaligned_store(&output.bytes[12], address);
+    std::copy_n(address.bytes, sizeof(Address), &output.bytes[12]);
     return output;
 }
 
@@ -52,7 +52,7 @@ constexpr bytes32_t abi_encode_uint(I const &i)
 
     constexpr size_t offset = sizeof(bytes32_t) - sizeof(I);
     bytes32_t output{};
-    unaligned_store(&output.bytes[offset], i);
+    std::copy_n(i.bytes, sizeof(I), &output.bytes[offset]);
     return output;
 }
 

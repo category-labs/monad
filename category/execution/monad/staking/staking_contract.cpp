@@ -410,7 +410,7 @@ void StakingContract::emit_delegation_event(
 }
 
 void StakingContract::emit_undelegate_event(
-    u64_be const val_id, Address const &delegator, uint8_t withdrawal_id,
+    u64_be const val_id, Address const &delegator, u8_be const withdrawal_id,
     u256_be const &amount, u64_be const activation_epoch)
 {
     constexpr bytes32_t signature = abi_encode_event_signature(
@@ -430,7 +430,7 @@ void StakingContract::emit_undelegate_event(
 }
 
 void StakingContract::emit_withdraw_event(
-    u64_be const val_id, Address const &delegator, uint8_t const withdrawal_id,
+    u64_be const val_id, Address const &delegator, u8_be const withdrawal_id,
     u256_be const &amount)
 {
     constexpr bytes32_t signature = abi_encode_event_signature(
@@ -1010,8 +1010,7 @@ Result<byte_string> StakingContract::precompile_get_withdrawal_request(
 
     BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
     BOOST_OUTCOME_TRY(auto const delegator, abi_decode_fixed<Address>(input));
-    BOOST_OUTCOME_TRY(
-        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    BOOST_OUTCOME_TRY(auto const withdrawal_id, abi_decode_fixed<u8_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
@@ -1260,8 +1259,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
     BOOST_OUTCOME_TRY(auto const stake, abi_decode_fixed<u256_be>(input));
-    BOOST_OUTCOME_TRY(
-        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    BOOST_OUTCOME_TRY(auto const withdrawal_id, abi_decode_fixed<u8_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
@@ -1375,8 +1373,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
     BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
-    BOOST_OUTCOME_TRY(
-        auto const withdrawal_id, abi_decode_fixed<uint8_t>(input));
+    BOOST_OUTCOME_TRY(auto const withdrawal_id, abi_decode_fixed<u8_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }

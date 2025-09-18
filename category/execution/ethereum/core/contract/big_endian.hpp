@@ -28,7 +28,7 @@ MONAD_NAMESPACE_BEGIN
 // BigEndian is a strongly typed big endian wrapper. This is used primarily for
 // writing to state, to allow for simple conversion to and from big endian.
 template <typename T>
-    requires(std::is_integral_v<T> || std::is_same_v<T, uint256_t>)
+    requires(unsigned_integral<T>)
 struct BigEndian
 {
     using native_type = T;
@@ -61,10 +61,13 @@ struct BigEndian
     }
 };
 
+using u8_be = BigEndian<uint8_t>;
 using u16_be = BigEndian<uint16_t>;
 using u32_be = BigEndian<uint32_t>;
 using u64_be = BigEndian<uint64_t>;
 using u256_be = BigEndian<uint256_t>;
+static_assert(sizeof(u8_be) == sizeof(uint8_t));
+static_assert(alignof(u8_be) == 1);
 static_assert(sizeof(u16_be) == sizeof(uint16_t));
 static_assert(alignof(u16_be) == 1);
 static_assert(sizeof(u32_be) == sizeof(uint32_t));
@@ -76,11 +79,6 @@ static_assert(alignof(u256_be) == 1);
 
 template <typename T>
 struct is_big_endian_wrapper : std::false_type
-{
-};
-
-template <>
-struct is_big_endian_wrapper<uint8_t> : std::true_type
 {
 };
 

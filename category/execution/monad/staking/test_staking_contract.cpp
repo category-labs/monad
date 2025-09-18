@@ -213,8 +213,7 @@ namespace
     }
 
     byte_string craft_undelegate_input(
-        u64_be const val_id, uint256_t const &amount,
-        uint8_t const withdrawal_id)
+        u64_be const val_id, uint256_t const &amount, u8_be const withdrawal_id)
     {
         AbiEncoder encoder;
         encoder.add_uint(val_id);
@@ -224,7 +223,7 @@ namespace
     }
 
     byte_string
-    craft_withdraw_input(u64_be const val_id, uint8_t const withdrawal_id)
+    craft_withdraw_input(u64_be const val_id, u8_be const withdrawal_id)
     {
         AbiEncoder encoder;
         encoder.add_uint(val_id);
@@ -393,8 +392,8 @@ struct Stake : public ::testing::Test
     }
 
     Result<void> undelegate(
-        u64_be const val_id, Address const &address,
-        uint8_t const withdrawal_id, uint256_t const &amount)
+        u64_be const val_id, Address const &address, u8_be const withdrawal_id,
+        uint256_t const &amount)
     {
         auto const input =
             craft_undelegate_input(val_id, amount, withdrawal_id);
@@ -406,8 +405,7 @@ struct Stake : public ::testing::Test
     }
 
     Result<void> withdraw(
-        u64_be const val_id, Address const &address,
-        uint8_t const withdrawal_id)
+        u64_be const val_id, Address const &address, u8_be const withdrawal_id)
     {
         auto const input = craft_withdraw_input(val_id, withdrawal_id);
         state.push();

@@ -51,7 +51,7 @@ Result<T> abi_decode_fixed(byte_string_view &enc)
 
     constexpr size_t offset = 32 - sizeof(T);
     T output{};
-    std::memcpy(&output, enc.data() + offset, sizeof(T));
+    std::memcpy(output.bytes, enc.data() + offset, sizeof(T));
     enc.remove_prefix(32);
     return output;
 }

@@ -235,7 +235,7 @@ testing mode disabled, AVX2 toolchain file selected).
 
 ### Analysis Scripts
 
-See [here](scripts/benchmark_analysis/README.md) for documentation on a set of
+See [here](/scripts/vm/benchmark-analysis/README.md) for documentation on a set of
 Python scripts that can be used to analyse the results obtained from these
 benchmarks.
 

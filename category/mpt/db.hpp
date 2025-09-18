@@ -68,11 +68,8 @@ public:
     RODb &operator=(RODb const &) = delete;
     RODb &operator=(RODb &&) = delete;
 
-    // get() and get_data() APIs are intentionally disabled to prevent
-    // heap-use-after-free memory bug. However, users can still access node data
-    // or value through OwningNodeCursor.
     Result<OwningNodeCursor>
-    find(OwningNodeCursor &, NibblesView, uint64_t block_id) const;
+    find(OwningNodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
     uint64_t get_latest_version() const;

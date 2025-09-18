@@ -287,7 +287,8 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
-    OwningNodeCursor &start, NibblesView const key, uint64_t const version)
+    OwningNodeCursor const &start, NibblesView const key,
+    uint64_t const version)
 {
     if (!aux.version_is_valid_ondisk(version)) {
         promise.set_value({start, find_result::version_no_longer_exist});
@@ -355,7 +356,7 @@ void find_owning_notify_fiber_future(
         }
         auto cont =
             [&aux, &node_cache, &inflights, &promise, next_key, version](
-                OwningNodeCursor &node_cursor) -> result<void> {
+                OwningNodeCursor const &node_cursor) -> result<void> {
             if (!node_cursor.is_valid()) {
                 promise.set_value(
                     {OwningNodeCursor{}, find_result::version_no_longer_exist});
@@ -408,7 +409,8 @@ void load_root_notify_fiber_future(
         promise.set_value({OwningNodeCursor{root}, find_result::success});
         return;
     }
-    auto cont = [&promise](OwningNodeCursor &node_cursor) -> result<void> {
+    auto cont =
+        [&promise](OwningNodeCursor const &node_cursor) -> result<void> {
         if (!node_cursor.is_valid()) {
             promise.set_value(
                 {node_cursor, find_result::version_no_longer_exist});

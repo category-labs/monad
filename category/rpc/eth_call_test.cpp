@@ -496,7 +496,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
         "82fd5b8082525050506014600cf3";
 
-    Transaction tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
+    Transaction tx{.gas_limit = 200000u, .data = from_hex(tx_data)};
     BlockHeader header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
@@ -555,7 +555,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 68137);
+    EXPECT_EQ(ctx.result->gas_used, 137'137);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -1401,7 +1401,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
         "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
         "82fd5b8082525050506014600cf3";
 
-    Transaction tx{.gas_limit = 100000u, .data = from_hex(tx_data)};
+    Transaction tx{.gas_limit = 200000u, .data = from_hex(tx_data)};
     BlockHeader header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);

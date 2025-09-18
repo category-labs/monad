@@ -48,6 +48,7 @@ namespace monad
         // Constants
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
+        { T::code_deposit_cost() } -> std::same_as<int64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -123,6 +124,11 @@ namespace monad
             }
 
             std::unreachable();
+        }
+
+        static constexpr int64_t code_deposit_cost() noexcept
+        {
+            return 200;
         }
 
         static constexpr uint64_t id() noexcept
@@ -212,6 +218,15 @@ namespace monad
             }
 
             std::unreachable();
+        }
+
+        static constexpr int64_t code_deposit_cost() noexcept
+        {
+            if constexpr (monad_pricing_version() >= 1) {
+                return 1200;
+            }
+
+            return 200;
         }
 
         static constexpr uint64_t id() noexcept

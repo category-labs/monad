@@ -188,7 +188,7 @@ template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block &block, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
-    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    BlockState &block_state, BlockHashBuffer const *block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
     RevertTransactionFn const &revert_transaction)
@@ -243,7 +243,7 @@ Result<std::vector<Receipt>> execute_block(
              &sender = senders[i],
              &authorities = authorities[i],
              &header = block.header,
-             &block_hash_buffer = block_hash_buffer,
+             block_hash_buffer = block_hash_buffer,
              &block_state,
              &block_metrics,
              &call_tracer = *call_tracers[i],

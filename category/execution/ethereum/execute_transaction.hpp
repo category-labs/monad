@@ -86,7 +86,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::i_;
     using ExecuteTransactionNoValidation<traits>::revert_transaction_;
 
-    BlockHashBuffer const &block_hash_buffer_;
+    BlockHashBuffer const *block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
@@ -99,7 +99,7 @@ public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::vector<std::optional<Address>> const &, BlockHeader const &,
-        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        BlockHashBuffer const *, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });

@@ -144,7 +144,7 @@ TEST(EvmcHost, emit_log)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -180,7 +180,7 @@ TEST(EvmcHost, access_precompile)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         state,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};

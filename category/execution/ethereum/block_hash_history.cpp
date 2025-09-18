@@ -79,4 +79,9 @@ bytes32_t get_block_hash_history(State &state, uint64_t const block_number)
         BLOCK_HISTORY_ADDRESS, to_bytes(to_big_endian(index)));
 }
 
+bool can_use_block_hash_history(State &state, uint64_t const block_number)
+{
+    return get_block_hash_history(state, block_number - 256) != bytes32_t{};
+}
+
 MONAD_NAMESPACE_END

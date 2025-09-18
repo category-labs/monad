@@ -711,13 +711,13 @@ int main(int argc, char *argv[])
                     bool &done;
                     unsigned const n_slices;
                     find_bytes_request_sender *sender{nullptr};
-                    OwningNodeCursor state_start;
+                    CacheNodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
 
                     explicit receiver_t(
                         uint64_t &ops_, bool &done_, unsigned n_slices_,
-                        OwningNodeCursor begin, uint32_t id)
+                        CacheNodeCursor begin, uint32_t id)
                         : ops(ops_)
                         , done(done_)
                         , n_slices(n_slices_)
@@ -767,7 +767,7 @@ int main(int argc, char *argv[])
                             aux,
                             node_cache,
                             inflights,
-                            OwningNodeCursor{start_node},
+                            CacheNodeCursor{start_node},
                             aux.db_history_max_version(),
                             NibblesView{},
                             true},
@@ -775,7 +775,7 @@ int main(int argc, char *argv[])
                             ops,
                             signal_done,
                             n_slices,
-                            OwningNodeCursor{start_node},
+                            CacheNodeCursor{start_node},
                             n))));
                 }
 

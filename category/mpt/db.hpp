@@ -68,9 +68,9 @@ public:
     RODb &operator=(RODb const &) = delete;
     RODb &operator=(RODb &&) = delete;
 
-    Result<OwningNodeCursor>
-    find(OwningNodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<CacheNodeCursor>
+    find(CacheNodeCursor const &, NibblesView, uint64_t block_id) const;
+    Result<CacheNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
@@ -201,11 +201,11 @@ namespace detail
         } op_type;
 
         std::shared_ptr<CacheNode> root;
-        OwningNodeCursor cur;
+        CacheNodeCursor cur;
         Nibbles const nv;
         uint64_t const block_id;
 
-        find_result_type<OwningNodeCursor> res_root;
+        find_result_type<CacheNodeCursor> res_root;
         find_result_type<T> get_result;
 
         constexpr DbGetSender(
@@ -222,7 +222,7 @@ namespace detail
         }
 
         constexpr DbGetSender(
-            AsyncContext &context_, op_t const op_type_, OwningNodeCursor cur_,
+            AsyncContext &context_, op_t const op_type_, CacheNodeCursor cur_,
             NibblesView const n, uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)

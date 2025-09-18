@@ -445,9 +445,9 @@ struct OnDiskWithWorkerThreadImpl
 
     struct RODbFiberFindOwningNodeRequest
     {
-        threadsafe_boost_fibers_promise<find_result_type<OwningNodeCursor>>
+        threadsafe_boost_fibers_promise<find_result_type<CacheNodeCursor>>
             *promise;
-        OwningNodeCursor start;
+        CacheNodeCursor start;
         NibblesView key;
         uint64_t version;
     };
@@ -1079,7 +1079,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
     }
 
     find_owning_cursor_result_type find_fiber_blocking(
-        OwningNodeCursor const &start, NibblesView const &key,
+        CacheNodeCursor const &start, NibblesView const &key,
         uint64_t const version)
     {
         threadsafe_boost_fibers_promise<find_owning_cursor_result_type> promise;
@@ -1098,7 +1098,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
         return fut.get();
     }
 
-    OwningNodeCursor load_root_fiber_blocking(uint64_t version)
+    CacheNodeCursor load_root_fiber_blocking(uint64_t version)
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
@@ -1151,8 +1151,8 @@ DbError find_result_to_db_error(find_result const result) noexcept
     }
 }
 
-Result<OwningNodeCursor> RODb::find(
-    OwningNodeCursor const &node_cursor, NibblesView const key,
+Result<CacheNodeCursor> RODb::find(
+    CacheNodeCursor const &node_cursor, NibblesView const key,
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
@@ -1172,11 +1172,11 @@ Result<OwningNodeCursor> RODb::find(
     return cursor;
 }
 
-Result<OwningNodeCursor>
+Result<CacheNodeCursor>
 RODb::find(NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
-    OwningNodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
+    CacheNodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
     return find(cursor, key, block_id);
 }
 

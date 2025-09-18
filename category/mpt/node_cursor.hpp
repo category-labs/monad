@@ -48,12 +48,12 @@ struct NodeCursorBase
 };
 
 using NodeCursor = NodeCursorBase<Node>;
-using OwningNodeCursor = NodeCursorBase<CacheNode>;
+using CacheNodeCursor = NodeCursorBase<CacheNode>;
 
 static_assert(sizeof(NodeCursor) == 24);
 static_assert(alignof(NodeCursor) == 8);
 
-static_assert(sizeof(OwningNodeCursor) == 24);
-static_assert(alignof(OwningNodeCursor) == 8);
+static_assert(sizeof(CacheNodeCursor) == 24);
+static_assert(alignof(CacheNodeCursor) == 8);
 
 MONAD_MPT_NAMESPACE_END

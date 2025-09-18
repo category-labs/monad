@@ -541,7 +541,7 @@ TYPED_TEST(TrieTest, verify_correct_compute_at_section_edge)
     EXPECT_EQ(this->root->child_data_len(), 0);
 
     // leaf is the end of prefix2 section, also root of account trie
-    auto &prefix2_leaf = this->root->shared_next(1);
+    auto &prefix2_leaf = this->root->next(1);
     EXPECT_EQ(prefix2_leaf->has_value(), true);
     EXPECT_EQ(prefix2_leaf->path_nibbles_len(), 0);
     EXPECT_EQ(prefix2_leaf->child_data_len(0), 10);

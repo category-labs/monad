@@ -115,7 +115,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
         while (!stop_token.stop_requested()) {
             // clear all in memory nodes under root
             for (unsigned idx = 0; idx < root->number_of_children(); ++idx) {
-                root->move_shared_next(idx).reset();
+                root->move_next(idx).reset();
             }
             auto [node_cursor, res] =
                 find_blocking(ro_aux, NodeCursor{root}, key, latest_version);

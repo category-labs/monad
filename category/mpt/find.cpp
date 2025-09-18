@@ -48,20 +48,20 @@ find_cursor_result_type find_blocking(
             }
             // go to node's matched child
             if (auto const idx = node->to_child_index(nibble);
-                !node->shared_next(idx)) {
+                !node->next(idx)) {
                 MONAD_ASSERT(aux.is_on_disk());
                 auto g2(g.upgrade());
-                if (g2.upgrade_was_atomic() || !node->shared_next(idx)) {
+                if (g2.upgrade_was_atomic() || !node->next(idx)) {
                     Node::UniquePtr next_node_ondisk =
                         read_node_blocking(aux, node->fnext(idx), version);
                     if (!next_node_ondisk) {
                         return {
                             NodeCursor{}, find_result::version_no_longer_exist};
                     }
-                    node->set_shared_next(idx, std::move(next_node_ondisk));
+                    node->set_next(idx, std::move(next_node_ondisk));
                 }
             }
-            node = node->shared_next(node->to_child_index(nibble));
+            node = node->next(node->to_child_index(nibble));
             MONAD_ASSERT(node);
             node_prefix_index = 0;
             ++prefix_index;

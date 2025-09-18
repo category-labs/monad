@@ -81,8 +81,8 @@ NodeBase::NodeBase(
 Node::~Node()
 {
     for (unsigned index = 0; index < number_of_children(); ++index) {
-        if (shared_next(index)) {
-            child_ptr(index)->reset();
+        if (next(index)) {
+            child_ptr(index)->~SharedPtr();
         }
     }
 }
@@ -381,32 +381,32 @@ unsigned char const *Node::next_data_aligned() const noexcept
 
 Node::SharedPtr *Node::child_ptr(unsigned index) noexcept
 {
-    return std::launder(reinterpret_cast<SharedPtr *>(
-        next_data_aligned() + index * sizeof(SharedPtr)));
+    return reinterpret_cast<SharedPtr *>(
+        next_data_aligned() + index * sizeof(SharedPtr));
 }
 
 Node::SharedPtr const *Node::child_ptr(unsigned index) const noexcept
 {
-    return std::launder(reinterpret_cast<SharedPtr const *>(
-        next_data_aligned() + index * sizeof(SharedPtr)));
+    return reinterpret_cast<SharedPtr const *>(
+        next_data_aligned() + index * sizeof(SharedPtr));
 }
 
-Node::SharedPtr &Node::shared_next(unsigned index) noexcept
+Node::SharedPtr &Node::next(unsigned index) noexcept
 {
     return *child_ptr(index);
 }
 
-Node::SharedPtr const &Node::shared_next(unsigned index) const noexcept
+Node::SharedPtr const &Node::next(unsigned index) const noexcept
 {
     return *child_ptr(index);
 }
 
-void Node::set_shared_next(unsigned index, Node::SharedPtr p) noexcept
+void Node::set_next(unsigned index, Node::SharedPtr p) noexcept
 {
     *child_ptr(index) = std::move(p);
 }
 
-Node::SharedPtr Node::move_shared_next(unsigned const index) noexcept
+Node::SharedPtr Node::move_next(unsigned const index) noexcept
 {
     return std::exchange(*child_ptr(index), SharedPtr{});
 }
@@ -415,6 +415,26 @@ unsigned Node::get_mem_size() const noexcept
 {
     auto const *const end =
         next_data_aligned() + sizeof(SharedPtr) * number_of_children();
+    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
+    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
+    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    return mem_size;
+}
+
+void *CacheNode::next(size_t const index) const noexcept
+{
+    return unaligned_load<void *>(next_data() + index * sizeof(Node *));
+}
+
+void CacheNode::set_next(unsigned const index, void *const ptr) noexcept
+{
+    ptr ? memcpy(next_data() + index * sizeof(Node *), &ptr, sizeof(void *))
+        : memset(next_data() + index * sizeof(Node *), 0, sizeof(void *));
+}
+
+unsigned CacheNode::get_mem_size() const noexcept
+{
+    auto const *const end = next_data() + sizeof(Node *) * number_of_children();
     MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
     auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
     MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
@@ -447,8 +467,8 @@ void ChildData::finalize(
 void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
-    if (old->shared_next(index)) { // in memory, infers cached
-        ptr = old->move_shared_next(index);
+    if (old->next(index)) { // in memory, infers cached
+        ptr = old->move_next(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -501,7 +521,7 @@ Node::UniquePtr make_node(
         new (node->child_ptr(i)) Node::SharedPtr();
     }
     for (unsigned i = 0; i < from.number_of_children(); ++i) {
-        node->set_shared_next(i, from.move_shared_next(i));
+        node->set_next(i, from.move_next(i));
     }
 
     return node;
@@ -564,7 +584,7 @@ Node::UniquePtr make_node(
             node->set_min_offset_fast(index, child.min_offset_fast);
             node->set_min_offset_slow(index, child.min_offset_slow);
             node->set_subtrie_min_version(index, child.subtrie_min_version);
-            node->set_shared_next(index, std::move(child.ptr));
+            node->set_next(index, std::move(child.ptr));
             node->set_child_data(index, {child.data, child.len});
             ++index;
         }

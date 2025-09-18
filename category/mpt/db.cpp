@@ -1079,7 +1079,8 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
     }
 
     find_owning_cursor_result_type find_fiber_blocking(
-        OwningNodeCursor start, NibblesView const &key, uint64_t const version)
+        OwningNodeCursor const &start, NibblesView const &key,
+        uint64_t const version)
     {
         threadsafe_boost_fibers_promise<find_owning_cursor_result_type> promise;
         RODbFiberFindOwningNodeRequest req{
@@ -1151,7 +1152,7 @@ DbError find_result_to_db_error(find_result const result) noexcept
 }
 
 Result<OwningNodeCursor> RODb::find(
-    OwningNodeCursor &node_cursor, NibblesView const key,
+    OwningNodeCursor const &node_cursor, NibblesView const key,
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);

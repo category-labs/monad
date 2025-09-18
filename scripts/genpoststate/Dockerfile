@@ -1,24 +1,28 @@
-FROM --platform=linux/amd64 fedora:38
+# syntax=docker/dockerfile:1
 
-ENV TESTDIR=ethtest
-ARG GAT_VERSION="1.12.0-e501b3b0"
+FROM golang:1.21-alpine AS builder
 
-RUN mkdir $TESTDIR
-WORKDIR $TESTDIR
+WORKDIR /app
 
-RUN dnf -y install jq \
-    && dnf -y clean all \
-    && rm -rf /var/cache/yum
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN curl -O https://gethstore.blob.core.windows.net/builds/geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz
-RUN curl -O https://gethstore.blob.core.windows.net/builds/geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz.asc
+COPY . .
 
-RUN gpg --recv-keys F9585DE6 C2FF8BBF 9BA28146 7B9E2481 D2A67EAC && gpg --verify geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz.asc
+RUN CGO_ENABLED=0 GOOS=linux go build -o /genpoststate ./cmd/genpoststate
 
-RUN tar -xvf geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz \
-    && mv geth-alltools-linux-amd64-${GAT_VERSION}/evm evm \
-    && rm -rf geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz geth-alltools-linux-amd64-${GAT_VERSION}.tar.gz.asc geth-alltools-linux-amd64-${GAT_VERSION}
+FROM alpine:latest
 
-COPY gps.sh /ethtest/gps.sh
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-ENTRYPOINT ["/ethtest/gps.sh"]
+WORKDIR /
+
+RUN addgroup -S monad && adduser -S -G monad monad
+
+COPY --from=builder --chown=appuser:appgroup /genpoststate /genpoststate
+
+USER appuser
+
+USER monad
+
+ENTRYPOINT ["/genpoststate"]

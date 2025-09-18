@@ -2484,13 +2484,6 @@ namespace monad::vm::compiler::native
             signextend_by_literal_ix(lit, std::move(src), {});
             return;
         }
-        if (ix->general_reg()) {
-            signextend_stack_elem_ix(std::move(ix), std::move(src), {});
-            return;
-        }
-        if (!ix->stack_offset()) {
-            mov_avx_reg_to_stack_offset(ix);
-        }
         signextend_stack_elem_ix(std::move(ix), std::move(src), {});
     }
 

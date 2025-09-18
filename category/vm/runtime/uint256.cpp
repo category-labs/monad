@@ -27,9 +27,14 @@ namespace monad::vm::runtime
 {
     uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
     {
-        if (byte_index_256 >= 31) {
-            return x;
+        uint256_t ret;
+        for (uint64_t ii = 0; ii < 4; ++ii) {
+            ret[ii] = x[ii];
         }
+        if (byte_index_256 >= 31) {
+            return ret;
+        }
+
         uint64_t const byte_index = byte_index_256[0];
         uint64_t const word_index = byte_index >> 3;
         uint64_t const word = x[word_index];
@@ -43,10 +48,6 @@ namespace monad::vm::runtime
             ~(std::numeric_limits<int64_t>::min() >> (63 - bit_index));
         uint64_t const lower = static_cast<uint64_t>(signed_lower);
         uint64_t const sign_bits = static_cast<uint64_t>(signed_byte >> 63);
-        uint256_t ret;
-        for (uint64_t j = 0; j < word_index; ++j) {
-            ret[j] = x[j];
-        }
         ret[word_index] = upper | lower;
         for (uint64_t j = word_index + 1; j < 4; ++j) {
             ret[j] = sign_bits;

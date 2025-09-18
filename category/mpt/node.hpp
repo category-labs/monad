@@ -316,12 +316,12 @@ public:
     SharedPtr *child_ptr(unsigned index) noexcept;
     SharedPtr const *child_ptr(unsigned index) const noexcept;
 
-    SharedPtr &shared_next(unsigned index) noexcept;
-    SharedPtr const &shared_next(unsigned index) const noexcept;
+    SharedPtr &next(unsigned index) noexcept;
+    SharedPtr const &next(unsigned index) const noexcept;
 
-    void set_shared_next(unsigned index, SharedPtr p) noexcept;
+    void set_next(unsigned index, SharedPtr p) noexcept;
 
-    SharedPtr move_shared_next(unsigned const index) noexcept;
+    SharedPtr move_next(unsigned const index) noexcept;
 
     unsigned get_mem_size() const noexcept;
 };
@@ -354,27 +354,10 @@ public:
             std::forward<Args>(args)...);
     }
 
-    void *next(size_t const index) const noexcept
-    {
-        return unaligned_load<void *>(next_data() + index * sizeof(Node *));
-    }
+    void *next(size_t const index) const noexcept;
+    void set_next(unsigned const index, void *const ptr) noexcept;
 
-    void set_next(unsigned const index, void *const ptr) noexcept
-    {
-        ptr ? memcpy(next_data() + index * sizeof(Node *), &ptr, sizeof(void *))
-            : memset(next_data() + index * sizeof(Node *), 0, sizeof(void *));
-    }
-
-    unsigned get_mem_size() const noexcept
-    {
-        auto const *const end =
-            next_data() + sizeof(Node *) * number_of_children();
-        MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
-        auto const mem_size =
-            static_cast<unsigned>(end - (unsigned char *)this);
-        MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
-        return mem_size;
-    }
+    unsigned get_mem_size() const noexcept;
 };
 
 static_assert(std::is_standard_layout_v<CacheNode>, "required by offsetof");

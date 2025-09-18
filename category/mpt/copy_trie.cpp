@@ -59,7 +59,7 @@ Node::UniquePtr create_node_add_new_branch(
         else if (mask & bit) {
             auto &child = children[j];
             child.branch = (unsigned char)i;
-            child.ptr = node->move_shared_next(old_j);
+            child.ptr = node->move_next(old_j);
             child.subtrie_min_version = node->subtrie_min_version(old_j);
             if (aux.is_on_disk()) {
                 child.min_offset_fast = node->min_offset_fast(old_j);
@@ -213,17 +213,17 @@ Node::SharedPtr copy_trie_impl(
         // end of node path
         if (node->mask & (1u << nibble)) {
             auto const index = node->to_child_index(nibble);
-            if (node->shared_next(index) == nullptr) {
+            if (node->next(index) == nullptr) {
                 Node::UniquePtr next_node_ondisk =
                     read_node_blocking(aux, node->fnext(index), dest_version);
                 MONAD_ASSERT(next_node_ondisk != nullptr);
-                node->set_shared_next(index, std::move(next_node_ondisk));
+                node->set_next(index, std::move(next_node_ondisk));
             }
             // there is a matched branch, go to next child
             parent = node.get();
             branch = nibble;
             parents_and_indexes.emplace(std::make_pair(parent, index));
-            node = node->shared_next(index);
+            node = node->next(index);
             node_prefix_index = 0;
             ++prefix_index;
             continue;
@@ -263,12 +263,12 @@ Node::SharedPtr copy_trie_impl(
         MONAD_ASSERT(parent != nullptr);
         auto const child_index = parent->to_child_index(branch);
         // reset child at `branch` to the new_node
-        parent->set_shared_next(child_index, std::move(new_node));
+        parent->set_next(child_index, std::move(new_node));
         parents_and_indexes.emplace(std::make_pair(parent, child_index));
         // serialize nodes of insert path up until root (excludes root)
         while (!parents_and_indexes.empty()) {
             auto const &[p, i] = parents_and_indexes.top();
-            auto &node = *p->shared_next(i);
+            auto &node = *p->next(i);
             p->set_fnext(i, async_write_node_set_spare(aux, node, true));
             auto const [min_offset_fast, min_offset_slow] =
                 calc_min_offsets(node);

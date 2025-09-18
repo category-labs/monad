@@ -91,11 +91,11 @@ namespace
         {
             MONAD_ASSERT(buffer_);
             auto const offset = parent->fnext(branch_index);
-            auto node = parent->shared_next(branch_index);
+            auto node = parent->next(branch_index);
             if (node == nullptr) {
                 node = detail::deserialize_node_from_receiver_result<Node>(
                     std::move(buffer_), buffer_off, io_state);
-                parent->set_shared_next(branch_index, node);
+                parent->set_next(branch_index, node);
             }
             auto it = inflights.find(offset);
             if (it != inflights.end()) {
@@ -248,8 +248,7 @@ void find_notify_fiber_future(
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
-        if (auto const &next = node->shared_next(child_index);
-            next != nullptr) {
+        if (auto const &next = node->next(child_index); next != nullptr) {
             find_notify_fiber_future(aux, inflights, promise, next, next_key);
             return;
         }

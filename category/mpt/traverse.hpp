@@ -76,7 +76,7 @@ namespace detail
         }
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (traverse.should_visit(node, branch)) {
-                if (Node::SharedPtr const &next = node.shared_next(idx);
+                if (Node::SharedPtr const &next = node.next(idx);
                     next != nullptr) {
                     preorder_traverse_blocking_impl(
                         aux, branch, *next, traverse, version);
@@ -301,7 +301,7 @@ namespace detail
         unsigned children_read = 0;
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
             if (machine.should_visit(node, branch)) {
-                Node::SharedPtr const &next = node.shared_next(idx);
+                Node::SharedPtr const &next = node.next(idx);
                 if (next == nullptr) {
                     MONAD_ASSERT(sender.aux.is_on_disk());
                     // verify version before read

@@ -229,15 +229,14 @@ struct load_all_impl_
             // load node from read buffer
             {
                 auto g(impl->aux.unique_lock());
-                MONAD_ASSERT(root.node->shared_next(branch_index) == nullptr);
-                root.node->set_shared_next(
+                MONAD_ASSERT(root.node->next(branch_index) == nullptr);
+                root.node->set_next(
                     branch_index,
                     detail::deserialize_node_from_receiver_result<Node>(
                         std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
-            impl->process(
-                NodeCursor{root.node->shared_next(branch_index)}, *sm);
+            impl->process(NodeCursor{root.node->next(branch_index)}, *sm);
         }
     };
 
@@ -257,7 +256,7 @@ struct load_all_impl_
             }
             sm.down(i);
             if (sm.cache()) {
-                auto next = node->shared_next(idx);
+                auto next = node->next(idx);
                 if (next == nullptr) {
                     receiver_t receiver(
                         this, NodeCursor{node}, uint8_t(idx), sm.clone());
@@ -669,7 +668,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
-        auto single_child = orig->move_shared_next(child_index);
+        auto single_child = orig->move_next(child_index);
         if (!single_child) {
             read_single_child_expire_receiver receiver(
                 &aux,
@@ -726,8 +725,6 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
     for (unsigned i = 0; i < node->number_of_children(); ++i) {
         new (node->child_ptr(i)) Node::SharedPtr();
     }
-    // clear next pointers
-    std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
     for (unsigned j = 0; j < number_of_children; ++j) {
         auto const &orig_j = orig_indexes[j];
         node->set_fnext(j, orig->fnext(orig_j));
@@ -738,7 +735,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
             aux.curr_upsert_auto_expire_version);
         node->set_subtrie_min_version(j, orig->subtrie_min_version(orig_j));
         if (tnode->cache_mask & (1u << orig_j)) {
-            node->set_shared_next(j, orig->move_shared_next(orig_j));
+            node->set_next(j, orig->move_next(orig_j));
         }
         node->set_child_data(j, orig->child_data_view(orig_j));
     }
@@ -1157,7 +1154,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[index],
-                    old->move_shared_next(old->to_child_index(branch)),
+                    old->move_next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
                     std::move(requests)[branch],
                     prefix_index + 1);
@@ -1361,14 +1358,14 @@ void expire_(
         if (node.subtrie_min_version(index) <
             aux.curr_upsert_auto_expire_version) {
             auto child_tnode = ExpireTNode::make(
-                tnode.get(), branch, index, node.move_shared_next(index));
+                tnode.get(), branch, index, node.move_next(index));
             expire_(aux, sm, std::move(child_tnode), node.fnext(index));
         }
         else if (
             node.min_offset_fast(index) < aux.compact_offset_fast ||
             node.min_offset_slow(index) < aux.compact_offset_slow) {
-            auto child_tnode = CompactTNode::make(
-                tnode.get(), index, node.move_shared_next(index));
+            auto child_tnode =
+                CompactTNode::make(tnode.get(), index, node.move_next(index));
             compact_(
                 aux,
                 sm,
@@ -1422,7 +1419,7 @@ void fillin_parent_after_expiration(
             if (cache_node) {
                 parent->cache_mask |= static_cast<uint16_t>(1u << index);
             }
-            parent->node->set_shared_next(index, std::move(new_node));
+            parent->node->set_next(index, std::move(new_node));
             parent->node->set_subtrie_min_version(index, min_version);
             parent->node->set_min_offset_fast(index, min_offset_fast);
             parent->node->set_min_offset_slow(index, min_offset_slow);
@@ -1497,7 +1494,7 @@ void compact_(
         if (node.min_offset_fast(j) < aux.compact_offset_fast ||
             node.min_offset_slow(j) < aux.compact_offset_slow) {
             auto child_tnode =
-                CompactTNode::make(tnode.get(), j, node.move_shared_next(j));
+                CompactTNode::make(tnode.get(), j, node.move_next(j));
             compact_(
                 aux,
                 sm,
@@ -1568,7 +1565,7 @@ void try_fillin_parent_with_rewritten_node(
         node->set_min_offset_slow(index, min_offset_slow);
         if (tnode->cache_node || parent->type == tnode_type::expire) {
             // Delay tnode->node deallocation to parent ExpireTNode
-            node->set_shared_next(index, std::move(tnode->node));
+            node->set_next(index, std::move(tnode->node));
             if (tnode->cache_node && parent->type == tnode_type::expire) {
                 ((ExpireTNode *)parent)->cache_mask |=
                     static_cast<uint16_t>(1u << tnode->index);

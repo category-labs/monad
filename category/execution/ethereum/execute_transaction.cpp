@@ -274,16 +274,19 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
+    auto const revert_transaction = [this, &state] {
+        return revert_transaction_(sender_, tx_, i_, state);
+    };
+
     auto result =
         (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
             ? ::monad::create<traits>(
                   &host,
                   state,
                   msg,
-                  chain_.get_max_code_size(header_.number, header_.timestamp))
-            : ::monad::call<traits>(&host, state, msg, [this, &state] {
-                  return revert_transaction_(sender_, tx_, i_, state);
-              });
+                  chain_.get_max_code_size(header_.number, header_.timestamp),
+                  revert_transaction)
+            : ::monad::call<traits>(&host, state, msg, revert_transaction);
 
     result.gas_refund += auth_refund;
     return result;

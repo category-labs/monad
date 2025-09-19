@@ -189,7 +189,7 @@ void post_call(State &state, evmc::Result const &result)
 template <Traits traits>
 evmc::Result create(
     EvmcHost<traits> *const host, State &state, evmc_message const &msg,
-    size_t const max_code_size)
+    size_t const max_code_size, std::function<bool()> const &revert_transaction)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -267,6 +267,10 @@ evmc::Result create(
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<traits>(
             state, contract_address, std::move(result), max_code_size);
+    }
+
+    if (msg.depth == 0 && revert_transaction()) {
+        result.status_code = EVMC_REVERT;
     }
 
     if (result.status_code == EVMC_SUCCESS) {

@@ -164,7 +164,7 @@ bool init_block_hash_buffer_from_triedb(
     for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
          b < block_number;
          ++b) {
-        auto const header = rodb.get(
+        auto const header = rodb.find(
             mpt::concat(
                 FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
             b);
@@ -175,7 +175,7 @@ bool init_block_hash_buffer_from_triedb(
                 header.error().message().c_str());
             return false;
         }
-        auto const h = to_bytes(keccak256(header.value()));
+        auto const h = to_bytes(keccak256(header.value().node->value()));
         block_hash_buffer.set(b, h);
     }
 

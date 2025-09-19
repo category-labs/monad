@@ -205,7 +205,12 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
                 .version = static_cast<int64_t>(v)};
             UpdateList finalized_updates;
             finalized_updates.push_front(finalized);
-            ctx->db.upsert(std::move(finalized_updates), v, false, false);
+            ctx->db.upsert(
+                ctx->db.load_root_for_version(v),
+                std::move(finalized_updates),
+                v,
+                false,
+                false);
         }
     }
     ctx->db.update_finalized_version(tgrt.number);

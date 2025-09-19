@@ -401,8 +401,7 @@ TEST_F(EthCallFixture, on_proposed_block)
 TEST_F(EthCallFixture, failed_to_read)
 {
     // missing 256 previous blocks
-    load_header(db, BlockHeader{.number = 1199});
-    tdb.set_block_and_prefix(1199);
+    tdb.reset_root(load_header(nullptr, db, BlockHeader{.number = 1199}), 1199);
     for (uint64_t i = 1200; i < 1256; ++i) {
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }

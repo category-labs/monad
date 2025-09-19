@@ -1023,7 +1023,7 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 
 // batch upsert, updates can be nested
 Node::SharedPtr upsert(
-    UpdateAuxImpl &, uint64_t, StateMachine &, Node::SharedPtr old,
+    UpdateAuxImpl &, uint64_t version, StateMachine &, Node::SharedPtr old,
     UpdateList &&, bool write_root = true);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
@@ -1032,9 +1032,9 @@ Node::SharedPtr upsert(
 // Any pre-existing trie at `dest_prefix` will be overwritten.
 // The in-memory effect is similar to a move operation.
 Node::SharedPtr copy_trie_to_dest(
-    UpdateAuxImpl &, NodeCursor src_root, NibblesView src_prefix,
-    uint64_t src_version, Node::SharedPtr dest_root, NibblesView dest_prefx,
-    uint64_t const dest_version, bool must_write_to_disk);
+    UpdateAuxImpl &, Node::SharedPtr src_root, NibblesView src_prefix,
+    Node::SharedPtr dest_root, NibblesView dest_prefix, uint64_t dest_version,
+    bool write_root = true);
 
 // load all nodes as far as caching policy would allow
 size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor const &);

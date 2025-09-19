@@ -40,6 +40,7 @@ struct monad_db_snapshot_loader
     uint64_t block;
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
+    monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
@@ -116,8 +117,12 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         .version = static_cast<int64_t>(loader->block)};
     finalized_updates.push_front(finalized);
 
-    loader->db.upsert(
-        std::move(finalized_updates), loader->block, false, false);
+    loader->root = loader->db.upsert(
+        std::move(loader->root),
+        std::move(finalized_updates),
+        loader->block,
+        false,
+        false);
     loader->hash_alloc.clear();
     loader->update_alloc.clear();
     for (auto &map : loader->account_offset_to_update) {
@@ -305,30 +310,32 @@ bool monad_db_dump_snapshot(
     Db db{io_context};
 
     for (uint64_t b = block < 256 ? 0 : block - 255; b <= block; ++b) {
-        auto const header = db.get(
+        auto const header_cursor_res = db.find(
             concat(FINALIZED_NIBBLE, NibblesView{block_header_nibbles}), b);
-        if (!header.has_value()) {
+        if (!header_cursor_res.has_value()) {
             LOG_INFO(
                 "Could not query block header {} from db -- {}",
                 b,
-                header.error().message().c_str());
+                header_cursor_res.error().message().c_str());
             return false;
         }
+        auto const header_view = header_cursor_res.value().node->value();
         MONAD_ASSERT(
             write(
                 block - b,
                 MONAD_SNAPSHOT_ETH_HEADER,
-                header.value().data(),
-                header.value().size(),
-                user) == header.value().size());
+                header_view.data(),
+                header_view.size(),
+                user) == header_view.size());
     }
 
     auto const root = db.load_root_for_version(block);
-    if (!root.is_valid()) {
+    if (!root) {
         LOG_INFO("root not valid for block {}", block);
         return false;
     }
-    auto const finalized_root_res = db.find(root, finalized_nibbles, block);
+    auto const finalized_root_res =
+        db.find(NodeCursor{root}, finalized_nibbles, block);
     if (!finalized_root_res.has_value()) {
         LOG_INFO("block {} not finalized", block);
         return false;
@@ -356,7 +363,7 @@ monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     auto *loader =
         new monad_db_snapshot_loader(block, dbname_paths, len, sq_thread_cpu);
     MONAD_ASSERT_PRINTF(
-        !loader->db.root().is_valid(),
+        loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
         "database must be hard reset when loading snapshot");
     return loader;
 }
@@ -474,7 +481,12 @@ void monad_db_snapshot_loader_destroy(monad_db_snapshot_loader *loader)
             .next = std::move(updates),
             .version = static_cast<int64_t>(block)};
         finalized_updates.push_front(finalized);
-        loader->db.upsert(std::move(finalized_updates), block, false, false);
+        loader->db.upsert(
+            loader->db.load_root_for_version(block),
+            std::move(finalized_updates),
+            block,
+            false,
+            false);
     }
     loader->db.update_finalized_version(loader->block);
     delete loader;

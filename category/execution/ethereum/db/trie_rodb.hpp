@@ -34,7 +34,7 @@ class TrieRODb final : public ::monad::Db
 {
     ::monad::mpt::RODb &db_;
     uint64_t block_number_;
-    ::monad::mpt::OwningNodeCursor prefix_cursor_;
+    ::monad::mpt::CacheNodeCursor prefix_cursor_;
 
 public:
     TrieRODb(mpt::RODb &db)

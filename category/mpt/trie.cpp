@@ -59,12 +59,12 @@ using namespace MONAD_ASYNC_NAMESPACE;
 */
 void dispatch_updates_impl_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::UniquePtr old, Requests &, unsigned prefix_index, NibblesView path,
+    Node::SharedPtr old, Requests &, unsigned prefix_index, NibblesView path,
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void mismatch_handler_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::UniquePtr old, Requests &, NibblesView path,
+    Node::SharedPtr old, Requests &, NibblesView path,
     unsigned old_prefix_index, unsigned prefix_index);
 
 void create_new_trie_(
@@ -78,7 +78,7 @@ void create_new_trie_from_requests_(
 
 void upsert_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::UniquePtr old, chunk_offset_t offset, UpdateList &&,
+    Node::SharedPtr old, chunk_offset_t offset, UpdateList &&,
     unsigned prefix_index = 0, unsigned old_prefix_index = 0);
 
 void create_node_compute_data_possibly_async(
@@ -110,9 +110,9 @@ struct async_write_node_result
 void flush_buffered_writes(UpdateAuxImpl &);
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &, uint64_t);
 
-Node::UniquePtr upsert(
+Node::SharedPtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
-    Node::UniquePtr old, UpdateList &&updates, bool const write_root)
+    Node::SharedPtr old, UpdateList &&updates, bool const write_root)
 {
     auto impl = [&] {
         aux.reset_stats();
@@ -161,7 +161,7 @@ Node::UniquePtr upsert(
             create_new_trie_(
                 aux, sm, sentinel->version, entry, std::move(updates));
         }
-        auto root = std::move(entry.ptr);
+        auto root = entry.ptr;
         if (aux.is_on_disk() && root) {
             if (write_root) {
                 write_new_root_node(aux, *root, version);
@@ -236,7 +236,7 @@ struct load_all_impl_
                         std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
-            impl->process(NodeCursor{*root.node->next(branch_index)}, *sm);
+            impl->process(NodeCursor{root.node->next(branch_index)}, *sm);
         }
     };
 
@@ -245,9 +245,9 @@ struct load_all_impl_
     {
     }
 
-    void process(NodeCursor const node_cursor, StateMachine &sm)
+    void process(NodeCursor const &node_cursor, StateMachine &sm)
     {
-        Node *const node = node_cursor.node;
+        auto node = node_cursor.node;
         for (auto const [idx, i] : NodeChildrenRange(node->mask)) {
             NibblesView const nv =
                 node->path_nibble_view().substr(node_cursor.prefix_index);
@@ -256,13 +256,14 @@ struct load_all_impl_
             }
             sm.down(i);
             if (sm.cache()) {
-                auto *const next = node->next(idx);
+                auto next = node->next(idx);
                 if (next == nullptr) {
-                    receiver_t receiver(this, *node, uint8_t(idx), sm.clone());
+                    receiver_t receiver(
+                        this, NodeCursor{node}, uint8_t(idx), sm.clone());
                     async_read(aux, std::move(receiver));
                 }
                 else {
-                    process(NodeCursor{*next}, sm);
+                    process(NodeCursor{std::move(next)}, sm);
                 }
             }
             sm.up(1 + nv.nibble_size());
@@ -270,7 +271,7 @@ struct load_all_impl_
     }
 };
 
-size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const root)
+size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const &root)
 {
     load_all_impl_ impl(aux);
     impl.process(root, sm);
@@ -667,7 +668,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
-        auto single_child = orig->move_next(child_index);
+        auto single_child = orig->next(child_index);
         if (!single_child) {
             read_single_child_expire_receiver receiver(
                 &aux,
@@ -719,6 +720,11 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
         (byte_string_view::pointer)child_data_offsets.data(),
         child_data_offsets.size() * sizeof(uint16_t),
         node->child_off_data());
+
+    // Must initialize child pointers after copying child_data_offset
+    for (unsigned i = 0; i < node->number_of_children(); ++i) {
+        new (node->child_ptr(i)) Node::SharedPtr();
+    }
     // clear next pointers
     std::memset(node->next_data(), 0, number_of_children * sizeof(Node *));
     for (unsigned j = 0; j < number_of_children; ++j) {
@@ -731,7 +737,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
             aux.curr_upsert_auto_expire_version);
         node->set_subtrie_min_version(j, orig->subtrie_min_version(orig_j));
         if (tnode->cache_mask & (1u << orig_j)) {
-            node->set_next(j, orig->move_next(orig_j));
+            node->set_next(j, orig->next(orig_j));
         }
         node->set_child_data(j, orig->child_data_view(orig_j));
     }
@@ -852,7 +858,7 @@ void create_node_compute_data_possibly_async(
 
 void update_value_and_subtrie_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::UniquePtr old, NibblesView const path, Update &update)
+    Node::SharedPtr old, NibblesView const path, Update &update)
 {
     if (update.is_deletion()) {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
@@ -1015,7 +1021,7 @@ void create_new_trie_from_requests_(
 
 void upsert_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::UniquePtr old, chunk_offset_t const old_offset, UpdateList &&updates,
+    Node::SharedPtr old, chunk_offset_t const old_offset, UpdateList &&updates,
     unsigned prefix_index, unsigned old_prefix_index)
 {
     MONAD_ASSERT(!updates.empty());
@@ -1121,7 +1127,7 @@ void fillin_entry(
  * and there might be update to the leaf value. */
 void dispatch_updates_impl_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::UniquePtr old_ptr, Requests &requests, unsigned const prefix_index,
+    Node::SharedPtr old_ptr, Requests &requests, unsigned const prefix_index,
     NibblesView const path, std::optional<byte_string_view> const opt_leaf_data,
     int64_t const version)
 {
@@ -1135,7 +1141,7 @@ void dispatch_updates_impl_(
         path,
         version,
         opt_leaf_data,
-        opt_leaf_data.has_value() ? std::move(old_ptr) : Node::UniquePtr{});
+        opt_leaf_data.has_value() ? old_ptr : Node::SharedPtr{});
     MONAD_DEBUG_ASSERT(
         tnode->children.size() == size_t(std::popcount(orig_mask)));
     auto &children = tnode->children;
@@ -1150,7 +1156,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[index],
-                    old->move_next(old->to_child_index(branch)),
+                    old->next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
                     std::move(requests)[branch],
                     prefix_index + 1);
@@ -1212,7 +1218,7 @@ void dispatch_updates_impl_(
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::UniquePtr old_ptr, Requests &requests, NibblesView const path,
+    Node::SharedPtr old_ptr, Requests &requests, NibblesView const path,
     unsigned const old_prefix_index, unsigned const prefix_index)
 {
     MONAD_ASSERT(old_ptr);
@@ -1353,15 +1359,15 @@ void expire_(
     for (auto const [index, branch] : NodeChildrenRange(node.mask)) {
         if (node.subtrie_min_version(index) <
             aux.curr_upsert_auto_expire_version) {
-            auto child_tnode = ExpireTNode::make(
-                tnode.get(), branch, index, node.move_next(index));
+            auto child_tnode =
+                ExpireTNode::make(tnode.get(), branch, index, node.next(index));
             expire_(aux, sm, std::move(child_tnode), node.fnext(index));
         }
         else if (
             node.min_offset_fast(index) < aux.compact_offset_fast ||
             node.min_offset_slow(index) < aux.compact_offset_slow) {
             auto child_tnode =
-                CompactTNode::make(tnode.get(), index, node.move_next(index));
+                CompactTNode::make(tnode.get(), index, node.next(index));
             compact_(
                 aux,
                 sm,
@@ -1377,7 +1383,7 @@ void expire_(
 }
 
 void fillin_parent_after_expiration(
-    UpdateAuxImpl &aux, Node::UniquePtr new_node, ExpireTNode *const parent,
+    UpdateAuxImpl &aux, Node::SharedPtr new_node, ExpireTNode *const parent,
     uint8_t const index, uint8_t const branch, bool const cache_node)
 {
     if (new_node == nullptr) {
@@ -1489,8 +1495,7 @@ void compact_(
     for (unsigned j = 0; j < node.number_of_children(); ++j) {
         if (node.min_offset_fast(j) < aux.compact_offset_fast ||
             node.min_offset_slow(j) < aux.compact_offset_slow) {
-            auto child_tnode =
-                CompactTNode::make(tnode.get(), j, node.move_next(j));
+            auto child_tnode = CompactTNode::make(tnode.get(), j, node.next(j));
             compact_(
                 aux,
                 sm,

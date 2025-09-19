@@ -68,12 +68,9 @@ public:
     RODb &operator=(RODb const &) = delete;
     RODb &operator=(RODb &&) = delete;
 
-    // get() and get_data() APIs are intentionally disabled to prevent
-    // heap-use-after-free memory bug. However, users can still access node data
-    // or value through OwningNodeCursor.
-    Result<OwningNodeCursor>
-    find(OwningNodeCursor &, NibblesView, uint64_t block_id) const;
-    Result<OwningNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<CacheNodeCursor>
+    find(CacheNodeCursor const &, NibblesView, uint64_t block_id) const;
+    Result<CacheNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
@@ -103,20 +100,16 @@ public:
     Db &operator=(Db &&) = delete;
     ~Db();
 
-    // The find, get, and get_data API calls return non-owning references.
-    // The result lifetime ends when a subsequent operation reloads the trie
-    // root. This can happen due to an RWDb upsert, an RODb reading a different
-    // version, or an RODb reading the same version that has been updated by an
-    // RWDb in another process.
     // The `block_id` parameter specify the version to read from, and is also
     // used for version control validation. These calls may wait on a fiber
     // future.
-    Result<NodeCursor> find(NodeCursor, NibblesView, uint64_t block_id) const;
+    Result<NodeCursor>
+    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
     Result<byte_string_view> get(NibblesView, uint64_t block_id) const;
     Result<byte_string_view> get_data(NibblesView, uint64_t block_id) const;
     Result<byte_string_view>
-    get_data(NodeCursor, NibblesView, uint64_t block_id) const;
+    get_data(NodeCursor const &, NibblesView, uint64_t block_id) const;
 
     NodeCursor load_root_for_version(uint64_t block_id) const;
 
@@ -144,10 +137,11 @@ public:
     // block the fiber and hang. If you have to do blocking i/o during the
     // traversal on RWDb, use the `traverse_blocking` api below.
     bool traverse(
-        NodeCursor, TraverseMachine &, uint64_t block_id,
+        NodeCursor const &, TraverseMachine &, uint64_t block_id,
         size_t concurrency_limit = 4096);
     // Blocking traverse never wait on a fiber future.
-    bool traverse_blocking(NodeCursor, TraverseMachine &, uint64_t block_id);
+    bool
+    traverse_blocking(NodeCursor const &, TraverseMachine &, uint64_t block_id);
     NodeCursor root() const noexcept;
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
@@ -207,11 +201,11 @@ namespace detail
         } op_type;
 
         std::shared_ptr<CacheNode> root;
-        OwningNodeCursor cur;
+        CacheNodeCursor cur;
         Nibbles const nv;
         uint64_t const block_id;
 
-        find_result_type<OwningNodeCursor> res_root;
+        find_result_type<CacheNodeCursor> res_root;
         find_result_type<T> get_result;
 
         constexpr DbGetSender(
@@ -228,7 +222,7 @@ namespace detail
         }
 
         constexpr DbGetSender(
-            AsyncContext &context_, op_t const op_type_, OwningNodeCursor cur_,
+            AsyncContext &context_, op_t const op_type_, CacheNodeCursor cur_,
             NibblesView const n, uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)
@@ -251,7 +245,7 @@ namespace detail
 }
 
 inline detail::TraverseSender make_traverse_sender(
-    AsyncContext *const context, Node::UniquePtr traverse_root,
+    AsyncContext *const context, Node::SharedPtr traverse_root,
     std::unique_ptr<TraverseMachine> machine, uint64_t const block_id,
     size_t const concurrency_limit = 4096)
 {

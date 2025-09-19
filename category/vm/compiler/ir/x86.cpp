@@ -27,9 +27,7 @@
 
 #include <asmjit/core/jitruntime.h>
 
-#include <quill/detail/LogMacros.h>
-// clang-tidy incorrectly views this macro as unused
-#include <quill/Quill.h> // IWYU pragma: keep
+#include <quill/Quill.h>
 
 #include <cstddef>
 #include <cstdint>

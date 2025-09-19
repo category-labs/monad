@@ -69,7 +69,7 @@ namespace monad::vm::compiler
          * Some instructions may also consume additional dynamic gas depending
          * on run-time properties (e.g. memory expansion or storage costs).
          */
-        std::uint16_t min_gas;
+        std::uint32_t min_gas;
 
         /**
          * The index within a set of related opcodes for this instruction.
@@ -796,7 +796,10 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_FOUR>>()
     {
-        return make_opcode_table<MonadTraits<MONAD_FOUR>::evm_base>();
+        auto table = make_opcode_table<MonadTraits<MONAD_FOUR>::evm_base>();
+        table[CREATE].min_gas = 160'000;
+        table[CREATE2].min_gas = 160'000;
+        return table;
     }
 
     /**

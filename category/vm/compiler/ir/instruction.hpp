@@ -113,18 +113,18 @@ namespace monad::vm::compiler
     {
     public:
         constexpr Instruction(
-            std::uint32_t pc, OpCode opcode, std::uint16_t static_gas_cost,
+            std::uint32_t pc, OpCode opcode, std::uint32_t static_gas_cost,
             std::uint8_t stack_args, std::uint8_t index,
             std::uint8_t stack_increase, bool dynamic_gas);
 
         constexpr Instruction(
             std::uint32_t pc, OpCode opcode, runtime::uint256_t immediate_value,
-            std::uint16_t static_gas_cost, std::uint8_t stack_args,
+            std::uint32_t static_gas_cost, std::uint8_t stack_args,
             std::uint8_t index, std::uint8_t stack_increase, bool dynamic_gas);
 
         constexpr runtime::uint256_t const &immediate_value() const noexcept;
         constexpr std::uint32_t pc() const noexcept;
-        constexpr std::uint16_t static_gas_cost() const noexcept;
+        constexpr std::uint32_t static_gas_cost() const noexcept;
         constexpr OpCode opcode() const noexcept;
         constexpr std::uint8_t stack_args() const noexcept;
         constexpr std::uint8_t index() const noexcept;
@@ -140,7 +140,7 @@ namespace monad::vm::compiler
 
         runtime::uint256_t immediate_value_;
         std::uint32_t pc_;
-        std::uint16_t static_gas_cost_;
+        std::uint32_t static_gas_cost_;
         OpCode opcode_;
         std::uint8_t stack_args_;
         std::uint8_t index_;
@@ -153,7 +153,7 @@ namespace monad::vm::compiler
      */
 
     constexpr Instruction::Instruction(
-        std::uint32_t pc, OpCode op, std::uint16_t static_gas_cost,
+        std::uint32_t pc, OpCode op, std::uint32_t static_gas_cost,
         std::uint8_t stack_args, std::uint8_t index,
         std::uint8_t stack_increase, bool dynamic_gas)
         : Instruction(
@@ -164,7 +164,7 @@ namespace monad::vm::compiler
 
     constexpr Instruction::Instruction(
         std::uint32_t pc, OpCode op, runtime::uint256_t immediate_value,
-        std::uint16_t static_gas_cost, std::uint8_t stack_args,
+        std::uint32_t static_gas_cost, std::uint8_t stack_args,
         std::uint8_t index, std::uint8_t stack_increase, bool dynamic_gas)
         : immediate_value_(immediate_value)
         , pc_(pc)
@@ -190,7 +190,7 @@ namespace monad::vm::compiler
         return pc_;
     }
 
-    constexpr std::uint16_t Instruction::static_gas_cost() const noexcept
+    constexpr std::uint32_t Instruction::static_gas_cost() const noexcept
     {
         return static_gas_cost_;
     }

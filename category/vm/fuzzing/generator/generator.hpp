@@ -197,14 +197,19 @@ namespace monad::vm::fuzzing
         std::optional<evmc::address> address;
     };
 
-    struct BlockIx
+    struct Constant
     {
-        std::size_t index;
+        runtime::uint256_t value;
     };
 
     struct SmallConstant
     {
         std::uint32_t value;
+    };
+
+    struct BlockIx
+    {
+        std::size_t index;
     };
 
     struct ReturnInstead
@@ -213,6 +218,54 @@ namespace monad::vm::fuzzing
 
     using ValidJumpDest = std::variant<BlockIx, SmallConstant, ReturnInstead>;
 
+    struct NonTerminator
+    {
+        std::uint8_t opcode;
+        std::vector<std::pair<std::uint8_t, Constant>> opnds = {};
+    };
+
+    struct Terminator
+    {
+        std::uint8_t opcode;
+        std::vector<std::pair<std::uint8_t, Constant>> opnds = {};
+    };
+
+    using Push = std::variant<ValidAddress, ValidJumpDest, Constant>;
+
+    struct Call
+    {
+        std::uint8_t opcode;
+        uint8_t gasPct;
+        uint8_t balancePct;
+        Constant argsOffset;
+        Constant argsSize;
+        Constant retOffset;
+        Constant retSize;
+        evmc::address address;
+        bool isTrivial;
+    };
+
+    struct ReturnDataCopy
+    {
+        Constant destOffset;
+        uint8_t sizePct; // percent of return data size
+        uint8_t offsetPct; // percent of return data size
+        bool isTrivial; // sometimes just emit a simple RETURNDATACOPY
+    };
+
+    struct Create
+    {
+        std::uint8_t opcode;
+        uint8_t balancePct;
+        Constant offset;
+        Constant salt;
+        evmc::address address;
+        bool isTrivial; // sometimes just emit a simple CREATE/CREATE2
+    };
+
+    using Instruction = std::variant<
+        NonTerminator, Terminator, Push, Call, ReturnDataCopy, Create>;
+
     struct BasicBlockInfo
     {
         bool is_main;
@@ -220,9 +273,11 @@ namespace monad::vm::fuzzing
         bool is_jump_dest;
     };
 
-    struct Constant
-    {
-        runtime::uint256_t value;
+    struct BasicBlock {
+        bool is_main;
+        bool is_exit;
+        bool is_jump_dest;
+        std::vector<Instruction> instructions;
     };
 
     template <typename Engine>
@@ -467,8 +522,6 @@ namespace monad::vm::fuzzing
         return addr;
     }
 
-    using Push = std::variant<ValidAddress, ValidJumpDest, Constant>;
-
     template <typename Engine>
     Push generate_push(
         GeneratorFocus const &focus, Engine &eng,
@@ -531,19 +584,6 @@ namespace monad::vm::fuzzing
             generate_push(focus, eng, valid_addresses, {}, 0));
     }
 
-    struct Call
-    {
-        std::uint8_t opcode;
-        uint8_t gasPct;
-        uint8_t balancePct;
-        Constant argsOffset;
-        Constant argsSize;
-        Constant retOffset;
-        Constant retSize;
-        evmc::address address;
-        bool isTrivial;
-    };
-
     template <typename Engine>
     Call generate_call(
         Engine &eng, evmc_revision rev,
@@ -564,14 +604,6 @@ namespace monad::vm::fuzzing
         with_probability(eng, 0.05, [&](auto &) { r.isTrivial = true; });
         return r;
     }
-
-    struct ReturnDataCopy
-    {
-        Constant destOffset;
-        uint8_t sizePct; // percent of return data size
-        uint8_t offsetPct; // percent of return data size
-        bool isTrivial; // sometimes just emit a simple RETURNDATACOPY
-    };
 
     template <typename Engine>
     ReturnDataCopy generate_returndatacopy(Engine &eng)
@@ -598,16 +630,6 @@ namespace monad::vm::fuzzing
         return r;
     }
 
-    struct Create
-    {
-        std::uint8_t opcode;
-        uint8_t balancePct;
-        Constant offset;
-        Constant salt;
-        evmc::address address;
-        bool isTrivial; // sometimes just emit a simple CREATE/CREATE2
-    };
-
     template <typename Engine>
     Create generate_create(
         Engine &eng, evmc_revision rev,
@@ -633,21 +655,6 @@ namespace monad::vm::fuzzing
         with_probability(eng, 0.05, [&](auto &) { r.isTrivial = true; });
         return r;
     }
-
-    struct NonTerminator
-    {
-        std::uint8_t opcode;
-        std::vector<std::pair<std::uint8_t, Constant>> opnds = {};
-    };
-
-    struct Terminator
-    {
-        std::uint8_t opcode;
-        std::vector<std::pair<std::uint8_t, Constant>> opnds = {};
-    };
-
-    using Instruction = std::variant<
-        NonTerminator, Terminator, Push, Call, ReturnDataCopy, Create>;
 
     template <typename Engine>
     NonTerminator
@@ -1105,12 +1112,10 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
-    std::vector<std::uint8_t> generate_program(
+    std::vector<BasicBlock> generate_basic_blocks(
         GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
         std::vector<evmc::address> const &valid_addresses)
     {
-        auto prog = std::vector<std::uint8_t>{};
-
         auto const block_dist_p = discrete_choice<double>(
             eng,
             [&focus](auto &) { return focus.block_dist_p1; },
@@ -1143,8 +1148,7 @@ namespace monad::vm::fuzzing
             blocks.push_back(BasicBlockInfo{is_main, is_exit, is_jump_dest});
         }
 
-        auto jumpdest_patches = std::vector<std::pair<std::size_t, BlockIx>>{};
-        auto block_offsets = std::vector<std::uint32_t>{};
+        auto contract = std::vector<BasicBlock>{};
 
         for (auto block_ix = 0u; block_ix < blocks.size(); ++block_ix) {
             auto const &block = blocks[block_ix];
@@ -1156,13 +1160,37 @@ namespace monad::vm::fuzzing
                 jumpdest_blocks,
                 block,
                 block_ix);
-
-            compile_block(
-                prog, block_instructions, jumpdest_patches, block_offsets);
+            contract.push_back(BasicBlock{
+                .is_main = block.is_main,
+                .is_exit = block.is_exit,
+                .is_jump_dest = block.is_jump_dest,
+                .instructions = block_instructions,
+            });
         }
 
+        return contract;
+    }
+
+    std::vector<std::uint8_t> compile_program(std::vector<BasicBlock> basic_blocks) {
+        auto prog = std::vector<std::uint8_t>{};
+        auto jumpdest_patches = std::vector<std::pair<std::size_t, BlockIx>>{};
+        auto block_offsets = std::vector<std::uint32_t>{};
+
+        for (auto const &b : basic_blocks) {
+            compile_block(prog, b.instructions, jumpdest_patches, block_offsets);
+        }
         patch_jumpdests(prog, jumpdest_patches, block_offsets);
         return prog;
+    }
+
+    template <typename Engine>
+    std::vector<std::uint8_t> generate_program(
+        GeneratorFocus focus, Engine &eng, evmc_revision rev,
+        std::vector<evmc::address> const &valid_addresses)
+    {
+        auto basic_blocks = generate_basic_blocks(
+            focus, eng, rev, valid_addresses);
+        return compile_program(std::move(basic_blocks));
     }
 
     template <typename Engine, typename LookupFunc>

@@ -40,12 +40,11 @@ done
 mapfile -t inputs < <(\
   find \
     category/vm \
-    \( -name '*.cpp' -or -name '*.c' \) \
-    -and -not -path '*third_party*')
+    \( -name '*.cpp' -or -name '*.c' \))
 
 "${RUN_CLANG_TIDY}"                               \
   "${inputs[@]}"                                  \
-  -header-filter "category/vm/.*"                \
+  -header-filter "category/.*"                \
   -j "$(nproc)"                                   \
   -p "${BUILD_DIR}" "$@"                          \
   -extra-arg='-Wno-unknown-warning-option'        \

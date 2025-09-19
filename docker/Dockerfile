@@ -66,17 +66,18 @@ RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On -DMONAD_COMPILER_LLVM=On
 RUN cd src && ./scripts/vm/build-tests.sh
 RUN cd src && SKIP_LLVM_TESTS=${SKIP_LLVM_TESTS:?} ./scripts/vm/test.sh
 
-FROM base AS vm_code_quality
+FROM base AS code_quality
 
 COPY . src
 
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build           \
+  -DMONAD_COMPILER_BENCHMARKS=On  \
   -DMONAD_COMPILER_LLVM=On        \
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_C_COMPILER=clang-19     \
   -DCMAKE_CXX_COMPILER=clang++-19
 
-RUN cd src && ./scripts/vm/check-clang-tidy.sh
+RUN cd src && ./scripts/check-clang-tidy.sh
 
 FROM base AS vm_fuzz
 

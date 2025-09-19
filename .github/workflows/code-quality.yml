@@ -11,7 +11,7 @@ concurrency:
 jobs:
   formatting-check:
     name: Check clang-format
-    runs-on: ubuntu-24.04-32
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -20,3 +20,54 @@ jobs:
         with:
           clang-format-version: 19
           include-regex: './(category|cmd|test)/.*\.(cpp|hpp|c|h)'
+
+  clang-tidy:
+    name: Check clang-tidy
+    runs-on: ubuntu-24.04-32
+    steps:
+        - name: Generate token
+          id: generate_token
+          uses: tibdex/github-app-token@v2
+          with:
+            app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+            private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+            # Limit permissions to what we need (these need to be
+            # configured in the app settings as well).
+            permissions: >-
+              {"contents": "read"}
+
+        - name: Tell git to do submodules in parallel
+          run: |
+            git config --global submodule.fetchJobs "$(nproc)"
+
+        - uses: actions/checkout@v4
+          with:
+            submodules: recursive
+            token: ${{ steps.generate_token.outputs.token }}
+
+        - uses: actions/checkout@v5
+          with:
+            repository: category-labs/evmone
+            token: ${{ steps.generate_token.outputs.token }}
+            ref: v0.15.0-category
+            path: third_party/evmone
+
+        - name: Setup Docker Buildx
+          uses: docker/setup-buildx-action@v3
+
+        - name: Build `base` stage
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            file: docker/Dockerfile
+            target: base
+            cache-from: type=gha,scope=base
+            cache-to: type=gha,scope=base,mode=max
+
+        - name: Build `code_quality` stage
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            file: docker/Dockerfile
+            target: code_quality
+            cache-from: type=gha,scope=base

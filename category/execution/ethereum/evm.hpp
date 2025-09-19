@@ -36,8 +36,9 @@ evmc::Result deploy_contract_code(
     State &, Address const &, evmc::Result, size_t max_code_size) noexcept;
 
 template <Traits traits>
-evmc::Result
-create(EvmcHost<traits> *, State &, evmc_message const &, size_t max_code_size);
+evmc::Result create(
+    EvmcHost<traits> *, State &, evmc_message const &, size_t max_code_size,
+    std::function<bool()> const &revert_transaction = [] { return false; });
 
 template <Traits traits>
 evmc::Result call(

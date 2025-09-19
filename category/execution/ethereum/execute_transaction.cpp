@@ -338,7 +338,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_,
         call_tracer_,
         tx_context,
-        block_hash_buffer_,
+        &block_hash_buffer_,
         state,
         chain_.get_max_code_size(header_.number, header_.timestamp),
         chain_.get_max_initcode_size(header_.number, header_.timestamp),

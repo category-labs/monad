@@ -16,6 +16,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -1523,4 +1524,231 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, read_block_hash_buffer)
+{
+    byte_string const bytecode = from_hex("0x5f35405f5260205ff3");
+    bytes32_t const code_hash = to_bytes(keccak256(bytecode));
+    auto const icode = monad::vm::make_shared_intercode(bytecode);
+
+    static constexpr auto CONTRACT_THAT_USES_BLOCKHASH_ADDR =
+        0x000000000000000000000000000000000000FFFF_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {CONTRACT_THAT_USES_BLOCKHASH_ADDR,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{.number = 0});
+
+    // Create 255 more blocks to have a history of 256 blocks
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    ASSERT_TRUE(
+        tdb.read_account(CONTRACT_THAT_USES_BLOCKHASH_ADDR).has_value());
+    ASSERT_TRUE(
+        tdb.read_account(CONTRACT_THAT_USES_BLOCKHASH_ADDR).value().code_hash ==
+        code_hash);
+    ASSERT_TRUE(tdb.read_code(code_hash) != nullptr);
+
+    auto const call =
+        [&](uint64_t block_number,
+            uint64_t current_block_number,
+            bytes32_t &out_result,
+            Address from =
+                0x000000000000000000000000000000000000AAAA_address) -> void {
+        auto const calldata = to_bytes(to_big_endian(uint256_t{block_number}));
+        byte_string const tx_data{calldata.bytes, sizeof(bytes32_t)};
+
+        Transaction tx{
+            .gas_limit = 100'000'000u,
+            .to = std::make_optional(CONTRACT_THAT_USES_BLOCKHASH_ADDR),
+            .data = tx_data};
+        BlockHeader header{.number = current_block_number};
+
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(from)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        auto executor = monad_eth_call_executor_create(
+            1,
+            1,
+            node_lru_max_mem,
+            max_timeout,
+            max_timeout,
+            dbname.string().c_str());
+
+        auto state_override = monad_state_override_create();
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        f.get();
+
+        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(ctx.result->output_data_len, 32);
+        memcpy(out_result.bytes, ctx.result->output_data, 32);
+
+        monad_state_override_destroy(state_override);
+        monad_eth_call_executor_destroy(executor);
+    };
+
+    auto const parent_hash = [&](uint64_t block_number) -> bytes32_t {
+        MONAD_ASSERT(block_number > 0);
+        auto const parent_header_encoded = db.get(
+            mpt::concat(monad::finalized_nibbles, monad::BLOCKHEADER_NIBBLE),
+            block_number);
+        MONAD_ASSERT(parent_header_encoded.has_value());
+        return to_bytes(keccak256(parent_header_encoded.value()));
+    };
+
+    std::vector<uint64_t> const read_blocks{1, 79, 112, 189, 250};
+
+    for (uint64_t const i : read_blocks) {
+        bytes32_t result;
+        call(i, 255, result);
+        ASSERT_EQ(result, parent_hash(i));
+    }
+}
+
+TEST_F(EthCallFixture, read_block_hash_history)
+{
+    byte_string const bytecode = from_hex("0x5f35405f5260205ff3");
+    bytes32_t const code_hash = to_bytes(keccak256(bytecode));
+    auto const icode = monad::vm::make_shared_intercode(bytecode);
+
+    static constexpr auto CONTRACT_THAT_USES_BLOCKHASH_ADDR =
+        0x000000000000000000000000000000000000FFFF_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {CONTRACT_THAT_USES_BLOCKHASH_ADDR,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{.number = 0});
+
+    // Create 255 more blocks to have a history of 256 blocks
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    byte_string const history_bytecode =
+        from_hex("0x3373fffffffffffffffffffffffffffffffffffffffe146046576020360"
+                 "36042575f35600143038111604257611fff81430311604257611fff900654"
+                 "5f5260205ff35b5f5ffd5b5f35611fff60014303065500");
+    bytes32_t const history_code_hash = to_bytes(keccak256(history_bytecode));
+    auto const history_icode =
+        monad::vm::make_shared_intercode(history_bytecode);
+    auto const hist_acc = Account{.code_hash = history_code_hash};
+    // Fill the history contract storage
+    StorageDeltas storage_deltas{};
+    for (uint64_t i = 1; i < BLOCK_HISTORY_LENGTH + 1; ++i) {
+        storage_deltas.insert(
+            {to_bytes(to_big_endian(uint256_t{i})),
+             {bytes32_t{}, to_bytes(uint256_t{i})}});
+    }
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {BLOCK_HISTORY_ADDRESS,
+             StateDelta{
+                 .account = {std::nullopt, hist_acc},
+                 .storage = storage_deltas,
+             }}},
+        {{history_code_hash, history_icode}},
+        BlockHeader{.number = 256});
+
+    auto const call =
+        [&](uint64_t block_number,
+            uint64_t current_block_number,
+            bytes32_t &out_result,
+            Address from =
+                0x000000000000000000000000000000000000AAAA_address) -> void {
+        auto const calldata = to_bytes(to_big_endian(uint256_t{block_number}));
+        byte_string const tx_data{calldata.bytes, sizeof(bytes32_t)};
+
+        Transaction tx{
+            .gas_limit = 100'000'000u,
+            .to = std::make_optional(CONTRACT_THAT_USES_BLOCKHASH_ADDR),
+            .data = tx_data};
+        BlockHeader header{.number = current_block_number};
+
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(from)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        auto executor = monad_eth_call_executor_create(
+            1,
+            1,
+            node_lru_max_mem,
+            max_timeout,
+            max_timeout,
+            dbname.string().c_str());
+
+        auto state_override = monad_state_override_create();
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        f.get();
+
+        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(ctx.result->output_data_len, 32);
+        memcpy(out_result.bytes, ctx.result->output_data, 32);
+
+        monad_state_override_destroy(state_override);
+        monad_eth_call_executor_destroy(executor);
+    };
+
+    std::vector<uint64_t> const read_blocks{1, 79, 112, 189, 250};
+
+    for (uint64_t const i : read_blocks) {
+        bytes32_t result;
+        call(i, 256, result);
+        ASSERT_EQ(result, to_bytes(uint256_t{i}));
+    }
 }

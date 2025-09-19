@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -35,7 +36,7 @@ MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
     Chain const &chain, CallTracerBase &call_tracer,
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
+    evmc_tx_context const &tx_context, BlockHashBuffer const *block_hash_buffer,
     State &state, size_t const max_code_size, size_t const max_initcode_size,
     std::function<bool()> const &revert_transaction) noexcept
     : block_hash_buffer_{block_hash_buffer}
@@ -141,8 +142,9 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
             block_hash != bytes32_t{}) {
             return block_hash;
         }
+        MONAD_ASSERT_THROW(block_hash_buffer_, "unable to get block hash");
         bytes32_t const block_hash =
-            block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+            block_hash_buffer_->get(static_cast<uint64_t>(block_number));
         MONAD_ASSERT(block_hash != bytes32_t{});
         return block_hash;
     }

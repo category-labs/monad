@@ -30,13 +30,13 @@
 	path = third_party/ethash
 	url = https://github.com/chfast/ethash.git
 [submodule "core/third_party/nanobench"]
-	path = category/core/third_party/nanobench
+	path = third_party/nanobench
 	url = https://github.com/martinus/nanobench.git
 [submodule "core/third_party/nlohmann_json"]
-	path = category/core/third_party/nlohmann_json
+	path = third_party/nlohmann_json
 	url = https://github.com/nlohmann/json.git
 [submodule "core/third_party/unordered_dense"]
-	path = category/core/third_party/unordered_dense
+	path = third_party/unordered_dense
 	url = https://github.com/martinus/unordered_dense.git
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3

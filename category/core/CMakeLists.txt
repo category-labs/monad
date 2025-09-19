@@ -61,14 +61,6 @@ function(check_if_boost_fiber_needs_ucontext_macro)
 endfunction()
 check_if_boost_fiber_needs_ucontext_macro()
 
-find_package(TBB REQUIRED)
-
-add_subdirectory("third_party/nanobench")
-
-add_subdirectory("third_party/nlohmann_json" SYSTEM)
-
-add_subdirectory("third_party/unordered_dense")
-
 # ##############################################################################
 # libs
 # ##############################################################################
@@ -179,7 +171,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "procfs/statm.h")
 endif()
 
-target_include_directories(monad_core PRIVATE "third_party/openssl")
+target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   target_sources(monad_core PRIVATE "keccak_impl.S")
 else()
@@ -204,6 +196,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
+target_link_libraries(monad_core PUBLIC ankerl_hash)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)

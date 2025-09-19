@@ -105,6 +105,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 
+# ankerl
+add_library(ankerl_hash INTERFACE)
+target_include_directories(ankerl_hash INTERFACE "third_party/ankerl")
+
 # asmjit
 set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
@@ -158,6 +162,12 @@ if(MONAD_COMPILER_LLVM)
   add_definitions(-DMONAD_COMPILER_LLVM)
 endif()
 
+# nanobench
+add_subdirectory("third_party/nanobench")
+
+# nlohmann_json
+add_subdirectory("third_party/nlohmann_json" SYSTEM)
+
 # quill
 add_subdirectory("third_party/quill")
 # TODO
@@ -182,6 +192,9 @@ find_package(TBB REQUIRED)
 add_library(thread_safe_lru INTERFACE)
 target_include_directories(thread_safe_lru
                            INTERFACE "third_party/thread-safe-lru")
+
+# unordered_dense
+add_subdirectory("third_party/unordered_dense")
 
 # ##############################################################################
 # unit tests

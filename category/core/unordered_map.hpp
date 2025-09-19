@@ -17,7 +17,7 @@
 
 #include <category/core/config.hpp>
 
-#include "../../../third_party/ankerl/robin_hood.h"
+#include "robin_hood.h"
 
 #include <ankerl/unordered_dense.h>
 

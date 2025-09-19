@@ -31,6 +31,7 @@ namespace detail
         return {{((void)Is, T{std::forward<Args>(args)...})...}};
     }
 }
+
 /*! \brief Return a `std::array<T, N>` with each item constructed
 from `args...`. Supports immovable types.
 */

@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 
 #include <deque>
 #include <utility>

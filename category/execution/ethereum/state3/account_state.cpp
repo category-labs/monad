@@ -15,8 +15,8 @@
 
 #include <category/execution/ethereum/state3/account_state.hpp>
 
-#include <category/core/config.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 
 #include <evmc/evmc.h>
 

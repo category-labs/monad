@@ -49,7 +49,7 @@ static inline void spinlock_lock(spinlock_t *const lock)
          * - if weak cmpxch fails, spin again or cpu relax?
          * - compare intel vs arm
          * - benchmark with real use cases
-        */
+         */
         unsigned retries = 0;
         while (
             MONAD_UNLIKELY(atomic_load_explicit(lock, memory_order_relaxed))) {

@@ -25,8 +25,8 @@
 #include <utility>
 
 #ifdef ENABLE_EVENT_TRACING
-    #include <category/core/likely.h>
     #include <category/core/fiber/priority_properties.hpp>
+    #include <category/core/likely.h>
 
     #include <boost/fiber/operations.hpp>
 

@@ -16,13 +16,13 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
-#include <cstddef>
-#include <memory>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex_literal.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
+#include <cstddef>
+#include <memory>
 
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 

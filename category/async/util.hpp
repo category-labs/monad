@@ -34,6 +34,7 @@ inline constexpr T round_up_align(T const x) noexcept
     constexpr T mask = (T(1) << bits) - 1;
     return (x + mask) & ~mask;
 }
+
 template <unsigned bits>
 inline constexpr chunk_offset_t round_up_align(chunk_offset_t x) noexcept
 {
@@ -48,6 +49,7 @@ inline constexpr T round_down_align(T const x) noexcept
     constexpr T mask = ~((T(1) << bits) - 1);
     return x & mask;
 }
+
 template <unsigned bits>
 inline constexpr chunk_offset_t round_down_align(chunk_offset_t x) noexcept
 {
@@ -57,7 +59,7 @@ inline constexpr chunk_offset_t round_down_align(chunk_offset_t x) noexcept
 }
 
 //! Returns a temporary directory in which `O_DIRECT` files definitely work
-extern const std::filesystem::path &working_temporary_directory();
+extern std::filesystem::path const &working_temporary_directory();
 
 //! Creates already deleted file so no need to clean it up
 //! after

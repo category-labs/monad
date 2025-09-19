@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 
 #include <evmc/evmc.h>
 

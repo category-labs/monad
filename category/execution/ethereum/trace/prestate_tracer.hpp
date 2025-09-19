@@ -71,7 +71,8 @@ namespace trace
         std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
     void run_tracer(StateTracer const &tracer, State &state);
 
-    nlohmann::json state_to_json(Map<Address, OriginalAccountState> const &, State &);
+    nlohmann::json
+    state_to_json(Map<Address, OriginalAccountState> const &, State &);
     void state_to_json(
         Map<Address, OriginalAccountState> const &, State &, nlohmann::json &);
     nlohmann::json state_deltas_to_json(StateDeltas const &, State &);

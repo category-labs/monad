@@ -14,10 +14,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -44,7 +44,7 @@ namespace
         0x59fb7853eb21f604d010b94c123acbeae621f09ce15ee5d7616485b1e78a72e9_bytes32;
     constexpr auto key6 =
         0x8d8ebb65ec00cb973d4fe086a607728fd1b9de14aa48208381eed9592f0dee9a_bytes32;
-    constexpr auto key7 = 
+    constexpr auto key7 =
         0xff896b09014882056009dedb136458f017fcef9a4729467d0d00b4fd413fb1f1_bytes32;
     constexpr auto value1 =
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32;
@@ -56,11 +56,11 @@ namespace
         0x000000000000000000000000000000000000000000000000000000000024aea6_bytes32;
     constexpr auto value5 =
         0x00000000000000c42b56a52aedf18667c8ae258a0280a8912641c80c48cd9548_bytes32;
-    constexpr auto value6 = 
+    constexpr auto value6 =
         0x00000000000000784ae4881e40b1f5ebb4437905fbb8a5914454123b0293b35f_bytes32;
-    constexpr auto value7 = 
+    constexpr auto value7 =
         0x000000000000000e78ac39cb1c20e9edc753623b153705d0ccc487e31f9d6749_bytes32;
-    
+
     constexpr auto addr1 = 0x0000000000000000000000000000000000000002_address;
     constexpr auto addr2 = 0x008b3b2f992c0e14edaa6e2c662bec549caa8df1_address;
     constexpr auto addr3 = 0x35a9f94af726f07b5162df7e828cc9dc8439e7d0_address;
@@ -125,11 +125,7 @@ TEST(PrestateTracer, zero_nonce)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(
-        tdb,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -156,12 +152,12 @@ TEST(PrestateTracer, state_deltas_to_json)
 
     StateDeltas state_deltas{
         {ADDR_A,
-            StateDelta{
-                .account = {std::nullopt, a},
-                .storage = {
-                    {key1, {bytes32_t{}, value1}},
-                    {key2, {bytes32_t{}, value1}},
-    }}}};
+         StateDelta{
+             .account = {std::nullopt, a},
+             .storage = {
+                 {key1, {bytes32_t{}, value1}},
+                 {key2, {bytes32_t{}, value1}},
+             }}}};
 
     commit_sequential(
         tdb,
@@ -192,7 +188,8 @@ TEST(PrestateTracer, state_deltas_to_json)
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_account_creation) {
+TEST(PrestateTracer, statediff_account_creation)
+{
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
 
     InMemoryMachine machine;
@@ -201,10 +198,7 @@ TEST(PrestateTracer, statediff_account_creation) {
     vm::VM vm;
 
     StateDeltas state_deltas{
-        {ADDR_A,
-         StateDelta{
-             .account = {std::nullopt, a},
-             .storage = {}}}};
+        {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}};
 
     commit_sequential(
         tdb,
@@ -231,11 +225,12 @@ TEST(PrestateTracer, statediff_account_creation) {
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_balance_nonce_update) {
+TEST(PrestateTracer, statediff_balance_nonce_update)
+{
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
     Account b = a;
     b.nonce += 1;
-    b.balance -= 100;   
+    b.balance -= 100;
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -243,10 +238,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update) {
     vm::VM vm;
 
     StateDeltas state_deltas{
-        {ADDR_A,
-         StateDelta{
-             .account = {a, b},
-             .storage = {}}}};
+        {ADDR_A, StateDelta{.account = {a, b}, .storage = {}}}};
 
     commit_sequential(
         tdb,
@@ -278,11 +270,12 @@ TEST(PrestateTracer, statediff_balance_nonce_update) {
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_delete_storage) {
+TEST(PrestateTracer, statediff_delete_storage)
+{
     Account const a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
     Account b = a;
     b.nonce += 1;
-    b.balance -= 100;   
+    b.balance -= 100;
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -292,30 +285,20 @@ TEST(PrestateTracer, statediff_delete_storage) {
     StateDeltas state_deltas1{
         {ADDR_A,
          StateDelta{
-             .account = {a, b},
-             .storage = {
-                {key1, {bytes32_t{}, value1}}
-             }}}};
-    
+             .account = {a, b}, .storage = {{key1, {bytes32_t{}, value1}}}}}};
+
     StateDeltas state_deltas2{
         {ADDR_A,
          StateDelta{
-             .account = {a, b},
-             .storage = {
-                {key1, {value1, bytes32_t{}}}
-             }}}};
+             .account = {a, b}, .storage = {{key1, {value1, bytes32_t{}}}}}}};
 
     commit_sequential(
         tdb,
         state_deltas1,
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
-    
-    commit_sequential(
-        tdb,
-        state_deltas2,
-        Code{},
-        BlockHeader{.number = 1});
+
+    commit_sequential(tdb, state_deltas2, Code{}, BlockHeader{.number = 1});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -341,12 +324,14 @@ TEST(PrestateTracer, statediff_delete_storage) {
     })";
 
     EXPECT_EQ(
-        state_deltas_to_json(state_deltas2, s), nlohmann::json::parse(json_str));
+        state_deltas_to_json(state_deltas2, s),
+        nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_multiple_fields_update) {
+TEST(PrestateTracer, statediff_multiple_fields_update)
+{
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
-    Account b{.balance = 42,  .code_hash = B_CODE_HASH, .nonce = 2};
+    Account b{.balance = 42, .code_hash = B_CODE_HASH, .nonce = 2};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -355,23 +340,19 @@ TEST(PrestateTracer, statediff_multiple_fields_update) {
 
     StateDeltas state_deltas{
         {ADDR_A,
-            StateDelta{
-                .account = {a, b},
-                .storage = {
-                    {key1, {value1, value2}},
-                    {key2, {value2, value3}},
-                }
-            }
-        },
+         StateDelta{
+             .account = {a, b},
+             .storage =
+                 {
+                     {key1, {value1, value2}},
+                     {key2, {value2, value3}},
+                 }}},
     };
 
     commit_sequential(
         tdb,
         state_deltas,
-        Code{
-            {A_CODE_HASH, A_ICODE},
-            {B_CODE_HASH, B_ICODE}
-        },
+        Code{{A_CODE_HASH, A_ICODE}, {B_CODE_HASH, B_ICODE}},
         BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
@@ -407,7 +388,8 @@ TEST(PrestateTracer, statediff_multiple_fields_update) {
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_account_deletion) {
+TEST(PrestateTracer, statediff_account_deletion)
+{
     Account a{.balance = 32, .code_hash = NULL_HASH, .nonce = 1};
 
     InMemoryMachine machine;
@@ -416,34 +398,16 @@ TEST(PrestateTracer, statediff_account_deletion) {
     vm::VM vm;
 
     StateDeltas state_deltas1{
-        {ADDR_A,
-            StateDelta{
-                .account = {std::nullopt, a},
-                .storage = {}
-            }
-        },
+        {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}},
     };
 
-    commit_sequential(
-        tdb,
-        state_deltas1,
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(tdb, state_deltas1, Code{}, BlockHeader{.number = 0});
 
     StateDeltas state_deltas2{
-        {ADDR_A,
-            StateDelta{
-                .account = {a, std::nullopt},
-                .storage = {}
-            }
-        },
+        {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}},
     };
 
-    commit_sequential(
-        tdb,
-        state_deltas2,
-        Code{},
-        BlockHeader{.number = 1});
+    commit_sequential(tdb, state_deltas2, Code{}, BlockHeader{.number = 1});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -461,10 +425,12 @@ TEST(PrestateTracer, statediff_account_deletion) {
     })";
 
     EXPECT_EQ(
-        state_deltas_to_json(state_deltas2, s), nlohmann::json::parse(json_str));
+        state_deltas_to_json(state_deltas2, s),
+        nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, geth_example_prestate) {
+TEST(PrestateTracer, geth_example_prestate)
+{
     // The only difference between this test and the Geth prestate tracer
     // example is the code/codehash. Here we use one from our test resources,
     // because the code in the Geth example is truncated.
@@ -475,13 +441,19 @@ TEST(PrestateTracer, geth_example_prestate) {
     as.storage_.emplace(key6, value6);
     as.storage_.emplace(key7, value7);
 
-    Account const b{.balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
+    Account const b{
+        .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
     OriginalAccountState bs{b};
-    Account const c{.balance = monad::vm::runtime::uint256_t::from_string("0x2638035a26d133809").as_intx(), .code_hash = NULL_HASH, .nonce = 0};
+    Account const c{
+        .balance =
+            monad::vm::runtime::uint256_t::from_string("0x2638035a26d133809")
+                .as_intx(),
+        .code_hash = NULL_HASH,
+        .nonce = 0};
     OriginalAccountState cs{c};
     Account const d{.balance = 0x0, .code_hash = NULL_HASH, .nonce = 0};
     OriginalAccountState ds{d};
-    
+
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(addr1, ds);
     prestate.emplace(addr2, cs);
@@ -531,18 +503,16 @@ TEST(PrestateTracer, geth_example_prestate) {
     EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, geth_example_statediff) {
-    Account const a{.balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1134};
-    Account const b{.balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1135};
-    
+TEST(PrestateTracer, geth_example_statediff)
+{
+    Account const a{
+        .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1134};
+    Account const b{
+        .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1135};
+
     StateDeltas state_deltas{
-            {addr3,
-                StateDelta{
-                    .account = {a, b},
-                    .storage = {}
-                }
-            },
-        };
+        {addr3, StateDelta{.account = {a, b}, .storage = {}}},
+    };
 
     // The State setup is only used to get code
     InMemoryMachine machine;
@@ -550,11 +520,7 @@ TEST(PrestateTracer, geth_example_statediff) {
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(
-        tdb,
-        state_deltas,
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
     BlockState bs0(tdb, vm);
     State s(bs0, Incarnation{0, 0});
@@ -574,10 +540,12 @@ TEST(PrestateTracer, geth_example_statediff) {
         }
     })";
 
-    EXPECT_EQ(state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, prestate_empty) {    
+TEST(PrestateTracer, prestate_empty)
+{
     trace::Map<Address, OriginalAccountState> prestate{};
 
     // The State setup is only used to get code
@@ -586,11 +554,7 @@ TEST(PrestateTracer, prestate_empty) {
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(
-        tdb,
-        {},
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(tdb, {}, Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -600,7 +564,8 @@ TEST(PrestateTracer, prestate_empty) {
     EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
 }
 
-TEST(PrestateTracer, statediff_empty) {    
+TEST(PrestateTracer, statediff_empty)
+{
     StateDeltas state_deltas{};
 
     // The State setup is only used to get code
@@ -609,11 +574,7 @@ TEST(PrestateTracer, statediff_empty) {
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(
-        tdb,
-        state_deltas,
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -626,5 +587,6 @@ TEST(PrestateTracer, statediff_empty) {
         }
     })";
 
-    EXPECT_EQ(state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }

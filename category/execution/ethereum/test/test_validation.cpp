@@ -256,7 +256,8 @@ TEST(Validation, invalid_gas_limit)
 {
     static BlockHeader const header{.gas_limit = 1000, .gas_used = 500};
 
-    auto const result = static_validate_header<EvmTraits<EVMC_SHANGHAI>>(header);
+    auto const result =
+        static_validate_header<EvmTraits<EVMC_SHANGHAI>>(header);
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
@@ -283,7 +284,8 @@ TEST(Validation, base_fee_per_gas_existence)
     static BlockHeader const header2{
         .gas_limit = 10000, .gas_used = 5000, .base_fee_per_gas = std::nullopt};
 
-    auto const result2 = static_validate_header<EvmTraits<EVMC_LONDON>>(header2);
+    auto const result2 =
+        static_validate_header<EvmTraits<EVMC_LONDON>>(header2);
     EXPECT_EQ(result2.error(), BlockError::MissingField);
 }
 

@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/core/basic_formatter.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>

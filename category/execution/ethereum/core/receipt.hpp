@@ -15,10 +15,10 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 
 MONAD_NAMESPACE_BEGIN

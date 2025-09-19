@@ -148,15 +148,14 @@ inline tnode_unique_ptr make_tnode(
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
     Node::UniquePtr old = {})
 {
-    return UpdateTNode::make(
-        UpdateTNode{
-            orig_mask,
-            parent,
-            branch,
-            path,
-            version,
-            opt_leaf_data,
-            std::move(old)});
+    return UpdateTNode::make(UpdateTNode{
+        orig_mask,
+        parent,
+        branch,
+        path,
+        version,
+        opt_leaf_data,
+        std::move(old)});
 }
 
 static_assert(sizeof(UpdateTNode) == 96);

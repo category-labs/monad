@@ -18,12 +18,12 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
+#include <category/core/rlp/encode.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/merkle/node_reference.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
-#include <category/core/rlp/encode.hpp>
 
 #include <cstddef>
 #include <cstring>

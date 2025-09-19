@@ -19,8 +19,8 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>

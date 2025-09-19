@@ -64,8 +64,8 @@ void record_block_qc(
     }
 }
 
-#define EXPLICIT_INSTANTIATE_QC_TEMPLATE(HEADER_TYPE) \
-template void record_block_qc<HEADER_TYPE>(HEADER_TYPE const &, uint64_t);
+#define EXPLICIT_INSTANTIATE_QC_TEMPLATE(HEADER_TYPE)                          \
+    template void record_block_qc<HEADER_TYPE>(HEADER_TYPE const &, uint64_t);
 
 EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV0);
 EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV1);

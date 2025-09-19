@@ -15,10 +15,10 @@
 
 #include <category/core/fiber/priority_algorithm.hpp>
 
-#include <category/core/likely.h>
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_queue.hpp>
+#include <category/core/likely.h>
 
 #include <boost/assert.hpp>
 #include <boost/fiber/context.hpp>

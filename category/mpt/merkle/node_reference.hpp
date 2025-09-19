@@ -17,8 +17,8 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
-#include <category/mpt/config.hpp>
 #include <category/core/rlp/encode.hpp>
+#include <category/mpt/config.hpp>
 
 #include <cstdint>
 #include <cstring>

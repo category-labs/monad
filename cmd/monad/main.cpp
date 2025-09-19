@@ -22,8 +22,8 @@
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
-#include <category/core/procfs/statm.h>
 #include <category/core/monad_exception.hpp>
+#include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>

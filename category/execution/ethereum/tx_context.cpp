@@ -19,9 +19,9 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/vm/evm/explicit_traits.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>

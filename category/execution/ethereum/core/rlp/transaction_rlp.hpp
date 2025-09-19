@@ -18,8 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 
 #include <vector>
 

@@ -17,9 +17,9 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 
 #include <vector>
 

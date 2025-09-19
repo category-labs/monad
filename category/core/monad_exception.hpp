@@ -30,11 +30,8 @@ class MonadException
 {
 public:
     MonadException(
-        char const *message,
-        char const *expr,
-        char const *function,
-        char const *file,
-        long line);
+        char const *message, char const *expr, char const *function,
+        char const *file, long line);
 
     ~MonadException();
 
@@ -68,7 +65,7 @@ MONAD_NAMESPACE_END
 
 /// Given `bool expr` and 'char const *message', throw
 /// `monad::MonadException` iff `expr` evaluates to `false`.
-#define MONAD_ASSERT_THROW(expr, message)                                             \
+#define MONAD_ASSERT_THROW(expr, message)                                      \
     if (MONAD_LIKELY(expr)) { /* likeliest */                                  \
     }                                                                          \
     else {                                                                     \

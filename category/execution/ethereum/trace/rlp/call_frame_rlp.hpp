@@ -17,8 +17,8 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 
 #include <span>
 #include <vector>

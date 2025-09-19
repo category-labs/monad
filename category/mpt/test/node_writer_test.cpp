@@ -16,10 +16,10 @@
 #include <category/core/assert.h>
 
 #include <category/async/config.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <cstddef>
 #include <cstdint>

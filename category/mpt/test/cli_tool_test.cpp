@@ -24,9 +24,9 @@
 #include <category/async/storage_pool.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <filesystem>
 #include <future>

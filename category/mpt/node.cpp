@@ -54,9 +54,8 @@ NodeBase::NodeBase(
     NibblesView const path, int64_t const version)
     : mask(mask)
     , path_nibble_index_end(path.end_nibble_)
-    , value_len(
-          static_cast<decltype(value_len)>(
-              value.transform(&byte_string_view::size).value_or(0)))
+    , value_len(static_cast<decltype(value_len)>(
+          value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_DEBUG_ASSERT(

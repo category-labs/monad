@@ -1,0 +1,22 @@
+name: Code Quality Checks
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formatting-check:
+    name: Check clang-format
+    runs-on: ubuntu-24.04-32
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Formatting Check
+        uses: jidicula/clang-format-action@v4.13.0
+        with:
+          clang-format-version: 19
+          include-regex: './(category|cmd|test)/.*\.(cpp|hpp|c|h)'

@@ -16,7 +16,7 @@
 #include <category/core/unordered_map.hpp>
 
 #include <category/core/config.hpp>
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp>  // NOLINT
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
 
@@ -84,15 +84,18 @@ template <size_t count>
 struct bytes
 {
     char v[count]{};
+
     bytes(uint32_t x) // NOLINT
     {
         memcpy(v, &x, sizeof(x));
     }
+
     bool operator==(bytes const &o) const noexcept
     {
         return 0 == memcmp(v, o.v, count);
     }
 };
+
 struct hasher
 {
     template <class T>
@@ -101,6 +104,7 @@ struct hasher
         return MONAD_NAMESPACE::hash_bytes(v.v, sizeof(v.v));
     }
 };
+
 template <class T>
 struct tag
 {
@@ -118,7 +122,7 @@ TEST(UnorderedSets, DISABLED_quick_comparative_benchmark)
     }
     auto do_test = [&](auto tag1, char const *desc) {
         using T = typename decltype(tag1)::type;
-        auto do_cont = [&](auto tag2, const char *desc2) {
+        auto do_cont = [&](auto tag2, char const *desc2) {
             using cont = typename decltype(tag2)::type;
             std::cout << "   Testing " << desc2 << " with " << desc << " ... "
                       << std::flush;
@@ -130,7 +134,7 @@ TEST(UnorderedSets, DISABLED_quick_comparative_benchmark)
                 }
                 for (size_t n = 0; n < 10; n++) {
                     for (auto i : values) {
-                        volatile auto it = c.find(i);
+                        auto volatile it = c.find(i);
                         (void)it;
                     }
                 }

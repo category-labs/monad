@@ -151,27 +151,26 @@ inline bool monad_exec_ring_block_id_matches(
 
     switch (event->event_type) {
     case MONAD_EXEC_BLOCK_START:
-        tag_matches = memcmp(
-                          block_id,
-                          &((struct monad_exec_block_start const *)payload)
-                              ->block_tag.id,
-                          sizeof *block_id) == 0;
-        break;
-
-    case MONAD_EXEC_BLOCK_QC:
-        tag_matches = memcmp(
-                          block_id,
-                          &((struct monad_exec_block_qc const *)payload)
-                              ->block_tag.id,
-                          sizeof *block_id) == 0;
-        break;
-
-    case MONAD_EXEC_BLOCK_FINALIZED:
         tag_matches =
             memcmp(
                 block_id,
-                &((struct monad_exec_block_tag const *)payload)->id,
+                &((struct monad_exec_block_start const *)payload)->block_tag.id,
                 sizeof *block_id) == 0;
+        break;
+
+    case MONAD_EXEC_BLOCK_QC:
+        tag_matches =
+            memcmp(
+                block_id,
+                &((struct monad_exec_block_qc const *)payload)->block_tag.id,
+                sizeof *block_id) == 0;
+        break;
+
+    case MONAD_EXEC_BLOCK_FINALIZED:
+        tag_matches = memcmp(
+                          block_id,
+                          &((struct monad_exec_block_tag const *)payload)->id,
+                          sizeof *block_id) == 0;
         break;
 
     default:

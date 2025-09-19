@@ -20,10 +20,10 @@
 #include <category/async/io_senders.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
-#include <category/core/small_prng.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/mem/huge_mem.hpp>
+#include <category/core/small_prng.hpp>
 
 #include <CLI/CLI.hpp>
 

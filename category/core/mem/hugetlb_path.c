@@ -26,8 +26,8 @@
 
 #include <category/core/cleanup.h>
 #include <category/core/format_err.h>
-#include <category/core/srcloc.h>
 #include <category/core/mem/hugetlb_path.h>
+#include <category/core/srcloc.h>
 
 thread_local char g_error_buf[PATH_MAX];
 

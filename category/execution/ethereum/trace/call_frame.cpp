@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/config.hpp>
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 

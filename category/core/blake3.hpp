@@ -15,8 +15,8 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 
 #include <blake3.h>
 #include <ethash/hash_types.hpp>

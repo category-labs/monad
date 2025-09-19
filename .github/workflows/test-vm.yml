@@ -185,12 +185,6 @@ jobs:
               ref: v0.15.0-category
               path: third_party/evmone
 
-          - name: Formatting Check
-            uses: jidicula/clang-format-action@v4.13.0
-            with:
-              check-path: category/vm
-              clang-format-version: 19
-
           - name: Setup Docker Buildx
             uses: docker/setup-buildx-action@v3
 

@@ -27,7 +27,8 @@ namespace monad::test
     template <class Base>
     struct AsyncTestFixture : public Base
     {
-        static constexpr size_t TEST_FILE_SIZE = 1024 * 1024;
+        static constexpr size_t TEST_FILE_SIZE =
+            static_cast<size_t>(1024 * 1024);
         static constexpr size_t MAX_CONCURRENCY = 4;
 
         struct shared_state_t

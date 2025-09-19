@@ -36,7 +36,6 @@
 #include <memory>
 #include <mutex>
 #include <span>
-#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -383,8 +382,8 @@ storage_pool::device storage_pool::make_device_(
     fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(stat.st_size));
     size_t total_size = 0;
     {
-        auto *const buffer = reinterpret_cast<std::byte *>(
-            aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 2));
+        auto *const buffer = reinterpret_cast<std::byte *>(aligned_alloc(
+            DISK_PAGE_SIZE, static_cast<size_t>(DISK_PAGE_SIZE * 2)));
         auto const unbuffer =
             make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const offset = round_down_align<DISK_PAGE_BITS>(
@@ -441,7 +440,7 @@ storage_pool::device storage_pool::make_device_(
             default:
                 abort();
             }
-            memset(buffer, 0, DISK_PAGE_SIZE * 2);
+            memset(buffer, 0, static_cast<size_t>(DISK_PAGE_SIZE * 2));
             MONAD_DEBUG_ASSERT(
                 chunk_capacity <= std::numeric_limits<uint32_t>::max());
             for (off_t offset2 = static_cast<off_t>(
@@ -866,7 +865,7 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
         MONAD_ABORT("zonefs support isn't implemented yet");
     }
     g.lock();
-    auto const ret2 = chunks_[which][id].chunk.lock();
+    auto ret2 = chunks_[which][id].chunk.lock();
     if (ret2) {
         return ret2;
     }

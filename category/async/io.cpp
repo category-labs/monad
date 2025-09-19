@@ -27,6 +27,8 @@
 #include <category/core/tl_tid.h>
 #include <category/core/unordered_map.hpp>
 
+#include <boost/outcome/try.hpp>
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -54,6 +56,7 @@
 #include <liburing/io_uring.h>
 #include <linux/ioprio.h>
 #include <poll.h>
+#include <sys/poll.h>
 #include <sys/resource.h> // for setrlimit
 #include <unistd.h>
 
@@ -591,7 +594,9 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
             }
             auto readed = ::read(
-                fds_.msgread, &state, sizeof(erased_connected_operation *));
+                fds_.msgread,
+                static_cast<void *>(&state),
+                sizeof(erased_connected_operation *));
             if (readed >= 0) {
                 MONAD_ASSERT(sizeof(erased_connected_operation *) == readed);
                 // Writes flushed in the submitting thread must be acquired now

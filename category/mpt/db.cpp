@@ -77,18 +77,17 @@ struct Db::Impl
 {
     virtual ~Impl() = default;
 
-    virtual Node::SharedPtr &root() = 0;
     virtual UpdateAux<> &aux() = 0;
-    virtual void upsert_fiber_blocking(
-        UpdateList &&, uint64_t, bool enable_compaction, bool can_write_to_fast,
-        bool write_root) = 0;
-    virtual void copy_trie_fiber_blocking(
-        uint64_t src_version, NibblesView src, uint64_t dest_version,
-        NibblesView dest, bool blocked_by_write = true) = 0;
+    virtual Node::SharedPtr upsert_fiber_blocking(
+        Node::SharedPtr, UpdateList &&, uint64_t, bool enable_compaction,
+        bool can_write_to_fast, bool write_root) = 0;
+    virtual Node::SharedPtr copy_trie_fiber_blocking(
+        Node::SharedPtr src_root, NibblesView src, Node::SharedPtr dest_root,
+        NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
-    virtual size_t prefetch_fiber_blocking() = 0;
-    virtual NodeCursor load_root_for_version(uint64_t version) = 0;
+    virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
+    virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
     virtual bool traverse_fiber_blocking(
         Node::SharedPtr, TraverseMachine &, uint64_t version,
@@ -168,20 +167,10 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
 class Db::ROOnDiskBlocking final : public Db::Impl
 {
     UpdateAux<> aux_;
-    chunk_offset_t last_loaded_root_offset_;
-    Node::SharedPtr root_;
 
 public:
     explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
         : aux_(&io_ctx.io)
-        , last_loaded_root_offset_{aux_.get_root_offset_at_version(
-              aux_.db_history_max_version())}
-        , root_{
-              last_loaded_root_offset_ == INVALID_OFFSET
-                  ? Node::SharedPtr{}
-                  : read_node_blocking(
-                        aux_, last_loaded_root_offset_,
-                        aux_.db_history_max_version())}
     {
     }
 
@@ -192,20 +181,15 @@ public:
         aux_.unset_io();
     }
 
-    virtual Node::SharedPtr &root() override
-    {
-        return root_;
-    }
-
     virtual UpdateAux<> &aux() override
     {
         return aux_;
     }
 
-    virtual void
-    upsert_fiber_blocking(UpdateList &&, uint64_t, bool, bool, bool) override
+    virtual Node::SharedPtr upsert_fiber_blocking(
+        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
@@ -229,18 +213,19 @@ public:
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
-    virtual size_t prefetch_fiber_blocking() override
+    virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
-    virtual void copy_trie_fiber_blocking(
-        uint64_t, NibblesView, uint64_t, NibblesView, bool) override
+    virtual Node::SharedPtr copy_trie_fiber_blocking(
+        Node::SharedPtr, NibblesView, Node::SharedPtr, NibblesView, uint64_t,
+        bool) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual size_t poll(bool const blocking, size_t const count) override
@@ -257,29 +242,25 @@ public:
             aux(), std::move(node), machine, version, concurrency_limit);
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t const version) override
+    virtual Node::SharedPtr
+    load_root_for_version(uint64_t const version) override
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
-            root_ = nullptr;
-            last_loaded_root_offset_ = root_offset;
-            return NodeCursor{};
+            return nullptr;
         }
-        if (last_loaded_root_offset_ != root_offset) {
-            last_loaded_root_offset_ = root_offset;
-            root_ = read_node_blocking(aux(), root_offset, version);
-        }
-        return NodeCursor{root_};
+
+        return read_node_blocking(aux(), root_offset, version);
     }
 
     virtual void update_finalized_version(uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual void update_verified_version(uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
     virtual uint64_t get_latest_finalized_version() const override
@@ -297,7 +278,6 @@ class Db::InMemory final : public Db::Impl
 {
     UpdateAux<> aux_;
     StateMachine &machine_;
-    Node::SharedPtr root_;
 
 public:
     explicit InMemory(StateMachine &machine)
@@ -306,26 +286,24 @@ public:
     {
     }
 
-    virtual Node::SharedPtr &root() override
-    {
-        return root_;
-    }
-
     virtual UpdateAux<> &aux() override
     {
         return aux_;
     }
 
-    virtual void upsert_fiber_blocking(
-        UpdateList &&list, uint64_t const version, bool, bool, bool) override
+    virtual Node::SharedPtr upsert_fiber_blocking(
+        Node::SharedPtr root, UpdateList &&list, uint64_t const version, bool,
+        bool, bool) override
     {
-        root_ = aux_.do_update(
-            std::move(root_), machine_, std::move(list), version, false);
+        return aux_.do_update(
+            std::move(root), machine_, std::move(list), version, false);
     }
 
-    virtual void copy_trie_fiber_blocking(
-        uint64_t, NibblesView, uint64_t, NibblesView, bool) override
+    virtual Node::SharedPtr copy_trie_fiber_blocking(
+        Node::SharedPtr, NibblesView, Node::SharedPtr, NibblesView, uint64_t,
+        bool) override
     {
+        MONAD_ABORT();
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
@@ -335,7 +313,7 @@ public:
         return find_blocking(aux(), root, key, version);
     }
 
-    virtual size_t prefetch_fiber_blocking() override
+    virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) override
     {
         return 0;
     }
@@ -354,12 +332,12 @@ public:
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
     {
-        MONAD_ABORT()
+        MONAD_ABORT();
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t) override
+    virtual Node::SharedPtr load_root_for_version(uint64_t) override
     {
-        return NodeCursor{root()};
+        return nullptr;
     }
 
     virtual void update_verified_version(uint64_t) override {}
@@ -394,13 +372,12 @@ struct OnDiskWithWorkerThreadImpl
     struct FiberCopyTrieRequest
     {
         threadsafe_boost_fibers_promise<Node::SharedPtr> *promise;
-        NodeCursor src_root;
+        Node::SharedPtr src_root;
         NibblesView src;
-        uint64_t src_version;
         Node::SharedPtr dest_root;
         NibblesView dest;
         uint64_t dest_version;
-        bool blocked_by_write;
+        bool write_root;
     };
 
     struct FiberLoadAllFromBlockRequest
@@ -671,13 +648,12 @@ struct OnDiskWithWorkerThreadImpl
                         req->promise = &upsert_promises.back();
                         auto root = copy_trie_to_dest(
                             aux,
-                            req->src_root,
+                            std::move(req->src_root),
                             req->src,
-                            req->src_version,
                             std::move(req->dest_root),
                             req->dest,
                             req->dest_version,
-                            req->blocked_by_write);
+                            req->write_root);
                         req->promise->set_value(std::move(root));
                     }
                     did_nothing = false;
@@ -802,32 +778,12 @@ class Db::RWOnDisk final
     StateMachine &machine_;
     bool const compaction_;
 
-    Node::SharedPtr root_;
-    uint64_t root_version_{INVALID_BLOCK_NUM};
-    uint64_t unflushed_version_{INVALID_BLOCK_NUM};
-
 public:
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
         : OnDiskWithWorkerThreadImpl(options)
         , machine_{machine}
         , compaction_(options.compaction)
-        , root_{[&] {
-            MONAD_ASSERT(aux_);
-            return aux_->get_latest_root_offset() != INVALID_OFFSET
-                       ? read_node_blocking(
-                             *aux_,
-                             aux_->get_latest_root_offset(),
-                             aux_->db_history_max_version())
-                       : Node::SharedPtr{};
-        }()}
-        , root_version_(aux_->db_history_max_version())
-        , unflushed_version_{INVALID_BLOCK_NUM}
     {
-    }
-
-    virtual Node::SharedPtr &root() override
-    {
-        return root_;
     }
 
     virtual UpdateAux<> &aux() override
@@ -860,36 +816,16 @@ public:
     }
 
     // threadsafe
-    virtual void upsert_fiber_blocking(
-        UpdateList &&updates, uint64_t const version,
+    virtual Node::SharedPtr upsert_fiber_blocking(
+        Node::SharedPtr root, UpdateList &&updates, uint64_t const version,
         bool const enable_compaction, bool const can_write_to_fast,
         bool const write_root) override
     {
-        if (unflushed_version_ != INVALID_BLOCK_NUM) {
-            if (unflushed_version_ != version) {
-                LOG_WARNING_CFORMAT(
-                    "Update version %lu while db hasn't flushed the last "
-                    "update on "
-                    "version %lu, the unflushed progress will be lost after "
-                    "this point",
-                    version,
-                    unflushed_version_);
-            }
-            if (write_root) {
-                unflushed_version_ = INVALID_BLOCK_NUM;
-            }
-        }
-        // reload root to handle out-of-order upserts
-        if (version != root_version_ &&
-            (version != root_version_ + 1 ||
-             aux().version_is_valid_ondisk(version))) {
-            load_root_for_version(version);
-        }
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberUpsertRequest{
             .promise = &promise,
-            .prev_root = root_,
+            .prev_root = std::move(root),
             .sm = machine_,
             .updates = std::move(updates),
             .version = version,
@@ -901,11 +837,7 @@ public:
             std::unique_lock const g(lock_);
             cond_.notify_one();
         }
-        root_ = fut.get();
-        root_version_ = version;
-        if (!write_root) {
-            unflushed_version_ = version;
-        }
+        return fut.get();
     }
 
     virtual void move_trie_version_fiber_blocking(
@@ -921,17 +853,15 @@ public:
             cond_.notify_one();
         }
         fut.get();
-        root_version_ = dest;
     }
 
     // threadsafe
-    virtual size_t prefetch_fiber_blocking() override
+    virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &root) override
     {
-        MONAD_ASSERT(root());
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberLoadAllFromBlockRequest{
-            .promise = &promise, .root = NodeCursor{root_}, .sm = machine_});
+            .promise = &promise, .root = NodeCursor{root}, .sm = machine_});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
@@ -967,69 +897,45 @@ public:
         return fut.get();
     }
 
-    virtual NodeCursor load_root_for_version(uint64_t const version) override
+    virtual Node::SharedPtr
+    load_root_for_version(uint64_t const version) override
     {
-        if (version != root_version_) {
-            if (!aux().version_is_valid_ondisk(version)) {
-                root_ = nullptr;
-                root_version_ = version;
-                return NodeCursor{};
-            }
-            threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
-            auto fut = promise.get_future();
-            comms_.enqueue(FiberLoadRootVersionRequest{
-                .promise = &promise, .version = version});
-            // promise is racily emptied after this point
-            if (worker_->sleeping.load(std::memory_order_acquire)) {
-                std::unique_lock const g(lock_);
-                cond_.notify_one();
-            }
-            root_ = fut.get();
-            root_version_ = version;
+        if (!aux().version_is_valid_ondisk(version)) {
+            return nullptr;
         }
-        return NodeCursor{root_};
-    }
-
-    virtual void copy_trie_fiber_blocking(
-        uint64_t const src_version, NibblesView const src,
-        uint64_t const dest_version, NibblesView const dest,
-        bool const blocked_by_write = true) override
-    {
-        if (src_version != root_version_) {
-            root_ = read_node_blocking(
-                aux(),
-                aux().get_root_offset_at_version(src_version),
-                src_version);
-            root_version_ = src_version;
-        }
-        Node::SharedPtr dest_root{};
-        if (src_version == dest_version) {
-            dest_root = root_;
-        }
-        else if (auto const root_offset =
-                     aux().get_root_offset_at_version(dest_version);
-                 root_offset != INVALID_OFFSET) {
-            dest_root = read_node_blocking(aux(), root_offset, dest_version);
-        }
-
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberCopyTrieRequest{
-            .promise = &promise,
-            .src_root = NodeCursor{root_},
-            .src = src,
-            .src_version = src_version,
-            .dest_root = dest_root,
-            .dest = dest,
-            .dest_version = dest_version,
-            .blocked_by_write = blocked_by_write});
+        comms_.enqueue(FiberLoadRootVersionRequest{
+            .promise = &promise, .version = version});
         // promise is racily emptied after this point
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
             cond_.notify_one();
         }
-        root_ = fut.get();
-        root_version_ = dest_version;
+        return fut.get();
+    }
+
+    virtual Node::SharedPtr copy_trie_fiber_blocking(
+        Node::SharedPtr src_root, NibblesView const src_prefix,
+        Node::SharedPtr dest_root, NibblesView const dest_prefix,
+        uint64_t const dest_version, bool const write_root = true) override
+    {
+        threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(FiberCopyTrieRequest{
+            .promise = &promise,
+            .src_root = std::move(src_root),
+            .src = src_prefix,
+            .dest_root = std::move(dest_root),
+            .dest = dest_prefix,
+            .dest_version = dest_version,
+            .write_root = write_root});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        return fut.get();
     }
 
     virtual void update_finalized_version(uint64_t const version) override
@@ -1201,62 +1107,29 @@ Result<NodeCursor> Db::find(
     return it;
 }
 
-NodeCursor Db::load_root_for_version(uint64_t const block_id) const
+Result<NodeCursor>
+Db::find(NibblesView const key, uint64_t const block_id) const
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(impl_->aux().is_on_disk());
+    auto root = impl_->load_root_for_version(block_id);
+    return find(NodeCursor{root}, key, block_id);
+}
+
+Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     return impl_->load_root_for_version(block_id);
 }
 
-Result<NodeCursor>
-Db::find(NibblesView const key, uint64_t const block_id) const
+Node::SharedPtr Db::upsert(
+    Node::SharedPtr root, UpdateList list, uint64_t const block_id,
+    bool const enable_compaction, bool const can_write_to_fast,
+    bool const write_root)
 {
     MONAD_ASSERT(impl_);
-    auto cursor = impl_->load_root_for_version(block_id);
-    return find(cursor, key, block_id);
-}
-
-Result<byte_string_view>
-Db::get(NibblesView const key, uint64_t const block_id) const
-{
-    auto res = find(key, block_id);
-    if (!res.has_value()) {
-        return DbError(res.error().value());
-    }
-    if (!res.value().node->has_value()) {
-        return DbError::key_not_found;
-    }
-    return res.value().node->value();
-}
-
-Result<byte_string_view> Db::get_data(
-    NodeCursor const &root, NibblesView const key,
-    uint64_t const block_id) const
-{
-    auto res = find(root, key, block_id);
-    if (!res.has_value()) {
-        return DbError(res.error().value());
-    }
-    MONAD_DEBUG_ASSERT(res.value().node != nullptr);
-    return res.value().node->data();
-}
-
-Result<byte_string_view>
-Db::get_data(NibblesView const key, uint64_t const block_id) const
-{
-    auto res = find(key, block_id);
-    if (!res.has_value()) {
-        return DbError(res.error().value());
-    }
-    MONAD_DEBUG_ASSERT(res.value().node != nullptr);
-    return res.value().node->data();
-}
-
-void Db::upsert(
-    UpdateList list, uint64_t const block_id, bool const enable_compaction,
-    bool const can_write_to_fast, bool const write_root)
-{
-    MONAD_ASSERT(impl_);
-    impl_->upsert_fiber_blocking(
+    return impl_->upsert_fiber_blocking(
+        std::move(root),
         std::move(list),
         block_id,
         enable_compaction,
@@ -1264,14 +1137,19 @@ void Db::upsert(
         write_root);
 }
 
-void Db::copy_trie(
-    uint64_t const src_version, NibblesView const src,
-    uint64_t const dest_version, NibblesView const dest,
-    bool const blocked_by_write)
+Node::SharedPtr Db::copy_trie(
+    Node::SharedPtr src_root, NibblesView const src_prefix,
+    Node::SharedPtr dest_root, NibblesView const dest_prefix,
+    uint64_t const dest_version, bool const write_root)
 {
     MONAD_ASSERT(impl_);
-    impl_->copy_trie_fiber_blocking(
-        src_version, src, dest_version, dest, blocked_by_write);
+    return impl_->copy_trie_fiber_blocking(
+        std::move(src_root),
+        src_prefix,
+        std::move(dest_root),
+        dest_prefix,
+        dest_version,
+        write_root);
 }
 
 void Db::move_trie_version_forward(uint64_t const src, uint64_t const dest)
@@ -1298,12 +1176,6 @@ bool Db::traverse_blocking(
     MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
         impl_->aux(), *cursor.node, machine, block_id);
-}
-
-NodeCursor Db::root() const noexcept
-{
-    MONAD_ASSERT(impl_);
-    return NodeCursor{impl_->root()};
 }
 
 void Db::update_finalized_version(uint64_t const version)
@@ -1352,32 +1224,25 @@ uint64_t Db::get_latest_voted_version() const
 uint64_t Db::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
-    if (impl_->aux().is_on_disk()) {
-        return impl_->aux().db_history_max_version();
-    }
-    else {
-        return impl_->root() ? 0 : INVALID_BLOCK_NUM;
-    }
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().db_history_max_version();
 }
 
 uint64_t Db::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
-    if (impl_->aux().is_on_disk()) {
-        return impl_->aux().db_history_min_valid_version();
-    }
-    else {
-        return impl_->root() ? 0 : INVALID_BLOCK_NUM;
-    }
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().db_history_min_valid_version();
 }
 
-size_t Db::prefetch()
+size_t Db::prefetch(Node::SharedPtr const &root)
 {
     MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
     if (get_latest_version() == INVALID_BLOCK_NUM) {
         return 0;
     }
-    return impl_->prefetch_fiber_blocking();
+    return impl_->prefetch_fiber_blocking(root);
 }
 
 size_t Db::poll(bool const blocking, size_t const count)
@@ -1625,7 +1490,7 @@ namespace detail
                 op_type = op_get_node2;
                 break;
             default:
-                MONAD_ABORT()
+                MONAD_ABORT();
             }
             return async::sender_errc::operation_must_be_reinitiated;
         }
@@ -1634,7 +1499,7 @@ namespace detail
         case op_t::op_get_node2:
             return {std::move(get_result.first)};
         }
-        abort();
+        MONAD_ABORT();
     }
 
     template struct DbGetSender<byte_string>;

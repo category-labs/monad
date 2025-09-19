@@ -106,20 +106,18 @@ public:
     Result<NodeCursor>
     find(NodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
-    Result<byte_string_view> get(NibblesView, uint64_t block_id) const;
-    Result<byte_string_view> get_data(NibblesView, uint64_t block_id) const;
-    Result<byte_string_view>
-    get_data(NodeCursor const &, NibblesView, uint64_t block_id) const;
 
-    NodeCursor load_root_for_version(uint64_t block_id) const;
+    Node::SharedPtr load_root_for_version(uint64_t block_id) const;
 
-    void copy_trie(
-        uint64_t src_version, NibblesView src, uint64_t dest_version,
-        NibblesView dest, bool blocked_by_write = true);
+    Node::SharedPtr copy_trie(
+        Node::SharedPtr src_root, NibblesView src_prefix,
+        Node::SharedPtr dest_root, NibblesView dest_prefix,
+        uint64_t dest_version, bool write_root = true);
 
-    void upsert(
-        UpdateList, uint64_t block_id, bool enable_compaction = true,
-        bool can_write_to_fast = true, bool write_root = true);
+    Node::SharedPtr upsert(
+        Node::SharedPtr root, UpdateList, uint64_t block_id,
+        bool enable_compaction = true, bool can_write_to_fast = true,
+        bool write_root = true);
 
     void update_finalized_version(uint64_t version);
     void update_verified_version(uint64_t version);
@@ -142,7 +140,6 @@ public:
     // Blocking traverse never wait on a fiber future.
     bool
     traverse_blocking(NodeCursor const &, TraverseMachine &, uint64_t block_id);
-    NodeCursor root() const noexcept;
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
     uint64_t get_history_length() const;
@@ -152,7 +149,7 @@ public:
 
     // Load the tree of nodes in the current DB root as far as the caching
     // policy allows. RW only.
-    size_t prefetch();
+    size_t prefetch(Node::SharedPtr const &root);
     // Pump any async DB operations. RO only.
     size_t poll(bool blocking, size_t count = 1);
 

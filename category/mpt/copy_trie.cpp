@@ -123,21 +123,22 @@ Node::UniquePtr create_node_with_two_children(
 }
 
 Node::SharedPtr copy_trie_impl(
-    UpdateAuxImpl &aux, NodeCursor src_root, NibblesView const src_prefix,
-    uint64_t const src_version, Node::SharedPtr root, NibblesView const dest,
+    UpdateAuxImpl &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
+    Node::SharedPtr dest_root, NibblesView const dest_prefix,
     uint64_t const dest_version)
 {
     auto [src_cursor, res] =
-        find_blocking(aux, src_root, src_prefix, src_version);
+        find_blocking(aux, src_root, src_prefix, aux.db_history_max_version());
     MONAD_ASSERT(res == find_result::success);
     Node &src_node = *src_cursor.node;
-    if (!root) {
+    if (!dest_root) {
         auto new_node = make_node(
             src_node,
-            dest.substr(1),
+            dest_prefix.substr(1),
             src_node.opt_value(),
             static_cast<int64_t>(dest_version));
-        ChildData child{.ptr = std::move(new_node), .branch = dest.get(0)};
+        ChildData child{
+            .ptr = std::move(new_node), .branch = dest_prefix.get(0)};
         child.subtrie_min_version = calc_min_version(*child.ptr);
         if (aux.is_on_disk()) {
             child.offset = async_write_node_set_spare(aux, *child.ptr, true);
@@ -149,14 +150,14 @@ Node::SharedPtr copy_trie_impl(
             static_cast<uint16_t>(1u << child.branch),
             {&child, 1},
             {},
-            src_root.node->value(),
+            src_root->value(),
             0,
             static_cast<int64_t>(dest_version));
     }
     // serialize to buffer for each new node created
     Node *parent = nullptr;
     unsigned char branch = INVALID_BRANCH;
-    Node::SharedPtr node = root;
+    Node::SharedPtr node = dest_root;
     Node::UniquePtr new_node{};
     unsigned prefix_index = 0;
     unsigned node_prefix_index = 0;
@@ -170,8 +171,8 @@ Node::SharedPtr copy_trie_impl(
     // Insert `dest` to trie, create the `dest` node to have the same
     // children as node at `src`. Disconnect src_node's in memory children to
     // avoid double references
-    while (prefix_index < dest.nibble_size()) {
-        auto const nibble = dest.get(prefix_index);
+    while (prefix_index < dest_prefix.nibble_size()) {
+        auto const nibble = dest_prefix.get(prefix_index);
         if (node_prefix_index < node->path_nibbles_len()) {
             // not yet end of path in node
             auto const node_nibble =
@@ -188,7 +189,8 @@ Node::SharedPtr copy_trie_impl(
             // memory children to `dest` node
             auto dest_latter_half = make_node(
                 src_node,
-                dest.substr(static_cast<unsigned char>(prefix_index) + 1u),
+                dest_prefix.substr(
+                    static_cast<unsigned char>(prefix_index) + 1u),
                 src_node.opt_value(),
                 src_node.version);
             auto node_latter_half = make_node(
@@ -205,8 +207,8 @@ Node::SharedPtr copy_trie_impl(
                 node_nibble,
                 std::move(node_latter_half),
                 dest_version,
-                node.get() == root.get()
-                    ? std::make_optional(src_root.node->value())
+                node.get() == dest_root.get()
+                    ? std::make_optional(src_root->value())
                     : std::nullopt);
             break;
         }
@@ -232,7 +234,7 @@ Node::SharedPtr copy_trie_impl(
             prefix_index < std::numeric_limits<unsigned char>::max());
         auto dest_node = make_node(
             src_node,
-            dest.substr(static_cast<unsigned char>(prefix_index) + 1u),
+            dest_prefix.substr(static_cast<unsigned char>(prefix_index) + 1u),
             src_node.opt_value(),
             src_node.version);
         new_node = create_node_add_new_branch(
@@ -241,13 +243,14 @@ Node::SharedPtr copy_trie_impl(
             nibble,
             std::move(dest_node),
             dest_version,
-            node.get() == root.get()
-                ? std::make_optional(src_root.node->value())
+            node.get() == dest_root.get()
+                ? std::make_optional(src_root->value())
                 : std::nullopt);
         break;
     }
 
-    if (prefix_index == dest.nibble_size()) { // replace existing `dest` trie
+    if (prefix_index ==
+        dest_prefix.nibble_size()) { // replace existing `dest` trie
         MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
         new_node = make_node(
             src_node,
@@ -255,9 +258,9 @@ Node::SharedPtr copy_trie_impl(
             src_node.opt_value(),
             static_cast<int64_t>(dest_version));
     }
-    if (node.get() == root.get()) {
+    if (node.get() == dest_root.get()) {
         MONAD_ASSERT(parents_and_indexes.empty());
-        root = std::move(new_node);
+        dest_root = std::move(new_node);
     }
     else {
         MONAD_ASSERT(parent != nullptr);
@@ -279,34 +282,30 @@ Node::SharedPtr copy_trie_impl(
         }
     }
 
-    return root;
+    return dest_root;
 }
 
 Node::SharedPtr copy_trie_to_dest(
-    UpdateAuxImpl &aux, NodeCursor src_root, NibblesView const src_prefix,
-    uint64_t const src_version, Node::SharedPtr root,
-    NibblesView const dest_prefix, uint64_t const dest_version,
-    bool const must_write_to_disk)
+    UpdateAuxImpl &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
+    Node::SharedPtr dest_root, NibblesView const dest_prefix,
+    uint64_t const dest_version, bool const write_root)
 {
     auto impl = [&]() -> Node::SharedPtr {
-        root = copy_trie_impl(
+        dest_root = copy_trie_impl(
             aux,
-            src_root,
+            std::move(src_root),
             src_prefix,
-            src_version,
-            std::move(root),
+            std::move(dest_root),
             dest_prefix,
             dest_version);
-        if (must_write_to_disk && aux.version_is_valid_ondisk(dest_version) &&
-            aux.is_on_disk()) { // DO NOT write new version to disk, only
-                                // upsert() should write new version
-            write_new_root_node(aux, *root, dest_version);
+        if (aux.is_on_disk() && write_root) {
+            write_new_root_node(aux, *dest_root, dest_version);
             MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
         }
         if (aux.is_on_disk()) {
-            MONAD_ASSERT(root->value_len == sizeof(uint32_t) * 2);
+            MONAD_ASSERT(dest_root->value_len == sizeof(uint32_t) * 2);
         }
-        return root;
+        return dest_root;
     };
     if (aux.is_current_thread_upserting()) {
         return impl();

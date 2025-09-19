@@ -51,10 +51,14 @@ class TrieDb final : public ::monad::Db
     // bytes32_t{} represent finalized
     bytes32_t proposal_block_id_;
     ::monad::mpt::Nibbles prefix_;
+    ::monad::mpt::Node::SharedPtr curr_root_;
 
 public:
     TrieDb(mpt::Db &);
     ~TrieDb();
+
+    void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
+    ::monad::mpt::Node::SharedPtr const &get_root() const;
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
@@ -86,7 +90,6 @@ public:
     virtual uint64_t get_block_number() const override;
 
     nlohmann::json to_json(size_t concurrency_limit = 4096);
-    size_t prefetch_current_root();
     uint64_t get_history_length() const;
 
 private:

@@ -60,14 +60,15 @@ TEST(DbBinarySnapshot, Basic)
 
     auto const src_db = tmp_dbname();
 
-    bytes32_t root;
+    bytes32_t root_hash;
     Code code_delta;
     BlockHeader last_header;
     {
         OnDiskMachine machine;
         mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db}}};
+        Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
-            load_header(db, BlockHeader{.number = i});
+            root = load_header(std::move(root), db, BlockHeader{.number = i});
         }
         db.update_finalized_version(99);
         StateDeltas deltas;
@@ -96,11 +97,12 @@ TEST(DbBinarySnapshot, Basic)
             code_delta.emplace(hash, icode);
         }
         TrieDb tdb{db};
+        ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
         tdb.commit(
             deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
         tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
-        root = tdb.state_root();
+        root_hash = tdb.state_root();
     }
 
     auto const dest_db = tmp_dbname();
@@ -138,7 +140,7 @@ TEST(DbBinarySnapshot, Basic)
         }
         tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
-        EXPECT_EQ(tdb.state_root(), root);
+        EXPECT_EQ(tdb.state_root(), root_hash);
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);

@@ -130,7 +130,8 @@ namespace
     // DB Getters
     ///////////////////////////////////////////
     std::vector<CallFrame> read_call_frame(
-        mpt::Db &db, uint64_t const block_number, uint64_t const txn_idx)
+        mpt::Node::SharedPtr root, mpt::Db &db, uint64_t const block_number,
+        uint64_t const txn_idx)
     {
         using namespace mpt;
 
@@ -153,7 +154,7 @@ namespace
             [&chunks](NibblesView const path, byte_string_view const value) {
                 chunks.emplace_back(path, value);
             }};
-        db.traverse(db.root(), machine, block_number);
+        db.traverse(root, machine, block_number);
         MONAD_ASSERT(!chunks.empty());
 
         std::sort(
@@ -179,20 +180,21 @@ namespace
     }
 
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
-        mpt::Db const &db, uint64_t const block_number, Address const &addr,
-        bytes32_t const &key)
+        mpt::Node::SharedPtr const &root, mpt::Db const &db,
+        uint64_t const block_number, Address const &addr, bytes32_t const &key)
     {
-        auto const value = db.get(
+        auto const find_res = db.find(
+            root,
             mpt::concat(
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number);
-        if (!value.has_value()) {
+        if (!find_res.has_value()) {
             return {};
         }
-        auto encoded_storage = value.value();
+        auto encoded_storage = find_res.value().node->value();
         auto const storage = decode_storage_db(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return storage.value();
@@ -295,14 +297,16 @@ TYPED_TEST(DBTest, read_storage)
     // Existing storage
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key1)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key1)
             .first,
         key1);
 
     // Non-existing key
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key2)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key2)
             .first,
         bytes32_t{});
 
@@ -310,7 +314,8 @@ TYPED_TEST(DBTest, read_storage)
     EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
     EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_B, key1)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_B, key1)
             .first,
         bytes32_t{});
 }
@@ -342,7 +347,8 @@ TYPED_TEST(DBTest, read_code)
 TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 {
     TrieDb tdb{db};
-    load_header(db, BlockHeader{.number = 8});
+    tdb.reset_root(
+        load_header(tdb.get_root(), db, BlockHeader{.number = 8}), 8);
     EXPECT_TRUE(get_proposal_block_ids(db, 8).empty());
 
     tdb.set_block_and_prefix(8);
@@ -587,14 +593,16 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     auto verify_read_and_parse_receipt = [&](uint64_t const block_id) {
         size_t log_i = 0;
         for (unsigned i = 0; i < receipts.size(); ++i) {
-            auto res = this->db.get(
+            auto find_res = this->db.find(
+                tdb.get_root(),
                 mpt::concat(
                     FINALIZED_NIBBLE,
                     RECEIPT_NIBBLE,
                     mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
                 block_id);
-            ASSERT_TRUE(res.has_value());
-            auto const decode_res = decode_receipt_db(res.value());
+            ASSERT_TRUE(find_res.has_value());
+            auto node_value = find_res.value().node->value();
+            auto const decode_res = decode_receipt_db(node_value);
             ASSERT_TRUE(decode_res.has_value());
             auto const [receipt, log_index_begin] = decode_res.value();
             EXPECT_EQ(receipt, receipts[i]) << i;
@@ -605,14 +613,16 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     auto verify_read_and_parse_transaction = [&](uint64_t const block_id) {
         for (unsigned i = 0; i < transactions.size(); ++i) {
-            auto res = this->db.get(
+            auto find_res = this->db.find(
+                tdb.get_root(),
                 mpt::concat(
                     FINALIZED_NIBBLE,
                     TRANSACTION_NIBBLE,
                     mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
                 block_id);
-            ASSERT_TRUE(res.has_value());
-            auto const decode_res = decode_transaction_db(res.value());
+            ASSERT_TRUE(find_res.has_value());
+            auto node_value = find_res.value().node->value();
+            auto const decode_res = decode_transaction_db(node_value);
             ASSERT_TRUE(decode_res.has_value());
             auto const [tx, sender] = decode_res.value();
             EXPECT_EQ(tx, transactions[i]) << i;
@@ -622,12 +632,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     auto verify_tx_hash = [&](hash256 const &tx_hash,
                               uint64_t const block_id,
                               unsigned const tx_idx) {
-        auto const res = this->db.get(
+        auto const find_res = this->db.find(
+            tdb.get_root(),
             concat(FINALIZED_NIBBLE, TX_HASH_NIBBLE, mpt::NibblesView{tx_hash}),
-            this->db.get_latest_version());
-        EXPECT_TRUE(res.has_value());
+            tdb.get_block_number());
+        EXPECT_TRUE(find_res.has_value());
         EXPECT_EQ(
-            res.value(),
+            find_res.value().node->value(),
             rlp::encode_list2(
                 rlp::encode_unsigned(block_id), rlp::encode_unsigned(tx_idx)));
     };
@@ -786,8 +797,9 @@ TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    load_from_binary(this->db, accounts, code);
+    auto root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
+    tdb.reset_root(root, 0);
     EXPECT_EQ(
         tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
@@ -875,8 +887,8 @@ TYPED_TEST(DBTest, commit_call_frames)
         transactions);
 
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
-        auto const &res =
-            read_call_frame(this->db, tdb.get_block_number(), txn);
+        auto const &res = read_call_frame(
+            tdb.get_root(), this->db, tdb.get_block_number(), txn);
         ASSERT_TRUE(!res.empty());
         ASSERT_TRUE(res.size() == 2);
         EXPECT_EQ(res[0], call_frame1);
@@ -991,7 +1003,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     tdb.set_block_and_prefix(1);
 
     auto const actual_call_frames =
-        read_call_frame(this->db, tdb.get_block_number(), 0);
+        read_call_frame(tdb.get_root(), this->db, tdb.get_block_number(), 0);
 
     EXPECT_EQ(actual_call_frames.size(), 35799);
 }
@@ -1197,7 +1209,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     tdb.set_block_and_prefix(1);
 
     auto const actual_call_frames =
-        read_call_frame(this->db, tdb.get_block_number(), 0);
+        read_call_frame(tdb.get_root(), this->db, tdb.get_block_number(), 0);
 
     ASSERT_EQ(actual_call_frames.size(), 1);
     CallFrame expected{

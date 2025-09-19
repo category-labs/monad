@@ -257,7 +257,7 @@ bool statesync_server_handle_request(
     auto &db = *ctx->ro;
     if (rq.prefix < 256 && rq.target > rq.prefix) {
         auto const version = rq.target - rq.prefix - 1;
-        auto const root = db.load_root_for_version(version);
+        NodeCursor const root{db.load_root_for_version(version)};
         if (!root.is_valid()) {
             return false;
         }
@@ -282,7 +282,7 @@ bool statesync_server_handle_request(
     }
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
-    auto const root = db.load_root_for_version(rq.target);
+    NodeCursor const root{db.load_root_for_version(rq.target)};
     if (!root.is_valid()) {
         return false;
     }

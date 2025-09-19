@@ -13,12 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/backtrace.hpp>
+#include <category/core/config.hpp>
 #include <category/core/monad_exception.hpp>
 
-#include <cstdio>
+#include <cstddef>
+#include <cstdlib>
 #include <cstring>
+#include <stdio.h>
 
-extern char const *__progname;
+extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
 
 MONAD_NAMESPACE_BEGIN
 

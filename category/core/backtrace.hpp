@@ -29,10 +29,6 @@ class stack_backtrace
 {
 protected:
     stack_backtrace() = default;
-    stack_backtrace(stack_backtrace const &) = delete;
-    stack_backtrace(stack_backtrace &&) = delete;
-    stack_backtrace &operator=(stack_backtrace const &) = delete;
-    stack_backtrace &operator=(stack_backtrace &&) = delete;
 
     struct deleter_
     {
@@ -44,7 +40,11 @@ protected:
     };
 
 public:
-    virtual ~stack_backtrace() {}
+    virtual ~stack_backtrace() = default;
+    stack_backtrace(stack_backtrace const &) = delete;
+    stack_backtrace(stack_backtrace &&) = delete;
+    stack_backtrace &operator=(stack_backtrace const &) = delete;
+    stack_backtrace &operator=(stack_backtrace &&) = delete;
 
     using ptr = std::unique_ptr<stack_backtrace, deleter_>;
 

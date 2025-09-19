@@ -776,7 +776,7 @@ TEST(DbTest, history_length_adjustment_never_under_min)
         config.dbname_paths,
         monad::async::storage_pool::mode::open_existing,
         pool_options);
-    monad::io::Ring read_ring{128};
+    monad::io::Ring read_ring{monad::io::RingConfig{128}};
     monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
         read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
     monad::async::AsyncIO io_ctx(pool, read_buffers);

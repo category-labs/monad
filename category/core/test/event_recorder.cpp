@@ -33,6 +33,7 @@
 #include <sched.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -44,6 +45,8 @@
 #include <category/core/likely.h>
 
 #include <gtest/gtest.h>
+
+#include <linux/limits.h>
 
 static uint8_t PERF_ITER_SHIFT = 20;
 

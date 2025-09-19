@@ -25,6 +25,9 @@
 #include <cstring>
 #include <span>
 
+#include <gtest/gtest.h>
+
+#include <bits/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -85,7 +88,7 @@ namespace
                 ::close(fds[0]);
                 ::close(fds[1]);
             }
-        } unfds{fds};
+        } const unfds{fds};
 
         st->print(fds[1], 3, true);
         char buffer[16384];

@@ -113,7 +113,7 @@ inline enum monad_event_iter_result monad_event_iterator_try_next(
 
 inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
 {
-    uint64_t last_available_seqno = monad_event_iterator_sync_wait(iter);
+    uint64_t const last_available_seqno = monad_event_iterator_sync_wait(iter);
     return iter->read_last_seqno =
                last_available_seqno > 0 ? last_available_seqno - 1 : 0;
 }

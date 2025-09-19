@@ -29,7 +29,6 @@
 #include <category/async/sender_errc.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
-#include <category/core/array.hpp>
 #include <category/core/assert.h>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>

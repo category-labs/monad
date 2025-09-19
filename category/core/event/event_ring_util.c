@@ -23,7 +23,9 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/magic.h>
+#include <stdint.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
 #include <unistd.h>
@@ -298,7 +300,7 @@ int monad_check_path_supports_map_hugetlb(char const *path, bool *supported)
 
     *supported = false;
     rc = find_existing_parent_path(path, &parent_path);
-    if (rc != 0) {
+    if (rc != 0 || parent_path == nullptr) {
         goto Done;
     }
     if (statfs(parent_path, &fs_stat) == -1) {

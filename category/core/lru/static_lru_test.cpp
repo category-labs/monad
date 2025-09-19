@@ -15,8 +15,9 @@
 
 #include <category/core/lru/static_lru_cache.hpp>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <string>
 
 TEST(static_lru_test, evict)
 {

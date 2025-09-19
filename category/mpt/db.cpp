@@ -164,7 +164,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
                            : async::storage_pool::mode::truncate};
     }()}
     , read_ring{{options.uring_entries, options.enable_io_polling, options.sq_thread_cpu}}
-    , write_ring{options.wr_buffers}
+    , write_ring{io::RingConfig{options.wr_buffers}}
     , buffers{io::make_buffers_for_segregated_read_write(
           read_ring, *write_ring, options.rd_buffers, options.wr_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,

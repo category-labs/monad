@@ -15,8 +15,11 @@
 
 #include <gtest/gtest.h>
 
-#include <category/core/cleanup.h>
+#include <category/core/cleanup.h> // NOLINT(misc-include-cleaner)
 #include <category/core/cpuset.h>
+
+#include <sched.h>
+#include <string.h>
 
 TEST(Cpuset, parse_all)
 {

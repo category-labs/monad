@@ -168,7 +168,7 @@ namespace allocators
             typename decltype(GetAllocator())::type_allocator;
         using value_type = typename allocator_type::value_type;
 
-        constexpr unique_ptr_aliasing_allocator_deleter() {}
+        constexpr unique_ptr_aliasing_allocator_deleter() = default;
 
         constexpr void operator()(value_type *const p1) const
         {

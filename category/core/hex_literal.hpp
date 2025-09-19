@@ -45,7 +45,8 @@ inline constexpr byte_string from_hex(std::string_view s)
     }
 
     byte_string r((s.size() + 1) / 2, (unsigned char)0);
-    unsigned in = 0, out = 0;
+    unsigned in = 0;
+    unsigned out = 0;
     // handle odd nibbles
     if (s.size() % 2) {
         r[out++] = from_hex_digit(s[in++]);

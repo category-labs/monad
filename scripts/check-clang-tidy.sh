@@ -39,7 +39,8 @@ done
 
 mapfile -t inputs < <(\
   find \
-    category/vm \
+    category/core \
+    category/vm   \
     \( -name '*.cpp' -or -name '*.c' \))
 
 "${RUN_CLANG_TIDY}"                               \

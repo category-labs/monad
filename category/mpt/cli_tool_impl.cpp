@@ -713,7 +713,7 @@ public:
         std::vector<uint32_t> chunks;
         chunks.reserve(1024);
         {
-            monad::io::Ring ring(1);
+            monad::io::Ring ring(monad::io::RingConfig{1});
             monad::io::Buffers rwbuf =
                 monad::io::make_buffers_for_mixed_read_write(
                     ring,
@@ -960,7 +960,7 @@ public:
         }
 
         // Use UpdateAux to adjust the fast and slow lists
-        monad::io::Ring ring(1);
+        monad::io::Ring ring(monad::io::RingConfig{1});
         monad::io::Buffers rwbuf = monad::io::make_buffers_for_read_only(
             ring,
             2,
@@ -1530,11 +1530,11 @@ opened.
             impl.do_restore_database();
         }
 
-        monad::io::Ring ring(1);
+        monad::io::Ring ring(monad::io::RingConfig{1});
 
         auto wr_ring(
             (impl.rewind_database_to || impl.reset_history_length)
-                ? std::optional<monad::io::Ring>(4)
+                ? std::optional<monad::io::Ring>(monad::io::RingConfig{4})
                 : std::nullopt);
         monad::io::Buffers rwbuf =
             (impl.rewind_database_to || impl.reset_history_length)

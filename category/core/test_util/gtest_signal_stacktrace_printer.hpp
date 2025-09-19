@@ -46,7 +46,8 @@ namespace monad::test
         {
             auto &signal_handlers = this->signal_handlers();
             for (auto const &signo : signals_to_backtrace) {
-                struct sigaction sa, oldsa;
+                struct sigaction sa;
+                struct sigaction oldsa;
                 memset(&sa, 0, sizeof(sa));
                 memset(&oldsa, 0, sizeof(oldsa));
                 sa.sa_sigaction = &signal_handler;
@@ -69,13 +70,16 @@ namespace monad::test
         {
             auto const &signal_handlers =
                 SignalStackTracePrinterEnvironment::signal_handlers();
-            auto const *old_signal_handler = [&]() -> struct sigaction const * {
+
+            auto const *old_signal_handler = [&] {
+                using handler_t = struct sigaction const *;
                 auto it = signal_handlers.find(signo);
                 if (it == signal_handlers.end()) {
-                    return nullptr;
+                    return handler_t{nullptr};
                 }
                 return &it->second;
             }();
+
             auto write = [](char const *fmt, ...) {
                 va_list args;
                 va_start(args, fmt);

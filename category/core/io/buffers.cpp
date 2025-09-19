@@ -23,11 +23,10 @@
 
 #include <liburing.h>
 
-#include <sys/uio.h>
-
 #include <bit>
 #include <cstddef>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <source_location>

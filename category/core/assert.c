@@ -21,7 +21,7 @@
 
 #include <unistd.h>
 
-extern char const *__progname;
+extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
 
 extern void monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,

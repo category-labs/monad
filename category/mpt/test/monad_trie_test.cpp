@@ -24,7 +24,6 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/storage_pool.hpp>
-#include <category/core/array.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/io/buffers.hpp>
@@ -475,8 +474,9 @@ int main(int argc, char *argv[])
                     : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
             // init uring
-            monad::io::Ring ring1({512, use_iopoll, sq_thread_cpu});
-            monad::io::Ring ring2(16
+            monad::io::Ring ring1(
+                monad::io::RingConfig{512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring2(monad::io::RingConfig{16}
                                   /* max concurrent write buffers in use <= 6 */
             );
 

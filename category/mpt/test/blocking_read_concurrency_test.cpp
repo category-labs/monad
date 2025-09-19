@@ -105,7 +105,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     auto find_loop = [&](std::stop_token const stop_token) {
         // Read only aux
         auto pool = state()->pool.clone_as_read_only();
-        monad::io::Ring ring{2};
+        monad::io::Ring ring{monad::io::RingConfig{2}};
         monad::io::Buffers rwbuf{monad::io::make_buffers_for_read_only(
             ring, 2, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)};
         AsyncIO io{pool, rwbuf};
@@ -183,7 +183,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     auto traverse_loop = [&](std::stop_token const stop_token) {
         // Read only aux
         auto pool = state()->pool.clone_as_read_only();
-        monad::io::Ring ring{2};
+        monad::io::Ring ring{monad::io::RingConfig{2}};
         monad::io::Buffers rwbuf{monad::io::make_buffers_for_read_only(
             ring, 2, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)};
         AsyncIO io{pool, rwbuf};

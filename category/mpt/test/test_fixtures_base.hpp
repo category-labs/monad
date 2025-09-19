@@ -376,8 +376,8 @@ namespace monad::test
         UpdateAux<LockType> aux;
 
         OnDiskTrieBase()
-            : ring1(2)
-            , ring2(4)
+            : ring1(monad::io::RingConfig{2})
+            , ring2(monad::io::RingConfig{4})
             , rwbuf(monad::io::make_buffers_for_segregated_read_write(
                   ring1, ring2, 2, 4,
                   MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
@@ -502,8 +502,8 @@ namespace monad::test
                     MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
                     flags);
             }()};
-            monad::io::Ring ring1{2};
-            monad::io::Ring ring2{4};
+            monad::io::Ring ring1{monad::io::RingConfig{2}};
+            monad::io::Ring ring2{monad::io::RingConfig{4}};
             monad::io::Buffers rwbuf{
                 monad::io::make_buffers_for_segregated_read_write(
                     ring1, ring2, 2, 4,

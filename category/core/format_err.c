@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include <category/core/format_err.h>
+#include <category/core/srcloc.h>
 
 static char const *final_path_component(char const *path)
 {

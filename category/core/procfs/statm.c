@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/cleanup.h>
+#include <category/core/cleanup.h> // NOLINT(misc-include-cleaner)
 #include <category/core/likely.h>
 #include <category/core/procfs/statm.h>
 
@@ -32,6 +32,7 @@ __attribute__((constructor)) static void monad_procfs_statm_init()
 bool monad_procfs_self_statm(
     long *const size, long *const resident, long *const shared)
 {
+    // NOLINTBEGIN(clang-analyzer-unix.Stream)
     FILE *const fp [[gnu::cleanup(cleanup_fclose)]] =
         fopen("/proc/self/statm", "r");
     if (MONAD_UNLIKELY(!fp)) {
@@ -44,6 +45,7 @@ bool monad_procfs_self_statm(
     }
 
     return true;
+    // NOLINTEND(clang-analyzer-unix.Stream)
 }
 
 long monad_procfs_self_resident()

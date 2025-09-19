@@ -37,7 +37,7 @@ struct RingConfig
 
     RingConfig() = default;
 
-    constexpr RingConfig(unsigned const entries_)
+    constexpr explicit RingConfig(unsigned const entries_)
         : entries(entries_)
     {
     }

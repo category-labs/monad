@@ -71,7 +71,6 @@ add_library(
   # config
   "config.hpp"
   # core
-  "array.hpp"
   "assert.c"
   "assert.h"
   "backtrace.cpp"

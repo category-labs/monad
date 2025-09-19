@@ -40,7 +40,7 @@ namespace
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
         monad::io::Ring testring1;
-        monad::io::Ring testring2(1);
+        monad::io::Ring testring2(monad::io::RingConfig{1});
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(
                 testring1,

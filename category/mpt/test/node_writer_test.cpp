@@ -78,8 +78,8 @@ struct NodeWriterTestBase : public ::testing::Test
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
                 flags);
         }()}
-        , ring1{2}
-        , ring2{4}
+        , ring1{monad::io::RingConfig{2}}
+        , ring2{monad::io::RingConfig{4}}
         , rwbuf{monad::io::make_buffers_for_segregated_read_write(
               ring1, ring2, 2, 4, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
               AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}

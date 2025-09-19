@@ -21,7 +21,6 @@ function(monad_add_test target)
 endfunction()
 
 monad_add_test(allocators_test "allocators.cpp")
-monad_add_test(array_test "array.cpp")
 monad_add_test(backtrace_test "backtrace.cpp")
 monad_add_test(cpuset_test "cpuset.cpp")
 monad_add_test(encode_test "encode_test.cpp")

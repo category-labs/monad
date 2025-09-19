@@ -21,6 +21,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <functional>
+#include <iostream>
 #include <thread>
 #include <vector>
 
@@ -54,8 +57,8 @@ TEST(PriorityPool, benchmark)
 
     std::vector<count_t> counts(std::thread::hardware_concurrency());
     std::atomic<size_t> countsidx{0};
-    std::function<void()> task([&] {
-        static thread_local size_t mycountidx =
+    std::function<void()> const task([&] {
+        static thread_local size_t const mycountidx =
             countsidx.fetch_add(1, std::memory_order_acq_rel);
         counts[mycountidx].count.fetch_add(1, std::memory_order_acq_rel);
     });

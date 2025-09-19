@@ -24,8 +24,6 @@
 #include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/utils/parser.hpp>
 
-#include <CLI/CLI.hpp>
-
 #include <evmc/evmc.h>
 
 #include <algorithm>

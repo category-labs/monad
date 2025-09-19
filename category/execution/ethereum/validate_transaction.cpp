@@ -20,6 +20,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -198,7 +199,7 @@ Result<void> static_validate_transaction(
 EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
-Result<void> validate_transaction(
+Result<void> validate_transaction_base(
     Transaction const &tx, std::optional<Account> const &sender_account,
     std::span<uint8_t const> code)
 {
@@ -251,16 +252,20 @@ Result<void> validate_transaction(
     return success();
 }
 
-EXPLICIT_TRAITS(validate_transaction);
+EXPLICIT_TRAITS(validate_transaction_base);
 
+template <Traits traits>
 Result<void> validate_transaction(
-    evmc_revision const rev, Transaction const &tx,
-    std::optional<Account> const &sender_account,
-    std::span<uint8_t const> const code)
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const &, std::vector<std::optional<Address>> const &)
 {
-    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
-    MONAD_ABORT("invalid revision");
+    auto const acct = state.recent_account(sender);
+    auto const &icode = state.get_code(sender)->intercode();
+    return validate_transaction_base<traits>(
+        tx, acct, {icode->code(), icode->size()});
 }
+
+EXPLICIT_EVM_TRAITS(validate_transaction);
 
 MONAD_NAMESPACE_END
 

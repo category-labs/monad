@@ -38,6 +38,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+
 enum class TransactionError
 {
     Success = 0,
@@ -68,13 +70,15 @@ Result<void> static_validate_transaction(
     size_t max_code_size);
 
 template <Traits traits>
-Result<void> validate_transaction(
+Result<void> validate_transaction_base(
     Transaction const &, std::optional<Account> const &sender_account,
     std::span<uint8_t const>);
 
+template <Traits traits>
 Result<void> validate_transaction(
-    evmc_revision, Transaction const &,
-    std::optional<Account> const &sender_account, std::span<uint8_t const>);
+    Transaction const &, Address const &sender, State &,
+    uint256_t const &base_fee_per_gas,
+    std::vector<std::optional<Address>> const &authorities);
 
 MONAD_NAMESPACE_END
 

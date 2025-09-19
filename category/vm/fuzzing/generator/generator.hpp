@@ -196,9 +196,21 @@ namespace monad::vm::fuzzing
         std::optional<evmc::address> address;
     };
 
-    struct ValidJumpDest
+    struct BlockIx
+    {
+        std::size_t index;
+    };
+
+    struct SmallConstant
+    {
+        std::uint32_t value;
+    };
+
+    struct ReturnInstead
     {
     };
+
+    using ValidJumpDest = std::variant<BlockIx, SmallConstant, ReturnInstead>;
 
     struct BasicBlockInfo
     {
@@ -320,6 +332,49 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
+    ValidJumpDest generate_valid_jump_dest(
+        Engine &gen, std::vector<BlockIx> const &jumpdest_blocks,
+        std::size_t block_index)
+    {
+        // If there is only one or zero valid jump destinations,
+        // then we will likely fail due to invalid jump destination
+        // or due to generating a loop. So in this case we will generate a
+        // return instead of a jump(i) instruction with 90% probability.
+        if (jumpdest_blocks.size() <= 1 && toss(gen, 0.9)) {
+            return ValidJumpDest{ReturnInstead{}};
+        }
+
+        auto forward_dests_begin = jumpdest_blocks.begin();
+        auto const forward_dests_end = jumpdest_blocks.end();
+
+        forward_dests_begin = std::find_if(
+            forward_dests_begin, forward_dests_end, [block_index](auto jd) {
+                return jd.index > block_index;
+            });
+
+        // If there are no possible forwards jumps (i.e. we're in the last
+        // block) then we need to unconditionally sample from the full set
+        // of jumpdests.
+        auto const forward_prob =
+            (forward_dests_begin != forward_dests_end) ? 0.9 : 0.0;
+
+        return discrete_choice<ValidJumpDest>(
+            gen,
+            [&](auto &g) {
+                if (jumpdest_blocks.size() == 0) {
+                    return ValidJumpDest{SmallConstant{random_uint32(g)}};
+                }
+                else {
+                    return ValidJumpDest{uniform_sample(g, jumpdest_blocks)};
+                }
+            },
+            Choice(forward_prob, [&](auto &g) {
+                return uniform_sample(
+                    g, forward_dests_begin, forward_dests_end);
+            }));
+    }
+
+    template <typename Engine>
     evmc::address generate_precompile_address(Engine &eng, evmc_revision rev)
     {
         std::uniform_int_distribution<uint8_t> dist(1, num_precompiles(rev));
@@ -353,14 +408,19 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     Push generate_push(
         GeneratorFocus const &focus, Engine &eng,
-        std::vector<evmc::address> const &valid_addresses)
+        std::vector<evmc::address> const &valid_addresses,
+        std::vector<BlockIx> const &jumpdest_blocks,
+        std::size_t current_block_index)
     {
         return discrete_choice<Push>(
             eng,
             [](auto &g) { return random_constant(g); },
             Choice(
                 focus.valid_jumpdest_prob,
-                [](auto &) { return ValidJumpDest{}; }),
+                [&](auto &g) {
+                    return generate_valid_jump_dest(
+                        g, jumpdest_blocks, current_block_index);
+                }),
             Choice(
                 focus.valid_address_prob,
                 [&](auto &) {
@@ -404,7 +464,7 @@ namespace monad::vm::fuzzing
             Cases{
                 [&](ValidJumpDest) -> Push { return random_constant(eng); },
                 [](Push const &x) -> Push { return x; }},
-            generate_push(focus, eng, valid_addresses));
+            generate_push(focus, eng, valid_addresses, {}, 0));
     }
 
     struct Call
@@ -588,7 +648,8 @@ namespace monad::vm::fuzzing
     std::vector<Instruction> generate_block(
         GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
         std::vector<evmc::address> const &valid_addresses,
-        BasicBlockInfo const &block)
+        std::vector<BlockIx> const &jumpdest_blocks,
+        BasicBlockInfo const &block, std::size_t block_index)
     {
         static constexpr std::size_t max_block_insts = 10000;
 
@@ -655,7 +716,12 @@ namespace monad::vm::fuzzing
                 auto const main_initial_pushes = main_pushes_dist(g);
 
                 for (auto i = 0u; i < main_initial_pushes; ++i) {
-                    program.push_back(generate_push(focus, g, valid_addresses));
+                    program.push_back(generate_push(
+                        focus,
+                        g,
+                        valid_addresses,
+                        jumpdest_blocks,
+                        block_index));
                 }
             });
         }
@@ -670,8 +736,13 @@ namespace monad::vm::fuzzing
                     [](auto &g) { return generate_common_non_terminator(g); }),
                 Choice(
                     push_prob,
-                    [&focus, valid_addresses](auto &g) {
-                        return generate_push(focus, g, valid_addresses);
+                    [&](auto &g) {
+                        return generate_push(
+                            focus,
+                            g,
+                            valid_addresses,
+                            jumpdest_blocks,
+                            block_index);
                     }),
                 Choice(dup_prob, [](auto &g) { return generate_dup(g); }),
                 Choice(
@@ -703,7 +774,8 @@ namespace monad::vm::fuzzing
 
                 if (op == JUMP || op == JUMPI) {
                     with_probability(eng, focus.valid_jump_prob, [&](auto &) {
-                        program.push_back(ValidJumpDest{});
+                        program.push_back(generate_valid_jump_dest(
+                            eng, jumpdest_blocks, block_index));
                     });
                 }
                 else if (op == RETURN || op == REVERT) {
@@ -834,7 +906,7 @@ namespace monad::vm::fuzzing
 
     void compile_push(
         std::vector<std::uint8_t> &program, Push const &push,
-        std::vector<std::size_t> &jumpdest_patches)
+        std::vector<std::pair<std::size_t, BlockIx>> &jumpdest_patches)
     {
         std::visit(
             Cases{
@@ -846,13 +918,38 @@ namespace monad::vm::fuzzing
                         program.push_back(ADDRESS);
                     }
                 },
-                [&](ValidJumpDest) {
-                    jumpdest_patches.push_back(program.size());
-
-                    program.push_back(PUSH4);
-                    for (auto i = 0; i < 4; ++i) {
-                        program.push_back(0xFF);
-                    }
+                [&](ValidJumpDest const &jd) {
+                    std::visit(
+                        Cases{
+                            [&](BlockIx const &block) {
+                                // We don't know the actual jumpdest yet,
+                                // so we need to patch it later.
+                                jumpdest_patches.push_back(
+                                    std::make_pair(program.size(), block));
+                                program.push_back(PUSH4);
+                                for (auto i = 0; i < 4; ++i) {
+                                    program.push_back(0xFF);
+                                }
+                            },
+                            [&](SmallConstant const &sc) {
+                                std::uint32_t val = sc.value;
+                                program.push_back(PUSH4);
+                                for (auto i = 0; i < 4; ++i) {
+                                    program.push_back(val & 0xFF);
+                                    val >>= 8;
+                                }
+                            },
+                            [&](ReturnInstead const &) {
+                                // We will replace the jump with a return
+                                // later, so just push a dummy value here.
+                                program.push_back(PUSH1);
+                                program.push_back(0xFF);
+                                program.push_back(PUSH1);
+                                program.push_back(0xFF);
+                                program.push_back(RETURN);
+                            },
+                        },
+                        jd);
                 },
                 [&](Constant const &c) {
                     program.push_back(PUSH32);
@@ -868,7 +965,7 @@ namespace monad::vm::fuzzing
 
     void compile_push(std::vector<std::uint8_t> &program, Push const &push)
     {
-        auto patches = std::vector<std::size_t>{};
+        auto patches = std::vector<std::pair<std::size_t, BlockIx>>{};
         compile_push(program, push, patches);
         MONAD_VM_DEBUG_ASSERT(patches.empty());
     }
@@ -876,16 +973,14 @@ namespace monad::vm::fuzzing
     void compile_block(
         std::vector<std::uint8_t> &program,
         std::vector<Instruction> const &block,
-        std::vector<std::uint32_t> &valid_jumpdests,
-        std::vector<std::size_t> &jumpdest_patches)
+        std::vector<std::pair<std::size_t, BlockIx>> &jumpdest_patches,
+        std::vector<std::uint32_t> &block_offsets)
     {
-        auto push_op = [&](auto op, auto const &opnds) {
-            if (op == JUMPDEST) {
-                valid_jumpdests.push_back(
-                    static_cast<std::uint32_t>(program.size()));
-            }
+        // Record the starting offset of this block for patch_jumpdests
+        block_offsets.push_back(static_cast<std::uint32_t>(program.size()));
 
-            for (auto [mem_op, safe_value] : opnds) {
+        auto push_op = [&](auto op, auto const &opnds) {
+            for (auto const &[mem_op, safe_value] : opnds) {
                 auto const byte_size =
                     count_significant_bytes(safe_value.value);
                 MONAD_VM_DEBUG_ASSERT(byte_size <= 32);
@@ -924,72 +1019,24 @@ namespace monad::vm::fuzzing
         }
     }
 
-    template <typename Engine>
     void patch_jumpdests(
-        Engine &eng, std::vector<std::uint8_t> &program,
-        std::vector<std::size_t> const &jumpdest_patches,
-        std::vector<std::uint32_t> const &valid_jumpdests)
+        std::vector<std::uint8_t> &program,
+        std::vector<std::pair<std::size_t, BlockIx>> const &jumpdest_patches,
+        std::vector<std::uint32_t> const &block_offsets)
     {
-        MONAD_VM_DEBUG_ASSERT(std::ranges::is_sorted(jumpdest_patches));
-        MONAD_VM_DEBUG_ASSERT(std::ranges::is_sorted(valid_jumpdests));
-
-        // The valid jumpdests and path locations in this program appear in
-        // sorted order, so we can bias the generator towards "forwards" jumps
-        // in the CFG by simply keeping track of a pointer to the first jumpdest
-        // greater than the program offset that we're currently patching, and
-        // sampling from that range with greater probability.
-
-        auto forward_jds_begin = valid_jumpdests.begin();
-        auto const forward_jds_end = valid_jumpdests.end();
-
-        for (auto const patch : jumpdest_patches) {
+        for (auto const &[patch, block_ix] : jumpdest_patches) {
             MONAD_VM_DEBUG_ASSERT(patch + 4 < program.size());
             MONAD_VM_DEBUG_ASSERT(program[patch] == PUSH4);
+            MONAD_VM_DEBUG_ASSERT(block_ix.index < block_offsets.size());
 
-            forward_jds_begin = std::find_if(
-                forward_jds_begin, forward_jds_end, [patch](auto jd) {
-                    return jd > patch;
-                });
-
-            // If there are no possible forwards jumps (i.e. we're in the last
-            // block) then we need to unconditionally sample from the full set
-            // of jumpdests.
-            auto const forward_prob =
-                (forward_jds_begin != forward_jds_end) ? 0.9 : 0.0;
-
-            auto const jd = discrete_choice<std::size_t>(
-                eng,
-                [&](auto &g) {
-                    if (valid_jumpdests.size() == 0) {
-                        return random_uint32(g);
-                    }
-                    else {
-                        return uniform_sample(g, valid_jumpdests);
-                    }
-                },
-                Choice(forward_prob, [&](auto &g) {
-                    return uniform_sample(
-                        g, forward_jds_begin, forward_jds_end);
-                }));
-
-            auto const *bs = intx::as_bytes(jd);
+            auto const jd_offset = block_offsets[block_ix.index];
+            auto const *bs = intx::as_bytes(jd_offset);
             for (auto i = 0u; i < 4; ++i) {
                 auto &dest = program[patch + i + 1];
                 MONAD_VM_DEBUG_ASSERT(dest == 0xFF);
 
                 dest = bs[3 - i];
             }
-
-            // If there is only one or zero valid jump destinations,
-            // then we will likely fail due to invalid jump destination
-            // or due to generating a loop. So in this case we will generate a
-            // return instead of a jump(i) instruction with 90% probability.
-            auto const return_prob = valid_jumpdests.size() > 1 ? 0 : 0.9;
-            with_probability(eng, return_prob, [&](auto &) {
-                program[patch] = PUSH1;
-                program[patch + 2] = PUSH1;
-                program[patch + 4] = RETURN;
-            });
         }
     }
 
@@ -1013,6 +1060,9 @@ namespace monad::vm::fuzzing
         auto const n_exit_blocks = exit_blocks_dist(eng);
 
         auto blocks = std::vector<BasicBlockInfo>{};
+        // indices of blocks that are valid jumpdests. Used when generating push
+        // instructions to pick valid jump destinations.
+        auto jumpdest_blocks = std::vector<BlockIx>{};
 
         for (auto i = 0; i < n_blocks; ++i) {
             // main block is the first
@@ -1022,21 +1072,32 @@ namespace monad::vm::fuzzing
             // with 2/3 probability, a block is a valid jump destination
             auto const is_jump_dest = toss(eng, 0.66);
 
+            if (is_jump_dest) {
+                jumpdest_blocks.push_back(BlockIx{static_cast<size_t>(i)});
+            }
+
             blocks.push_back(BasicBlockInfo{is_main, is_exit, is_jump_dest});
         }
 
-        auto valid_jumpdests = std::vector<std::uint32_t>{};
-        auto jumpdest_patches = std::vector<std::size_t>{};
+        auto jumpdest_patches = std::vector<std::pair<std::size_t, BlockIx>>{};
+        auto block_offsets = std::vector<std::uint32_t>{};
 
-        for (auto const &block : blocks) {
-            auto const block_instructions =
-                generate_block(focus, eng, rev, valid_addresses, block);
+        for (auto block_ix = 0u; block_ix < blocks.size(); ++block_ix) {
+            auto const &block = blocks[block_ix];
+            auto const block_instructions = generate_block(
+                focus,
+                eng,
+                rev,
+                valid_addresses,
+                jumpdest_blocks,
+                block,
+                block_ix);
 
             compile_block(
-                prog, block_instructions, valid_jumpdests, jumpdest_patches);
+                prog, block_instructions, jumpdest_patches, block_offsets);
         }
 
-        patch_jumpdests(eng, prog, jumpdest_patches, valid_jumpdests);
+        patch_jumpdests(prog, jumpdest_patches, block_offsets);
         return prog;
     }
 

@@ -82,6 +82,5 @@ struct MonadChain : Chain
 bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t i, bytes32_t const &orig_code_hash,
     MonadChainContext const &);
-uint256_t get_max_reserve(monad_revision, Address const &);
 
 MONAD_NAMESPACE_END

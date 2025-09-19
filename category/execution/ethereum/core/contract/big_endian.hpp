@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 
+#include <algorithm>
 #include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
@@ -53,6 +54,20 @@ struct BigEndian
     {
         intx::be::store(bytes, x);
         return *this;
+    }
+
+    bool is_zero() const
+    {
+        return std::ranges::all_of(bytes, [](auto b) { return b == 0; });
+    }
+
+    template <typename BytesWrapper>
+        requires(sizeof(BytesWrapper) == sizeof(BigEndian<T>))
+    static BigEndian<T> from_bytes(BytesWrapper const &b) noexcept
+    {
+        BigEndian<T> result;
+        std::memcpy(result.bytes, b.bytes, sizeof(BigEndian<T>));
+        return result;
     }
 };
 

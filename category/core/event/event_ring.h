@@ -31,6 +31,8 @@
 
 #include <sys/types.h>
 
+#include <category/core/likely.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -247,7 +249,7 @@ inline bool monad_event_ring_try_copy(
     struct monad_event_ring const *event_ring, uint64_t seqno,
     struct monad_event_descriptor *event)
 {
-    if (__builtin_expect(seqno == 0, 0)) {
+    if (MONAD_UNLIKELY(seqno == 0)) {
         return false;
     }
     struct monad_event_descriptor const *const ring_event =
@@ -255,7 +257,7 @@ inline bool monad_event_ring_try_copy(
     *event = *ring_event;
     uint64_t const ring_seqno =
         __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
-    if (__builtin_expect(ring_seqno != seqno, 0)) {
+    if (MONAD_UNLIKELY(ring_seqno != seqno)) {
         return false;
     }
     return true;
@@ -283,14 +285,12 @@ inline void *monad_event_ring_payload_memcpy(
     struct monad_event_ring const *event_ring,
     struct monad_event_descriptor const *event, void *dst, size_t n)
 {
-    if (__builtin_expect(
-            !monad_event_ring_payload_check(event_ring, event), 0)) {
+    if (MONAD_UNLIKELY(!monad_event_ring_payload_check(event_ring, event))) {
         return nullptr;
     }
     void const *const src = monad_event_ring_payload_peek(event_ring, event);
     memcpy(dst, src, n);
-    if (__builtin_expect(
-            !monad_event_ring_payload_check(event_ring, event), 0)) {
+    if (MONAD_UNLIKELY(!monad_event_ring_payload_check(event_ring, event))) {
         return nullptr; // Payload expired
     }
     return dst;

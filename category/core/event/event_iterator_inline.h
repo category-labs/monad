@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include <category/core/event/event_ring.h>
+#include <category/core/likely.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -83,17 +84,17 @@ inline enum monad_event_iter_result monad_event_iterator_try_copy(
         &iter->descriptors[iter->read_last_seqno & iter->desc_capacity_mask];
     uint64_t const seqno =
         __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
-    if (__builtin_expect(seqno == iter->read_last_seqno + 1, 1)) {
+    if (MONAD_LIKELY(seqno == iter->read_last_seqno + 1)) {
         // Copy the structure, then reload sequence number with
         // __ATOMIC_ACQUIRE to make sure it still matches after the copy
         *event = *ring_event;
         __atomic_load(&ring_event->seqno, &event->seqno, __ATOMIC_ACQUIRE);
-        if (__builtin_expect(event->seqno == seqno, 1)) {
+        if (MONAD_LIKELY(event->seqno == seqno)) {
             return MONAD_EVENT_SUCCESS;
         }
         return MONAD_EVENT_GAP;
     }
-    if (__builtin_expect(seqno < iter->read_last_seqno, 1)) {
+    if (MONAD_LIKELY(seqno < iter->read_last_seqno)) {
         return MONAD_EVENT_NOT_READY;
     }
     return seqno == iter->read_last_seqno && seqno == 0 ? MONAD_EVENT_NOT_READY
@@ -105,7 +106,7 @@ inline enum monad_event_iter_result monad_event_iterator_try_next(
 {
     enum monad_event_iter_result const r =
         monad_event_iterator_try_copy(iter, event);
-    if (__builtin_expect(r == MONAD_EVENT_SUCCESS, 1)) {
+    if (MONAD_LIKELY(r == MONAD_EVENT_SUCCESS)) {
         ++iter->read_last_seqno;
     }
     return r;

@@ -193,7 +193,8 @@ struct shared_state_t
         auto offset_into_chunk = (r >> 16) % chunk_size_div_disk_page_size;
         return MONAD_ASYNC_NAMESPACE::chunk_offset_t(
             chunk_id,
-            offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE);
+            static_cast<size_t>(
+                offset_into_chunk * MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE));
     }
 };
 
@@ -244,6 +245,7 @@ inline void receiver_t::set_value(
     }
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char *argv[])
 {
     CLI::App cli("Tool for benchmarking the i/o engine", "benchmark_io_test");

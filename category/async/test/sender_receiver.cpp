@@ -27,11 +27,8 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/sender_errc.hpp>
-#include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/core/small_prng.hpp>
 
 #include <boost/fiber/fiber.hpp>
@@ -48,8 +45,9 @@
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/coroutine_support.hpp>
 
+#include <gtest/gtest.h>
+
 #include <array>
-#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <coroutine>
@@ -57,12 +55,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -195,13 +191,15 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
         void reset() {}
     };
 
-    std::byte *buffer =
-        (std::byte *)aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 4);
+    std::byte *buffer = (std::byte *)aligned_alloc(
+        DISK_PAGE_SIZE, static_cast<size_t>(DISK_PAGE_SIZE * 4));
     auto unbuffer = monad::make_scope_exit([&]() noexcept { free(buffer); });
     std::vector<read_multiple_buffer_sender::buffer_type> inbuffers;
     inbuffers.emplace_back(buffer + 0, DISK_PAGE_SIZE);
     inbuffers.emplace_back(buffer + DISK_PAGE_SIZE, DISK_PAGE_SIZE);
-    inbuffers.emplace_back(buffer + DISK_PAGE_SIZE * 2, DISK_PAGE_SIZE * 2);
+    inbuffers.emplace_back(
+        buffer + static_cast<size_t>(DISK_PAGE_SIZE * 2),
+        static_cast<size_t>(DISK_PAGE_SIZE * 2));
     std::optional<read_multiple_buffer_sender::buffers_type> outbuffers;
     auto state = connect(
         *shared_state_()->testio,
@@ -228,21 +226,25 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
             (*outbuffers)[0].data() + DISK_PAGE_SIZE,
             shared_state_()->testfilecontents.data() + DISK_PAGE_SIZE,
             DISK_PAGE_SIZE));
-    EXPECT_EQ((*outbuffers)[2].data(), buffer + DISK_PAGE_SIZE * 2);
-    EXPECT_EQ((*outbuffers)[2].size(), DISK_PAGE_SIZE * 2);
+    EXPECT_EQ(
+        (*outbuffers)[2].data(),
+        buffer + static_cast<size_t>(DISK_PAGE_SIZE * 2));
+    EXPECT_EQ((*outbuffers)[2].size(), static_cast<size_t>(DISK_PAGE_SIZE * 2));
     EXPECT_EQ(
         0,
         memcmp(
-            (*outbuffers)[0].data() + DISK_PAGE_SIZE * 2,
-            shared_state_()->testfilecontents.data() + DISK_PAGE_SIZE * 2,
-            DISK_PAGE_SIZE * 2));
+            (*outbuffers)[0].data() + static_cast<size_t>(DISK_PAGE_SIZE * 2),
+            shared_state_()->testfilecontents.data() +
+                static_cast<size_t>(DISK_PAGE_SIZE * 2),
+            static_cast<size_t>(DISK_PAGE_SIZE * 2)));
 
     outbuffers.reset();
     state.reset(
         std::tuple(
             chunk_offset_t{
                 0,
-                shared_state_()->testfilecontents.size() - DISK_PAGE_SIZE * 4},
+                shared_state_()->testfilecontents.size() -
+                    static_cast<size_t>(DISK_PAGE_SIZE * 4)},
             read_multiple_buffer_sender::buffers_type{inbuffers}),
         std::tuple());
     state.initiate();
@@ -257,7 +259,8 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
         memcmp(
             (*outbuffers)[0].data(),
             shared_state_()->testfilecontents.data() +
-                shared_state_()->testfilecontents.size() - DISK_PAGE_SIZE * 4,
+                shared_state_()->testfilecontents.size() -
+                static_cast<size_t>(DISK_PAGE_SIZE * 4),
             DISK_PAGE_SIZE));
     EXPECT_EQ((*outbuffers)[1].data(), buffer + DISK_PAGE_SIZE);
     EXPECT_EQ((*outbuffers)[1].size(), DISK_PAGE_SIZE);
@@ -266,17 +269,21 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
         memcmp(
             (*outbuffers)[0].data() + DISK_PAGE_SIZE,
             shared_state_()->testfilecontents.data() +
-                shared_state_()->testfilecontents.size() - DISK_PAGE_SIZE * 3,
+                shared_state_()->testfilecontents.size() -
+                static_cast<size_t>(DISK_PAGE_SIZE * 3),
             DISK_PAGE_SIZE));
-    EXPECT_EQ((*outbuffers)[2].data(), buffer + DISK_PAGE_SIZE * 2);
-    EXPECT_EQ((*outbuffers)[2].size(), DISK_PAGE_SIZE * 2);
+    EXPECT_EQ(
+        (*outbuffers)[2].data(),
+        buffer + static_cast<size_t>(DISK_PAGE_SIZE * 2));
+    EXPECT_EQ((*outbuffers)[2].size(), static_cast<size_t>(DISK_PAGE_SIZE * 2));
     EXPECT_EQ(
         0,
         memcmp(
-            (*outbuffers)[0].data() + DISK_PAGE_SIZE * 2,
+            (*outbuffers)[0].data() + static_cast<size_t>(DISK_PAGE_SIZE * 2),
             shared_state_()->testfilecontents.data() +
-                shared_state_()->testfilecontents.size() - DISK_PAGE_SIZE * 2,
-            DISK_PAGE_SIZE * 2));
+                shared_state_()->testfilecontents.size() -
+                static_cast<size_t>(DISK_PAGE_SIZE * 2),
+            static_cast<size_t>(DISK_PAGE_SIZE * 2)));
 }
 
 /* A receiver which just immediately asks the sender
@@ -697,7 +704,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_bytes_transferred)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
-        result<void> operator()(erased_connected_operation *) noexcept
+        result<void> operator()(erased_connected_operation *)
         {
             return std::visit(
                 [&](auto &v) -> result<void> {
@@ -784,7 +791,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_void)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
-        result<void> operator()(erased_connected_operation *) noexcept
+        result<void> operator()(erased_connected_operation *)
         {
             return std::visit(
                 [&](auto &v) -> result<void> {

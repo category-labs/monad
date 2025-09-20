@@ -30,11 +30,10 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
-#include <system_error>
 #include <utility>
 #include <vector>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -95,7 +94,7 @@ namespace
             static_cast<uint32_t>(pool.chunks(storage_pool::seq) - 1));
         print_pool_statistics(pool);
 
-        std::vector<std::byte> buffer(1024 * 1024);
+        std::vector<std::byte> buffer(static_cast<size_t>(1024 * 1024));
         memset(buffer.data(), 0xee, buffer.size());
         std::cout << "\n\nWriting to conventional chunk ..." << std::endl;
         EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
@@ -263,7 +262,7 @@ namespace
             ({
                 std::filesystem::path const devs[] = {
                     "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-                storage_pool pool(devs, storage_pool::mode::truncate);
+                storage_pool const pool(devs, storage_pool::mode::truncate);
             }),
             "open failed");
     }
@@ -287,7 +286,8 @@ namespace
                 ::close(fd);
                 return ret;
             };
-            static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
+            static constexpr auto BLKSIZE =
+                static_cast<file_offset_t>(256 * 1024 * 1024);
             std::filesystem::path devs[] = {
                 create_temp_file(22 * BLKSIZE),
                 create_temp_file(12 * BLKSIZE),
@@ -400,7 +400,8 @@ namespace
             ::close(fd);
             return ret;
         };
-        static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
+        static constexpr auto BLKSIZE =
+            static_cast<file_offset_t>(256 * 1024 * 1024);
         std::filesystem::path devs[] = {
             create_temp_file(20 * BLKSIZE),
             create_temp_file(10 * BLKSIZE),
@@ -426,7 +427,7 @@ namespace
         storage_pool pool1(use_anonymous_inode_tag{});
         storage_pool pool2(use_anonymous_inode_tag{});
 
-        std::vector<std::byte> buffer1(1024 * 1024);
+        std::vector<std::byte> buffer1(static_cast<size_t>(1024 * 1024));
         memset(buffer1.data(), 0xee, buffer1.size());
         auto chunk1 = pool1.activate_chunk(storage_pool::seq, 0);
         {
@@ -439,7 +440,7 @@ namespace
                           static_cast<off_t>(fd.second)));
             EXPECT_EQ(chunk1->size(), buffer1.size());
         }
-        std::vector<std::byte> buffer2(1024 * 1024);
+        std::vector<std::byte> buffer2(static_cast<size_t>(1024 * 1024));
         memset(buffer2.data(), 0xcc, buffer2.size());
         auto chunk2 = pool2.activate_chunk(storage_pool::seq, 0);
         {

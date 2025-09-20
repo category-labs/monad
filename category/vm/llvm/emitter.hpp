@@ -86,34 +86,42 @@ namespace monad::vm::llvm
             inline_empty_fallthroughs();
         }
 
-        void terminate_block(Block const &blk)
+        void terminate_block(
+            Block const &blk, VirtualStack &stack, Value *stack_top,
+            bool const stack_top_updated)
         {
             auto term = blk.terminator;
             switch (term) {
             case Jump:
-                jump();
+                jump(stack, stack_top, stack_top_updated);
                 return;
             case JumpI:
-                jumpi(blk);
+                jumpi(blk, stack, stack_top, stack_top_updated);
                 return;
             case FallThrough:
-                fallthrough(blk);
+                fallthrough_to_jumpdest(
+                    blk, stack, stack_top, stack_top_updated);
                 return;
             case Stop:
+                llvm.debug("stop\n");
                 llvm.br(return_lbl);
                 return;
             case Return:
-                prep_for_return();
+                llvm.debug("return\n");
+                prep_for_return(stack);
                 llvm.br(return_lbl);
                 return;
             case Revert:
-                prep_for_return();
+                llvm.debug("revert\n");
+                prep_for_return(stack);
                 llvm.br(revert_lbl);
                 return;
             case SelfDestruct:
-                selfdestruct_();
+                llvm.debug("self destruct\n");
+                selfdestruct_(stack);
                 return;
             default:
+                llvm.debug("invalid instruction\n");
                 MONAD_VM_ASSERT(term == InvalidInstruction);
                 llvm.br(error_lbl);
                 return;
@@ -122,7 +130,13 @@ namespace monad::vm::llvm
 
         void emit_contract()
         {
-            contract_start();
+            bool const any_jumpdests = ir.jump_dests().size() > 0;
+
+            contract_start(any_jumpdests);
+
+            VirtualStack stack;
+            Value *stack_top = evm_stack_begin;
+            int64_t total_delta = 0;
 
             for (size_t i = 0; i < ir.blocks().size(); ++i) {
                 auto const &blk = ir.blocks()[i];
@@ -130,22 +144,81 @@ namespace monad::vm::llvm
                 base_gas_remaining =
                     block_base_gas<traits>(blk) + gas_from_inlining[i];
 
-                bool const skip_block = block_begin(blk);
+                auto *lbl = get_block_lbl(blk);
 
-                if (skip_block) {
+                llvm.insert_at(lbl);
+
+                llvm.debug(std::format(
+                    "\nblock {} is {}\n",
+                    blk.offset,
+                    is_jumpdest(blk) ? "jumpdest" : "fall through"));
+
+                if (is_jumpdest(blk)) {
+                    llvm.debug("clear stack and update stack_top\n");
+                    stack.clear();
+                    stack_top = load_stack_top_p();
+                    total_delta = 0;
+                    jumpdests.emplace_back(blk.offset, lbl);
+                }
+
+                else {
+                    llvm.debug(std::format(
+                        "carry over stack (size = {}) and stack_top\n",
+                        stack.size()));
+                }
+
+                // compute low/delta/high stack water marks
+                auto [low, delta, high] = blk.stack_deltas();
+
+                llvm.debug(std::format("virtstack size={}\n", stack.size()));
+
+                llvm.debug(std::format(
+                    "low={}, high={}, delta={}, total_delta={}\n",
+                    low,
+                    high,
+                    delta,
+                    total_delta));
+
+                if (low < -1024 || // impossible to not be out of bounds
+                    high > 1024 || (blk.terminator == Jump && !any_jumpdests)) {
+                    llvm.br(error_lbl);
                     continue;
                 }
+
+                // compute gas
+                int64_t const min_gas = is_jumpdest(blk)
+                                            ? 1 + base_gas_remaining
+                                            : base_gas_remaining;
+
+                update_gas(min_gas, blk.offset);
+
+                Value *stack_top_pre = stack_top;
+                if (total_delta != 0) {
+                    stack_top_pre = evm_stack_idx(stack_top, total_delta);
+                }
+
+                check_underflow(low, stack_top_pre, blk.offset);
+                check_overflow(high, stack_top_pre, blk.offset);
+                stack_unspill(low, stack, stack_top_pre);
 
                 for (auto const &instr : blk.instrs) {
                     base_gas_remaining -= instr.static_gas_cost();
 
-                    emit_instr(instr);
+                    emit_instr(instr, stack);
                 }
 
                 base_gas_remaining -=
                     terminator_static_gas<traits>(blk.terminator);
 
-                terminate_block(blk);
+                total_delta += delta;
+
+                Value *stack_top_next = stack_top;
+                bool const stack_top_updated = total_delta != 0;
+                if (stack_top_updated) {
+                    stack_top_next = evm_stack_idx(stack_top, total_delta);
+                }
+
+                terminate_block(blk, stack, stack_top_next, stack_top_updated);
             }
 
             contract_finish();
@@ -155,14 +228,13 @@ namespace monad::vm::llvm
         LLVMState &llvm;
         BasicBlocksIR &ir;
 
-        VirtualStack virtual_stack;
-
         Value *g_ctx_ref = nullptr;
         Value *g_ctx_gas_ref = nullptr;
         Value *g_local_gas_ref = nullptr;
 
-        Value *evm_stack = nullptr;
-        Value *evm_stack_height = nullptr;
+        Value *evm_stack_begin = nullptr;
+        Value *evm_stack_end = nullptr;
+        Value *evm_stack_top_p = nullptr;
 
         std::unordered_map<std::string, Function *> llvm_opcode_tbl;
         // ^ string instead of opcode for Log
@@ -196,7 +268,19 @@ namespace monad::vm::llvm
             llvm.store(gas, to);
         }
 
-        void contract_start()
+        void store_stack_top_p(Value *stack_top)
+        {
+            llvm.debug("storing new stack_top_p\n");
+            llvm.store(stack_top, evm_stack_top_p);
+        }
+
+        Value *load_stack_top_p()
+        {
+            llvm.debug("loading stacktop_p\n");
+            return llvm.load(llvm.ptr_ty(llvm.word_ty), evm_stack_top_p);
+        }
+
+        void contract_start(bool any_jumpdests)
         {
             auto [contractf, arg] = llvm.external_function_definition(
                 "contract",
@@ -205,8 +289,6 @@ namespace monad::vm::llvm
             contractf->addFnAttr(Attribute::NoReturn);
             contract = contractf;
 
-            evm_stack = arg[0];
-            g_ctx_ref = arg[1];
             entry = llvm.basic_block("entry", contract);
             error_lbl = llvm.basic_block("error_lbl", contract);
             return_lbl = llvm.basic_block("return_lbl", contract);
@@ -214,17 +296,28 @@ namespace monad::vm::llvm
 
             llvm.insert_at(entry);
 
+            // BAL: should the stack be allocated here instead of passed in?
+            evm_stack_begin = arg[0];
+            g_ctx_ref = arg[1];
+
+            // llvm.comment("init.the.gas");
             g_ctx_gas_ref = context_gep(
                 g_ctx_ref, context_offset_gas_remaining, "ctx_gas_ref");
-
-            evm_stack_height =
-                llvm.alloca_(llvm.int_ty(32), "evm_stack_height");
-            llvm.store(llvm.lit(32, 0), evm_stack_height);
 
             g_local_gas_ref = llvm.alloca_(llvm.int_ty(64), "local_gas_ref");
             copy_gas(g_ctx_gas_ref, g_local_gas_ref);
 
-            set_stack_vars(evm_stack, evm_stack_height);
+            // llvm.comment("init.the.stack");
+
+            evm_stack_end = llvm.gep(
+                llvm.word_ty, evm_stack_begin, llvm.u64(1024), "evm_stack_end");
+
+            evm_stack_top_p =
+                llvm.alloca_(llvm.ptr_ty(llvm.word_ty), "evm_stack_top_p");
+
+            if (any_jumpdests) {
+                store_stack_top_p(evm_stack_begin);
+            }
 
             llvm.insert_at(error_lbl);
             exit_(StatusCode::Error);
@@ -257,104 +350,56 @@ namespace monad::vm::llvm
             }
         };
 
-        void set_stack_vars(Value *evm_stackv, Value *evm_stack_heightv)
+        Value *evm_stack_idx(Value *stack_top, int64_t i)
         {
-            evm_stack = evm_stackv;
-            evm_stack_height = evm_stack_heightv;
+            return llvm.gep(
+                llvm.word_ty, stack_top, llvm.i64(i), "evm_stack_idx");
         };
 
         // spill virtual stack values to the evm runtime stack
-        void stack_spill()
+        void stack_spill(
+            VirtualStack const &stack, Value *stack_top,
+            bool const stack_top_updated)
         {
-            for (auto *v : virtual_stack.virt_stack) {
-                evm_push(v);
+            int64_t sz = stack.size();
+
+            llvm.debug(std::format("spilling stack size {}\n", sz));
+
+            if (stack_top_updated) {
+                llvm.debug("storing stack top pointer\n");
+                store_stack_top_p(stack_top);
+            }
+            else {
+                llvm.debug("no need to store stack top pointer\n");
+            }
+
+            for (int64_t i = -1; i >= -sz; --i) {
+                llvm.debug(std::format("spilling stack index {}\n", i));
+                Value *v = stack.peek(i);
+                Value *p = evm_stack_idx(stack_top, i);
+                llvm.store(v, p);
             }
         };
 
         // unspill values from the evm runtime stack to the virtual stack (if
         // necessary)
-        void stack_unspill(int64_t low)
+        void stack_unspill(int64_t low, VirtualStack &stack, Value *stack_top)
         {
-            for (; low < 0; ++low) {
-                Value *v = evm_pop();
-                virtual_stack.virt_stack.insert(
-                    virtual_stack.virt_stack.begin(), v);
+            auto sz = stack.size();
+
+            llvm.debug(std::format(
+                "unspilling stack size {}, low = {}, net = {}\n",
+                sz,
+                -low,
+                sz + low));
+
+            for (int64_t i = -sz - 1; i >= low; --i) {
+                llvm.debug(std::format("unspilling stack index {}\n", i));
+                Value *p = evm_stack_idx(stack_top, i);
+                Value *v = llvm.load(llvm.word_ty, p);
+                // fallthroughs want to be inserted at the beginning
+                stack.push_front(v);
             }
-        };
-
-        void evm_push(Value *v)
-        {
-            if (evm_push_f == nullptr) {
-                evm_push_f = init_evm_push();
-            }
-            llvm.call_void(evm_push_f, {v, evm_stack, evm_stack_height});
-        };
-
-        Value *evm_pop()
-        {
-            if (evm_pop_f == nullptr) {
-                evm_pop_f = init_evm_pop();
-            }
-            return llvm.call(evm_pop_f, {evm_stack, evm_stack_height});
-        };
-
-        Function *init_evm_push()
-        {
-            SaveInsert const _unused(llvm);
-
-            auto [fun, arg] = llvm.internal_function_definition(
-                "evm_push",
-                llvm.void_ty,
-                {llvm.word_ty,
-                 llvm.ptr_ty(llvm.word_ty),
-                 llvm.ptr_ty(llvm.int_ty(32))});
-
-            Value *val = arg[0];
-            Value *evm_stackp = arg[1];
-            Value *heightp = arg[2];
-
-            auto *entry = llvm.basic_block("entry", fun);
-            llvm.insert_at(entry);
-
-            auto *height = llvm.load(llvm.int_ty(32), heightp);
-            auto *top = get_evm_stack_top(evm_stackp, height);
-            llvm.store(val, top);
-            auto *height1 = llvm.add(llvm.lit(32, 1), height);
-            llvm.store(height1, heightp);
-            llvm.ret_void();
-            return fun;
-        };
-
-        Value *get_evm_stack_top(Value *evm_stackp, Value *height)
-        {
-            return llvm.gep(llvm.word_ty, evm_stackp, height, "evm_stack_top");
-        };
-
-        Function *init_evm_pop()
-        {
-            SaveInsert const _unused(llvm);
-
-            auto [fun, arg] = llvm.internal_function_definition(
-                "evm_pop",
-                llvm.word_ty,
-                {llvm.ptr_ty(llvm.word_ty), llvm.ptr_ty(llvm.int_ty(32))});
-
-            Value *evm_stackp = arg[0];
-            Value *heightp = arg[1];
-
-            auto *entry = llvm.basic_block("entry", fun);
-
-            llvm.insert_at(entry);
-
-            auto *height = llvm.load(llvm.int_ty(32), heightp);
-            auto *height1 = llvm.sub(height, llvm.lit(32, 1));
-            llvm.store(height1, heightp);
-
-            auto *top = get_evm_stack_top(evm_stackp, height1);
-            auto *val = llvm.load(llvm.word_ty, top);
-
-            llvm.ret(val);
-            return fun;
         };
 
         void contract_finish()
@@ -367,7 +412,7 @@ namespace monad::vm::llvm
             if (jump_lbl != nullptr) {
                 emit_jumptable();
             }
-        }
+        };
 
         bool reads_ctx_gas(OpCode op)
         {
@@ -395,33 +440,33 @@ namespace monad::vm::llvm
                 op == SStore || op == Sha3 || op == StaticCall);
         };
 
-        void emit_instr(Instruction const &instr)
+        void emit_instr(Instruction const &instr, VirtualStack &stack)
         {
             auto op = instr.opcode();
 
             switch (op) {
             case Push:
-                virtual_stack.push(llvm.lit_word(instr.immediate_value()));
+                stack.push(llvm.lit_word(instr.immediate_value()));
                 break;
 
             case Pc:
-                virtual_stack.push(llvm.lit_word(instr.pc()));
+                stack.push(llvm.lit_word(instr.pc()));
                 break;
 
             case Dup:
-                virtual_stack.dup(instr.index());
+                stack.dup(instr.index());
                 break;
 
             case Swap:
-                virtual_stack.swap(instr.index());
+                stack.swap(instr.index());
                 break;
 
             case Pop:
-                virtual_stack.pop();
+                stack.pop();
                 break;
 
             case Gas:
-                llvm_gas();
+                llvm_gas(stack);
                 break;
 
             default:
@@ -448,7 +493,7 @@ namespace monad::vm::llvm
                 args.push_back(g);
 
                 for (auto i = 0; i < instr.stack_args(); ++i) {
-                    auto *v = virtual_stack.pop();
+                    auto *v = stack.pop();
                     args.push_back(v);
                 }
 
@@ -457,7 +502,7 @@ namespace monad::vm::llvm
                 }
 
                 if (instr.increases_stack()) {
-                    virtual_stack.push(llvm.call(f, args));
+                    stack.push(llvm.call(f, args));
                 }
                 else {
                     llvm.call_void(f, args);
@@ -511,6 +556,12 @@ namespace monad::vm::llvm
             MONAD_VM_DEBUG_ASSERT(ir.is_valid());
         }
 
+        bool is_jumpdest(Block const &blk)
+        {
+            auto item = ir.jump_dests().find(blk.offset);
+            return (item != ir.jump_dests().end());
+        };
+
         void emit_jump(Value *v)
         {
             if (ir.jump_dests().size() == 0) {
@@ -523,12 +574,6 @@ namespace monad::vm::llvm
             }
         };
 
-        bool is_jumpdest(Block const &blk)
-        {
-            auto item = ir.jump_dests().find(blk.offset);
-            return (item != ir.jump_dests().end());
-        };
-
         Block const &get_fallthrough_block(Block const &blk)
         {
             auto dest = blk.fallthrough_dest;
@@ -537,36 +582,51 @@ namespace monad::vm::llvm
             return ir.blocks()[dest];
         };
 
-        void fallthrough(Block const &blk)
+        void fallthrough_to_jumpdest(
+            Block const &blk, VirtualStack const &stack, Value *stack_top,
+            bool const stack_top_updated)
         {
             auto next_blk = get_fallthrough_block(blk);
             MONAD_VM_ASSERT(is_jumpdest(next_blk));
-            stack_spill();
+            llvm.debug("fall through to jumpdest\n");
+            stack_spill(stack, stack_top, stack_top_updated);
             llvm.br(get_block_lbl(next_blk));
         };
 
-        void jump()
+        void jump(
+            VirtualStack &stack, Value *stack_top, bool const stack_top_updated)
         {
-            auto *v = virtual_stack.pop();
-            stack_spill();
+            auto *v = stack.pop();
+            llvm.debug("jump\n");
+            stack_spill(stack, stack_top, stack_top_updated);
             emit_jump(v);
         };
 
-        void jumpi(Block const &blk)
+        void jumpi(
+            Block const &blk, VirtualStack &stack, Value *stack_top,
+            bool const stack_top_updated)
         {
-            auto *v = virtual_stack.pop();
-            auto *b = virtual_stack.pop();
+            llvm.debug("jumpi\n");
+            auto *v = stack.pop();
+            auto *b = stack.pop();
             auto *isz = llvm.eq(b, llvm.lit_word(0));
 
             auto fallthrough_block = get_fallthrough_block(blk);
             BasicBlock *then_lbl = get_block_lbl(fallthrough_block);
 
-            BasicBlock *else_lbl = llvm.basic_block("else", contract);
+            BasicBlock *else_lbl = llvm.basic_block(
+                std::format("else_lbl_{}", blk.offset), contract);
 
             auto fallthrough_is_jumpdest = is_jumpdest(fallthrough_block);
 
             if (fallthrough_is_jumpdest) {
-                stack_spill();
+                llvm.debug("jumpi fallthrough is jumpdest, spilling prior to "
+                           "condbr\n");
+                stack_spill(stack, stack_top, stack_top_updated);
+            }
+            else {
+                llvm.debug("jumpi fallthrough not jumpdest, ");
+                llvm.debug("spilling in else branch\n");
             }
 
             llvm.condbr(isz, then_lbl, else_lbl);
@@ -574,8 +634,10 @@ namespace monad::vm::llvm
             llvm.insert_at(else_lbl);
 
             if (!fallthrough_is_jumpdest) {
-                stack_spill();
+                llvm.debug("else branch spill\n");
+                stack_spill(stack, stack_top, stack_top_updated);
             }
+
             emit_jump(v);
         }
 
@@ -599,7 +661,7 @@ namespace monad::vm::llvm
             llvm.unreachable();
         }
 
-        void selfdestruct_()
+        void selfdestruct_(VirtualStack &stack)
         {
             if (selfdestruct_f == nullptr) {
                 selfdestruct_f = declare_symbol(
@@ -611,17 +673,17 @@ namespace monad::vm::llvm
 
             copy_gas(g_local_gas_ref, g_ctx_gas_ref);
 
-            auto *addr = virtual_stack.pop();
+            auto *addr = stack.pop();
             auto *p = assign(addr, "addr");
             llvm.call_void(selfdestruct_f, {g_ctx_ref, p});
             llvm.unreachable();
             llvm.ret_void();
         };
 
-        void prep_for_return()
+        void prep_for_return(VirtualStack &stack)
         {
-            auto *a = virtual_stack.pop();
-            auto *b = virtual_stack.pop();
+            auto *a = stack.pop();
+            auto *b = stack.pop();
             auto *offsetp = context_gep(
                 g_ctx_ref, context_offset_result_offset, "result_offset");
             llvm.store(a, offsetp);
@@ -630,89 +692,54 @@ namespace monad::vm::llvm
             llvm.store(b, sizep);
         }
 
-        void check_underflow(Value *stack_height, int64_t low)
+        void check_underflow(int64_t low, Value *stack_top, byte_offset offset)
         {
-            auto *no_underflow_lbl =
-                llvm.basic_block("no_underflow_lbl", contract);
+            if (low >= 0) {
+                llvm.debug("no need to check underflow\n");
+                return;
+            }
+            auto *no_underflow_lbl = llvm.basic_block(
+                std::format("no_underflow_lbl_{}", offset), contract);
 
-            auto *stack_low = llvm.add(
-                stack_height, llvm.lit(32, static_cast<uint32_t>(low)));
-            auto *low_pred = llvm.slt(stack_low, llvm.lit(32, 0));
+            auto *stack_low = evm_stack_idx(stack_top, low);
+
+            auto *low_pred = llvm.slt(stack_low, evm_stack_begin);
             llvm.condbr(low_pred, error_lbl, no_underflow_lbl);
 
             llvm.insert_at(no_underflow_lbl);
         };
 
-        void check_overflow(Value *stack_height, int64_t high)
+        void check_overflow(int64_t high, Value *stack_top, byte_offset offset)
         {
-            auto *no_overflow_lbl =
-                llvm.basic_block("no_overflow_lbl", contract);
+            if (high <= 0) {
+                llvm.debug("no need to check overflow\n");
+                return;
+            }
+            auto *no_overflow_lbl = llvm.basic_block(
+                std::format("no_overflow_lbl_{}", offset), contract);
 
-            auto *stack_high = llvm.add(
-                stack_height, llvm.lit(32, static_cast<uint32_t>(high)));
-            auto *high_pred = llvm.sgt(stack_high, llvm.lit(32, 1024));
+            auto *stack_high = evm_stack_idx(stack_top, high);
+
+            auto *high_pred = llvm.sgt(stack_high, evm_stack_end);
             llvm.condbr(high_pred, error_lbl, no_overflow_lbl);
 
             llvm.insert_at(no_overflow_lbl);
         };
 
-        void update_gas(int64_t const min_gas)
+        void update_gas(int64_t const min_gas, byte_offset offset)
         {
             auto *gas = llvm.load(llvm.int_ty(64), g_local_gas_ref);
             auto *gas1 =
                 llvm.sub(gas, llvm.lit(64, static_cast<uint64_t>(min_gas)));
             auto *gas_lt_zero = llvm.slt(gas1, llvm.lit(64, 0));
 
-            auto *gas_ok_lbl = llvm.basic_block("gas_ok_lbl", contract);
+            auto *gas_ok_lbl = llvm.basic_block(
+                std::format("gas_ok_lbl_{}", offset), contract);
 
             llvm.condbr(gas_lt_zero, error_lbl, gas_ok_lbl);
             llvm.insert_at(gas_ok_lbl);
             llvm.store(gas1, g_local_gas_ref);
         }
-
-        bool block_begin(Block const &blk)
-        {
-            auto *lbl = get_block_lbl(blk);
-
-            llvm.insert_at(lbl);
-
-            if (is_jumpdest(blk)) {
-                virtual_stack.clear();
-                jumpdests.emplace_back(blk.offset, lbl);
-            }
-
-            // compute gas
-            int64_t const min_gas =
-                is_jumpdest(blk) ? 1 + base_gas_remaining : base_gas_remaining;
-
-            // compute low/high stack water marks
-            auto [low, high] = virtual_stack.deltas(blk);
-
-            if (low < -1024 || // impossible to not be out of bounds
-                high > 1024 ||
-                (blk.terminator == Jump && ir.jump_dests().size() == 0)) {
-                llvm.br(error_lbl);
-                return true;
-            }
-
-            if (low < 0 || high > 0) {
-                auto *stack_height =
-                    llvm.load(llvm.int_ty(32), evm_stack_height);
-                if (low < 0) {
-                    check_underflow(stack_height, low);
-                }
-
-                if (high > 0) {
-                    check_overflow(stack_height, high);
-                }
-            }
-
-            update_gas(min_gas);
-
-            stack_unspill(low);
-
-            return false;
-        };
 
         BasicBlock *get_block_lbl(Block const &blk)
         {
@@ -720,7 +747,7 @@ namespace monad::vm::llvm
             if (item == block_tbl.end()) {
                 auto const *nm = is_jumpdest(blk) ? "jd" : "fallthrough";
                 auto *lbl = llvm.basic_block(
-                    std::format("{}_loc{}", nm, blk.offset), contract);
+                    std::format("{}_lbl_{}", nm, blk.offset), contract);
                 block_tbl.insert({blk.offset, lbl});
                 return lbl;
             }
@@ -1057,12 +1084,12 @@ namespace monad::vm::llvm
             return f;
         }
 
-        void llvm_gas()
+        void llvm_gas(VirtualStack &stack)
         {
             auto *gas = llvm.load(llvm.int_ty(64), g_local_gas_ref);
             auto *r = llvm.add(
                 gas, llvm.lit(64, static_cast<uint64_t>(base_gas_remaining)));
-            virtual_stack.push(llvm.cast_word(r));
+            stack.push(llvm.cast_word(r));
         }
 
         Function *llvm_byte(Instruction const &instr)

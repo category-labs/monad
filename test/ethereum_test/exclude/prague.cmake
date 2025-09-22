@@ -1,7 +1,6 @@
 set(prague_excluded_tests
     # Blobs (EIP-4844)
     "BlockchainTests.cancun/eip4844_blobs/*"
-    "BlockchainTests.cancun/eip4788_beacon_root/beacon_root_contract/tx_to_beacon_root_contract.json"
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip6110_deposits/*"
     "BlockchainTests.prague/eip7002_el_triggerable_withdrawals/*"

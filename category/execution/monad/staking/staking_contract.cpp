@@ -237,8 +237,8 @@ constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(OpCount{
     .transfers = 0});
 
 constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 0,
-    .cold_sloads = 2,
+    .warm_sloads = 2,
+    .cold_sloads = 0,
     .warm_sstores = 0,
     .warm_sstore_nonzero = 0,
     .cold_sstores = 0,
@@ -300,7 +300,7 @@ static_assert(COMPOUND_OP_COST == 285050);
 static_assert(CLAIM_REWARDS_OP_COST == 155375);
 static_assert(CHANGE_COMMISSION_OP_COST == 39475);
 static_assert(EXTERNAL_REWARDS_OP_COST == 62300);
-static_assert(GET_EPOCH_OP_COST == 16200);
+static_assert(GET_EPOCH_OP_COST == 200);
 static_assert(GET_VALIDATOR_OP_COST == 97200);
 static_assert(GET_DELEGATOR_OP_COST == 184900);
 static_assert(GET_WITHDRAWAL_REQUEST_OP_COST == 24300);

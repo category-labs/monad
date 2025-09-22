@@ -501,6 +501,33 @@ TEST_F(EvmTest, EthCallOutOfGas)
     ASSERT_EQ(result_.status_code, EVMC_OUT_OF_GAS);
 }
 
+TEST_F(EvmTest, Int32BlockGasOverflow)
+{
+    std::vector<uint8_t> code;
+    for (size_t i = 0; i < 14 * 1024; ++i) {
+        code.push_back(PUSH0);
+        code.push_back(PUSH0);
+        code.push_back(CODESIZE);
+        code.push_back(CREATE);
+        code.push_back(POP);
+    }
+
+    auto const icode = make_shared_intercode(code);
+    auto const ncode =
+        vm_.compiler().compile<monad::MonadTraits<MONAD_FOUR>>(icode);
+
+    pre_execute(20'000'000, {});
+    result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
+        chain_params,
+        &host_.get_interface(),
+        host_.to_context(),
+        &msg_,
+        icode,
+        ncode->entrypoint())};
+
+    EXPECT_EQ(result_.status_code, EVMC_FAILURE);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     EvmTest, EvmFile,
     ::testing::ValuesIn(std::vector<fs::directory_entry>{

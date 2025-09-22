@@ -33,7 +33,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <variant>
 
@@ -48,7 +47,7 @@ namespace
 
     template <Traits traits>
     void emit_instr(
-        Emitter &emit, Instruction const &instr, int32_t remaining_base_gas)
+        Emitter &emit, Instruction const &instr, int64_t remaining_base_gas)
     {
         using enum OpCode;
         switch (instr.opcode()) {
@@ -323,11 +322,10 @@ namespace
 
     template <Traits traits>
     void emit_instrs(
-        Emitter &emit, Block const &block, int32_t instr_gas,
+        Emitter &emit, Block const &block, int64_t instr_gas,
         native_code_size_t max_native_size, CompilerConfig const &config)
     {
-        MONAD_VM_ASSERT(instr_gas <= std::numeric_limits<int32_t>::max());
-        int32_t remaining_base_gas = instr_gas;
+        int64_t remaining_base_gas = instr_gas;
         for (auto const &instr : block.instrs) {
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
@@ -344,7 +342,7 @@ namespace
     {
         // Remaining block base gas is zero for terminator instruction,
         // because there are no more instructions left in the block.
-        constexpr int32_t remaining_base_gas = 0;
+        constexpr int64_t remaining_base_gas = 0;
         using enum basic_blocks::Terminator;
         switch (block.terminator) {
         case FallThrough:
@@ -377,7 +375,7 @@ namespace
 
     void emit_gas_decrement(
         Emitter &emit, BasicBlocksIR const &ir, Block const &block,
-        int32_t block_base_gas)
+        int64_t block_base_gas)
     {
         if (ir.jump_dests().contains(block.offset)) {
             emit.gas_decrement_unbounded_work(block_base_gas + 1);
@@ -439,7 +437,7 @@ namespace monad::vm::compiler::native
         for (Block const &block : ir.blocks()) {
             bool const can_enter_block = emit.begin_new_block(block);
             if (can_enter_block) {
-                int32_t const base_gas = block_base_gas<traits>(block);
+                int64_t const base_gas = block_base_gas<traits>(block);
                 emit_gas_decrement(emit, ir, block, base_gas);
                 emit_instrs<traits>(
                     emit, block, base_gas, max_native_size, config);

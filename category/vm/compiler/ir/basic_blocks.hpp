@@ -420,9 +420,9 @@ namespace monad::vm::compiler::basic_blocks
     }
 
     template <Traits traits>
-    int32_t block_base_gas(Block const &block)
+    int64_t block_base_gas(Block const &block)
     {
-        int32_t base_gas = 0;
+        int64_t base_gas = 0;
         for (auto const &instr : block.instrs) {
             base_gas += instr.static_gas_cost();
         }

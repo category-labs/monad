@@ -1009,7 +1009,7 @@ namespace monad::vm::compiler::native
         return block_prologue(b);
     }
 
-    void Emitter::gas_decrement_static_work(int32_t gas)
+    void Emitter::gas_decrement_static_work(int64_t gas)
     {
         if (gas) {
             gas_decrement_no_check(gas);
@@ -1019,7 +1019,7 @@ namespace monad::vm::compiler::native
         }
     }
 
-    void Emitter::gas_decrement_unbounded_work(int32_t gas)
+    void Emitter::gas_decrement_unbounded_work(int64_t gas)
     {
         accumulated_static_work_ = 0;
         if (gas) {
@@ -1228,12 +1228,31 @@ namespace monad::vm::compiler::native
         return is_live(reg, live, std::index_sequence_for<LiveSet...>{});
     }
 
-    void Emitter::gas_decrement_no_check(int32_t gas)
+    void Emitter::gas_decrement_no_check(int64_t gas)
     {
         MONAD_VM_DEBUG_ASSERT(gas > 0);
+
+        // This condition should never hold in practice, because the total gas
+        // that can be included in a block for any supported chain is
+        // substantially less than the maximum 32-bit signed integer.
+        if (MONAD_VM_UNLIKELY(gas > std::numeric_limits<int32_t>::max())) {
+            // TODO: To avoid hard-coding this value, we'd need to have access
+            // to a Traits template parameter. Refactoring the Emitter class to
+            // be trait-parameterized is a large refactoring that will need to
+            // be done carefully, so for now just encode the current maximum
+            // block size of any chain supported by the VM.
+            static constexpr int64_t max_known_block_gas_limit = 200'000'000;
+            static_assert(
+                max_known_block_gas_limit <=
+                std::numeric_limits<int32_t>::max());
+
+            as_.jmp(error_label_);
+            return;
+        }
+
         as_.sub(
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
-            gas);
+            static_cast<int32_t>(gas));
     }
 
     void Emitter::gas_decrement_no_check(x86::Gpq gas)
@@ -1243,11 +1262,11 @@ namespace monad::vm::compiler::native
             gas);
     }
 
-    bool Emitter::accumulate_static_work(int32_t work)
+    bool Emitter::accumulate_static_work(int64_t work)
     {
         MONAD_VM_DEBUG_ASSERT(work >= 0);
         MONAD_VM_DEBUG_ASSERT(
-            work <= std::numeric_limits<int32_t>::max() -
+            work <= std::numeric_limits<int64_t>::max() -
                         STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
         MONAD_VM_DEBUG_ASSERT(
             accumulated_static_work_ < STATIC_WORK_GAS_CHECK_THRESHOLD);
@@ -2933,7 +2952,7 @@ namespace monad::vm::compiler::native
     }
 
     // Discharge
-    void Emitter::gas(int32_t remaining_base_gas)
+    void Emitter::gas(int64_t remaining_base_gas)
     {
         MONAD_VM_DEBUG_ASSERT(remaining_base_gas >= 0);
         discharge_deferred_comparison();
@@ -7725,7 +7744,7 @@ namespace monad::vm::compiler::native
     // Discharge via exp_emit_gas_decrement_*.
     // It is assumed that the work of optimized EXP does not exceed the static
     // work cost of the EXP instruction. See `static_assert` in `Emitter::exp`.
-    bool Emitter::exp_optimized(int32_t remaining_base_gas, uint32_t gas_factor)
+    bool Emitter::exp_optimized(int64_t remaining_base_gas, uint32_t gas_factor)
     {
         auto base_elem = stack_.get(stack_.top_index());
         auto exp_elem = stack_.get(stack_.top_index() - 1);

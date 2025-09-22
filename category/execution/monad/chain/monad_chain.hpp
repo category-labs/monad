@@ -24,8 +24,6 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 
-#include <array>
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -37,8 +35,7 @@ inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
 
 struct BlockHeader;
 struct Transaction;
-class AccountState;
-class FeeBuffer;
+class State;
 
 struct MonadChainContext
 {
@@ -67,11 +64,6 @@ struct MonadChain : Chain
 
     virtual size_t get_max_initcode_size(
         uint64_t block_number, uint64_t timestamp) const override;
-
-    virtual Result<void> validate_transaction(
-        uint64_t block_number, uint64_t timestamp, Transaction const &,
-        Address const &sender, State &, uint256_t const &base_fee_per_gas,
-        std::vector<std::optional<Address>> const &authorities) const override;
 
     bool revert_transaction(
         uint64_t block_number, uint64_t timestamp, Address const &sender,

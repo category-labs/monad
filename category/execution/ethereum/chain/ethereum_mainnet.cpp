@@ -21,14 +21,8 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet_alloc.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/dao.hpp>
-#include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/switch_traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -173,18 +167,6 @@ GenesisState EthereumMainnet::get_genesis_state() const
                                        "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, ETHEREUM_MAINNET_ALLOC};
-}
-
-Result<void> EthereumMainnet::validate_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
-    Transaction const &tx, Address const &sender, State &state,
-    uint256_t const &, std::vector<std::optional<Address>> const &) const
-{
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    auto const sender_account = state.recent_account(sender);
-    auto const &icode = state.get_code(sender)->intercode();
-    return ::monad::validate_transaction(
-        rev, tx, sender_account, {icode->code(), icode->size()});
 }
 
 MONAD_NAMESPACE_END

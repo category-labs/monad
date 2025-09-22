@@ -227,6 +227,8 @@ add_library(
   "monad/system_sender.hpp"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
+  "monad/validate_monad_transaction.cpp"
+  "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
   # monad/staking

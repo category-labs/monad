@@ -317,9 +317,7 @@ template <Traits traits>
 Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
     auto const validate_lambda = [this, &state] {
-        auto result = chain_.validate_transaction(
-            header_.number,
-            header_.timestamp,
+        Result<void> result = validate_transaction<traits>(
             tx_,
             sender_,
             state,

@@ -218,7 +218,8 @@ namespace
 
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
-        BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
+        BOOST_OUTCOME_TRY(
+            validate_transaction_base<traits>(enriched_txn, eoa, {}));
 
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());

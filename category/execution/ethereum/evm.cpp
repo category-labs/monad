@@ -140,12 +140,14 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
 {
     state.push();
 
+    bool const static_call = msg.flags & EVMC_STATIC;
+
     if (msg.kind != EVMC_DELEGATECALL) {
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
             state.pop_reject();
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
-        else if (msg.flags != EVMC_STATIC) {
+        else if (!static_call) {
             transfer_balances(state, msg, msg.recipient);
         }
     }
@@ -156,7 +158,7 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
             Address{msg.recipient} == Address{msg.code_address});
     }
 
-    if (msg.kind == EVMC_CALL && msg.flags & EVMC_STATIC) {
+    if (msg.kind == EVMC_CALL && static_call) {
         // eip-161
         state.touch(msg.recipient);
     }

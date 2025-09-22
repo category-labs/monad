@@ -47,7 +47,7 @@ nlohmann::json to_json(CallFrame const &f)
 {
     nlohmann::json res{};
     res["type"] = call_kind_to_string(f.type);
-    if (MONAD_UNLIKELY(f.type == CallType::CALL && f.flags == EVMC_STATIC)) {
+    if (MONAD_UNLIKELY(f.type == CallType::CALL && (f.flags & EVMC_STATIC))) {
         res["type"] = "STATICCALL";
     }
     res["from"] = fmt::format(

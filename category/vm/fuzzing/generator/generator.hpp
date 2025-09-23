@@ -546,7 +546,7 @@ namespace monad::vm::fuzzing
         std::vector<BlockIx> const &jumpdest_blocks,
         BasicBlockInfo const &block, std::size_t block_index)
     {
-        static constexpr std::size_t max_block_insts = 10000;
+        static constexpr std::size_t max_block_insts = 10; // BAL: 10000;
 
         auto program = std::vector<Instruction>{};
 

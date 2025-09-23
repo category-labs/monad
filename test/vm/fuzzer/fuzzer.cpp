@@ -363,6 +363,7 @@ static arguments parse_args(int const argc, char **const argv)
         std::map<std::string, BlockchainTestVM::Implementation>{
             {"interpreter", BlockchainTestVM::Implementation::Interpreter},
             {"compiler", BlockchainTestVM::Implementation::Compiler},
+            {"llvm", BlockchainTestVM::Implementation::LLVM},
         };
 
     app.add_option(
@@ -556,8 +557,11 @@ static evmc::VM create_monad_vm(
         hook = compiler_emit_hook(engine, &hook_engine);
     }
 
-    return evmc::VM(
-        new BlockchainTestVM(args.implementation, hook, execute_hook));
+    if (args.implementation == LLVM) {
+        init_llvm();
+    }
+
+    return evmc::VM(new BlockchainTestVM(args.implementation, hook, execute_hook));
 }
 
 struct DeployContract
@@ -601,6 +605,7 @@ static evmc::address prepare_address(evmc::address const &from, uint64_t &nonce)
 // 3. Optionally deploying a delegated contract
 // 4. Sending a few messages to deployed contracts
 template <typename Engine>
+
 static void prepare_iteration(
     arguments const &args, Engine &engine, Run &run,
     std::vector<evmc::address> &known_addresses,

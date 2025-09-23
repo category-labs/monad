@@ -164,9 +164,10 @@ namespace monad::vm::llvm
             ir.CreateCall(f, args);
         };
 
-        Value *call(Function *f, std::vector<Value *> const &args)
+        Value *
+        call(Function *f, std::vector<Value *> const &args, std::string_view nm)
         {
-            return ir.CreateCall(f, args, "r");
+            return ir.CreateCall(f, args, nm);
         };
 
         void insert_symbol(std::string const &nm, void const *f)
@@ -177,9 +178,14 @@ namespace monad::vm::llvm
             opcode_syms.insert({mangle(nm), esd});
         }
 
+        BasicBlock *get_insert()
+        {
+            return ir.GetInsertBlock();
+        };
+
         void save_insert()
         {
-            auto *lbl = ir.GetInsertBlock();
+            auto *lbl = get_insert();
             insert_lbls.push_back(lbl);
         };
 
@@ -195,9 +201,10 @@ namespace monad::vm::llvm
             insert_lbls.pop_back();
         };
 
-        Value *gep(Type *ty, Value *v, Value *const offset, std::string_view nm)
+        Value *
+        gep(Type *ty, Value *v, ArrayRef<Value *> idxs, std::string_view nm)
         {
-            return ir.CreateInBoundsGEP(ty, v, {offset}, nm);
+            return ir.CreateInBoundsGEP(ty, v, idxs, nm);
         }
 
         void store(Value *v, Value *p)
@@ -223,7 +230,7 @@ namespace monad::vm::llvm
         void comment(std::string const &s)
         {
             Value *v = no_op();
-            Instruction *instr = dyn_cast<Instruction>(v);
+            ::llvm::Instruction *instr = dyn_cast<::llvm::Instruction>(v);
             MDString *comment_str = MDString::get(context, "comment");
             MDNode *comment_node = MDNode::get(context, comment_str);
 
@@ -237,6 +244,16 @@ namespace monad::vm::llvm
             instr->setMetadata(sanitized, comment_node);
         }
 
+        PHINode *phi(Type *ty)
+        {
+            return PHINode::Create(ty, 1, "phi");
+        }
+
+        void phi_incoming(PHINode *phiNode, Value *val, BasicBlock *lbl)
+        {
+            phiNode->addIncoming(val, lbl);
+        }
+
         void br(BasicBlock *blk)
         {
             ir.CreateBr(blk);
@@ -248,12 +265,17 @@ namespace monad::vm::llvm
                 bswap_f = ::llvm::Intrinsic::getDeclaration(
                     &m, ::llvm::Intrinsic::bswap, {word_ty});
             }
-            return call(bswap_f, {val});
+            return call(bswap_f, {val}, "bswap");
         };
 
         Value *addr_to_word(Value *val)
         {
             return shr(bswap(cast_word(val)), lit_word(96));
+        };
+
+        Value *select(Value *cond, Value *a, Value *b)
+        {
+            return ir.CreateSelect(cond, a, b);
         };
 
         void condbr(Value *pred, BasicBlock *then_lbl, BasicBlock *else_lbl)
@@ -274,6 +296,16 @@ namespace monad::vm::llvm
         Value *cast_bool(Value *a)
         {
             return ir.CreateIntCast(a, int_ty(1), false, "cast_bool");
+        };
+
+        Value *cast_32(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(32), false, "cast_32");
+        };
+
+        Value *cast_64(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(64), false, "cast_64");
         };
 
         Value *not_(Value *a)
@@ -394,6 +426,16 @@ namespace monad::vm::llvm
             return ir.CreateICmpUGT(a, b, "ugt");
         };
 
+        Value *uge(Value *a, Value *b)
+        {
+            return ir.CreateICmpUGE(a, b, "uge");
+        };
+
+        Value *ule(Value *a, Value *b)
+        {
+            return ir.CreateICmpULE(a, b, "ule");
+        };
+
         Value *ult(Value *a, Value *b)
         {
             return ir.CreateICmpULT(a, b, "ult");
@@ -422,6 +464,16 @@ namespace monad::vm::llvm
         Constant *i64(int64_t x)
         {
             return u64(static_cast<uint64_t>(x));
+        };
+
+        Constant *u32(uint32_t x)
+        {
+            return ConstantInt::get(int_ty(32), x);
+        };
+
+        Constant *i32(int32_t x)
+        {
+            return u32(static_cast<uint32_t>(x));
         };
 
         ConstantInt *lit_word(uint256_t x)
@@ -483,6 +535,38 @@ namespace monad::vm::llvm
         {
             return BasicBlock::Create(context, nm, fun);
         };
+
+        ArrayType *array_ty(Type *ty, uint64_t sz)
+        {
+            return ArrayType::get(ty, sz);
+        }
+
+        GlobalVariable *
+        const_array(std::vector<Constant *> const vals, std::string_view nm)
+        {
+            MONAD_VM_ASSERT(vals.size() > 0);
+
+            Type *ty = vals[0]->getType();
+            ArrayType *arr_ty = array_ty(ty, vals.size());
+            Constant *arr = ConstantArray::get(arr_ty, vals);
+            return new GlobalVariable(
+                m, arr_ty, true, GlobalValue::InternalLinkage, arr, nm);
+        }
+
+        BlockAddress *block_address(BasicBlock *blk)
+        {
+            return BlockAddress::get(blk);
+        }
+
+        IndirectBrInst *indirectbr(Value *addr, std::vector<BasicBlock *> blks)
+        {
+            auto *r = ir.CreateIndirectBr(
+                addr, static_cast<unsigned int>(blks.size()));
+            for (BasicBlock *blk : blks) {
+                r->addDestination(blk);
+            }
+            return r;
+        }
 
     private:
         std::unique_ptr<LLVMContext> llvm_context =

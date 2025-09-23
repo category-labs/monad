@@ -16,6 +16,16 @@
 #pragma once
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/instruction.hpp>
+#include <category/vm/runtime/uint256.hpp>
+// #include <category/vm/evm/opcodes.hpp> // BAL:
+#include <category/vm/evm/traits.hpp>
+
+using namespace monad::vm::compiler::basic_blocks;
+using namespace monad::vm::runtime;
+using namespace monad::vm::compiler;
+using enum OpCode;
+using enum Terminator;
 
 namespace monad::vm::llvm
 {
@@ -82,4 +92,5 @@ namespace monad::vm::llvm
 
         std::vector<Value *> virt_stack;
     };
+
 }

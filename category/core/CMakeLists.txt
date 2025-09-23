@@ -131,6 +131,10 @@ add_library(
   "event/event_ring_fmt.hpp"
   "event/event_ring_util.c"
   "event/event_ring_util.h"
+  "event/event_source.h"
+  "event/event_source_inline.h"
+  "event/event_source_inline_c_generic.h"
+  "event/event_source_inline_cxx.hpp"
   "event/test_event_ctypes.h"
   "event/test_event_ctypes_metadata.c"
   # fiber

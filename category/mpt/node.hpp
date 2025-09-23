@@ -26,6 +26,7 @@
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/util.hpp>
 
+#include <concepts>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -122,6 +123,13 @@ We store node data to its parent's storage to avoid an extra read of child node
 to retrieve child data.
 */
 
+class Node;
+class CacheNode;
+
+template <typename NodeType>
+concept node_type =
+    std::same_as<NodeType, Node> || std::same_as<NodeType, CacheNode>;
+
 class NodeBase
 {
 protected:
@@ -148,6 +156,9 @@ public:
     static constexpr unsigned disk_size_bytes = sizeof(uint32_t);
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
+
+    template <node_type DestNodeType, node_type SrcNodeType>
+    friend DestNodeType::UniquePtr copy_node(SrcNodeType const *const from);
 
     /* 16-bit mask for children */
     uint16_t mask{0};
@@ -271,16 +282,19 @@ public:
     void set_child_data(unsigned index, byte_string_view data) noexcept;
 
     //! next pointers
+protected:
     unsigned char *next_data() noexcept;
     unsigned char const *next_data() const noexcept;
+
+public:
+    unsigned char *next_data_aligned() noexcept;
+    unsigned char const *next_data_aligned() const noexcept;
 
     uint32_t get_disk_size() const noexcept;
 };
 
 class Node final : public NodeBase
 {
-    unsigned char *next_data_aligned() noexcept;
-    unsigned char const *next_data_aligned() const noexcept;
 
 public:
     using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
@@ -439,10 +453,6 @@ void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_write, Node const &,
     uint32_t disk_size, unsigned offset = 0);
 
-template <typename NodeType>
-concept node_type =
-    std::same_as<NodeType, Node> || std::same_as<NodeType, CacheNode>;
-
 template <node_type NodeType>
 inline NodeType::UniquePtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
@@ -461,9 +471,8 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     uint32_t const base_size = disk_size - NodeBase::disk_size_bytes;
     if constexpr (std::same_as<NodeType, Node>) {
-        auto const alloc_size = static_cast<uint32_t>(
-            round_up_align<3>(base_size) +
-            number_of_children * sizeof(Node::SharedPtr));
+        auto const alloc_size = round_up_align<3>(base_size) +
+                                number_of_children * sizeof(Node::SharedPtr);
         auto node = NodeType::make(alloc_size);
         std::copy_n(read_pos, base_size, (unsigned char *)node.get());
         for (unsigned i = 0; i < node->number_of_children(); ++i) {
@@ -473,12 +482,14 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
         return node;
     }
     else {
-        auto const alloc_size = static_cast<uint32_t>(
-            base_size + number_of_children * sizeof(NodeType *));
+        auto const alloc_size = round_up_align<3>(base_size) +
+                                number_of_children * sizeof(NodeType *);
         auto node = NodeType::make(alloc_size);
         std::copy_n(read_pos, base_size, (unsigned char *)node.get());
         std::memset(
-            node->next_data(), 0, number_of_children * sizeof(NodeType *));
+            node->next_data_aligned(),
+            0,
+            number_of_children * sizeof(NodeType *));
         MONAD_ASSERT(alloc_size == node->get_mem_size());
         return node;
     }
@@ -488,13 +499,12 @@ template <node_type DestNodeType, node_type SrcNodeType>
 DestNodeType::UniquePtr copy_node(SrcNodeType const *const from)
 {
     auto const number_of_children = from->number_of_children();
-    unsigned const base_size =
-        static_cast<unsigned>(from->next_data() - (unsigned char *)from);
+    auto const base_size = static_cast<unsigned>(
+        from->next_data_aligned() - (unsigned char *)from);
 
     if constexpr (std::same_as<DestNodeType, Node>) {
-        unsigned const alloc_size = static_cast<unsigned>(
-            round_up_align<3>(base_size) +
-            number_of_children * sizeof(Node::SharedPtr));
+        auto const alloc_size = round_up_align<3>(base_size) +
+                                number_of_children * sizeof(Node::SharedPtr);
         auto node_copy = DestNodeType::make(alloc_size);
         std::copy_n(
             (unsigned char *)from, base_size, (unsigned char *)node_copy.get());
@@ -504,14 +514,13 @@ DestNodeType::UniquePtr copy_node(SrcNodeType const *const from)
         return node_copy;
     }
     else {
-        auto const next_ptrs_size =
-            static_cast<unsigned>(number_of_children * sizeof(void *));
-        unsigned const alloc_size = base_size + next_ptrs_size;
+        auto const next_ptrs_size = number_of_children * sizeof(void *);
+        auto const alloc_size = round_up_align<3>(base_size) + next_ptrs_size;
         auto node_copy = DestNodeType::make(alloc_size);
         std::copy_n(
             (unsigned char *)from, base_size, (unsigned char *)node_copy.get());
         // reset all in memory children
-        std::memset(node_copy->next_data(), 0, next_ptrs_size);
+        std::memset(node_copy->next_data_aligned(), 0, next_ptrs_size);
         return node_copy;
     }
 }

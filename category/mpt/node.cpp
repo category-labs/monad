@@ -354,6 +354,19 @@ unsigned char const *NodeBase::next_data() const noexcept
     return child_data() + child_data_offset(number_of_children());
 }
 
+// round up to 8-byte boundary
+unsigned char *NodeBase::next_data_aligned() noexcept
+{
+    return reinterpret_cast<unsigned char *>(
+        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
+}
+
+unsigned char const *NodeBase::next_data_aligned() const noexcept
+{
+    return reinterpret_cast<unsigned char *>(
+        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
+}
+
 uint32_t NodeBase::get_disk_size() const noexcept
 {
     MONAD_DEBUG_ASSERT(next_data() >= (unsigned char *)this);
@@ -362,21 +375,6 @@ uint32_t NodeBase::get_disk_size() const noexcept
     uint32_t const total_disk_size = node_disk_size + NodeBase::disk_size_bytes;
     MONAD_DEBUG_ASSERT(total_disk_size <= NodeBase::max_disk_size);
     return total_disk_size;
-}
-
-// round up to 8-byte boundary
-unsigned char *Node::next_data_aligned() noexcept
-{
-    auto const aligned =
-        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data()));
-    return reinterpret_cast<unsigned char *>(aligned);
-}
-
-unsigned char const *Node::next_data_aligned() const noexcept
-{
-    auto const aligned =
-        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data()));
-    return reinterpret_cast<unsigned char *>(aligned);
 }
 
 Node::SharedPtr *Node::child_ptr(unsigned index) noexcept
@@ -423,18 +421,23 @@ unsigned Node::get_mem_size() const noexcept
 
 void *CacheNode::next(size_t const index) const noexcept
 {
-    return unaligned_load<void *>(next_data() + index * sizeof(Node *));
+    return unaligned_load<void *>(next_data_aligned() + index * sizeof(Node *));
 }
 
 void CacheNode::set_next(unsigned const index, void *const ptr) noexcept
 {
-    ptr ? memcpy(next_data() + index * sizeof(Node *), &ptr, sizeof(void *))
-        : memset(next_data() + index * sizeof(Node *), 0, sizeof(void *));
+    ptr ? memcpy(
+              next_data_aligned() + index * sizeof(Node *),
+              &ptr,
+              sizeof(void *))
+        : memset(
+              next_data_aligned() + index * sizeof(Node *), 0, sizeof(void *));
 }
 
 unsigned CacheNode::get_mem_size() const noexcept
 {
-    auto const *const end = next_data() + sizeof(Node *) * number_of_children();
+    auto const *const end =
+        next_data_aligned() + sizeof(Node *) * number_of_children();
     MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
     auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
     MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);

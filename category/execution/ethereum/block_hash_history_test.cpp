@@ -95,7 +95,7 @@ namespace
             chain,
             call_tracer,
             tx_context,
-            block_hash_buffer,
+            &block_hash_buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -245,7 +245,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -312,7 +312,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -350,7 +350,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -439,7 +439,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -482,7 +482,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            &buffer,
             state,
             chain.get_max_code_size(header.number, header.timestamp),
             chain.get_max_initcode_size(header.number, header.timestamp)};

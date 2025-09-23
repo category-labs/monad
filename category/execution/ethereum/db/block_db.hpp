@@ -37,9 +37,6 @@ public:
     ~BlockDb() = default;
 
     bool get(uint64_t, Block &) const;
-
-    void upsert(uint64_t, Block const &) const;
-    bool remove(uint64_t) const;
 };
 
 MONAD_NAMESPACE_END

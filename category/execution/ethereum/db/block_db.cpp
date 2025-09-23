@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 
 #include <brotli/decode.h>
-#include <brotli/encode.h>
 #include <brotli/types.h>
 
 #include <algorithm>
@@ -65,36 +64,6 @@ bool BlockDb::get(uint64_t const num, Block &block) const
     MONAD_ASSERT(view2.size() == 0);
     block = decoded_block.value();
     return true;
-}
-
-void BlockDb::upsert(uint64_t const num, Block const &block) const
-{
-    auto const key = std::to_string(num);
-    auto const encoded_block = rlp::encode_block(block);
-    size_t brotli_size = BrotliEncoderMaxCompressedSize(encoded_block.size());
-    MONAD_ASSERT(brotli_size);
-    byte_string brotli_buffer;
-    brotli_buffer.resize(brotli_size);
-    auto const brotli_result = BrotliEncoderCompress(
-        BROTLI_DEFAULT_QUALITY,
-        BROTLI_DEFAULT_WINDOW,
-        BROTLI_MODE_GENERIC,
-        encoded_block.size(),
-        encoded_block.data(),
-        &brotli_size,
-        brotli_buffer.data());
-    MONAD_ASSERT(brotli_result == BROTLI_TRUE);
-    brotli_buffer.resize(brotli_size);
-    std::string_view const value{
-        reinterpret_cast<char const *>(brotli_buffer.data()),
-        brotli_buffer.size()};
-    db_.upsert(key.c_str(), value);
-}
-
-bool BlockDb::remove(uint64_t const num) const
-{
-    auto const key = std::to_string(num);
-    return db_.remove(key.c_str());
 }
 
 MONAD_NAMESPACE_END

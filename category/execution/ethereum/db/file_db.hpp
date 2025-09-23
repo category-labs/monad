@@ -20,7 +20,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -38,9 +37,6 @@ public:
     ~FileDb();
 
     std::optional<std::string> get(char const *key) const;
-
-    void upsert(char const *key, std::string_view value) const;
-    bool remove(char const *key) const;
 };
 
 MONAD_NAMESPACE_END

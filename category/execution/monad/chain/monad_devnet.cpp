@@ -23,7 +23,7 @@ MONAD_NAMESPACE_BEGIN
 
 monad_revision MonadDevnet::get_monad_revision(uint64_t /*timestamp*/) const
 {
-    return MONAD_FOUR;
+    return MONAD_FIVE;
 }
 
 uint256_t MonadDevnet::get_chain_id() const

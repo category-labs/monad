@@ -211,7 +211,7 @@ namespace monad
 
         static consteval uint8_t monad_pricing_version() noexcept
         {
-            if constexpr (Rev >= MONAD_FOUR) {
+            if constexpr (Rev >= MONAD_FIVE) {
                 return 1;
             }
 
@@ -220,7 +220,7 @@ namespace monad
 
         static consteval bool should_refund_reduce_gas_used() noexcept
         {
-            return Rev < MONAD_FOUR;
+            return Rev < MONAD_FIVE;
         }
 
         static consteval bool eip_7702_refund_active() noexcept

@@ -69,6 +69,8 @@
         return f<::monad::MonadTraits<MONAD_THREE>>(__VA_ARGS__);              \
     case MONAD_FOUR:                                                           \
         return f<::monad::MonadTraits<MONAD_FOUR>>(__VA_ARGS__);               \
+    case MONAD_FIVE:                                                           \
+        return f<::monad::MonadTraits<MONAD_FIVE>>(__VA_ARGS__);               \
     default:                                                                   \
         break;                                                                 \
     }

@@ -707,7 +707,7 @@ TEST(Osaka, p256_verify)
 
 TEST(MonadFour, p256_verify)
 {
-    do_geth_tests<MonadTraits<MONAD_FOUR>>(
+    do_geth_tests<MonadTraits<MONAD_FIVE>>(
         "p256_verify", "p256Verify.json", 0x0100_address);
 }
 
@@ -717,7 +717,7 @@ TEST(MonadFour, bn_add)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json"),
         [](auto &test) { test.gas *= 2; });
 
-    do_geth_tests<MonadTraits<MONAD_FOUR>>("bn_add", tests, 0x06_address);
+    do_geth_tests<MonadTraits<MONAD_FIVE>>("bn_add", tests, 0x06_address);
 }
 
 TEST(MonadFour, bn_mul)
@@ -727,7 +727,7 @@ TEST(MonadFour, bn_mul)
             test_resource::geth_vectors_dir / "bn256ScalarMul.json"),
         [](auto &test) { test.gas *= 5; });
 
-    do_geth_tests<MonadTraits<MONAD_FOUR>>("bn_mul", tests, 0x07_address);
+    do_geth_tests<MonadTraits<MONAD_FIVE>>("bn_mul", tests, 0x07_address);
 }
 
 TEST(MonadFour, bn_pairing)
@@ -736,7 +736,7 @@ TEST(MonadFour, bn_pairing)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json"),
         [](auto &test) { test.gas *= 5; });
 
-    do_geth_tests<MonadTraits<MONAD_FOUR>>("bn_pairing", tests, 0x08_address);
+    do_geth_tests<MonadTraits<MONAD_FIVE>>("bn_pairing", tests, 0x08_address);
 }
 
 TEST(MonadFour, blake2f_valid)
@@ -745,6 +745,6 @@ TEST(MonadFour, blake2f_valid)
         load_test_cases(test_resource::geth_vectors_dir / "blake2F.json"),
         [](auto &test) { test.gas *= 2; });
 
-    do_geth_tests<MonadTraits<MONAD_FOUR>>(
+    do_geth_tests<MonadTraits<MONAD_FIVE>>(
         "blake_2f_valid", tests, 0x09_address);
 }

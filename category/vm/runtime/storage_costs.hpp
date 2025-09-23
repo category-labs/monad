@@ -323,6 +323,12 @@ namespace monad::vm::runtime
 
     template <>
     struct StorageCostTable<MonadTraits<MONAD_FOUR>>
+        : StorageCostTable<MonadTraits<MONAD_FOUR>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_FIVE>>
     {
         // Derived from the algorithm in:
         // Monad specification §4.2: Storage Gas Cost and Refunds

@@ -114,7 +114,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
 }
 
-TEST(TransactionProcessor, monad_four_refunds_delete)
+TEST(TransactionProcessor, monad_five_refunds_delete)
 {
     using intx::operator""_u256;
 
@@ -171,7 +171,7 @@ TEST(TransactionProcessor, monad_four_refunds_delete)
 
         NoopCallTracer noop_call_tracer;
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FOUR>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
             MonadDevnet{},
             0,
             set_tx,
@@ -217,7 +217,7 @@ TEST(TransactionProcessor, monad_four_refunds_delete)
 
         NoopCallTracer noop_call_tracer;
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FOUR>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
             MonadDevnet{},
             0,
             zero_tx,
@@ -243,7 +243,7 @@ TEST(TransactionProcessor, monad_four_refunds_delete)
     }
 }
 
-TEST(TransactionProcessor, monad_four_refunds_delete_then_set)
+TEST(TransactionProcessor, monad_five_refunds_delete_then_set)
 {
     using intx::operator""_u256;
 
@@ -303,7 +303,7 @@ TEST(TransactionProcessor, monad_four_refunds_delete_then_set)
 
         NoopCallTracer noop_call_tracer;
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FOUR>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
             MonadDevnet{},
             0,
             set_tx,

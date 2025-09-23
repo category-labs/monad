@@ -87,7 +87,7 @@ TEST(Evm, create_with_insufficient)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -142,7 +142,7 @@ TEST(Evm, eip684_existing_code)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -172,7 +172,7 @@ TEST(Evm, create_nonce_out_of_range)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -226,7 +226,7 @@ TEST(Evm, static_precompile_execution)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -285,7 +285,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -384,7 +384,7 @@ TEST(Evm, create_op_max_initcode_size)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         128 * 1024,
         2 * 128 * 1024};
@@ -482,7 +482,7 @@ TEST(Evm, create2_op_max_initcode_size)
         chain,
         call_tracer,
         EMPTY_TX_CONTEXT,
-        block_hash_buffer,
+        &block_hash_buffer,
         s,
         128 * 1024,
         2 * 128 * 1024};
@@ -707,7 +707,7 @@ TEST(Evm, create_inside_delegated_call)
             chain,
             call_tracer,
             EMPTY_TX_CONTEXT,
-            block_hash_buffer,
+            &block_hash_buffer,
             s,
             MAX_CODE_SIZE_EIP170,
             MAX_INITCODE_SIZE_EIP3860};
@@ -725,7 +725,7 @@ TEST(Evm, create_inside_delegated_call)
             chain,
             call_tracer,
             EMPTY_TX_CONTEXT,
-            block_hash_buffer,
+            &block_hash_buffer,
             s,
             MAX_CODE_SIZE_EIP170,
             MAX_INITCODE_SIZE_EIP3860};
@@ -839,7 +839,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
             chain,
             call_tracer,
             EMPTY_TX_CONTEXT,
-            block_hash_buffer,
+            &block_hash_buffer,
             s,
             MAX_CODE_SIZE_EIP170,
             MAX_INITCODE_SIZE_EIP3860};
@@ -857,7 +857,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
             chain,
             call_tracer,
             EMPTY_TX_CONTEXT,
-            block_hash_buffer,
+            &block_hash_buffer,
             s,
             MAX_CODE_SIZE_EIP170,
             MAX_INITCODE_SIZE_EIP3860};
@@ -954,7 +954,7 @@ TEST(Evm, nested_call_to_delegated_precompile)
             chain,
             call_tracer,
             EMPTY_TX_CONTEXT,
-            block_hash_buffer,
+            &block_hash_buffer,
             s,
             MAX_CODE_SIZE_EIP170,
             MAX_INITCODE_SIZE_EIP3860};

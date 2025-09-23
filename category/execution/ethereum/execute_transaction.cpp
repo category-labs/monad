@@ -299,13 +299,13 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
+    BlockHeader const &header, BlockHashBuffer const *buffer_,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header, i, revert_transaction}
-    , block_hash_buffer_{block_hash_buffer}
+    , block_hash_buffer_{buffer_}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}

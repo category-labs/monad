@@ -20,6 +20,7 @@
 #include <category/core/lru/lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -83,6 +84,9 @@ struct monad_state_override
 
 namespace
 {
+    // avoid conflict with block reward txn
+    constexpr uint64_t INCARNATION_TX = Incarnation::LAST_TX - 1u;
+
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
     char const *const BLOCKHASH_ERR_MSG =
         "failure to initialize block hash buffer";
@@ -95,10 +99,9 @@ namespace
     template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
-        uint64_t const block_number, bytes32_t const &block_id,
-        Address const &sender,
-        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
-        vm::VM &vm, BlockHashBufferFinalized const buffer,
+        uint64_t const block_number, Address const &sender,
+        std::vector<std::optional<Address>> const &authorities,
+        BlockState &block_state, std::unique_ptr<BlockHashBuffer> const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer state_tracer)
     {
@@ -122,11 +125,7 @@ namespace
             chain.get_chain_id(),
             max_code_size));
 
-        tdb.set_block_and_prefix(block_number, block_id);
-        BlockState block_state{tdb, vm};
-        // avoid conflict with block reward txn
-        Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        State state{block_state, incarnation};
+        State state{block_state, Incarnation{block_number, INCARNATION_TX}};
 
         for (auto const &[addr, state_delta] : state_overrides.override_sets) {
             // address
@@ -228,7 +227,7 @@ namespace
             chain,
             call_tracer,
             tx_context,
-            buffer,
+            buffer.get(),
             state,
             max_code_size,
             chain.get_max_initcode_size(header.number, header.timestamp)};
@@ -454,7 +453,7 @@ struct monad_eth_call_executor
     monad_eth_call_executor &
     operator=(monad_eth_call_executor const &) = delete;
 
-    std::unique_ptr<BlockHashBufferFinalized>
+    std::unique_ptr<BlockHashBuffer>
     create_blockhash_buffer(uint64_t const block_number)
     {
         std::unique_ptr<BlockHashBufferFinalized> buffer{
@@ -620,17 +619,29 @@ struct monad_eth_call_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const block_hash_buffer =
-                        create_blockhash_buffer(block_number);
-                    if (block_hash_buffer == nullptr) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(BLOCKHASH_ERR_MSG);
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
+                    TrieRODb tdb{db};
+                    tdb.set_block_and_prefix(block_number, block_id);
+                    BlockState block_state{tdb, vm_};
+
+                    std::unique_ptr<BlockHashBuffer> block_hash_buffer;
+                    {
+                        State state{
+                            block_state,
+                            Incarnation{block_number, INCARNATION_TX}};
+                        if (MONAD_UNLIKELY(!can_use_block_hash_history(
+                                state, block_number))) {
+                            block_hash_buffer =
+                                create_blockhash_buffer(block_number);
+                            if (block_hash_buffer == nullptr) {
+                                result->status_code = EVMC_REJECTED;
+                                result->message = strdup(BLOCKHASH_ERR_MSG);
+                                MONAD_ASSERT(result->message);
+                                complete(result, user);
+                                return;
+                            }
+                        }
                     }
 
-                    TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
@@ -662,12 +673,10 @@ struct monad_eth_call_executor
                                 transaction,
                                 block_header,
                                 block_number,
-                                block_id,
                                 sender,
                                 authorities,
-                                tdb,
-                                vm_,
-                                *block_hash_buffer,
+                                block_state,
+                                block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);
@@ -684,12 +693,10 @@ struct monad_eth_call_executor
                                 transaction,
                                 block_header,
                                 block_number,
-                                block_id,
                                 sender,
                                 authorities,
-                                tdb,
-                                vm_,
-                                *block_hash_buffer,
+                                block_state,
+                                block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);

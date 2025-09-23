@@ -154,7 +154,7 @@ TEST(CallTrace, execute_success)
         chain,
         call_tracer,
         tx_context,
-        buffer,
+        &buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};
@@ -232,7 +232,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         chain,
         call_tracer,
         tx_context,
-        buffer,
+        &buffer,
         s,
         MAX_CODE_SIZE_EIP170,
         MAX_INITCODE_SIZE_EIP3860};

@@ -503,6 +503,8 @@ TEST_F(EvmTest, EthCallOutOfGas)
 
 TEST_F(EvmTest, Int32BlockGasOverflow)
 {
+    using traits = monad::MonadTraits<MONAD_FOUR>;
+
     std::vector<uint8_t> code;
     for (size_t i = 0; i < 14 * 1024; ++i) {
         code.push_back(PUSH0);
@@ -512,9 +514,14 @@ TEST_F(EvmTest, Int32BlockGasOverflow)
         code.push_back(POP);
     }
 
+    auto const ir = basic_blocks::BasicBlocksIR::unsafe_from<traits>(code);
+    ASSERT_EQ(ir.blocks().size(), 1);
+    ASSERT_GT(
+        block_base_gas<traits>(ir.blocks()[0]),
+        std::numeric_limits<int32_t>::max());
+
     auto const icode = make_shared_intercode(code);
-    auto const ncode =
-        vm_.compiler().compile<monad::MonadTraits<MONAD_FOUR>>(icode);
+    auto const ncode = vm_.compiler().compile<traits>(icode);
 
     pre_execute(20'000'000, {});
     result_ = evmc::Result{vm_.execute_native_entrypoint_raw(

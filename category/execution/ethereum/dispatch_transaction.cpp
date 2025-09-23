@@ -44,6 +44,6 @@ Result<Receipt> dispatch_transaction(
         revert_transaction}();
 }
 
-EXPLICIT_TRAITS(dispatch_transaction)
+EXPLICIT_EVM_TRAITS(dispatch_transaction)
 
 MONAD_NAMESPACE_END

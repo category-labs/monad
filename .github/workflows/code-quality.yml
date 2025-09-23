@@ -21,6 +21,23 @@ jobs:
           clang-format-version: 19
           include-regex: './(category|cmd|test)/.*\.(cpp|hpp|c|h)'
 
+  traits-check:
+      name: Trait instantiation check
+      runs-on: ubuntu-24.04
+      steps:
+          - uses: actions/checkout@v4
+            with:
+              submodules: false
+
+          - name: Install uv
+            uses: astral-sh/setup-uv@v5
+
+          - name: Set up Python
+            uses: actions/setup-python@v5
+
+          - name: Check instantiations
+            run: uv run scripts/check-trait-instantiations.py category
+
   clang-tidy:
     name: Check clang-tidy
     runs-on: ubuntu-24.04-32

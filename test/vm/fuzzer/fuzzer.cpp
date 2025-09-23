@@ -498,10 +498,17 @@ static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;
 
+    // When fuzzing, we want to be able to replay the same sequence of
+    // contracts and messages, so we allocate separate engines for
+    // different purposes so changing the sequence of contracts or
+    // messages doesn't cause other random numbers to change.
     auto engine = random_engine_t(args.seed);
+    auto msg_seed_eng = random_engine_t(engine());
+    auto contract_seed_eng = random_engine_t(engine());
+    auto vm_engine = random_engine_t(engine());
 
     auto evmone_vm = evmc::VM(evmc_create_evmone());
-    auto monad_vm = create_monad_vm(args, engine);
+    auto monad_vm = create_monad_vm(args, vm_engine);
 
     auto initial_state_ = initial_state();
 
@@ -533,8 +540,10 @@ static void do_run(std::size_t const run_index, arguments const &args)
         }
 
         for (;;) {
-            auto const contract = monad::vm::fuzzing::generate_program(
-                focus, engine, rev, known_addresses);
+            auto contract_engine = random_engine_t(contract_seed_eng());
+            auto const basic_blocks = monad::vm::fuzzing::generate_basic_blocks(
+                focus, contract_engine, rev, known_addresses);
+            auto const contract = compile_program(basic_blocks);
 
             if (contract.size() > evmone::MAX_CODE_SIZE) {
                 // The evmone host will fail when we attempt to deploy
@@ -565,9 +574,11 @@ static void do_run(std::size_t const run_index, arguments const &args)
         }
 
         for (auto j = 0u; j < args.messages; ++j) {
+            auto msg_seed = msg_seed_eng();
+            auto msg_engine = random_engine_t(msg_seed);
             auto msg = monad::vm::fuzzing::generate_message(
                 focus,
-                engine,
+                msg_engine,
                 contract_addresses,
                 {genesis_address},
                 [&](auto const &address) {

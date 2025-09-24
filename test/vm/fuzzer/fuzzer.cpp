@@ -315,7 +315,7 @@ namespace
         bool print_stats = false;
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
-        evmc_revision revision = EVMC_CANCUN;
+        evmc_revision revision = EVMC_PRAGUE;
 
         void set_random_seed_if_default()
         {

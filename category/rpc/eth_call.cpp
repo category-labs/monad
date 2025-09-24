@@ -385,20 +385,60 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
     delete result;
 }
 
+namespace
+{
+
+    struct Pool
+    {
+        enum class Type
+        {
+            low,
+            high
+        };
+
+        Pool(Type const type, monad_eth_call_pool_config const &config)
+            : type(type)
+            , limit(config.queue_limit)
+            , timeout(std::chrono::seconds(config.timeout_sec))
+            , pool(config.num_threads, config.num_fibers, true)
+        {
+        }
+
+        bool try_enqueue()
+        {
+            auto const current = queued_count.load(std::memory_order_relaxed);
+            if (current >= limit) {
+                return false;
+            }
+            queued_count.fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
+
+        Type type;
+
+        // Maximum number of requests in the queue.
+        unsigned limit;
+
+        // Timeout request if it failed to be scheduled in this time.
+        std::chrono::seconds timeout;
+
+        // Number of requests currently in the queue.
+        std::atomic<unsigned> queued_count{0};
+
+        // Underlying fiber pool.
+        fiber::PriorityPool pool;
+    };
+}
+
 struct monad_eth_call_executor
 {
     using BlockHashCache = LruCache<uint64_t, bytes32_t>;
 
-    fiber::PriorityPool low_gas_pool_;
-    fiber::PriorityPool high_gas_pool_;
-
-    unsigned high_pool_queue_limit_{20};
-    std::chrono::seconds low_pool_timeout_{2};
-    std::chrono::seconds high_pool_timeout_{30};
+    Pool low_gas_pool_;
+    Pool high_gas_pool_;
 
     // counters
     uint64_t call_count_{0};
-    std::atomic<unsigned> high_pool_queued_count_{0};
 
     mpt::RODb db_;
 
@@ -410,13 +450,11 @@ struct monad_eth_call_executor
     BlockHashCache blockhash_cache_{7200};
 
     monad_eth_call_executor(
-        unsigned const num_threads, unsigned const num_fibers,
-        uint64_t const node_lru_max_mem, unsigned const low_pool_timeout_sec,
-        unsigned const high_pool_timeout_sec, std::string const &triedb_path)
-        : low_gas_pool_{num_threads, num_fibers, true}
-        , high_gas_pool_{1, 2, true}
-        , low_pool_timeout_{low_pool_timeout_sec}
-        , high_pool_timeout_{high_pool_timeout_sec}
+        monad_eth_call_pool_config const &low_pool_config,
+        monad_eth_call_pool_config const &high_pool_config,
+        uint64_t const node_lru_max_mem, std::string const &triedb_path)
+        : low_gas_pool_{Pool::Type::low, low_pool_config}
+        , high_gas_pool_{Pool::Type::high, high_pool_config}
         , db_{[&] {
             std::vector<std::filesystem::path> paths;
             if (std::filesystem::is_directory(triedb_path)) {
@@ -497,20 +535,11 @@ struct monad_eth_call_executor
     {
         monad_eth_call_result *const result = new monad_eth_call_result();
 
-        bool const use_high_gas_pool =
-            (gas_specified && txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT);
+        Pool *pool =
+            gas_specified && txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT
+                ? &high_gas_pool_
+                : &low_gas_pool_;
 
-        if (use_high_gas_pool) {
-            if (high_pool_queued_count_.load(std::memory_order_acquire) >=
-                high_pool_queue_limit_) {
-                result->status_code = EVMC_REJECTED;
-                result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
-                MONAD_ASSERT(result->message);
-                complete(result, user);
-                return;
-            }
-            ++high_pool_queued_count_;
-        }
         submit_eth_call_to_pool(
             chain_config,
             txn,
@@ -526,7 +555,7 @@ struct monad_eth_call_executor
             std::chrono::steady_clock::now(),
             call_count_++,
             result,
-            use_high_gas_pool);
+            *pool);
     }
 
     void submit_eth_call_to_pool(
@@ -538,14 +567,20 @@ struct monad_eth_call_executor
         monad_tracer_config const tracer_config, bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_eth_call_result *const result,
-        bool const use_high_gas_pool)
+        Pool &active_pool)
     {
-        auto &active_pool = use_high_gas_pool ? high_gas_pool_ : low_gas_pool_;
+        if (!active_pool.try_enqueue()) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
 
-        auto const authorities = recover_authorities({txn}, active_pool);
+        auto const authorities = recover_authorities({txn}, active_pool.pool);
         MONAD_ASSERT(authorities.size() == 1);
 
-        active_pool.submit(
+        active_pool.pool.submit(
             eth_call_seq_no,
             [this,
              call_begin = call_begin,
@@ -564,16 +599,13 @@ struct monad_eth_call_executor
              state_overrides = overrides,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
-             use_high_gas_pool = use_high_gas_pool,
-             timeout =
-                 use_high_gas_pool ? high_pool_timeout_ : low_pool_timeout_] {
+             active_pool = &active_pool] {
                 try {
-                    if (use_high_gas_pool) {
-                        --high_pool_queued_count_;
-                    }
+                    active_pool->queued_count.fetch_sub(
+                        1, std::memory_order_relaxed);
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
-                        timeout) {
+                        active_pool->timeout) {
                         result->status_code = EVMC_REJECTED;
                         result->message = strdup(TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
@@ -584,7 +616,8 @@ struct monad_eth_call_executor
                     auto transaction = orig_txn;
 
                     bool const override_with_low_gas_retry_if_oog =
-                        !use_high_gas_pool && !gas_specified &&
+                        active_pool->type == Pool::Type::low &&
+                        !gas_specified &&
                         orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT;
 
                     if (override_with_low_gas_retry_if_oog) {
@@ -804,16 +837,6 @@ struct monad_eth_call_executor
         // retry in high gas limit pool
         MONAD_ASSERT(orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT);
 
-        if (high_pool_queued_count_.load(std::memory_order_acquire) >=
-            high_pool_queue_limit_) {
-            result->status_code = EVMC_REJECTED;
-            result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
-            MONAD_ASSERT(result->message);
-            complete(result, user);
-            return;
-        }
-
-        ++high_pool_queued_count_;
         submit_eth_call_to_pool(
             chain_config,
             orig_txn,
@@ -829,25 +852,20 @@ struct monad_eth_call_executor
             call_begin,
             eth_call_seq_no,
             result,
-            true /* use_high_gas_pool */);
+            high_gas_pool_);
     }
 };
 
 monad_eth_call_executor *monad_eth_call_executor_create(
-    unsigned const num_threads, unsigned const num_fibers,
-    uint64_t const node_lru_max_mem, unsigned const low_pool_timeout_sec,
-    unsigned const high_pool_timeout_sec, char const *const dbpath)
+    monad_eth_call_pool_config const low_pool_conf,
+    monad_eth_call_pool_config const high_pool_conf,
+    uint64_t const node_lru_max_mem, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 
     monad_eth_call_executor *const e = new monad_eth_call_executor(
-        num_threads,
-        num_fibers,
-        node_lru_max_mem,
-        low_pool_timeout_sec,
-        high_pool_timeout_sec,
-        triedb_path);
+        low_pool_conf, high_pool_conf, node_lru_max_mem, triedb_path);
 
     return e;
 }

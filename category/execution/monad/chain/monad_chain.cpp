@@ -144,37 +144,6 @@ Result<void> MonadChain::validate_output_header(
     return success();
 }
 
-size_t MonadChain::get_max_code_size(
-    uint64_t /*block_number*/, uint64_t const timestamp) const
-{
-    auto const monad_rev = get_monad_revision(timestamp);
-    if (MONAD_LIKELY(monad_rev >= MONAD_TWO)) {
-        return MAX_CODE_SIZE_MONAD_TWO;
-    }
-    else if (monad_rev >= MONAD_ZERO) {
-        return MAX_CODE_SIZE_EIP170;
-    }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-}
-
-size_t MonadChain::get_max_initcode_size(
-    uint64_t /*block_number*/, uint64_t const timestamp) const
-{
-    auto const monad_rev = get_monad_revision(timestamp);
-
-    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
-        return MAX_INITCODE_SIZE_MONAD_FOUR;
-    }
-    else if (monad_rev >= MONAD_ZERO) {
-        return MAX_INITCODE_SIZE_EIP3860;
-    }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-}
-
 Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,

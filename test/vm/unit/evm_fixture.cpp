@@ -73,7 +73,6 @@ namespace monad::vm::compiler::test
 
             ASSERT_TRUE(ncode->entrypoint() != nullptr);
             result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
-                chain_params,
                 &host_.get_interface(),
                 host_.to_context(),
                 &msg_,
@@ -84,7 +83,6 @@ namespace monad::vm::compiler::test
             result_ = evmc::Result{[&, rev = rev_] {
                 SWITCH_EVM_TRAITS(
                     vm_.execute_intercode_raw,
-                    chain_params,
                     &host_.get_interface(),
                     host_.to_context(),
                     &msg_,

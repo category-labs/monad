@@ -160,41 +160,37 @@ namespace monad::vm
         /// interpreter and potentially start async compilation.
         template <Traits traits>
         evmc::Result execute(
-            runtime::ChainParams const &params, Host &host,
-            evmc_message const *msg, evmc::bytes32 const &code_hash,
+            Host &host, evmc_message const *msg, evmc::bytes32 const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
         template <Traits traits>
         evmc::Result execute_bytecode(
-            runtime::ChainParams const &params, Host &host,
-            evmc_message const *msg, std::span<uint8_t const> code);
+            Host &host, evmc_message const *msg, std::span<uint8_t const> code);
 
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>
         evmc::Result execute_raw(
-            runtime::ChainParams const &params, evmc_host_interface const *host,
-            evmc_host_context *host_ctx, evmc_message const *msg,
-            evmc::bytes32 const &code_hash, SharedVarcode const &vcode);
+            evmc_host_interface const *host, evmc_host_context *host_ctx,
+            evmc_message const *msg, evmc::bytes32 const &code_hash,
+            SharedVarcode const &vcode);
 
         /// Like `execute_bytecode`, but without stack unwind support.
         template <Traits traits>
         evmc::Result execute_bytecode_raw(
-            runtime::ChainParams const &params, evmc_host_interface const *host,
-            evmc_host_context *host_ctx, evmc_message const *msg,
-            std::span<uint8_t const> code);
+            evmc_host_interface const *host, evmc_host_context *host_ctx,
+            evmc_message const *msg, std::span<uint8_t const> code);
 
         /// Execute with interpreter, without stack unwind support.
         template <Traits traits>
         evmc::Result execute_intercode_raw(
-            runtime::ChainParams const &params, evmc_host_interface const *host,
-            evmc_host_context *host_ctx, evmc_message const *msg,
-            SharedIntercode const &icode);
+            evmc_host_interface const *host, evmc_host_context *host_ctx,
+            evmc_message const *msg, SharedIntercode const &icode);
 
         /// Execute the entrypoint, without stack unwind support.
         evmc::Result execute_native_entrypoint_raw(
-            runtime::ChainParams const &, evmc_host_interface const *,
-            evmc_host_context *, evmc_message const *, SharedIntercode const &,
+            evmc_host_interface const *, evmc_host_context *,
+            evmc_message const *, SharedIntercode const &,
             compiler::native::entrypoint_t);
 
         [[nodiscard]]

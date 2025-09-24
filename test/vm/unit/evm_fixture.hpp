@@ -44,10 +44,6 @@ namespace monad::vm::compiler::test
 
         EvmTest() noexcept = default;
 
-        runtime::ChainParams chain_params = {
-            .max_initcode_size = evmone::MAX_INITCODE_SIZE,
-        };
-
         monad::vm::VM vm_{};
 
         evmc_revision rev_ = EVMC_CANCUN;

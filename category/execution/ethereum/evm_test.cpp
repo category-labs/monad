@@ -83,16 +83,8 @@ TEST(Evm, create_with_insufficient)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
-    auto const result =
-        create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -138,16 +130,8 @@ TEST(Evm, eip684_existing_code)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
-    auto const result =
-        create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
@@ -168,14 +152,7 @@ TEST(Evm, create_nonce_out_of_range)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
+    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -198,8 +175,7 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result =
-        create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m, MAX_CODE_SIZE_EIP170);
+    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -222,14 +198,7 @@ TEST(Evm, static_precompile_execution)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
+    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -281,14 +250,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
+    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -380,14 +342,8 @@ TEST(Evm, create_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        128 * 1024,
-        2 * 128 * 1024};
+    EvmcHost<MonadTraits<MONAD_FOUR>> h{
+        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
     {
@@ -398,7 +354,7 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -411,7 +367,7 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
@@ -478,14 +434,8 @@ TEST(Evm, create2_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    evm_host_t h{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        s,
-        128 * 1024,
-        2 * 128 * 1024};
+    EvmcHost<MonadTraits<MONAD_FOUR>> h{
+        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
     {
@@ -496,7 +446,7 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -509,7 +459,7 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
@@ -538,7 +488,7 @@ TEST(Evm, deploy_contract_code)
             static constexpr int64_t gas = 10'000;
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 = deploy_contract_code<EvmTraits<EVMC_FRONTIER>>(
-                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+                s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
             EXPECT_EQ(r2.create_address, a);
@@ -553,7 +503,7 @@ TEST(Evm, deploy_contract_code)
             State s{bs, Incarnation{0, 1}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 = deploy_contract_code<EvmTraits<EVMC_FRONTIER>>(
-                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+                s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, a);
@@ -570,7 +520,7 @@ TEST(Evm, deploy_contract_code)
 
             evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
             auto const r2 = deploy_contract_code<EvmTraits<EVMC_HOMESTEAD>>(
-                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+                s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
             EXPECT_EQ(r2.gas_left,
@@ -586,7 +536,7 @@ TEST(Evm, deploy_contract_code)
             State s{bs, Incarnation{0, 3}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
             auto const r2 = deploy_contract_code<EvmTraits<EVMC_HOMESTEAD>>(
-                s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+                s, a, std::move(r));
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
             EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, 0x00_address);
@@ -607,7 +557,7 @@ TEST(Evm, deploy_contract_code)
             code.data(),
             code.size()};
         auto const r2 = deploy_contract_code<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
-            s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+            s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
@@ -621,8 +571,8 @@ TEST(Evm, deploy_contract_code)
 
         evmc::Result r{
             EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 = deploy_contract_code<EvmTraits<EVMC_LONDON>>(
-            s, a, std::move(r), MAX_CODE_SIZE_EIP170);
+        auto const r2 =
+            deploy_contract_code<EvmTraits<EVMC_LONDON>>(s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
@@ -704,13 +654,7 @@ TEST(Evm, create_inside_delegated_call)
         NoopCallTracer call_tracer;
         EthereumMainnet chain{};
         EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain,
-            call_tracer,
-            EMPTY_TX_CONTEXT,
-            block_hash_buffer,
-            s,
-            MAX_CODE_SIZE_EIP170,
-            MAX_INITCODE_SIZE_EIP3860};
+            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
@@ -722,13 +666,7 @@ TEST(Evm, create_inside_delegated_call)
         NoopCallTracer call_tracer;
         MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain,
-            call_tracer,
-            EMPTY_TX_CONTEXT,
-            block_hash_buffer,
-            s,
-            MAX_CODE_SIZE_EIP170,
-            MAX_INITCODE_SIZE_EIP3860};
+            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_FAILURE);
@@ -836,13 +774,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
         NoopCallTracer call_tracer;
         EthereumMainnet chain{};
         EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain,
-            call_tracer,
-            EMPTY_TX_CONTEXT,
-            block_hash_buffer,
-            s,
-            MAX_CODE_SIZE_EIP170,
-            MAX_INITCODE_SIZE_EIP3860};
+            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
@@ -854,13 +786,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
         NoopCallTracer call_tracer;
         MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain,
-            call_tracer,
-            EMPTY_TX_CONTEXT,
-            block_hash_buffer,
-            s,
-            MAX_CODE_SIZE_EIP170,
-            MAX_INITCODE_SIZE_EIP3860};
+            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_FAILURE);
@@ -951,13 +877,7 @@ TEST(Evm, nested_call_to_delegated_precompile)
         NoopCallTracer call_tracer;
         MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain,
-            call_tracer,
-            EMPTY_TX_CONTEXT,
-            block_hash_buffer,
-            s,
-            MAX_CODE_SIZE_EIP170,
-            MAX_INITCODE_SIZE_EIP3860};
+            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);

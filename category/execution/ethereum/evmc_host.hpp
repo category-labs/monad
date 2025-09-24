@@ -53,15 +53,12 @@ protected:
     Chain const &chain_;
     State &state_;
     CallTracerBase &call_tracer_;
-    size_t const max_code_size_;
-    size_t const max_initcode_size_;
     std::function<bool()> revert_transaction_;
 
 public:
     EvmcHostBase(
         Chain const &, CallTracerBase &, evmc_tx_context const &,
-        BlockHashBuffer const &, State &, size_t max_code_size,
-        size_t max_init_code_size,
+        BlockHashBuffer const &, State &,
         std::function<bool()> const &revert_transaction = [] {
             return false;
         }) noexcept;
@@ -105,7 +102,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 112);
+static_assert(sizeof(EvmcHostBase) == 96);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -144,8 +141,7 @@ struct EvmcHost final : public EvmcHostBase
     {
         try {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-                auto result =
-                    ::monad::create<traits>(this, state_, msg, max_code_size_);
+                auto result = ::monad::create<traits>(this, state_, msg);
 
                 // EIP-211
                 if (result.status_code != EVMC_REVERT) {
@@ -182,13 +178,6 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    monad::vm::runtime::ChainParams get_chain_params() const noexcept
-    {
-        return {
-            .max_initcode_size = max_initcode_size_,
-        };
-    }
-
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
@@ -200,7 +189,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 112);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 96);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
 MONAD_NAMESPACE_END

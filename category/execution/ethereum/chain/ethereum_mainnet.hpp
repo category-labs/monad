@@ -47,12 +47,6 @@ struct EthereumMainnet : Chain
     virtual Result<void> validate_output_header(
         BlockHeader const &input, BlockHeader const &output) const override;
 
-    virtual size_t
-    get_max_code_size(uint64_t block_number, uint64_t timestamp) const override;
-
-    virtual size_t get_max_initcode_size(
-        uint64_t block_number, uint64_t timestamp) const override;
-
     virtual GenesisState get_genesis_state() const override;
 
     virtual Result<void> validate_transaction(

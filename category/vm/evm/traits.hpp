@@ -21,10 +21,22 @@
 #include <evmc/evmc.h>
 
 #include <concepts>
+#include <limits>
 #include <utility>
 
 namespace monad
 {
+    namespace constants
+    {
+        inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
+        inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
+            2 * MAX_CODE_SIZE_EIP170; // 0xC000
+
+        inline constexpr size_t MAX_CODE_SIZE_MONAD_TWO = 128 * 1024;
+        inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
+            2 * MAX_CODE_SIZE_MONAD_TWO;
+    }
+
     template <typename T>
     concept Traits = requires() {
         requires sizeof(T) == 1;
@@ -46,6 +58,8 @@ namespace monad
         { T::monad_pricing_version() } -> std::same_as<uint8_t>;
 
         // Constants
+        { T::max_code_size() } -> std::same_as<size_t>;
+        { T::max_initcode_size() } -> std::same_as<size_t>;
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
         { T::code_deposit_cost() } -> std::same_as<int64_t>;
@@ -106,6 +120,24 @@ namespace monad
         static constexpr bool eip_7702_refund_active() noexcept
         {
             return Rev >= EVMC_PRAGUE;
+        }
+
+        static constexpr size_t max_code_size() noexcept
+        {
+            if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
+                return constants::MAX_CODE_SIZE_EIP170;
+            }
+
+            return std::numeric_limits<size_t>::max();
+        }
+
+        static constexpr size_t max_initcode_size() noexcept
+        {
+            if constexpr (Rev >= EVMC_SHANGHAI) {
+                return constants::MAX_INITCODE_SIZE_EIP3860;
+            }
+
+            return std::numeric_limits<size_t>::max();
         }
 
         static constexpr int64_t cold_account_cost() noexcept
@@ -194,6 +226,24 @@ namespace monad
         static constexpr bool eip_7702_refund_active() noexcept
         {
             return false;
+        }
+
+        static constexpr size_t max_code_size() noexcept
+        {
+            if constexpr (Rev >= MONAD_TWO) {
+                return constants::MAX_CODE_SIZE_MONAD_TWO;
+            }
+
+            return constants::MAX_CODE_SIZE_EIP170;
+        }
+
+        static constexpr size_t max_initcode_size() noexcept
+        {
+            if constexpr (Rev >= MONAD_FOUR) {
+                return constants::MAX_INITCODE_SIZE_MONAD_FOUR;
+            }
+
+            return constants::MAX_INITCODE_SIZE_EIP3860;
         }
 
         static constexpr int64_t cold_account_cost() noexcept

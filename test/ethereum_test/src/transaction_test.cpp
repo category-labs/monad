@@ -88,7 +88,7 @@ template <Traits traits>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
     if (auto const result = static_validate_transaction<traits>(
-            txn, std::nullopt, std::nullopt, 1, MAX_CODE_SIZE_EIP170);
+            txn, std::nullopt, std::nullopt, 1);
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }

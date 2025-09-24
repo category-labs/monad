@@ -118,12 +118,7 @@ public:
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};
 
         auto ctx = vm::runtime::Context::from(
-            memory_allocator,
-            {.max_initcode_size = 0xC000},
-            interface,
-            context,
-            msg,
-            code_span);
+            memory_allocator, interface, context, msg, code_span);
 
         auto stack_ptr = stack_allocator.allocate();
 

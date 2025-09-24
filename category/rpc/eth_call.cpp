@@ -112,15 +112,11 @@ namespace
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
 
-        size_t const max_code_size =
-            chain.get_max_code_size(header.number, header.timestamp);
-
         BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
             enriched_txn,
             header.base_fee_per_gas,
             header.excess_blob_gas,
-            chain.get_chain_id(),
-            max_code_size));
+            chain.get_chain_id()));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
@@ -224,14 +220,7 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
 
         // TODO: properly initialize revert_transaction?
-        EvmcHost<traits> host{
-            chain,
-            call_tracer,
-            tx_context,
-            buffer,
-            state,
-            max_code_size,
-            chain.get_max_initcode_size(header.number, header.timestamp)};
+        EvmcHost<traits> host{chain, call_tracer, tx_context, buffer, state};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain, enriched_txn, sender, authorities, header, 0}(state, host);
 

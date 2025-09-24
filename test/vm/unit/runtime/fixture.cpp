@@ -72,7 +72,6 @@ namespace monad::vm::compiler::test
         : blob_hashes_{bytes32_from_uint256(1), bytes32_from_uint256(2)}
         , host_{init_host(blob_hashes_)}
         , ctx_{
-              .chain_params = {.max_initcode_size = 0xC000},
               .host = &host_.get_interface(),
               .context = host_.to_context(),
               .gas_remaining = std::numeric_limits<std::int64_t>::max(),

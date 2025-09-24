@@ -64,12 +64,11 @@ namespace monad::vm::runtime
     }
 
     Context Context::from(
-        EvmMemoryAllocator alloc, ChainParams const &chain_params,
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, std::span<std::uint8_t const> code) noexcept
+        EvmMemoryAllocator alloc, evmc_host_interface const *host,
+        evmc_host_context *context, evmc_message const *msg,
+        std::span<std::uint8_t const> code) noexcept
     {
         return Context{
-            .chain_params = chain_params,
             .host = host,
             .context = context,
             .gas_remaining = msg->gas,
@@ -99,7 +98,6 @@ namespace monad::vm::runtime
     Context Context::empty() noexcept
     {
         return Context{
-            .chain_params = {.max_initcode_size = 0},
             .host = nullptr,
             .context = nullptr,
             .gas_remaining = 0,

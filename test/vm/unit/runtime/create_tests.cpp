@@ -137,12 +137,11 @@ TEST_F(RuntimeTest, Create2Constantinople)
 
 TEST_F(RuntimeTest, CreateMaxCodeSize)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
+    using traits = MonadTraits<MONAD_FOUR>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 
     ctx_.gas_remaining = 1000000;
-    ctx_.chain_params.max_initcode_size = max_initcode_size;
     host_.call_result = create_result(result_addr, 900000, 10);
 
     auto const do_create = wrap(create<traits>);
@@ -152,12 +151,11 @@ TEST_F(RuntimeTest, CreateMaxCodeSize)
 
 TEST_F(RuntimeTest, Create2MaxCodeSize)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
+    using traits = MonadTraits<MONAD_FOUR>;
     constexpr std::size_t max_initcode_size =
         2 * 128 * 1024; // max initcode size at MONAD_FOUR
 
     ctx_.gas_remaining = 1000000;
-    ctx_.chain_params.max_initcode_size = max_initcode_size;
     host_.call_result = create_result(result_addr, 900000, 10);
 
     auto const do_create2 = wrap(create2<traits>);

@@ -89,8 +89,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             tx,
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
-            chain_.get_chain_id(),
-            chain_.get_max_code_size(header_.number, header_.timestamp)));
+            chain_.get_chain_id()));
     }
 
     {

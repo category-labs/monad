@@ -11,6 +11,7 @@
                     bugprone-*,
                     -bugprone-branch-clone,
                     -bugprone-easily-swappable-parameters,
+                    -bugprone-implicit-widening-of-multiplication-result,
                     -bugprone-unchecked-optional-access,
                     -bugprone-unhandled-self-assignment,
                     clang-analyzer*,

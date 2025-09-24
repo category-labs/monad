@@ -47,19 +47,14 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute(
-        runtime::ChainParams const &params, Host &host, evmc_message const *msg,
-        evmc::bytes32 const &code_hash, SharedVarcode const &vcode)
+        Host &host, evmc_message const *msg, evmc::bytes32 const &code_hash,
+        SharedVarcode const &vcode)
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
         auto const &icode = vcode->intercode();
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_,
-            params,
-            host_itf,
-            host_ctx,
-            msg,
-            icode->code_span());
+            memory_allocator_, host_itf, host_ctx, msg, icode->code_span());
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -78,13 +73,12 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode(
-        runtime::ChainParams const &params, Host &host, evmc_message const *msg,
-        std::span<uint8_t const> code)
+        Host &host, evmc_message const *msg, std::span<uint8_t const> code)
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_, params, host_itf, host_ctx, msg, code);
+            memory_allocator_, host_itf, host_ctx, msg, code);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -103,13 +97,13 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_raw(
-        runtime::ChainParams const &params, evmc_host_interface const *host,
-        evmc_host_context *host_ctx, evmc_message const *msg,
-        evmc::bytes32 const &code_hash, SharedVarcode const &vcode)
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
+        evmc_message const *msg, evmc::bytes32 const &code_hash,
+        SharedVarcode const &vcode)
     {
         auto const &icode = vcode->intercode();
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+            memory_allocator_, host, host_ctx, msg, icode->code_span());
         return execute_impl<traits>(rt_ctx, code_hash, vcode);
     }
 
@@ -117,12 +111,11 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode_raw(
-        runtime::ChainParams const &params, evmc_host_interface const *host,
-        evmc_host_context *host_ctx, evmc_message const *msg,
-        std::span<uint8_t const> code)
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
+        evmc_message const *msg, std::span<uint8_t const> code)
     {
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_, params, host, host_ctx, msg, code);
+            memory_allocator_, host, host_ctx, msg, code);
         return execute_bytecode_impl<traits>(rt_ctx, code);
     }
 
@@ -130,12 +123,11 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_intercode_raw(
-        runtime::ChainParams const &params, evmc_host_interface const *host,
-        evmc_host_context *host_ctx, evmc_message const *msg,
-        SharedIntercode const &icode)
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
+        evmc_message const *msg, SharedIntercode const &icode)
     {
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+            memory_allocator_, host, host_ctx, msg, icode->code_span());
         return execute_intercode_impl<traits>(rt_ctx, icode);
     }
 
@@ -224,12 +216,12 @@ namespace monad::vm
     EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_impl);
 
     evmc::Result VM::execute_native_entrypoint_raw(
-        runtime::ChainParams const &params, evmc_host_interface const *host,
-        evmc_host_context *host_ctx, evmc_message const *msg,
-        SharedIntercode const &icode, compiler::native::entrypoint_t entry)
+        evmc_host_interface const *host, evmc_host_context *host_ctx,
+        evmc_message const *msg, SharedIntercode const &icode,
+        compiler::native::entrypoint_t entry)
     {
         auto rt_ctx = runtime::Context::from(
-            memory_allocator_, params, host, host_ctx, msg, icode->code_span());
+            memory_allocator_, host, host_ctx, msg, icode->code_span());
         return execute_native_entrypoint_impl(rt_ctx, entry);
     }
 

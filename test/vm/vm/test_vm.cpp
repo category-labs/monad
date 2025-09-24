@@ -272,7 +272,7 @@ evmc::Result BlockchainTestVM::execute_compiler(
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
     return monad_vm_.execute_native_entrypoint_raw(
-        chain_params(), host, context, msg, icode, ncode->entrypoint());
+        host, context, msg, icode, ncode->entrypoint());
 }
 
 #ifdef MONAD_COMPILER_LLVM
@@ -291,7 +291,7 @@ evmc::Result BlockchainTestVM::execute_llvm(
     auto code_hash = host->get_code_hash(context, &msg->code_address);
 
     return llvm_vm_.execute_llvm(
-        rev, chain_params(), code_hash, host, context, msg, code, code_size);
+        rev, code_hash, host, context, msg, code, code_size);
 }
 #endif
 
@@ -303,11 +303,6 @@ evmc::Result BlockchainTestVM::execute_interpreter(
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &icode = get_intercode(code_hash, code, code_size);
     SWITCH_EVM_TRAITS(
-        monad_vm_.execute_intercode_raw,
-        chain_params(),
-        host,
-        context,
-        msg,
-        icode);
+        monad_vm_.execute_intercode_raw, host, context, msg, icode);
     MONAD_VM_ASSERT(false);
 }

@@ -141,13 +141,7 @@ TEST(EvmcHost, emit_log)
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
     evmc_host_t host{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        state,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
+        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     host.emit_log(
         from,
@@ -177,13 +171,7 @@ TEST(EvmcHost, access_precompile)
     NoopCallTracer call_tracer;
     EthereumMainnet chain;
     evmc_host_t host{
-        chain,
-        call_tracer,
-        EMPTY_TX_CONTEXT,
-        block_hash_buffer,
-        state,
-        MAX_CODE_SIZE_EIP170,
-        MAX_INITCODE_SIZE_EIP3860};
+        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

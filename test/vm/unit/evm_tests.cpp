@@ -293,7 +293,6 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -312,7 +311,6 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -351,7 +349,6 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -370,7 +367,6 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
 
     pre_execute(10'000, {});
     result_ = vm_.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,
@@ -415,7 +411,6 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
     vm.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg,
@@ -525,7 +520,6 @@ TEST_F(EvmTest, Int32BlockGasOverflow)
 
     pre_execute(20'000'000, {});
     result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
-        chain_params,
         &host_.get_interface(),
         host_.to_context(),
         &msg_,

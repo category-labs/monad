@@ -35,8 +35,8 @@ using namespace intx::literals;
 inline constexpr uint256_t MON{1000000000000000000_u256};
 
 inline constexpr uint256_t MAX_COMMISSION = MON;
-inline constexpr uint256_t MIN_VALIDATE_STAKE{1'000'000 * MON};
-inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{50'000'000 * MON};
+inline constexpr uint256_t MIN_VALIDATE_STAKE{100'000 * MON};
+inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{25'000'000 * MON};
 inline constexpr uint256_t UNIT_BIAS{
     1000000000000000000000000000000000000_u256}; // 1e36
 inline constexpr uint256_t DUST_THRESHOLD{1000000000}; // 1e9

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/monad/chain/monad_transaction_error.hpp>
+#include <category/execution/monad/chain/validate_monad_transaction.hpp>
 
 #include <system_error>
 

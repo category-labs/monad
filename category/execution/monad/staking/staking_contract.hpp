@@ -125,8 +125,7 @@ public:
 
         // A non-zero value to indicate a transaction level lock. This value is
         // never written to storage. It is maintained in transient storage.
-        bytes32_t LOOPING_TSTORE_LOCK_KEY =
-            0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
+        bytes32_t LOOPING_TSTORE_LOCK_KEY = bytes32_t{1};
 
         // The current epoch, which is incremented by syscall_on_epoch_change()
         StorageVariable<u64_be> epoch{state_, STAKING_CA, AddressEpoch};

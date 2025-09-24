@@ -1613,7 +1613,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
 
     // 2. Set transaction lock for claim_rewards
     state_.set_transient_storage(
-        STAKING_CA, vars.LOOPING_TSTORE_LOCK_KEY, abi_encode_bool(true));
+        STAKING_CA, vars.LOOPING_TSTORE_LOCK_KEY, bytes32_t{1});
 
     // 3. Apply bounds checks
     if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {

@@ -28,7 +28,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_transaction_error.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 
@@ -37,8 +37,7 @@
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bool dipped_into_reserve(
-    monad_revision const monad_rev, evmc_revision const rev,
-    Address const &sender, Transaction const &tx,
+    evmc_revision const rev, Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
     MonadChainContext const &ctx, State &state)
 {
@@ -69,10 +68,11 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
+            uint256_t const max_reserve =
+                ReserveBalanceContract{state}.get(addr).native();
             uint256_t const orig_balance =
                 orig_account.has_value() ? orig_account.value().balance : 0;
-            uint256_t const reserve =
-                std::min(get_max_reserve(monad_rev, addr), orig_balance);
+            uint256_t const reserve = std::min(max_reserve, orig_balance);
             if (addr == sender) {
                 if (gas_fees > reserve) { // must be dipping
                     return std::nullopt;
@@ -193,7 +193,7 @@ bool MonadChain::revert_transaction(
     if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
         evmc_revision const rev = get_revision(block_number, timestamp);
         return dipped_into_reserve(
-            monad_rev, rev, sender, tx, base_fee_per_gas, i, ctx, state);
+            rev, sender, tx, base_fee_per_gas, i, ctx, state);
     }
     else if (monad_rev >= MONAD_ZERO) {
         return false;
@@ -235,13 +235,6 @@ bool can_sender_dip_into_reserve(
     }
 
     return true; // Allow dipping into reserve if no restrictions found
-}
-
-uint256_t get_max_reserve(monad_revision const rev, Address const &)
-{
-    // TODO: implement precompile (support reading from orig)
-    constexpr uint256_t WEI_PER_MON{1000000000000000000};
-    return uint256_t{monad_default_max_reserve_balance_mon(rev)} * WEI_PER_MON;
 }
 
 MONAD_NAMESPACE_END

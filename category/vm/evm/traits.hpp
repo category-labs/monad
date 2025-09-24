@@ -74,55 +74,55 @@ namespace monad
     template <evmc_revision Rev>
     struct EvmTraits
     {
-        static constexpr evmc_revision evm_rev() noexcept
+        static consteval evmc_revision evm_rev() noexcept
         {
             return Rev;
         }
 
-        static constexpr monad_revision monad_rev() noexcept
+        static consteval monad_revision monad_rev() noexcept
         {
             static_assert(false, "Calling monad_rev() on an EVM trait type");
             std::unreachable();
         }
 
-        static constexpr bool eip_2929_active() noexcept
+        static consteval bool eip_2929_active() noexcept
         {
             return Rev >= EVMC_BERLIN;
         }
 
-        static constexpr bool eip_4844_active() noexcept
+        static consteval bool eip_4844_active() noexcept
         {
             return Rev >= EVMC_CANCUN;
         }
 
-        static constexpr bool eip_7951_active() noexcept
+        static consteval bool eip_7951_active() noexcept
         {
             return Rev >= EVMC_OSAKA;
         }
 
-        static constexpr bool can_create_inside_delegated() noexcept
+        static consteval bool can_create_inside_delegated() noexcept
         {
             return true;
         }
 
-        static constexpr uint8_t monad_pricing_version() noexcept
+        static consteval uint8_t monad_pricing_version() noexcept
         {
             static_assert(
                 false, "Calling monad_pricing_version() on an EVM trait type");
             std::unreachable();
         }
 
-        static constexpr bool should_refund_reduce_gas_used() noexcept
+        static consteval bool should_refund_reduce_gas_used() noexcept
         {
             return true;
         }
 
-        static constexpr bool eip_7702_refund_active() noexcept
+        static consteval bool eip_7702_refund_active() noexcept
         {
             return Rev >= EVMC_PRAGUE;
         }
 
-        static constexpr size_t max_code_size() noexcept
+        static consteval size_t max_code_size() noexcept
         {
             if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
                 return constants::MAX_CODE_SIZE_EIP170;
@@ -131,7 +131,7 @@ namespace monad
             return std::numeric_limits<size_t>::max();
         }
 
-        static constexpr size_t max_initcode_size() noexcept
+        static consteval size_t max_initcode_size() noexcept
         {
             if constexpr (Rev >= EVMC_SHANGHAI) {
                 return constants::MAX_INITCODE_SIZE_EIP3860;
@@ -140,7 +140,7 @@ namespace monad
             return std::numeric_limits<size_t>::max();
         }
 
-        static constexpr int64_t cold_account_cost() noexcept
+        static consteval int64_t cold_account_cost() noexcept
         {
             if constexpr (eip_2929_active()) {
                 return 2500;
@@ -149,7 +149,7 @@ namespace monad
             std::unreachable();
         }
 
-        static constexpr int64_t cold_storage_cost() noexcept
+        static consteval int64_t cold_storage_cost() noexcept
         {
             if constexpr (eip_2929_active()) {
                 return 2000;
@@ -158,12 +158,12 @@ namespace monad
             std::unreachable();
         }
 
-        static constexpr int64_t code_deposit_cost() noexcept
+        static consteval int64_t code_deposit_cost() noexcept
         {
             return 200;
         }
 
-        static constexpr uint64_t id() noexcept
+        static consteval uint64_t id() noexcept
         {
             return static_cast<uint64_t>(Rev);
         }
@@ -172,7 +172,7 @@ namespace monad
     template <monad_revision Rev>
     struct MonadTraits
     {
-        static constexpr evmc_revision evm_rev() noexcept
+        static consteval evmc_revision evm_rev() noexcept
         {
             if constexpr (Rev >= MONAD_FOUR) {
                 return EVMC_PRAGUE;
@@ -181,17 +181,17 @@ namespace monad
             return EVMC_CANCUN;
         }
 
-        static constexpr monad_revision monad_rev() noexcept
+        static consteval monad_revision monad_rev() noexcept
         {
             return Rev;
         }
 
-        static constexpr bool eip_2929_active() noexcept
+        static consteval bool eip_2929_active() noexcept
         {
             return evm_rev() >= EVMC_BERLIN;
         }
 
-        static constexpr bool eip_4844_active() noexcept
+        static consteval bool eip_4844_active() noexcept
         {
             // if this EIP is ever enabled, reserve balance must be modified
             // such that execution (and consensus) is accounting for the blob
@@ -199,17 +199,17 @@ namespace monad
             return false;
         }
 
-        static constexpr bool eip_7951_active() noexcept
+        static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
         }
 
-        static constexpr bool can_create_inside_delegated() noexcept
+        static consteval bool can_create_inside_delegated() noexcept
         {
             return false;
         }
 
-        static constexpr uint8_t monad_pricing_version() noexcept
+        static consteval uint8_t monad_pricing_version() noexcept
         {
             if constexpr (Rev >= MONAD_FOUR) {
                 return 1;
@@ -218,17 +218,17 @@ namespace monad
             return 0;
         }
 
-        static constexpr bool should_refund_reduce_gas_used() noexcept
+        static consteval bool should_refund_reduce_gas_used() noexcept
         {
             return Rev < MONAD_FOUR;
         }
 
-        static constexpr bool eip_7702_refund_active() noexcept
+        static consteval bool eip_7702_refund_active() noexcept
         {
             return false;
         }
 
-        static constexpr size_t max_code_size() noexcept
+        static consteval size_t max_code_size() noexcept
         {
             if constexpr (Rev >= MONAD_TWO) {
                 return constants::MAX_CODE_SIZE_MONAD_TWO;
@@ -237,7 +237,7 @@ namespace monad
             return constants::MAX_CODE_SIZE_EIP170;
         }
 
-        static constexpr size_t max_initcode_size() noexcept
+        static consteval size_t max_initcode_size() noexcept
         {
             if constexpr (Rev >= MONAD_FOUR) {
                 return constants::MAX_INITCODE_SIZE_MONAD_FOUR;
@@ -246,7 +246,7 @@ namespace monad
             return constants::MAX_INITCODE_SIZE_EIP3860;
         }
 
-        static constexpr int64_t cold_account_cost() noexcept
+        static consteval int64_t cold_account_cost() noexcept
         {
             if constexpr (monad_pricing_version() >= 1) {
                 return 10000;
@@ -258,7 +258,7 @@ namespace monad
             std::unreachable();
         }
 
-        static constexpr int64_t cold_storage_cost() noexcept
+        static consteval int64_t cold_storage_cost() noexcept
         {
             if constexpr (monad_pricing_version() >= 1) {
                 return 8000;
@@ -270,7 +270,7 @@ namespace monad
             std::unreachable();
         }
 
-        static constexpr int64_t code_deposit_cost() noexcept
+        static consteval int64_t code_deposit_cost() noexcept
         {
             if constexpr (monad_pricing_version() >= 1) {
                 return 1200;
@@ -279,7 +279,7 @@ namespace monad
             return 200;
         }
 
-        static constexpr uint64_t id() noexcept
+        static consteval uint64_t id() noexcept
         {
             return static_cast<uint64_t>(Rev);
         }

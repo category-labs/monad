@@ -16,7 +16,12 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/monad/revision.h>
+
+#include <evmc/evmc.h>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -28,8 +33,13 @@
 #endif
 
 #include <initializer_list>
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+struct Transaction;
+class State;
 
 enum class MonadTransactionError
 {
@@ -38,6 +48,11 @@ enum class MonadTransactionError
                                ///< transaction fees
     SystemTransactionSenderIsAuthority,
 };
+
+Result<void> validate_monad_transaction(
+    monad_revision, evmc_revision, Transaction const &, Address const &sender,
+    State &, uint256_t const &base_fee_per_gas,
+    std::vector<std::optional<Address>> const &authorities);
 
 MONAD_NAMESPACE_END
 

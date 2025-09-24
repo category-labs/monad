@@ -24,8 +24,6 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 
-#include <array>
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -38,7 +36,6 @@ inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
 struct BlockHeader;
 struct Transaction;
 class AccountState;
-class FeeBuffer;
 
 struct MonadChainContext
 {

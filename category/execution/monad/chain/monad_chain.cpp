@@ -33,8 +33,6 @@
 #include <category/execution/monad/system_sender.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 
-#include <ranges>
-
 MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
@@ -77,37 +75,11 @@ Result<void> MonadChain::validate_transaction(
     uint256_t const &base_fee_per_gas,
     std::vector<std::optional<Address>> const &authorities) const
 {
+
+    monad_revision const monad_rev = get_monad_revision(timestamp);
     evmc_revision const rev = get_revision(block_number, timestamp);
-    auto const acct = state.recent_account(sender);
-    auto const &icode = state.get_code(sender)->intercode();
-    auto res = ::monad::validate_transaction(
-        rev, tx, acct, {icode->code(), icode->size()});
-    auto const monad_rev = get_monad_revision(timestamp);
-    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
-        if (res.has_error() &&
-            res.error() != TransactionError::InsufficientBalance) {
-            return res;
-        }
-
-        evmc_revision const rev = get_revision(block_number, timestamp);
-        uint256_t const balance = acct.has_value() ? acct.value().balance : 0;
-        uint256_t const gas_fee =
-            uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
-        if (MONAD_UNLIKELY(balance < gas_fee)) {
-            return MonadTransactionError::InsufficientBalanceForFee;
-        }
-
-        if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
-            return MonadTransactionError::SystemTransactionSenderIsAuthority;
-        }
-    }
-    else if (monad_rev >= MONAD_ZERO) {
-        return res;
-    }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-    return success();
+    return validate_monad_transaction(
+        monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
 }
 
 bool MonadChain::revert_transaction(

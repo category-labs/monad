@@ -200,8 +200,6 @@ add_library(
   "monad/chain/monad_testnet2.cpp"
   "monad/chain/monad_testnet2.hpp"
   "monad/chain/monad_testnet2_alloc.hpp"
-  "monad/chain/validate_monad_transaction.cpp"
-  "monad/chain/validate_monad_transaction.hpp"
   # monad/core
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"
@@ -229,6 +227,8 @@ add_library(
   "monad/system_sender.hpp"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"
+  "monad/validate_monad_transaction.cpp"
+  "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
   # monad/staking

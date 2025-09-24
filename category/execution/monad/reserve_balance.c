@@ -15,7 +15,7 @@
 
 #include <category/execution/monad/reserve_balance.h>
 
-unsigned monad_default_max_reserve_balance_mon(monad_revision)
+unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
 {
     return 10;
 }

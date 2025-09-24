@@ -220,7 +220,6 @@ add_library(
   "monad/monad_precompiles_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
-  "monad/reserve_balance.c"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"

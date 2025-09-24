@@ -31,6 +31,11 @@
 #include <optional>
 #include <ranges>
 
+unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
+{
+    return 10;
+}
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bool dipped_into_reserve(

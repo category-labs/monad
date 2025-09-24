@@ -2473,7 +2473,7 @@ namespace monad::vm::compiler::native
             }
             else {
                 byte_non_literal_ix_literal_or_stack_offset_src(
-                    std::move(ix), std::move(src));
+                    std::move(ix), std::move(src), {});
             }
         }
     }
@@ -3924,8 +3924,9 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
+    template <typename... LiveSet>
     void Emitter::byte_non_literal_ix_literal_or_stack_offset_src(
-        StackElemRef ix, StackElemRef src)
+        StackElemRef ix, StackElemRef src, std::tuple<LiveSet...> const &live)
     {
         MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(
@@ -3978,7 +3979,8 @@ namespace monad::vm::compiler::native
         }
 
         as_.cmovb(dst_gpq[0], zero_reg); // Clear when 31 < ix[0]
-        test_high_bits192(std::move(ix), std::make_tuple(dst));
+        test_high_bits192(
+            std::move(ix), std::tuple_cat(std::make_tuple(dst), live));
         as_.cmovnz(dst_gpq[0], zero_reg);
 
         stack_.push(std::move(dst));
@@ -4077,7 +4079,7 @@ namespace monad::vm::compiler::native
         // zero out result if ix[0] > 31
         as_.cmovb(dst_gpq[0], dst_gpq[2]);
 
-        test_high_bits192(ix, std::make_tuple(dst));
+        test_high_bits192(ix, std::tuple_cat(std::make_tuple(dst), live));
         // zero out result if any of the upper 192 bits of ix are set
         as_.cmovnz(dst_gpq[0], dst_gpq[2]);
 
@@ -4138,7 +4140,7 @@ namespace monad::vm::compiler::native
         AvxRegReserv const src_reserv{src};
 
         auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
-        test_high_bits192(ix, std::make_tuple(src));
+        test_high_bits192(ix, std::tuple_cat(std::make_tuple(src), live));
 
         auto [dst, dst_reserv] = alloc_or_release_avx_reg(
             std::move(src), std::tuple_cat(std::make_tuple(ix), live));
@@ -4381,7 +4383,8 @@ namespace monad::vm::compiler::native
         RegReserv const ix_reserv{src};
         RegReserv const src_reserv{src};
 
-        cmp_stack_elem_to_uint16(ix, 32, std::make_tuple(src));
+        cmp_stack_elem_to_uint16(
+            ix, 32, std::tuple_cat(std::make_tuple(src), live));
 
         static constexpr int32_t byte_off = sp_offset_temp_word2 - 1;
 

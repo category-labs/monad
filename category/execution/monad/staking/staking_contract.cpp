@@ -1495,7 +1495,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
     }
 
     // 2. Apply bounds checks
-    if (MONAD_UNLIKELY(external_reward < MON)) {
+    if (MONAD_UNLIKELY(external_reward < MIN_EXTERNAL_REWARD)) {
         return StakingError::ExternalRewardTooSmall;
     }
     if (MONAD_UNLIKELY(external_reward > MAX_EXTERNAL_REWARD)) {

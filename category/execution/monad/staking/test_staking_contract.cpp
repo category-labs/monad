@@ -2079,7 +2079,11 @@ TEST_F(Stake, validator_external_rewards_failure_conditions)
         StakingError::UnknownValidator);
 
     EXPECT_EQ(
-        external_reward(val.id, auth_address, MON - 1).assume_error(),
+        external_reward(val.id, auth_address, 5).assume_error(),
+        StakingError::ExternalRewardTooSmall);
+    EXPECT_EQ(
+        external_reward(val.id, auth_address, MIN_EXTERNAL_REWARD - 1)
+            .assume_error(),
         StakingError::ExternalRewardTooSmall);
 
     EXPECT_EQ(

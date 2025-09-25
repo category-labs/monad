@@ -300,349 +300,35 @@ void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
     }
 }
 
-struct update_receiver
+template <typename Cont>
+struct node_receiver_t
 {
+public:
     static constexpr bool lifetime_managed_internally = true;
 
-    UpdateAuxImpl *aux;
-    std::unique_ptr<StateMachine> sm;
-    UpdateList updates;
-    UpdateTNode *parent;
-    ChildData &entry;
-    chunk_offset_t rd_offset;
-    unsigned bytes_to_read;
-    uint16_t buffer_off;
-    uint8_t prefix_index;
+    Cont cont;
 
-    update_receiver(
-        UpdateAuxImpl *aux, std::unique_ptr<StateMachine> sm, ChildData &entry,
-        chunk_offset_t offset, UpdateList &&updates, UpdateTNode *parent,
-        unsigned const prefix_index)
-        : aux(aux)
-        , sm(std::move(sm))
-        , updates(std::move(updates))
-        , parent(parent)
-        , entry(entry)
-        , rd_offset(round_down_align<DISK_PAGE_BITS>(offset))
-        , prefix_index(static_cast<uint8_t>(prefix_index))
+    // part of the receiver trait
+    chunk_offset_t rd_offset;
+    uint16_t buffer_offset{};
+    unsigned bytes_to_read{};
+
+    node_receiver_t(Cont cont_, chunk_offset_t const offset_)
+        : cont(std::move(cont_))
+        , rd_offset{round_down_align<DISK_PAGE_BITS>(offset_)}
+        , buffer_offset{
+              static_cast<uint16_t>(offset_.offset - rd_offset.offset)}
     {
-        // prep uring data
-        buffer_off = uint16_t(offset.offset - rd_offset.offset);
-        // spare bits are number of pages needed to load node
-        auto const num_pages_to_load_node =
-            node_disk_pages_spare_15(rd_offset).to_pages();
-        MONAD_DEBUG_ASSERT(
-            num_pages_to_load_node <=
-            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-        bytes_to_read =
-            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+        auto const pages = node_disk_pages_spare_15{rd_offset}.to_pages();
+        bytes_to_read = static_cast<unsigned>(pages << DISK_PAGE_BITS);
         rd_offset.set_spare(0);
     }
 
-    template <class ResultType>
-    void set_value(erased_connected_operation *io_state, ResultType buffer_)
+    template <typename Result>
+    void set_value(erased_connected_operation *io_state_, Result buffer_)
     {
         MONAD_ASSERT(buffer_);
-        auto old = detail::deserialize_node_from_receiver_result<Node>(
-            std::move(buffer_), buffer_off, io_state);
-        // continue recurse down the trie starting from `old`
-        upsert_(
-            *aux,
-            *sm,
-            *parent,
-            entry,
-            std::move(old),
-            INVALID_OFFSET,
-            std::move(updates),
-            prefix_index);
-        sm->up(1);
-        upward_update(*aux, *sm, parent);
-    }
-};
-
-static_assert(sizeof(update_receiver) == 64);
-static_assert(alignof(update_receiver) == 8);
-
-struct read_single_child_expire_receiver
-{
-    static constexpr bool lifetime_managed_internally = true;
-
-    UpdateAuxImpl *aux;
-    std::unique_ptr<StateMachine> sm;
-    chunk_offset_t rd_offset;
-    ExpireTNode::unique_ptr_type tnode;
-    unsigned bytes_to_read;
-    uint16_t buffer_off;
-    uint8_t child_branch;
-
-    read_single_child_expire_receiver(
-        UpdateAuxImpl *const aux_, std::unique_ptr<StateMachine> sm_,
-        ExpireTNode::unique_ptr_type tnode_, chunk_offset_t const offset,
-        uint8_t const child_branch)
-        : aux(aux_)
-        , sm(std::move(sm_))
-        , rd_offset(0, 0)
-        , tnode(std::move(tnode_))
-        , child_branch(child_branch)
-    {
-        MONAD_ASSERT(tnode && tnode->node);
-        aux->collect_expire_stats(true);
-        // TODO: put in a helper to dedup logic
-        rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
-        auto const num_pages_to_load_node =
-            node_disk_pages_spare_15{rd_offset}.to_pages();
-        buffer_off = uint16_t(offset.offset - rd_offset.offset);
-        MONAD_DEBUG_ASSERT(
-            num_pages_to_load_node <=
-            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-        bytes_to_read =
-            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
-        rd_offset.set_spare(0);
-    }
-
-    template <class ResultType>
-    void set_value(erased_connected_operation *io_state, ResultType buffer_)
-    {
-        MONAD_ASSERT(buffer_);
-        auto single_child = detail::deserialize_node_from_receiver_result<Node>(
-            std::move(buffer_), buffer_off, io_state);
-        auto new_node = make_node(
-            *single_child,
-            concat(
-                tnode->node->path_nibble_view(),
-                child_branch,
-                single_child->path_nibble_view()),
-            single_child->opt_value(),
-            single_child->version);
-        fillin_parent_after_expiration(
-            *aux,
-            std::move(new_node),
-            tnode->parent,
-            tnode->index,
-            tnode->branch,
-            tnode->cache_node);
-        // upward update
-        auto *parent = tnode->parent;
-        while (!parent->npending) {
-            if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpdateTNode *)parent);
-                return;
-            }
-            auto *next_parent = parent->parent;
-            MONAD_ASSERT(next_parent);
-            try_fillin_parent_after_expiration(
-                *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-            // go one level up
-            parent = next_parent;
-        }
-    }
-};
-
-struct read_single_child_receiver
-{
-    static constexpr bool lifetime_managed_internally = true;
-
-    UpdateAuxImpl *aux;
-    chunk_offset_t rd_offset;
-    UpdateTNode *tnode; // single child tnode
-    ChildData &child;
-    unsigned bytes_to_read;
-    uint16_t buffer_off;
-    std::unique_ptr<StateMachine> sm;
-
-    read_single_child_receiver(
-        UpdateAuxImpl *const aux, std::unique_ptr<StateMachine> sm,
-        UpdateTNode *const tnode, ChildData &child)
-        : aux(aux)
-        , rd_offset(0, 0)
-        , tnode(tnode)
-        , child(child)
-        , sm(std::move(sm))
-    {
-        { // some sanity checks
-            auto const virtual_child_offset =
-                aux->physical_to_virtual(child.offset);
-            MONAD_DEBUG_ASSERT(virtual_child_offset != INVALID_VIRTUAL_OFFSET);
-            // child offset is older than current node writer's start offset
-            MONAD_DEBUG_ASSERT(
-                virtual_child_offset <
-                aux->physical_to_virtual((virtual_child_offset.in_fast_list()
-                                              ? aux->node_writer_fast
-                                              : aux->node_writer_slow)
-                                             ->sender()
-                                             .offset()));
-        }
-        rd_offset = round_down_align<DISK_PAGE_BITS>(child.offset);
-        rd_offset.set_spare(0);
-        buffer_off = uint16_t(child.offset.offset - rd_offset.offset);
-        // spare bits are number of pages needed to load node
-        auto const num_pages_to_load_node =
-            node_disk_pages_spare_15{child.offset}.to_pages();
-        MONAD_DEBUG_ASSERT(
-            num_pages_to_load_node <=
-            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-        bytes_to_read =
-            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
-    }
-
-    template <class ResultType>
-    void set_value(erased_connected_operation *io_state, ResultType buffer_)
-    {
-        MONAD_ASSERT(buffer_);
-        // load node from read buffer
-        auto *parent = tnode->parent;
-        MONAD_DEBUG_ASSERT(parent);
-        auto &entry = parent->children[tnode->child_index()];
-        MONAD_DEBUG_ASSERT(entry.branch < 16);
-        auto &child = tnode->children[bitmask_index(
-            tnode->orig_mask,
-            static_cast<unsigned>(std::countr_zero(tnode->mask)))];
-        child.ptr = detail::deserialize_node_from_receiver_result<Node>(
-            std::move(buffer_), buffer_off, io_state);
-        auto const path_size = tnode->path.nibble_size();
-        create_node_compute_data_possibly_async(
-            *aux, *sm, *parent, entry, tnode_unique_ptr{tnode}, false);
-        sm->up(path_size + !parent->is_sentinel());
-        upward_update(*aux, *sm, parent);
-    }
-};
-
-static_assert(sizeof(read_single_child_receiver) == 48);
-static_assert(alignof(read_single_child_receiver) == 8);
-
-struct compaction_receiver
-{
-    static constexpr bool lifetime_managed_internally = true;
-
-    UpdateAuxImpl *aux;
-    chunk_offset_t rd_offset;
-    chunk_offset_t orig_offset;
-    CompactTNode::unique_ptr_type tnode;
-    unsigned bytes_to_read;
-    uint16_t buffer_off;
-    std::unique_ptr<StateMachine> sm;
-    bool copy_node_for_fast_or_slow;
-
-    compaction_receiver(
-        UpdateAuxImpl *aux_, std::unique_ptr<StateMachine> sm_,
-        CompactTNode::unique_ptr_type tnode_, chunk_offset_t const offset,
-        bool const copy_node_for_fast_or_slow_)
-        : aux(aux_)
-        , rd_offset({0, 0})
-        , orig_offset(offset)
-        , tnode(std::move(tnode_))
-        , sm(std::move(sm_))
-        , copy_node_for_fast_or_slow(copy_node_for_fast_or_slow_)
-    {
-        MONAD_ASSERT(offset != INVALID_OFFSET);
-        MONAD_ASSERT(tnode && tnode->type == tnode_type::compact);
-        rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
-        auto const num_pages_to_load_node =
-            node_disk_pages_spare_15{rd_offset}.to_pages();
-        buffer_off = uint16_t(offset.offset - rd_offset.offset);
-        MONAD_DEBUG_ASSERT(
-            num_pages_to_load_node <=
-            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-        bytes_to_read =
-            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
-        rd_offset.set_spare(0);
-
-        aux->collect_compaction_read_stats(offset, bytes_to_read);
-    }
-
-    template <class ResultType>
-    void set_value(erased_connected_operation *io_state, ResultType buffer_)
-    {
-        MONAD_ASSERT(buffer_);
-        tnode->update_after_async_read(
-            detail::deserialize_node_from_receiver_result<Node>(
-                std::move(buffer_), buffer_off, io_state));
-        auto *parent = tnode->parent;
-        compact_(
-            *aux,
-            *sm,
-            std::move(tnode),
-            orig_offset,
-            copy_node_for_fast_or_slow);
-        while (!parent->npending) {
-            if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpdateTNode *)parent);
-                return;
-            }
-            auto *next_parent = parent->parent;
-            MONAD_ASSERT(next_parent);
-            if (parent->type == tnode_type::compact) {
-                try_fillin_parent_with_rewritten_node(
-                    *aux, CompactTNode::unique_ptr_type{parent});
-            }
-            else {
-                try_fillin_parent_after_expiration(
-                    *aux,
-                    *sm,
-                    ExpireTNode::unique_ptr_type{(ExpireTNode *)parent});
-            }
-            // go one level up
-            parent = next_parent;
-        }
-    }
-};
-
-struct expire_receiver
-{
-    static constexpr bool lifetime_managed_internally = true;
-
-    UpdateAuxImpl *aux;
-    chunk_offset_t rd_offset;
-    ExpireTNode::unique_ptr_type tnode;
-    unsigned bytes_to_read;
-    uint16_t buffer_off;
-    std::unique_ptr<StateMachine> sm;
-
-    expire_receiver(
-        UpdateAuxImpl *aux_, std::unique_ptr<StateMachine> sm_,
-        ExpireTNode::unique_ptr_type tnode_, chunk_offset_t const offset)
-        : aux(aux_)
-        , rd_offset({0, 0})
-        , tnode(std::move(tnode_))
-        , sm(std::move(sm_))
-    {
-        MONAD_ASSERT(tnode && tnode->type == tnode_type::expire);
-        aux->collect_expire_stats(true);
-        rd_offset = round_down_align<DISK_PAGE_BITS>(offset);
-        auto const num_pages_to_load_node =
-            node_disk_pages_spare_15{rd_offset}.to_pages();
-        buffer_off = uint16_t(offset.offset - rd_offset.offset);
-        MONAD_DEBUG_ASSERT(
-            num_pages_to_load_node <=
-            round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
-        bytes_to_read =
-            static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
-        rd_offset.set_spare(0);
-    }
-
-    template <class ResultType>
-    void set_value(erased_connected_operation *io_state, ResultType buffer_)
-    {
-        MONAD_ASSERT(buffer_);
-        tnode->update_after_async_read(
-            detail::deserialize_node_from_receiver_result<Node>(
-                std::move(buffer_), buffer_off, io_state));
-        auto *parent = tnode->parent;
-        MONAD_ASSERT(parent);
-        expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
-        while (!parent->npending) {
-            if (parent->type == tnode_type::update) {
-                upward_update(*aux, *sm, (UpdateTNode *)parent);
-                return;
-            }
-            MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
-            auto *next_parent = parent->parent;
-            MONAD_ASSERT(next_parent);
-            try_fillin_parent_after_expiration(
-                *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-            // go one level up
-            parent = next_parent;
-        }
+        cont(io_state_, std::move(buffer_), buffer_offset);
     }
 };
 
@@ -669,13 +355,49 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
         auto const child_index = orig->to_child_index(child_branch);
         auto single_child = orig->move_next(child_index);
         if (!single_child) {
-            read_single_child_expire_receiver receiver(
-                &aux,
-                sm.clone(),
-                std::move(tnode),
-                orig->fnext(child_index),
-                child_branch);
-            async_read(aux, std::move(receiver));
+            node_receiver_t recv{
+                [aux = &aux,
+                 sm = sm.clone(),
+                 tnode = std::move(tnode),
+                 child_branch = child_branch](
+                    erased_connected_operation *io_state,
+                    auto buffer,
+                    uint16_t const buffer_offset) mutable {
+                    auto single_child =
+                        detail::deserialize_node_from_receiver_result<Node>(
+                            std::move(buffer), buffer_offset, io_state);
+                    auto new_node = make_node(
+                        *single_child,
+                        concat(
+                            tnode->node->path_nibble_view(),
+                            child_branch,
+                            single_child->path_nibble_view()),
+                        single_child->opt_value(),
+                        single_child->version);
+                    fillin_parent_after_expiration(
+                        *aux,
+                        std::move(new_node),
+                        tnode->parent,
+                        tnode->index,
+                        tnode->branch,
+                        tnode->cache_node);
+                    // upward update
+                    auto *parent = tnode->parent;
+                    while (!parent->npending) {
+                        if (parent->type == tnode_type::update) {
+                            upward_update(*aux, *sm, (UpdateTNode *)parent);
+                            return;
+                        }
+                        auto *next_parent = parent->parent;
+                        MONAD_ASSERT(next_parent);
+                        try_fillin_parent_after_expiration(
+                            *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                        // go one level up
+                        parent = next_parent;
+                    }
+                },
+                orig->fnext(child_index)};
+            async_read(aux, std::move(recv));
             return {false, nullptr};
         }
         return {
@@ -817,9 +539,43 @@ void create_node_compute_data_possibly_async(
         if (!child.ptr) {
             MONAD_DEBUG_ASSERT(aux.is_on_disk());
             MONAD_ASSERT(child.offset != INVALID_OFFSET);
-            read_single_child_receiver receiver(
-                &aux, sm.clone(), tnode.release(), child);
-            async_read(aux, std::move(receiver));
+            { // some sanity checks
+                auto const virtual_child_offset =
+                    aux.physical_to_virtual(child.offset);
+                MONAD_DEBUG_ASSERT(
+                    virtual_child_offset != INVALID_VIRTUAL_OFFSET);
+                // child offset is older than current node writer's start offset
+                MONAD_DEBUG_ASSERT(
+                    virtual_child_offset <
+                    aux.physical_to_virtual((virtual_child_offset.in_fast_list()
+                                                 ? aux.node_writer_fast
+                                                 : aux.node_writer_slow)
+                                                ->sender()
+                                                .offset()));
+            }
+            node_receiver_t recv{
+                [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
+                    erased_connected_operation *io_state,
+                    auto buffer,
+                    uint16_t const buffer_offset) mutable {
+                    auto *parent = tnode->parent;
+                    MONAD_DEBUG_ASSERT(parent);
+                    auto &entry = parent->children[tnode->child_index()];
+                    MONAD_DEBUG_ASSERT(entry.branch < 16);
+                    auto &child = tnode->children[bitmask_index(
+                        tnode->orig_mask,
+                        static_cast<unsigned>(std::countr_zero(tnode->mask)))];
+                    child.ptr =
+                        detail::deserialize_node_from_receiver_result<Node>(
+                            std::move(buffer), buffer_offset, io_state);
+                    auto const path_size = tnode->path.nibble_size();
+                    create_node_compute_data_possibly_async(
+                        *aux, *sm, *parent, entry, std::move(tnode), false);
+                    sm->up(path_size + !parent->is_sentinel());
+                    upward_update(*aux, *sm, parent);
+                },
+                child.offset};
+            async_read(aux, std::move(recv));
             MONAD_DEBUG_ASSERT(parent.npending);
             return;
         }
@@ -1026,15 +782,33 @@ void upsert_(
         "Invalid update detected: current implementation does not "
         "support updating variable-length tables");
     if (!old) {
-        update_receiver receiver(
-            &aux,
-            sm.clone(),
-            entry,
-            old_offset,
-            std::move(updates),
-            &parent,
-            prefix_index);
-        async_read(aux, std::move(receiver));
+        node_receiver_t recv{
+            [aux = &aux,
+             entry = &entry,
+             prefix_index = prefix_index,
+             sm = sm.clone(),
+             parent = &parent,
+             updates = std::move(updates)](
+                erased_connected_operation *io_state,
+                auto buffer,
+                uint16_t const buffer_offset) mutable {
+                auto old = detail::deserialize_node_from_receiver_result<Node>(
+                    std::move(buffer), buffer_offset, io_state);
+                // continue recurse down the trie starting from `old`
+                upsert_(
+                    *aux,
+                    *sm,
+                    *parent,
+                    *entry,
+                    std::move(old),
+                    INVALID_OFFSET,
+                    std::move(updates),
+                    prefix_index);
+                sm->up(1);
+                upward_update(*aux, *sm, parent);
+            },
+            old_offset};
+        async_read(aux, std::move(recv));
         return;
     }
     MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
@@ -1326,9 +1100,34 @@ void expire_(
         // is needs to call expire_() over the read node rather than upsert_(),
         // can pass in a flag to differentiate, or maybe a different receiver?
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
-        expire_receiver receiver(
-            &aux, sm.clone(), std::move(tnode), node_offset);
-        async_read(aux, std::move(receiver));
+        node_receiver_t recv{
+            [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
+                erased_connected_operation *io_state,
+                auto buffer,
+                uint16_t const buffer_offset) mutable {
+                tnode->update_after_async_read(
+                    detail::deserialize_node_from_receiver_result<Node>(
+                        std::move(buffer), buffer_offset, io_state));
+                auto *parent = tnode->parent;
+                MONAD_ASSERT(parent);
+                expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
+                while (!parent->npending) {
+                    if (parent->type == tnode_type::update) {
+                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        return;
+                    }
+                    MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
+                    auto *next_parent = parent->parent;
+                    MONAD_ASSERT(next_parent);
+                    try_fillin_parent_after_expiration(
+                        *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                    // go one level up
+                    parent = next_parent;
+                }
+            },
+            node_offset};
+        aux.collect_expire_stats(true);
+        async_read(aux, std::move(recv));
         return;
     }
     auto *const parent = tnode->parent;
@@ -1452,13 +1251,50 @@ void compact_(
 {
     MONAD_ASSERT(tnode->type == tnode_type::compact);
     if (!tnode->node) {
-        compaction_receiver receiver(
-            &aux,
-            sm.clone(),
-            std::move(tnode),
-            node_offset,
-            copy_node_for_fast_or_slow);
-        async_read(aux, std::move(receiver));
+        node_receiver_t recv{
+            [copy_node_for_fast_or_slow,
+             node_offset,
+             aux = &aux,
+             sm = sm.clone(),
+             tnode = std::move(tnode)](
+                erased_connected_operation *io_state,
+                auto buf,
+                uint16_t const buffer_offset) mutable {
+                tnode->update_after_async_read(
+                    detail::deserialize_node_from_receiver_result<Node>(
+                        std::move(buf), buffer_offset, io_state));
+                auto *parent = tnode->parent;
+                compact_(
+                    *aux,
+                    *sm,
+                    std::move(tnode),
+                    node_offset,
+                    copy_node_for_fast_or_slow);
+                while (!parent->npending) {
+                    if (parent->type == tnode_type::update) {
+                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        return;
+                    }
+                    auto *next_parent = parent->parent;
+                    MONAD_ASSERT(next_parent);
+                    if (parent->type == tnode_type::compact) {
+                        try_fillin_parent_with_rewritten_node(
+                            *aux, CompactTNode::unique_ptr_type{parent});
+                    }
+                    else {
+                        try_fillin_parent_after_expiration(
+                            *aux,
+                            *sm,
+                            ExpireTNode::unique_ptr_type{
+                                (ExpireTNode *)parent});
+                    }
+                    // go one level up
+                    parent = next_parent;
+                }
+            },
+            node_offset};
+        aux.collect_compaction_read_stats(node_offset, recv.bytes_to_read);
+        async_read(aux, std::move(recv));
         return;
     }
     // Only compact nodes < compaction range (either fast or slow) to slow,

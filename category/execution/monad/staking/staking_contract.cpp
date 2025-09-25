@@ -347,8 +347,9 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-StakingContract::StakingContract(State &state)
+StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
     : state_{state}
+    , call_tracer_{call_tracer}
     , vars{state}
 {
 }
@@ -370,7 +371,7 @@ void StakingContract::emit_validator_created_event(
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(auth_delegator))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_validator_status_changed_event(
@@ -386,7 +387,7 @@ void StakingContract::emit_validator_status_changed_event(
                            .add_topic(abi_encode_uint(val_id))
                            .add_data(abi_encode_uint(flags))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_delegation_event(
@@ -406,7 +407,7 @@ void StakingContract::emit_delegation_event(
                            .add_data(abi_encode_uint(amount))
                            .add_data(abi_encode_uint(active_epoch))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_undelegate_event(
@@ -426,7 +427,7 @@ void StakingContract::emit_undelegate_event(
                            .add_data(abi_encode_uint(amount))
                            .add_data(abi_encode_uint(activation_epoch))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_withdraw_event(
@@ -447,7 +448,7 @@ void StakingContract::emit_withdraw_event(
                            .add_data(abi_encode_uint(amount))
                            .add_data(abi_encode_uint(withdraw_epoch))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_claim_rewards_event(
@@ -464,7 +465,7 @@ void StakingContract::emit_claim_rewards_event(
                            .add_topic(abi_encode_address(delegator))
                            .add_data(abi_encode_uint(amount))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 void StakingContract::emit_commission_changed_event(
@@ -482,7 +483,7 @@ void StakingContract::emit_commission_changed_event(
                            .add_data(abi_encode_uint(old_commission))
                            .add_data(abi_encode_uint(new_commission))
                            .build();
-    state_.store_log(event);
+    emit_log(event);
 }
 
 //////////////
@@ -1942,6 +1943,12 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
     }
     bool const done = (ptr == Trait::empty());
     return {done, ptr, std::move(results)};
+}
+
+void StakingContract::emit_log(Receipt::Log const &log)
+{
+    state_.store_log(log);
+    call_tracer_.on_log(log);
 }
 
 MONAD_STAKING_NAMESPACE_END

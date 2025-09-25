@@ -249,7 +249,8 @@ struct Stake : public ::testing::Test
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    StakingContract contract{state};
+    NoopCallTracer call_tracer{};
+    StakingContract contract{state, call_tracer};
 
     void SetUp() override
     {

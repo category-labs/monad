@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -23,8 +24,8 @@
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_monad_precompile(State &state, evmc_message const &msg)
+std::optional<evmc::Result> check_call_monad_precompile(
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         return std::nullopt;
@@ -45,7 +46,7 @@ check_call_monad_precompile(State &state, evmc_message const &msg)
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    staking::StakingContract contract(state);
+    staking::StakingContract contract(state, call_tracer);
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -79,14 +80,14 @@ bool is_precompile(Address const &address)
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &state, evmc_message const &msg)
+std::optional<evmc::Result> check_call_precompile(
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
     }
 
-    return check_call_monad_precompile<traits>(state, msg);
+    return check_call_monad_precompile<traits>(state, call_tracer, msg);
 }
 
 EXPLICIT_MONAD_TRAITS(check_call_precompile);

@@ -1197,7 +1197,9 @@ TYPED_TEST(DBTest, call_frames_refund)
         .gas = 0x186a0,
         .gas_used = 0x8fd8,
         .status = EVMC_SUCCESS,
-        .depth = 0};
+        .depth = 0,
+        .logs = std::vector<CallFrame::Log>{},
+    };
 
     EXPECT_EQ(actual_call_frames[0], expected);
 }

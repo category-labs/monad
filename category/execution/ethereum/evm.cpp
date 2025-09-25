@@ -310,7 +310,8 @@ evmc::Result call(
     }
 
     evmc::Result result;
-    if (auto maybe_result = check_call_precompile<traits>(state, msg);
+    if (auto maybe_result =
+            check_call_precompile<traits>(state, call_tracer, msg);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

@@ -69,6 +69,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
         .output = byte_string{},
         .status = EVMC_SUCCESS,
         .depth = 0,
+        .logs = std::nullopt,
     };
 
     CallFrame const call_frame2{
@@ -83,7 +84,30 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
         .output = byte_string{0x01, 0x02},
         .status = EVMC_REVERT,
         .depth = 1,
-    };
+        .logs = std::vector{
+            CallFrame::Log{
+                .log =
+                    Receipt::Log{
+                        .data = {byte_string{0xef, 0xfe}},
+                        .topics = {evmc_bytes32{0x01, 0x02}},
+                        .address = a,
+                    },
+                .position = 0,
+            },
+            CallFrame::Log{
+                .log =
+                    Receipt::Log{
+                        .data = {byte_string{0xab, 0xcd}},
+                        .topics =
+                            {
+                                evmc_bytes32{0x03},
+                                evmc_bytes32{0x04, 0x05},
+                            },
+                        .address = b,
+                    },
+                .position = 2,
+            },
+        }};
 
     std::vector<CallFrame> const call_frames{call_frame1, call_frame2};
 

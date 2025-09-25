@@ -19,11 +19,13 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
 #include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -39,6 +41,31 @@ enum class CallType
 
 struct CallFrame
 {
+    struct Log
+    {
+        Receipt::Log log;
+
+        /*
+         * The position field for a log is defined to be the number of sub-call
+         * frames that happened in the same enclosing frame before the log event
+         * was emitted. For example:
+         *
+         *   LOG  <- position 0
+         *   CALL
+         *   CALL
+         *   LOG  <- position 2
+         *   LOG  <- position 2
+         *
+         * Note that the last two logs have the same position; their relative
+         * ordering is established by their position in the vector of log
+         * output. Positions encode ordering between calls and logs, not between
+         * logs.
+         */
+        size_t position;
+
+        friend bool operator==(Log const &, Log const &) = default;
+    };
+
     CallType type{};
     uint32_t flags{};
     Address from{};
@@ -50,14 +77,12 @@ struct CallFrame
     byte_string output{};
     evmc_status_code status{};
     uint64_t depth{};
+    std::optional<std::vector<Log>> logs{};
 
     friend bool operator==(CallFrame const &, CallFrame const &) = default;
-
-    // TODO: official documentation doesn't contain "logs", but geth/reth
-    // implementation does
 };
 
-static_assert(sizeof(CallFrame) == 184);
+static_assert(sizeof(CallFrame) == 216);
 static_assert(alignof(CallFrame) == 8);
 
 nlohmann::json to_json(CallFrame const &);

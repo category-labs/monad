@@ -82,7 +82,8 @@ protected:
         TrieDb tdb{db};
         BlockState bs{tdb, vm};
         State state{bs, Incarnation{0, 0}};
-        StakingContract contract{state};
+        NoopCallTracer call_tracer{};
+        StakingContract contract{state, call_tracer};
 
         state.add_to_balance(STAKING_CA, 0);
 

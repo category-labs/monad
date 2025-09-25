@@ -24,6 +24,7 @@
 #include "state.hpp"
 #include "test_state.hpp"
 #include "transaction.hpp"
+#include "state_predicates.hpp"
 
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
@@ -140,12 +141,7 @@ static Transaction tx_from(State &state, evmc::address const &addr) noexcept
     return tx;
 }
 
-// Derived from the evmone transition implementation; transaction-related
-// book-keeping is elided here to keep the implementation simple and allow us to
-// send arbitrary messages to update the state.
-static evmc::Result transition(
-    State &state, evmc_message const &msg, evmc_revision const rev,
-    evmc::VM &vm, std::int64_t const block_gas_left)
+static void pre_transition_cleanup(State &state) noexcept
 {
     // Pre-transaction clean-up.
     // - Clear transient storage.
@@ -160,6 +156,51 @@ static evmc::Result transition(
             val.original = val.current;
         }
     }
+}
+
+// Post-transaction clean-up.
+// When rollback() is used, this must be called after it so empty accounts
+// referred by the journal can be rolled back properly.
+static void post_transition_cleanup(evmc_revision const rev, State &state) noexcept
+{
+    // Apply destructs and erasures.
+    std::erase_if(
+        state.get_modified_accounts(),
+        [rev](std::pair<address const, Account> const &p) noexcept {
+            return is_account_erasable(rev, p.second);
+        });
+
+    // It's possible for the compiler and evmone to reach equivalent-but-not-equal
+    // states after both executing. For example, the compiler may exit a block
+    // containing an SSTORE early because of unconditional underflow later in the
+    // block. Evmone will instead execute the SSTORE, then roll back the change.
+    // Because of how rollback is implemented, this produces a state with a mapping
+    // `K |-> 0` for some key `K`. This won't directly compare equal to the _empty_
+    // state that the compiler has, and so we need to normalise the states after
+    // execution to remove cold zero slots.
+    for (auto &[addr, acc] : state.get_modified_accounts()) {
+        std::erase_if(
+            acc.storage,
+            [](std::pair<evmc::bytes32 const, StorageValue> const &p) noexcept {
+                return is_storage_erasable(p.second);
+            });
+
+        std::erase_if(
+            acc.transient_storage,
+            [](std::pair<evmc::bytes32 const, evmc::bytes32> const &p) noexcept {
+                return is_transient_storage_erasable(p.second);
+            });
+    }
+}
+
+// Derived from the evmone transition implementation; transaction-related
+// book-keeping is elided here to keep the implementation simple and allow us to
+// send arbitrary messages to update the state.
+static evmc::Result transition(
+    State &state, evmc_message const &msg, evmc_revision const rev,
+    evmc::VM &vm, std::int64_t const block_gas_left)
+{
+    pre_transition_cleanup(state);
 
     // TODO(BSC): fill out block and host context properly; should all work fine
     // for the moment as zero values from the perspective of the VM
@@ -194,26 +235,6 @@ static evmc::Result transition(
     gas_used -= refund;
 
     sender_acc.balance += (block_gas_left - gas_used) * effective_gas_price;
-
-    // Apply destructs.
-    std::erase_if(
-        state.get_modified_accounts(),
-        [](std::pair<address const, Account> const &p) noexcept {
-            return p.second.destructed;
-        });
-
-    // Delete empty accounts after every transaction. This is strictly required
-    // until Byzantium where intermediate state root hashes are part of the
-    // transaction receipt.
-    // TODO: Consider limiting this only to Spurious Dragon.
-    if (rev >= EVMC_SPURIOUS_DRAGON) {
-        std::erase_if(
-            state.get_modified_accounts(),
-            [](std::pair<address const, Account> const &p) noexcept {
-                auto const &acc = p.second;
-                return acc.erase_if_empty && acc.is_empty();
-            });
-    }
 
     return result;
 }
@@ -261,41 +282,6 @@ static evmc::address deploy_delegated_contracts(
     MONAD_VM_ASSERT(a == a1);
     assert_equal(evmone_state, monad_state);
     return a;
-}
-
-// It's possible for the compiler and evmone to reach equivalent-but-not-equal
-// states after both executing. For example, the compiler may exit a block
-// containing an SSTORE early because of unconditional underflow later in the
-// block. Evmone will instead execute the SSTORE, then roll back the change.
-// Because of how rollback is implemented, this produces a state with a mapping
-// `K |-> 0` for some key `K`. This won't directly compare equal to the _empty_
-// state that the compiler has, and so we need to normalise the states after
-// execution to remove cold zero slots.
-static void clean_storage(State &state)
-{
-    for (auto &[addr, acc] : state.get_modified_accounts()) {
-        for (auto it = acc.storage.begin(); it != acc.storage.end();) {
-            auto const &[k, v] = *it;
-
-            if (v.current == evmc::bytes32{} && v.original == evmc::bytes32{} &&
-                v.access_status == EVMC_ACCESS_COLD) {
-                it = acc.storage.erase(it);
-            }
-            else {
-                ++it;
-            }
-        }
-        for (auto it = acc.transient_storage.begin();
-             it != acc.transient_storage.end();) {
-            auto const &[k, v] = *it;
-            if (v == evmc::bytes32{}) {
-                it = acc.transient_storage.erase(it);
-            }
-            else {
-                ++it;
-            }
-        }
-    }
 }
 
 using random_engine_t = std::mt19937_64;
@@ -432,12 +418,12 @@ static evmc_status_code fuzz_iteration(
     if (evmone_result.status_code != EVMC_SUCCESS) {
         evmone_state.rollback(evmone_checkpoint);
     }
-    clean_storage(evmone_state);
+    post_transition_cleanup(rev, evmone_state);
 
     if (monad_result.status_code != EVMC_SUCCESS) {
         monad_state.rollback(monad_checkpoint);
     }
-    clean_storage(monad_state);
+    post_transition_cleanup(rev, monad_state);
 
     assert_equal(evmone_state, monad_state);
     return evmone_result.status_code;

@@ -184,7 +184,7 @@ namespace
                      .account =
                          {std::nullopt,
                           Account{
-                              .balance = 0x200000,
+                              .balance = 20'000'000u,
                               .code_hash = NULL_HASH,
                               .nonce = 0x0}}}},
                 {ADDR_B,
@@ -197,7 +197,7 @@ namespace
 
         Transaction const tx{
             .max_fee_per_gas = 1,
-            .gas_limit = 500'000u,
+            .gas_limit = 9'000'000u,
             .value = 0x10000,
             .to = ADDR_B,
         };
@@ -244,8 +244,9 @@ namespace
             .from = from,
             .to = ADDR_B,
             .value = 0x10000,
-            .gas = gas_specified ? 500'000u : MONAD_ETH_CALL_LOW_GAS_LIMIT,
-            .gas_used = gas_specified ? 500'000u : MONAD_ETH_CALL_LOW_GAS_LIMIT,
+            .gas = gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
+            .gas_used =
+                gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
             .status = EVMC_SUCCESS,
             .depth = 0,
             .logs = std::vector<CallFrame::Log>{},

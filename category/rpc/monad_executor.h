@@ -26,7 +26,7 @@ extern "C"
 {
 #endif
 
-static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 400'000;
+static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
 
 struct monad_state_override;
 struct monad_executor;

@@ -1151,7 +1151,7 @@ namespace monad::vm::fuzzing
      * instantiating this lookup as appropriate.
      */
     template <typename Engine, typename LookupFunc>
-    message_ptr generate_message(
+    evmc_message generate_message(
         GeneratorFocus focus, Engine &eng,
         std::vector<evmc::address> const &contract_addresses,
         std::vector<evmc::address> const &known_eoas,
@@ -1211,7 +1211,7 @@ namespace monad::vm::fuzzing
 
         auto const &code = address_lookup(target);
 
-        return message_ptr{new evmc_message{
+        return evmc_message{
             .kind = kind,
             .flags = flags,
             .depth = depth,
@@ -1226,7 +1226,7 @@ namespace monad::vm::fuzzing
             .code_address = target,
             .code = code.data(),
             .code_size = code.size(),
-        }};
+        };
     }
 
 }

@@ -415,7 +415,11 @@ try {
             ? std::numeric_limits<uint64_t>::max()
             : block_num + nblocks - 1;
 
-    vm::VM vm;
+    // If call tracing is enabled, we need to correspondingly disable native
+    // compilation: the compiler does not expose the full fidelity of error exit
+    // codes that are required to serve RPC responses that include call traces.
+    vm::VM vm{!trace_calls};
+
     DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {

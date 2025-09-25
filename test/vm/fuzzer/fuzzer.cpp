@@ -31,6 +31,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/fuzzing/generator/shrinker.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <evmone/constants.hpp>
@@ -131,6 +132,24 @@ static evmone::test::TestState initial_state()
         .code = {}};
     return init;
 }
+
+// When shrinking, we want the state to be reverted to some arbitrary point
+// after each iteration. Unfortunately, the state journal does not keep track
+// of all state changes, for example account balances changes from gas usage,
+// meaning we cannot simply rollback to a previous journal checkpoint.
+//
+// Instead of keeping track of all the things that can change the state, we
+// simply clone the entire state before each execution. This is less efficient,
+// but the shrinker doesn't need to be fast.
+// static std::shared_ptr<State> clone_state(State const &state)
+// {
+//     auto new_state = State{initial_state()};
+//     for (auto const &[addr, acc] : state.get_modified_accounts()) {
+//         auto const new_acc = acc;
+//         new_state.insert(addr, new_acc);
+//     }
+//     return std::make_shared<State>(std::move(new_state));
+// }
 
 static Transaction tx_from(State &state, evmc::address const &addr) noexcept
 {
@@ -259,7 +278,7 @@ static evmc::address deploy_contract(
             .transient_storage = {},
             .code = code});
 
-    MONAD_VM_ASSERT(state.find(create_address) != nullptr);
+    FUZZER_ASSERT(state.find(create_address) != nullptr);
 
     return create_address;
 }
@@ -269,7 +288,7 @@ static evmc::address deploy_delegated_contract(
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
-    MONAD_VM_ASSERT(code.size() == 23);
+    FUZZER_ASSERT(code.size() == 23);
     return deploy_contract(state, from, code);
 }
 
@@ -279,7 +298,7 @@ static evmc::address deploy_delegated_contracts(evmc_revision const rev,
 {
     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
-    MONAD_VM_ASSERT(a == a1);
+    FUZZER_ASSERT(a == a1);
     assert_equal(rev, evmone_state, monad_state);
     return a;
 }
@@ -403,17 +422,14 @@ static evmc_status_code fuzz_iteration(
     }
 
     auto const evmone_checkpoint = evmone_state.checkpoint();
+    auto evmone_sender_balance = evmone_state.get_or_insert(msg.sender).balance;
     auto const evmone_result =
         transition(evmone_state, msg, rev, evmone_vm, block_gas_limit);
 
     auto const monad_checkpoint = monad_state.checkpoint();
+    auto monad_sender_balance = monad_state.get_or_insert(msg.sender).balance;
     auto const monad_result =
         transition(monad_state, msg, rev, monad_vm, block_gas_limit);
-
-    assert_equal(
-        evmone_result,
-        monad_result,
-        impl == BlockchainTestVM::Implementation::Interpreter);
 
     if (evmone_result.status_code != EVMC_SUCCESS) {
         evmone_state.rollback(evmone_checkpoint);
@@ -423,13 +439,214 @@ static evmc_status_code fuzz_iteration(
         monad_state.rollback(monad_checkpoint);
     }
 
-    assert_equal(rev, evmone_state, monad_state);
+    try {
+        assert_equal(
+            evmone_result,
+            monad_result,
+            impl == BlockchainTestVM::Implementation::Interpreter);
 
-    // After checking equality, cleanup the state for the next iteration
+        assert_equal(rev, evmone_state, monad_state);
+    }
+    catch (FuzzerAssertFailure const &ex)
+    {
+        (void)ex;
+        // Revert to pre-message state to allow shrinking from the initial state.
+        evmone_state.rollback(evmone_checkpoint);
+        monad_state.rollback(monad_checkpoint);
+        post_transition_cleanup(rev, evmone_state);
+        post_transition_cleanup(rev, monad_state);
+        monad_state.get_or_insert(msg.sender).balance = monad_sender_balance;
+        evmone_state.get_or_insert(msg.sender).balance = evmone_sender_balance;
+        throw;
+    }
+
     post_transition_cleanup(rev, evmone_state);
     post_transition_cleanup(rev, monad_state);
+    monad_state.get_or_insert(msg.sender).balance = monad_sender_balance;
+    evmone_state.get_or_insert(msg.sender).balance = evmone_sender_balance;
 
     return evmone_result.status_code;
+}
+
+
+static evmc_message redeploy_contract(
+    evmc_revision const rev,
+    evmc_message const &msg,
+    State &evmone_state, State &monad_state, std::vector<BasicBlock> &blocks)
+{
+    auto contract = compile_program(blocks);
+    std::cerr << "redeploy_contract: state check" << std::endl;
+    assert_equal(rev, evmone_state, monad_state);
+    std::cerr << "redeploy_contract: state ok" << std::endl;
+    auto const a = deploy_contract(evmone_state, genesis_address, contract);
+    auto const a1 = deploy_contract(monad_state, genesis_address, contract);
+    FUZZER_ASSERT(a == a1);
+    std::cerr << "redeploy_contract: state check" << std::endl;
+    assert_equal(rev, evmone_state, monad_state);
+    std::cerr << "redeploy_contract: state ok" << std::endl;
+
+    // Update the message to call the newly deployed contract.
+    FUZZER_ASSERT(msg.kind == EVMC_CALL);
+    return evmc_message{
+        .kind = msg.kind,
+        .flags = msg.flags,
+        .depth = msg.depth,
+        .gas = msg.gas,
+        .recipient = a, // Different!
+        .sender = msg.sender,
+        .input_data = msg.input_data,
+        .input_size = msg.input_size,
+        .value = msg.value,
+        .create2_salt = msg.create2_salt,
+        .code_address = a, // Different!
+        .code = msg.code,
+        .code_size = msg.code_size
+    };
+}
+
+static evmc_message message_call(evmc_message const &msg) {
+    if (msg.kind != EVMC_CALL) {
+        return evmc_message{
+            .kind = EVMC_CALL,
+            .flags = msg.flags,
+            .depth = msg.depth,
+            .gas = msg.gas,
+            .recipient = msg.code_address, // Different!
+            .sender = msg.sender,
+            .input_data = msg.input_data,
+            .input_size = msg.input_size,
+            .value = msg.value,
+            .create2_salt = msg.create2_salt,
+            .code_address = msg.code_address,
+            .code = msg.code,
+            .code_size = msg.code_size
+        };
+    } else {
+        return msg; // Return copy
+    }
+}
+
+static bool shrink_predicate(evmc_message const &msg, evmc_revision const rev, State &evmone_state,
+    evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
+    BlockchainTestVM::Implementation const impl)
+{
+    for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
+        state.get_or_insert(msg.sender);
+        state.get_or_insert(msg.recipient);
+    }
+
+    auto const evmone_checkpoint = evmone_state.checkpoint();
+    auto evmone_sender_balance = evmone_state.get_or_insert(msg.sender).balance;
+
+    auto const evmone_result =
+        transition(evmone_state, msg, rev, evmone_vm, block_gas_limit);
+
+    auto const monad_checkpoint = monad_state.checkpoint();
+    auto monad_sender_balance = monad_state.get_or_insert(msg.sender).balance;
+    auto const monad_result =
+        transition(monad_state, msg, rev, monad_vm, block_gas_limit);
+
+    if (evmone_result.status_code != EVMC_SUCCESS) {
+        evmone_state.rollback(evmone_checkpoint);
+    }
+
+    if (monad_result.status_code != EVMC_SUCCESS) {
+        monad_state.rollback(monad_checkpoint);
+    }
+
+    try {
+        assert_equal(
+            evmone_result,
+            monad_result,
+            impl == BlockchainTestVM::Implementation::Interpreter);
+
+        assert_equal(rev, evmone_state, monad_state);
+    }
+    catch (FuzzerAssertFailure const &ex)
+    {
+        (void)ex;
+        std::cerr << "Shrink predicate: found smaller failing input\n";
+        std::cerr << ex.what() << "\n";
+        evmone_state.rollback(evmone_checkpoint);
+        monad_state.rollback(monad_checkpoint);
+        post_transition_cleanup(rev, evmone_state);
+        post_transition_cleanup(rev, monad_state);
+        monad_state.get_or_insert(msg.sender).balance = monad_sender_balance;
+        evmone_state.get_or_insert(msg.sender).balance = evmone_sender_balance;
+        std::cerr << "States after rollback:\n";
+        assert_equal(rev, evmone_state, monad_state);
+        std::cerr << "End of states after rollback\n";
+        return true;
+    }
+
+    // Revert to pre-message state to allow shrinking from the initial state.
+    // The rollback mechanism doesn't handle all state changes (e.g. balance
+    // changes from gas usage), so we need to manually reset the sender balance.
+    evmone_state.rollback(evmone_checkpoint);
+    monad_state.rollback(monad_checkpoint);
+    post_transition_cleanup(rev, evmone_state);
+    post_transition_cleanup(rev, monad_state);
+    monad_state.get_or_insert(msg.sender).balance = monad_sender_balance;
+    evmone_state.get_or_insert(msg.sender).balance = evmone_sender_balance;
+    return false;
+}
+
+bool shrink_predicate(evmc_message const &msg, evmc_revision const rev, State &evmone_state,
+    evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
+    BlockchainTestVM::Implementation const impl, std::vector<BasicBlock> &blocks)
+{
+    auto new_msg = redeploy_contract(rev, msg, evmone_state, monad_state, blocks);
+    return shrink_predicate(new_msg, rev, evmone_state, evmone_vm, monad_state, monad_vm, impl);
+}
+
+void print_contract_stats(std::vector<BasicBlock> const &blocks)
+{
+    std::cout << "Contract (" << blocks.size() << " blocks):\n";
+    for (auto const &block : blocks) {
+        // Print number of instructions per blocks
+        std::cout << "  Block (" << block.instructions.size() << " instr): ";
+    }
+}
+
+template <typename Engine>
+static std::vector<BasicBlock> shrink_iteration(Engine &engine, evmc_message const &msg, evmc_revision const rev, State &evmone_state,
+    evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
+    BlockchainTestVM::Implementation const impl, std::vector<BasicBlock> &blocks)
+{
+    int iteration_count = 0;
+    while (++iteration_count < 100) { // Limit the number of shrinking attempts
+        if (blocks.size() == 0) {
+            break; // Nothing to shrink?
+        }
+
+        std::cerr << "Shrink iteration " << iteration_count << ", contract size " << compile_program(blocks).size() << "\n";
+        auto [new_contract, removed_block_ix] = shrink_contract(engine, blocks);
+        if (shrink_predicate(msg, rev, evmone_state, evmone_vm, monad_state, monad_vm, impl, new_contract)) {
+            // Keep going, we managed to shrink the contract.
+            blocks = std::move(new_contract);
+            iteration_count = 0;
+        } else if (blocks[removed_block_ix].instructions.size() > 0) {
+            // Shrinking made the counter-example go away, try to shrink instruction instead
+            auto [new_contract2, removed_instr_ix] = shrink_block(engine, blocks, removed_block_ix);
+            if (shrink_predicate(msg, rev, evmone_state, evmone_vm, monad_state, monad_vm, impl, new_contract2)) {
+                blocks = std::move(new_contract2);
+                iteration_count = 0;
+            }
+            std::cerr << "  Block " << removed_block_ix << "[" << removed_instr_ix << "] could not be shrunk\n";
+            // Shrinking failed, try again.
+        } else {
+            std::cerr << "  Block " << removed_block_ix << " is empty, cannot shrink instructions\n";
+        }
+        print_contract_stats(blocks);
+    }
+
+    if (!shrink_predicate(msg, rev, evmone_state, evmone_vm, monad_state, monad_vm, impl, blocks)) {
+        std::cerr << "Warning: final shrunken contract does not reproduce the failure\n";
+    }
+
+    std::cerr << "Finished shrinking after " << iteration_count << " iterations\n";
+
+    return blocks;
 }
 
 static void
@@ -504,6 +721,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto evmone_state = State{initial_state_};
     auto monad_state = State{initial_state_};
 
+    auto contracts = std::map<evmc::address, std::vector<BasicBlock>>{};
     auto contract_addresses = std::vector<evmc::address>{};
     auto known_addresses = std::vector<evmc::address>{};
 
@@ -529,7 +747,8 @@ static void do_run(std::size_t const run_index, arguments const &args)
         }
 
         for (;;) {
-            auto contract_engine = random_engine_t(contract_seed_eng());
+            auto contract_seed = contract_seed_eng();
+            auto contract_engine = random_engine_t(contract_seed);
             auto const basic_blocks = monad::vm::fuzzing::generate_basic_blocks(
                 focus, contract_engine, rev, known_addresses);
             auto const contract = compile_program(basic_blocks);
@@ -547,10 +766,11 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 deploy_contract(evmone_state, genesis_address, contract);
             auto const a1 =
                 deploy_contract(monad_state, genesis_address, contract);
-            MONAD_VM_ASSERT(a == a1);
+            FUZZER_ASSERT(a == a1);
 
             assert_equal(rev, evmone_state, monad_state);
 
+            contracts[a] = basic_blocks;
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
@@ -580,15 +800,30 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 });
             ++total_messages;
 
-            auto const ec = fuzz_iteration(
-                *msg,
-                rev,
-                evmone_state,
-                evmone_vm,
-                monad_state,
-                monad_vm,
-                args.implementation);
-            ++exit_code_stats[ec];
+            try {
+                auto const ec = fuzz_iteration(
+                    *msg,
+                    rev,
+                    evmone_state,
+                    evmone_vm,
+                    monad_state,
+                    monad_vm,
+                    args.implementation);
+                ++exit_code_stats[ec];
+            }
+            catch (std::exception const &ex) {
+                std::cerr << "Fuzz iteration failed, trying to shrink contract" << std::endl;
+
+                // Attempt to shrink the counter-example.
+                shrink_iteration(engine, message_call(*msg),
+                    rev,
+                    evmone_state,
+                    evmone_vm,
+                    monad_state,
+                    monad_vm,
+                    args.implementation, contracts[msg->code_address]);
+                throw;
+            }
         }
     }
 

@@ -73,17 +73,6 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-namespace detail
-{
-    struct void_receiver
-    {
-        void set_value(
-            async::erased_connected_operation *, async::result<void>) const
-        {
-        }
-    };
-}
-
 struct Db::Impl
 {
     virtual ~Impl() = default;

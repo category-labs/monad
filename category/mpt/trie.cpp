@@ -99,6 +99,10 @@ void try_fillin_parent_with_rewritten_node(
 void try_fillin_parent_after_expiration(
     UpdateAuxImpl &, StateMachine &, ExpireTNode::unique_ptr_type);
 
+void fillin_parent_after_expiration(
+    UpdateAuxImpl &, Node::UniquePtr, ExpireTNode *const, uint8_t const index,
+    uint8_t const branch, bool const cache_node);
+
 struct async_write_node_result
 {
     chunk_offset_t offset_written_to;
@@ -328,7 +332,9 @@ public:
     void set_value(erased_connected_operation *io_state_, Result buffer_)
     {
         MONAD_ASSERT(buffer_);
-        cont(io_state_, std::move(buffer_), buffer_offset);
+        auto as_node = detail::deserialize_node_from_receiver_result<Node>(
+            std::move(buffer_), buffer_offset, io_state_);
+        cont(std::move(as_node));
     }
 };
 
@@ -359,21 +365,15 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
                 [aux = &aux,
                  sm = sm.clone(),
                  tnode = std::move(tnode),
-                 child_branch = child_branch](
-                    erased_connected_operation *io_state,
-                    auto buffer,
-                    uint16_t const buffer_offset) mutable {
-                    auto single_child =
-                        detail::deserialize_node_from_receiver_result<Node>(
-                            std::move(buffer), buffer_offset, io_state);
+                 child_branch](Node::UniquePtr read_node) mutable {
                     auto new_node = make_node(
-                        *single_child,
+                        *read_node,
                         concat(
                             tnode->node->path_nibble_view(),
                             child_branch,
-                            single_child->path_nibble_view()),
-                        single_child->opt_value(),
-                        single_child->version);
+                            read_node->path_nibble_view()),
+                        read_node->opt_value(),
+                        read_node->version);
                     fillin_parent_after_expiration(
                         *aux,
                         std::move(new_node),
@@ -555,9 +555,7 @@ void create_node_compute_data_possibly_async(
             }
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                    erased_connected_operation *io_state,
-                    auto buffer,
-                    uint16_t const buffer_offset) mutable {
+                    Node::UniquePtr read_node) mutable {
                     auto *parent = tnode->parent;
                     MONAD_DEBUG_ASSERT(parent);
                     auto &entry = parent->children[tnode->child_index()];
@@ -565,9 +563,7 @@ void create_node_compute_data_possibly_async(
                     auto &child = tnode->children[bitmask_index(
                         tnode->orig_mask,
                         static_cast<unsigned>(std::countr_zero(tnode->mask)))];
-                    child.ptr =
-                        detail::deserialize_node_from_receiver_result<Node>(
-                            std::move(buffer), buffer_offset, io_state);
+                    child.ptr = std::move(read_node);
                     auto const path_size = tnode->path.nibble_size();
                     create_node_compute_data_possibly_async(
                         *aux, *sm, *parent, entry, std::move(tnode), false);
@@ -788,19 +784,14 @@ void upsert_(
              prefix_index = prefix_index,
              sm = sm.clone(),
              parent = &parent,
-             updates = std::move(updates)](
-                erased_connected_operation *io_state,
-                auto buffer,
-                uint16_t const buffer_offset) mutable {
-                auto old = detail::deserialize_node_from_receiver_result<Node>(
-                    std::move(buffer), buffer_offset, io_state);
+             updates = std::move(updates)](Node::UniquePtr read_node) mutable {
                 // continue recurse down the trie starting from `old`
                 upsert_(
                     *aux,
                     *sm,
                     *parent,
                     *entry,
-                    std::move(old),
+                    std::move(read_node),
                     INVALID_OFFSET,
                     std::move(updates),
                     prefix_index);
@@ -1102,12 +1093,8 @@ void expire_(
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
         node_receiver_t recv{
             [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                erased_connected_operation *io_state,
-                auto buffer,
-                uint16_t const buffer_offset) mutable {
-                tnode->update_after_async_read(
-                    detail::deserialize_node_from_receiver_result<Node>(
-                        std::move(buffer), buffer_offset, io_state));
+                Node::UniquePtr read_node) mutable {
+                tnode->update_after_async_read(std::move(read_node));
                 auto *parent = tnode->parent;
                 MONAD_ASSERT(parent);
                 expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
@@ -1256,13 +1243,8 @@ void compact_(
              node_offset,
              aux = &aux,
              sm = sm.clone(),
-             tnode = std::move(tnode)](
-                erased_connected_operation *io_state,
-                auto buf,
-                uint16_t const buffer_offset) mutable {
-                tnode->update_after_async_read(
-                    detail::deserialize_node_from_receiver_result<Node>(
-                        std::move(buf), buffer_offset, io_state));
+             tnode = std::move(tnode)](Node::UniquePtr read_node) mutable {
+                tnode->update_after_async_read(std::move(read_node));
                 auto *parent = tnode->parent;
                 compact_(
                     *aux,

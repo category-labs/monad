@@ -172,6 +172,7 @@ TEST(CallTrace, execute_success)
         .gas_used = 0x5208,
         .status = EVMC_SUCCESS,
         .depth = 0,
+        .logs = std::vector<CallFrame::Log>{},
     };
 
     EXPECT_EQ(call_frames[0], expected);
@@ -244,6 +245,7 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
         .gas_used = 0x5208,
         .status = EVMC_INSUFFICIENT_BALANCE,
         .depth = 0,
+        .logs = std::vector<CallFrame::Log>{},
     };
 
     EXPECT_EQ(call_frames[0], expected);

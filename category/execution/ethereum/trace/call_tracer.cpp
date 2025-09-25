@@ -69,6 +69,8 @@ void NoopCallTracer::on_enter(evmc_message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
+void NoopCallTracer::on_log(Receipt::Log) {}
+
 void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
 void NoopCallTracer::on_finish(uint64_t const) {}
@@ -77,14 +79,19 @@ void NoopCallTracer::reset() {}
 
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     : frames_(frames)
-    , depth_{0}
     , tx_(tx)
 {
     frames_.reserve(128);
+    positions_.push(0);
 }
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
+    MONAD_ASSERT(!positions_.empty());
+
+    positions_.top()++;
+    positions_.push(0);
+
     depth_ = static_cast<uint64_t>(msg.depth);
 
     // This is to conform with quicknode RPC
@@ -131,6 +138,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         .output = {},
         .status = EVMC_FAILURE,
         .depth = depth_,
+        .logs = std::vector<CallFrame::Log>{},
     });
 
     last_.push(frames_.size() - 1);
@@ -140,6 +148,7 @@ void CallTracer::on_exit(evmc::Result const &res)
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
 
     auto &frame = frames_.at(last_.top());
 
@@ -158,10 +167,26 @@ void CallTracer::on_exit(evmc::Result const &res)
     }
 
     last_.pop();
+    positions_.pop();
+}
+
+void CallTracer::on_log(Receipt::Log log)
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
+
+    auto &frame = frames_.at(last_.top());
+    MONAD_ASSERT(frame.logs.has_value());
+
+    frame.logs->emplace_back(std::move(log), positions_.top());
 }
 
 void CallTracer::on_self_destruct(Address const &from, Address const &to)
 {
+    MONAD_ASSERT(!positions_.empty());
+    positions_.top()++;
+
     // we don't change depth_ here, because exit and enter combined
     // together here
     frames_.emplace_back(CallFrame{
@@ -191,6 +216,9 @@ void CallTracer::reset()
     frames_.clear();
     last_ = std::stack<size_t>{};
     depth_ = 0;
+
+    positions_ = std::stack<size_t>{};
+    positions_.push(0);
 }
 
 nlohmann::json CallTracer::to_json() const

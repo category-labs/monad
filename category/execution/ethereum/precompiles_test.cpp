@@ -16,6 +16,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -283,9 +284,10 @@ void do_basic_tests(
     for (size_t i = 0; i < num_basic_test_cases; i++) {
         auto const &basic_test_case = basic_test_cases[i];
 
+        NoopCallTracer call_tracer{};
         evmc::Result const result =
             check_call_precompile<EvmTraits<EVMC_BERLIN>>(
-                s, basic_test_case.input)
+                s, call_tracer, basic_test_case.input)
                 .value();
 
         EXPECT_EQ(
@@ -343,8 +345,9 @@ void do_geth_tests(
                 .input_size = input_bytes.size(),
                 .code_address = code_address};
 
+            NoopCallTracer call_tracer{};
             evmc::Result const result =
-                check_call_precompile<traits>(s, input).value();
+                check_call_precompile<traits>(s, call_tracer, input).value();
 
             if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                 EXPECT_EQ(result.gas_left, gas_offset)

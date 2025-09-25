@@ -158,7 +158,8 @@ void EvmcHostBase::emit_log(
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.push_back({topics[i]});
         }
-        state_.store_log(std::move(log));
+        state_.store_log(log);
+        call_tracer_.on_log(std::move(log));
         return;
     }
     catch (...) {

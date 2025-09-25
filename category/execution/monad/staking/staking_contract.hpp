@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -46,9 +47,10 @@ MONAD_STAKING_NAMESPACE_BEGIN
 class StakingContract
 {
     State &state_;
+    CallTracerBase &call_tracer_;
 
 public:
-    StakingContract(State &);
+    StakingContract(State &, CallTracerBase &);
 
     struct WithdrawalRequest
     {
@@ -521,6 +523,8 @@ private:
     template <typename Key, typename Ptr>
     std::tuple<bool, Ptr, std::vector<Ptr>>
     linked_list_traverse(Key const &, Ptr const &, uint32_t limit);
+
+    void emit_log(Receipt::Log const &);
 
 public:
     using PrecompileFunc = Result<byte_string> (StakingContract::*)(

@@ -29,6 +29,7 @@
 
 #include <fcntl.h> // for open
 #include <linux/magic.h> // for TMPFS_MAGIC
+#include <sys/statfs.h> // for statfs
 #include <sys/user.h> // for PAGE_SIZE
 #include <sys/vfs.h> // for statfs
 #include <unistd.h> // for unlink

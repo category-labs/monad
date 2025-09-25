@@ -591,7 +591,9 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
             }
             auto readed = ::read(
-                fds_.msgread, &state, sizeof(erased_connected_operation *));
+                fds_.msgread,
+                static_cast<void *>(&state),
+                sizeof(erased_connected_operation *));
             if (readed >= 0) {
                 MONAD_ASSERT(sizeof(erased_connected_operation *) == readed);
                 // Writes flushed in the submitting thread must be acquired now

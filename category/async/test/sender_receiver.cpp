@@ -27,11 +27,8 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/sender_errc.hpp>
-#include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/core/small_prng.hpp>
 
 #include <boost/fiber/fiber.hpp>
@@ -49,7 +46,6 @@
 #include <boost/outcome/coroutine_support.hpp>
 
 #include <array>
-#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <coroutine>
@@ -57,12 +53,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -697,7 +691,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_bytes_transferred)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
-        result<void> operator()(erased_connected_operation *) noexcept
+        result<void> operator()(erased_connected_operation *)
         {
             return std::visit(
                 [&](auto &v) -> result<void> {
@@ -784,7 +778,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_void)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
-        result<void> operator()(erased_connected_operation *) noexcept
+        result<void> operator()(erased_connected_operation *)
         {
             return std::visit(
                 [&](auto &v) -> result<void> {

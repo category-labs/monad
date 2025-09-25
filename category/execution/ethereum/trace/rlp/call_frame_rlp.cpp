@@ -78,7 +78,7 @@ Result<CallFrame::Log> decode_call_frame_log(byte_string_view &enc)
 {
     CallFrame::Log log;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(log.log, decode_log(enc));
+    BOOST_OUTCOME_TRY(log.log, decode_log(payload));
     BOOST_OUTCOME_TRY(log.position, decode_unsigned<size_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
@@ -95,7 +95,7 @@ decode_call_frame_logs(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto log, decode_log(payload));
+        BOOST_OUTCOME_TRY(auto log, decode_call_frame_log(payload));
         logs.emplace_back(std::move(log));
     }
 

@@ -28,7 +28,7 @@ namespace monad::vm::fuzzing
         evmone::state::Account const &a, evmone::state::Account const &b);
 
     void
-    assert_equal(evmone::state::State const &a, evmone::state::State const &b);
+    assert_equal(evmc_revision const rev, evmone::state::State const &a, evmone::state::State const &b);
 
     void assert_equal(
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,

@@ -18,6 +18,8 @@ add_executable(monad-compiler-fuzzer)
 target_sources(monad-compiler-fuzzer PRIVATE
   assertions.cpp
   assertions.hpp
+  state_predicates.cpp
+  state_predicates.hpp
   compiler_hook.hpp
   fuzzer.cpp)
 

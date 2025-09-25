@@ -20,26 +20,9 @@ using namespace evmone::state;
 
 namespace monad::vm::fuzzing
 {
-    // An erasable account is one that will be removed at the end of a transaction.
-    // That is, it is empty and marked for erasure, or it has been destructed.
-    // Empty accounts are deleted after every transaction. This is strictly
-    // required until Byzantium where intermediate state root hashes are part of
-    // the transaction receipt.
-    // TODO: Consider limiting this only to Spurious Dragon.
-    bool is_account_erasable(evmc_revision const rev, Account const &acc) noexcept
-    {
-        return (rev >= EVMC_SPURIOUS_DRAGON && acc.erase_if_empty && acc.is_empty())
-                || acc.destructed;
-    }
+    bool is_account_erasable(evmc_revision const rev, Account const &acc);
 
-    bool is_storage_erasable(StorageValue const &v) noexcept
-    {
-        return v.current == evmc::bytes32{} && v.original == evmc::bytes32{} &&
-                v.access_status == EVMC_ACCESS_COLD;
-    }
+    bool is_storage_erasable(StorageValue const &v);
 
-    bool is_transient_storage_erasable(bytes32 const &v) noexcept
-    {
-        return v == evmc::bytes32{};
-    }
+    bool is_transient_storage_erasable(bytes32 const &v);
 }

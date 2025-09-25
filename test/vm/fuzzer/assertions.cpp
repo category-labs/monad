@@ -15,6 +15,7 @@
 
 #include "account.hpp"
 #include "state.hpp"
+#include "state_predicates.hpp"
 
 #include <category/vm/core/assert.h>
 
@@ -28,6 +29,33 @@ using namespace evmone::state;
 
 namespace monad::vm::fuzzing
 {
+    // Count the number of non-empty accounts in the state.
+    // Non-empty accounts are those that are not destructed and
+    // not empty erasable accounts (i.e. empty accounts that
+    // would be removed at the end of the transaction).
+    long non_empty_accounts_size(evmc_revision const rev, std::unordered_map<address, Account> const &accs)
+    {
+        return std::count_if(accs.begin(), accs.end(), [rev](auto const &p) {
+            return !monad::vm::fuzzing::is_account_erasable(rev, p.second);
+        });
+    }
+
+    // Count the number of non-empty storage slots in the account.
+    long non_empty_storage_size(std::unordered_map<bytes32, StorageValue> const &storage)
+    {
+        return std::count_if(storage.begin(), storage.end(), [](auto const &p) {
+            return !is_storage_erasable(p.second);
+        });
+    }
+
+    // Count the number of non-empty transient storage slots in the account.
+    long non_empty_transient_storage_size(std::unordered_map<bytes32, bytes32> const &transient_storage)
+    {
+        return std::count_if(transient_storage.begin(), transient_storage.end(), [](auto const &p) {
+            return !is_transient_storage_erasable(p.second);
+        });
+    }
+
     void assert_equal(StorageValue const &a, StorageValue const &b)
     {
         MONAD_VM_ASSERT(a.current == b.current);
@@ -38,18 +66,28 @@ namespace monad::vm::fuzzing
     void assert_equal(Account const &a, Account const &b)
     {
         MONAD_VM_ASSERT(
-            a.transient_storage.size() == b.transient_storage.size());
+            non_empty_transient_storage_size(a.transient_storage) ==
+            non_empty_transient_storage_size(b.transient_storage));
         for (auto const &[k, v] : a.transient_storage) {
             auto const found = b.transient_storage.find(k);
-            MONAD_VM_ASSERT(found != b.transient_storage.end());
-            MONAD_VM_ASSERT(found->second == v);
+            if (found != b.transient_storage.end()) {
+                MONAD_VM_ASSERT(found->second == v);
+            } else {
+                // Transient storage entry must be empty to be missing in b.
+                MONAD_VM_ASSERT(is_transient_storage_erasable(v));
+            }
         }
 
-        MONAD_VM_ASSERT(a.storage.size() == b.storage.size());
+        MONAD_VM_ASSERT(non_empty_storage_size(a.storage) ==
+                        non_empty_storage_size(b.storage));
         for (auto const &[k, v] : a.storage) {
             auto const found = b.storage.find(k);
-            MONAD_VM_ASSERT(found != b.storage.end());
-            assert_equal(v, found->second);
+            if (found != b.storage.end()) {
+                assert_equal(v, found->second);
+            } else {
+                // Storage entry must be empty to be missing in b.
+                MONAD_VM_ASSERT(is_storage_erasable(v));
+            }
         }
 
         MONAD_VM_ASSERT(a.nonce == b.nonce);
@@ -61,16 +99,20 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.access_status == b.access_status);
     }
 
-    void assert_equal(State const &a, State const &b)
+    void assert_equal(evmc_revision const rev, State const &a, State const &b)
     {
         auto const &a_accs = a.get_modified_accounts();
         auto const &b_accs = b.get_modified_accounts();
 
-        MONAD_VM_ASSERT(a_accs.size() == b_accs.size());
+        MONAD_VM_ASSERT(non_empty_accounts_size(rev, a_accs) == non_empty_accounts_size(rev, b_accs));
         for (auto const &[k, v] : a_accs) {
             auto const found = b_accs.find(k);
-            MONAD_VM_ASSERT(found != b_accs.end());
-            assert_equal(v, found->second);
+            if (found != b_accs.end()) {
+                assert_equal(v, found->second);
+            } else {
+                // Account must be empty and erasable to be missing in b.
+                MONAD_VM_ASSERT(rev >= EVMC_SPURIOUS_DRAGON && v.erase_if_empty && v.is_empty());
+            }
         }
     }
 

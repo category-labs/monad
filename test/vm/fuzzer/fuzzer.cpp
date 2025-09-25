@@ -273,14 +273,14 @@ static evmc::address deploy_delegated_contract(
     return deploy_contract(state, from, code);
 }
 
-static evmc::address deploy_delegated_contracts(
+static evmc::address deploy_delegated_contracts(evmc_revision const rev,
     State &evmone_state, State &monad_state, evmc::address const &from,
     evmc::address delegatee)
 {
     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
     MONAD_VM_ASSERT(a == a1);
-    assert_equal(evmone_state, monad_state);
+    assert_equal(rev, evmone_state, monad_state);
     return a;
 }
 
@@ -418,14 +418,17 @@ static evmc_status_code fuzz_iteration(
     if (evmone_result.status_code != EVMC_SUCCESS) {
         evmone_state.rollback(evmone_checkpoint);
     }
-    post_transition_cleanup(rev, evmone_state);
 
     if (monad_result.status_code != EVMC_SUCCESS) {
         monad_state.rollback(monad_checkpoint);
     }
+
+    assert_equal(rev, evmone_state, monad_state);
+
+    // After checking equality, cleanup the state for the next iteration
+    post_transition_cleanup(rev, evmone_state);
     post_transition_cleanup(rev, monad_state);
 
-    assert_equal(evmone_state, monad_state);
     return evmone_result.status_code;
 }
 
@@ -520,7 +523,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
         if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
             auto precompile =
                 monad::vm::fuzzing::generate_precompile_address(engine, rev);
-            auto const a = deploy_delegated_contracts(
+            auto const a = deploy_delegated_contracts(rev,
                 evmone_state, monad_state, genesis_address, precompile);
             known_addresses.push_back(a);
         }
@@ -546,13 +549,13 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 deploy_contract(monad_state, genesis_address, contract);
             MONAD_VM_ASSERT(a == a1);
 
-            assert_equal(evmone_state, monad_state);
+            assert_equal(rev, evmone_state, monad_state);
 
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
             if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
-                auto const b = deploy_delegated_contracts(
+                auto const b = deploy_delegated_contracts(rev,
                     evmone_state, monad_state, genesis_address, a);
                 known_addresses.push_back(b);
             }

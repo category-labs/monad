@@ -19,6 +19,7 @@
 #include <category/core/rlp/config.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -30,6 +31,21 @@
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
+
+byte_string encode_call_frame_log(CallFrame::Log const &log)
+{
+    return encode_list2(encode_log(log.log), encode_unsigned(log.position));
+}
+
+byte_string encode_call_frame_logs(std::span<CallFrame::Log const> const logs)
+{
+    byte_string res{};
+    for (auto const &log : logs) {
+        res += encode_call_frame_log(log);
+    }
+
+    return encode_list2(res);
+}
 
 byte_string encode_call_frame(CallFrame const &call_frame)
 {
@@ -44,7 +60,8 @@ byte_string encode_call_frame(CallFrame const &call_frame)
         encode_string2(call_frame.input),
         encode_string2(call_frame.output),
         encode_unsigned(static_cast<unsigned char>(call_frame.status)),
-        encode_unsigned(call_frame.depth));
+        encode_unsigned(call_frame.depth),
+        encode_call_frame_logs(call_frame.logs));
 }
 
 byte_string encode_call_frames(std::span<CallFrame const> const call_frames)
@@ -55,6 +72,38 @@ byte_string encode_call_frames(std::span<CallFrame const> const call_frames)
     }
 
     return encode_list2(res);
+}
+
+Result<CallFrame::Log> decode_call_frame_log(byte_string_view &enc)
+{
+    CallFrame::Log log;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(log.log, decode_log(enc));
+    BOOST_OUTCOME_TRY(log.position, decode_unsigned<size_t>(payload));
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return log;
+}
+
+Result<std::vector<CallFrame::Log>>
+decode_call_frame_logs(byte_string_view &enc)
+{
+    std::vector<CallFrame::Log> logs;
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+
+    while (payload.size() > 0) {
+        BOOST_OUTCOME_TRY(auto log, decode_log(payload));
+        logs.emplace_back(std::move(log));
+    }
+
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return logs;
 }
 
 Result<CallFrame> decode_call_frame(byte_string_view &enc)
@@ -75,6 +124,7 @@ Result<CallFrame> decode_call_frame(byte_string_view &enc)
         auto const status, decode_unsigned<unsigned char>(payload));
     call_frame.status = static_cast<enum evmc_status_code>(status);
     BOOST_OUTCOME_TRY(call_frame.depth, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(call_frame.logs, decode_call_frame_logs(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

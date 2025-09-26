@@ -781,16 +781,23 @@ void UpdateAuxImpl::set_io(
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0].main->chunk_info_count = chunk_count & 0xfffffU;
         if (io->storage_pool().chunks(storage_pool::cnv) > 1) {
+            db_metadata_[0].main->using_chunks_for_root_offsets = true;
             auto &storage = db_metadata_[0].main->root_offsets.storage_;
             memset(&storage, 0xff, sizeof(storage));
             storage.cnv_chunks_len = 0;
-            auto chunk =
-                io->storage_pool().activate_chunk(storage_pool::cnv, 1);
-            auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk->capacity());
+            auto const chunk_capacity =
+                io->storage_pool()
+                    .activate_chunk(storage_pool::cnv, 1)
+                    ->capacity();
+            auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk_capacity);
             MONAD_ASSERT(tofill != nullptr);
             auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
-            memset(tofill, 0xff, chunk->capacity());
-            {
+            memset(tofill, 0xff, chunk_capacity);
+
+            // Use the last 2 out of the 3 cnv chunks for root offsets storage
+            for (unsigned i = 1; i < storage_pool::NUM_CNV_CHUNKS; ++i) {
+                auto const chunk =
+                    io->storage_pool().activate_chunk(storage_pool::cnv, i);
                 auto fdw = chunk->write_fd(chunk->capacity());
                 MONAD_ASSERT(
                     -1 != ::pwrite(
@@ -798,26 +805,9 @@ void UpdateAuxImpl::set_io(
                               tofill,
                               chunk->capacity(),
                               (off_t)fdw.second));
-            }
-            storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
-            db_metadata_[0].main->using_chunks_for_root_offsets = true;
-            db_metadata_[0].main->history_length =
-                chunk->capacity() / 2 / sizeof(chunk_offset_t);
-            // Gobble up all remaining cnv chunks
-            for (uint32_t n = 2;
-                 n < io->storage_pool().chunks(storage_pool::cnv);
-                 n++) {
-                auto chunk =
-                    io->storage_pool().activate_chunk(storage_pool::cnv, n);
-                auto fdw = chunk->write_fd(chunk->capacity());
-                MONAD_ASSERT(
-                    -1 != ::pwrite(
-                              fdw.first,
-                              tofill,
-                              chunk->capacity(),
-                              (off_t)fdw.second));
-                storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
-                db_metadata_[0].main->history_length +=
+
+                storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = i;
+                db_metadata_[0].main->history_length =
                     chunk->capacity() / 2 / sizeof(chunk_offset_t);
             }
         }

@@ -290,8 +290,8 @@ namespace
             static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
             std::filesystem::path devs[] = {
                 create_temp_file(22 * BLKSIZE),
-                create_temp_file(12 * BLKSIZE),
-                create_temp_file(7 * BLKSIZE)};
+                create_temp_file(9 * BLKSIZE),
+                create_temp_file(4 * BLKSIZE)};
             auto undevs = monad::make_scope_exit([&]() noexcept {
                 for (auto &p : devs) {
                     std::filesystem::remove(p);

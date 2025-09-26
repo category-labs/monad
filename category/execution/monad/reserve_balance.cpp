@@ -54,12 +54,12 @@ bool dipped_into_reserve(
     for (auto const &[addr, stack] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
         std::optional<Account> const &orig_account = orig.at(addr).account_;
-        bytes32_t const orig_code_hash = orig_account.has_value()
-                                             ? orig_account.value().code_hash
-                                             : NULL_HASH;
-
+        bytes32_t const orig_code_hash =
+            orig_account.has_value() ? orig_account.value().get_code_hash()
+                                     : NULL_HASH;
         // Skip if not EOA
-        if (orig_code_hash != NULL_HASH) {
+        if (orig_code_hash != NULL_HASH &&
+            !orig_account->inline_delegated_code()) {
             vm::SharedIntercode const intercode =
                 state.read_code(orig_code_hash)->intercode();
             if (!monad::vm::evm::is_delegated(

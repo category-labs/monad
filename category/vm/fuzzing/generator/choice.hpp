@@ -74,14 +74,20 @@ namespace monad::vm::fuzzing
         return *result;
     }
 
-    template <typename Engine, typename Action>
-    void
-    with_probability(Engine &eng, double const probability, Action &&action)
+    template <typename Engine>
+    bool bernoulli_trial(Engine &eng, double const probability)
     {
         auto dist = std::uniform_real_distribution<double>(0.0, 1.0);
         auto const cutoff = dist(eng);
 
-        if (probability >= cutoff) {
+        return probability >= cutoff;
+    }
+
+    template <typename Engine, typename Action>
+    void
+    with_probability(Engine &eng, double const probability, Action &&action)
+    {
+        if (bernoulli_trial(eng, probability)) {
             std::forward<Action>(action)(eng);
         }
     }

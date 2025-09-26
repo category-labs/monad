@@ -69,6 +69,8 @@ void NoopCallTracer::on_enter(evmc_message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
+void NoopCallTracer::on_log(Receipt::Log) {}
+
 void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
 
 void NoopCallTracer::on_finish(uint64_t const) {}
@@ -81,10 +83,16 @@ CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     , tx_(tx)
 {
     frames_.reserve(128);
+    positions_.push(0);
 }
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
+    MONAD_ASSERT(!positions_.empty());
+
+    positions_.top()++;
+    positions_.push(0);
+
     depth_ = static_cast<uint64_t>(msg.depth);
 
     // This is to conform with quicknode RPC
@@ -140,6 +148,7 @@ void CallTracer::on_exit(evmc::Result const &res)
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
 
     auto &frame = frames_.at(last_.top());
 
@@ -158,10 +167,24 @@ void CallTracer::on_exit(evmc::Result const &res)
     }
 
     last_.pop();
+    positions_.pop();
+}
+
+void CallTracer::on_log(Receipt::Log log)
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
+
+    auto &frame = frames_.at(last_.top());
+    frame.logs.emplace_back(std::move(log), positions_.top());
 }
 
 void CallTracer::on_self_destruct(Address const &from, Address const &to)
 {
+    MONAD_ASSERT(!positions_.empty());
+    positions_.top()++;
+
     // we don't change depth_ here, because exit and enter combined
     // together here
     frames_.emplace_back(CallFrame{

@@ -165,9 +165,8 @@ try {
     cli.add_option(
         "--db",
         dbname_paths,
-        "A comma-separated list of previously created database paths. You can "
-        "configure the storage pool with one or more files/devices. If no "
-        "value is passed, the replay will run with an in-memory triedb");
+        "Database file or device paths. Multiple paths can be specified. "
+        "If omitted, uses an in-memory database for the replay");
     cli.add_option(
         "--dump_snapshot",
         dump_snapshot,

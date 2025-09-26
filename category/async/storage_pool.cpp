@@ -510,7 +510,8 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     std::vector<size_t> chunks;
     size_t total = 0;
     chunks.reserve(devices_.size());
-    for (auto const &device : devices_) {
+    for (size_t i = 0; i < devices_.size(); ++i) {
+        auto const &device = devices_[i];
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
             MONAD_ASSERT_PRINTF(
@@ -519,9 +520,12 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                 device.current_path().c_str(),
                 devicechunks);
             MONAD_ASSERT(devicechunks <= std::numeric_limits<uint32_t>::max());
-            // Take off three for the cnv chunks
-            chunks.push_back(devicechunks - 3);
-            total += devicechunks - 3;
+            // Take off NUM_CNV_CHUNKS in first device for the cnv chunks
+            auto const seq_chunks =
+                i == 0 ? devicechunks - storage_pool::NUM_CNV_CHUNKS
+                       : devicechunks;
+            chunks.push_back(seq_chunks);
+            total += seq_chunks;
             fnv1a_hash<uint32_t>::add(
                 hashshouldbe, static_cast<uint32_t>(devicechunks));
             fnv1a_hash<uint32_t>::add(
@@ -563,23 +567,16 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     auto const zone_id = [this](int const chunk_type) {
         return static_cast<uint32_t>(chunks_[chunk_type].size());
     };
-    // First three blocks of each device goes to conventional, remainder go to
-    // sequential
-    chunks_[cnv].reserve(devices_.size() * 3);
+    // First NUM_CNV_CHUNKS chunks of the first device goes to conventional,
+    // remainder go to sequential
+    chunks_[cnv].reserve(storage_pool::NUM_CNV_CHUNKS);
+    for (unsigned i = 0; i < storage_pool::NUM_CNV_CHUNKS; ++i) {
+        chunks_[cnv].emplace_back(
+            activate_chunk(storage_pool::cnv, devices_[0], i, zone_id(cnv)));
+    }
+
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 0, zone_id(cnv)));
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 1, zone_id(cnv)));
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 2, zone_id(cnv)));
-        }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
         // would be ABACABA i.e. a ratio of 4:2:1
@@ -588,7 +585,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         for (size_t n = 0; n < chunks.size(); n++) {
             chunkratios[n] = double(total) / static_cast<double>(chunks[n]);
             chunkcounts[n] = chunkratios[n];
-            chunks[n] = 3;
+            chunks[n] = (n == 0) ? NUM_CNV_CHUNKS : 0;
         }
         while (chunks_[seq].size() < chunks_[seq].capacity()) {
             for (size_t n = 0; n < chunks.size(); n++) {
@@ -614,20 +611,14 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
 #endif
     }
     else {
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 0, zone_id(cnv)));
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 1, zone_id(cnv)));
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 2, zone_id(cnv)));
-        }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
             for (size_t n = 0; n < chunks[deviceidx]; n++) {
                 chunks_[seq].emplace_back(activate_chunk(
                     seq,
                     devices_[deviceidx],
-                    static_cast<uint32_t>(3 + n),
+                    static_cast<uint32_t>(
+                        deviceidx == 0 ? (storage_pool::NUM_CNV_CHUNKS + n)
+                                       : n),
                     zone_id(seq)));
             }
         }

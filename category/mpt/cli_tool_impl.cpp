@@ -488,7 +488,8 @@ public:
              << " history, earliest is " << aux.db_history_min_valid_version()
              << " latest is " << aux.db_history_max_version()
              << ".\n     It has been configured to retain no more than "
-             << aux.version_history_length() << ".\n     Latest proposed is ("
+             << aux.version_history_length()
+             << " historical versions.\n     Latest proposed is ("
              << aux.get_latest_proposed_version() << ", "
              << evmc::hex(monad::byte_string_view(
                     aux.get_latest_proposed_block_id().bytes,

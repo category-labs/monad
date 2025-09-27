@@ -23,7 +23,13 @@
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <optional>
+
+namespace monad::vm::compiler
+{
+    enum EvmOpCode : uint8_t;
+}
 
 MONAD_NAMESPACE_BEGIN
 
@@ -61,5 +67,7 @@ static_assert(sizeof(CallFrame) == 184);
 static_assert(alignof(CallFrame) == 8);
 
 nlohmann::json to_json(CallFrame const &);
+
+vm::compiler::EvmOpCode get_call_frame_opcode(CallType, uint32_t call_flags);
 
 MONAD_NAMESPACE_END

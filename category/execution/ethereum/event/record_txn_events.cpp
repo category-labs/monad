@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <bit>
@@ -80,7 +81,8 @@ MONAD_NAMESPACE_BEGIN
 void record_txn_events(
     uint32_t txn_num, Transaction const &transaction, Address const &sender,
     std::span<std::optional<Address> const> authorities,
-    Result<Receipt> const &receipt_result)
+    Result<Receipt> const &receipt_result,
+    std::span<CallFrame const> call_frames)
 {
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
@@ -178,7 +180,7 @@ void record_txn_events(
             {.status = receipt.status == 1,
              .log_count = static_cast<uint32_t>(size(receipt.logs)),
              .gas_used = receipt.gas_used},
-        .call_frame_count = 0};
+        .call_frame_count = static_cast<uint32_t>(size(call_frames))};
     exec_recorder->commit(txn_evm_output);
 
     // TXN_LOG
@@ -195,6 +197,37 @@ void record_txn_events(
             .topic_count = static_cast<uint8_t>(size(log.topics)),
             .data_length = static_cast<uint32_t>(size(log.data))};
         exec_recorder->commit(txn_log);
+        ++index;
+    }
+
+    // TXN_CALL_FRAME
+    for (uint32_t index = 0; auto const &call_frame : call_frames) {
+        std::span const input_bytes{
+            data(call_frame.input), size(call_frame.input)};
+        std::span const return_bytes{
+            data(call_frame.output), size(call_frame.output)};
+
+        ReservedExecEvent const txn_call_frame =
+            exec_recorder->reserve_txn_event<monad_exec_txn_call_frame>(
+                MONAD_EXEC_TXN_CALL_FRAME,
+                txn_num,
+                as_bytes(input_bytes),
+                as_bytes(return_bytes));
+        *txn_call_frame.payload = monad_exec_txn_call_frame{
+            .index = index,
+            .caller = call_frame.from,
+            .call_target = call_frame.to.value_or(Address{}),
+            .opcode = std::to_underlying(
+                get_call_frame_opcode(call_frame.type, call_frame.flags)),
+            .value = call_frame.value,
+            .gas = call_frame.gas,
+            .gas_used = call_frame.gas_used,
+            .evmc_status = std::to_underlying(call_frame.status),
+            .depth = call_frame.depth,
+            .input_length = size(call_frame.input),
+            .return_length = size(call_frame.output),
+        };
+        exec_recorder->commit(txn_call_frame);
         ++index;
     }
 

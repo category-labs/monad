@@ -69,6 +69,7 @@
 #include <stdexcept>
 #include <string>
 #include <sys/sysinfo.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -355,7 +356,9 @@ try {
             mpt::Db ro{io_ctx};
             ctx->ro = &ro;
             while (!token.stop_requested()) {
-                monad_statesync_server_run_once(sync);
+                if (monad_statesync_server_run_once(sync) == ENOTCONN) {
+                    std::this_thread::sleep_for(std::chrono::seconds{1});
+                }
             }
             ctx->ro = nullptr;
         });

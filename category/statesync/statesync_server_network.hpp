@@ -21,10 +21,13 @@
 
 #include <quill/Quill.h>
 
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 
 struct monad_statesync_server_network
@@ -33,30 +36,33 @@ struct monad_statesync_server_network
     monad::byte_string obuf;
     std::string path;
 
-    void connect()
+    [[nodiscard]] bool connect()
     {
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         MONAD_ASSERT_PRINTF(
-            fd >= 0, "failed to create socket: %s", strerror(errno));
+            fd >= 0, "failed to create socket: %s", std::strerror(errno));
         struct sockaddr_un addr;
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
-        while (::connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (::connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
+            LOG_WARNING(
+                "connection to {} failed: {}", path, std::strerror(errno));
+            return false;
         }
+        return true;
     }
 
     monad_statesync_server_network(char const *const path)
         : path{path}
     {
-        connect();
+        (void)connect();
     }
 
     ~monad_statesync_server_network()
     {
         if (fd >= 0) {
-            close(fd);
+            (void)close(fd);
         }
     }
 };
@@ -77,7 +83,7 @@ namespace
                 if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
                     LOG_ERROR(
                         "send error: {}, fd={}, nsent={}, size={}",
-                        strerror(errno),
+                        std::strerror(errno),
                         fd,
                         nsent,
                         buf.size());
@@ -96,21 +102,23 @@ ssize_t statesync_server_recv(
     monad_statesync_server_network *const net, unsigned char *buf, size_t n)
 {
     while (true) {
-        ssize_t ret = recv(net->fd, buf, n, MSG_DONTWAIT);
-        if (ret == 0 ||
-            (ret < 0 && (errno == ECONNRESET || errno == ENOTCONN))) {
+        ssize_t const ret = recv(net->fd, buf, n, MSG_DONTWAIT);
+        if (ret == 0 || (ret < 0 && (errno == ECONNRESET || errno == ENOTCONN ||
+                                     errno == EBADF))) {
             LOG_WARNING("connection closed, reconnecting");
-            if (close(net->fd) < 0) {
-                LOG_ERROR("failed to close socket: {}", strerror(errno));
-            }
+            (void)close(net->fd);
             net->fd = -1;
-            net->connect();
+            if (!net->connect()) {
+                return -ENOTCONN;
+            }
         }
         else if (
             ret < 0 &&
             (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
-            LOG_ERROR("recv error: {}", strerror(errno));
-            return -1;
+            LOG_ERROR("recv error: {}", std::strerror(errno));
+            (void)close(net->fd);
+            net->fd = -1;
+            return -ENOTCONN;
         }
         else {
             return ret;

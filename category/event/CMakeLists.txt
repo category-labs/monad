@@ -33,6 +33,8 @@ add_library(
   "../core/format_err.c"
   "../core/format_err.h"
   "../core/likely.h"
+  "../core/path_util.c"
+  "../core/path_util.h"
   "../core/srcloc.h"
   "../core/event/event_iterator.h"
   "../core/event/event_iterator_inline.h"

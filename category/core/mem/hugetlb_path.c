@@ -16,19 +16,17 @@
 #include <category/core/cleanup.h> // NOLINT(misc-include-cleaner)
 #include <category/core/format_err.h>
 #include <category/core/mem/hugetlb_path.h>
+#include <category/core/path_util.h>
 #include <category/core/srcloc.h>
 
 #include <hugetlbfs.h>
 
 #include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <linux/limits.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
+
+#include <fcntl.h>
+#include <linux/limits.h>
 
 thread_local char g_error_buf[PATH_MAX];
 
@@ -39,122 +37,27 @@ thread_local char g_error_buf[PATH_MAX];
         &MONAD_SOURCE_LOCATION_CURRENT(),                                      \
         __VA_ARGS__)
 
-static int
-path_append(char **dst, char const *src, size_t *size, bool prepend_sep)
-{
-    if (*dst == nullptr) {
-        return 0;
-    }
-    if (prepend_sep) {
-        if (*size == 0) {
-            return FORMAT_ERRC(ERANGE, "path buffer overflow");
-        }
-        **dst = '/';
-        *dst += 1;
-        *size -= 1;
-    }
-    size_t const n = strlcpy(*dst, src, *size);
-    if (n >= *size) {
-        *dst += *size;
-        *size = 0;
-        return FORMAT_ERRC(ERANGE, "path buffer overflow");
-    }
-    *dst += n;
-    *size -= n;
-    return 0;
-}
-
-static int walk_path_suffix(
-    char const *path_suffix, bool create_dirs, mode_t mode, int *curfd,
-    char const *const namebuf_start, char *namebuf, size_t namebuf_size)
-{
-    // NOLINTBEGIN(clang-analyzer-unix.Malloc)
-    int rc = 0;
-    char *dir_name;
-    char *tokctx;
-
-    char *const path_components [[gnu::cleanup(cleanup_free)]] =
-        strdup(path_suffix);
-    if (path_components == nullptr) {
-        return FORMAT_ERRC(errno, "strdup of `%s` failed", path_suffix);
-    }
-
-    for (dir_name = strtok_r(path_components, "/", &tokctx); dir_name;
-         dir_name = strtok_r(nullptr, "/", &tokctx)) {
-        // This loop iterates over the path components in a path string; each
-        // path component is the name of a directory.
-        //
-        // Within this loop, `dir_name` refers to the next path component and
-        // `*curfd` is an open file descriptor to the parent directory of
-        // `dir_name`; the "walk" involves:
-        //
-        //   - creating a directory named `dir_name` if it doesn't exist and
-        //     we're allowed to create directories
-        //
-        //   - opening a file descriptor to `dir_name` as the new `*curfd`
-        //     with O_DIRECTORY (thereby checking if it is a directory in
-        //     case we got EEXIST but it is some other type of file)
-        //
-        //   - appending the `dir_name` to `namebuf`
-        //
-        // When we're done, `*curfd` is an open file descriptor to the last
-        // directory in the path; if we fail early for any reason, the error
-        // will indicate what path component is responsible for the error,
-        // e.g., in `/a/b/c/d` if `c` exists but is not a directory we'll get
-        // ENOTDIR with the error string indicating that it occured for path
-        // component `c` at `/a/b`
-        int nextfd;
-        int lastfd;
-        if (create_dirs && mkdirat(*curfd, dir_name, mode) == -1 &&
-            errno != EEXIST) {
-            rc = FORMAT_ERRC(
-                errno,
-                "mkdir of `%s` at path `%s` failed",
-                dir_name,
-                namebuf_start ? namebuf_start : "<unknown>");
-            goto Error;
-        }
-        nextfd = openat(*curfd, dir_name, O_DIRECTORY | O_PATH);
-        if (nextfd == -1) {
-            rc = FORMAT_ERRC(
-                errno,
-                "openat of `%s` at path `%s` failed",
-                dir_name,
-                namebuf_start ? namebuf_start : "<unknown>");
-            goto Error;
-        }
-        lastfd = *curfd;
-        *curfd = nextfd;
-        (void)close(lastfd);
-        rc = path_append(
-            &namebuf, dir_name, &namebuf_size, /*prepend_sep*/ true);
-    }
-    return rc;
-
-Error:
-    (void)close(*curfd);
-    *curfd = -1;
-    return rc;
-    // NOLINTEND(clang-analyzer-unix.Malloc)
-}
-
 int monad_hugetlbfs_open_dir_fd(
     struct monad_hugetlbfs_resolve_params const *params, int *dirfd,
-    char *namebuf, size_t namebuf_size)
+    char *pathbuf, size_t pathbuf_size)
 {
-    int rc;
     size_t resolve_size;
     char const *hugetlbfs_mount_path;
-    char const *const namebuf_start = namebuf;
-    int curfd;
+    char local_pathbuf[PATH_MAX];
+#ifdef O_PATH
+    constexpr int OPEN_FLAGS = O_DIRECTORY | O_PATH;
+#else
+    constexpr int OPEN_FLAGS = O_DIRECTORY;
+#endif
 
     if (params == nullptr) {
         return FORMAT_ERRC(EFAULT, "params cannot be nullptr");
     }
-    if (dirfd != nullptr) {
-        // Ensure the caller doesn't accidentally close something (i.e., stdin)
-        // if they unconditionally close upon failure
-        *dirfd = -1;
+    if (pathbuf == nullptr) {
+        // Even if the user doesn't want the full absolute path, we need it
+        // locally for better error reporting
+        pathbuf = local_pathbuf;
+        pathbuf_size = sizeof local_pathbuf;
     }
     if (params->page_size == 0) {
         long default_size = gethugepagesize();
@@ -171,31 +74,35 @@ int monad_hugetlbfs_open_dir_fd(
         return FORMAT_ERRC(
             ENODEV, "no mounted hugetlbfs is accessible to this user");
     }
-    rc = path_append(
-        &namebuf, hugetlbfs_mount_path, &namebuf_size, /*prepend_sep*/ false);
-    if (rc) {
-        return rc;
+    size_t const mount_path_len =
+        strlcpy(pathbuf, hugetlbfs_mount_path, pathbuf_size);
+    if (mount_path_len >= pathbuf_size) {
+        return FORMAT_ERRC(
+            ENAMETOOLONG, "pathbuf cannot hold %s", hugetlbfs_mount_path);
     }
-    curfd = open(hugetlbfs_mount_path, O_DIRECTORY | O_PATH);
-    if (curfd == -1) {
+    int mountfd [[gnu::cleanup(cleanup_close)]] =
+        open(hugetlbfs_mount_path, OPEN_FLAGS);
+    if (mountfd == -1) {
         return FORMAT_ERRC(
             errno, "open of hugetlbfs mount `%s` failed", hugetlbfs_mount_path);
     }
-    rc = walk_path_suffix(
+    int const rc = monad_path_open_subdir(
+        mountfd,
         params->path_suffix,
-        params->create_dirs,
-        params->dir_create_mode,
-        &curfd,
-        namebuf_start,
-        namebuf,
-        namebuf_size);
-    if (dirfd) {
-        *dirfd = curfd;
+        params->create_dirs ? params->dir_create_mode : MONAD_PATH_NO_CREATE,
+        dirfd,
+        pathbuf + mount_path_len,
+        pathbuf_size - mount_path_len);
+    if (rc != 0) {
+        return FORMAT_ERRC(
+            rc,
+            "monad_path_open_subdir of `%s` underneath `%s` failed at last "
+            "path component of `%s`",
+            params->path_suffix,
+            hugetlbfs_mount_path,
+            pathbuf);
     }
-    else {
-        (void)close(curfd);
-    }
-    return rc;
+    return 0;
 }
 
 char const *monad_hugetlbfs_get_last_error()

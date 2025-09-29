@@ -2501,16 +2501,10 @@ namespace monad::vm::compiler::native
             auto const lit = ix->literal()->value;
             ix.reset(); // Potentially Clear locations
             signextend_by_literal_ix(lit, std::move(src), {});
-            return;
         }
-        if (ix->general_reg()) {
-            signextend_stack_elem_ix(std::move(ix), std::move(src), {});
-            return;
+        else {
+            signextend_by_non_literal(std::move(ix), std::move(src), {});
         }
-        if (!ix->stack_offset()) {
-            mov_avx_reg_to_stack_offset(ix);
-        }
-        signextend_stack_elem_ix(std::move(ix), std::move(src), {});
     }
 
     // Discharge through `shl` overload
@@ -3848,50 +3842,80 @@ namespace monad::vm::compiler::native
         }
     }
 
-    // Sets zero flag according to whether `e` is below `i`.
-    // Does not update the low 64 bits, even when `e` is not live.
     template <typename... LiveSet>
-    void Emitter::cmp_stack_elem_to_uint16(
-        StackElemRef e, uint16_t i, std::tuple<LiveSet...> const &live)
+    void Emitter::destructive_mov_stack_elem_to_bounded_rax(
+        StackElemRef e, uint16_t bound, std::tuple<LiveSet...> const &live)
     {
-        MONAD_VM_DEBUG_ASSERT(i > 0);
+        MONAD_VM_DEBUG_ASSERT(bound > 0);
         MONAD_VM_DEBUG_ASSERT(!e->literal().has_value());
         if (e->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*e->general_reg());
-            as_.cmp(gpq[0], i);
+            as_.cmp(gpq[0], bound);
             if (!is_live(e, live)) {
-                as_.cmovnb(gpq[1], gpq[0]);
+                as_.cmova(gpq[1], gpq[0]);
                 as_.or_(gpq[2], gpq[3]);
                 as_.or_(gpq[2], gpq[1]);
             }
             else {
                 as_.mov(x86::rax, gpq[1]);
-                as_.cmovnb(x86::rax, gpq[0]);
+                as_.cmova(x86::rax, gpq[0]);
                 as_.or_(x86::rax, gpq[2]);
                 as_.or_(x86::rax, gpq[3]);
             }
+            as_.mov(x86::eax, bound);
+            as_.cmovz(x86::eax, gpq[0].r32());
         }
         else if (e->avx_reg()) {
             AvxRegReserv const e_reserv{e};
             auto const y = avx_reg_to_ymm(*e->avx_reg());
-            auto const [tmp_e, reserv] = alloc_avx_reg();
-            auto const tmp_y = avx_reg_to_ymm(*tmp_e->avx_reg());
-            as_.vpsubusw(tmp_y, y, rodata_.add32(i - 1));
-            // `tmp_y` is zero iff `y <= i-1`, so zero iff `y < i`
-            as_.vptest(tmp_y, tmp_y);
+            if (std::popcount(uint32_t{bound} + 1) == 1) {
+                auto const shift = std::bit_width(bound);
+                auto const mask = std::numeric_limits<uint256_t>::max()
+                                  << shift;
+                as_.vptest(y, rodata_.add32(mask));
+            }
+            else {
+                auto const [tmp_e, reserv] = alloc_avx_reg();
+                auto const tmp_y = avx_reg_to_ymm(*tmp_e->avx_reg());
+                as_.vpsubusw(tmp_y, y, rodata_.add32(bound - 1));
+                // `tmp_y` zero iff `y <= bound-1`, so zero iff `y < bound`
+                as_.vptest(tmp_y, tmp_y);
+            }
+            as_.vmovd(x86::eax, y.xmm());
+            if (stack_.has_free_general_reg()) {
+                auto [e, reserv] = alloc_general_reg();
+                auto const q = general_reg_to_gpq256(*e->general_reg())[0];
+                as_.mov(q.r32(), bound);
+                as_.cmovnz(x86::eax, q.r32());
+            }
+            else {
+                as_.cmovnz(x86::eax, rodata_.add4(bound));
+            }
         }
         else {
             MONAD_VM_ASSERT(e->stack_offset().has_value());
             x86::Mem mem = stack_offset_to_mem(*e->stack_offset());
-            as_.cmp(mem, i);
             mem.addOffset(8);
             as_.mov(x86::rax, mem);
-            mem.addOffset(-8);
-            as_.cmovnb(x86::rax, mem);
-            mem.addOffset(16);
+            mem.addOffset(8);
             as_.or_(x86::rax, mem);
             mem.addOffset(8);
             as_.or_(x86::rax, mem);
+            as_.mov(x86::eax, bound);
+            mem.addOffset(-24);
+            if (stack_.has_free_general_reg()) {
+                auto [e, reserv] = alloc_general_reg();
+                auto const q = general_reg_to_gpq256(*e->general_reg())[0];
+                as_.mov(q.r32(), x86::eax);
+                as_.cmovz(x86::rax, mem);
+                as_.cmp(x86::rax, q);
+                as_.cmova(x86::eax, q.r32());
+            }
+            else {
+                as_.cmovz(x86::rax, mem);
+                as_.cmp(x86::rax, bound);
+                as_.cmova(x86::eax, rodata_.add4(bound));
+            }
         }
     }
 
@@ -4373,60 +4397,253 @@ namespace monad::vm::compiler::native
         }
     }
 
-    // TODO optimize this algorithm
-    template <typename... LiveSet>
-    void Emitter::signextend_stack_elem_ix(
-        StackElemRef ix, StackElemRef src, std::tuple<LiveSet...> const &live)
+    void Emitter::signextend_avx_reg_by_bounded_rax(StackElemRef src)
     {
-        MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
+        MONAD_VM_DEBUG_ASSERT(src->avx_reg().has_value());
 
-        RegReserv const ix_reserv{src};
-        RegReserv const src_reserv{src};
-
-        cmp_stack_elem_to_uint16(
-            ix, 32, std::tuple_cat(std::make_tuple(src), live));
-
-        static constexpr int32_t byte_off = sp_offset_temp_word2 - 1;
-
-        x86::Mem stack_mem;
-        auto const bound_mem = rodata_.add4(31);
-        if (ix->general_reg()) {
-            auto const &gpq = general_reg_to_gpq256(*ix->general_reg());
-            auto byte_ix = gpq[0];
-            if (is_live(ix, std::tuple_cat(std::make_tuple(src), live))) {
-                byte_ix = x86::rax;
-                as_.mov(byte_ix.r32(), gpq[0].r32());
-            }
-            as_.cmovnz(byte_ix.r32(), bound_mem);
-            as_.neg(byte_ix);
-            stack_mem = x86::qword_ptr(x86::rsp, byte_ix, 0, byte_off);
-        }
-        else if (ix->avx_reg()) {
-            as_.vmovd(x86::eax, avx_reg_to_xmm(*ix->avx_reg()));
-            as_.cmovnz(x86::eax, bound_mem);
-            as_.neg(x86::rax);
-            stack_mem = x86::qword_ptr(x86::rsp, x86::rax, 0, byte_off);
-        }
-        else {
-            MONAD_VM_DEBUG_ASSERT(ix->stack_offset().has_value());
-            auto mem = stack_offset_to_mem(*ix->stack_offset());
-            as_.mov(x86::eax, mem);
-            as_.cmovnz(x86::eax, bound_mem);
-            as_.neg(x86::rax);
-            stack_mem = x86::qword_ptr(x86::rsp, x86::rax, 0, byte_off);
-        }
-
-        mov_stack_elem_to_unaligned_mem<true>(src, stack_mem);
-
+        AvxRegReserv const src_reserv{src};
         auto [dst, dst_reserv] = alloc_avx_reg();
-        auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
+        auto [tmp, tmp_reserv] = alloc_avx_reg();
 
-        as_.vpbroadcastb(dst_ymm, x86::byte_ptr(x86::rsp, byte_off));
-        as_.vpsraw(dst_ymm, dst_ymm, 15);
-        as_.vmovups(x86::ptr(x86::rsp, sp_offset_temp_word2), dst_ymm);
-        as_.vmovups(dst_ymm, stack_mem);
+        auto const src_y = avx_reg_to_ymm(*src->avx_reg());
+        auto const dst_y = avx_reg_to_ymm(*dst->avx_reg());
+        auto const tmp_y = avx_reg_to_ymm(*tmp->avx_reg());
+
+        static constexpr uint256_t mem{
+            0x06050403020100ff,
+            0x0e0d0c0b0a090807,
+            0x161514131211100f,
+            0x1e1d1c1b1a191817};
+
+        as_.vmovd(dst_y.xmm(), x86::eax);
+        as_.vpbroadcastb(dst_y, dst_y.xmm());
+        // dst_y = {byte_ix, byte_ix, ...}
+        as_.vpsrld(tmp_y.xmm(), dst_y.xmm(), 2);
+        as_.vpbroadcastd(tmp_y, tmp_y.xmm());
+        // tmp_y = {dword_ix, dword_ix, ...}
+        as_.vpermd(tmp_y, tmp_y, src_y);
+        as_.vpshufb(tmp_y, tmp_y, dst_y);
+        // tmp_y = {sign_byte, sign_byte, ...}
+        as_.vpsraw(tmp_y, tmp_y, 15);
+        // tmp_y = {sign, sign, ...}
+        as_.vpcmpgtb(dst_y, dst_y, rodata_.add32(mem));
+        // dst_y = {f(-1), f(0), f(1), ..., f(30)}
+        // where f(i) = if byte_ix > i then -1 else 0
+        as_.vpblendvb(dst_y, tmp_y, src_y, dst_y);
+        // dst_y = {g(0), g(1), ..., g(31)}
+        // where g(i) = if byte_ix >= i then src_y[i] else tmp_y[i]
 
         stack_.push(std::move(dst));
+    }
+
+    void Emitter::signextend_general_reg_by_bounded_rax(StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(src->general_reg().has_value());
+
+        GeneralRegReserv const src_reserv{src};
+        auto [dst, dst_reserv] = alloc_general_reg();
+
+        x86::Gpq shift;
+        std::variant<x86::Gpd, x86::Mem> shift63;
+        if (stack_.has_free_general_reg()) {
+            auto [e, reserv] = alloc_general_reg();
+            auto const &gpq = general_reg_to_gpq256(*e->general_reg());
+            shift = gpq[0];
+            shift63 = gpq[1].r32();
+            as_.mov(gpq[1].r32(), 63);
+        }
+        else {
+            as_.push(reg_context);
+            shift = reg_context;
+            shift63 = rodata_.add4(63);
+        }
+
+        auto cmovb_shift = [&, this] {
+            if (std::holds_alternative<x86::Gpd>(shift63)) {
+                as_.cmovb(shift.r32(), std::get<x86::Gpd>(shift63));
+            }
+            else {
+                as_.cmovb(shift.r32(), std::get<x86::Mem>(shift63));
+            }
+        };
+
+        auto const &src_gpq = general_reg_to_gpq256(*src->general_reg());
+        auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+
+        // It is a pre-condition that rax is bounded, rax <= 31.
+
+        as_.lea(
+            shift.r32(),
+            x86::byte_ptr(std::bit_cast<uint32_t>(int32_t{-56}), x86::eax, 3));
+        // shift.r32() = -56 + eax * 8
+        as_.neg(shift.r32());
+        // shift.r32() = 56 - eax * 8
+        as_.and_(shift.r32(), 63);
+        // shift.r32()
+        //   = (56 - eax * 8) % 64
+        //   = (56 % 64 - (eax * 8) % 64) % 64
+        //   = (56 - (eax * 8) % 64) % 64
+        //   = 56 - (eax * 8) % 64, because (eax * 8) % 64 <= 56
+        //   = 56 - (eax % 8) * 8
+        //   where the last equality follows from
+        //     8 * (eax / 8) + (eax % 8) = eax iff
+        //     64 * (eax / 8) + 8 * (eax % 8) = 8 * eax iff
+        //     64 * ((8 * eax) / 64) + 8 * (eax % 8) = 8 * eax
+        //   which implies that 8 * (eax % 8) = (8 * eax) % 64,
+        //   because 8 * (eax % 8) < 64.
+
+        // For demostration purposes, suppose
+        // * eax = 9
+        // * src_gpq[0] = {0x80, 0x81, ..., 0x87}
+        // * src_gpq[1] = {0x88, 0x89, ..., 0x8f}
+        // * src_gpq[2] = {0x90, 0x91, ..., 0x90}
+        // * src_gpq[2] = {0x98, 0x99, ..., 0x9f}
+        // The byte to signextend is 0x89 at index eax == 9 in src_gpq,
+        // which is the byte at index eax % 8 == 1 in src_gpq[1].
+
+        // So at this point
+        // shift = 56 - (eax % 8) * 8 = 48
+
+        as_.shlx(dst_gpq[0], src_gpq[0], shift);
+        as_.shlx(dst_gpq[1], src_gpq[1], shift);
+        as_.shlx(dst_gpq[2], src_gpq[2], shift);
+        as_.shlx(dst_gpq[3], src_gpq[3], shift);
+
+        // dst_gpq[0] = {0, ..., 0, 0x80, 0x81}
+        // dst_gpq[1] = {0, ..., 0, 0x88, 0x89}
+        // dst_gpq[2] = {0, ..., 0, 0x90, 0x91}
+        // dst_gpq[3] = {0, ..., 0, 0x98, 0x99}
+
+        as_.cmp(x86::eax, 8);
+        as_.cmovb(dst_gpq[1], dst_gpq[0]);
+        // eax < 8 is false:
+        //   dst_gpq[1] = {0, ..., 0, 0x88, 0x89}
+        as_.sarx(dst_gpq[0], dst_gpq[0], shift);
+        // shift == 48:
+        //   dst_gpq[0] = {0x88, 0x89, 0xff, ..., 0xff}
+        cmovb_shift();
+        // eax < 8 is false:
+        //   shift = 48
+        as_.cmovae(dst_gpq[0], src_gpq[0]);
+        // eax >= 8 is true:
+        //   dst_gpq[0] = {0x80, 0x81, 0x82, ..., 0x87}
+
+        as_.cmp(x86::eax, 16);
+        as_.cmovb(dst_gpq[2], dst_gpq[1]);
+        // eax < 16 is true:
+        //   dst_gpq[2] = {0, ..., 0, 0x88, 0x89}
+        as_.sarx(dst_gpq[1], dst_gpq[1], shift);
+        // dst_gpq[1] = {0x88, 0x89, 0xff, ..., 0xff}
+        cmovb_shift();
+        // eax < 16 is true:
+        //   shift = 63
+        as_.cmovae(dst_gpq[1], src_gpq[1]);
+        // eax >= 16 is false:
+        //   dst_gpq[1] = {0x88, 0x89, 0xff, ..., 0xff}
+
+        as_.cmp(x86::eax, 24);
+        as_.cmovb(dst_gpq[3], dst_gpq[2]);
+        // eax < 24 is true:
+        //   dst_gpq[3] = {0, ..., 0, 0x88, 0x89}
+        as_.sarx(dst_gpq[2], dst_gpq[2], shift);
+        // shift == 63:
+        //   dst_gpq[2] = {0xff, 0xff, ..., 0xff}
+        cmovb_shift();
+        // eax < 24 is true:
+        //   shift = 63
+        as_.cmovae(dst_gpq[2], src_gpq[2]);
+        // eax >= 24 is false:
+        //   dst_gpq[2] = {0xff, 0xff, ..., 0xff}
+
+        as_.sarx(dst_gpq[3], dst_gpq[3], shift);
+        // dst_gpq[3] = {0xff, 0xff, ..., 0xff}
+
+        if (shift == reg_context) {
+            as_.pop(reg_context);
+        }
+
+        stack_.push(std::move(dst));
+    }
+
+    void
+    Emitter::signextend_stack_offset_or_literal_by_bounded_rax(StackElemRef src)
+    {
+        MONAD_VM_DEBUG_ASSERT(
+            src->stack_offset().has_value() || src->literal().has_value());
+
+        auto [dst, dst_reserv] = alloc_avx_reg();
+        auto [tmp, tmp_reserv] = alloc_avx_reg();
+
+        auto const dst_y = avx_reg_to_ymm(*dst->avx_reg());
+        auto const tmp_y = avx_reg_to_ymm(*tmp->avx_reg());
+
+        static constexpr uint256_t mem{
+            0x06050403020100ff,
+            0x0e0d0c0b0a090807,
+            0x161514131211100f,
+            0x1e1d1c1b1a191817};
+
+        x86::Mem base_mem;
+        if (src->stack_offset()) {
+            base_mem = stack_offset_to_mem(*src->stack_offset());
+        }
+        else if (stack_.has_free_general_reg()) {
+            auto [e, reserv] = alloc_general_reg();
+            auto const &gpq = general_reg_to_gpq256(*e->general_reg());
+            as_.lea(gpq[0], rodata_.add32(src->literal()->value));
+            base_mem = x86::qword_ptr(gpq[0]);
+        }
+        else {
+            as_.push(reg_context);
+            as_.lea(reg_context, rodata_.add32(src->literal()->value));
+            base_mem = x86::qword_ptr(reg_context);
+        }
+        auto byte_mem = base_mem;
+        byte_mem.setSize(1);
+        byte_mem.setIndex(x86::rax);
+        as_.vpbroadcastb(tmp_y, byte_mem);
+        // tmp_y = {sign_byte, sign_byte, ...}
+        as_.vpsraw(tmp_y, tmp_y, 15);
+        // tmp_y = {sign, sign, ...}
+        as_.vmovd(dst_y.xmm(), x86::eax);
+        as_.vpbroadcastb(dst_y, dst_y.xmm());
+        // dst_y = {byte_ix, byte_ix, ...}
+        as_.vpcmpgtb(dst_y, dst_y, rodata_.add32(mem));
+        // dst_y = {f(-1), f(0), f(1), ..., f(30)}
+        // where f(i) = if byte_ix > i then -1 else 0
+        as_.vpblendvb(dst_y, tmp_y, base_mem, dst_y);
+        // dst_y = {g(0), g(1), ..., g(31)}
+        // where g(i) = if byte_ix >= i then base_mem[i] else tmp_y[i]
+
+        if (base_mem.baseReg() == reg_context) {
+            as_.pop(reg_context);
+        }
+
+        stack_.push(std::move(dst));
+    }
+
+    template <typename... LiveSet>
+    void Emitter::signextend_by_non_literal(
+        StackElemRef ix, StackElemRef src, std::tuple<LiveSet...> const &live)
+    {
+        MONAD_VM_DEBUG_ASSERT(!stack_.has_deferred_comparison());
+        MONAD_VM_DEBUG_ASSERT(!ix->literal().has_value());
+
+        {
+            RegReserv const src_reserv{src};
+            destructive_mov_stack_elem_to_bounded_rax(
+                std::move(ix), 31, std::tuple_cat(std::make_tuple(src), live));
+        }
+
+        if (src->avx_reg()) {
+            signextend_avx_reg_by_bounded_rax(std::move(src));
+        }
+        else if (src->general_reg()) {
+            signextend_general_reg_by_bounded_rax(std::move(src));
+        }
+        else {
+            signextend_stack_offset_or_literal_by_bounded_rax(std::move(src));
+        }
     }
 
     // Discharge directly or through `shift_by_literal`.
@@ -4914,10 +5131,10 @@ namespace monad::vm::compiler::native
         AvxRegReserv const value_reserv{value};
         auto const in = avx_reg_to_ymm(*value->avx_reg());
 
-        cmp_stack_elem_to_uint16(
-            shift, 257, std::tuple_cat(std::make_tuple(value), live));
-        mov_stack_elem_low64_to_gpq(std::move(shift), x86::rax);
-        as_.cmovnz(x86::eax, rodata_.add4(256));
+        destructive_mov_stack_elem_to_bounded_rax(
+            std::move(shift),
+            256,
+            std::tuple_cat(std::make_tuple(value), live));
 
         // Allocate result before temporary avx registers, so that result
         // is likely to have lower avx reg, which better avoids spill.

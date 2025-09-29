@@ -264,6 +264,12 @@ namespace
             return;
         }
 #endif
+#if 0
+        std::cout <<
+            std::format("LEFT {} : {}  and  RIGHT {} : {}",
+                    left, Emitter::location_type_to_string(left_loc),
+                    right, Emitter::location_type_to_string(right_loc)) << std::endl;
+#endif
 
         TestEmitter emit{rt, ir.codesize};
         (void)emit.begin_new_block(ir.blocks()[0]);

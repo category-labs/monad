@@ -922,7 +922,7 @@ namespace monad::vm::compiler::native
         void slt(StackElemRef dst, StackElemRef src);
 
         template <typename... LiveSet>
-        void cmp_stack_elem_to_uint16(
+        void destructive_mov_stack_elem_to_bounded_rax(
             StackElemRef, uint16_t, std::tuple<LiveSet...> const &);
 
         void
@@ -949,8 +949,11 @@ namespace monad::vm::compiler::native
         void signextend_by_literal_ix(
             uint256_t const &ix, StackElemRef src,
             std::tuple<LiveSet...> const &);
+        void signextend_avx_reg_by_bounded_rax(StackElemRef);
+        void signextend_general_reg_by_bounded_rax(StackElemRef src);
+        void signextend_stack_offset_or_literal_by_bounded_rax(StackElemRef);
         template <typename... LiveSet>
-        void signextend_stack_elem_ix(
+        void signextend_by_non_literal(
             StackElemRef ix, StackElemRef src, std::tuple<LiveSet...> const &);
 
         enum class ShiftType

@@ -498,7 +498,7 @@ TEST(Evm, deploy_contract_code)
                 byte_string_view(code, sizeof(code)));
         }
 
-        // Initilization code succeeds, but deployment of code failed
+        // Initialization code succeeds, but deployment of code failed
         {
             State s{bs, Incarnation{0, 1}};
             evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};

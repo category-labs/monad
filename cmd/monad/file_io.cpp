@@ -41,7 +41,7 @@ byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
         std::istreambuf_iterator<char>(is), std::istreambuf_iterator<char>()};
     auto const checksum = to_bytes(blake3(data));
     MONAD_ASSERT_PRINTF(
-        checksum == id, "Checksum failed for bft header: %s", filename.c_str());
+        checksum == id, "Checksum failed for file: %s", path.c_str());
     return data;
 }
 

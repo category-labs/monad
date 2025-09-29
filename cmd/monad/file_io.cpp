@@ -29,11 +29,12 @@ MONAD_NAMESPACE_BEGIN
 
 byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
 {
-    auto const filename = evmc::hex(id);
-    auto const path = dir / filename;
-    MONAD_ASSERT(
-        std::filesystem::exists(path) &&
-        std::filesystem::is_regular_file(path));
+    std::string const filename = evmc::hex(id);
+    std::filesystem::path const path = dir / filename;
+    MONAD_ASSERT_PRINTF(
+        std::filesystem::exists(path) && std::filesystem::is_regular_file(path),
+        "missing or bad file %s",
+        path.c_str());
     std::ifstream is(path);
     MONAD_ASSERT(is);
     byte_string const data{

@@ -36,7 +36,6 @@
 #include <memory>
 #include <mutex>
 #include <span>
-#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -866,7 +865,7 @@ storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
         MONAD_ABORT("zonefs support isn't implemented yet");
     }
     g.lock();
-    auto const ret2 = chunks_[which][id].chunk.lock();
+    auto ret2 = chunks_[which][id].chunk.lock();
     if (ret2) {
         return ret2;
     }

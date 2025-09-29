@@ -103,7 +103,7 @@ namespace
                 empty_receiver{}));
             // Exactly the same test as the death test, except for this line
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         }
         testio.wait_until_done();
     }
@@ -145,7 +145,7 @@ namespace
                     {0, 0}, monad::async::DISK_PAGE_SIZE),
                 empty_receiver{bufs}));
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         }
         testio.wait_until_done();
     }
@@ -184,7 +184,7 @@ namespace
             offset += monad::async::DISK_PAGE_SIZE;
             s1->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
             s1->initiate();
-            s1.release();
+            (void)s1.release();
             auto s2 = state->executor()->make_connected(
                 monad::async::write_single_buffer_sender(
                     {0, offset}, monad::async::DISK_PAGE_SIZE),
@@ -192,7 +192,7 @@ namespace
             offset += monad::async::DISK_PAGE_SIZE;
             s2->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
             s2->initiate();
-            s2.release();
+            (void)s2.release();
         }
     }
 
@@ -241,7 +241,7 @@ namespace
         offset += monad::async::DISK_PAGE_SIZE;
         s1->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
         s1->initiate();
-        s1.release();
+        (void)s1.release();
         testio.wait_until_done();
         std::cout << "   " << seq.size() << " offsets written." << std::endl;
 

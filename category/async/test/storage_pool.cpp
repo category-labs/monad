@@ -30,11 +30,10 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
-#include <system_error>
 #include <utility>
 #include <vector>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -263,7 +262,7 @@ namespace
             ({
                 std::filesystem::path const devs[] = {
                     "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-                storage_pool pool(devs, storage_pool::mode::truncate);
+                storage_pool const pool(devs, storage_pool::mode::truncate);
             }),
             "open failed");
     }

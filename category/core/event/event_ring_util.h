@@ -39,6 +39,10 @@ struct monad_event_ring;
 /// to request the hugetlbfs path that is dynamically computed by libhugetlbfs
 constexpr char const *MONAD_EVENT_DEFAULT_HUGETLBFS = nullptr;
 
+/// Value passed to the `monad_event_decompress_snapshot_{fd,mem}` functions
+/// to allow unlimited memory allocation during zstd decompression
+constexpr size_t MONAD_EVENT_NO_MAX_SIZE = 0;
+
 /// Arguments for the `monad_event_ring_init_simple` function
 struct monad_event_ring_simple_config
 {
@@ -102,6 +106,24 @@ int monad_event_open_hugetlbfs_dir_fd(
 int monad_event_resolve_ring_file(
     char const *default_path, char const *file, char *pathbuf,
     size_t pathbuf_size);
+
+/// Check if the given file appears to be an event ring snapshot file
+int monad_event_is_snapshot_file(
+    int fd, char const *error_name, bool *is_snapshot);
+
+/// Given a file descriptor to an event ring snapshot file, try to decompress
+/// it; if successful, the file descriptor `*fd_out` will will refer to an
+/// unlinked temporary file that was created to contain the decompressed
+/// contents; this function fails if the resulting decompressed temporary file
+/// is larger than `max_size`, use MONAD_EVENT_NO_MAX_SIZE to allow any size
+int monad_event_decompress_snapshot_fd(
+    int fd_in, size_t max_size, char const *error_name, int *fd_out);
+
+/// Similar to monad_event_decompress_snapshot_fd, but operates on a memory
+/// buffer described by (buf, buf_size) instead of a file descriptor
+int monad_event_decompress_snapshot_mem(
+    void const *buf, size_t buf_size, size_t max_size, char const *error_name,
+    int *fd_out);
 
 constexpr char MONAD_EVENT_DEFAULT_RING_DIR[] = "event-rings";
 

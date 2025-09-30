@@ -32,6 +32,8 @@ option(MONAD_EVENT_USE_LIBHUGETLBFS
   "Build with libhugetlbfs support (enables the `monad_event_open_hugetlbfs_dir_fd` API function)"
   ${MONAD_EVENT_HUGETLBFS_DEFAULT})
 
+find_library(libzstd_file zstd REQUIRED)
+
 add_library(
   monad_event
   "../core/assert.c"
@@ -83,6 +85,7 @@ endif()
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
+target_link_libraries(monad_event PRIVATE ${libzstd_file})
 
 if(MONAD_EVENT_USE_LIBHUGETLBFS)
   find_library(libhugetlbfs NAMES hugetlbfs REQUIRED)

@@ -1,6 +1,3 @@
 @PACKAGE_INIT@
 
-include(CMakeFindDependencyMacro)
-find_dependency(zstd)
-
 include("${CMAKE_CURRENT_LIST_DIR}/monad_exec_events_sdk.cmake")

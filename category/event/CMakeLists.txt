@@ -26,6 +26,8 @@ option(MONAD_EVENT_DISABLE_LIBHUGETLBFS
 
 add_library(
   monad_event
+  "../core/assert.c"
+  "../core/assert.h"
   "../core/cleanup.c"
   "../core/cleanup.h"
   "../core/format_err.c"
@@ -35,10 +37,13 @@ add_library(
   "../core/event/event_iterator.h"
   "../core/event/event_iterator_inline.h"
   "../core/event/event_metadata.h"
+  "../core/event/event_recorder.h"
+  "../core/event/event_recorder_inline.h"
   "../core/event/event_ring.c"
   "../core/event/event_ring.h"
   "../core/event/event_ring_util.c"
   "../core/event/event_ring_util.h"
+  "../core/mem/align.h"
   "../execution/ethereum/core/base_ctypes.h"
   "../execution/ethereum/core/eth_ctypes.h"
   "../execution/ethereum/event/exec_event_ctypes.h"

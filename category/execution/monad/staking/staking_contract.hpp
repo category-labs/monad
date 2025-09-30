@@ -410,9 +410,11 @@ private:
 
     // event ValidatorCreated(
     //     uint64  indexed valId,
-    //     address indexed auth_delegator);
-    void
-    emit_validator_created_event(u64_be val_id, Address const &auth_delegator);
+    //     address indexed auth_delegator,
+    //     uint256         commission);
+    void emit_validator_created_event(
+        u64_be val_id, Address const &auth_delegator,
+        u256_be const &commission);
 
     // event ValidatorStatusChanged(
     //     uint64  indexed valId,
@@ -451,8 +453,9 @@ private:
 
     // event ClaimRewards(
     // uint64  indexed valId,
-    // address indexed delegatorAddress
-    // uint256         amount);
+    // address indexed delegatorAddress,
+    // uint256         amount,
+    // uint64          epoch);
     void emit_claim_rewards_event(
         u64_be val_id, Address const &delegator, u256_be const &amount);
 

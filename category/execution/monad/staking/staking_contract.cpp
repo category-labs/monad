@@ -207,7 +207,7 @@ constexpr uint64_t COMPOUND_OP_COST = compute_costs(OpCount{
     .warm_sstores = 6,
     .warm_sstore_nonzero = 29,
     .cold_sstores = 3,
-    .events = 2,
+    .events = 3,
     .transfers = 0});
 
 constexpr uint64_t CLAIM_REWARDS_OP_COST = compute_costs(OpCount{
@@ -297,7 +297,7 @@ static_assert(ADD_VALIDATOR_OP_COST == 505125);
 static_assert(DELEGATE_OP_COST == 260850);
 static_assert(UNDELEGATE_OP_COST == 147750);
 static_assert(WITHDRAW_OP_COST == 68675);
-static_assert(COMPOUND_OP_COST == 285050);
+static_assert(COMPOUND_OP_COST == 289325);
 static_assert(CLAIM_REWARDS_OP_COST == 155375);
 static_assert(CHANGE_COMMISSION_OP_COST == 39475);
 static_assert(EXTERNAL_REWARDS_OP_COST == 66575);
@@ -1399,6 +1399,11 @@ Result<byte_string> StakingContract::precompile_compound(
     rewards_slot.clear();
 
     if (MONAD_UNLIKELY(rewards != 0)) {
+        // A compound call is essentially a helper for a `claimRewards()` call
+        // followed by a `delegate()` call. For offchain programs to track the
+        // flow of rewards leaving delegation using events only, this aids in
+        // double-counting errors.
+        emit_claim_rewards_event(val_id, msg_sender, rewards);
         BOOST_OUTCOME_TRY(delegate(val_id, rewards, msg_sender));
     }
 

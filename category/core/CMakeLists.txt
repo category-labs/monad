@@ -99,6 +99,8 @@ add_library(
   "monad_exception.cpp"
   "monad_exception.hpp"
   "nibble.h"
+  "path_util.c"
+  "path_util.h"
   "result.hpp"
   "size_of.hpp"
   "small_prng.hpp"

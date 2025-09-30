@@ -122,17 +122,22 @@ namespace
         chunk_offset_t rd_offset; // required for sender
         unsigned bytes_to_read; // required for sender too
         uint16_t buffer_off;
+        std::shared_ptr<CacheNode> parent;
+        unsigned child_index;
 
         find_owning_receiver(
             UpdateAuxImpl &aux, NodeCache &node_cache,
             inflight_map_owning_t &inflights, chunk_offset_t const offset,
-            virtual_chunk_offset_t const virtual_offset)
+            virtual_chunk_offset_t const virtual_offset,
+            std::shared_ptr<CacheNode> parent, unsigned const child_index)
             : aux(&aux)
             , node_cache(node_cache)
             , inflights(inflights)
             , offset(offset)
             , virtual_offset(virtual_offset)
             , rd_offset(0, 0)
+            , parent(std::move(parent))
+            , child_index(child_index)
         {
             auto const num_pages_to_load_node =
                 node_disk_pages_spare_15{offset}.to_pages();
@@ -165,7 +170,10 @@ namespace
                 std::shared_ptr<CacheNode> node =
                     detail::deserialize_node_from_receiver_result<CacheNode>(
                         std::move(buffer_), buffer_off, io_state);
-                node_cache.insert(virtual_offset, node);
+                auto cache_it = node_cache.insert(virtual_offset, node);
+                if (parent != nullptr) {
+                    parent->set_next(child_index, &*cache_it->second);
+                }
                 start_cursor = OwningNodeCursor{node};
             }
             auto it = inflights.find(virtual_offset);
@@ -184,7 +192,8 @@ namespace
         threadsafe_boost_fibers_promise<find_owning_cursor_result_type>
             &promise,
         auto &&cont, chunk_offset_t const read_offset,
-        virtual_chunk_offset_t const virtual_offset)
+        virtual_chunk_offset_t const virtual_offset,
+        std::shared_ptr<CacheNode> parent, unsigned const child_index)
     {
         if (aux.io->owning_thread_id() != get_tl_tid()) {
             promise.set_value(
@@ -198,7 +207,13 @@ namespace
         }
         inflights[virtual_offset].emplace_back(cont);
         find_owning_receiver receiver(
-            aux, node_cache, inflights, read_offset, virtual_offset);
+            aux,
+            node_cache,
+            inflights,
+            read_offset,
+            virtual_offset,
+            std::move(parent),
+            child_index);
         detail::initiate_async_read_update(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }
@@ -289,10 +304,11 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
-    OwningNodeCursor &start, NibblesView const key, uint64_t const version)
+    OwningNodeCursor start, NibblesView const key, uint64_t const version)
 {
     if (!aux.version_is_valid_ondisk(version)) {
-        promise.set_value({start, find_result::version_no_longer_exist});
+        promise.set_value(
+            {std::move(start), find_result::version_no_longer_exist});
         return;
     }
     if (!start.is_valid()) {
@@ -302,37 +318,37 @@ void find_owning_notify_fiber_future(
     }
     unsigned prefix_index = 0;
     unsigned node_prefix_index = start.prefix_index;
-    auto node = start.node;
-    for (; node_prefix_index < node->path_nibbles_len();
+    for (; node_prefix_index < start.node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
             promise.set_value(
-                {OwningNodeCursor{node, node_prefix_index},
+                {OwningNodeCursor{std::move(start.node), node_prefix_index},
                  find_result::key_ends_earlier_than_node_failure});
             return;
         }
         if (key.get(prefix_index) !=
-            node->path_nibble_view().get(node_prefix_index)) {
+            start.node->path_nibble_view().get(node_prefix_index)) {
             promise.set_value(
-                {OwningNodeCursor{node, node_prefix_index},
+                {OwningNodeCursor{std::move(start.node), node_prefix_index},
                  find_result::key_mismatch_failure});
             return;
         }
     }
     if (prefix_index == key.nibble_size()) {
         promise.set_value(
-            {OwningNodeCursor{node, node_prefix_index}, find_result::success});
+            {OwningNodeCursor{std::move(start.node), node_prefix_index},
+             find_result::success});
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
     if (unsigned char const branch = key.get(prefix_index);
-        node->mask & (1u << branch)) {
+        start.node->mask & (1u << branch)) {
         MONAD_DEBUG_ASSERT(
             prefix_index < std::numeric_limits<unsigned char>::max());
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
-        auto const child_index = node->to_child_index(branch);
-        auto const next_node_offset = node->fnext(child_index);
+        auto const child_index = start.node->to_child_index(branch);
+        auto const next_node_offset = start.node->fnext(child_index);
         auto const next_virtual_offset =
             aux.physical_to_virtual(next_node_offset);
         // version validity check must be after the virtual offset translation
@@ -341,23 +357,36 @@ void find_owning_notify_fiber_future(
             promise.set_value({start, find_result::version_no_longer_exist});
             return;
         }
-        // find in cache
-        NodeCache::ConstAccessor acc;
-        if (node_cache.find(acc, next_virtual_offset)) {
-            OwningNodeCursor next_cursor{acc->second->val.first};
+        auto next_node =
+            static_cast<NodeCache::list_node *>(start.node->next(child_index));
+        if (next_node != nullptr && next_node->key == next_virtual_offset) {
             find_owning_notify_fiber_future(
                 aux,
                 node_cache,
                 inflights,
                 promise,
-                next_cursor,
+                OwningNodeCursor{next_node->val.first},
+                next_key,
+                version);
+            return;
+        }
+        // find in cache
+        NodeCache::ConstAccessor acc;
+        if (node_cache.find(acc, next_virtual_offset)) {
+            start.node->set_next(child_index, &*acc->second);
+            find_owning_notify_fiber_future(
+                aux,
+                node_cache,
+                inflights,
+                promise,
+                OwningNodeCursor{acc->second->val.first},
                 next_key,
                 version);
             return;
         }
         auto cont =
             [&aux, &node_cache, &inflights, &promise, next_key, version](
-                OwningNodeCursor &node_cursor) -> result<void> {
+                OwningNodeCursor node_cursor) -> result<void> {
             if (!node_cursor.is_valid()) {
                 promise.set_value(
                     {OwningNodeCursor{}, find_result::version_no_longer_exist});
@@ -368,7 +397,7 @@ void find_owning_notify_fiber_future(
                 node_cache,
                 inflights,
                 promise,
-                node_cursor,
+                std::move(node_cursor),
                 next_key,
                 version);
             return success();
@@ -380,11 +409,13 @@ void find_owning_notify_fiber_future(
             promise,
             cont,
             next_node_offset,
-            next_virtual_offset);
+            next_virtual_offset,
+            std::move(start.node),
+            child_index);
     }
     else {
         promise.set_value(
-            {OwningNodeCursor{node, node_prefix_index},
+            {OwningNodeCursor{std::move(start.node), node_prefix_index},
              find_result::branch_not_exist_failure});
     }
 }
@@ -427,7 +458,9 @@ void load_root_notify_fiber_future(
         promise,
         cont,
         root_offset,
-        root_virtual_offset);
+        root_virtual_offset,
+        nullptr,
+        unsigned(-1));
 }
 
 MONAD_MPT_NAMESPACE_END

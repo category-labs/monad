@@ -377,18 +377,20 @@ void StakingContract::emit_validator_rewarded_event(
 }
 
 void StakingContract::emit_validator_created_event(
-    u64_be const val_id, Address const &auth_delegator)
+    u64_be const val_id, Address const &auth_delegator,
+    u256_be const &commission)
 
 {
     constexpr bytes32_t signature =
-        abi_encode_event_signature("ValidatorCreated(uint64,address)");
+        abi_encode_event_signature("ValidatorCreated(uint64,address,uint256)");
     static_assert(
         signature ==
-        0xab6f199d07fd15c571140b120b4b414ab3baa8b5a543b4d4f78c8319d6634974_bytes32);
+        0x6f8045cd38e512b8f12f6f02947c632e5f25af03aad132890ecf50015d97c1b2_bytes32);
 
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(auth_delegator))
+                           .add_data(abi_encode_uint(commission))
                            .build();
     emit_log(event);
 }
@@ -473,16 +475,17 @@ void StakingContract::emit_withdraw_event(
 void StakingContract::emit_claim_rewards_event(
     u64_be const val_id, Address const &delegator, u256_be const &amount)
 {
-    constexpr bytes32_t signature =
-        abi_encode_event_signature("ClaimRewards(uint64,address,uint256)");
+    constexpr bytes32_t signature = abi_encode_event_signature(
+        "ClaimRewards(uint64,address,uint256,uint64)");
     static_assert(
         signature ==
-        0x3170ba953fe3e068954fcbc93913a05bf457825d4d4d86ec9b72ce2186cd8109_bytes32);
+        0xcb607e6b63c89c95f6ae24ece9fe0e38a7971aa5ed956254f1df47490921727b_bytes32);
 
     auto const event = EventBuilder(STAKING_CA, signature)
                            .add_topic(abi_encode_uint(val_id))
                            .add_topic(abi_encode_address(delegator))
                            .add_data(abi_encode_uint(amount))
+                           .add_data(abi_encode_uint(vars.epoch.load()))
                            .build();
     emit_log(event);
 }
@@ -1182,7 +1185,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
         .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
     val.commission().store(commission);
 
-    emit_validator_created_event(val_id, auth_address);
+    emit_validator_created_event(val_id, auth_address, commission);
 
     BOOST_OUTCOME_TRY(delegate(val_id, stake, auth_address));
     return byte_string{abi_encode_uint(val_id)};

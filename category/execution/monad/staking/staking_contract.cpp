@@ -32,6 +32,7 @@
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
+#include <category/execution/monad/system_sender.hpp>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
@@ -233,7 +234,7 @@ constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(OpCount{
     .warm_sstores = 0,
     .warm_sstore_nonzero = 0,
     .cold_sstores = 2,
-    .events = 0,
+    .events = 1,
     .transfers = 0});
 
 constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(OpCount{
@@ -299,7 +300,7 @@ static_assert(WITHDRAW_OP_COST == 68675);
 static_assert(COMPOUND_OP_COST == 285050);
 static_assert(CLAIM_REWARDS_OP_COST == 155375);
 static_assert(CHANGE_COMMISSION_OP_COST == 39475);
-static_assert(EXTERNAL_REWARDS_OP_COST == 62300);
+static_assert(EXTERNAL_REWARDS_OP_COST == 66575);
 static_assert(GET_EPOCH_OP_COST == 200);
 static_assert(GET_VALIDATOR_OP_COST == 97200);
 static_assert(GET_DELEGATOR_OP_COST == 184900);
@@ -357,6 +358,24 @@ StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
 /////////////
 // Events //
 /////////////
+void StakingContract::emit_validator_rewarded_event(
+    u64_be const val_id, Address const &from, u256_be const &amount)
+{
+    constexpr bytes32_t signature = abi_encode_event_signature(
+        "ValidatorRewarded(uint64,address,uint256,uint64)");
+    static_assert(
+        signature ==
+        0x3a420a01486b6b28d6ae89c51f5c3bde3e0e74eecbb646a0c481ccba3aae3754_bytes32);
+
+    auto const event = EventBuilder(STAKING_CA, signature)
+                           .add_topic(abi_encode_uint(val_id))
+                           .add_topic(abi_encode_address(from))
+                           .add_data(abi_encode_uint(amount))
+                           .add_data(abi_encode_uint(vars.epoch.load()))
+                           .build();
+    emit_log(event);
+}
+
 void StakingContract::emit_validator_created_event(
     u64_be const val_id, Address const &auth_delegator)
 
@@ -695,7 +714,7 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
 }
 
 Result<void> StakingContract::apply_reward(
-    ValExecution &val_execution, uint256_t const &new_rewards,
+    u64_be const val_id, Address const &from, uint256_t const &new_rewards,
     uint256_t const &active_stake)
 {
     // 1. compute current acc value
@@ -704,6 +723,7 @@ Result<void> StakingContract::apply_reward(
         checked_mul_div(new_rewards, UNIT_BIAS, active_stake));
 
     // 2. add to accumulator
+    auto val_execution = vars.val_execution(val_id);
     BOOST_OUTCOME_TRY(
         auto const acc,
         checked_add(
@@ -719,6 +739,8 @@ Result<void> StakingContract::apply_reward(
 
     // 4. include in unclaimed rewards
     val_execution.unclaimed_rewards().store(unclaimed_rewards);
+
+    emit_validator_rewarded_event(val_id, from, new_rewards);
 
     return outcome::success();
 }
@@ -1491,7 +1513,7 @@ Result<byte_string> StakingContract::precompile_change_commission(
 }
 
 Result<byte_string> StakingContract::precompile_external_reward(
-    byte_string_view input, evmc_address const &,
+    byte_string_view input, evmc_address const &sender,
     evmc_uint256be const &msg_value)
 {
     auto const external_reward = intx::be::load<uint256_t>(msg_value);
@@ -1521,7 +1543,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
 
     // 3. Update validator accumulator.
     BOOST_OUTCOME_TRY(
-        apply_reward(val_execution, external_reward, active_stake));
+        apply_reward(val_id, sender, external_reward, active_stake));
 
     return byte_string{abi_encode_bool(true)};
 }
@@ -1627,7 +1649,8 @@ Result<void> StakingContract::syscall_reward(
     BOOST_OUTCOME_TRY(
         auto const del_reward, checked_sub(raw_reward, commission));
     // 5. update accumulator and unclaimed rewards for this validator pool
-    BOOST_OUTCOME_TRY(apply_reward(val_execution, del_reward, active_stake));
+    BOOST_OUTCOME_TRY(
+        apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
     return outcome::success();
 }

@@ -400,6 +400,14 @@ private:
     // Events //
     /////////////
 
+    // event ValidatorRewarded(
+    //      uint64 indexed valId,
+    //      address indexed from,
+    //      uint256         amount,
+    //      uint64          epoch);
+    void
+    emit_validator_rewarded_event(u64_be, Address const &, u256_be const &);
+
     // event ValidatorCreated(
     //     uint64  indexed valId,
     //     address indexed auth_delegator);
@@ -508,7 +516,8 @@ private:
     // Updates a validator's additive accumulator with the new reward, which
     // goes to every active delegator in the pool.
     Result<void> apply_reward(
-        ValExecution &, uint256_t const &reward, uint256_t const &active_stake);
+        u64_be val_id, Address const &from, uint256_t const &reward,
+        uint256_t const &active_stake);
 
     // helper function for delegate. used by three compiles:
     //  1. add_validator

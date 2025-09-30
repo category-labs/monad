@@ -455,6 +455,11 @@ private:
     void emit_commission_changed_event(
         u64_be, u256_be const &old_commission, u256_be const &new_commission);
 
+    // event EpochChanged(
+    // uint256 oldEpoch
+    // uint256 newEpoch);
+    void emit_epoch_changed_event(u64_be, u64_be);
+
     /////////////
     // Helpers //
     /////////////

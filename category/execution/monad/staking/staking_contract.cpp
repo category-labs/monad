@@ -486,6 +486,22 @@ void StakingContract::emit_commission_changed_event(
     emit_log(event);
 }
 
+void StakingContract::emit_epoch_changed_event(
+    u64_be const old_epoch, u64_be const new_epoch)
+{
+    constexpr bytes32_t signature =
+        abi_encode_event_signature("EpochChanged(uint64,uint64)");
+    static_assert(
+        signature ==
+        0x4fae4dbe0ed659e8ce6637e3c273cd8e4d3bf029b9379a9e8b3f3f27dbef809b_bytes32);
+
+    auto const event = EventBuilder(STAKING_CA, signature)
+                           .add_data(abi_encode_uint(old_epoch))
+                           .add_data(abi_encode_uint(new_epoch))
+                           .build();
+    emit_log(event);
+}
+
 //////////////
 // Helpers //
 //////////////
@@ -1530,6 +1546,8 @@ Result<void> StakingContract::syscall_on_epoch_change(byte_string_view input)
             next_epoch.native());
         return StakingError::InvalidEpochChange;
     }
+
+    emit_epoch_changed_event(last_epoch, next_epoch);
 
     auto const valset = vars.valset_snapshot;
     uint64_t const num_active_vals = valset.length();

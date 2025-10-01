@@ -1634,6 +1634,9 @@ namespace monad::vm::compiler::native
     void
     Emitter::discharge_deferred_comparison(StackElem *elem, Comparison comp)
     {
+        MONAD_VM_DEBUG_ASSERT(
+            !elem->general_reg() && !elem->avx_reg() && !elem->literal() &&
+            !elem->stack_offset());
         insert_avx_reg_without_reserv(*elem);
         auto x = avx_reg_to_xmm(*elem->avx_reg());
         switch (comp) {
@@ -3556,16 +3559,11 @@ namespace monad::vm::compiler::native
         }
         else {
             comp = Comparison::NotEqual;
-            if (cond->stack_offset() && !cond->avx_reg()) {
-                AvxRegReserv const dest_reserv{dest};
-                mov_stack_offset_to_avx_reg(cond);
-            }
             if (cond->avx_reg()) {
                 auto y = avx_reg_to_ymm(*cond->avx_reg());
                 as_.vptest(y, y);
             }
-            else {
-                MONAD_VM_DEBUG_ASSERT(cond->general_reg().has_value());
+            else if (cond->general_reg()) {
                 Gpq256 const &gpq = general_reg_to_gpq256(*cond->general_reg());
                 if (!is_live(cond, std::make_tuple(dest))) {
                     as_.or_(gpq[1], gpq[0]);
@@ -3578,6 +3576,13 @@ namespace monad::vm::compiler::native
                     as_.or_(x86::rax, gpq[2]);
                     as_.or_(x86::rax, gpq[3]);
                 }
+            }
+            else {
+                MONAD_VM_DEBUG_ASSERT(cond->stack_offset().has_value());
+                RegReserv const dest_reserv{dest};
+                mov_stack_offset_to_avx_reg(cond);
+                auto y = avx_reg_to_ymm(*cond->avx_reg());
+                as_.vptest(y, y);
             }
         }
         return comp;
@@ -8021,21 +8026,28 @@ namespace monad::vm::compiler::native
             if (base == 0) { // O ** exp semantic: 1 if exp = 0 else 0
                 stack_.pop();
                 stack_.pop();
-                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                {
+                    RegReserv const exp_reserv{exp_elem};
+                    exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                }
                 push_iszero(std::move(exp_elem));
                 return true;
             }
             else if (base == 1) { // 1 ** exp == 1
                 stack_.pop();
                 stack_.pop();
-                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                exp_emit_gas_decrement_by_stack_elem(
+                    std::move(exp_elem), gas_factor);
                 stack_.push_literal({1});
                 return true;
             }
             else if (popcount(base) == 1) { // (2 ** k) ** n == 1 << (k * n)
                 stack_.pop();
                 stack_.pop();
-                exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                {
+                    RegReserv const exp_reserv{exp_elem};
+                    exp_emit_gas_decrement_by_stack_elem(exp_elem, gas_factor);
+                }
                 if (base == 2) {
                     stack_.push(shl(
                         std::move(exp_elem), stack_.alloc_literal({1}), {}));
@@ -8076,14 +8088,20 @@ namespace monad::vm::compiler::native
             else if (exp == 1) { // x ** 1 = x
                 stack_.pop();
                 stack_.pop();
-                exp_emit_gas_decrement_by_literal(1, gas_factor);
+                {
+                    RegReserv const base_reserv{base_elem};
+                    exp_emit_gas_decrement_by_literal(1, gas_factor);
+                }
                 stack_.push(std::move(base_elem));
                 return true;
             }
             else if (exp == 2) { // x ** 2 = x * x
                 stack_.pop();
                 stack_.pop();
-                exp_emit_gas_decrement_by_literal(2, gas_factor);
+                {
+                    RegReserv const base_reserv{base_elem};
+                    exp_emit_gas_decrement_by_literal(2, gas_factor);
+                }
                 stack_.push(std::move(base_elem));
                 dup(1);
                 mul(remaining_base_gas);

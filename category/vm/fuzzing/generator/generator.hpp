@@ -23,7 +23,10 @@
 
 #include <evmc/evmc.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <array>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <random>
@@ -31,16 +34,176 @@
 #include <variant>
 #include <vector>
 
+using json = nlohmann::json;
 using namespace evmc::literals;
 
 namespace monad::vm::fuzzing
 {
-    enum class GeneratorFocus
+    struct GeneratorFocus
     {
-        Generic,
-        Pow2,
-        DynJump
+        // PUSH params
+        double valid_jumpdest_prob = 0;
+        double valid_address_prob = 0;
+        double random_constant_with_cleared_words_prob = 0;
+        double meaningful_constant_prob = 0;
+        double small_constant_prob = 0;
+        double power_of_two_constant_prob = 0;
+        double power_of_32_constant_prob = 0;
+        double negated_power_of_32_constant_prob = 0;
+        double negated_power_of_two_constant_prob = 0;
+
+        // Block params
+
+        // We want a high probability of emitting a non-terminator,
+        // because large basic blocks are more likely to explore
+        // complex code paths in the emitter. We prefer few large
+        // basic blocks over many small.
+        double total_non_term_prob = 0.19;
+
+        // We want push to be common, to increase probability
+        // of triggering emitter optimizations.
+        double push_weight = (37.0 / 148.0); // 25%
+        // We want dup opcode to be common, because it increases
+        // probability of stack elements being live, which are tricky
+        // cases. Also serves as a way to avoid stack underflows.
+        double dup_weight = (49.0 / 148.0); // 33%
+        // The call weight is small, because the are all similar,
+        // and they increase the number of out-of-gas errors.
+        double call_weight = (0.03 / 148.0); // 0.02%
+        double returndatacopy_weight = (0.03 / 148.0); // 0.02%
+        double create_weight = (0.03 / 148.0); // 0.02%
+        // The uncommon non-terminators have simple emitter
+        // implementations, so we want low probability of these to
+        // increase probability of the more complex code paths.
+        double uncommon_non_term_weight = (4.5 / 148.0); // 3%
+        // The common non-terminators have high probability, because
+        // they have or aid with complex code paths in the emitter.
+
+        double random_byte_prob = 0.00001; // 1/100k
+
+        double valid_jump_prob;
+
+        // no of blocks params
+        // Approximately 24% probability of 5 or more basic blocks,
+        // and 30% probability of just 1 basic block.
+        double block_dist_p1 = 0.30;
+        // Approximately 50% probability of 17 or more basic blocks,
+        // and 4% probability of just 1 basic block.
+        double block_dist_p2 = 0.04;
+        double block_dist_p3 = 0.10;
     };
+
+    static constexpr auto genericFocus = GeneratorFocus{
+        .valid_jumpdest_prob = 0.25,
+        .valid_address_prob = 0.10,
+        .random_constant_with_cleared_words_prob = 0.10,
+        .meaningful_constant_prob = 0.10,
+        .small_constant_prob = 0.10,
+        .power_of_two_constant_prob = 0.10,
+        .power_of_32_constant_prob = 0.10,
+        .negated_power_of_32_constant_prob = 0.05,
+        .negated_power_of_two_constant_prob = 0.05,
+
+        .valid_jump_prob = 0.90,
+    };
+
+    static constexpr auto pow2Focus = GeneratorFocus{
+        .power_of_two_constant_prob = 0.25,
+        .power_of_32_constant_prob = 0.25,
+        .negated_power_of_32_constant_prob = 0.15,
+        .negated_power_of_two_constant_prob = 0.15,
+
+        .valid_jump_prob = 1.0,
+    };
+
+    static constexpr auto dynJumpFocus = GeneratorFocus{
+        .valid_jumpdest_prob = 0.50,
+        .meaningful_constant_prob = 0.20,
+        .small_constant_prob = 0.20,
+
+        .valid_jump_prob = 0,
+    };
+
+    // Helper function to safely get values or fallback to defaults
+    template <typename T>
+    T get_or_default(json const &j, std::string const &key, T default_val)
+    {
+        if (j.contains(key) && j[key].is_number()) {
+            return j[key].get<T>();
+        }
+        return default_val;
+    }
+
+    // Parse from JSON
+    GeneratorFocus parseGeneratorFocus(std::string const &filename)
+    {
+        std::ifstream inFile(filename);
+        if (!inFile) {
+            throw std::runtime_error("Failed to open JSON file.");
+        }
+
+        json j;
+        inFile >> j;
+
+        GeneratorFocus gf;
+
+        // Fill values, using genericFocus for missing fields
+        gf.valid_jumpdest_prob = get_or_default(
+            j, "valid_jumpdest_prob", genericFocus.valid_jumpdest_prob);
+        gf.valid_address_prob = get_or_default(
+            j, "valid_address_prob", genericFocus.valid_address_prob);
+        gf.random_constant_with_cleared_words_prob = get_or_default(
+            j,
+            "random_constant_with_cleared_words_prob",
+            genericFocus.random_constant_with_cleared_words_prob);
+        gf.meaningful_constant_prob = get_or_default(
+            j,
+            "meaningful_constant_prob",
+            genericFocus.meaningful_constant_prob);
+        gf.small_constant_prob = get_or_default(
+            j, "small_constant_prob", genericFocus.small_constant_prob);
+        gf.power_of_two_constant_prob = get_or_default(
+            j,
+            "power_of_two_constant_prob",
+            genericFocus.power_of_two_constant_prob);
+        gf.power_of_32_constant_prob = get_or_default(
+            j,
+            "power_of_32_constant_prob",
+            genericFocus.power_of_32_constant_prob);
+        gf.negated_power_of_32_constant_prob = get_or_default(
+            j,
+            "negated_power_of_32_constant_prob",
+            genericFocus.negated_power_of_32_constant_prob);
+        gf.negated_power_of_two_constant_prob = get_or_default(
+            j,
+            "negated_power_of_two_constant_prob",
+            genericFocus.negated_power_of_two_constant_prob);
+
+        gf.total_non_term_prob =
+            get_or_default(j, "total_non_term_prob", gf.total_non_term_prob);
+        gf.push_weight = get_or_default(j, "push_weight", gf.push_weight);
+        gf.dup_weight = get_or_default(j, "dup_weight", gf.dup_weight);
+        gf.call_weight = get_or_default(j, "call_weight", gf.call_weight);
+        gf.returndatacopy_weight = get_or_default(
+            j, "returndatacopy_weight", gf.returndatacopy_weight);
+        gf.create_weight = get_or_default(j, "create_weight", gf.create_weight);
+        gf.uncommon_non_term_weight = get_or_default(
+            j, "uncommon_non_term_weight", gf.uncommon_non_term_weight);
+        gf.random_byte_prob =
+            get_or_default(j, "random_byte_prob", gf.random_byte_prob);
+
+        gf.valid_jump_prob =
+            get_or_default(j, "valid_jump_prob", genericFocus.valid_jump_prob);
+
+        gf.block_dist_p1 =
+            get_or_default(j, "block_dist_p1", genericFocus.block_dist_p1);
+        gf.block_dist_p2 =
+            get_or_default(j, "block_dist_p2", genericFocus.block_dist_p2);
+        gf.block_dist_p3 =
+            get_or_default(j, "block_dist_p3", genericFocus.block_dist_p3);
+
+        return gf;
+    }
 
     struct ValidAddress
     {
@@ -165,70 +328,42 @@ namespace monad::vm::fuzzing
     using Push = std::variant<ValidAddress, ValidJumpDest, Constant>;
 
     template <typename Engine>
-    Push generate_push(GeneratorFocus focus, Engine &eng)
+    inline Push generate_push(GeneratorFocus const &focus, Engine &eng)
     {
-        double valid_jumpdest_prob = 0.0;
-        double valid_address_prob = 0.0;
-        double random_constant_with_cleared_words_prob = 0.0;
-        double meaningful_constant_prob = 0.0;
-        double small_constant_prob = 0.0;
-        double power_of_two_constant_prob = 0.0;
-        double power_of_32_constant_prob = 0.0;
-        double negated_power_of_32_constant_prob = 0.0;
-        double negated_power_of_two_constant_prob = 0.0;
-        switch (focus) {
-        case GeneratorFocus::Generic:
-            valid_jumpdest_prob = 0.25;
-            valid_address_prob = 0.10;
-            random_constant_with_cleared_words_prob = 0.10;
-            meaningful_constant_prob = 0.10;
-            small_constant_prob = 0.10;
-            power_of_two_constant_prob = 0.10;
-            power_of_32_constant_prob = 0.10;
-            negated_power_of_32_constant_prob = 0.05;
-            negated_power_of_two_constant_prob = 0.05;
-            break;
-        case GeneratorFocus::Pow2:
-            power_of_two_constant_prob = 0.25;
-            power_of_32_constant_prob = 0.25;
-            negated_power_of_32_constant_prob = 0.15;
-            negated_power_of_two_constant_prob = 0.15;
-            break;
-        case GeneratorFocus::DynJump:
-            valid_jumpdest_prob = 0.50;
-            small_constant_prob = 0.20;
-            meaningful_constant_prob = 0.20;
-            break;
-        }
         return discrete_choice<Push>(
             eng,
             [](auto &g) { return random_constant(g); },
-            Choice(valid_jumpdest_prob, [](auto &) { return ValidJumpDest{}; }),
-            Choice(valid_address_prob, [](auto &) { return ValidAddress{}; }),
             Choice(
-                random_constant_with_cleared_words_prob,
+                focus.valid_jumpdest_prob,
+                [](auto &) { return ValidJumpDest{}; }),
+            Choice(
+                focus.valid_address_prob,
+                [](auto &) { return ValidAddress{}; }),
+            Choice(
+                focus.random_constant_with_cleared_words_prob,
                 [](auto &g) { return random_constant_with_cleared_words(g); }),
             Choice(
-                meaningful_constant_prob,
+                focus.meaningful_constant_prob,
                 [](auto &g) { return meaningful_constant(g); }),
             Choice(
-                small_constant_prob, [](auto &g) { return small_constant(g); }),
+                focus.small_constant_prob,
+                [](auto &g) { return small_constant(g); }),
             Choice(
-                power_of_two_constant_prob,
+                focus.power_of_two_constant_prob,
                 [](auto &g) { return power_of_two_constant(g); }),
             Choice(
-                power_of_32_constant_prob,
+                focus.power_of_32_constant_prob,
                 [](auto &g) { return power_of_32_constant(g); }),
             Choice(
-                negated_power_of_32_constant_prob,
+                focus.negated_power_of_32_constant_prob,
                 [](auto &g) { return negated_power_of_32_constant(g); }),
-            Choice(negated_power_of_two_constant_prob, [](auto &g) {
+            Choice(focus.negated_power_of_two_constant_prob, [](auto &g) {
                 return negated_power_of_two_constant(g);
             }));
     }
 
     template <typename Engine>
-    Push generate_calldata_item(GeneratorFocus focus, Engine &eng)
+    Push generate_calldata_item(GeneratorFocus const &focus, Engine &eng)
     {
         return std::visit(
             Cases{
@@ -381,57 +516,34 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     std::vector<Instruction> generate_block(
-        GeneratorFocus focus, Engine &eng, bool const is_exit,
+        GeneratorFocus const &focus, Engine &eng, bool const is_exit,
         bool const is_main)
     {
         static constexpr std::size_t max_block_insts = 10000;
 
         auto program = std::vector<Instruction>{};
 
-        // We want a high probability of emitting a non-terminator,
-        // because large basic blocks are more likely to explore
-        // complex code paths in the emitter. We prefer few large
-        // basic blocks over many small.
-        static constexpr auto total_non_term_prob = 0.99;
-
-        // We want push to be common, to increase probability
-        // of triggering emitter optimizations.
-        static constexpr auto push_weight = (37.0 / 148.0); // 25%
-        // We want dup opcode to be common, because it increases
-        // probability of stack elements being live, which are tricky
-        // cases. Also serves as a way to avoid stack underflows.
-        static constexpr auto dup_weight = (49.0 / 148.0); // 33%
-        // The call weight is small, because the are all similar,
-        // and they increase the number of out-of-gas errors.
-        static constexpr auto call_weight = (0.03 / 148.0); // 0.02%
-        static constexpr auto returndatacopy_weight = (0.03 / 148.0); // 0.02%
-        static constexpr auto create_weight = (0.03 / 148.0); // 0.02%
-        // The uncommon non-terminators have simple emitter
-        // implementations, so we want low probability of these to
-        // increase probability of the more complex code paths.
-        static constexpr auto uncommon_non_term_weight = (4.5 / 148.0); // 3%
-        // The common non-terminators have high probability, because
-        // they have or aid with complex code paths in the emitter.
-        static constexpr auto common_non_term_weight =
-            1.0 -
-            (push_weight + dup_weight + call_weight + returndatacopy_weight +
-             create_weight + uncommon_non_term_weight);
+        // // The common non-terminators have high probability, because
+        // // they have or aid with complex code paths in the emitter.
+        auto common_non_term_weight =
+            1.0 - (focus.push_weight + focus.dup_weight + focus.call_weight +
+                   focus.returndatacopy_weight + focus.create_weight +
+                   focus.uncommon_non_term_weight);
         // 100% - 25% - 33% - 0.02% - 0.02% - 0.02% - 3% = 39.94%
 
-        static constexpr auto push_prob = total_non_term_prob * push_weight;
-        static constexpr auto dup_prob = total_non_term_prob * dup_weight;
-        static constexpr auto call_prob = total_non_term_prob * call_weight;
-        static constexpr auto returndatacopy_prob =
-            total_non_term_prob * returndatacopy_weight;
-        static constexpr auto create_prob = total_non_term_prob * create_weight;
-        static constexpr auto uncommon_non_term_prob =
-            total_non_term_prob * uncommon_non_term_weight;
-        static constexpr auto common_non_term_prob =
-            total_non_term_prob * common_non_term_weight;
+        auto push_prob = focus.total_non_term_prob * focus.push_weight;
+        auto dup_prob = focus.total_non_term_prob * focus.dup_weight;
+        auto call_prob = focus.total_non_term_prob * focus.call_weight;
+        auto returndatacopy_prob =
+            focus.total_non_term_prob * focus.returndatacopy_weight;
+        auto create_prob = focus.total_non_term_prob * focus.create_weight;
+        auto uncommon_non_term_prob =
+            focus.total_non_term_prob * focus.uncommon_non_term_weight;
+        auto common_non_term_prob =
+            focus.total_non_term_prob * common_non_term_weight;
 
-        static constexpr auto random_byte_prob = 0.00001; // 1/100k
-        static constexpr auto terminate_prob =
-            (1 - total_non_term_prob) - random_byte_prob;
+        auto terminate_prob =
+            (1 - focus.total_non_term_prob) - focus.random_byte_prob;
 
         with_probability(eng, 0.66, [&](auto &) {
             program.push_back(NonTerminator{JUMPDEST});
@@ -510,19 +622,7 @@ namespace monad::vm::fuzzing
                 auto op = term->opcode;
 
                 if (op == JUMP || op == JUMPI) {
-                    double valid_jump_prob = 0.0;
-                    switch (focus) {
-                    case GeneratorFocus::Generic:
-                        valid_jump_prob = 0.90;
-                        break;
-                    case GeneratorFocus::Pow2:
-                        valid_jump_prob = 1.0;
-                        break;
-                    case GeneratorFocus::DynJump:
-                        valid_jump_prob = 0;
-                        break;
-                    }
-                    with_probability(eng, valid_jump_prob, [&](auto &) {
+                    with_probability(eng, focus.valid_jump_prob, [&](auto &) {
                         program.push_back(ValidJumpDest{});
                     });
                 }
@@ -890,22 +990,22 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     std::vector<std::uint8_t> generate_program(
-        GeneratorFocus focus, Engine &eng, evmc_revision rev,
+        GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
         std::vector<evmc::address> const &valid_addresses)
     {
         auto prog = std::vector<std::uint8_t>{};
 
         auto const block_dist_p = discrete_choice<double>(
             eng,
-            [](auto &) {
+            [focus](auto &) {
                 // Approximately 24% probability of 5 or more basic blocks,
                 // and 30% probability of just 1 basic block.
-                return 0.30;
+                return focus.block_dist_p1;
             },
-            Choice(0.10, [](auto &) {
+            Choice(focus.block_dist_p3, [focus](auto &) {
                 // Approximately 50% probability of 17 or more basic blocks,
                 // and 4% probability of just 1 basic block.
-                return 0.04;
+                return focus.block_dist_p2;
             }));
         auto blocks_dist = std::geometric_distribution(block_dist_p);
         auto const n_blocks = 1 + blocks_dist(eng);
@@ -993,7 +1093,7 @@ namespace monad::vm::fuzzing
      */
     template <typename Engine>
     std::uint8_t const *generate_input_data(
-        GeneratorFocus focus, Engine &eng, std::size_t const size,
+        GeneratorFocus const &focus, Engine &eng, std::size_t const size,
         std::vector<evmc::address> const &contract_addresses)
     {
         if (size == 0) {
@@ -1029,7 +1129,7 @@ namespace monad::vm::fuzzing
      */
     template <typename Engine, typename LookupFunc>
     message_ptr generate_message(
-        GeneratorFocus focus, Engine &eng,
+        GeneratorFocus const &focus, Engine &eng,
         std::vector<evmc::address> const &contract_addresses,
         std::vector<evmc::address> const &known_eoas,
         LookupFunc address_lookup) noexcept

@@ -176,9 +176,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
         using monad::vm::fuzzing::GeneratorFocus;
         auto focus = discrete_choice<GeneratorFocus>(
             engine,
-            [](auto &) { return GeneratorFocus::Generic; },
-            Choice(0.05, [](auto &) { return GeneratorFocus::Pow2; }),
-            Choice(0.8, [](auto &) { return GeneratorFocus::DynJump; }));
+            [](auto &) { return generic_focus; },
+            Choice(0.05, [](auto &) { return pow2_focus; }),
+            Choice(0.8, [](auto &) { return dyn_jump_focus; }));
 
         auto const contract =
             monad::vm::fuzzing::generate_program(focus, engine, rev, {});

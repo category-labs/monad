@@ -381,7 +381,7 @@ try {
         start_block_num,
         nblocks);
 
-    fiber::PriorityPool priority_pool{nthreads, nfibers};
+    fiber::PriorityPool priority_pool{"wr/", nthreads, nfibers};
 
     auto const start_time = std::chrono::steady_clock::now();
 

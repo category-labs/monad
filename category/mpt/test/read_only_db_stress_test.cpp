@@ -493,7 +493,7 @@ int main(int argc, char *const argv[])
 
             constexpr unsigned num_fibers = 16;
             monad::fiber::PriorityPool pool(
-                num_async_reader_threads, num_fibers);
+                "", num_async_reader_threads, num_fibers);
 
             std::atomic<size_t> inflight_requests = 0;
             while (ro_db.get_latest_version() == INVALID_BLOCK_NUM && !g_done) {

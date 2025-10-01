@@ -24,6 +24,7 @@
 #include <boost/fiber/mutex.hpp>
 
 #include <future>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -48,7 +49,8 @@ class PriorityPool final
 
 public:
     PriorityPool(
-        unsigned n_threads, unsigned n_fibers, bool prevent_spin = false);
+        std::string const &name_prefix, unsigned n_threads, unsigned n_fibers,
+        bool prevent_spin = false);
 
     PriorityPool(PriorityPool const &) = delete;
     PriorityPool &operator=(PriorityPool const &) = delete;

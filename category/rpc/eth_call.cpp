@@ -413,8 +413,8 @@ struct monad_eth_call_executor
         unsigned const num_threads, unsigned const num_fibers,
         uint64_t const node_lru_max_mem, unsigned const low_pool_timeout_sec,
         unsigned const high_pool_timeout_sec, std::string const &triedb_path)
-        : low_gas_pool_{num_threads, num_fibers, true}
-        , high_gas_pool_{1, 2, true}
+        : low_gas_pool_{"lo/", num_threads, num_fibers, true}
+        , high_gas_pool_{"hi/", 1, 2, true}
         , low_pool_timeout_{low_pool_timeout_sec}
         , high_pool_timeout_{high_pool_timeout_sec}
         , db_{[&] {

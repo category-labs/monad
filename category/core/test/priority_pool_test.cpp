@@ -41,6 +41,7 @@ Hardware concurrency is 64
 TEST(PriorityPool, benchmark)
 {
     monad::fiber::PriorityPool ppool(
+        "",
         (unsigned)std::thread::hardware_concurrency(),
         (unsigned)std::thread::hardware_concurrency() * 4);
 

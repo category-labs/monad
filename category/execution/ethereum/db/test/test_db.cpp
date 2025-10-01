@@ -937,7 +937,7 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     BlockState bs(tdb, this->vm);
     BlockMetrics metrics;
 
-    fiber::PriorityPool pool{1, 1};
+    fiber::PriorityPool pool{"", 1, 1};
 
     auto const recovered_senders =
         recover_senders(block.value().transactions, pool);
@@ -1039,7 +1039,7 @@ TYPED_TEST(DBTest, assertion_exception)
     BlockState bs(tdb, this->vm);
     BlockMetrics metrics;
 
-    fiber::PriorityPool pool{1, 1};
+    fiber::PriorityPool pool{"", 1, 1};
 
     auto const recovered_senders =
         recover_senders(block.value().transactions, pool);
@@ -1135,7 +1135,7 @@ TYPED_TEST(DBTest, call_frames_refund)
     BlockState bs(tdb, this->vm);
     BlockMetrics metrics;
 
-    fiber::PriorityPool pool{1, 1};
+    fiber::PriorityPool pool{"", 1, 1};
 
     auto const recovered_senders =
         recover_senders(block.value().transactions, pool);

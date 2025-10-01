@@ -538,6 +538,7 @@ namespace monad::vm::compiler::native
         [[nodiscard]]
         std::pair<AvxRegReserv, std::optional<StackOffset>>
             insert_avx_reg(StackElemRef);
+        [[nodiscard]]
         std::optional<StackOffset> insert_avx_reg_without_reserv(StackElem &);
 
         /**

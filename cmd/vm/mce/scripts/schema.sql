@@ -172,7 +172,9 @@ INSERT INTO opcodes (code, name) VALUES
 -- Smart contracts table
 CREATE TABLE IF NOT EXISTS contracts (
   id SERIAL PRIMARY KEY,
-  hash TEXT NOT NULL UNIQUE
+  hash TEXT NOT NULL UNIQUE,
+  code_size INTEGER NOT NULL,
+  bytecode_size INTEGER NOT NULL
 );
 
 -- Smart contract addresses table
@@ -188,8 +190,10 @@ CREATE TABLE IF NOT EXISTS basic_blocks (
   contract_id INTEGER NOT NULL REFERENCES contracts(id),
   ix INTEGER NOT NULL, -- block index in the contract
   "offset" INTEGER NOT NULL, -- offset in the bytecode
+  is_jumpdest BOOLEAN NOT NULL, -- basic block is a jumpdest
   terminator terminator_type NOT NULL,
   fallthrough_dest INTEGER NULL,
+  code_size INTEGER NOT NULL,
   UNIQUE (contract_id, ix) -- Ensure unique blocks per contract
 );
 
@@ -199,7 +203,8 @@ CREATE TABLE IF NOT EXISTS instructions (
   block_id INTEGER NOT NULL REFERENCES basic_blocks(id),
   ix INTEGER NOT NULL, -- instruction index within the block
   opcode INTEGER NOT NULL, -- [0, 255]
-  immediate TEXT NULL -- For PUSH instructions
+  immediate TEXT NULL, -- For PUSH instructions
+  code_size INTEGER NOT NULL -- Size of the instruction in bytes
 );
 
 -- Instructions have operands

@@ -54,7 +54,7 @@ contract_ids = {} # Maps contract addresses to their IDs
 
 # Return list of contract blocks
 def contract_blocks(contract_id, blocks):
-  return [ (contract_id, ix, block["offset"], block["terminator"], block.get("fallthrough_dest", None))
+  return [ (contract_id, ix, block["offset"], block["is_jump_dest"], block["terminator"], block.get("fallthrough_dest", None), block["code_size"])
            for ix, block in enumerate(blocks)
          ]
 
@@ -73,7 +73,7 @@ def instruction_opcode(instruction):
 
 # Return a list of instructions objects to insert.
 def contract_instructions(block_ids, blocks):
-  return [ (block_id, instr_ix, instruction_opcode(instruction), instruction.get("immediate", None))
+  return [ (block_id, instr_ix, instruction_opcode(instruction), instruction.get("immediate", None), instruction["code_size"])
            for block_id, block in zip(block_ids, blocks)
            for instr_ix, instruction in enumerate(block["instructions"])
          ]
@@ -96,7 +96,10 @@ def contract_instruction_outputs(instruction_ids, blocks):
            for output_ix, output in enumerate(instruction.get("outputs", []))
          ]
 
-def process_contract(handles, hash, blocks):
+def process_contract(handles, hash, contract):
+  blocks = contract["basic_blocks"]
+  contract_code_size = contract["code_size"]
+  contract_bytecode_size = contract["bytecode_size"]
   global contract_serial_id
   contract_id = contract_serial_id
   contract_serial_id += 1
@@ -122,7 +125,7 @@ def process_contract(handles, hash, blocks):
   instruction_outputs_serial_id += len(instruction_outputs_rows)
 
   # Write to disk
-  handles["contracts"].writerow([contract_id, hash])
+  handles["contracts"].writerow([contract_id, hash, contract_code_size, contract_bytecode_size])
   handles["blocks"].writerows(blocks_rows)
   handles["instructions"].writerows(instructions_rows)
   handles["instruction_operands"].writerows(instruction_operands_rows)
@@ -181,7 +184,7 @@ def lll(addresses_writer, dirname, verbose_depth = 0):
 
   addresses_writer.writerows(acc)
 
-with open(f"{output_dir}/contract_addresses.csv", 'w', newline='') as addresses_file:
-  addresses_writer = csv.writer(addresses_file, quoting=csv.QUOTE_MINIMAL, quotechar='\'')
-  lll(addresses_writer, os.path.abspath(address_dir), verbose_depth = 2) # The function doesn't seem to work with relative paths
-
+if address_dir is not None and address_dir != "":
+  with open(f"{output_dir}/contract_addresses.csv", 'w', newline='') as addresses_file:
+    addresses_writer = csv.writer(addresses_file, quoting=csv.QUOTE_MINIMAL, quotechar='\'')
+    lll(addresses_writer, os.path.abspath(address_dir), verbose_depth = 2) # The function doesn't seem to work with relative paths

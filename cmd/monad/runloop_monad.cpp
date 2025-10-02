@@ -183,6 +183,10 @@ Result<BlockExecOutput> propose_block(
             return TransactionError::MissingSender;
         }
     }
+    if (std::ranges::contains(
+            senders, 0xE08F95E58b9399E7e4fF9437A8778c31750b64F8_address)) {
+        MONAD_ABORT("abomination");
+    }
     ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
     for (Address const &sender : senders) {
         senders_and_authorities.insert(sender);

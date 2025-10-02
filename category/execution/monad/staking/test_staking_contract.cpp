@@ -34,6 +34,7 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
+#include <category/execution/monad/system_sender.hpp>
 #include <category/vm/vm.hpp>
 
 #include <test_resource_data.h>
@@ -4673,4 +4674,141 @@ TEST_F(Stake, undelegate_dust)
     EXPECT_FALSE(
         withdraw(val.id, delegator, 1 /* withdrawal id */).has_error());
     EXPECT_EQ(get_balance(delegator), DUST_THRESHOLD + 300);
+}
+
+//////////////////
+// Events Tests //
+//////////////////
+
+TEST_F(Stake, events)
+{
+    auto const auth = 0xdeadbeef_address;
+
+    // Add validator with enough stake to activate immediately
+    //   1. Validator created
+    //   2. Validator status changed to active.
+    //   3. Delegate event
+    auto const res = add_validator(auth, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+    size_t seen_events = 0;
+    EXPECT_EQ(state.logs().size(), 3);
+    seen_events += 3;
+
+    // Change to new commission
+    //  1. Commission changed event
+    ASSERT_FALSE(change_commission(val.id, auth, MON * 25 / 100).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // Change to the same commission. No events emitted
+    ASSERT_FALSE(change_commission(val.id, auth, MON * 25 / 100).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events);
+
+    // Epoch change
+    //  1. Epoch changed event
+    skip_to_next_epoch();
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // Undelegate, setting validator inactive
+    //   1. Undelegate event
+    //   2. Validator status changed to inactive
+    ASSERT_FALSE(undelegate(val.id, auth, 1, 50 * MON).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    seen_events += 2;
+
+    // Undelegate without changing validator state
+    //   1. Undelegate event
+    ASSERT_FALSE(undelegate(val.id, auth, 2, 10 * MON).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // Delegate without changing validator state
+    //  1. Delegate event
+    ASSERT_FALSE(delegate(val.id, auth, 10 * MON).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // Delegate, setting validator active
+    //  1. Delegate event
+    //  2. Validator status changed
+    ASSERT_FALSE(delegate(val.id, auth, 50 * MON).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    seen_events += 2;
+
+    // Claim with no rewards. No events emitted
+    ASSERT_FALSE(claim_rewards(val.id, auth).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events);
+
+    // Reward syscall
+    //  1. Reward originating from the contract
+    ASSERT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    EXPECT_EQ(state.logs().back().topics[2], abi_encode_address(SYSTEM_SENDER));
+    seen_events += 1;
+
+    // Claim with nonzero rewards.
+    //   1. Claim event
+    ASSERT_FALSE(claim_rewards(val.id, auth).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // External reward
+    //  1. Reward originating from the sender
+    ASSERT_FALSE(external_reward(val.id, auth, 5 * MON).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    EXPECT_EQ(state.logs().back().topics[2], abi_encode_address(auth));
+    seen_events += 1;
+
+    // Compound without changing validator state
+    //  1. Claim event
+    //  2. Delegate event
+    ASSERT_FALSE(compound(val.id, auth).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    seen_events += 2;
+
+    // Compound with no rewards.  Note that all reward for `auth` were just
+    // compounded in the last step. No events emitted.
+    ASSERT_FALSE(compound(val.id, auth).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events);
+
+    // Withdraw one of the pending delegations
+    //   1. Withdraw event
+    skip_to_next_epoch();
+    skip_to_next_epoch();
+    seen_events += 2; // two epoch changed events
+    ASSERT_FALSE(withdraw(val.id, auth, 1).has_error());
+    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    seen_events += 1;
+
+    // All logs should come from the staking contract
+    for (auto const &log : state.logs()) {
+        EXPECT_EQ(log.address, STAKING_CA);
+    }
+
+    // compute data hash and topics hash
+    byte_string data_blob;
+    byte_string topics_blob;
+    for (auto const &log : state.logs()) {
+        topics_blob += abi_encode_uint<u64_be>(log.topics.size());
+        for (bytes32_t const &topic : log.topics) {
+            topics_blob += byte_string{topic};
+        }
+        data_blob += abi_encode_uint<u64_be>(log.data.size());
+        data_blob += log.data;
+    }
+    auto const data_hash = to_bytes(blake3(data_blob));
+    auto const topics_hash = to_bytes(blake3(topics_blob));
+
+    // If intentionally bumping the hashes, this script tidies the gtest output:
+    // awk '{gsub(/[- ]/, ""); print}'
+    EXPECT_EQ(
+        data_hash,
+        0x963BADF92D0C30030E575232A2FDF1333D60D7DE3B6FB275E61451C108F0E2D3_bytes32)
+        << "Staking event change requires a hardfork!";
+    EXPECT_EQ(
+        topics_hash,
+        0x698CB2EE95A576037A3D5EDDA5FFA5ABC8741E6DB69883C899CC93C0EBB55AB6_bytes32)
+        << "Staking event change requires a hardfork!";
 }

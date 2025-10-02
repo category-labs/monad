@@ -1405,10 +1405,10 @@ Result<byte_string> StakingContract::precompile_withdraw(
 
     BOOST_OUTCOME_TRY(
         withdrawal_amount, checked_add(withdrawal_amount, rewards));
-    auto const contract_balance =
-        intx::be::load<uint256_t>(state_.get_balance(STAKING_CA));
     MONAD_ASSERT_THROW(
-        contract_balance >= withdrawal_amount, "withdrawal insolvent");
+        state_.record_balance_constraint_for_debit(
+            STAKING_CA, withdrawal_amount),
+        "withdrawal insolvent");
     send_tokens(msg_sender, withdrawal_amount);
 
     emit_withdraw_event(val_id, msg_sender, withdrawal_id, withdrawal_amount);

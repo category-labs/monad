@@ -1514,8 +1514,10 @@ Result<byte_string> StakingContract::precompile_change_commission(
 
     // set in execution view. will go live next epoch.
     u256_be const old_commission = validator.commission().load();
-    validator.commission().store(new_commission);
-    emit_commission_changed_event(val_id, old_commission, new_commission);
+    if (MONAD_LIKELY(old_commission != new_commission)) {
+        validator.commission().store(new_commission);
+        emit_commission_changed_event(val_id, old_commission, new_commission);
+    }
 
     return byte_string{abi_encode_bool(true)};
 }

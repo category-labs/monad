@@ -30,6 +30,8 @@ namespace
         Instruction instruction;
         std::vector<OperandLocations> operand_locations;
         std::vector<OperandLocations> result_locations;
+        size_t contract_size_before;
+        size_t contract_size_after;
     };
 
     struct OperandsLoggerState
@@ -104,21 +106,25 @@ namespace
         nlohmann::json to_json(basic_blocks::BasicBlocksIR const &ir)
         {
             auto blocks = ir.blocks();
-            nlohmann::json object = nlohmann::json::array();
+            nlohmann::json basic_blocks = nlohmann::json::array();
+            size_t contract_code_size = 0;
 
             for (size_t i = 0; i < blocks_metadata.size(); ++i) {
+                auto const &block = blocks[i];
                 auto const &block_metadata = blocks_metadata[i];
                 nlohmann::json block_json;
                 block_json["instructions"] = nlohmann::json::array();
-                block_json["offset"] = blocks[i].offset;
+                block_json["is_jump_dest"] = ir.jump_dests().contains(block.offset);
+                block_json["offset"] = block.offset;
                 block_json["terminator"] =
-                    std::format("{}", blocks[i].terminator);
+                    std::format("{}", block.terminator);
+                size_t start_contract_code_size = contract_code_size;
 
-                if (blocks[i].fallthrough_dest != INVALID_BLOCK_ID) {
-                    block_json["fallthrough_dest"] = blocks[i].fallthrough_dest;
+                if (block.fallthrough_dest != INVALID_BLOCK_ID) {
+                    block_json["fallthrough_dest"] = block.fallthrough_dest;
                 }
 
-                for (auto const &[instr, opnds, outputs] : block_metadata) {
+                for (auto const &[instr, opnds, outputs, before_size, after_size] : block_metadata) {
                     nlohmann::json instr_json;
                     auto opcode = instr.opcode();
                     instr_json["opcode"] = opcode;
@@ -133,11 +139,18 @@ namespace
                     instr_json["opcode_name"] = opcode_name(opcode);
                     instr_json["operands"] = to_json(opnds);
                     instr_json["outputs"] = to_json(outputs);
+                    instr_json["code_size"] = after_size - before_size;
                     block_json["instructions"].push_back(instr_json);
+                    contract_code_size = after_size;
                 }
-                object.push_back(block_json);
+                block_json["code_size"] = contract_code_size - start_contract_code_size;
+                basic_blocks.push_back(block_json);
             }
-            return object;
+            nlohmann::json contract_json;
+            contract_json["basic_blocks"] = basic_blocks;
+            contract_json["code_size"] = contract_code_size;
+            contract_json["bytecode_size"] = *ir.codesize;
+            return contract_json;
         }
     };
 
@@ -176,7 +189,7 @@ namespace
                 }
                 else {
                     state.blocks_metadata[block_ix].push_back(
-                        InstructionMetadata{instr, instr_args.value(), {}});
+                        InstructionMetadata{instr, instr_args.value(), {}, emitter.estimate_size(), 0});
                 }
             };
 
@@ -195,6 +208,8 @@ namespace
                 else {
                     state.blocks_metadata[block_ix][instr_ix].result_locations =
                         instr_results.value();
+                    state.blocks_metadata[block_ix][instr_ix].contract_size_after =
+                        emitter.estimate_size();
                 }
             };
         return std::tuple{pre_hook, post_hook};

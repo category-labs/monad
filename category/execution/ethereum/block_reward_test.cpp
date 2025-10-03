@@ -71,13 +71,13 @@ TEST(BlockReward, apply_block_reward)
         apply_block_reward<EvmTraits<EVMC_FRONTIER>>(as, block);
 
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(a)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
             5'312'500'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(b)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
             4'375'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(c)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
             3'750'000'000'000'000'000);
     }
 
@@ -89,7 +89,7 @@ TEST(BlockReward, apply_block_reward)
         vm::VM vm;
         BlockState bs{tdb, vm};
         State as{bs, Incarnation{1, 1}};
-        (void)as.get_balance(a);
+        (void)as.get_current_balance_pessimistic(a);
 
         EXPECT_FALSE(as.account_exists(a));
 
@@ -103,13 +103,13 @@ TEST(BlockReward, apply_block_reward)
         apply_block_reward<EvmTraits<EVMC_BYZANTIUM>>(as, block);
 
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(a)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
             3'187'500'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(b)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
             2'625'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_balance(c)),
+            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
             2'250'000'000'000'000'000);
     }
 
@@ -131,13 +131,13 @@ TEST(BlockReward, apply_block_reward)
         apply_block_reward<EvmTraits<EVMC_PETERSBURG>>(s, block);
 
         EXPECT_EQ(
-            intx::be::load<uint256_t>(s.get_balance(a)),
+            intx::be::load<uint256_t>(s.get_current_balance_pessimistic(a)),
             2'125'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(s.get_balance(b)),
+            intx::be::load<uint256_t>(s.get_current_balance_pessimistic(b)),
             1'750'000'000'000'000'000);
         EXPECT_EQ(
-            intx::be::load<uint256_t>(s.get_balance(c)),
+            intx::be::load<uint256_t>(s.get_current_balance_pessimistic(c)),
             1'500'000'000'000'000'000);
     }
 
@@ -155,6 +155,8 @@ TEST(BlockReward, apply_block_reward)
 
         apply_block_reward<EvmTraits<EVMC_PARIS>>(s, block);
 
-        EXPECT_EQ(intx::be::load<uint256_t>(s.get_balance(a)), 0u);
+        EXPECT_EQ(
+            intx::be::load<uint256_t>(s.get_current_balance_pessimistic(a)),
+            0u);
     }
 }

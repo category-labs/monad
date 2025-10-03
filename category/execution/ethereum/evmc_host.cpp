@@ -74,7 +74,7 @@ evmc_storage_status EvmcHostBase::set_storage(
 evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
     try {
-        return state_.get_balance(address);
+        return state_.get_current_balance_pessimistic(address);
     }
     catch (...) {
         capture_current_exception();

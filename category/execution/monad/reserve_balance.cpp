@@ -68,8 +68,8 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
-            uint256_t const orig_balance =
-                intx::be::load<uint256_t>(state.get_original_balance(addr));
+            uint256_t const orig_balance = intx::be::load<uint256_t>(
+                state.get_original_balance_pessimistic(addr));
             uint256_t const reserve =
                 std::min(get_max_reserve(monad_rev, addr), orig_balance);
             if (addr == sender) {
@@ -80,8 +80,8 @@ bool dipped_into_reserve(
             }
             return reserve;
         }();
-        uint256_t const curr_balance =
-            intx::be::load<uint256_t>(state.get_balance(addr));
+        uint256_t const curr_balance = intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(addr));
         if (!violation_threshold.has_value() ||
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {

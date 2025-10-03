@@ -1452,8 +1452,8 @@ Result<byte_string> StakingContract::precompile_withdraw(
 
     BOOST_OUTCOME_TRY(
         withdrawal_amount, checked_add(withdrawal_amount, rewards));
-    auto const contract_balance =
-        intx::be::load<uint256_t>(state_.get_balance(STAKING_CA));
+    auto const contract_balance = intx::be::load<uint256_t>(
+        state_.get_current_balance_pessimistic(STAKING_CA));
     MONAD_ASSERT_THROW(
         contract_balance >= withdrawal_amount, "withdrawal insolvent");
     send_tokens(msg_sender, withdrawal_amount);

@@ -82,7 +82,8 @@ void transfer_balance_dao(
     State state{block_state, incarnation};
 
     for (auto const &addr : dao::child_accounts) {
-        auto const balance = intx::be::load<uint256_t>(state.get_balance(addr));
+        auto const balance = intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(addr));
         state.add_to_balance(dao::withdraw_account, balance);
         state.subtract_from_balance(addr, balance);
     }

@@ -209,6 +209,11 @@ bytes32_t State::get_balance(Address const &address)
     return {};
 }
 
+bytes32_t State::get_original_balance(Address const &address)
+{
+    return original_account_state(address).get_balance();
+}
+
 bytes32_t State::get_code_hash(Address const &address)
 {
     auto const &account = recent_account(address);
@@ -644,6 +649,11 @@ bool State::try_fix_account_mismatch(
         }
     }
     original->balance = actual->balance;
+
+    // not necessary as can_merge() wont be called
+    // anymore, but just being defensive, and this makes
+    // it easier to write the class invariant
+    original_state.set_validate_exact_balance();
     return true;
 }
 

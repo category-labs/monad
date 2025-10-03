@@ -158,11 +158,11 @@ namespace trace
         return res;
     }
 
-    json account_state_to_json(OriginalAccountState const &as, State &state)
+    json PrestateTracer::account_state_to_json(
+        OriginalAccountState const &as, State &state)
     {
         auto const &account = as.account_;
         auto const &storage = as.storage_;
-
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
             res["storage"] = storage_to_json(storage);
@@ -170,7 +170,7 @@ namespace trace
         return res;
     }
 
-    void state_to_json(
+    void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
         json &result)
     {
@@ -185,12 +185,25 @@ namespace trace
         }
     }
 
-    json
-    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    json PrestateTracer::state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state)
     {
         json result = json::object();
         state_to_json(trace, state, result);
         return result;
+    }
+
+    void state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        json &result)
+    {
+        PrestateTracer::state_to_json(trace, state, result);
+    }
+
+    json
+    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    {
+        return PrestateTracer::state_to_json(trace, state);
     }
 
     void state_deltas_to_json(

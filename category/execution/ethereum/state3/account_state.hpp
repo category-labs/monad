@@ -35,13 +35,35 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+class BlockState;
+
+namespace trace
+{
+    struct PrestateTracer;
+    struct StateDiffTracer;
+}
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
     template <class Key, class T>
     using Map = ankerl::unordered_dense::segmented_map<Key, T>;
 
+protected:
     std::optional<Account> account_{};
+
+private:
+    friend class State;
+    friend class BlockState;
+
+    // the classes below can access the account_ field just for logging but
+    // CANNOT use it to make decisions affecting the final state (state of
+    // accounts) of execution.
+    friend struct trace::PrestateTracer;
+    friend struct trace::StateDiffTracer;
+
+public:
     Map<bytes32_t, bytes32_t> storage_{};
     Map<bytes32_t, bytes32_t> transient_storage_{};
 
@@ -68,6 +90,35 @@ public:
     AccountState(AccountState const &) = default;
     AccountState &operator=(AccountState &&) = default;
     AccountState &operator=(AccountState const &) = default;
+
+    [[nodiscard]] bool has_account() const
+    {
+        return account_.has_value();
+    }
+
+    [[nodiscard]] bytes32_t get_code_hash() const
+    {
+        if (account_.has_value()) {
+            return account_->code_hash;
+        }
+        return NULL_HASH;
+    }
+
+    [[nodiscard]] uint64_t get_nonce() const
+    {
+        if (account_.has_value()) {
+            return account_->nonce;
+        }
+        return 0;
+    }
+
+    [[nodiscard]] std::optional<Incarnation> get_incarnation() const
+    {
+        if (account_.has_value()) {
+            return account_->incarnation;
+        }
+        return std::nullopt;
+    }
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
@@ -134,6 +185,18 @@ public:
     {
         validate_exact_balance_ = true;
     }
+
+    bytes32_t get_balance()
+    {
+        set_validate_exact_balance();
+        if (account_.has_value()) {
+            return intx::be::store<bytes32_t>(account_->balance);
+        }
+        return {};
+    }
+
+private:
+    friend class State;
 
     void set_min_balance(uint256_t const &value)
     {

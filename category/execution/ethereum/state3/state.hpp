@@ -111,6 +111,8 @@ public:
 
     bytes32_t get_balance(Address const &);
 
+    bytes32_t get_original_balance(Address const &);
+
     bytes32_t get_code_hash(Address const &);
 
     bytes32_t get_storage(Address const &, bytes32_t const &key);

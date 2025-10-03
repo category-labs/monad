@@ -47,6 +47,18 @@ namespace trace
         void encode(Map<Address, OriginalAccountState> const &, State &);
 
     private:
+        static nlohmann::json
+        account_state_to_json(OriginalAccountState const &, State &);
+        static void state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            nlohmann::json &);
+        static nlohmann::json
+        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+        friend void state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            nlohmann::json &);
+        friend nlohmann::json
+        state_to_json(Map<Address, OriginalAccountState> const &, State &);
         nlohmann::json &storage_;
     };
 

@@ -51,12 +51,9 @@ bool dipped_into_reserve(
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
     auto const &orig = state.original();
-    for (auto const &[addr, stack] : state.current()) {
+    for (auto const &[addr, _] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        std::optional<Account> const &orig_account = orig.at(addr).account_;
-        bytes32_t const orig_code_hash = orig_account.has_value()
-                                             ? orig_account.value().code_hash
-                                             : NULL_HASH;
+        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
 
         // Skip if not EOA
         if (orig_code_hash != NULL_HASH) {
@@ -72,7 +69,7 @@ bool dipped_into_reserve(
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
             uint256_t const orig_balance =
-                orig_account.has_value() ? orig_account.value().balance : 0;
+                intx::be::load<uint256_t>(state.get_original_balance(addr));
             uint256_t const reserve =
                 std::min(get_max_reserve(monad_rev, addr), orig_balance);
             if (addr == sender) {
@@ -83,9 +80,8 @@ bool dipped_into_reserve(
             }
             return reserve;
         }();
-        std::optional<Account> const &curr_account = stack.recent().account_;
         uint256_t const curr_balance =
-            curr_account.has_value() ? curr_account.value().balance : 0;
+            intx::be::load<uint256_t>(state.get_balance(addr));
         if (!violation_threshold.has_value() ||
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {

@@ -20,6 +20,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/variant.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -107,19 +108,45 @@ namespace trace
         state_deltas_to_json(state_deltas, state, storage_);
     }
 
-    void run_tracer(StateTracer const &tracer, State &state)
+    void AccessListTracer::encode(State &state)
     {
-        if (std::holds_alternative<PrestateTracer>(tracer)) {
-            PrestateTracer prestate = std::get<PrestateTracer>(tracer);
-            prestate.encode(state.original(), state);
-            return;
+        auto access_list = json::array();
+        for (auto const &[address, current_stack] : state.current()) {
+            if (address == sender_) {
+                continue;
+            }
+
+            auto keys = json::array();
+            auto const &current_account_state = current_stack.recent();
+            for (auto const &[key, _] : current_account_state.storage_) {
+                keys.push_back(bytes_to_hex(key.bytes));
+            }
+
+            auto entry = json::object();
+            entry["address"] = bytes_to_hex(address.bytes);
+            entry["storageKeys"] = std::move(keys);
+
+            access_list.push_back(std::move(entry));
         }
 
-        if (std::holds_alternative<StateDiffTracer>(tracer)) {
-            StateDiffTracer statediff = std::get<StateDiffTracer>(tracer);
-            statediff.encode(statediff.trace(state), state);
-            return;
-        }
+        storage_["accessList"] = std::move(access_list);
+    }
+
+    void run_tracer(StateTracer &tracer, State &state)
+    {
+        return std::visit(
+            overloaded{
+                [](std::monostate) {},
+                [&state](PrestateTracer &prestate) {
+                    prestate.encode(state.original(), state);
+                },
+                [&state](StateDiffTracer &statediff) {
+                    statediff.encode(statediff.trace(state), state);
+                },
+                [&state](AccessListTracer &access_list) {
+                    access_list.encode(state);
+                }},
+            tracer);
     }
 
     // Json serialization

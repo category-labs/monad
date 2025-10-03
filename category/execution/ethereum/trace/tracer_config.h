@@ -26,6 +26,7 @@ enum monad_tracer_config
     CALL_TRACER = 1,
     PRESTATE_TRACER = 2,
     STATEDIFF_TRACER = 3,
+    ACCESS_LIST_TRACER = 4,
 };
 
 #ifdef __cplusplus

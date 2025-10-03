@@ -670,6 +670,8 @@ struct monad_eth_call_executor
                             return trace::PrestateTracer{state_trace};
                         case STATEDIFF_TRACER:
                             return trace::StateDiffTracer{state_trace};
+                        case ACCESS_LIST_TRACER:
+                            return trace::AccessListTracer{state_trace, sender};
                         }
                         MONAD_ASSERT(false);
                     }();

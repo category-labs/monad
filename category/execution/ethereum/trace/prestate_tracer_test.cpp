@@ -590,3 +590,78 @@ TEST(PrestateTracer, statediff_empty)
     EXPECT_EQ(
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
 }
+
+TEST(AccessListTracer, empty)
+{
+    StateDeltas state_deltas{};
+
+    // The State setup is only used to get code
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    nlohmann::json storage;
+    AccessListTracer tracer{storage, addr1};
+    tracer.encode(s);
+
+    auto const json_str = R"({
+        "accessList": []
+    })";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TEST(AccessListTracer, write)
+{
+    StateDeltas state_deltas{};
+
+    // The State setup is only used to get code
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+
+    s.set_storage(addr1, key1, value1);
+    s.set_storage(addr2, key1, value1);
+    s.set_storage(addr2, key2, value2);
+    s.set_storage(addr3, key3, value3);
+
+    nlohmann::json storage;
+    AccessListTracer tracer{storage, addr1};
+    tracer.encode(s);
+
+    auto const json_str = R"({
+        "accessList": [
+            {
+                "address": "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
+                "storageKeys": [
+                    "0x00000000000000000000000000000000000000000000000000000000cafebabe",
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+                ]
+            },
+            {
+                "address": "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0",
+                "storageKeys": [
+                    "0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+                ]
+            }
+        ]
+    })";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}

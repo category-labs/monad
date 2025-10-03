@@ -67,9 +67,24 @@ namespace trace
         nlohmann::json &storage_;
     };
 
-    using StateTracer =
-        std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
-    void run_tracer(StateTracer const &tracer, State &state);
+    struct AccessListTracer
+    {
+        AccessListTracer(nlohmann::json &storage, Address const &sender)
+            : storage_(storage)
+            , sender_(sender)
+        {
+        }
+
+        void encode(State &);
+
+    private:
+        nlohmann::json &storage_;
+        Address const &sender_;
+    };
+
+    using StateTracer = std::variant<
+        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
+    void run_tracer(StateTracer &tracer, State &state);
 
     nlohmann::json
     state_to_json(Map<Address, OriginalAccountState> const &, State &);

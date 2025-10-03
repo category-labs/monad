@@ -34,7 +34,10 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_call_frame_log(CallFrame::Log const &log)
 {
-    return encode_list2(encode_log(log.log), encode_unsigned(log.position));
+    return encode_list2(
+        encode_unsigned(log.receipt_index),
+        encode_log(log.log),
+        encode_unsigned(log.position));
 }
 
 byte_string encode_call_frame_logs(std::span<CallFrame::Log const> const logs)
@@ -85,6 +88,7 @@ Result<CallFrame::Log> decode_call_frame_log(byte_string_view &enc)
 {
     CallFrame::Log log;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(log.receipt_index, decode_unsigned<size_t>(payload));
     BOOST_OUTCOME_TRY(log.log, decode_log(payload));
     BOOST_OUTCOME_TRY(log.position, decode_unsigned<size_t>(payload));
 

@@ -25,12 +25,17 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/fuzzing/generator/shrinker.hpp>
 #include <category/vm/utils/debug.hpp>
+
+#include <category/core/byte_string.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 
 #include <evmone/constants.hpp>
 #include <evmone/evmone.h>
@@ -218,18 +223,16 @@ static evmc::Result transition(
     return result;
 }
 
-static evmc::address deploy_contract(
-    State &state, evmc::address const &from,
+static void deploy_contract(
+    State &state, evmc::address const &to,
     std::span<std::uint8_t const> const code_)
 {
     auto code = bytes{code_.data(), code_.size()};
 
-    auto const create_address =
-        compute_create_address(from, state.get_or_insert(from).nonce++);
-    MONAD_VM_DEBUG_ASSERT(state.find(create_address) == nullptr);
+    MONAD_VM_DEBUG_ASSERT(state.find(to) == nullptr);
 
     state.insert(
-        create_address,
+        to,
         Account{
             .nonce = 0,
             .balance = 0,
@@ -238,29 +241,25 @@ static evmc::address deploy_contract(
             .transient_storage = {},
             .code = code});
 
-    MONAD_VM_ASSERT(state.find(create_address) != nullptr);
-
-    return create_address;
+    FUZZER_ASSERT(state.find(to) != nullptr);
 }
 
-static evmc::address deploy_delegated_contract(
-    State &state, evmc::address const &from, evmc::address const &delegatee)
+static void deploy_delegated_contract(
+    State &state, evmc::address const &to, evmc::address const &delegatee)
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
-    MONAD_VM_ASSERT(code.size() == 23);
-    return deploy_contract(state, from, code);
+    FUZZER_ASSERT(code.size() == 23);
+    deploy_contract(state, to, code);
 }
 
-static evmc::address deploy_delegated_contracts(
-    State &evmone_state, State &monad_state, evmc::address const &from,
+static void deploy_delegated_contracts(
+    State &evmone_state, State &monad_state, evmc::address const &to,
     evmc::address delegatee)
 {
-    auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
-    auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
-    MONAD_VM_ASSERT(a == a1);
+    deploy_delegated_contract(evmone_state, to, delegatee);
+    deploy_delegated_contract(monad_state, to, delegatee);
     assert_equal(evmone_state, monad_state);
-    return a;
 }
 
 // It's possible for the compiler and evmone to reach equivalent-but-not-equal
@@ -316,6 +315,8 @@ namespace
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
         evmc_revision revision = EVMC_PRAGUE;
+        // Disable compiler hook introducing randomness in compilation
+        bool deterministic_compilation = false;
 
         void set_random_seed_if_default()
         {
@@ -366,6 +367,11 @@ static arguments parse_args(int const argc, char **const argv)
         "--print-stats",
         args.print_stats,
         "Print message result statistics when logging");
+
+    app.add_flag(
+        "--deterministic-compilation",
+        args.deterministic_compilation,
+        "Enable deterministic compilation (no randomness)");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
         {"FRONTIER", EVMC_FRONTIER},
@@ -446,7 +452,7 @@ static evmc_status_code fuzz_iteration(
 static void
 log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
     std::unordered_map<evmc_status_code, std::size_t> const &exit_code_stats,
-    std::size_t const run_index, std::size_t const total_messages)
+    std::size_t const run_index, std::size_t const iteration_count, std::size_t const total_messages)
 {
     using namespace std::chrono;
 
@@ -454,7 +460,7 @@ log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
 
     auto const end = high_resolution_clock::now();
     auto const diff = (end - start).count();
-    auto const per_contract = diff / args.iterations_per_run;
+    auto const per_contract = diff / static_cast<int64_t>(iteration_count);
 
     std::cerr << std::format(
         "[{}]: {:.4f}s / iteration\n",
@@ -479,7 +485,7 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
 
     monad::vm::compiler::native::EmitterHook hook = nullptr;
 
-    if (args.implementation == Compiler) {
+    if (args.implementation == Compiler && !args.deterministic_compilation) {
         hook = compiler_emit_hook(engine);
     }
 
@@ -494,13 +500,133 @@ static bool toss(Engine &engine, double p)
     return dist(engine);
 }
 
-static void do_run(std::size_t const run_index, arguments const &args)
+struct PrecompileContract
+{
+    evmc::address contract_address;
+    evmc::address precompile_address;
+};
+
+struct Iteration
+{
+    // Each iteration deploys a contract and then sends N messages to it.
+    std::vector<BasicBlock> contract;
+    evmc::address contract_address;
+    std::optional<PrecompileContract> precompile;
+    std::optional<evmc::address> delegated_contract_address;
+    std::vector<evmc_message> messages;
+};
+
+struct Run
+{
+    std::vector<Iteration> iterations;
+};
+
+static evmc::address prepare_address(evmc::address const &from, uint64_t &nonce) {
+    return compute_create_address(from, nonce++);
+}
+
+template <typename Engine>
+static Iteration prepare_iteration(arguments const &args, Engine &engine,
+    std::vector<evmc::address> &known_addresses,
+    std::vector<evmc::address> &contract_addresses,
+    std::unordered_map<address, std::vector<std::uint8_t>> &contract_codes,
+    uint64_t &nonce)
+{
+    auto const rev = args.revision;
+
+    auto focus = discrete_choice<GeneratorFocus>(
+        engine,
+        [](auto &) { return GeneratorFocus::Generic; },
+        Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
+        Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
+
+    std::optional<PrecompileContract> precompile = std::nullopt;
+    if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
+        auto precompile_address =
+            monad::vm::fuzzing::generate_precompile_address(engine, rev);
+        auto const contract_address = prepare_address(genesis_address, nonce);
+        known_addresses.push_back(contract_address);
+        precompile = PrecompileContract{contract_address, precompile_address};
+    }
+
+    std::vector<BasicBlock> contract;
+    evmc::address contract_address;
+    std::optional<evmc::address> delegated_contract_address = std::nullopt;
+    for (;;) {
+        contract = monad::vm::fuzzing::generate_basic_blocks(
+            focus, engine, rev, known_addresses);
+
+        auto const compiled_contract = compile_program(contract);
+        if (compiled_contract.size() > evmone::MAX_CODE_SIZE) {
+            // The evmone host will fail when we attempt to deploy
+            // contracts of this size. It rarely happens that we
+            // generate contract this large.
+            std::cerr << "Skipping contract of size: " << compiled_contract.size()
+                        << " bytes" << std::endl;
+            continue;
+        }
+
+        contract_address = prepare_address(genesis_address, nonce);
+
+        known_addresses.push_back(contract_address);
+        contract_addresses.push_back(contract_address);
+        contract_codes[contract_address] = compiled_contract;
+
+        if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
+            delegated_contract_address = prepare_address(genesis_address, nonce);
+            known_addresses.push_back(*delegated_contract_address);
+        }
+        break;
+    }
+
+    std::vector<evmc_message> messages;
+    for (auto j = 0u; j < args.messages; ++j) {
+        auto msg = monad::vm::fuzzing::generate_message(
+            focus,
+            engine,
+            contract_addresses,
+            {genesis_address},
+            [&](auto const &address) {
+                if (auto it = contract_codes.find(address);
+                    it != contract_codes.end()) {
+                    return bytes{it->second.data(), it->second.size()};
+                }
+                return evmc::bytes{};
+            });
+        messages.push_back(msg);
+    }
+    return Iteration{contract, contract_address, precompile, delegated_contract_address, messages};
+}
+
+static Run prepare_run(arguments const &args)
+{
+    auto engine = random_engine_t(args.seed);
+    auto run = Run{};
+    auto contract_addresses = std::vector<evmc::address>{};
+    auto known_addresses = std::vector<evmc::address>{};
+    std::unordered_map<address, std::vector<std::uint8_t>> contract_codes;
+    uint64_t nonce = 0;
+    for (auto i = 0; i < args.iterations_per_run; ++i) {
+        run.iterations.push_back(prepare_iteration(args, engine, known_addresses, contract_addresses, contract_codes, nonce));
+    }
+    return run;
+}
+
+static void do_run(std::size_t const run_index, arguments const &args, Run const &run, size_t &iteration_index, size_t &message_index)
 {
     auto const rev = args.revision;
 
     auto engine = random_engine_t(args.seed);
 
     auto evmone_vm = evmc::VM(evmc_create_evmone());
+    // Of all the source of randomness, this is the only one that can't easily
+    // be pre-generated like the rest of the fuzzer input. The BlockchainTestVM
+    // could be extended to signal the beginning of a compilation, allowing
+    // us to reset the seed of the compiler hook to a known value, but since we
+    // don't have a clear mechanism to debug the counter-examples that depend
+    // on the compiler hook randomness, we ignore this for now.
+    // Anyway, when shrinking, the compiler hook is disabled to make the
+    // shrink predicate deterministic.
     auto monad_vm = create_monad_vm(args, engine);
 
     auto initial_state_ = initial_state();
@@ -508,80 +634,44 @@ static void do_run(std::size_t const run_index, arguments const &args)
     auto evmone_state = State{initial_state_};
     auto monad_state = State{initial_state_};
 
-    auto contract_addresses = std::vector<evmc::address>{};
-    auto known_addresses = std::vector<evmc::address>{};
-
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    for (auto i = 0; i < args.iterations_per_run; ++i) {
-        using monad::vm::fuzzing::GeneratorFocus;
-        auto focus = discrete_choice<GeneratorFocus>(
-            engine,
-            [](auto &) { return GeneratorFocus::Generic; },
-            Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
-            Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
-
-        if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
-            auto precompile =
-                monad::vm::fuzzing::generate_precompile_address(engine, rev);
-            auto const a = deploy_delegated_contracts(
-                evmone_state, monad_state, genesis_address, precompile);
-            known_addresses.push_back(a);
+    iteration_index = 0;
+    for (auto const &iteration : run.iterations) {
+        if (iteration.precompile.has_value()) {
+            deploy_delegated_contracts(
+                evmone_state, monad_state,
+                iteration.precompile->contract_address,
+                iteration.precompile->precompile_address);
         }
 
-        for (;;) {
-            auto const contract = monad::vm::fuzzing::generate_program(
-                focus, engine, rev, known_addresses);
+        auto const &contract = compile_program(iteration.contract);
 
-            if (contract.size() > evmone::MAX_CODE_SIZE) {
-                // The evmone host will fail when we attempt to deploy
-                // contracts of this size. It rarely happens that we
-                // generate contract this large.
-                std::cerr << "Skipping contract of size: " << contract.size()
-                          << " bytes" << std::endl;
-                continue;
-            }
+        deploy_contract(
+            evmone_state, iteration.contract_address,
+            contract);
+        deploy_contract(
+            monad_state, iteration.contract_address,
+            contract);
 
-            auto const a =
-                deploy_contract(evmone_state, genesis_address, contract);
-            auto const a1 =
-                deploy_contract(monad_state, genesis_address, contract);
-            MONAD_VM_ASSERT(a == a1);
+        assert_equal(evmone_state, monad_state);
 
-            assert_equal(evmone_state, monad_state);
-
-            contract_addresses.push_back(a);
-            known_addresses.push_back(a);
-
-            if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
-                auto const b = deploy_delegated_contracts(
-                    evmone_state, monad_state, genesis_address, a);
-                known_addresses.push_back(b);
-            }
-            break;
+        if (iteration.delegated_contract_address.has_value()) {
+            deploy_delegated_contracts(
+                evmone_state, monad_state,
+                *iteration.delegated_contract_address,
+                iteration.contract_address);
         }
 
-        for (auto j = 0u; j < args.messages; ++j) {
-            auto msg = monad::vm::fuzzing::generate_message(
-                focus,
-                engine,
-                contract_addresses,
-                {genesis_address},
-                [&](auto const &address) {
-                    if (auto *found = evmone_state.find(address);
-                        found != nullptr) {
-                        return found->code;
-                    }
-
-                    return evmc::bytes{};
-                });
+        message_index = 0;
+        for (auto const &msg : iteration.messages) {
             ++total_messages;
 
             auto const ec = fuzz_iteration(
-                *msg,
+                msg,
                 rev,
                 evmone_state,
                 evmone_vm,
@@ -589,10 +679,194 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 monad_vm,
                 args.implementation);
             ++exit_code_stats[ec];
+            ++message_index;
+        }
+        ++iteration_index;
+    }
+
+    log(start_time, args, exit_code_stats, run_index, iteration_index, total_messages);
+}
+
+static bool try_run(std::size_t const run_index, arguments const &args, Run const &run, size_t &iteration_index, size_t &message_index)
+{
+    try {
+        do_run(run_index, args, run, iteration_index, message_index);
+        return true;
+    }
+    catch (FuzzerAssertFailure const &ex) {
+        return false;
+    }
+}
+
+void print_message(evmc_message const &msg)
+{
+    static auto kind_map = std::map<evmc_call_kind, std::string>{
+        {EVMC_CALL, "CALL"},
+        {EVMC_CALLCODE, "CALLCODE"},
+        {EVMC_DELEGATECALL, "DELEGATECALL"},
+        {EVMC_CREATE, "CREATE"},
+        {EVMC_CREATE2, "CREATE2"},
+        {EVMC_EOFCREATE, "EVMC_EOFCREATE"},
+    };
+
+    std::cerr << fmt::format(
+        "  kind {}, gas {}, value {}\n",
+        kind_map[msg.kind],
+        msg.gas,
+        intx::hex(intx::be::load<intx::uint256>(msg.value)));
+
+    std::cerr << fmt::format(
+        "  code_address {}, sender {}, recipient {}\n",
+        address(msg.code_address),
+        address(msg.sender),
+        address(msg.recipient));
+
+    std::cerr << "  input_data ["
+                << msg.input_size << " bytes]: ";
+    for (size_t i = 0; i < msg.input_size; ++i) {
+        std::cerr << fmt::format("{:02x}", msg.input_data[i]);
+    }
+    std::cerr << "\n";
+}
+
+void print_run(Run const &run)
+{
+    std::cerr << "Run with " << run.iterations.size() << " iterations\n";
+    for (size_t i = 0; i < run.iterations.size(); ++i) {
+        auto const &it = run.iterations[i];
+        auto const program = compile_program(it.contract);
+
+        auto const code_hash = evmone::keccak256(to_byte_string_view(program));
+        auto const code_hash_str =
+            intx::hex(intx::be::load<intx::uint256>(code_hash.bytes));
+        std::cerr << fmt::format(
+            "Iteration {}: contract (hash {}) at address {} (size: {} bytes):\n",
+            i,
+            code_hash_str,
+            it.contract_address,
+            program.size());
+
+        auto const &ir = monad::vm::compiler::basic_blocks::unsafe_make_ir<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(program);
+        for (auto const &block: ir.blocks()) {
+            std::cerr << std::format("{}", block) << "\n";
+        }
+
+        for (size_t j = 0; j < it.messages.size(); ++j) {
+            auto const &msg = it.messages[j];
+            std::cerr << fmt::format("Message[{}]:\n", j);
+            print_message(msg);
+        }
+    }
+}
+
+static bool try_singleton_run(std::size_t const run_index, arguments const &args, std::vector<BasicBlock> contract, evmc::address contract_address, evmc_message failed_message)
+{
+    auto run = Run{};
+    run.iterations = {Iteration{
+        .contract = contract,
+        .contract_address = contract_address,
+        .precompile = std::nullopt,
+        .delegated_contract_address = std::nullopt,
+        .messages = {failed_message}}};
+    size_t iteration_index = 0;
+    size_t message_index = 0;
+    return try_run(run_index, args, run, iteration_index, message_index);
+}
+
+// A singleton run is one with a single contract and a single message.
+static Run shrink_singleton_run(std::size_t const run_index, arguments const &args, std::vector<BasicBlock> original_contract, evmc::address contract_address, evmc_message failed_message)
+{
+    auto engine = random_engine_t(args.seed);
+    int iteration_count = 0;
+    auto contract = original_contract;
+
+    while (++iteration_count < 100) { // After 100 shrinker failure, give up.
+        if (contract.size() == 0) {
+            break; // Nothing to shrink
+        }
+
+        auto [new_contract, removed_block_ix] = shrink_contract(engine, contract);
+
+        if (!try_singleton_run(run_index, args, new_contract, contract_address, failed_message)) {
+            // Block was not needed
+            contract = std::move(new_contract);
+            iteration_count = 0;
+            continue;
+        } else if (contract[removed_block_ix].instructions.size() > 0) {
+            // Try to remove instructions from the block instead
+            // First try with ranges of instructions
+            auto new_contract2 = shrink_block(engine, contract, removed_block_ix);
+            if (!try_singleton_run(run_index, args, new_contract2, contract_address, failed_message)) {
+                contract = std::move(new_contract2);
+                iteration_count = 0;
+                continue;
+            } else {
+                // Idea: Replace instructions with simpler/shorter instructions?
+            }
+        } else {
+            // Block is empty but cannot be removed. This can only happen if
+            // the block is a JUMPDEST and the next block is not a JUMPDEST
+            // and depends on the fallthrough from the JUMPDEST block.
+            auto [new_contract, shrunk_contract] = propagate_jumpdest(contract, removed_block_ix);
+            if (shrunk_contract && !try_singleton_run(run_index, args, new_contract, contract_address, failed_message)) {
+                contract = std::move(new_contract);
+                iteration_count = 0;
+            }
         }
     }
 
-    log(start_time, args, exit_code_stats, run_index, total_messages);
+    // Make sure the final shrunken contract still fails
+    FUZZER_ASSERT(!try_singleton_run(run_index, args, contract, contract_address, failed_message));
+
+    return Run{.iterations = {Iteration{
+        .contract = contract,
+        .contract_address = contract_address,
+        .precompile = std::nullopt,
+        .delegated_contract_address = std::nullopt,
+        .messages = {failed_message}}}};
+}
+
+static Run shrink_run(std::size_t const run_index, arguments const &args, Run const &run, size_t failed_iteration_index, size_t failed_message_index)
+{
+    // Assume that the contract that failed didn't depend on any of the previous
+    // contracts. This is not always true, but most counter-examples are of this
+    // form.
+    // Prepare a run with only the msg.recipient contract and the message that
+    // caused the failure.
+    auto contract_map = std::unordered_map<evmc::address, std::vector<BasicBlock>>{};
+    for (auto const &it : run.iterations) {
+        contract_map.insert({it.contract_address, it.contract});
+    }
+
+    auto const &failed_iteration = run.iterations[failed_iteration_index];
+    auto const &failed_message = failed_iteration.messages[failed_message_index];
+    auto const &failed_contract_it = contract_map.find(failed_message.code_address);
+    if (failed_contract_it == contract_map.end()) {
+        std::cerr << "Failed to find contract that caused the failure\n";
+        return run;
+    }
+    auto const &failed_contract = failed_contract_it->second;
+
+    if (try_singleton_run(run_index, args, failed_contract, failed_message.code_address, failed_message)) {
+        std::cerr << "Shrinker: Contract depends on other contracts or state, cannot shrink.\n";
+        /*
+            To shrink the entire run, we'd need to find which of the previous
+            contracts/messages the failed contract execution depends on. A
+            solution could be to trace the execution of the failing run, and log
+            which accounts/storage slots were accessed during the execution of
+            the failing contract, retry with those contracts, and repeat until
+            we reach a fixed point before starting to shrink the contracts.
+
+            This is likely too complicated and not that effective comparing to
+            simply deleting contracts/messages from the run and seeing if the
+            failure still happens. To speed up the process, we can truncate
+            the tail of the run first (after the failing contract/message), then
+            reorder a few contracts and messages and try again.
+        */
+        return run;
+    } else {
+        return shrink_singleton_run(run_index, args, failed_contract, failed_message.code_address, failed_message);
+    }
 }
 
 static void run_loop(int argc, char **argv)
@@ -602,7 +876,23 @@ static void run_loop(int argc, char **argv)
     for (auto i = 0u; i < args.runs; ++i) {
         std::cerr << std::format(
             "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);
-        do_run(i, args);
+
+        auto const &run = prepare_run(args);
+        size_t iteration_index = 0;
+        size_t message_index = 0;
+        try {
+            do_run(i, args, run, iteration_index, message_index);
+        }
+        catch (FuzzerAssertFailure const &ex) {
+            // Disable randomness in compilation for shrinking
+            args.deterministic_compilation = true;
+            auto const &shrunk_run = shrink_run(i+1, args, run, iteration_index, message_index);
+            std::cerr << "Original counter-example found by fuzzer:\n";
+            print_run(run);
+            std::cerr << "Shrunk counter-example found by fuzzer:\n";
+            print_run(shrunk_run);
+            std::exit(1);
+        }
         args.seed = random_engine_t(args.seed)();
     }
 }

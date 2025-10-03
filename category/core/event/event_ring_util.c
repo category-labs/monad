@@ -22,8 +22,8 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <linux/limits.h>
 #include <linux/magic.h>
-#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
@@ -33,6 +33,7 @@
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
+#include <category/core/path_util.h>
 #include <category/core/srcloc.h>
 
 #if !MONAD_EVENT_DISABLE_LIBHUGETLBFS
@@ -48,6 +49,52 @@ extern thread_local char _g_monad_event_ring_error_buf[1024];
         sizeof(_g_monad_event_ring_error_buf),                                 \
         &MONAD_SOURCE_LOCATION_CURRENT(),                                      \
         __VA_ARGS__)
+
+static char const *g_event_ring_dir_override;
+
+__attribute__((destructor)) static void free_override_dir()
+{
+    free((void *)g_event_ring_dir_override);
+}
+
+// Create MONAD_EVENT_DEFAULT_RING_DIR or override subpaths with with rwxrwxr-x
+constexpr mode_t DIR_CREATE_MODE = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
+
+// libhugetlbfs is always present for Category Labs, but when this is compiled
+// by third parties using the SDK, it is optional
+#if MONAD_EVENT_DISABLE_LIBHUGETLBFS
+
+static int open_event_ring_default_dir(int *, char *, size_t)
+{
+    return FORMAT_ERRC(
+        ENOSYS,
+        "no override event ring dir set, and compiled without libhugetlbfs "
+        "support");
+}
+
+#else
+
+static int
+open_event_ring_default_dir(int *dirfd, char *pathbuf, size_t pathbuf_size)
+{
+    struct monad_hugetlbfs_resolve_params const params = {
+        .page_size = 1UL << 21,
+        .path_suffix = MONAD_EVENT_DEFAULT_RING_DIR,
+        .create_dirs = true,
+        .dir_create_mode = DIR_CREATE_MODE};
+    int const rc =
+        monad_hugetlbfs_open_dir_fd(&params, dirfd, pathbuf, pathbuf_size);
+    if (rc != 0) {
+        // Copy the error message directly, since we added nothing interesting
+        strlcpy(
+            _g_monad_event_ring_error_buf,
+            monad_hugetlbfs_get_last_error(),
+            sizeof _g_monad_event_ring_error_buf);
+    }
+    return rc;
+}
+
+#endif
 
 // Given a path which may not exist, walk backward until we find a parent path
 // that does exist; the caller must free(3) parent_path
@@ -236,10 +283,11 @@ int monad_event_ring_init_simple(
         return rc;
     }
     size_t const ring_bytes = monad_event_ring_calc_storage(&ring_size);
-    if (fallocate(ring_fd, 0, ring_offset, (off_t)ring_bytes) == -1) {
+    rc = posix_fallocate(ring_fd, ring_offset, (off_t)ring_bytes);
+    if (rc != 0) {
         return FORMAT_ERRC(
-            errno,
-            "fallocate failed for event ring file `%s`, size %lu",
+            rc,
+            "posix_fallocate failed for event ring file `%s`, size %lu",
             error_name,
             ring_bytes);
     }
@@ -317,36 +365,97 @@ Done:
     return rc;
 }
 
-// libhugetlbfs is always present for Category Labs, but when this is compiled
-// by third parties using the SDK, it is optional
-#if MONAD_EVENT_DISABLE_LIBHUGETLBFS
-
-int monad_event_open_ring_dir_fd(int *, char *, size_t)
+int monad_event_open_ring_dir_fd(int *dirfd, char *pathbuf, size_t pathbuf_size)
 {
-    return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
-}
+    char local_pathbuf[PATH_MAX];
 
-#else
+    if (g_event_ring_dir_override == nullptr) {
+        return open_event_ring_default_dir(dirfd, pathbuf, pathbuf_size);
+    }
 
-int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
-{
-    // Create MONAD_EVENT_DEFAULT_RING_DIR with rwxrwxr-x
-    constexpr mode_t mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
-    struct monad_hugetlbfs_resolve_params const params = {
-        .page_size = 1UL << 21,
-        .path_suffix = MONAD_EVENT_DEFAULT_RING_DIR,
-        .create_dirs = true,
-        .dir_create_mode = mode};
-    int const rc =
-        monad_hugetlbfs_open_dir_fd(&params, dirfd, namebuf, namebuf_size);
+    if (pathbuf == nullptr) {
+        pathbuf = local_pathbuf;
+        pathbuf_size = sizeof local_pathbuf;
+    }
+    int const rc = monad_path_open_subdir(
+        AT_FDCWD,
+        g_event_ring_dir_override,
+        DIR_CREATE_MODE,
+        dirfd,
+        pathbuf,
+        pathbuf_size);
     if (rc != 0) {
-        // Copy the error message directly, since we added nothing interesting
-        strlcpy(
-            _g_monad_event_ring_error_buf,
-            monad_hugetlbfs_get_last_error(),
-            sizeof _g_monad_event_ring_error_buf);
+        return FORMAT_ERRC(
+            rc,
+            "monad_path_open_subdir of `%s` failed at `%s`",
+            g_event_ring_dir_override,
+            pathbuf);
     }
     return rc;
 }
 
-#endif
+int monad_event_set_ring_dir_override(char const *value)
+{
+    char const *new = nullptr;
+    if (value != nullptr) {
+        new = strdup(value);
+        if (new == nullptr) {
+            return FORMAT_ERRC(errno, "strdup of %s failed", value);
+        }
+    }
+    char const *old =
+        __atomic_exchange_n(&g_event_ring_dir_override, new, __ATOMIC_RELAXED);
+    free((void *)old);
+    return 0;
+}
+
+char const *monad_event_get_ring_dir_override()
+{
+    return g_event_ring_dir_override;
+}
+
+int monad_event_resolve_ring_file(
+    char const *event_ring_path, char *pathbuf, size_t pathbuf_size)
+{
+    int rc;
+
+    if (event_ring_path == nullptr || pathbuf == nullptr) {
+        return FORMAT_ERRC(
+            EFAULT, "event_ring_path and pathbuf cannot be nullptr");
+    }
+    if (event_ring_path == pathbuf) {
+        return FORMAT_ERRC(EINVAL, "event_ring_path cannot alias pathbuf");
+    }
+    if (strchr(event_ring_path, '/') != nullptr) {
+        // The event ring path contains a '/' character; this is resolved
+        // relative to the current working directory
+        if (strlcpy(pathbuf, event_ring_path, pathbuf_size) >= pathbuf_size) {
+            return FORMAT_ERRC(
+                ENAMETOOLONG,
+                "event_ring_path %s overflows %zu size pathbuf",
+                event_ring_path,
+                pathbuf_size);
+        }
+        return 0;
+    }
+
+    // The event ring path does not contain a '/'; we assume this is a file
+    // name relative to the default event ring directory, which is returned
+    // by the function `monad_event_open_ring_dir_fd`
+    rc = monad_event_open_ring_dir_fd(nullptr, pathbuf, pathbuf_size);
+    if (rc != 0) {
+        return rc;
+    }
+    size_t const default_dir_len = strlen(pathbuf);
+    char *append = pathbuf + default_dir_len;
+    pathbuf_size -= default_dir_len;
+    rc = monad_path_append(&append, event_ring_path, &pathbuf_size);
+    if (rc != 0) {
+        return FORMAT_ERRC(
+            rc,
+            "monad_path_append of %s failed; partial: %s",
+            event_ring_path,
+            pathbuf);
+    }
+    return 0;
+}

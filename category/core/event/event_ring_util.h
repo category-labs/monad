@@ -33,6 +33,7 @@ extern "C"
 #endif
 
 enum monad_event_content_type : uint16_t;
+struct monad_event_ring;
 
 /// Arguments for the `monad_event_ring_init_simple` function
 struct monad_event_ring_simple_config
@@ -58,21 +59,41 @@ int monad_event_ring_check_content_type(
     struct monad_event_ring const *, enum monad_event_content_type,
     uint8_t const *schema_hash);
 
-/// Find the pid of every process that has opened the given event ring file
-/// descriptor for writing; this is slow, and somewhat brittle (it crawls
-/// proc(5) file descriptor tables so depends on your access(2) permissions)
+/// Find the pid of every process that has opened the given file descriptor
+/// for writing; this is slow, and somewhat brittle (it crawls proc(5) file
+/// descriptor tables so depends on your access(2) permissions)
 int monad_event_ring_find_writer_pids(int ring_fd, pid_t *pids, size_t *size);
 
 /// Given a path to a file (which does not need to exist), check if the
 /// associated file system supports that file being mmap'ed with MAP_HUGETLB
 int monad_check_path_supports_map_hugetlb(char const *path, bool *supported);
 
-/// Open a directory fd, for use in openat(2), to the default subdirectory on
-/// a hugetlbfs filesystem that is used to hold event ring files; also computes
-/// the full path to this directory; this is a wrapper around the generic API
-/// function `monad_hugetlbfs_open_dir_fd`
+/// Open a directory fd, for use in openat(2), to the default subdirectory
+/// that is used to hold event ring files; also computes the full path to this
+/// directory; this calls the API function `monad_hugetlbfs_open_dir_fd` unless
+/// an override has been set (see monad_event_set_ring_dir_override)
 int monad_event_open_ring_dir_fd(
-    int *dirfd, char *namebuf, size_t namebuf_size);
+    int *dirfd, char *pathbuf, size_t pathbuf_size);
+
+/// Set an override directory that monad_event_open_ring_dir_fd will use in
+/// place of the default; the default is a subdirectory under the best available
+/// hugetlbfs mount as computed by libhugetlbfs, so if you compile without
+/// libhugetlbfs support, this function should be called; intermediate
+/// subdirectories which do not already exist will be automatically created
+/// the next time monad_event_open_ring_dir_fd is called
+int monad_event_set_ring_dir_override(char const *);
+
+/// Return the override value previously set by a call to
+/// monad_event_set_ring_dir_override, or nullptr if this was not called
+char const *monad_event_get_ring_dir_override();
+
+/// Given an event ring file input (typically from the command line), resolve it
+/// to a file relative to the directory returned by monad_event_open_ring_dir_fd
+/// if it does not contain any '/' characters, i.e., if it is a "pure" filename;
+/// if it contains a '/' character then just copy it, so that it will resolve
+/// relative to getcwd(2), similar to how a UNIX shell resolves command names
+int monad_event_resolve_ring_file(
+    char const *input, char *pathbuf, size_t pathbuf_size);
 
 constexpr char MONAD_EVENT_DEFAULT_RING_DIR[] = "event-rings";
 

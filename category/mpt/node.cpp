@@ -81,7 +81,9 @@ NodeBase::NodeBase(
 Node::~Node()
 {
     for (unsigned index = 0; index < number_of_children(); ++index) {
-        move_next(index).reset();
+        if (next(index)) {
+            child_ptr(index)->~SharedPtr();
+        }
     }
 }
 
@@ -352,31 +354,17 @@ unsigned char const *NodeBase::next_data() const noexcept
     return child_data() + child_data_offset(number_of_children());
 }
 
-void *NodeBase::next(size_t const index) const noexcept
+// round up to 8-byte boundary
+unsigned char *NodeBase::next_data_aligned() noexcept
 {
-    return unaligned_load<void *>(next_data() + index * sizeof(Node *));
+    return reinterpret_cast<unsigned char *>(
+        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
 }
 
-void NodeBase::set_next(unsigned const index, void *const ptr) noexcept
+unsigned char const *NodeBase::next_data_aligned() const noexcept
 {
-    ptr ? memcpy(next_data() + index * sizeof(Node *), &ptr, sizeof(void *))
-        : memset(next_data() + index * sizeof(Node *), 0, sizeof(void *));
-}
-
-void *NodeBase::move_next(unsigned const index) noexcept
-{
-    auto const p = next(index);
-    set_next(index, nullptr);
-    return p;
-}
-
-unsigned NodeBase::get_mem_size() const noexcept
-{
-    auto const *const end = next_data() + sizeof(Node *) * number_of_children();
-    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
-    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
-    return mem_size;
+    return reinterpret_cast<unsigned char *>(
+        round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
 }
 
 uint32_t NodeBase::get_disk_size() const noexcept
@@ -387,6 +375,73 @@ uint32_t NodeBase::get_disk_size() const noexcept
     uint32_t const total_disk_size = node_disk_size + NodeBase::disk_size_bytes;
     MONAD_DEBUG_ASSERT(total_disk_size <= NodeBase::max_disk_size);
     return total_disk_size;
+}
+
+Node::SharedPtr *Node::child_ptr(unsigned index) noexcept
+{
+    return reinterpret_cast<SharedPtr *>(
+        next_data_aligned() + index * sizeof(SharedPtr));
+}
+
+Node::SharedPtr const *Node::child_ptr(unsigned index) const noexcept
+{
+    return reinterpret_cast<SharedPtr const *>(
+        next_data_aligned() + index * sizeof(SharedPtr));
+}
+
+Node::SharedPtr &Node::next(unsigned index) noexcept
+{
+    return *child_ptr(index);
+}
+
+Node::SharedPtr const &Node::next(unsigned index) const noexcept
+{
+    return *child_ptr(index);
+}
+
+void Node::set_next(unsigned index, Node::SharedPtr p) noexcept
+{
+    *child_ptr(index) = std::move(p);
+}
+
+Node::SharedPtr Node::move_next(unsigned const index) noexcept
+{
+    return std::exchange(*child_ptr(index), SharedPtr{});
+}
+
+unsigned Node::get_mem_size() const noexcept
+{
+    auto const *const end =
+        next_data_aligned() + sizeof(SharedPtr) * number_of_children();
+    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
+    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
+    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    return mem_size;
+}
+
+void *CacheNode::next(size_t const index) const noexcept
+{
+    return unaligned_load<void *>(next_data_aligned() + index * sizeof(Node *));
+}
+
+void CacheNode::set_next(unsigned const index, void *const ptr) noexcept
+{
+    ptr ? memcpy(
+              next_data_aligned() + index * sizeof(Node *),
+              &ptr,
+              sizeof(void *))
+        : memset(
+              next_data_aligned() + index * sizeof(Node *), 0, sizeof(void *));
+}
+
+unsigned CacheNode::get_mem_size() const noexcept
+{
+    auto const *const end =
+        next_data_aligned() + sizeof(Node *) * number_of_children();
+    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
+    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
+    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    return mem_size;
 }
 
 bool ChildData::is_valid() const
@@ -464,11 +519,12 @@ Node::UniquePtr make_node(
         from.data().size() + from.child_data_len(),
         node->data_data());
 
-    // move next ptrs to new node, invalidating old pointers
-    if (from.number_of_children()) {
-        auto const next_size = from.number_of_children() * sizeof(Node *);
-        std::copy_n(from.next_data(), next_size, node->next_data());
-        std::memset(from.next_data(), 0, next_size);
+    // Must initialize child pointers after copying child_data_offset
+    for (unsigned i = 0; i < node->number_of_children(); ++i) {
+        new (node->child_ptr(i)) Node::SharedPtr();
+    }
+    for (unsigned i = 0; i < from.number_of_children(); ++i) {
+        node->set_next(i, from.move_next(i));
     }
 
     return node;
@@ -519,6 +575,11 @@ Node::UniquePtr make_node(
         (byte_string_view::pointer)child_data_offsets.data(),
         child_data_offsets.size() * sizeof(uint16_t),
         node->child_off_data());
+
+    // Must initialize child pointers after copying child_data_offset
+    for (unsigned i = 0; i < node->number_of_children(); ++i) {
+        new (node->child_ptr(i)) Node::SharedPtr();
+    }
 
     for (unsigned index = 0; auto &child : children) {
         if (child.is_valid()) {

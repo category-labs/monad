@@ -551,8 +551,8 @@ public:
 
     void unset_io();
 
-    Node::UniquePtr do_update(
-        Node::UniquePtr prev_root, StateMachine &, UpdateList &&,
+    Node::SharedPtr do_update(
+        Node::SharedPtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true, bool write_root = true);
 
@@ -1022,8 +1022,8 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 }
 
 // batch upsert, updates can be nested
-Node::UniquePtr upsert(
-    UpdateAuxImpl &, uint64_t, StateMachine &, Node::UniquePtr old,
+Node::SharedPtr upsert(
+    UpdateAuxImpl &, uint64_t, StateMachine &, Node::SharedPtr old,
     UpdateList &&, bool write_root = true);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
@@ -1031,13 +1031,13 @@ Node::UniquePtr upsert(
 // Note that `src_root` may be of a different version than `dest_root`.
 // Any pre-existing trie at `dest_prefix` will be overwritten.
 // The in-memory effect is similar to a move operation.
-Node::UniquePtr copy_trie_to_dest(
-    UpdateAuxImpl &, Node &src_root, NibblesView src_prefix,
-    uint64_t src_version, Node::UniquePtr dest_root, NibblesView dest_prefx,
+Node::SharedPtr copy_trie_to_dest(
+    UpdateAuxImpl &, NodeCursor src_root, NibblesView src_prefix,
+    uint64_t src_version, Node::SharedPtr dest_root, NibblesView dest_prefx,
     uint64_t const dest_version, bool must_write_to_disk);
 
 // load all nodes as far as caching policy would allow
-size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor);
+size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor const &);
 
 //////////////////////////////////////////////////////////////////////////////
 // find
@@ -1057,17 +1057,18 @@ template <class T>
 using find_result_type = std::pair<T, find_result>;
 
 using find_cursor_result_type = find_result_type<NodeCursor>;
-using find_owning_cursor_result_type = find_result_type<OwningNodeCursor>;
+using find_owning_cursor_result_type = find_result_type<CacheNodeCursor>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
-    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
+    std::vector<
+        std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
     chunk_offset_t_hasher>;
 
 using inflight_map_owning_t = unordered_dense_map<
     virtual_chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(OwningNodeCursor &)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+        CacheNodeCursor const &)>>,
     virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread
@@ -1079,9 +1080,8 @@ struct fiber_find_request_t
     NibblesView key{};
 };
 
-static_assert(sizeof(fiber_find_request_t) == 40);
+static_assert(sizeof(fiber_find_request_t) == 48);
 static_assert(alignof(fiber_find_request_t) == 8);
-static_assert(std::is_trivially_copyable_v<fiber_find_request_t> == true);
 
 class NodeCache;
 
@@ -1091,13 +1091,13 @@ class NodeCache;
 void find_notify_fiber_future(
     UpdateAuxImpl &, inflight_map_t &,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &,
-    NodeCursor start, NibblesView key);
+    NodeCursor const &start, NibblesView key);
 
 // rodb
 void find_owning_notify_fiber_future(
     UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
-    OwningNodeCursor &start, NibblesView, uint64_t version);
+    CacheNodeCursor const &start, NibblesView, uint64_t version);
 
 // rodb load root
 void load_root_notify_fiber_future(

@@ -256,8 +256,8 @@ namespace monad::test
     using StateMachinePlainVarLen = StateMachineAlways<
         EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;
 
-    Node::UniquePtr upsert_vector(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
+    Node::SharedPtr upsert_vector(
+        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         std::vector<Update> &&update_vec, uint64_t const version = 0)
     {
         UpdateList update_ls;
@@ -268,8 +268,8 @@ namespace monad::test
     }
 
     template <class... Updates>
-    [[nodiscard]] constexpr Node::UniquePtr upsert_updates_with_version(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
+    [[nodiscard]] constexpr Node::SharedPtr upsert_updates_with_version(
+        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         uint64_t const version, Updates... updates)
     {
         UpdateList update_ls;
@@ -278,8 +278,8 @@ namespace monad::test
     }
 
     template <class... Updates>
-    [[nodiscard]] constexpr Node::UniquePtr upsert_updates(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::UniquePtr old,
+    [[nodiscard]] constexpr Node::SharedPtr upsert_updates(
+        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         Updates... updates)
     {
         return upsert_updates_with_version(
@@ -336,7 +336,7 @@ namespace monad::test
     class InMemoryTrieBase : public Base
     {
     public:
-        Node::UniquePtr root;
+        Node::SharedPtr root;
         UpdateAux<LockType> aux;
 
         InMemoryTrieBase()
@@ -372,7 +372,7 @@ namespace monad::test
         MONAD_ASYNC_NAMESPACE::AsyncIO io;
 
     public:
-        Node::UniquePtr root;
+        Node::SharedPtr root;
         UpdateAux<LockType> aux;
 
         OnDiskTrieBase()
@@ -512,7 +512,7 @@ namespace monad::test
                         MONAD_IO_BUFFERS_WRITE_SIZE)};
             MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rwbuf};
             MerkleCompute comp;
-            Node::UniquePtr root;
+            Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux<LockType> aux{
                 &io, Config.history_len}; // trie section starts from account

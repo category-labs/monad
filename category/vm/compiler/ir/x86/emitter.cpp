@@ -591,7 +591,7 @@ namespace monad::vm::compiler::native
         , as_{init_code_holder(rt, config.asm_log_path)}
         , epilogue_label_{as_.newNamedLabel("ContractEpilogue")}
         , error_label_{as_.newNamedLabel("Error")}
-        , jump_table_label_{as_.newNamedLabel("JumpTable")}
+        , jump_table_label_{std::nullopt}
         , keep_stack_in_next_block_{}
         , gpq256_regs_{Gpq256{x86::r12, x86::r13, x86::r14, x86::r15}, Gpq256{x86::r8, x86::r9, x86::r10, x86::r11}, Gpq256{x86::rcx, x86::rsi, x86::rdx, x86::rdi}}
         , bytecode_size_{codesize}
@@ -642,29 +642,32 @@ namespace monad::vm::compiler::native
         // relative label distance ourselves, instead of asmjit doing the
         // same calculation again and again for `as_.embedLabelDelta`.
         as_.align(asmjit::AlignMode::kData, 4);
-        as_.bind(jump_table_label_);
-        int32_t const error_offset = [&] {
-            int64_t const x = std::bit_cast<int64_t>(
-                code_holder_.labelOffset(error_label_) -
-                code_holder_.labelOffset(jump_table_label_));
-            MONAD_VM_DEBUG_ASSERT(
-                x <= std::numeric_limits<int32_t>::max() &&
-                x >= std::numeric_limits<int32_t>::min());
-            return static_cast<int32_t>(x);
-        }();
-        size_t error_offset_repeat_count = 0;
-        for (size_t bid = 0; bid < *bytecode_size_; ++bid) {
-            auto lbl = jump_dests_.find(bid);
-            if (lbl != jump_dests_.end()) {
-                as_.embedInt32(error_offset, error_offset_repeat_count);
-                error_offset_repeat_count = 0;
-                as_.embedLabelDelta(lbl->second, jump_table_label_, 4);
+        if (jump_table_label_) {
+            as_.bind(jump_table_label_.value());
+            int32_t const error_offset = [&] {
+                int64_t const x = std::bit_cast<int64_t>(
+                    code_holder_.labelOffset(error_label_) -
+                    code_holder_.labelOffset(jump_table_label_.value()));
+                MONAD_VM_DEBUG_ASSERT(
+                    x <= std::numeric_limits<int32_t>::max() &&
+                    x >= std::numeric_limits<int32_t>::min());
+                return static_cast<int32_t>(x);
+            }();
+            size_t error_offset_repeat_count = 0;
+            for (size_t bid = 0; bid < *bytecode_size_; ++bid) {
+                auto lbl = jump_dests_.find(bid);
+                if (lbl != jump_dests_.end()) {
+                    as_.embedInt32(error_offset, error_offset_repeat_count);
+                    error_offset_repeat_count = 0;
+                    as_.embedLabelDelta(
+                        lbl->second, jump_table_label_.value(), 4);
+                }
+                else {
+                    ++error_offset_repeat_count;
+                }
             }
-            else {
-                ++error_offset_repeat_count;
-            }
+            as_.embedInt32(error_offset, error_offset_repeat_count);
         }
-        as_.embedInt32(error_offset, error_offset_repeat_count);
 
         static char const *const ro_section_name = "ro";
         static auto const ro_section_name_len = 2;
@@ -3455,6 +3458,8 @@ namespace monad::vm::compiler::native
                 stack_.remove_general_reg(*dest);
             }
         }
+        jump_table_label_ = jump_table_label_ ? jump_table_label_
+                                              : as_.newNamedLabel("JumpTable");
         if (std::holds_alternative<Gpq256>(dest_op)) {
             Gpq256 const &gpq = std::get<Gpq256>(dest_op);
             as_.cmp(gpq[0], *bytecode_size_);
@@ -3463,7 +3468,7 @@ namespace monad::vm::compiler::native
             as_.or_(gpq[1], gpq[3]);
             as_.jnz(error_label_);
 
-            as_.lea(x86::rax, x86::ptr(jump_table_label_));
+            as_.lea(x86::rax, x86::ptr(jump_table_label_.value()));
             as_.movsxd(x86::rcx, x86::dword_ptr(x86::rax, gpq[0], 2));
             as_.add(x86::rax, x86::rcx);
             as_.jmp(x86::rax);
@@ -3489,7 +3494,7 @@ namespace monad::vm::compiler::native
             as_.or_(x86::rdx, m);
             as_.jnz(error_label_);
 
-            as_.lea(x86::rax, x86::ptr(jump_table_label_));
+            as_.lea(x86::rax, x86::ptr(jump_table_label_.value()));
             as_.movsxd(x86::rcx, x86::dword_ptr(x86::rax, x86::rcx, 2));
             as_.add(x86::rax, x86::rcx);
             as_.jmp(x86::rax);

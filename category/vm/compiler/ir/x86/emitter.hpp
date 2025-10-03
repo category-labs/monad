@@ -1090,7 +1090,7 @@ namespace monad::vm::compiler::native
         asmjit::x86::Assembler as_;
         asmjit::Label epilogue_label_;
         asmjit::Label error_label_;
-        asmjit::Label jump_table_label_;
+        std::optional<asmjit::Label> jump_table_label_;
         Stack stack_;
         bool keep_stack_in_next_block_;
         std::array<Gpq256, 3> gpq256_regs_;

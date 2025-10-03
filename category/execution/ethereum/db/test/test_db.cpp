@@ -678,6 +678,61 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_read_and_parse_transaction(second_block);
 }
 
+TYPED_TEST(DBTest, get_transactions)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    TrieDb tdb{this->db};
+
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+
+    constexpr uint64_t block_number = 0;
+    constexpr unsigned total_txs = 4096;
+    std::vector<Transaction> transactions;
+    transactions.reserve(total_txs);
+    Transaction tx{
+        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .nonce = 9,
+        .max_fee_per_gas = price,
+        .gas_limit = 21'000,
+        .value = value,
+        .to = to_addr};
+    for (unsigned i = 0; i < total_txs; ++i) {
+        transactions.emplace_back(tx);
+        tx.nonce++;
+    }
+    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<Receipt> receipts;
+    receipts.resize(transactions.size());
+    call_frames.resize(receipts.size());
+    std::vector<Address> senders = recover_senders(transactions);
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = block_number},
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto const txs_res = get_transactions(this->db, block_number);
+    ASSERT_TRUE(txs_res.has_value());
+    auto const txs = txs_res.value();
+    EXPECT_EQ(txs.size(), transactions.size());
+    for (size_t i = 0; i < txs.size(); ++i) {
+        EXPECT_EQ(txs[i], transactions[i]);
+    }
+}
+
 TYPED_TEST(DBTest, to_json)
 {
     // TODO: typed test doesn't really make sense here, split to two different

@@ -40,6 +40,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -125,6 +126,9 @@ namespace
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
         vm::VM vm;
     };
+
+    using OnDiskTrieDbWithFileFixture =
+        OnDiskDbWithFileFixtureBase<OnDiskMachine>;
 
     ///////////////////////////////////////////
     // DB Getters
@@ -687,6 +691,79 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[4], second_block, 1);
     verify_read_and_parse_receipt(second_block);
     verify_read_and_parse_transaction(second_block);
+}
+
+TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    TrieDb tdb{this->db};
+
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+
+    constexpr uint64_t block_number = 0;
+    constexpr unsigned total_txs = 4096;
+    std::vector<Transaction> transactions;
+    transactions.reserve(total_txs);
+    Transaction tx{
+        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .nonce = 9,
+        .max_fee_per_gas = price,
+        .gas_limit = 21'000,
+        .value = value,
+        .to = to_addr};
+    for (unsigned i = 0; i < total_txs; ++i) {
+        transactions.emplace_back(tx);
+        tx.nonce++;
+    }
+    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<Receipt> receipts;
+    receipts.resize(transactions.size());
+    call_frames.resize(receipts.size());
+    std::vector<Address> senders = recover_senders(transactions);
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = block_number},
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto verify_transactions = [&](auto &db) {
+        auto const txs_res = get_transactions(db, block_number);
+        ASSERT_TRUE(txs_res.has_value());
+        auto const txs = txs_res.value();
+        EXPECT_EQ(txs.size(), transactions.size());
+        for (size_t i = 0; i < txs.size(); ++i) {
+            EXPECT_EQ(txs[i], transactions[i]);
+        }
+    };
+
+    // RWDb
+    verify_transactions(this->db);
+
+    { // nonblocking RODb
+        mpt::RODb rodb{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+        verify_transactions(rodb);
+    }
+
+    { // blocking read-only Db
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+        mpt::Db rodb{io_ctx};
+        verify_transactions(rodb);
+    }
 }
 
 TYPED_TEST(DBTest, to_json)

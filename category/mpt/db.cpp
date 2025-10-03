@@ -470,6 +470,8 @@ struct OnDiskWithWorkerThreadImpl
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<find_owning_cursor_result_type>>
                 find_owning_cursor_promises;
+            ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
+                traverse_promises;
 
             Comms request;
             unsigned did_nothing_count = 0;
@@ -500,6 +502,25 @@ struct OnDiskWithWorkerThreadImpl
                                 req->version);
                         }
                     }
+                    else if (auto *req = std::get_if<4>(&request);
+                             req != nullptr) {
+                        // Ditto to above
+                        traverse_promises.emplace_back(
+                            std::move(*req->promise));
+                        req->promise = &traverse_promises.back();
+                        // verify version is valid
+                        if (aux.version_is_valid_ondisk(req->version)) {
+                            req->promise->set_value(preorder_traverse_ondisk(
+                                aux,
+                                std::move(req->root),
+                                req->machine,
+                                req->version,
+                                req->concurrency_limit));
+                        }
+                        else {
+                            req->promise->set_value(false);
+                        }
+                    }
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
@@ -515,7 +536,12 @@ struct OnDiskWithWorkerThreadImpl
                            .future_has_been_destroyed()) {
                     find_owning_cursor_promises.pop_front();
                 }
-                if (!find_owning_cursor_promises.empty()) {
+                while (!traverse_promises.empty() &&
+                       traverse_promises.front().future_has_been_destroyed()) {
+                    traverse_promises.pop_front();
+                }
+                if (!find_owning_cursor_promises.empty() ||
+                    !traverse_promises.empty()) {
                     did_nothing = false;
                 }
                 if (did_nothing) {
@@ -1038,6 +1064,26 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
         }
         return {};
     }
+
+    bool traverse_fiber_blocking(
+        Node::SharedPtr node, TraverseMachine &machine, uint64_t const version,
+        size_t const concurrency_limit)
+    {
+        threadsafe_boost_fibers_promise<bool> promise;
+        auto fut = promise.get_future();
+        comms_.enqueue(FiberTraverseRequest{
+            .promise = &promise,
+            .root = std::move(node),
+            .machine = machine,
+            .version = version,
+            .concurrency_limit = concurrency_limit});
+        // promise is racily emptied after this point
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+        return fut.get();
+    }
 };
 
 RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
@@ -1105,6 +1151,19 @@ RODb::find(NibblesView const key, uint64_t const block_id) const
     MONAD_ASSERT(impl_);
     CacheNodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
     return find(cursor, key, block_id);
+}
+
+bool RODb::traverse(
+    CacheNodeCursor const &cursor, TraverseMachine &machine,
+    uint64_t const block_id, size_t const concurrency_limit)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(cursor.is_valid());
+    return impl_->traverse_fiber_blocking(
+        copy_node<Node>(cursor.node.get()),
+        machine,
+        block_id,
+        concurrency_limit);
 }
 
 Db::Db(StateMachine &machine)

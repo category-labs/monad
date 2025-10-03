@@ -38,11 +38,13 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/db_error.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/traverse_util.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
@@ -895,6 +897,50 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
     return block_ids;
 }
+
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
+Result<std::vector<Transaction>> get_transactions(
+    DBType &db, uint64_t const block_number, bytes32_t const &block_id)
+{
+    Nibbles const prefix =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    BOOST_OUTCOME_TRY(
+        auto const cursor,
+        db.find(concat(NibblesView{prefix}, TRANSACTION_NIBBLE), block_number));
+    // traverse from cursor
+    std::vector<Transaction> txs;
+    txs.reserve(1000);
+    GetAllMachine machine{
+        [&txs](NibblesView const path, byte_string_view value) {
+            // nibble size is even and first nibble starts at index 0
+            MONAD_ASSERT(path.nibble_size() == path.data_size() * 2);
+            // convert nibbles to byte_string
+            byte_string_view raw{path.data(), path.data_size()};
+            auto const index_res = rlp::decode_unsigned<uint32_t>(raw);
+            MONAD_ASSERT(index_res.has_value());
+            uint32_t const idx = index_res.value();
+            auto tx_res = decode_transaction_db(value);
+            MONAD_ASSERT(tx_res.has_value());
+            auto &tx = tx_res.value().first;
+            if (idx >= txs.size()) {
+                txs.resize(idx + 1);
+            }
+            txs[idx] = std::move(tx);
+        }};
+    if (db.traverse(cursor, machine, block_number) == false) {
+        MONAD_ASSERT(db.find({}, block_number).has_error());
+        return DbError::version_no_longer_exist;
+    }
+    return txs;
+}
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
 bool for_each_code(
     mpt::Db &db, uint64_t const block,

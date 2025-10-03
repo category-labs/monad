@@ -34,7 +34,8 @@ namespace test_resource
 
     // ethereum tests
     inline auto const ethereum_tests_dir = third_party_dir / "ethereum-tests";
-    inline auto const internal_blockchain_tests_dir = test_data_dir / "data" / "shared";
+    inline auto const internal_blockchain_tests_dir =
+        test_data_dir / "data" / "shared";
 
     inline auto const checkpoint_dir = test_data_dir / "data" / "checkpoint";
 
@@ -93,7 +94,7 @@ inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_ICODE = vm::make_shared_intercode(H_CODE);
 
 inline bytes32_t commit_sequential(
-    Db &db, StateDeltas const &deltas, Code const &code,
+    monad::Db &db, StateDeltas const &deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
     std::vector<std::vector<CallFrame>> const &call_frames = {},
     std::vector<Address> const &senders = {},

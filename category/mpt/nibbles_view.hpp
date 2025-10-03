@@ -206,6 +206,11 @@ public:
     {
     }
 
+    unsigned char const *data() const noexcept
+    {
+        return data_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;

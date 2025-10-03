@@ -33,6 +33,7 @@
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -73,7 +74,6 @@ using namespace monad::test;
 
 namespace
 {
-    constexpr unsigned DBTEST_HISTORY_LENGTH = 1000;
 
     template <class... Updates>
     Node::SharedPtr upsert_updates_flat_list(
@@ -127,48 +127,12 @@ namespace
         StateMachineAlwaysMerkle machine;
         Db db{
             machine,
-            OnDiskDbConfig{.fixed_history_length = DBTEST_HISTORY_LENGTH}};
+            OnDiskDbConfig{.fixed_history_length = MPT_TEST_HISTORY_LENGTH}};
         Node::SharedPtr root;
     };
 
-    std::filesystem::path create_temp_file(long size_gb)
-    {
-        std::filesystem::path const filename{
-            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_db_test_XXXXXX"};
-        int const fd = ::mkstemp((char *)filename.native().data());
-        MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(-1 != ::ftruncate(fd, size_gb * 1024 * 1024 * 1024));
-        ::close(fd);
-        return filename;
-    }
-
-    struct OnDiskDbWithFileFixture : public ::testing::Test
-    {
-        std::filesystem::path const dbname;
-        StateMachineAlwaysMerkle machine;
-        OnDiskDbConfig config;
-        Db db;
-        Node::SharedPtr root;
-
-        OnDiskDbWithFileFixture()
-            : dbname{create_temp_file(8)}
-            , machine{StateMachineAlwaysMerkle{}}
-            , config{OnDiskDbConfig{
-                  .compaction = true,
-                  .sq_thread_cpu = std::nullopt,
-                  .dbname_paths = {dbname},
-                  .fixed_history_length = DBTEST_HISTORY_LENGTH}}
-            , db{machine, config}
-            , root{}
-        {
-        }
-
-        ~OnDiskDbWithFileFixture()
-        {
-            std::filesystem::remove(dbname);
-        }
-    };
+    using OnDiskDbWithFileFixture =
+        OnDiskDbWithFileFixtureBase<StateMachineAlwaysMerkle>;
 
     struct OnDiskDbWithFileAsyncFixture : public OnDiskDbWithFileFixture
     {
@@ -518,7 +482,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 
 TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
 {
-    constexpr uint64_t num_versions = DBTEST_HISTORY_LENGTH + 1;
+    constexpr uint64_t num_versions = MPT_TEST_HISTORY_LENGTH + 1;
     // keep all historical roots in memory
     std::array<Node::SharedPtr, num_versions> roots;
 
@@ -965,7 +929,7 @@ TEST_F(
         }
     };
 
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     constexpr size_t nkeys = 20;
     auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
     uint64_t version = 0;
@@ -978,7 +942,7 @@ TEST_F(
         root = db.upsert(std::move(root), std::move(ls), version);
     };
 
-    while (version < DBTEST_HISTORY_LENGTH - 1) {
+    while (version < MPT_TEST_HISTORY_LENGTH - 1) {
         upsert_once();
         ++version;
     }
@@ -1167,7 +1131,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
-        .fixed_history_length = DBTEST_HISTORY_LENGTH};
+        .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
     Db db{machine, config};
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
@@ -1186,7 +1150,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     db.move_trie_version_forward(0, start_version);
     EXPECT_EQ(rodb.get_earliest_version(), start_version);
     EXPECT_EQ(rodb.get_latest_version(), start_version);
-    EXPECT_EQ(rodb.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(rodb.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     // upsert one key in reverse order
     constexpr uint64_t min_version = 900;
@@ -1206,7 +1170,7 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
         db.upsert(db.load_root_for_version(v - 1), std::move(ls), v);
         EXPECT_EQ(
             rodb.get_earliest_version(),
-            std::max(v - DBTEST_HISTORY_LENGTH + 1, min_version));
+            std::max(v - MPT_TEST_HISTORY_LENGTH + 1, min_version));
         EXPECT_EQ(rodb.get_latest_version(), v);
     }
 
@@ -1229,7 +1193,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
-        .fixed_history_length = DBTEST_HISTORY_LENGTH};
+        .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
     Db db{machine, config};
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db rodb{io_ctx};
@@ -2105,10 +2069,10 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
 
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     // continuous upsert() and move_trie_version_forward() leads to
     // discontinuity in history
@@ -2172,7 +2136,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     uint64_t const dest_block_id = ro_db.get_history_length() + 5;
     db.move_trie_version_forward(block_id, dest_block_id);
 
-    // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
+    // Now valid version are 6-9, 1005 (MPT_TEST_HISTORY_LENGTH+5)
     EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
     EXPECT_EQ(
         ro_db.get_earliest_version(),
@@ -2241,10 +2205,10 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 
 TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
 {
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
@@ -2281,10 +2245,10 @@ TEST_F(
     OnDiskDbWithFileFixture,
     move_trie_version_forward_clear_history_versions_out_of_range)
 {
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
@@ -2308,7 +2272,7 @@ TEST_F(
     uint64_t const dest_block_id = ro_db.get_history_length() + 5;
     db.move_trie_version_forward(block_id, dest_block_id);
 
-    // Now valid version are 6-9, 1005 (DBTEST_HISTORY_LENGTH+5)
+    // Now valid version are 6-9, 1005 (MPT_TEST_HISTORY_LENGTH+5)
     EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
     auto const earliest_block_id = ro_db.get_earliest_version();
     EXPECT_EQ(
@@ -2337,7 +2301,8 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 
     // fille rwdb with some blocks
     auto const &kv = fixed_updates::kv;
-    for (uint64_t block_id = 0; block_id < DBTEST_HISTORY_LENGTH; ++block_id) {
+    for (uint64_t block_id = 0; block_id < MPT_TEST_HISTORY_LENGTH;
+         ++block_id) {
         root = upsert_updates_flat_list(
             std::move(root),
             db,
@@ -2346,16 +2311,16 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
             make_update(kv[0].first, kv[0].second));
     }
 
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
-    EXPECT_EQ(ro_db.get_latest_version(), DBTEST_HISTORY_LENGTH - 1);
+    EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_latest_version(), MPT_TEST_HISTORY_LENGTH - 1);
     auto const res = ro_db.find(prefix + kv[0].first, 0);
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(res.value().node->value(), kv[0].second);
 
     uint64_t const end_history_length =
-        DBTEST_HISTORY_LENGTH - DBTEST_HISTORY_LENGTH / 2;
+        MPT_TEST_HISTORY_LENGTH - MPT_TEST_HISTORY_LENGTH / 2;
     uint64_t const expected_earliest_block =
-        DBTEST_HISTORY_LENGTH - end_history_length;
+        MPT_TEST_HISTORY_LENGTH - end_history_length;
 
     // ro db starts reading from block 0, increment read block id when fail
     // reading current block
@@ -2393,7 +2358,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
         config.fixed_history_length = *config.fixed_history_length - 1;
         Db new_db{machine, config};
         EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
-        EXPECT_EQ(new_db.get_latest_version(), DBTEST_HISTORY_LENGTH - 1);
+        EXPECT_EQ(new_db.get_latest_version(), MPT_TEST_HISTORY_LENGTH - 1);
     }
 
     EXPECT_EQ(ro_db.get_history_length(), end_history_length);
@@ -2409,12 +2374,12 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 
 TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 {
-    EXPECT_EQ(db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     // Insert more than history length number of blocks
     auto const &kv = fixed_updates::kv;
     auto const prefix = 0x00_hex;
-    uint64_t const max_block_id = DBTEST_HISTORY_LENGTH + 10;
+    uint64_t const max_block_id = MPT_TEST_HISTORY_LENGTH + 10;
     for (uint64_t block_id = 0; block_id <= max_block_id; ++block_id) {
         root = upsert_updates_flat_list(
             std::move(root),
@@ -2427,23 +2392,25 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     EXPECT_TRUE(db.find(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(db.find(prefix + kv[1].first, max_block_id).has_value());
-    auto const min_block_num_before = max_block_id - DBTEST_HISTORY_LENGTH + 1;
+    auto const min_block_num_before =
+        max_block_id - MPT_TEST_HISTORY_LENGTH + 1;
     EXPECT_EQ(db.get_earliest_version(), min_block_num_before);
     EXPECT_TRUE(
         db.find(prefix + kv[1].first, min_block_num_before).has_value());
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    EXPECT_EQ(ro_db.get_history_length(), DBTEST_HISTORY_LENGTH);
+    EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, max_block_id).has_value());
     EXPECT_EQ(
-        ro_db.get_earliest_version(), max_block_id - DBTEST_HISTORY_LENGTH + 1);
+        ro_db.get_earliest_version(),
+        max_block_id - MPT_TEST_HISTORY_LENGTH + 1);
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, ro_db.get_earliest_version())
                     .has_value());
 
     // Reopen rwdb with a shorter history length
-    config.fixed_history_length = DBTEST_HISTORY_LENGTH / 2;
+    config.fixed_history_length = MPT_TEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
         Db new_rw{machine, config};
@@ -2464,7 +2431,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
         ro_db.find(prefix + kv[1].first, min_block_num_after - 1).has_error());
 
     // Reopen rwdb with a longer history length
-    config.fixed_history_length = DBTEST_HISTORY_LENGTH;
+    config.fixed_history_length = MPT_TEST_HISTORY_LENGTH;
     Db new_rw{machine, config};
     EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(new_rw.get_earliest_version(), min_block_num_after);

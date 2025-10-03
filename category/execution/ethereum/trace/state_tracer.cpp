@@ -20,10 +20,12 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/variant.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -107,20 +109,85 @@ namespace trace
         state_deltas_to_json(state_deltas, state, storage_);
     }
 
-    void run_tracer(StateTracer const &tracer, State &state)
+    AccessListTracer::AccessListTracer(
+        nlohmann::json &storage, Address const &sender,
+        Address const &beneficiary, std::optional<Address> const &to,
+        std::span<std::optional<Address> const> const authorities)
+        : storage_(storage)
     {
-        if (std::holds_alternative<PrestateTracer>(tracer)) {
-            PrestateTracer prestate = std::get<PrestateTracer>(tracer);
-            prestate.encode(state.original(), state);
-            return;
+        excluded_addresses_.insert(sender);
+        excluded_addresses_.insert(beneficiary);
+
+        if (to.has_value()) {
+            excluded_addresses_.insert(*to);
         }
 
-        if (std::holds_alternative<StateDiffTracer>(tracer)) {
-            StateDiffTracer statediff = std::get<StateDiffTracer>(tracer);
-            statediff.encode(statediff.trace(state), state);
-            return;
+        for (auto const &authority : authorities) {
+            if (authority.has_value()) {
+                excluded_addresses_.insert(*authority);
+            }
         }
     }
+
+    template <Traits traits>
+    void AccessListTracer::encode(State &state)
+    {
+        auto access_list = json::array();
+        for (auto const &[address, current_stack] : state.current()) {
+            auto keys = json::array();
+            auto const &current_account_state = current_stack.recent();
+            for (auto const &key :
+                 current_account_state.get_accessed_storage()) {
+                keys.push_back(bytes_to_hex(key.bytes));
+            }
+
+            // If an address is excluded because it's always considered warm, we
+            // still want to include it in the access list if it's had storage
+            // keys set by this transaction.
+            auto const exclude =
+                keys.empty() && should_exclude_address<traits>(address);
+
+            if (!exclude) {
+                access_list.push_back(json::object({
+                    {"address", bytes_to_hex(address.bytes)},
+                    {"storageKeys", std::move(keys)},
+                }));
+            }
+        }
+
+        storage_ = std::move(access_list);
+    }
+
+    EXPLICIT_TRAITS_MEMBER(AccessListTracer::encode);
+
+    template <Traits traits>
+    bool AccessListTracer::should_exclude_address(Address const &addr) const
+    {
+        return excluded_addresses_.contains(addr) ||
+               is_precompile<traits>(addr);
+    }
+
+    EXPLICIT_TRAITS_MEMBER(AccessListTracer::should_exclude_address);
+
+    template <Traits traits>
+    void run_tracer(StateTracer &tracer, State &state)
+    {
+        return std::visit(
+            overloaded{
+                [](std::monostate) {},
+                [&state](PrestateTracer &prestate) {
+                    prestate.encode(state.original(), state);
+                },
+                [&state](StateDiffTracer &statediff) {
+                    statediff.encode(statediff.trace(state), state);
+                },
+                [&state](AccessListTracer &access_list) {
+                    access_list.encode<traits>(state);
+                }},
+            tracer);
+    }
+
+    EXPLICIT_TRAITS(run_tracer);
 
     // Json serialization
     json storage_to_json(AccountState::StorageMap const &storage)

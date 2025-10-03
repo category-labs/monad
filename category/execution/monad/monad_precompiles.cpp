@@ -73,6 +73,9 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 bool is_precompile(Address const &address)
 {
+    // Note that if new Monad-specific precompiles are added, identifying them
+    // as a precompile should be gated behind the revision they were activated
+    // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA);
 }

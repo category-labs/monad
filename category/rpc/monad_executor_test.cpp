@@ -38,8 +38,8 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -2805,5 +2805,309 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             nlohmann::json::from_cbor(encoded_pre_state_trace));
     }
 
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, access_list_trace)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    // SSTORE(1, 1)
+    static constexpr auto contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+    auto const contract_code = 0x6001600155_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
+
+    auto const header = BlockHeader{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}},
+            {contract_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = contract_code_hash}}}}},
+        Code{
+            {contract_code_hash, contract_icode},
+        },
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = contract_address,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+
+    {
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            ACCESS_LIST_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        auto const *const expected = R"([
+            {
+                "address" : "0x00000000000000000000000000000000aaaaaaaa",
+                "storageKeys" : [
+                    "0x0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+            }
+        ])";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_trace));
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, access_list_trace_empty)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    // STOP
+    static constexpr auto contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+    auto const contract_code = 0x00_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
+
+    auto const header = BlockHeader{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}},
+            {contract_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = contract_code_hash}}}}},
+        Code{
+            {contract_code_hash, contract_icode},
+        },
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = contract_address,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+
+    {
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            ACCESS_LIST_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+        EXPECT_EQ(ctx.result->encoded_trace, nullptr);
+        EXPECT_EQ(ctx.result->encoded_trace_len, 0);
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, access_list_trace_nested)
+{
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    // SSTORE(0, 2); CALL(b)
+    static constexpr auto a_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+    auto const a_code =
+        0x60025f555f5f5f5f5f7300000000000000000000000000000000bbbbbbbb5af1_bytes;
+    auto const a_code_hash = to_bytes(keccak256(a_code));
+    auto const a_icode = monad::vm::make_shared_intercode(a_code);
+
+    // SSTORE(1, 1)
+    static constexpr auto b_address =
+        0x00000000000000000000000000000000bbbbbbbb_address;
+    auto const b_code = 0x6001600155_bytes;
+    auto const b_code_hash = to_bytes(keccak256(b_code));
+    auto const b_icode = monad::vm::make_shared_intercode(b_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}},
+            {a_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = a_code_hash}}}},
+            {b_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = b_code_hash}}}}},
+        Code{
+            {a_code_hash, a_icode},
+            {b_code_hash, b_icode},
+        },
+        BlockHeader{.number = 0});
+    BlockHeader const header{.number = 0};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = a_address,
+        .data = byte_string{},
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        ACCESS_LIST_TRACER,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+    std::vector<uint8_t> const encoded_trace(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    auto const *const expected = R"([
+        {
+            "address" : "0x00000000000000000000000000000000aaaaaaaa",
+            "storageKeys" : [
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+        },
+        {
+            "address" : "0x00000000000000000000000000000000bbbbbbbb",
+            "storageKeys" : [
+                "0x0000000000000000000000000000000000000000000000000000000000000001"
+            ]
+        }
+    ])";
+
+    EXPECT_EQ(
+        nlohmann::json::parse(expected),
+        nlohmann::json::from_cbor(encoded_trace));
+
+    monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
 }

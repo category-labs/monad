@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>

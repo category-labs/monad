@@ -43,8 +43,8 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -189,7 +189,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer state_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
     {
         Transaction enriched_txn{txn};
 
@@ -326,7 +326,7 @@ namespace
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
-        trace::run_tracer(state_tracer, state);
+        trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
     }
@@ -942,6 +942,13 @@ struct monad_executor
                             return trace::PrestateTracer{state_trace};
                         case STATEDIFF_TRACER:
                             return trace::StateDiffTracer{state_trace};
+                        case ACCESS_LIST_TRACER:
+                            return trace::AccessListTracer{
+                                state_trace,
+                                sender,
+                                block_header.beneficiary,
+                                transaction.to,
+                                authorities};
                         }
                         MONAD_ASSERT(false);
                     }();

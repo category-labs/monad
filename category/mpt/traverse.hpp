@@ -72,6 +72,7 @@ namespace detail
         ++traverse.level;
         if (!traverse.down(branch, node)) {
             --traverse.level;
+            traverse.up(branch, node);
             return true;
         }
         for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {

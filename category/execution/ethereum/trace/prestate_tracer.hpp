@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -67,9 +68,39 @@ namespace trace
         nlohmann::json &storage_;
     };
 
-    using StateTracer =
-        std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
-    void run_tracer(StateTracer const &tracer, State &state);
+    struct AccessListTracer
+    {
+        AccessListTracer(
+            nlohmann::json &storage, Address const &sender,
+            Address const &beneficiary, std::optional<Address> const &to,
+            std::vector<std::optional<Address>> const &authorities)
+            : storage_(storage)
+            , sender_(sender)
+            , beneficiary_(beneficiary)
+            , to_(to)
+            , authorities_(authorities)
+        {
+        }
+
+        template <Traits traits>
+        void encode(State &);
+
+    private:
+        nlohmann::json &storage_;
+        Address const &sender_;
+        Address const &beneficiary_;
+        std::optional<Address> const &to_;
+        std::vector<std::optional<Address>> const &authorities_;
+
+        template <Traits traits>
+        bool should_exclude_address(Address const &) const;
+    };
+
+    using StateTracer = std::variant<
+        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
+
+    template <Traits traits>
+    void run_tracer(StateTracer &tracer, State &state);
 
     nlohmann::json
     state_to_json(Map<Address, OriginalAccountState> const &, State &);

@@ -234,7 +234,7 @@ namespace
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
-        trace::run_tracer(state_tracer, state);
+        trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
     }
@@ -694,6 +694,13 @@ struct monad_eth_call_executor
                             return trace::PrestateTracer{state_trace};
                         case STATEDIFF_TRACER:
                             return trace::StateDiffTracer{state_trace};
+                        case ACCESS_LIST_TRACER:
+                            return trace::AccessListTracer{
+                                state_trace,
+                                sender,
+                                block_header.beneficiary,
+                                transaction.to,
+                                authorities};
                         }
                         MONAD_ASSERT(false);
                     }();

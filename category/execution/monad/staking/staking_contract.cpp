@@ -1998,8 +1998,8 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
 
 void StakingContract::emit_log(Receipt::Log const &log)
 {
-    state_.store_log(log);
-    call_tracer_.on_log(log);
+    size_t const receipt_index = state_.store_log(log);
+    call_tracer_.on_log(receipt_index, log);
 }
 
 MONAD_STAKING_NAMESPACE_END

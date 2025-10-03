@@ -323,7 +323,8 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
 
     uint256_t get_balance(Address const &account)
     {
-        return intx::be::load<uint256_t>(state.get_balance(account));
+        return intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(account));
     }
 };
 
@@ -4505,7 +4506,9 @@ TEST_F(StakeLatest, withdrawal_state_override)
     // make the contract insolvent. this could be achieved by an eth call state
     // override.
     state.subtract_from_balance(
-        STAKING_CA, intx::be::load<uint256_t>(state.get_balance(STAKING_CA)));
+        STAKING_CA,
+        intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(STAKING_CA)));
 
     EXPECT_THROW((void)withdraw(val.id, auth_address, 1), MonadException);
 }

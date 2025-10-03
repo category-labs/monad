@@ -140,16 +140,19 @@ namespace
                 auto const balance = intx::be::unsafe::load<uint256_t>(
                     state_delta.balance.value().data());
                 if (balance >
-                    intx::be::load<uint256_t>(state.get_balance(address))) {
+                    intx::be::load<uint256_t>(
+                        state.get_current_balance_pessimistic(address))) {
                     state.add_to_balance(
                         address,
                         balance - intx::be::load<uint256_t>(
-                                      state.get_balance(address)));
+                                      state.get_current_balance_pessimistic(
+                                          address)));
                 }
                 else {
                     state.subtract_from_balance(
                         address,
-                        intx::be::load<uint256_t>(state.get_balance(address)) -
+                        intx::be::load<uint256_t>(
+                            state.get_current_balance_pessimistic(address)) -
                             balance);
                 }
             }

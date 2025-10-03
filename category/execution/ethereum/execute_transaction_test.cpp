@@ -121,8 +121,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(receipt.value().status, 1u);
     {
         State state{bs, Incarnation{0, 0}};
-        auto const final_balance_uint256 =
-            intx::be::load<uint256_t>(state.get_balance(from));
+        auto const final_balance_uint256 = intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(from));
         ASSERT_TRUE(
             final_balance_uint256 < std::numeric_limits<uint64_t>::max());
         auto const final_balance = static_cast<uint64_t>(final_balance_uint256);
@@ -382,8 +382,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         {
             State state{bs, Incarnation{0, 0}};
-            auto const final_balance_uint256 =
-                intx::be::load<uint256_t>(state.get_balance(from));
+            auto const final_balance_uint256 = intx::be::load<uint256_t>(
+                state.get_current_balance_pessimistic(from));
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());
             auto const final_balance =
@@ -437,8 +437,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         {
             State state{bs, Incarnation{0, 0}};
-            auto const final_balance_uint256 =
-                intx::be::load<uint256_t>(state.get_balance(from));
+            auto const final_balance_uint256 = intx::be::load<uint256_t>(
+                state.get_current_balance_pessimistic(from));
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());
             auto const final_balance =
@@ -539,8 +539,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
         {
             State state{bs, Incarnation{0, 0}};
-            auto const final_balance_uint256 =
-                intx::be::load<uint256_t>(state.get_balance(from));
+            auto const final_balance_uint256 = intx::be::load<uint256_t>(
+                state.get_current_balance_pessimistic(from));
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());
             auto const final_balance =

@@ -110,7 +110,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     {
         State state{bs, Incarnation{0, 0}};
         EXPECT_EQ(
-            intx::be::load<uint256_t>(state.get_balance(from)),
+            intx::be::load<uint256_t>(
+                state.get_current_balance_pessimistic(from)),
             uint256_t{55'999'999'999'470'000});
         EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
     }
@@ -268,7 +269,8 @@ TEST(TransactionProcessor, refunds_delete)
         {
             State state{bs, Incarnation{0, 0}};
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
+                intx::be::load<uint256_t>(
+                    state.get_current_balance_pessimistic(from)),
                 uint256_t{40'296'100'000'000'000});
         }
     }
@@ -316,7 +318,8 @@ TEST(TransactionProcessor, refunds_delete)
         {
             State state{bs, Incarnation{0, 0}};
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
+                intx::be::load<uint256_t>(
+                    state.get_current_balance_pessimistic(from)),
                 uint256_t{
                     37'093'800'000'000'000 + (120'000 * 100'000'000'000)});
         }
@@ -404,7 +407,8 @@ TEST(TransactionProcessor, refunds_delete_then_set)
         {
             State state{bs, Incarnation{0, 0}};
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
+                intx::be::load<uint256_t>(
+                    state.get_current_balance_pessimistic(from)),
                 uint256_t{52'559'100'000'000'000 + (2800 * 100'000'000'000)});
         }
     }

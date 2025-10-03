@@ -186,7 +186,7 @@ public:
         validate_exact_balance_ = true;
     }
 
-    bytes32_t get_balance()
+    bytes32_t get_balance_pessimistic()
     {
         set_validate_exact_balance();
         if (account_.has_value()) {

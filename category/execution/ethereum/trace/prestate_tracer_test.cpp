@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -65,6 +66,7 @@ namespace
     constexpr auto addr2 = 0x008b3b2f992c0e14edaa6e2c662bec549caa8df1_address;
     constexpr auto addr3 = 0x35a9f94af726f07b5162df7e828cc9dc8439e7d0_address;
     constexpr auto addr4 = 0xc8ba32cab1757528daf49033e3673fae77dcf05d_address;
+    constexpr auto addr5 = 0xe02ad958162c9acb9c3eb90f67b02db21b10d3e0_address;
 }
 
 TEST(PrestateTracer, pre_state_to_json)
@@ -589,4 +591,74 @@ TEST(PrestateTracer, statediff_empty)
 
     EXPECT_EQ(
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(TraitsTest, access_list_empty)
+{
+    StateDeltas state_deltas{};
+
+    // The State setup is only used to get code
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    nlohmann::json storage;
+    AccessListTracer tracer{storage, addr1, addr2, std::nullopt, {}};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+}
+
+TYPED_TEST(TraitsTest, access_list_write)
+{
+    StateDeltas state_deltas{};
+
+    // The State setup is only used to get code
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+
+    s.set_storage(addr2, key1, value1);
+    s.set_storage(addr2, key2, value2);
+    s.set_storage(addr3, key3, value3);
+
+    nlohmann::json storage;
+    AccessListTracer tracer{storage, addr1, addr4, addr5, {}};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    auto const json_str = R"(
+        [
+            {
+                "address": "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
+                "storageKeys": [
+                    "0x00000000000000000000000000000000000000000000000000000000cafebabe",
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+                ]
+            },
+            {
+                "address": "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0",
+                "storageKeys": [
+                    "0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+                ]
+            }
+        ]
+    )";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
 }

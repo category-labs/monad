@@ -15,7 +15,6 @@
 
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/interpreter/debug.hpp>
 #include <category/vm/interpreter/instruction_table.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -56,9 +55,6 @@ namespace monad::vm::interpreter
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 
-            if constexpr (debug_enabled) {
-                trace(*analysis, gas_remaining, instr_ptr);
-            }
             instruction_table<traits>[*instr_ptr](
                 *ctx,
                 *analysis,

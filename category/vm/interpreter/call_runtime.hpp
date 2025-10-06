@@ -82,10 +82,6 @@ namespace monad::vm::interpreter
 
         static_assert(
             stack_arg_count <= std::numeric_limits<std::ptrdiff_t>::max());
-        constexpr std::ptrdiff_t stack_adjustment =
-            static_cast<std::ptrdiff_t>(stack_arg_count) - (use_result ? 1 : 0);
-
-        stack_top -= stack_adjustment;
         gas_remaining = ctx.gas_remaining;
     }
 }

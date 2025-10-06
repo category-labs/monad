@@ -16,7 +16,6 @@
 #pragma once
 
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/types.hpp>
@@ -63,19 +62,15 @@ namespace monad::vm::interpreter
                 *reinterpret_cast<subword_t *>(&aligned_mem[0]));
         }
 
-        template <std::size_t N, Traits traits>
+        template <std::size_t N>
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
+            runtime::Context &, Intercode const &, runtime::uint256_t const *,
+            runtime::uint256_t *stack_top, std::int64_t &,
             std::uint8_t const *instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
-
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             auto const leading_word = [instr_ptr] {
                 auto word = subword_t{0};
@@ -140,19 +135,15 @@ namespace monad::vm::interpreter
             }
         }
 
-        template <std::size_t N, Traits traits>
+        template <std::size_t N>
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
+            runtime::Context &, Intercode const &, runtime::uint256_t const *,
+            runtime::uint256_t *stack_top, std::int64_t &,
             std::uint8_t const *instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
-
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             static constexpr int64_t m = ~(
                 std::numeric_limits<int64_t>::max() >> (63 - leading_part * 8));
@@ -190,7 +181,7 @@ namespace monad::vm::interpreter
         }
     }
 
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
     struct push_impl
     {
         [[gnu::always_inline]] static inline void push(
@@ -199,7 +190,7 @@ namespace monad::vm::interpreter
             runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
             std::uint8_t const *instr_ptr)
         {
-            detail::generic_push<N, traits>(
+            detail::generic_push<N>(
                 ctx,
                 analysis,
                 stack_bottom,
@@ -209,24 +200,20 @@ namespace monad::vm::interpreter
         }
     };
 
-    template <Traits traits>
-    struct push_impl<0, traits>
+    template <>
+    struct push_impl<0>
     {
         [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *)
+            runtime::Context &, Intercode const &, runtime::uint256_t const *,
+            runtime::uint256_t *stack_top, std::int64_t &, std::uint8_t const *)
         {
-            check_requirements<PUSH0, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
             interpreter::push(stack_top, 0);
         }
     };
 
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
         requires(detail::use_avx2_push(N))
-    struct push_impl<N, traits>
+    struct push_impl<N>
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
@@ -234,7 +221,7 @@ namespace monad::vm::interpreter
             runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
             std::uint8_t const *instr_ptr)
         {
-            detail::avx2_push<N, traits>(
+            detail::avx2_push<N>(
                 ctx,
                 analysis,
                 stack_bottom,

@@ -23,355 +23,322 @@
 
 namespace monad::vm::interpreter
 {
+
+    template <Traits traits, InstrEvalInline eval, compiler::EvmOpCode OP>
+    MONAD_VM_INSTRUCTION_CALL void wrap(
+        runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr);
+
+    template <InstrEvalInline eval>
+    MONAD_VM_INSTRUCTION_CALL inline void terminator_inline(
+        runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr);
+
+    template <Traits traits, InstrEvalInline eval>
+    MONAD_VM_INSTRUCTION_CALL void terminator(
+        runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr);
+
     // Arithmetic
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     add(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     mul(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     sub(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void udiv(
+    void udiv(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void sdiv(
+    void sdiv(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void umod(
+    void umod(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void smod(
+    void smod(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void addmod(
+    void addmod(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void mulmod(
+    void mulmod(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     exp(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void signextend(
+    void signextend(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Boolean
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     lt(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-       runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+       runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     gt(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-       runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+       runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     slt(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     sgt(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     eq(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-       runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+       runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void iszero(
+    void iszero(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Bitwise
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void and_(
+    void and_(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     or_(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void xor_(
+    void xor_(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void not_(
+    void not_(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void byte(
+    void byte(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     shl(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     shr(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     sar(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Data
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void sha3(
+    void sha3(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void address(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void address(
+    void balance(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void origin(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void caller(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void callvalue(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void calldataload(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void calldatasize(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void calldatacopy(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void codesize(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void codecopy(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void gasprice(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void balance(
+    void extcodesize(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void origin(
+    void extcodecopy(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void returndatasize(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void returndatacopy(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void caller(
+    void extcodehash(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void callvalue(
+    void blockhash(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void calldataload(
+    void coinbase(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void calldatasize(
+    void timestamp(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void calldatacopy(
+    void number(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void codesize(
+    void prevrandao(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void codecopy(
+    void gaslimit(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void gasprice(
+    void chainid(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void extcodesize(
+    void selfbalance(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void extcodecopy(
+    void basefee(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void returndatasize(
+    void blobhash(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void returndatacopy(
+    void blobbasefee(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void extcodehash(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void blockhash(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void coinbase(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void timestamp(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void number(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void prevrandao(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void gaslimit(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void chainid(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void selfbalance(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void basefee(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void blobhash(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void blobbasefee(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Memory & Storage
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void mload(
+    void mload(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void mstore(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void mstore8(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
+
+    void mcopy(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void mstore(
+    void sstore(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void mstore8(
+    void sload(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void mcopy(
+    void tstore(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void sstore(
+    void tload(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void sload(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void tstore(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
-
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void tload(
-        runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Execution Intercode
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     pc(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-       runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+       runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void msize(
+    void msize(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     gas(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Stack
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
         requires(N <= 32)
-    MONAD_VM_INSTRUCTION_CALL void push(
+    void push(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     pop(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
         requires(N >= 1)
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     dup(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
         requires(N >= 1)
-    MONAD_VM_INSTRUCTION_CALL void swap(
+    void swap(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void jump(
@@ -383,70 +350,69 @@ namespace monad::vm::interpreter
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
         runtime::uint256_t *, std::int64_t, std::uint8_t const *);
 
-    template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void jumpdest(
+    void jumpdest(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Logging
-    template <std::size_t N, Traits traits>
+    template <std::size_t N>
         requires(N <= 4)
-    MONAD_VM_INSTRUCTION_CALL void
+    void
     log(runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // Call & Create
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void create(
+    void create(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void call(
+    void call(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void callcode(
+    void callcode(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void delegatecall(
+    void delegatecall(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void create2(
+    void create2(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void staticcall(
+    void staticcall(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     // VM Control
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void return_(
+    void return_(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void revert(
+    void revert(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
     template <Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void selfdestruct(
+    void selfdestruct(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    MONAD_VM_INSTRUCTION_CALL inline void stop(
+    void stop(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 
-    MONAD_VM_INSTRUCTION_CALL inline void invalid(
+    void invalid(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, std::int64_t &, std::uint8_t const *&);
 }

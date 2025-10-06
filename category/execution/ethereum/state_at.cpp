@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_at.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <evmc/evmc.hpp>
@@ -30,30 +31,32 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits, typename It>
+template <Traits traits>
 void state_after_transactions(
     Chain const &chain, BlockHeader const &header,
     BlockHashBuffer const &buffer, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, BlockState &block_state,
     std::vector<std::optional<Address>> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
-    It const begin, It const end)
+    std::vector<Transaction> const
+        &txns) // TODO(dhil): Probably worth being able to replay up to a bound.
 {
-    for (auto it = begin; it != end; ++it) {
-        size_t const index = std::distance(begin, it);
-        Transaction const txn = *it;
-        Address const sender = [&senders, index]() {
-            if (senders[index].has_value()) {
-                return *senders[index];
+    MONAD_ASSERT(txns.size() == senders.size());
+    MONAD_ASSERT(txns.size() == authorities.size());
+
+    for (size_t i = 0; i < txns.size(); ++i) {
+        Transaction const txn = txns[i];
+        Address const sender = [&senders, i]() -> Address {
+            if (senders[i].has_value()) {
+                return *senders[i];
             }
             // TODO(dhil): any possible "default" sender?
             MONAD_ABORT("Failed to recover sender");
         }();
         ExecuteTransactionNoValidation<traits> execute_tx(
-            chain, txn, sender, authorities[index], header, index);
+            chain, txn, sender, authorities[i], header, i);
         State state{
-            block_state,
-            Incarnation{header.number, static_cast<uint64_t>(index)}};
+            block_state, Incarnation{header.number, static_cast<uint64_t>(i)}};
         evmc_tx_context tx_context =
             get_tx_context<traits>(txn, sender, header, chain.get_chain_id());
         EvmcHost<traits> host{chain, call_tracer, tx_context, buffer, state};
@@ -70,33 +73,5 @@ void state_after_transactions(
     }
 }
 
-template <Traits traits>
-void state_after_transactions(
-    Chain const &chain, BlockHeader const &header,
-    BlockHashBuffer const &buffer, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, BlockState &bs,
-    std::vector<Transaction> const &txns, fiber::PriorityPool &priority_pool)
-{
-    std::vector<std::optional<Address>> senders =
-        recover_senders(txns, priority_pool);
-    std::vector<std::vector<std::optional<Address>>> authorities =
-        recover_authorities(txns, priority_pool);
-
-    using it = std::vector<Transaction>::const_iterator;
-    state_after_transactions<traits, it>(
-        chain,
-        header,
-        buffer,
-        call_tracer,
-        state_tracer,
-        bs,
-        senders,
-        authorities,
-        txns.begin(),
-        txns.end());
-}
-
-EXPLICIT_EVM_TRAITS(state_after_transactions)
-EXPLICIT_MONAD_TRAITS(state_after_transactions)
-
+EXPLICIT_TRAITS(state_after_transactions)
 MONAD_NAMESPACE_END

@@ -40,6 +40,16 @@ struct Block;
 struct Chain;
 
 template <Traits traits>
+Result<std::vector<Receipt>> execute_block_transactions(
+    Chain const &, BlockHeader const &, std::vector<Transaction> const &,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
+    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
+    RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                     uint64_t, State &) { return false; });
+
+template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &, Block const &, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,

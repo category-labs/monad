@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -39,6 +37,8 @@ template <Traits traits>
 void state_after_transactions(
     Chain const &, BlockHeader const &, BlockHashBuffer const &,
     CallTracerBase &, trace::StateTracer &, BlockState & /* inout */,
-    std::vector<Transaction> const &txns, fiber::PriorityPool &);
+    std::vector<std::optional<Address>> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    std::vector<Transaction> const &txns);
 
 MONAD_NAMESPACE_END

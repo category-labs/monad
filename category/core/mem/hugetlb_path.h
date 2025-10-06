@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#pragma once
+
 /**
  * @file
  *
@@ -44,10 +46,10 @@ struct monad_hugetlbfs_resolve_params
 /// hugetlbfs filesystem; the mount point of the filesystem will be used if
 /// path_suffix is nullptr. If desired, the subdirectory will be created if it
 /// does not exist. This also formats the full name of the absolute path to
-/// the subdirectory into namebuf, if it is not nullptr.
+/// the subdirectory into pathbuf, if it is not nullptr.
 int monad_hugetlbfs_open_dir_fd(
-    struct monad_hugetlbfs_resolve_params const *, int *dirfd, char *namebuf,
-    size_t namebuf_size);
+    struct monad_hugetlbfs_resolve_params const *, int *dirfd, char *pathbuf,
+    size_t pathbuf_size);
 
 /// Return the last error that occurred on this thread
 char const *monad_hugetlbfs_get_last_error();

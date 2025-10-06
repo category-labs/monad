@@ -127,9 +127,19 @@ Result<void> static_validate_transaction(
 
     // EIP-3860
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+        // In `MONAD_TWO`, the maximum code size for contracts was increased
+        // without explicitly changing every corresponding check on initcode
+        // size. This meant that in some places, the maximum initcode size was
+        // twice the maximum code size, but in others it differed.
+        //
+        // We introduced the trait parameter `max_initcode_size` to handle the
+        // case where the effective max initcode size differed from twice the
+        // max code size. At this call site, however, the effective max initcode
+        // size has always been twice the max code size, and so it's not
+        // appropriate to use `traits::max_initcode_size()` instead.
         if (MONAD_UNLIKELY(
                 !tx.to.has_value() &&
-                tx.data.size() > traits::max_initcode_size())) {
+                tx.data.size() > 2 * traits::max_code_size())) {
             return TransactionError::InitCodeLimitExceeded;
         }
     }

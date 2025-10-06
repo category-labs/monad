@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -112,6 +113,81 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     // check if miner gets the right reward
     EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
+}
+
+template <Traits traits>
+static void test_monad_top_level_create()
+{
+    using intx::operator""_u256;
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto bene{
+        0x5353535353535353535353535353535353535353_address};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        constexpr uint256_t WEI_PER_MON{1000000000000000000};
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 20 * WEI_PER_MON);
+        state.set_nonce(from, 25);
+        bs.merge(state);
+    }
+
+    auto const data = byte_string(154'776, '\x60');
+
+    Transaction const tx{
+        .sc =
+            {.r =
+                 0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+             .s =
+                 0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
+        .nonce = 25,
+        .max_fee_per_gas = 100'000'000'000,
+        .gas_limit = 68'491'176,
+        .value = 0,
+        .to = std::nullopt,
+        .data = data,
+    };
+
+    BlockHeader const header{.beneficiary = bene};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    NoopCallTracer noop_call_tracer;
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    auto const receipt = ExecuteTransaction<traits>(
+        MonadTestnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer)();
+
+    ASSERT_TRUE(!receipt.has_error());
+}
+
+TEST(TransactionProcessor, monad_three_top_level_create)
+{
+    test_monad_top_level_create<MonadTraits<MONAD_THREE>>();
+}
+
+TEST(TransactionProcessor, monad_four_top_level_create)
+{
+    test_monad_top_level_create<MonadTraits<MONAD_FOUR>>();
 }
 
 TEST(TransactionProcessor, monad_five_refunds_delete)

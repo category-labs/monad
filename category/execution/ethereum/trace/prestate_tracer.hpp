@@ -33,7 +33,6 @@ struct Transaction;
 
 namespace trace
 {
-
     template <typename Key, typename Elem>
     using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
 

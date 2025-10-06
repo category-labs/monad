@@ -59,6 +59,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <memory>
 #include <string_view>
 #include <variant>
@@ -237,6 +238,137 @@ namespace
         trace::run_tracer(state_tracer, state);
 
         return execution_result;
+    }
+
+    template <Traits traits>
+    Result<nlohmann::json> eth_trace_block_or_transaction_impl(
+        Chain const &chain, BlockHeader const &header,
+        std::vector<Transaction> const &transactions,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        bool const trace_transaction, uint64_t const transaction_index,
+        BlockState &block_state, BlockHashBufferFinalized const buffer,
+        monad::fiber::PriorityPool &pool,
+        enum monad_tracer_config tracer_config)
+    {
+        MONAD_ASSERT(transactions.size() == senders.size());
+        MONAD_ASSERT(transactions.size() == authorities.size());
+
+        // Execute block header
+        execute_block_header<traits>(chain, block_state, header);
+        BlockMetrics metrics{};
+
+        // Prepare state tracers and auxiliary noop call tracers.
+        using json = nlohmann::json;
+        std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
+        state_tracers.reserve(transactions.size());
+
+        // Helper to create a trace log entry of the form:
+        //   {"result": { execution trace goes here }, "txHash": "0x..."}
+        auto const trace_entry =
+            [&transactions](uint64_t const transaction_index) -> json {
+            bytes32_t const tx_hash = to_bytes(keccak256(
+                rlp::encode_transaction(transactions[transaction_index])));
+            json entry{
+                {"result", json{}},
+                {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
+            return entry;
+        };
+
+        std::vector<std::unique_ptr<CallTracerBase>> noop_call_tracers{};
+        noop_call_tracers.reserve(transactions.size());
+
+        for (size_t i = 0; i < transactions.size(); ++i) {
+            noop_call_tracers.emplace_back(std::unique_ptr<NoopCallTracer>{
+                std::make_unique<NoopCallTracer>()});
+        }
+
+        // Trace single transaction
+        if (trace_transaction) {
+            // We allocate just one trace entry here as we only need to return
+            // the trace result of `transaction[transaction_index]`.
+            json trace = trace_entry(transaction_index);
+            for (size_t i = 0; i < transactions.size(); ++i) {
+                if (i == transaction_index) {
+                    if (tracer_config == PRESTATE_TRACER) {
+                        state_tracers.emplace_back(
+                            std::unique_ptr<trace::StateTracer>{
+                                std::make_unique<trace::StateTracer>(
+                                    trace::PrestateTracer{trace["result"]})});
+                    }
+                    else {
+                        state_tracers.emplace_back(
+                            std::unique_ptr<trace::StateTracer>{
+                                std::make_unique<trace::StateTracer>(
+                                    trace::StateDiffTracer{trace["result"]})});
+                    }
+                }
+                else {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                std::monostate{})});
+                }
+            }
+
+            Result<std::vector<Receipt>> result =
+                execute_block_transactions<traits>(
+                    chain,
+                    header,
+                    transactions, // TODO(dhil): we need to play only up to and
+                                  // including `transaction_index`.
+                    senders,
+                    authorities,
+                    block_state,
+                    buffer,
+                    pool,
+                    metrics,
+                    noop_call_tracers,
+                    state_tracers);
+            if (result.has_error()) {
+                return Result<nlohmann::json>{std::move(result).as_failure()};
+            }
+            return Result<nlohmann::json>{std::move(trace)};
+        }
+        else {
+            // Trace an entire block
+            std::vector<json> traces{};
+            traces.reserve(transactions.size());
+            for (size_t i = 0; i < transactions.size(); ++i) {
+                traces.emplace_back(trace_entry(i));
+                if (tracer_config == PRESTATE_TRACER) {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                trace::PrestateTracer{traces[i]["result"]})});
+                }
+                else {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                trace::StateDiffTracer{traces[i]["result"]})});
+                }
+            }
+            Result<std::vector<Receipt>> result =
+                execute_block_transactions<traits>(
+                    chain,
+                    header,
+                    transactions,
+                    senders,
+                    authorities,
+                    block_state,
+                    buffer,
+                    pool,
+                    metrics,
+                    noop_call_tracers,
+                    state_tracers);
+            if (result.has_error()) {
+                return Result<json>{std::move(result).as_failure()};
+            }
+
+            // Compose state traces
+            return Result<json>{std::move(traces)};
+        }
     }
 }
 
@@ -878,6 +1010,229 @@ struct monad_eth_call_executor
             result,
             high_gas_pool_);
     }
+
+    void submit_eth_trace_block_or_transaction_to_pool(
+        monad_chain_config const chain_config, BlockHeader const &block_header,
+        uint64_t const block_number, bytes32_t const &block_id,
+        bytes32_t const &parent_id, bool const trace_transaction,
+        uint64_t const transaction_index,
+        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        monad_tracer_config const tracer_config)
+    {
+        monad_eth_call_result *const result = new monad_eth_call_result();
+
+        if (tracer_config != PRESTATE_TRACER &&
+            tracer_config != STATEDIFF_TRACER) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup("only the prestate tracer is supported");
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        if (block_number == 0) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup("cannot trace genesis block");
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        if (!low_gas_pool_.try_enqueue()) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        auto const priority =
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        low_gas_pool_.pool.submit(
+            priority,
+            [this,
+             block_id = block_id,
+             block_header = block_header,
+             block_number = block_number,
+             chain_config = chain_config,
+             complete = complete,
+             &db = db_,
+             fiber_pool = &high_gas_pool_,
+             parent_id = parent_id,
+             result = result,
+             tracer_config = tracer_config,
+             trace_transaction = trace_transaction,
+             transaction_index = transaction_index,
+             user = user]() {
+                // TODO(dhil): These trace block calls consume a lot more
+                // resources than an eth_call request.
+                fiber_pool->queued_count.fetch_sub(
+                    1, std::memory_order_relaxed);
+                fiber_pool->executing_count.fetch_add(
+                    1, std::memory_order_relaxed);
+                try {
+                    auto const chain =
+                        [chain_config] -> std::unique_ptr<Chain> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return std::make_unique<EthereumMainnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                            return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                            return std::make_unique<MonadTestnet>();
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                            return std::make_unique<MonadMainnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET2:
+                            return std::make_unique<MonadTestnet2>();
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
+                    auto const block_hash_buffer =
+                        create_blockhash_buffer(block_number);
+                    if (block_hash_buffer == nullptr) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(BLOCKHASH_ERR_MSG);
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    // Load transactions, senders, and authorities
+                    Result<std::vector<monad::Transaction>> maybe_transactions =
+                        get_transactions(db, block_number, block_id);
+                    if (maybe_transactions.has_error()) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup("Failed to load transactions");
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+                    std::vector<Transaction> const &transactions =
+                        maybe_transactions.value();
+                    if (trace_transaction &&
+                        transactions.size() <= transaction_index) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup("Transaction out of bounds");
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    std::vector<Address> senders;
+                    senders.reserve(transactions.size());
+                    {
+                        std::vector<std::optional<Address>> recovered_senders =
+                            monad::recover_senders(
+                                transactions, fiber_pool->pool);
+                        MONAD_ASSERT(
+                            recovered_senders.size() == transactions.size());
+                        senders.reserve(transactions.size());
+                        for (size_t i = 0; i < recovered_senders.size(); i++) {
+                            if (!recovered_senders[i].has_value()) {
+                                result->status_code = EVMC_REJECTED;
+                                result->message =
+                                    strdup("Failed to recover sender");
+                                MONAD_ASSERT(result->message);
+                                complete(result, user);
+                                return;
+                            }
+                            senders.emplace_back(*recovered_senders[i]);
+                        }
+                        MONAD_ASSERT(senders.size() == transactions.size());
+                    }
+                    std::vector<std::vector<std::optional<Address>>>
+                        authorities = monad::recover_authorities(
+                            transactions, fiber_pool->pool);
+
+                    // Set db to parent block state
+                    TrieRODb tdb{db};
+                    tdb.set_block_and_prefix(block_number - 1, parent_id);
+                    BlockState block_state{tdb, vm_};
+
+                    auto const res = [&]() -> Result<nlohmann::json> {
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                            evmc_revision const rev = chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                            SWITCH_EVM_TRAITS(
+                                eth_trace_block_or_transaction_impl,
+                                *chain,
+                                block_header,
+                                transactions,
+                                senders,
+                                authorities,
+                                trace_transaction,
+                                transaction_index,
+                                block_state,
+                                *block_hash_buffer,
+                                fiber_pool->pool,
+                                tracer_config);
+                            MONAD_ASSERT(false);
+                        }
+                        else {
+                            auto const rev =
+                                dynamic_cast<MonadChain *>(chain.get())
+                                    ->get_monad_revision(
+                                        block_header.timestamp);
+                            SWITCH_MONAD_TRAITS(
+                                eth_trace_block_or_transaction_impl,
+                                *chain,
+                                block_header,
+                                transactions,
+                                senders,
+                                authorities,
+                                trace_transaction,
+                                transaction_index,
+                                block_state,
+                                *block_hash_buffer,
+                                fiber_pool->pool,
+                                tracer_config);
+                            MONAD_ASSERT(false);
+                        }
+                    }();
+
+                    if (MONAD_UNLIKELY(res.has_error())) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(res.error().message().c_str());
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    nlohmann::json trace = res.assume_value();
+                    result->status_code = EVMC_SUCCESS;
+                    if (trace.empty()) {
+                        result->encoded_trace = nullptr;
+                        result->encoded_trace_len = 0;
+                    }
+                    else {
+                        std::vector<uint8_t> cbor_state_trace =
+                            nlohmann::json::to_cbor(res.assume_value());
+                        result->encoded_trace =
+                            new uint8_t[cbor_state_trace.size()];
+                        result->encoded_trace_len = cbor_state_trace.size();
+                        memcpy(
+                            (uint8_t *)result->encoded_trace,
+                            cbor_state_trace.data(),
+                            cbor_state_trace.size());
+                    }
+
+                    complete(result, user);
+                }
+                catch (MonadException const &e) {
+                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->message = strdup(e.message());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                }
+                catch (...) {
+                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                }
+            });
+    }
 };
 
 monad_eth_call_executor *monad_eth_call_executor_create(
@@ -964,4 +1319,102 @@ monad_eth_call_executor_get_state(monad_eth_call_executor *const e)
         .low_gas_pool_state = e->low_gas_pool_.get_state(),
         .high_gas_pool_state = e->high_gas_pool_.get_state(),
     };
+}
+
+void monad_eth_trace_block_or_transaction_executor_submit(
+    struct monad_eth_call_executor *executor,
+    enum monad_chain_config chain_config, uint8_t const *rlp_header,
+    size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len, bool const trace_transaction,
+    size_t const transaction_index,
+    void (*complete)(monad_eth_call_result *, void *user), void *user,
+    enum monad_tracer_config tracer_config)
+{
+    MONAD_ASSERT(executor);
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    byte_string_view parent_id_view(
+        {rlp_parent_block_id, rlp_parent_block_id_len});
+
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const block_header = block_header_result.value();
+
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    auto const parent_id_result = rlp::decode_bytes32(parent_id_view);
+    MONAD_ASSERT(!parent_id_result.has_error());
+    MONAD_ASSERT(parent_id_view.empty());
+    auto const parent_id = parent_id_result.value();
+
+    executor->submit_eth_trace_block_or_transaction_to_pool(
+        chain_config,
+        block_header,
+        block_number,
+        block_id,
+        parent_id,
+        trace_transaction,
+        transaction_index,
+        complete,
+        user,
+        tracer_config);
+}
+
+void monad_eth_trace_transaction_executor_submit(
+    struct monad_eth_call_executor *executor,
+    enum monad_chain_config chain_config, uint8_t const *rlp_header,
+    size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len, uint64_t const transaction_index,
+    void (*complete)(monad_eth_call_result *, void *user), void *user,
+    enum monad_tracer_config tracer_config)
+{
+    monad_eth_trace_block_or_transaction_executor_submit(
+        executor,
+        chain_config,
+        rlp_header,
+        rlp_header_len,
+        block_number,
+        rlp_block_id,
+        rlp_block_id_len,
+        rlp_parent_block_id,
+        rlp_parent_block_id_len,
+        true,
+        transaction_index,
+        complete,
+        user,
+        tracer_config);
+}
+
+void monad_eth_trace_block_executor_submit(
+    struct monad_eth_call_executor *executor,
+    enum monad_chain_config chain_config, uint8_t const *rlp_header,
+    size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len,
+    void (*complete)(monad_eth_call_result *, void *user), void *user,
+    enum monad_tracer_config tracer_config)
+{
+
+    monad_eth_trace_block_or_transaction_executor_submit(
+        executor,
+        chain_config,
+        rlp_header,
+        rlp_header_len,
+        block_number,
+        rlp_block_id,
+        rlp_block_id_len,
+        rlp_parent_block_id,
+        rlp_parent_block_id_len,
+        false,
+        0,
+        complete,
+        user,
+        tracer_config);
 }

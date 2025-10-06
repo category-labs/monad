@@ -186,7 +186,7 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, Block &block, std::vector<Address> const &senders,
+    Chain const &chain, Block const &block, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,

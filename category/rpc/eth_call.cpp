@@ -437,8 +437,9 @@ struct monad_eth_call_executor
     Pool low_gas_pool_;
     Pool high_gas_pool_;
 
-    // counters
-    uint64_t call_count_{0};
+    // Sequence number for each call. This is used as a priority of the request,
+    // requests started earlier have higher priority.
+    std::atomic<uint64_t> call_seq_no_{0};
 
     mpt::RODb db_;
 
@@ -553,7 +554,7 @@ struct monad_eth_call_executor
             tracer_config,
             gas_specified,
             std::chrono::steady_clock::now(),
-            call_count_++,
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed),
             result,
             *pool);
     }

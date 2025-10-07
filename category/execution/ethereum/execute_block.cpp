@@ -175,6 +175,37 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 }
 
 template <Traits traits>
+void execute_block_header(
+    Chain const &chain, BlockState &block_state, BlockHeader const &header)
+{
+    State state{block_state, Incarnation{header.number, 0}};
+
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+        deploy_block_hash_history_contract(state);
+    }
+
+    set_block_hash_history(state, header);
+
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+        set_beacon_root(state, header);
+    }
+
+    // Ethereum mainnet dao fork
+    if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
+        if (MONAD_UNLIKELY(header.number == dao::dao_block_number)) {
+            if (chain.get_chain_id() == 1) {
+                transfer_balance_dao(state);
+            }
+        }
+    }
+
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
+}
+
+EXPLICIT_TRAITS(execute_block_header);
+
+template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &chain, BlockHeader const &header,
     std::vector<Transaction> const &transactions,
@@ -302,31 +333,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == block.transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
 
-    {
-        State state{block_state, Incarnation{block.header.number, 0}};
-
-        if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-            deploy_block_hash_history_contract(state);
-        }
-
-        set_block_hash_history(state, block.header);
-
-        if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-            set_beacon_root(state, block.header);
-        }
-
-        // Ethereum mainnet dao fork
-        if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
-            if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-                if (chain.get_chain_id() == 1) {
-                    transfer_balance_dao(state);
-                }
-            }
-        }
-
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
+    execute_block_header<traits>(chain, block_state, block.header);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,

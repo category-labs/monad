@@ -307,31 +307,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == block.transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
 
-    {
-        State state{block_state, Incarnation{block.header.number, 0}};
-
-        if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-            deploy_block_hash_history_contract(state);
-        }
-
-        set_block_hash_history(state, block.header);
-
-        if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-            set_beacon_root(state, block.header);
-        }
-
-        // Ethereum mainnet dao fork
-        if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
-            if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-                if (chain.get_chain_id() == 1) {
-                    transfer_balance_dao(state);
-                }
-            }
-        }
-
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
+    preprocess_block<traits>(block_state, block.header);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,
@@ -349,6 +325,44 @@ Result<std::vector<Receipt>> execute_block(
             state_tracers,
             revert_transaction));
 
+    postprocess_block<traits>(block_state, block);
+
+    return retvals;
+}
+
+template <Traits traits>
+void preprocess_block(BlockState &block_state, BlockHeader const &header)
+{
+    {
+        State state{block_state, Incarnation{header.number, 0}};
+
+        if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+            deploy_block_hash_history_contract(state);
+        }
+
+        set_block_hash_history(state, header);
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+
+    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+        set_beacon_root(block_state, header);
+    }
+
+    // Ethereum mainnet dao fork
+    if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
+        if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
+            if (chain.get_chain_id() == 1) {
+                transfer_balance_dao(state);
+            }
+        }
+    }
+}
+
+template <Traits traits>
+void postprocess_block(BlockState &block_state, Block const &block)
+{
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
@@ -364,8 +378,6 @@ Result<std::vector<Receipt>> execute_block(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-
-    return retvals;
 }
 
 EXPLICIT_TRAITS(execute_block);

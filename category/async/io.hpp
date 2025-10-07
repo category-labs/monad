@@ -66,8 +66,7 @@ public:
 private:
     friend class read_single_buffer_sender;
     using _storage_pool = class storage_pool;
-    using cnv_chunk = _storage_pool::cnv_chunk;
-    using seq_chunk = _storage_pool::seq_chunk;
+    using chunk = _storage_pool::chunk_t;
 
     template <class T>
     struct chunk_ptr_
@@ -87,8 +86,8 @@ private:
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ptr_<cnv_chunk> cnv_chunk_;
-    std::vector<chunk_ptr_<seq_chunk>> seq_chunks_;
+    chunk_ptr_<chunk> cnv_chunk_;
+    std::vector<chunk_ptr_<chunk>> seq_chunks_;
 
     struct
     {

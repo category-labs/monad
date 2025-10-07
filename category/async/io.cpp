@@ -200,7 +200,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     // here, and we open everything all at once. It also means I can avoid
     // dynamic fd registration with io_uring, which simplifies implementation.
     storage_pool_ = &pool;
-    cnv_chunk_ = std::static_pointer_cast<storage_pool::cnv_chunk>(
+    cnv_chunk_ = std::static_pointer_cast<storage_pool::chunk_t>(
         pool.activate_chunk(storage_pool::cnv, 0));
     auto count = pool.chunks(storage_pool::seq);
     seq_chunks_.reserve(count);
@@ -210,9 +210,8 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     fds.push_back(cnv_chunk_.io_uring_write_fd);
     for (size_t n = 0; n < count; n++) {
         seq_chunks_.emplace_back(
-            std::static_pointer_cast<storage_pool::seq_chunk>(
-                pool.activate_chunk(
-                    storage_pool::seq, static_cast<uint32_t>(n))));
+            std::static_pointer_cast<storage_pool::chunk_t>(pool.activate_chunk(
+                storage_pool::seq, static_cast<uint32_t>(n))));
         MONAD_ASSERT_PRINTF(
             seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
             "sequential chunk capacity %llu must equal or exceed i/o buffer "

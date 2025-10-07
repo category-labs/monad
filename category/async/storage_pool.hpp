@@ -77,7 +77,7 @@ public:
 
     /*! \brief A source of backing storage for the storage pool.
      */
-    class device
+    class device_t
     {
         friend class storage_pool;
 
@@ -143,7 +143,7 @@ public:
 
         static_assert(sizeof(metadata_t) == 64);
 
-        constexpr device(
+        constexpr device_t(
             int readwritefd, type_t_ type, uint64_t unique_hash,
             file_offset_t size_of_file, metadata_t *metadata)
             : readwritefd_(readwritefd)
@@ -187,12 +187,11 @@ public:
     ptr. When the shared ptr count reaches zero, any file descriptors or other
     resources associated with the chunk are released.
      */
-    class chunk
+    class chunk_t
     {
         friend class storage_pool;
 
-    protected:
-        class device &device_;
+        device_t &device_;
         int read_fd_{-1}, write_fd_{-1};
         file_offset_t const offset_{file_offset_t(-1)},
             capacity_{file_offset_t(-1)};
@@ -201,11 +200,12 @@ public:
         bool const owns_readfd_{false}, owns_writefd_{false},
             append_only_{false};
 
-        constexpr chunk(
-            class device &device, int read_fd, int write_fd,
-            file_offset_t offset, file_offset_t capacity,
-            uint32_t chunkid_within_device, uint32_t chunkid_within_zone,
-            bool owns_readfd, bool owns_writefd, bool append_only)
+    public:
+        constexpr chunk_t(
+            device_t &device, int read_fd, int write_fd, file_offset_t offset,
+            file_offset_t capacity, uint32_t chunkid_within_device,
+            uint32_t chunkid_within_zone, bool owns_readfd, bool owns_writefd,
+            bool append_only)
             : device_(device)
             , read_fd_(read_fd)
             , write_fd_(write_fd)
@@ -219,19 +219,18 @@ public:
         {
         }
 
-    public:
-        chunk(chunk const &) = delete;
-        chunk(chunk &&) = delete;
-        virtual ~chunk();
+        chunk_t(chunk_t const &) = delete;
+        chunk_t(chunk_t &&) = delete;
+        virtual ~chunk_t();
 
         //! \brief Returns the storage device this chunk is stored upon
-        class device &device() noexcept
+        device_t &device() noexcept
         {
             return device_;
         }
 
         //! \brief Returns the storage device this chunk is stored upon
-        const class device &device() const noexcept
+        device_t const &device() const noexcept
         {
             return device_;
         }
@@ -288,54 +287,13 @@ public:
         //! chunk, using kernel offload where available. The destination chunk
         //! MUST be empty if it is sequential append only, otherwise the call
         //! fails.
-        uint32_t clone_contents_into(chunk &other, uint32_t bytes);
+        uint32_t clone_contents_into(chunk_t &other, uint32_t bytes);
 
         /*! \brief Tries to trim the contents of a chunk by efficiently
         discarding the tail of the contents. If not possible to do efficiently,
         return false.
         */
         bool try_trim_contents(uint32_t bytes);
-    };
-
-    /*! \brief A conventional zone chunk from the `cnv` subdirectory.
-     */
-    class cnv_chunk final : public chunk
-    {
-        friend class storage_pool;
-
-        using chunk::chunk;
-
-    public:
-        bool is_conventional_write() const noexcept
-        {
-            return true;
-        }
-
-        bool is_sequential_write() const noexcept
-        {
-            return false;
-        }
-    };
-
-    /*! \brief An append-only sequential write zone chunk from the `seq`
-     * subdirectory.
-     */
-    class seq_chunk final : public chunk
-    {
-        friend class storage_pool;
-
-        using chunk::chunk;
-
-    public:
-        bool is_conventional_write() const noexcept
-        {
-            return false;
-        }
-
-        bool is_sequential_write() const noexcept
-        {
-            return true;
-        }
     };
 
     //! \brief What to do when opening the pool for use.
@@ -375,29 +333,27 @@ public:
         }
     };
 
-    using chunk_ptr = std::shared_ptr<class chunk>;
-    using cnv_chunk_ptr = std::shared_ptr<cnv_chunk>;
-    using seq_chunk_ptr = std::shared_ptr<seq_chunk>;
+    using chunk_ptr = std::shared_ptr<chunk_t>;
 
 private:
     bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_;
-    std::vector<device> devices_;
+    std::vector<device_t> devices_;
 
     // Lock protects everything below this
     mutable std::mutex lock_;
 
     struct chunk_info_
     {
-        std::weak_ptr<class chunk> chunk;
-        class device &device;
+        std::weak_ptr<chunk_t> chunk;
+        device_t &device;
         uint32_t const chunk_offset_into_device;
     };
 
     std::vector<chunk_info_> chunks_[2];
 
-    device make_device_(
-        mode op, device::type_t_ type, std::filesystem::path const &path,
-        int fd, std::variant<uint64_t, device const *> dev_no_or_dev,
+    device_t make_device_(
+        mode op, device_t::type_t_ type, std::filesystem::path const &path,
+        int fd, std::variant<uint64_t, device_t const *> dev_no_or_dev,
         creation_flags flags);
 
     void fill_chunks_(creation_flags const &flags);
@@ -447,7 +403,7 @@ public:
     }
 
     //! \brief Returns a list of the backing storage devices
-    std::span<device const> devices() const noexcept
+    std::span<device_t const> devices() const noexcept
     {
         return {devices_};
     }
@@ -462,9 +418,9 @@ public:
     //! type
     size_t currently_active_chunks(chunk_type which) const noexcept;
     //! \brief Get an existing chunk, if it is activated
-    std::shared_ptr<class chunk> chunk(chunk_type which, uint32_t id) const;
+    std::shared_ptr<chunk_t> chunk(chunk_type which, uint32_t id) const;
     //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
-    std::shared_ptr<class chunk> activate_chunk(chunk_type which, uint32_t id);
+    std::shared_ptr<chunk_t> activate_chunk(chunk_type which, uint32_t id);
 
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;

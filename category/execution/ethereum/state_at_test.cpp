@@ -24,6 +24,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <test_resource_data.h>
 
@@ -44,12 +45,14 @@ namespace
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto addr2{
         0x5353535353535353535353535353535353535353_address};
+    static constexpr auto counter_addr{
+        0x6363636363636363636363636363636363636363_address};
 
     struct StateAtFixture : public ::testing::Test
     {
         MonadDevnet chain;
         BlockHashBufferFinalized buffer;
-        uint64_t next_nonce = 0;
+        uint64_t next_tx_nonce = 0;
         InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
@@ -63,17 +66,38 @@ namespace
         {
         }
 
-        Transaction make_tx(Address to, byte_string &data);
+        Transaction make_tx(std::optional<Address> to = std::nullopt);
+        void deploy_counter_contract(uint64_t block_number);
     };
 
-    Transaction StateAtFixture::make_tx(Address to, byte_string &data)
+    Transaction StateAtFixture::make_tx(std::optional<Address> to)
     {
         Transaction tx;
         tx.gas_limit = 100'000;
-        tx.nonce = next_nonce++;
-        tx.data = data;
+        tx.nonce = next_tx_nonce++;
         tx.to = to;
         return tx;
+    }
+
+    void StateAtFixture::deploy_counter_contract(uint64_t block_number)
+    {
+        using namespace monad::vm::utils;
+        auto eb = evm_as::latest();
+
+        eb.push(1).push0().sload().add().push0().sstore();
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+
+        byte_string code{bytecode.data(), bytecode.data() + bytecode.size()};
+
+        State state{block_state, Incarnation{block_number, 0}};
+        state.create_contract(counter_addr);
+        state.set_code(counter_addr, code);
+        state.set_code_hash(counter_addr, to_bytes(keccak256(code)));
+
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
     }
 
     std::vector<std::vector<std::optional<Address>>> authorities(size_t n)
@@ -92,7 +116,6 @@ namespace
 
 TEST_F(StateAtFixture, simple)
 {
-
     State state{block_state, Incarnation{0, 0}};
     state.create_contract(addr1);
     state.add_to_balance(addr1, 1'000'000);
@@ -101,12 +124,10 @@ TEST_F(StateAtFixture, simple)
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(std::move(state));
 
-    byte_string code{};
-    Transaction tx1 = make_tx(addr1, code);
     BlockHeader header{.number = 1};
     NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer = std::monostate{};
-    std::vector<Transaction> txns{make_tx(addr1, code), make_tx(addr1, code)};
+    std::vector<Transaction> txns{make_tx(addr1), make_tx(addr1)};
 
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 0);
     state_after_transactions<traits>(
@@ -120,4 +141,43 @@ TEST_F(StateAtFixture, simple)
         ::authorities(txns.size()),
         txns);
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 2);
+}
+
+TEST_F(StateAtFixture, counter_contract)
+{
+    State state{block_state, Incarnation{0, 0}};
+    state.create_contract(addr1);
+    state.add_to_balance(addr1, 1'000'000);
+    state.create_contract(addr2);
+    state.add_to_balance(addr2, 1'000'000);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(std::move(state));
+
+    deploy_counter_contract(1);
+    BlockHeader header{.number = 2};
+    NoopCallTracer call_tracer{};
+    trace::StateTracer state_tracer = std::monostate{};
+    std::vector<Transaction> txns{make_tx(counter_addr), make_tx(counter_addr)};
+
+    bytes32_t const value_slot{};
+    EXPECT_EQ(
+        block_state.read_storage(
+            counter_addr, Incarnation{1, Incarnation::LAST_TX}, value_slot),
+        bytes32_t{});
+    state_after_transactions<traits>(
+        chain,
+        header,
+        buffer,
+        call_tracer,
+        state_tracer,
+        block_state,
+        ::senders(txns.size()),
+        ::authorities(txns.size()),
+        txns);
+
+    bytes32_t const expected_value = to_bytes(to_big_endian(uint256_t{2}));
+    EXPECT_EQ(
+        block_state.read_storage(
+            counter_addr, Incarnation{2, Incarnation::LAST_TX}, value_slot),
+        expected_value);
 }

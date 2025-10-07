@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
@@ -1053,6 +1054,108 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(gas_used, balance_gas + 3); // +3 for PUSH20
+}
+
+TYPED_TEST(TraitsTest, defensive_delegation_check)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+
+    static constexpr auto falsely_delegated_1{
+        0x00000000000000000000000000000000aaaaaaaa_address};
+
+    static constexpr auto falsely_delegated_2{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto falsely_delegated_3{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    static constexpr auto correctly_delegated{
+        0x00000000000000000000000000000000dddddddd_address};
+
+    uint8_t bad_code[50] = {0xEF, 0x01, 0x00, 0xFE};
+    auto const bad_icode = vm::make_shared_intercode(bad_code);
+    auto const bad_code_hash = to_bytes(keccak256(bad_code));
+
+    uint8_t bad_code2[24] = {0xEF, 0x01, 0x00};
+    bad_code2[23] = 0xAA;
+    auto const bad_icode2 = vm::make_shared_intercode(bad_code2);
+    auto const bad_code_hash2 = to_bytes(keccak256(bad_code2));
+
+    uint8_t short_code[3] = {0xEF, 0x01, 0x00};
+    auto const short_icode = vm::make_shared_intercode(short_code);
+    auto const short_code_hash = to_bytes(keccak256(short_code));
+
+    uint8_t good_code[23] = {0xEF, 0x01, 0x00};
+    std::memcpy(&good_code[3], falsely_delegated_3.bytes, sizeof(Address));
+    auto const good_icode = vm::make_shared_intercode(good_code);
+    auto const good_code_hash = to_bytes(keccak256(good_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {falsely_delegated_1,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = short_code_hash,
+                      }}}},
+            {falsely_delegated_2,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = bad_code_hash2,
+                      }}}},
+            {falsely_delegated_3,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = bad_code_hash,
+                      }}}},
+            {correctly_delegated,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = good_code_hash,
+                      }}}}},
+        Code{
+            {bad_code_hash, bad_icode},
+            {bad_code_hash2, bad_icode2},
+            {short_code_hash, short_icode},
+            {good_code_hash, good_icode}},
+        BlockHeader{});
+
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    auto const d1 = vm::evm::resolve_delegation(
+        &h.get_interface(), h.to_context(), falsely_delegated_1);
+    EXPECT_FALSE(d1.has_value());
+    auto const d2 = vm::evm::resolve_delegation(
+        &h.get_interface(), h.to_context(), falsely_delegated_2);
+    EXPECT_FALSE(d2.has_value());
+    auto const d3 = vm::evm::resolve_delegation(
+        &h.get_interface(), h.to_context(), falsely_delegated_3);
+    EXPECT_FALSE(d3.has_value());
+    auto const d4 = vm::evm::resolve_delegation(
+        &h.get_interface(), h.to_context(), correctly_delegated);
+    EXPECT_TRUE(d4.has_value());
+    EXPECT_EQ(d4.value(), falsely_delegated_3);
 }
 
 #undef PUSH3

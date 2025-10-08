@@ -27,7 +27,7 @@ Result<Receipt> dispatch_transaction(
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
+    BlockMetrics &block_metrics, State &state,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
@@ -42,10 +42,9 @@ Result<Receipt> dispatch_transaction(
             transaction,
             sender,
             header,
-            block_state,
             block_metrics,
             prev,
-            call_tracer}();
+            call_tracer}(state);
     }
     else {
         return ExecuteTransaction<traits>{
@@ -56,12 +55,11 @@ Result<Receipt> dispatch_transaction(
             authorities,
             header,
             block_hash_buffer,
-            block_state,
             block_metrics,
             prev,
             call_tracer,
             state_tracer,
-            revert_transaction}();
+            revert_transaction}(state);
     }
 }
 

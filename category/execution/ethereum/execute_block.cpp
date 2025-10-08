@@ -183,10 +183,12 @@ Result<std::vector<Receipt>> execute_block_transactions(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
+    MONAD_ASSERT(senders.size() == state_tracers.size())
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
@@ -213,6 +215,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &block_state,
              &block_metrics,
              &call_tracer = *call_tracers[i],
+             &state_tracer = *state_tracers[i],
              &txn_exec_finished,
              &revert_transaction = revert_transaction] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
@@ -229,6 +232,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_metrics,
                         promises[i],
                         call_tracer,
+                        state_tracer,
                         revert_transaction);
                     promises[i + 1].set_value();
                     record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
@@ -295,6 +299,7 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
     std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
     TRACE_BLOCK_EVENT(StartBlock);
@@ -341,6 +346,7 @@ Result<std::vector<Receipt>> execute_block(
             priority_pool,
             block_metrics,
             call_tracers,
+            state_tracers,
             revert_transaction));
 
     State state{

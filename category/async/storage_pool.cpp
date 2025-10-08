@@ -33,7 +33,6 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
-#include <memory>
 #include <mutex>
 #include <span>
 #include <sstream>
@@ -564,19 +563,25 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             }
         }
     }
+    auto const zone_id = [this](int const chunk_type) {
+        return static_cast<uint32_t>(chunks_[chunk_type].size());
+    };
     // First three blocks of each device goes to conventional, remainder go to
     // sequential
     chunks_[cnv].reserve(devices_.size() * 3);
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 0);
+            chunks_[cnv].emplace_back(
+                activate_chunk(storage_pool::cnv, device, 0, zone_id(cnv)));
         }
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 1);
+            chunks_[cnv].emplace_back(
+                activate_chunk(storage_pool::cnv, device, 1, zone_id(cnv)));
         }
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 2);
+            chunks_[cnv].emplace_back(
+                activate_chunk(storage_pool::cnv, device, 2, zone_id(cnv)));
         }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
@@ -592,8 +597,11 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             for (size_t n = 0; n < chunks.size(); n++) {
                 chunkcounts[n] -= 1.0;
                 if (chunkcounts[n] < 0) {
-                    chunks_[seq].emplace_back(
-                        std::weak_ptr<chunk_t>{}, devices_[n], chunks[n]++);
+                    chunks_[seq].emplace_back(activate_chunk(
+                        seq,
+                        devices_[n],
+                        static_cast<uint32_t>(chunks[n]++),
+                        zone_id(seq)));
                     chunkcounts[n] += chunkratios[n];
                     if (chunks_[seq].size() == chunks_[seq].capacity()) {
                         break;
@@ -610,14 +618,20 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     }
     else {
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 0);
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 1);
-            chunks_[cnv].emplace_back(std::weak_ptr<chunk_t>{}, device, 2);
+            chunks_[cnv].emplace_back(
+                activate_chunk(cnv, device, 0, zone_id(cnv)));
+            chunks_[cnv].emplace_back(
+                activate_chunk(cnv, device, 1, zone_id(cnv)));
+            chunks_[cnv].emplace_back(
+                activate_chunk(cnv, device, 2, zone_id(cnv)));
         }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
             for (size_t n = 0; n < chunks[deviceidx]; n++) {
-                chunks_[seq].emplace_back(
-                    std::weak_ptr<chunk_t>{}, devices_[deviceidx], 3 + n);
+                chunks_[seq].emplace_back(activate_chunk(
+                    seq,
+                    devices_[deviceidx],
+                    static_cast<uint32_t>(3 + n),
+                    zone_id(seq)));
             }
         }
     }
@@ -755,20 +769,19 @@ storage_pool::storage_pool(
 storage_pool::~storage_pool()
 {
     auto const cleanupchunks_ = [&](chunk_type which) {
-        for (auto &chunk_ : chunks_[which]) {
-            auto chunk(chunk_.chunk.lock());
-            if (chunk && (chunk->owns_readfd_ || chunk->owns_writefd_)) {
-                auto const fd = chunk->read_fd_;
-                if (chunk->owns_readfd_ && chunk->read_fd_ != -1) {
-                    (void)::close(chunk->read_fd_);
-                    chunk->read_fd_ = -1;
+        for (auto &chunk : chunks_[which]) {
+            if (chunk.owns_readfd_ || chunk.owns_writefd_) {
+                auto const fd = chunk.read_fd_;
+                if (chunk.owns_readfd_ && chunk.read_fd_ != -1) {
+                    (void)::close(chunk.read_fd_);
+                    chunk.read_fd_ = -1;
                 }
-                if (chunk->owns_writefd_ && chunk->write_fd_ != -1) {
-                    if (chunk->write_fd_ != fd) {
-                        (void)::fsync(chunk->write_fd_);
-                        (void)::close(chunk->write_fd_);
+                if (chunk.owns_writefd_ && chunk.write_fd_ != -1) {
+                    if (chunk.write_fd_ != fd) {
+                        (void)::fsync(chunk.write_fd_);
+                        (void)::close(chunk.write_fd_);
                     }
-                    chunk->write_fd_ = -1;
+                    chunk.write_fd_ = -1;
                 }
             }
         }
@@ -794,85 +807,57 @@ storage_pool::~storage_pool()
     devices_.clear();
 }
 
-size_t storage_pool::currently_active_chunks(chunk_type which) const noexcept
-{
-    std::unique_lock const g(lock_);
-    size_t ret = 0;
-    for (auto const &i : chunks_[which]) {
-        if (!i.chunk.expired()) {
-            ret++;
-        }
-    }
-    return ret;
-}
-
-std::shared_ptr<storage_pool::chunk_t>
-storage_pool::chunk(chunk_type which, uint32_t id) const
+storage_pool::chunk_t &storage_pool::chunk(chunk_type which, uint32_t id)
 {
     std::unique_lock const g(lock_);
     if (id >= chunks_[which].size()) {
         MONAD_ABORT("Requested chunk which does not exist");
     }
-    return chunks_[which][id].chunk.lock();
+    return chunks_[which][id];
 }
 
-std::shared_ptr<storage_pool::chunk_t>
-storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
+storage_pool::chunk_t storage_pool::activate_chunk(
+    chunk_type const which, device_t &device, uint32_t const id_within_device,
+    uint32_t const id_within_zone)
 {
 #ifndef __clang__
     MONAD_DEBUG_ASSERT(this != nullptr);
 #endif
     std::unique_lock g(lock_);
-    if (id >= chunks_[which].size()) {
-        MONAD_ABORT("Requested to activate chunk which does not exist");
-    }
-    auto ret = chunks_[which][id].chunk.lock();
-    if (ret) {
-        return ret;
-    }
-    g.unlock();
-    auto &chunkinfo = chunks_[which][id];
-    switch (which) {
-    case chunk_type::cnv:
-        ret = std::make_shared<chunk_t>(
-            chunkinfo.device,
-            chunkinfo.device.readwritefd_,
-            chunkinfo.device.readwritefd_,
-            file_offset_t(chunkinfo.chunk_offset_into_device) *
-                chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.chunk_offset_into_device,
-            id,
-            false,
-            false,
-            false);
-        break;
-    case chunk_type::seq: {
-        ret = std::make_shared<chunk_t>(
-            chunkinfo.device,
-            chunkinfo.device.readwritefd_,
-            chunkinfo.device.readwritefd_,
-            file_offset_t(chunkinfo.chunk_offset_into_device) *
-                chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.chunk_offset_into_device,
-            id,
-            false,
-            false,
-            true);
-        break;
-    }
-    }
-    MONAD_ASSERT(ret);
-    if (ret->device().is_zoned_device()) {
-        MONAD_ABORT("zonefs support isn't implemented yet");
-    }
-    g.lock();
-    auto const ret2 = chunks_[which][id].chunk.lock();
-    if (ret2) {
-        return ret2;
-    }
-    chunks_[which][id].chunk = ret;
+    chunk_t const ret = [&]() {
+        switch (which) {
+        case chunk_type::cnv:
+            return chunk_t{
+                device,
+                device.readwritefd_,
+                device.readwritefd_,
+                file_offset_t(id_within_device) *
+                    device.metadata_->chunk_capacity,
+                device.metadata_->chunk_capacity,
+                id_within_device,
+                id_within_zone,
+                false,
+                false,
+                false};
+        case chunk_type::seq: {
+            return chunk_t{
+                device,
+                device.readwritefd_,
+                device.readwritefd_,
+                file_offset_t(id_within_device) *
+                    device.metadata_->chunk_capacity,
+                device.metadata_->chunk_capacity,
+                id_within_device,
+                id_within_zone,
+                false,
+                false,
+                true};
+        }
+        }
+        MONAD_ABORT_PRINTF("chunk type not supported: %d", which);
+    }();
+    MONAD_ASSERT_PRINTF(
+        !ret.device().is_zoned_device(), "zonefs isn't implemented");
     return ret;
 }
 

@@ -68,16 +68,15 @@ private:
     using _storage_pool = class storage_pool;
     using chunk = _storage_pool::chunk_t;
 
-    template <class T>
     struct chunk_ptr_
     {
-        std::shared_ptr<T> ptr;
+        chunk *ptr;
         int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
 
         constexpr chunk_ptr_() = default;
 
-        constexpr chunk_ptr_(std::shared_ptr<T> ptr_)
-            : ptr(std::move(ptr_))
+        constexpr chunk_ptr_(chunk *ptr_)
+            : ptr(ptr_)
             , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
             , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
         {
@@ -86,8 +85,8 @@ private:
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ptr_<chunk> cnv_chunk_;
-    std::vector<chunk_ptr_<chunk>> seq_chunks_;
+    chunk_ptr_ cnv_chunk_;
+    std::vector<chunk_ptr_> seq_chunks_;
 
     struct
     {
@@ -661,7 +660,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 280);
+static_assert(sizeof(AsyncIO) == 272);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

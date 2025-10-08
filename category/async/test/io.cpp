@@ -47,8 +47,8 @@ namespace
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
         {
-            auto chunk = pool.activate_chunk(pool.seq, 0);
-            auto fd = chunk->write_fd(1);
+            auto chunk = pool.chunk(pool.seq, 0);
+            auto fd = chunk.write_fd(1);
             char c = 5;
             MONAD_ASSERT(
                 -1 != ::pwrite(fd.first, &c, 1, static_cast<off_t>(fd.second)));

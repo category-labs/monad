@@ -193,15 +193,8 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
     }
 
-    // TODO(niall): In the future don't activate all the chunks, as
-    // theoretically zoned storage may enforce a maximum open zone count in
-    // hardware. I cannot find any current zoned storage implementation that
-    // does not implement infinite open zones so I went ahead and have been lazy
-    // here, and we open everything all at once. It also means I can avoid
-    // dynamic fd registration with io_uring, which simplifies implementation.
-    storage_pool_ = &pool;
-    cnv_chunk_ = std::static_pointer_cast<storage_pool::chunk_t>(
-        pool.activate_chunk(storage_pool::cnv, 0));
+    storage_pool_ = std::addressof(pool);
+    cnv_chunk_ = std::addressof(pool.chunk(storage_pool::cnv, 0));
     auto count = pool.chunks(storage_pool::seq);
     seq_chunks_.reserve(count);
     std::vector<int> fds;
@@ -209,9 +202,8 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     fds.push_back(cnv_chunk_.io_uring_read_fd);
     fds.push_back(cnv_chunk_.io_uring_write_fd);
     for (size_t n = 0; n < count; n++) {
-        seq_chunks_.emplace_back(
-            std::static_pointer_cast<storage_pool::chunk_t>(pool.activate_chunk(
-                storage_pool::seq, static_cast<uint32_t>(n))));
+        seq_chunks_.emplace_back(std::addressof(
+            pool.chunk(storage_pool::seq, static_cast<uint32_t>(n))));
         MONAD_ASSERT_PRINTF(
             seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
             "sequential chunk capacity %llu must equal or exceed i/o buffer "

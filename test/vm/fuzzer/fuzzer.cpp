@@ -237,7 +237,7 @@ static void deploy_contract(
             .transient_storage = {},
             .code = code});
 
-    MONAD_VM_ASSERT(state.find(to) != nullptr);
+    FUZZER_ASSERT(state.find(to) != nullptr);
 }
 
 static void deploy_delegated_contract(
@@ -245,7 +245,7 @@ static void deploy_delegated_contract(
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
-    MONAD_VM_ASSERT(code.size() == 23);
+    FUZZER_ASSERT(code.size() == 23);
     deploy_contract(state, to, code);
 }
 

@@ -219,8 +219,6 @@ public:
         {
         }
 
-        chunk_t(chunk_t const &) = delete;
-        chunk_t(chunk_t &&) = delete;
         virtual ~chunk_t();
 
         //! \brief Returns the storage device this chunk is stored upon
@@ -333,8 +331,6 @@ public:
         }
     };
 
-    using chunk_ptr = std::shared_ptr<chunk_t>;
-
 private:
     bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_;
     std::vector<device_t> devices_;
@@ -342,14 +338,7 @@ private:
     // Lock protects everything below this
     mutable std::mutex lock_;
 
-    struct chunk_info_
-    {
-        std::weak_ptr<chunk_t> chunk;
-        device_t &device;
-        uint32_t const chunk_offset_into_device;
-    };
-
-    std::vector<chunk_info_> chunks_[2];
+    std::vector<chunk_t> chunks_[2];
 
     device_t make_device_(
         mode op, device_t::type_t_ type, std::filesystem::path const &path,
@@ -414,16 +403,17 @@ public:
         return chunks_[which].size();
     }
 
-    //! \brief Returns the number of currently active chunks for the specified
-    //! type
-    size_t currently_active_chunks(chunk_type which) const noexcept;
     //! \brief Get an existing chunk, if it is activated
-    std::shared_ptr<chunk_t> chunk(chunk_type which, uint32_t id) const;
-    //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
-    std::shared_ptr<chunk_t> activate_chunk(chunk_type which, uint32_t id);
+    chunk_t &chunk(chunk_type which, uint32_t id);
 
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;
+
+private:
+    //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
+    chunk_t activate_chunk(
+        chunk_type which, device_t &device, uint32_t id_within_device,
+        uint32_t id_within_zone);
 };
 
 MONAD_ASYNC_NAMESPACE_END

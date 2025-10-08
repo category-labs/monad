@@ -52,8 +52,8 @@ Node::UniquePtr read_node_blocking(
         (unsigned char *)aligned_alloc(DISK_PAGE_SIZE, bytes_to_read);
     auto unbuffer = make_scope_exit([buffer]() noexcept { ::free(buffer); });
 
-    auto chunk = pool.activate_chunk(pool.seq, node_offset.id);
-    auto fd = chunk->read_fd();
+    auto &chunk = pool.chunk(pool.seq, node_offset.id);
+    auto fd = chunk.read_fd();
     ssize_t const bytes_read = pread(
         fd.first,
         buffer,

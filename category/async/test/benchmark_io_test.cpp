@@ -148,7 +148,7 @@ struct shared_state_t
                     uint32_t(
                         io.storage_pool()
                             .chunk(MONAD_ASYNC_NAMESPACE::storage_pool::seq, n)
-                            ->size() /
+                            .size() /
                         MONAD_ASYNC_NAMESPACE::DISK_PAGE_SIZE)};
                 if (ret[n].second > 0) {
                     // Prevent random reads off the end of the chunk
@@ -397,7 +397,7 @@ set it to the desired size beforehand).
             };
             for (uint32_t n = 0; n < tofill; n++) {
                 auto const bytes = uint32_t(io.chunk_capacity(n));
-                auto [fd, offset] = pool.chunk(pool.seq, n)->write_fd(bytes);
+                auto [fd, offset] = pool.chunk(pool.seq, n).write_fd(bytes);
                 if (buffer.size_bytes() < bytes) {
                     make_storage(bytes);
                 }
@@ -412,7 +412,7 @@ set it to the desired size beforehand).
         else if (destroy_and_fill) {
             for (uint32_t n = 0; n < io.chunk_count(); n++) {
                 pool.chunk(pool.seq, n)
-                    ->write_fd(uint32_t(io.chunk_capacity(n)));
+                    .write_fd(uint32_t(io.chunk_capacity(n)));
             }
         }
         io.set_capture_io_latencies(true);

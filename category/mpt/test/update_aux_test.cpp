@@ -164,7 +164,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
             aux_writer.node_writer_fast->sender().offset();
         (void)pool
             .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
-            ->write_fd(50);
+            .write_fd(50);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(50);
         aux_writer.append_root_offset(start_offset);
@@ -183,7 +183,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
             aux_writer.node_writer_fast->sender().offset();
         (void)pool
             .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
-            ->write_fd(100);
+            .write_fd(100);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
         aux_writer.append_root_offset(end_offset);

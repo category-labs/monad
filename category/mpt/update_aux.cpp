@@ -151,9 +151,9 @@ void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
     if (list == chunk_list::free) {
-        auto chunk = io->storage_pool().chunk(storage_pool::seq, idx);
-        auto capacity = chunk->capacity();
-        MONAD_DEBUG_ASSERT(chunk->size() == 0);
+        auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
+        auto capacity = chunk.capacity();
+        MONAD_DEBUG_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_add_(capacity);
         db_metadata_[1].main->free_capacity_add_(capacity);
     }
@@ -169,9 +169,9 @@ void UpdateAuxImpl::remove(uint32_t const idx) noexcept
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
     if (is_free_list) {
-        auto chunk = io->storage_pool().chunk(storage_pool::seq, idx);
-        auto capacity = chunk->capacity();
-        MONAD_DEBUG_ASSERT(chunk->size() == 0);
+        auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
+        auto capacity = chunk.capacity();
+        MONAD_DEBUG_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_sub_(capacity);
         db_metadata_[1].main->free_capacity_sub_(capacity);
     }
@@ -422,24 +422,24 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     while (ci != db_metadata()->fast_list_end()) {
         auto const idx = db_metadata()->fast_list.end;
         remove(idx);
-        io->storage_pool().chunk(storage_pool::seq, idx)->destroy_contents();
+        io->storage_pool().chunk(storage_pool::seq, idx).destroy_contents();
         append(chunk_list::free, idx);
     }
-    auto fast_offset_chunk =
+    auto &fast_offset_chunk =
         io->storage_pool().chunk(storage_pool::seq, fast_offset.id);
-    MONAD_ASSERT(fast_offset_chunk->try_trim_contents(fast_offset.offset));
+    MONAD_ASSERT(fast_offset_chunk.try_trim_contents(fast_offset.offset));
 
     // Same for slow list
     auto const *slow_ci = db_metadata()->at(slow_offset.id);
     while (slow_ci != db_metadata()->slow_list_end()) {
         auto const idx = db_metadata()->slow_list.end;
         remove(idx);
-        io->storage_pool().chunk(storage_pool::seq, idx)->destroy_contents();
+        io->storage_pool().chunk(storage_pool::seq, idx).destroy_contents();
         append(chunk_list::free, idx);
     }
-    auto slow_offset_chunk =
+    auto &slow_offset_chunk =
         io->storage_pool().chunk(storage_pool::seq, slow_offset.id);
-    MONAD_ASSERT(slow_offset_chunk->try_trim_contents(slow_offset.offset));
+    MONAD_ASSERT(slow_offset_chunk.try_trim_contents(slow_offset.offset));
 
     // Reset node_writers offset to the same offsets in db_metadata
     reset_node_writers();
@@ -530,9 +530,9 @@ void UpdateAuxImpl::set_io(
     auto const map_size =
         sizeof(detail::db_metadata) +
         chunk_count * sizeof(detail::db_metadata::chunk_info_t);
-    auto cnv_chunk = io->storage_pool().activate_chunk(storage_pool::cnv, 0);
-    auto fdr = cnv_chunk->read_fd();
-    auto fdw = cnv_chunk->write_fd(0);
+    auto &cnv_chunk = io->storage_pool().chunk(storage_pool::cnv, 0);
+    auto fdr = cnv_chunk.read_fd();
+    auto fdw = cnv_chunk.write_fd(0);
     /* We keep accidentally running MPT on 4Kb min granularity storage, so
     error out on that early to save everybody time and hassle.
 
@@ -594,7 +594,7 @@ void UpdateAuxImpl::set_io(
         prot,
         mapflags,
         fd.first,
-        off_t(fdr.second + cnv_chunk->capacity() / 2)));
+        off_t(fdr.second + cnv_chunk.capacity() / 2)));
     MONAD_ASSERT(db_metadata_[1].main != MAP_FAILED);
     /* If on a storage which ignores TRIM, and the user just truncated
     an existing triedb, all the magics will be valid but the pool has
@@ -700,7 +700,7 @@ void UpdateAuxImpl::set_io(
         if (db_metadata()->using_chunks_for_root_offsets) {
             // Map in the DB version history storage
             // Firstly reserve address space for each copy
-            size_t const map_bytes_per_chunk = cnv_chunk->capacity() / 2;
+            size_t const map_bytes_per_chunk = cnv_chunk.capacity() / 2;
             size_t const db_version_history_storage_bytes =
                 db_metadata()->root_offsets.storage_.cnv_chunks_len *
                 map_bytes_per_chunk;
@@ -726,13 +726,13 @@ void UpdateAuxImpl::set_io(
             for (size_t n = 0;
                  n < db_metadata()->root_offsets.storage_.cnv_chunks_len;
                  n++) {
-                auto chunk = io->storage_pool().activate_chunk(
+                auto &chunk = io->storage_pool().chunk(
                     storage_pool::cnv,
                     db_metadata()
                         ->root_offsets.storage_.cnv_chunks[n]
                         .cnv_chunk_id);
-                auto fdr = chunk->read_fd();
-                auto fdw = chunk->write_fd(0);
+                auto fdr = chunk.read_fd();
+                auto fdw = chunk.write_fd(0);
                 auto &fd = can_write_to_map ? fdw : fdr;
                 MONAD_ASSERT(
                     MAP_FAILED != ::mmap(
@@ -771,9 +771,9 @@ void UpdateAuxImpl::set_io(
             "Neither copy of the DB metadata is valid, and not opened for "
             "writing so stopping now.");
         for (uint32_t n = 0; n < chunk_count; n++) {
-            auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
+            auto &chunk = io->storage_pool().chunk(storage_pool::seq, n);
             MONAD_ASSERT(
-                chunk->size() == 0,
+                chunk.size() == 0,
                 "Trying to initialise new DB but storage pool contains "
                 "existing data, stopping now to prevent data loss.");
         }
@@ -784,41 +784,39 @@ void UpdateAuxImpl::set_io(
             auto &storage = db_metadata_[0].main->root_offsets.storage_;
             memset(&storage, 0xff, sizeof(storage));
             storage.cnv_chunks_len = 0;
-            auto chunk =
-                io->storage_pool().activate_chunk(storage_pool::cnv, 1);
-            auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk->capacity());
+            auto &chunk = io->storage_pool().chunk(storage_pool::cnv, 1);
+            auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk.capacity());
             MONAD_ASSERT(tofill != nullptr);
             auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
-            memset(tofill, 0xff, chunk->capacity());
+            memset(tofill, 0xff, chunk.capacity());
             {
-                auto fdw = chunk->write_fd(chunk->capacity());
+                auto fdw = chunk.write_fd(chunk.capacity());
                 MONAD_ASSERT(
                     -1 != ::pwrite(
                               fdw.first,
                               tofill,
-                              chunk->capacity(),
+                              chunk.capacity(),
                               (off_t)fdw.second));
             }
             storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
             db_metadata_[0].main->using_chunks_for_root_offsets = true;
             db_metadata_[0].main->history_length =
-                chunk->capacity() / 2 / sizeof(chunk_offset_t);
+                chunk.capacity() / 2 / sizeof(chunk_offset_t);
             // Gobble up all remaining cnv chunks
             for (uint32_t n = 2;
                  n < io->storage_pool().chunks(storage_pool::cnv);
                  n++) {
-                auto chunk =
-                    io->storage_pool().activate_chunk(storage_pool::cnv, n);
-                auto fdw = chunk->write_fd(chunk->capacity());
+                auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
+                auto fdw = chunk.write_fd(chunk.capacity());
                 MONAD_ASSERT(
                     -1 != ::pwrite(
                               fdw.first,
                               tofill,
-                              chunk->capacity(),
+                              chunk.capacity(),
                               (off_t)fdw.second));
                 storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
                 db_metadata_[0].main->history_length +=
-                    chunk->capacity() / 2 / sizeof(chunk_offset_t);
+                    chunk.capacity() / 2 / sizeof(chunk_offset_t);
             }
         }
         else {
@@ -853,9 +851,9 @@ void UpdateAuxImpl::set_io(
         chunks.reserve(chunk_count);
         for (uint32_t n = 0; n < chunk_count; n++) {
             auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
-            MONAD_DEBUG_ASSERT(chunk->zone_id().first == storage_pool::seq);
-            MONAD_DEBUG_ASSERT(chunk->zone_id().second == n);
-            MONAD_ASSERT(chunk->size() == 0); // chunks must actually be free
+            MONAD_DEBUG_ASSERT(chunk.zone_id().first == storage_pool::seq);
+            MONAD_DEBUG_ASSERT(chunk.zone_id().second == n);
+            MONAD_ASSERT(chunk.size() == 0); // chunks must actually be free
             chunks.push_back(n);
         }
 
@@ -1020,12 +1018,12 @@ void UpdateAuxImpl::reset_node_writers()
 {
     auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
         -> node_writer_unique_ptr_type {
-        auto chunk =
+        auto &chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
-        MONAD_ASSERT(chunk->size() >= node_writer_offset.offset);
+        MONAD_ASSERT(chunk.size() >= node_writer_offset.offset);
         size_t const bytes_to_write = std::min(
             AsyncIO::WRITE_BUFFER_SIZE,
-            size_t(chunk->capacity() - node_writer_offset.offset));
+            size_t(chunk.capacity() - node_writer_offset.offset));
         return io ? io->make_connected(
                         write_single_buffer_sender{
                             node_writer_offset, bytes_to_write},
@@ -1426,7 +1424,7 @@ void UpdateAuxImpl::free_compacted_chunks()
                 remove(idx);
                 io->storage_pool()
                     .chunk(monad::async::storage_pool::seq, idx)
-                    ->destroy_contents();
+                    .destroy_contents();
                 append(
                     UpdateAuxImpl::chunk_list::free,
                     idx); // append not prepend

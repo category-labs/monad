@@ -539,7 +539,7 @@ namespace monad::test
                 }
             }
 
-            std::ostream &print(std::ostream &s) const
+            std::ostream &print(std::ostream &s)
             {
                 auto v = pool.devices().front().capacity();
                 std::cout << "\n   Storage pool capacity = " << v.first
@@ -559,10 +559,10 @@ namespace monad::test
                      ci != nullptr;
                      ci = ci->next(aux.db_metadata())) {
                     auto idx = ci->index(aux.db_metadata());
-                    auto chunk = pool.chunk(pool.seq, idx);
+                    auto &chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
-                              << " has capacity = " << chunk->capacity()
-                              << " consumed = " << chunk->size();
+                              << " has capacity = " << chunk.capacity()
+                              << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Slow list:";
                 for (auto const *ci = aux.db_metadata()->slow_list_begin();
@@ -571,8 +571,8 @@ namespace monad::test
                     auto idx = ci->index(aux.db_metadata());
                     auto chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
-                              << " has capacity = " << chunk->capacity()
-                              << " consumed = " << chunk->size();
+                              << " has capacity = " << chunk.capacity()
+                              << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Free list: "
                           << aux.db_metadata()->capacity_in_free_list

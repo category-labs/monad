@@ -139,7 +139,7 @@ struct chunk_info_restore_t
     monad::mpt::detail::db_metadata::chunk_info_t const metadata;
     std::span<std::byte const> const compressed;
 
-    monad::async::storage_pool::chunk_ptr chunk_ptr;
+    monad::async::storage_pool::chunk_t *chunk_ptr;
     std::vector<std::byte> nonchunkstorage;
     std::future<size_t> decompression_thread;
     bool const is_uncompressed;
@@ -281,7 +281,7 @@ struct chunk_info_restore_t
 
 struct chunk_info_archive_t
 {
-    monad::async::storage_pool::chunk_ptr const chunk_ptr;
+    monad::async::storage_pool::chunk_t const *chunk_ptr;
     la_int64_t const metadata;
 
     void *compressed_storage{nullptr};
@@ -292,7 +292,7 @@ struct chunk_info_archive_t
     std::future<void> compression_thread;
 
     chunk_info_archive_t(
-        monad::async::storage_pool::chunk_ptr chunk_ptr_, la_int64_t metadata_)
+        monad::async::storage_pool::chunk_t *chunk_ptr_, la_int64_t metadata_)
         : chunk_ptr(std::move(chunk_ptr_))
         , metadata(metadata_)
     {
@@ -448,17 +448,17 @@ public:
         do {
             auto chunkid = item->index(aux.db_metadata());
             count++;
-            auto chunk = pool->activate_chunk(pool->seq, chunkid);
-            MONAD_DEBUG_ASSERT(chunk->zone_id().second == chunkid);
+            auto &chunk = pool->chunk(pool->seq, chunkid);
+            MONAD_DEBUG_ASSERT(chunk.zone_id().second == chunkid);
             if constexpr (!std::is_void_v<T>) {
                 if (list != nullptr) {
                     la_int64_t const metadata =
                         std::bit_cast<la_int64_t>(*item);
-                    list->emplace_back(chunk, metadata);
+                    list->emplace_back(std::addressof(chunk), metadata);
                 }
             }
-            total_capacity += chunk->capacity();
-            total_used += chunk->size();
+            total_capacity += chunk.capacity();
+            total_used += chunk.size();
             item = item->next(aux.db_metadata());
         }
         while (item != nullptr);
@@ -665,7 +665,7 @@ public:
                 i.nonchunkstorage.resize(size_t(decompressed_len));
             }
             else {
-                i.chunk_ptr = pool->activate_chunk(i.type, i.chunk_id);
+                i.chunk_ptr = std::addressof(pool->chunk(i.type, i.chunk_id));
                 if (decompressed_len > i.chunk_ptr->capacity()) {
                     std::stringstream ss;
                     ss << "DB archive " << restore_database << " chunk id "
@@ -827,12 +827,12 @@ public:
                               "version.";
                         throw std::runtime_error(ss.str());
                     }
-                    auto cnv_chunk = pool->activate_chunk(
-                        monad::async::storage_pool::cnv, 0);
-                    auto [wfd, offset] = cnv_chunk->write_fd(0);
+                    auto &cnv_chunk =
+                        pool->chunk(monad::async::storage_pool::cnv, 0);
+                    auto [wfd, offset] = cnv_chunk.write_fd(0);
                     auto *new_metadata_map = ::mmap(
                         nullptr,
-                        cnv_chunk->capacity(),
+                        cnv_chunk.capacity(),
                         PROT_READ | PROT_WRITE,
                         MAP_SHARED,
                         wfd,
@@ -842,13 +842,13 @@ public:
                     }
                     auto un_new_metadata_map =
                         monad::make_scope_exit([&]() noexcept {
-                            ::munmap(new_metadata_map, cnv_chunk->capacity());
+                            ::munmap(new_metadata_map, cnv_chunk.capacity());
                         });
                     monad::mpt::detail::db_metadata *db_metadata[2] = {
                         (monad::mpt::detail::db_metadata *)new_metadata_map,
                         (monad::mpt::detail::db_metadata
                              *)((std::byte *)new_metadata_map +
-                                cnv_chunk->capacity() / 2)};
+                                cnv_chunk.capacity() / 2)};
                     auto do_ = [&](auto &&f) {
                         f(db_metadata[0]);
                         f(db_metadata[1]);
@@ -1115,8 +1115,7 @@ public:
                 std::thread::hardware_concurrency() /
                 2 /* deliberately not
                      true_hardware_concurrency */
-                * pool->activate_chunk(monad::async::storage_pool::seq, 0)
-                      ->capacity();
+                * pool->chunk(monad::async::storage_pool::seq, 0).capacity();
             int const tempfd = monad::async::make_temporary_inode();
             if (tempfd == -1) {
                 throw std::system_error(errno, std::system_category());
@@ -1219,7 +1218,8 @@ public:
             std::vector<chunk_info_archive_t> cnv_infos;
             cnv_infos.reserve(pool->chunks(pool->cnv));
             for (uint32_t n = 0; n <= additional_cnv_chunks_to_archive; n++) {
-                cnv_infos.emplace_back(pool->activate_chunk(pool->cnv, n), -1);
+                cnv_infos.emplace_back(
+                    std::addressof(pool->chunk(pool->cnv, n)), -1);
                 tocompress.push_back(&cnv_infos.back());
                 if (n == 0) {
                     // Need to determine additional_cnv_chunks_to_archive

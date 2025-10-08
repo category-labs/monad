@@ -64,7 +64,8 @@ void state_after_transactions(
         if (result.status_code != EVMC_SUCCESS &&
             result.status_code != EVMC_REVERT) {
             // TODO(dhil): proper error handling
-            MONAD_ABORT("Transaction execution failed");
+            MONAD_ABORT_PRINTF(
+                "Transaction execution failed: %d", result.status_code);
         }
         trace::run_tracer(
             state_tracer, state); // TODO(dhil): glue state traces together

@@ -53,17 +53,38 @@ namespace
         MonadDevnet chain;
         BlockHashBufferFinalized buffer;
         uint64_t next_tx_nonce = 0;
-        InMemoryMachine machine;
+        std::filesystem::path dbname;
+        OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
         vm::VM vm;
         BlockState block_state;
 
         StateAtFixture()
-            : db{machine}
+            : dbname{[] {
+                std::filesystem::path dbname(
+                    MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                    "monad_eth_call_test1_XXXXXX");
+                int const fd = ::mkstemp((char *)dbname.native().data());
+                MONAD_ASSERT(fd != -1);
+                MONAD_ASSERT(
+                    -1 !=
+                    ::ftruncate(
+                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+                ::close(fd);
+                return dbname;
+            }()}
+            , db{machine,
+                 mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dbname}}}
             , tdb{db}
             , block_state{tdb, vm}
         {
+            // tdb.set_block_and_prefix(0);
+        }
+
+        ~StateAtFixture()
+        {
+            std::filesystem::remove(dbname);
         }
 
         Transaction make_tx(std::optional<Address> to = std::nullopt);
@@ -73,7 +94,7 @@ namespace
     Transaction StateAtFixture::make_tx(std::optional<Address> to)
     {
         Transaction tx;
-        tx.gas_limit = 100'000;
+        tx.gas_limit = 100'000'000;
         tx.nonce = next_tx_nonce++;
         tx.to = to;
         return tx;
@@ -154,6 +175,7 @@ TEST_F(StateAtFixture, counter_contract)
     block_state.merge(std::move(state));
 
     deploy_counter_contract(1);
+
     BlockHeader header{.number = 2};
     NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer = std::monostate{};
@@ -161,8 +183,7 @@ TEST_F(StateAtFixture, counter_contract)
 
     bytes32_t const value_slot{};
     EXPECT_EQ(
-        block_state.read_storage(
-            counter_addr, Incarnation{1, Incarnation::LAST_TX}, value_slot),
+        block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
         bytes32_t{});
     state_after_transactions<traits>(
         chain,
@@ -177,7 +198,6 @@ TEST_F(StateAtFixture, counter_contract)
 
     bytes32_t const expected_value = to_bytes(to_big_endian(uint256_t{2}));
     EXPECT_EQ(
-        block_state.read_storage(
-            counter_addr, Incarnation{2, Incarnation::LAST_TX}, value_slot),
+        block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
         expected_value);
 }

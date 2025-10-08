@@ -55,6 +55,11 @@ public:
 
     ~PriorityPool();
 
+    unsigned num_fibers() const
+    {
+        return static_cast<unsigned>(fibers_.size());
+    }
+
     void submit(uint64_t const priority, std::function<void()> task)
     {
         channel_.push({priority, std::move(task)});

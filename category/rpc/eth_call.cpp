@@ -52,6 +52,7 @@
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
+#include <boost/scope_exit.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -387,7 +388,6 @@ void monad_eth_call_result_release(monad_eth_call_result *const result)
 
 namespace
 {
-
     struct Pool
     {
         enum class Type
@@ -404,10 +404,24 @@ namespace
         {
         }
 
+        monad_eth_call_pool_state get_state() const
+        {
+            return monad_eth_call_pool_state{
+                .num_fibers = pool.num_fibers(),
+                .executing_count =
+                    executing_count.load(std::memory_order_relaxed),
+                .queued_count = queued_count.load(std::memory_order_relaxed),
+                .queue_limit = limit,
+                .queue_full_count =
+                    queue_full_count.load(std::memory_order_relaxed),
+            };
+        }
+
         bool try_enqueue()
         {
             auto const current = queued_count.load(std::memory_order_relaxed);
             if (current >= limit) {
+                queue_full_count.fetch_add(1, std::memory_order_relaxed);
                 return false;
             }
             queued_count.fetch_add(1, std::memory_order_relaxed);
@@ -424,6 +438,12 @@ namespace
 
         // Number of requests currently in the queue.
         std::atomic<unsigned> queued_count{0};
+
+        // Number of requests currently being executed.
+        std::atomic<unsigned> executing_count{0};
+
+        // Number of queue full conditions.
+        std::atomic<uint64_t> queue_full_count{0};
 
         // Underlying fiber pool.
         fiber::PriorityPool pool;
@@ -601,9 +621,16 @@ struct monad_eth_call_executor
              tracer_config = tracer_config,
              gas_specified = gas_specified,
              active_pool = &active_pool] {
-                try {
-                    active_pool->queued_count.fetch_sub(
+                active_pool->queued_count.fetch_sub(
+                    1, std::memory_order_relaxed);
+                active_pool->executing_count.fetch_add(
+                    1, std::memory_order_relaxed);
+                BOOST_SCOPE_EXIT_ALL(&active_pool)
+                {
+                    active_pool->executing_count.fetch_sub(
                         1, std::memory_order_relaxed);
+                };
+                try {
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
                         active_pool->timeout) {
@@ -613,7 +640,6 @@ struct monad_eth_call_executor
                         complete(result, user);
                         return;
                     }
-
                     auto transaction = orig_txn;
 
                     bool const override_with_low_gas_retry_if_oog =
@@ -931,4 +957,14 @@ void monad_eth_call_executor_submit(
         user,
         tracer_config,
         gas_specified);
+}
+
+struct monad_eth_call_executor_state
+monad_eth_call_executor_get_state(monad_eth_call_executor *const e)
+{
+    MONAD_ASSERT(e);
+    return monad_eth_call_executor_state{
+        .low_gas_pool_state = e->low_gas_pool_.get_state(),
+        .high_gas_pool_state = e->high_gas_pool_.get_state(),
+    };
 }

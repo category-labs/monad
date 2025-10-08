@@ -87,6 +87,8 @@ public:
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
+    void clear();
+
     void push();
 
     void pop_accept();

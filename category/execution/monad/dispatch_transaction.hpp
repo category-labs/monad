@@ -26,7 +26,7 @@ Result<Receipt> dispatch_transaction(
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
+    BlockState &block_state, BlockMetrics &block_metrics, State &state,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &, RevertTransactionFn const &revert_transaction);
 

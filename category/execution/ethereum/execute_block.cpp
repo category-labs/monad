@@ -205,6 +205,7 @@ void execute_block_header(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
+    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
 }
 
 EXPLICIT_TRAITS(execute_block_header);
@@ -254,6 +255,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &txn_exec_finished,
              &revert_transaction = revert_transaction] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
+                State state{block_state, Incarnation{header.number, i + 1}};
                 try {
                     results[i] = dispatch_transaction<traits>(
                         chain,
@@ -265,6 +267,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_hash_buffer,
                         block_state,
                         block_metrics,
+                        state,
                         promises[i],
                         call_tracer,
                         state_tracer,
@@ -277,7 +280,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         sender,
                         authorities,
                         *results[i],
-                        call_tracer.get_call_frames());
+                        call_tracer.get_call_frames(),
+                        state);
                 }
                 catch (...) {
                     promises[i + 1].set_exception(std::current_exception());
@@ -295,8 +299,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
     // All transactions have released their merge-order synchronization
     // primitive (promises[i + 1]) but some stragglers could still be running
     // post-execution code that occurs immediately after that, e.g.
-    // `record_txn_exec_result_events`. This waits for everything to finish
-    // so that it's safe to assume we're the only ones using `results`.
+    // `record_txn_events`. This waits for everything to finish so that it's
+    // safe to assume we're the only ones using `results`.
     while (txn_exec_finished.load() < txn_count) {
         cpu_relax();
     }
@@ -377,6 +381,7 @@ Result<std::vector<Receipt>> execute_block(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
+    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
 
     return retvals;
 }

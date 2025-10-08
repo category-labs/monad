@@ -57,11 +57,11 @@ private:
     friend class State;
     friend class BlockState;
 
-    // the classes below can access the account_ field just for logging but
-    // CANNOT use it to make decisions affecting the final state (state of
-    // accounts) of execution.
-    friend struct trace::PrestateTracer;
-    friend struct trace::StateDiffTracer;
+    friend std::optional<Account> const &
+    get_account_for_trace(AccountState const &as)
+    {
+        return as.account_;
+    }
 
 public:
     Map<bytes32_t, bytes32_t> storage_{};

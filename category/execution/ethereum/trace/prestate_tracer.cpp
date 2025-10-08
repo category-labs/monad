@@ -81,10 +81,12 @@ namespace trace
 
             // Possible diff.
             auto const &current_account_state = current_stack.recent();
-            auto const &current_account = current_account_state.account_;
+            auto const &current_account =
+                get_account_for_trace(current_account_state);
             auto const &current_storage = current_account_state.storage_;
             auto const &original_account_state = it->second;
-            auto const &original_account = original_account_state.account_;
+            auto const &original_account =
+                get_account_for_trace(original_account_state);
             auto const &original_storage = original_account_state.storage_;
 
             // Nothing to do if the account has been created and destructed
@@ -161,7 +163,7 @@ namespace trace
     json PrestateTracer::account_state_to_json(
         OriginalAccountState const &as, State &state)
     {
-        auto const &account = as.account_;
+        auto const &account = get_account_for_trace(as);
         auto const &storage = as.storage_;
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {

@@ -102,6 +102,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
+    State state{bs, Incarnation{header.number, 1}};
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         EthereumMainnet{},
         0,
@@ -112,6 +113,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         block_hash_buffer,
         bs,
         metrics,
+        state,
         prev,
         noop_call_tracer,
         noop_state_tracer)();
@@ -210,6 +212,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
+    State state{bs, Incarnation{header.number, 1}};
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
         0,
@@ -220,6 +223,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         block_hash_buffer,
         bs,
         metrics,
+        state,
         prev,
         noop_call_tracer,
         noop_state_tracer)();
@@ -363,6 +367,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
@@ -373,6 +378,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
+            state,
             prev,
             noop_call_tracer,
             noop_state_tracer)();
@@ -418,6 +424,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
@@ -428,6 +435,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
+            state,
             prev,
             noop_call_tracer,
             noop_state_tracer)();
@@ -520,6 +528,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
@@ -530,6 +539,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             block_hash_buffer,
             bs,
             metrics,
+            state,
             prev,
             noop_call_tracer,
             noop_state_tracer)();

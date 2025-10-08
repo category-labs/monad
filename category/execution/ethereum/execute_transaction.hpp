@@ -86,6 +86,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
+    State &state_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
@@ -97,7 +98,7 @@ public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
-        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        BlockHashBuffer const &, BlockState &, BlockMetrics &, State &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         trace::StateTracer &,
         RevertTransactionFn const & = [](Address const &, Transaction const &,

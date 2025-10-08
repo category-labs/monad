@@ -120,6 +120,15 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
+void State::clear()
+{
+    original_.clear();
+    current_.clear();
+    logs_.reset({});
+    code_.clear();
+    version_ = 0;
+}
+
 void State::push()
 {
     ++version_;

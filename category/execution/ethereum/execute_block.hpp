@@ -46,6 +46,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
+    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
 
@@ -55,6 +56,7 @@ Result<std::vector<Receipt>> execute_block(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
+    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
 

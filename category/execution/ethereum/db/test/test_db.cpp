@@ -951,9 +951,12 @@ TYPED_TEST(DBTest, call_frames_stress_test)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
+        state_tracers.emplace_back(
+            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
@@ -965,7 +968,8 @@ TYPED_TEST(DBTest, call_frames_stress_test)
         block_hash_buffer,
         pool,
         metrics,
-        call_tracers);
+        call_tracers,
+        state_tracers);
 
     ASSERT_TRUE(!receipts.has_error());
 
@@ -1053,9 +1057,12 @@ TYPED_TEST(DBTest, assertion_exception)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
+        state_tracers.emplace_back(
+            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     EXPECT_THROW(
@@ -1069,7 +1076,8 @@ TYPED_TEST(DBTest, assertion_exception)
                 block_hash_buffer,
                 pool,
                 metrics,
-                call_tracers);
+                call_tracers,
+                state_tracers);
         },
         MonadException);
 }
@@ -1149,9 +1157,12 @@ TYPED_TEST(DBTest, call_frames_refund)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
+        state_tracers.emplace_back(
+            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
@@ -1163,7 +1174,8 @@ TYPED_TEST(DBTest, call_frames_refund)
         block_hash_buffer,
         pool,
         metrics,
-        call_tracers);
+        call_tracers,
+        state_tracers);
 
     ASSERT_TRUE(!receipts.has_error());
 

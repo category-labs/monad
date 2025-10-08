@@ -295,6 +295,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
     call_frames.resize(block.transactions.size());
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
+        block.transactions.size()};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -302,6 +304,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
+        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
+            std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
     BOOST_OUTCOME_TRY(
@@ -315,7 +319,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
             block_hash_buffer,
             *pool_,
             metrics,
-            call_tracers));
+            call_tracers,
+            state_tracers));
 
     block_state.log_debug();
     block_state.commit(

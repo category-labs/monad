@@ -39,6 +39,12 @@ public:
     VersionStack &operator=(VersionStack &&) = default;
     VersionStack &operator=(VersionStack const &) = delete;
 
+    void reset(T value, unsigned version = 0)
+    {
+        stack_.clear();
+        stack_.emplace_back(version, std::move(value));
+    }
+
     size_t size() const
     {
         return stack_.size();

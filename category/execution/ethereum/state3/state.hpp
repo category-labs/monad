@@ -87,6 +87,12 @@ public:
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
+    BlockState const &get_block_state() const;
+
+    BlockState &get_block_state();
+
+    void clear();
+
     void push();
 
     void pop_accept();

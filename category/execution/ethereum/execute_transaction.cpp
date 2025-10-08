@@ -296,14 +296,12 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header, i, revert_transaction}
     , block_hash_buffer_{block_hash_buffer}
-    , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
     , call_tracer_{call_tracer}
@@ -405,7 +403,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 }
 
 template <Traits traits>
-Result<Receipt> ExecuteTransaction<traits>::operator()()
+Result<Receipt> ExecuteTransaction<traits>::operator()(State &state)
 {
     TRACE_TXN_EVENT(StartTxn);
 
@@ -415,12 +413,11 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         header_.excess_blob_gas,
         chain_.get_chain_id()));
 
+    BlockState &block_state = state.get_block_state();
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
-
         call_tracer_.reset();
 
         auto result = execute_impl2(state);
@@ -430,14 +427,14 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             prev_.get_future().wait();
         }
 
-        if (block_state_.can_merge(state)) {
+        if (block_state.can_merge(state)) {
             if (result.has_error()) {
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
             trace::run_tracer(state_tracer_, state);
-            block_state_.merge(state);
+            block_state.merge(state);
             return receipt;
         }
     }
@@ -445,20 +442,19 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
-
+        state.clear();
         call_tracer_.reset();
 
         auto result = execute_impl2(state);
 
-        MONAD_ASSERT(block_state_.can_merge(state));
+        MONAD_ASSERT(block_state.can_merge(state));
         if (result.has_error()) {
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
         trace::run_tracer(state_tracer_, state);
-        block_state_.merge(state);
+        block_state.merge(state);
         return receipt;
     }
 }

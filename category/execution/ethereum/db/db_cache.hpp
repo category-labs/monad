@@ -218,6 +218,11 @@ public:
                ",sc=" + storage_.print_stats();
     }
 
+    virtual uint64_t get_block_number() const override
+    {
+        return db_.get_block_number();
+    }
+
 private:
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {

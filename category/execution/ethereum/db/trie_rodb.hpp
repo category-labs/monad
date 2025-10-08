@@ -183,6 +183,11 @@ public:
     {
         MONAD_ABORT();
     }
+
+    virtual uint64_t get_block_number() const override
+    {
+        return block_number_;
+    }
 };
 
 MONAD_NAMESPACE_END

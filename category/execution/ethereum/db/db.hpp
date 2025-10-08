@@ -57,6 +57,8 @@ struct Db
     virtual void
     update_voted_metadata(uint64_t block_number, bytes32_t const &block_id) = 0;
 
+    virtual uint64_t get_block_number() const = 0;
+
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &block_id,
         BlockHeader const &, std::vector<Receipt> const & = {},

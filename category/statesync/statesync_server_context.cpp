@@ -311,3 +311,8 @@ void monad_statesync_server_context::commit(
         ommers,
         withdrawals);
 }
+
+uint64_t monad_statesync_server_context::get_block_number() const
+{
+    return rw.get_block_number();
+}

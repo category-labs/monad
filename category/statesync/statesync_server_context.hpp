@@ -137,4 +137,6 @@ struct monad_statesync_server_context final : public monad::Db
         std::vector<monad::BlockHeader> const &ommers = {},
         std::optional<std::vector<monad::Withdrawal>> const & =
             std::nullopt) override;
+
+    virtual uint64_t get_block_number() const override;
 };

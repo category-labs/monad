@@ -480,7 +480,7 @@ void TrieDb::set_block_and_prefix(
         db_.find(prefix_, block_number).has_value(),
         "Fail to find block_number %lu, block_id %s",
         block_number,
-        evmc::hex(to_byte_string_view(block_id.bytes)).c_str());
+        fmt::format("{}", block_id).c_str());
     block_number_ = block_number;
     proposal_block_id_ = block_id;
 }

@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
@@ -37,6 +38,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <quill/Quill.h>
+#include <quill/bundled/fmt/format.h>
 
 #include <memory>
 #include <optional>
@@ -136,7 +138,12 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     {
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
-        MONAD_ASSERT(code_hash == NULL_HASH || result->size() != 0);
+        MONAD_ASSERT_PRINTF(
+            code_hash == NULL_HASH || result->size() != 0,
+            "code_hash %s, code size %zu, block_number %lu",
+            fmt::format("{}", code_hash).c_str(),
+            result->size(),
+            db_.get_block_number());
         return vm_.try_insert_varcode(code_hash, result);
     }
 }

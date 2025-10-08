@@ -83,12 +83,10 @@ namespace monad::vm::llvm
             : llvm(llvm)
             , ir(ir)
             , dep_ir(dep_ir)
-            , gas_from_inlining(ir.blocks().size())
         {
-            inline_empty_fallthroughs(); // BAL:
         }
 
-        Value *EVMValue_to_value(EVMValue const &arg)
+        Value *EvmValue_to_value(EvmValue const &arg)
         {
             Value *val;
             std::visit<void>(
@@ -100,19 +98,19 @@ namespace monad::vm::llvm
             return val;
         }
 
-        void prep_for_return(EVMValue const &a, EVMValue const &b)
+        void prep_for_return(EvmValue const &a, EvmValue const &b)
         {
             copy_gas(g_local_gas_ref, g_ctx_gas_ref);
 
             auto *offsetp = context_gep(
                 g_ctx_ref, context_offset_result_offset, "result_offset");
-            llvm.store(EVMValue_to_value(a), offsetp);
+            llvm.store(EvmValue_to_value(a), offsetp);
             auto *sizep = context_gep(
                 g_ctx_ref, context_offset_result_size, "result_size");
-            llvm.store(EVMValue_to_value(b), sizep);
+            llvm.store(EvmValue_to_value(b), sizep);
         }
 
-        void selfdestruct_(EVMValue const &v)
+        void selfdestruct_(EvmValue const &v)
         {
             if (selfdestruct_f == nullptr) {
                 selfdestruct_f = declare_symbol(
@@ -124,7 +122,7 @@ namespace monad::vm::llvm
 
             copy_gas(g_local_gas_ref, g_ctx_gas_ref);
 
-            auto *p = assign(EVMValue_to_value(v), "addr");
+            auto *p = assign(EvmValue_to_value(v), "addr");
             llvm.call_void(selfdestruct_f, {g_ctx_ref, p});
             llvm.unreachable();
             llvm.ret_void();
@@ -170,7 +168,7 @@ namespace monad::vm::llvm
             return item->second;
         }
 
-        void emit_jump(EVMValue const &v)
+        void emit_jump(EvmValue const &v)
         {
             std::visit<void>(
                 Cases{
@@ -182,7 +180,7 @@ namespace monad::vm::llvm
         }
 
         void emit_jumpi(
-            EVMValue const &else_v, EVMValue const &pred, BasicBlock *then_lbl)
+            EvmValue const &else_v, EvmValue const &pred, BasicBlock *then_lbl)
         {
             std::visit<void>(
                 Cases{
@@ -212,11 +210,10 @@ namespace monad::vm::llvm
                     },
                 },
                 pred);
-
         }
 
         void terminate_block(
-            Terminator term, std::vector<EVMValue> const &args,
+            Terminator term, std::vector<EvmValue> const &args,
             BasicBlock *fallthrough_lbl)
         {
             switch (term) {
@@ -273,6 +270,47 @@ namespace monad::vm::llvm
                 "stacktop_offset");
         }
 
+        void update_gas(int64_t const block_base_gas)
+        {
+
+            if (update_gas_f == nullptr) {
+                SaveInsert const _unused(llvm);
+                auto [f, arg] = llvm.internal_function_definition(
+                    "update_gas",
+                    llvm.void_ty,
+                    {llvm.ptr_ty(llvm.int_ty(64)), llvm.int_ty(64)});
+                update_gas_f = f;
+                auto *entry = llvm.basic_block("entry", f);
+                llvm.insert_at(entry);
+
+                Value *gas_ref = arg[0];
+                gas_ref->setName("gas_ref");
+                Value *block_base_gas = arg[1];
+                block_base_gas->setName("block_base_gas");
+
+                auto *gas = llvm.load(llvm.int_ty(64), gas_ref);
+                auto *gas1 = llvm.sub(gas, block_base_gas);
+                auto *gas_lt_zero = llvm.slt(gas1, llvm.lit(64, 0));
+
+                auto *gas_ok_lbl = llvm.basic_block("gas_ok_lbl", contract);
+                auto *gas_err_lbl = llvm.basic_block("gas_err_lbl", contract);
+
+                llvm.condbr(gas_lt_zero, gas_err_lbl, gas_ok_lbl);
+
+                llvm.insert_at(gas_err_lbl);
+                exit_(StatusCode::Error);
+
+                llvm.insert_at(gas_ok_lbl);
+                llvm.store(gas1, gas_ref);
+                llvm.ret_void();
+            }
+
+            llvm.call_void(
+                update_gas_f,
+                {g_local_gas_ref,
+                 llvm.lit(64, static_cast<uint64_t>(block_base_gas))});
+        }
+
         void emit_contract()
         {
             contract_start();
@@ -282,11 +320,10 @@ namespace monad::vm::llvm
             }
 
             for (DependencyBlock const &blk : dep_ir.blocks) {
-                base_gas_remaining = blk.base_gas;
-                // BAL: block_base_gas<traits>(blk) + gas_from_inlining[i];
-
                 auto *lbl = get_block_lbl(blk.offset);
                 llvm.insert_at(lbl);
+
+                update_gas(blk.block_base_gas);
 
                 Value *stack_top = load_stack_top_p();
 
@@ -307,20 +344,12 @@ namespace monad::vm::llvm
                             },
                             [&](struct SpillInstr const &si) {
                                 llvm.store(
-                                    EVMValue_to_value(si.val),
+                                    EvmValue_to_value(si.val),
                                     stacktop_offset(stack_top, si.idx));
                             },
                         },
                         instr);
                 }
-
-                // compute gas
-                // int64_t const min_gas = is_jumpdest(blk.offset)
-                //                             ? 1 + base_gas_remaining
-                //                             : base_gas_remaining;
-                int64_t const min_gas = base_gas_remaining;
-
-                update_gas(min_gas, blk.offset);
 
                 switch (blk.terminator) {
                 case Jump:
@@ -369,17 +398,14 @@ namespace monad::vm::llvm
 
         std::vector<std::tuple<byte_offset, BasicBlock *>> jumpdests;
 
-        std::vector<int32_t> gas_from_inlining;
-
         std::unordered_map<byte_offset, BasicBlock *> block_tbl;
         std::unordered_map<byte_offset, BasicBlock *> jumpdest_tbl;
-
-        int64_t base_gas_remaining;
 
         Type *context_ty = llvm.void_ty;
 
         Function *exit_f = init_exit();
         Function *selfdestruct_f = nullptr;
+        Function *update_gas_f = nullptr;
 
         Value *jump_mem = nullptr;
         BasicBlock *jump_lbl = nullptr;
@@ -613,13 +639,11 @@ namespace monad::vm::llvm
 
             args.push_back(g_ctx_ref);
 
-            // MONAD_VM_DEBUG_ASSERT(base_gas_remaining >= 0);
-
-            auto *g = llvm.lit(64, static_cast<uint64_t>(base_gas_remaining));
+            auto *g = llvm.lit(64, ei.remaining_block_base_gas);
             args.push_back(g);
 
             for (auto const &arg : ei.args) {
-                args.push_back(EVMValue_to_value(arg));
+                args.push_back(EvmValue_to_value(arg));
             }
 
             if (reads_ctx_gas(op)) {
@@ -653,38 +677,6 @@ namespace monad::vm::llvm
             }
 
             return std::tuple(jump_mem, jump_lbl);
-        };
-
-        void inline_empty_fallthroughs()
-        {
-            // rewrite from the bottom up so we can take advantage of previous
-            // rewrites
-            uint64_t i = ir.blocks().size();
-            while (i > 0) {
-                --i;
-                Block &blk = ir.blocks()[i];
-                if (blk.terminator == Terminator::FallThrough) {
-                    Block const &dest = ir.blocks()[blk.fallthrough_dest];
-                    if (dest.instrs.size() == 0) {
-                        gas_from_inlining[i] = is_jumpdest(dest.offset) ? 1 : 0;
-                        gas_from_inlining[i] +=
-                            gas_from_inlining[blk.fallthrough_dest];
-                        blk.terminator = dest.terminator;
-                        blk.fallthrough_dest = dest.fallthrough_dest;
-                    }
-                    else {
-                        gas_from_inlining[i] = 0;
-                    }
-                }
-            }
-
-            MONAD_VM_DEBUG_ASSERT(ir.is_valid());
-        }
-
-        bool is_jumpdest(byte_offset offset)
-        {
-            auto item = ir.jump_dests().find(offset);
-            return (item != ir.jump_dests().end());
         };
 
         Function *init_exit()
@@ -741,26 +733,12 @@ namespace monad::vm::llvm
             llvm.insert_at(no_overflow_lbl);
         };
 
-        void update_gas(int64_t const min_gas, byte_offset offset)
-        {
-            auto *gas = llvm.load(llvm.int_ty(64), g_local_gas_ref);
-            auto *gas1 =
-                llvm.sub(gas, llvm.lit(64, static_cast<uint64_t>(min_gas)));
-            auto *gas_lt_zero = llvm.slt(gas1, llvm.lit(64, 0));
-
-            auto *gas_ok_lbl = llvm.basic_block(
-                std::format("gas_ok_lbl_{}", offset), contract);
-
-            llvm.condbr(gas_lt_zero, error_lbl(), gas_ok_lbl);
-            llvm.insert_at(gas_ok_lbl);
-            llvm.store(gas1, g_local_gas_ref);
-        }
-
         BasicBlock *get_block_lbl(byte_offset offset)
         {
             auto item = block_tbl.find(offset);
             if (item == block_tbl.end()) {
-                auto const *nm = is_jumpdest(offset) ? "jd" : "fallthrough";
+                auto const *nm =
+                    dep_ir.is_jumpdest(offset) ? "jd" : "fallthrough";
                 auto *lbl = llvm.basic_block(
                     std::format("{}_lbl_{}", nm, offset), contract);
                 block_tbl.insert({offset, lbl});

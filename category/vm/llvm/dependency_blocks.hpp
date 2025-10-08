@@ -36,8 +36,7 @@ bool is_pure(OpCode op)
         op == Sub || op == Div || op == SDiv || op == Mod || op == SMod ||
         op == AddMod || op == MulMod || op == SignExtend || op == Lt ||
         op == Gt || op == SLt || op == SGt || op == Eq || op == IsZero ||
-        op == And || op == Or || op == XOr || op == Not || op == Byte
-    );
+        op == And || op == Or || op == XOr || op == Not || op == Byte);
 
     // BAL: just put true or false in the OpCodeInfo table in opcodes.hpp
 }
@@ -48,22 +47,7 @@ namespace monad::vm::dependency_blocks
     typedef int32_t StackIdx;
     typedef int64_t InstrIdx;
 
-    typedef std::variant<uint256_t, InstrIdx> EVMValue;
-
-    struct CheckOverflowInstr
-    {
-        int32_t high;
-    };
-
-    struct CheckUnderflowInstr
-    {
-        int32_t low;
-    };
-
-    struct UpdateStackTopInstr
-    {
-        int32_t delta;
-    };
+    typedef std::variant<uint256_t, InstrIdx> EvmValue;
 
     struct UnspillInstr
     {
@@ -72,14 +56,15 @@ namespace monad::vm::dependency_blocks
 
     struct SpillInstr
     {
-        EVMValue val;
+        EvmValue val;
         StackIdx idx;
     };
 
     struct EvmInstr
     {
         Instruction instr;
-        std::vector<EVMValue> args;
+        std::vector<EvmValue> args;
+        int64_t remaining_block_base_gas;
     };
 
     typedef std::variant<
@@ -93,61 +78,23 @@ namespace monad::vm::dependency_blocks
         return e;
     };
 
-    Instr spill_instr(EVMValue val, StackIdx idx)
+    Instr spill_instr(EvmValue val, StackIdx idx)
     {
         struct SpillInstr e{val, idx};
         // std::cerr << std::format("spill {} {}\n", e.val, e.idx);
         return e;
     };
 
-    Instr evm_instr(Instruction instr, std::vector<EVMValue> args)
+    Instr evm_instr(
+        Instruction instr, std::vector<EvmValue> args,
+        int64_t remaining_block_base_gas)
     {
-        struct EvmInstr e{instr, args};
+        struct EvmInstr e{instr, args, remaining_block_base_gas};
         return e;
     };
 
     struct DependencyBlock
     {
-        int32_t low;
-        int32_t high;
-        int32_t delta;
-
-        int64_t base_gas;
-
-        std::vector<EVMValue> value_stack;
-
-        std::vector<Instr> blk_instrs;
-        std::vector<bool> blk_instrs_evaluated;
-
-        std::vector<std::tuple<InstrIdx, Instr>> instrs;
-        std::vector<InstrIdx> dependencies;
-
-        /**
-         * The linear sequence of statements that make up this dependency block.
-         *
-         * It is legal for the body of a block to be empty; every valid block is
-         * terminated.
-         */
-        InstrIdx last_stmt = -1;
-
-        /**
-         * The terminator that ends this block.
-         */
-        Terminator terminator;
-        std::vector<EVMValue> terminator_args;
-
-        /**
-         * The block ID that control should fall through to at the end of this
-         * block, if the terminator of the block is a `JUMPI` instruction or an
-         * implicit fallthrough.
-         */
-        block_id fallthrough_dest;
-
-        /**
-         * The basic block byte code offset.
-         */
-        byte_offset offset;
-
         InstrIdx insert_instr(Instr instr)
         {
             InstrIdx idx = blk_instrs.size();
@@ -169,13 +116,13 @@ namespace monad::vm::dependency_blocks
             }
         }
 
-        std::vector<EVMValue> pop_args(uint8_t n)
+        std::vector<EvmValue> pop_args(uint8_t n)
         {
             // std::cerr << std::format("pop_args {} {}", n,
             // value_stack.size());
             MONAD_VM_ASSERT(value_stack.size() >= n);
 
-            std::vector<EVMValue> args;
+            std::vector<EvmValue> args;
 
             while (n > 0) {
 
@@ -212,7 +159,7 @@ namespace monad::vm::dependency_blocks
             instrs.push_back(std::make_tuple(i, instr));
         }
 
-        void push_if_unevaluated(std::vector<InstrIdx> &deps, EVMValue v)
+        void push_if_unevaluated(std::vector<InstrIdx> &deps, EvmValue v)
         {
             std::visit<void>(
                 Cases{
@@ -266,16 +213,42 @@ namespace monad::vm::dependency_blocks
             return (t == JumpI || t == Jump || t == FallThrough);
         }
 
-        DependencyBlock(Block const &blk)
-            : terminator(blk.terminator)
+    public:
+        byte_offset offset;
+        int64_t block_base_gas;
+
+        int32_t low;
+        int32_t high;
+        int32_t delta;
+
+        std::vector<std::tuple<InstrIdx, Instr>> instrs;
+
+        Terminator terminator;
+        block_id fallthrough_dest;
+        std::vector<EvmValue> terminator_args;
+
+    private:
+        std::vector<Instr> blk_instrs;
+        std::vector<bool> blk_instrs_evaluated;
+        std::vector<EvmValue> value_stack;
+
+    public:
+        DependencyBlock(Block const &blk, int64_t blk_base_gas)
+            : offset(blk.offset)
+            , block_base_gas(blk_base_gas)
+            , terminator(blk.terminator)
             , fallthrough_dest(blk.fallthrough_dest)
-            , offset(blk.offset)
-        // , base_gas(block_base_gas<traits>(blk))
         {
             auto [low_, delta_, high_] = blk.stack_deltas();
             low = low_;
             delta = delta_;
             high = high_;
+
+            int64_t remaining_block_base_gas = block_base_gas;
+            MONAD_VM_DEBUG_ASSERT(remaining_block_base_gas >= 0);
+
+            InstrIdx last_stmt = -1;
+            std::vector<InstrIdx> dependencies;
 
             expand_value_stack(low);
 
@@ -283,6 +256,9 @@ namespace monad::vm::dependency_blocks
             // to check gas add block base gas to CheckGas instruction
             // also add remaining block bas gas to each instruction
             for (auto const &instr : blk.instrs) {
+
+                remaining_block_base_gas -= instr.static_gas_cost();
+
                 uint8_t n_args = instr.stack_args();
                 auto op = instr.opcode();
                 // std::cerr << std::format("op = {}\n", op);
@@ -313,13 +289,14 @@ namespace monad::vm::dependency_blocks
                     value_stack.pop_back();
                     break;
                 default:
-                    std::vector<EVMValue> args = pop_args(n_args);
+                    std::vector<EvmValue> args = pop_args(n_args);
 
                     if (!is_pure(op)) {
                         args.push_back(last_stmt);
                     }
 
-                    InstrIdx idx = insert_instr(evm_instr(instr, args));
+                    InstrIdx idx = insert_instr(
+                        evm_instr(instr, args, remaining_block_base_gas));
 
                     if (!is_pure(op)) {
                         last_stmt = idx;
@@ -341,7 +318,7 @@ namespace monad::vm::dependency_blocks
             terminator_args = pop_args(term_n_args);
 
             // push terminator dependencies first so they are processed last
-            for (EVMValue const &val : terminator_args) {
+            for (EvmValue const &val : terminator_args) {
 
                 std::visit<void>(
                     Cases{
@@ -390,14 +367,6 @@ namespace monad::vm::dependency_blocks
         };
     };
 
-    template <Traits traits>
-    DependencyBlock make_DependencyBlock(Block const &blk)
-    {
-        DependencyBlock dep_blk(blk);
-        dep_blk.base_gas = block_base_gas<traits>(blk);
-        return dep_blk;
-    }
-
     class DependencyBlocksIR
     {
     private:
@@ -409,6 +378,12 @@ namespace monad::vm::dependency_blocks
             : jump_dests(ir.jump_dests())
         {
         }
+
+        bool is_jumpdest(byte_offset offset)
+        {
+            auto item = jump_dests.find(offset);
+            return (item != jump_dests.end());
+        };
     };
 
     template <Traits traits>
@@ -416,7 +391,9 @@ namespace monad::vm::dependency_blocks
     {
         DependencyBlocksIR dep_ir(ir);
         for (auto const &blk : ir.blocks()) {
-            dep_ir.blocks.push_back(make_DependencyBlock<traits>(blk));
+            int64_t gas = block_base_gas<traits>(blk);
+            gas = dep_ir.is_jumpdest(blk.offset) ? 1 + gas : gas;
+            dep_ir.blocks.push_back(DependencyBlock(blk, gas));
         }
         return dep_ir;
     }
@@ -428,7 +405,7 @@ namespace monad::vm::dependency_blocks
  */
 
 template <>
-struct std::formatter<monad::vm::dependency_blocks::EVMValue>
+struct std::formatter<monad::vm::dependency_blocks::EvmValue>
 {
     constexpr auto parse(std::format_parse_context &ctx)
     {
@@ -436,7 +413,7 @@ struct std::formatter<monad::vm::dependency_blocks::EVMValue>
     }
 
     auto format(
-        monad::vm::dependency_blocks::EVMValue const &v,
+        monad::vm::dependency_blocks::EvmValue const &v,
         std::format_context &ctx) const
     {
         using namespace monad::vm::dependency_blocks;

@@ -950,7 +950,7 @@ TEST_F(EthCallFixture, from_contract_account)
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 32094);
+    EXPECT_EQ(ctx.result->gas_used, 62094);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
@@ -1040,7 +1040,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         EXPECT_EQ(ctx->result->output_data_len, 0);
         EXPECT_EQ(ctx->result->encoded_trace_len, 0);
         EXPECT_EQ(ctx->result->gas_refund, 0);
-        EXPECT_EQ(ctx->result->gas_used, 32094);
+        EXPECT_EQ(ctx->result->gas_used, 62094);
 
         monad_state_override_destroy(state_override);
     }

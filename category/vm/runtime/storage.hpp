@@ -87,7 +87,7 @@ namespace monad::vm::runtime
 
         if constexpr (traits::eip_2929_active()) {
             if (access_status == EVMC_ACCESS_COLD) {
-                gas_used += 2100;
+                gas_used += traits::cold_storage_cost() + min_gas;
             }
         }
 

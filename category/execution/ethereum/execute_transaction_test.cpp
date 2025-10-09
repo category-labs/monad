@@ -234,7 +234,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
                      0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
             .nonce = 25,
             .max_fee_per_gas = 100'000'000'000,
-            .gas_limit = 151'039,
+            .gas_limit = 157'039,
             .to = contract,
             .data = evmc::from_hex("0x01").value(),
         };
@@ -267,7 +267,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
             State state{bs, Incarnation{0, 0}};
             EXPECT_EQ(
                 intx::be::load<uint256_t>(state.get_balance(from)),
-                uint256_t{40'896'100'000'000'000});
+                uint256_t{40'296'100'000'000'000});
         }
     }
 
@@ -281,7 +281,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
                      0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
             .nonce = 26,
             .max_fee_per_gas = 100'000'000'000,
-            .gas_limit = 26'023,
+            .gas_limit = 32'023,
             .to = contract,
         };
 
@@ -314,7 +314,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
             EXPECT_EQ(
                 intx::be::load<uint256_t>(state.get_balance(from)),
                 uint256_t{
-                    38'293'800'000'000'000 + (120'000 * 100'000'000'000)});
+                    37'093'800'000'000'000 + (120'000 * 100'000'000'000)});
         }
     }
 }
@@ -367,7 +367,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete_then_set)
             .nonce = 25,
             .max_fee_per_gas = 100'000'000'000,
             .gas_limit =
-                26'109 + 2300, // actual gas used + low gas SSTORE stipend
+                32'109 + 2300, // actual gas used + low gas SSTORE stipend
             .to = contract,
         };
 
@@ -399,7 +399,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete_then_set)
             State state{bs, Incarnation{0, 0}};
             EXPECT_EQ(
                 intx::be::load<uint256_t>(state.get_balance(from)),
-                uint256_t{53'159'100'000'000'000 + (2800 * 100'000'000'000)});
+                uint256_t{52'559'100'000'000'000 + (2800 * 100'000'000'000)});
         }
     }
 }

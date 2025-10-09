@@ -17,9 +17,11 @@
 
 #include <category/vm/core/assert.h>
 
+#include <functional>
 #include <iterator>
 #include <optional>
 #include <random>
+#include <unordered_map>
 
 namespace monad::vm::fuzzing
 {
@@ -102,4 +104,68 @@ namespace monad::vm::fuzzing
     {
         return uniform_sample(eng, in.begin(), in.end());
     }
+
+    template <
+        typename T, typename Hash = std::hash<T>,
+        typename Equal = std::equal_to<T>>
+    class UniformSamplingSet
+    {
+    public:
+        bool insert(T const &x)
+        {
+            auto const [_, ins] = map_.insert({x, vec_.size()});
+            if (ins) {
+                vec_.push_back(x);
+            }
+            return ins;
+        }
+
+        bool erase(T const &x)
+        {
+            auto const e = map_.find(x);
+            if (e == map_.end()) {
+                return false;
+            }
+            MONAD_VM_DEBUG_ASSERT(!vec_.empty());
+            auto const i = e->second;
+            map_.at(vec_.back()) = i;
+            vec_[i] = vec_.back();
+            vec_.pop_back();
+            map_.erase(e);
+            return true;
+        }
+
+        bool empty() const
+        {
+            return vec_.empty();
+        }
+
+        size_t size() const
+        {
+            return vec_.size();
+        }
+
+        bool contains(T const &x) const
+        {
+            return map_.contains(x);
+        }
+
+        template <typename Engine>
+        T sample(Engine &eng)
+        {
+            MONAD_VM_ASSERT(!empty());
+            return uniform_sample(eng, vec_);
+        }
+
+        void for_each(std::function<void(T const &)> f)
+        {
+            for (auto const &x : vec_) {
+                f(x);
+            }
+        }
+
+    private:
+        std::unordered_map<T, size_t, Hash, Equal> map_;
+        std::vector<T> vec_;
+    };
 }

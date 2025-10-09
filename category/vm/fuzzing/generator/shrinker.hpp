@@ -63,8 +63,7 @@ namespace monad::vm::fuzzing
         auto const p = 1 / (mean_ratio * static_cast<double>(vec.size()));
 
         if (p >= 1.0) {
-            // Mean is greater than or equal to the vector size, so just remove
-            // one element.
+            // Invalid p, just remove a single element
             return erase_element(engine, std::move(vec)).first;
         }
         else {

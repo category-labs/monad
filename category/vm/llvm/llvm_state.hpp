@@ -245,16 +245,37 @@ namespace monad::vm::llvm
             instr->setMetadata(sanitized, comment_node);
         }
 
-        Value *
-        phi(Type *ty,
-            std::vector<std::tuple<Value *, BasicBlock *>> const &phi_vals)
+        // BAL:
+        // Value *
+        // phi(Type *ty,
+        //     std::vector<std::tuple<Value *, BasicBlock *>> const &phi_vals)
+        // {
+        //     PHINode *v = ir.CreatePHI(
+        //         ty, static_cast<unsigned int>(phi_vals.size()), "phi");
+        //     for (auto const &[val, lbl] : phi_vals) {
+        //         v->addIncoming(val, lbl);
+        //     }
+        //     return v;
+        // }
+
+        PHINode *phi(Type *ty)
         {
-            PHINode *v = ir.CreatePHI(
-                ty, static_cast<unsigned int>(phi_vals.size()), "phi");
-            for (auto const &[val, lbl] : phi_vals) {
-                v->addIncoming(val, lbl);
-            }
-            return v;
+            return ir.CreatePHI(ty, 0, "phi");
+        }
+
+        void phi_add_incoming(PHINode *v, Value *val, BasicBlock *lbl)
+        {
+            v->addIncoming(val, lbl);
+        }
+
+        IndirectBrInst *indirectbr(Value *addr)
+        {
+            return ir.CreateIndirectBr(addr, 0);
+        }
+
+        void indirect_br_add_dest(IndirectBrInst *r, BasicBlock *lbl)
+        {
+            r->addDestination(lbl);
         }
 
         void br(BasicBlock *blk)
@@ -559,16 +580,6 @@ namespace monad::vm::llvm
         BlockAddress *block_address(BasicBlock *blk)
         {
             return BlockAddress::get(blk);
-        }
-
-        IndirectBrInst *indirectbr(Value *addr, std::vector<BasicBlock *> blks)
-        {
-            auto *r = ir.CreateIndirectBr(
-                addr, static_cast<unsigned int>(blks.size()));
-            for (BasicBlock *blk : blks) {
-                r->addDestination(blk);
-            }
-            return r;
         }
 
     private:

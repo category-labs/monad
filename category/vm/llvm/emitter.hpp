@@ -398,8 +398,6 @@ namespace monad::vm::llvm
         std::unordered_map<std::string, Function *> llvm_opcode_tbl;
         // ^ string instead of opcode for Log
 
-        std::vector<std::tuple<byte_offset, BasicBlock *>> jumpdests;
-
         std::unordered_map<byte_offset, BasicBlock *> block_tbl;
         std::unordered_map<byte_offset, BasicBlock *> jumpdest_tbl;
 
@@ -414,8 +412,10 @@ namespace monad::vm::llvm
         BasicBlock *error_lbl_v = nullptr;
         BasicBlock *return_lbl_v = nullptr;
         BasicBlock *revert_lbl_v = nullptr;
+
         BasicBlock *indirectbr_lbl_v = nullptr;
-        std::vector<std::tuple<Value *, BasicBlock *>> indirectbr_phis;
+        PHINode *indirectbr_phi = nullptr;
+        IndirectBrInst *indirectbr_v = nullptr;
 
         std::vector<Value *> value_tbl;
 
@@ -476,55 +476,55 @@ namespace monad::vm::llvm
             return revert_lbl_v;
         }
 
-        void init_indirectbr_block()
-        {
-            if (indirectbr_lbl_v == nullptr) {
-                return;
-            }
-            init_jumptable();
-            SaveInsert const _unused(llvm);
-            llvm.insert_at(indirectbr_lbl_v);
-            Value *indirectbr_phi = llvm.phi(llvm.word_ty, indirectbr_phis);
-
-            Value *is_lte_max_offset = llvm.ule(
-                indirectbr_phi,
-                llvm.lit_word(static_cast<uint256_t>(jumptable_max_offset)));
-
-            Value *lte_offset = llvm.select(
-                is_lte_max_offset,
-                llvm.cast_64(indirectbr_phi),
-                llvm.u64(jumptable_err_offset + jumptable_min_offset));
-
-            Value *is_gte_min_offset =
-                llvm.uge(lte_offset, llvm.u64(jumptable_min_offset));
-
-            Value *gte_offset = llvm.select(
-                is_gte_min_offset,
-                lte_offset,
-                llvm.u64(jumptable_err_offset + jumptable_min_offset));
-
-            Value *sub_offset = // BAL: eliminate this sub by rewriting the
-                                // jumptable address
-                llvm.sub(gte_offset, llvm.u64(jumptable_min_offset));
-
-            Value *p = llvm.gep(
-                jumptable_ty,
-                jumptable,
-                {llvm.u32(0), sub_offset},
-                "jumpdest_p");
-
-            Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_ty), p);
-
-            std::vector<BasicBlock *> lbls;
-
-            for (auto const &[_, lbl] : jumpdest_tbl) {
-                lbls.push_back(lbl);
-            }
-            lbls.push_back(error_lbl());
-
-            llvm.indirectbr(jd_addr, lbls);
-        }
-
+        // void init_indirectbr_block()
+        // {
+        //     if (indirectbr_lbl_v == nullptr) {
+        //         return;
+        //     }
+        //     init_jumptable();
+        //     SaveInsert const _unused(llvm);
+        //     llvm.insert_at(indirectbr_lbl_v);
+        //     Value *indirectbr_phi = llvm.phi(llvm.word_ty, indirectbr_phis);
+        //
+        //     Value *is_lte_max_offset = llvm.ule(
+        //         indirectbr_phi,
+        //         llvm.lit_word(static_cast<uint256_t>(jumptable_max_offset)));
+        //
+        //     Value *lte_offset = llvm.select(
+        //         is_lte_max_offset,
+        //         llvm.cast_64(indirectbr_phi),
+        //         llvm.u64(jumptable_err_offset + jumptable_min_offset));
+        //
+        //     Value *is_gte_min_offset =
+        //         llvm.uge(lte_offset, llvm.u64(jumptable_min_offset));
+        //
+        //     Value *gte_offset = llvm.select(
+        //         is_gte_min_offset,
+        //         lte_offset,
+        //         llvm.u64(jumptable_err_offset + jumptable_min_offset));
+        //
+        //     Value *sub_offset = // BAL: eliminate this sub by rewriting the
+        //                         // jumptable address
+        //         llvm.sub(gte_offset, llvm.u64(jumptable_min_offset));
+        //
+        //     Value *p = llvm.gep(
+        //         jumptable_ty,
+        //         jumptable,
+        //         {llvm.u32(0), sub_offset},
+        //         "jumpdest_p");
+        //
+        //     Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_ty), p);
+        //
+        //     std::vector<BasicBlock *> lbls;
+        //
+        //     for (auto const &[_, lbl] : jumpdest_tbl) {
+        //         lbls.push_back(lbl);
+        //     }
+        //     lbls.push_back(error_lbl());
+        //
+        //     llvm.indirectbr(jd_addr, lbls);
+        // }
+        //
         BasicBlock *indirectbr_lbl(InstrIdx i)
         {
             if (jumpdest_tbl.size() == 0) {
@@ -532,10 +532,52 @@ namespace monad::vm::llvm
             }
 
             if (indirectbr_lbl_v == nullptr) {
+                init_jumptable();
                 indirectbr_lbl_v = llvm.basic_block("indirectbr_lbl", contract);
+                SaveInsert const _unused(llvm);
+                llvm.insert_at(indirectbr_lbl_v);
+
+                indirectbr_phi = llvm.phi(llvm.word_ty);
+
+                Value *is_lte_max_offset = llvm.ule(
+                    indirectbr_phi,
+                    llvm.lit_word(
+                        static_cast<uint256_t>(jumptable_max_offset)));
+
+                Value *lte_offset = llvm.select(
+                    is_lte_max_offset,
+                    llvm.cast_64(indirectbr_phi),
+                    llvm.u64(jumptable_err_offset + jumptable_min_offset));
+
+                Value *is_gte_min_offset =
+                    llvm.uge(lte_offset, llvm.u64(jumptable_min_offset));
+
+                Value *gte_offset = llvm.select(
+                    is_gte_min_offset,
+                    lte_offset,
+                    llvm.u64(jumptable_err_offset + jumptable_min_offset));
+
+                Value *sub_offset = // BAL: eliminate this sub by rewriting the
+                                    // jumptable address
+                    llvm.sub(gte_offset, llvm.u64(jumptable_min_offset));
+
+                Value *p = llvm.gep(
+                    jumptable_ty,
+                    jumptable,
+                    {llvm.u32(0), sub_offset},
+                    "jumpdest_p");
+
+                Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_ty), p);
+                indirectbr_v = llvm.indirectbr(jd_addr);
+
+                llvm.indirect_br_add_dest(indirectbr_v, error_lbl());
+                for (auto const &[_, lbl] : jumpdest_tbl) {
+                    llvm.indirect_br_add_dest(indirectbr_v, lbl);
+                }
             }
 
-            indirectbr_phis.push_back({value_tbl[i], llvm.get_insert()});
+            llvm.phi_add_incoming(
+                indirectbr_phi, value_tbl[i], llvm.get_insert());
 
             return indirectbr_lbl_v;
         }
@@ -590,7 +632,6 @@ namespace monad::vm::llvm
             llvm.insert_at(entry);
             MONAD_VM_ASSERT(dep_ir.blocks.size() > 0);
             llvm.br(get_block_lbl(dep_ir.blocks.front().offset));
-            init_indirectbr_block();
         };
 
         bool reads_ctx_gas(OpCode op)

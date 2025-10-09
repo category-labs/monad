@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_at.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -59,6 +60,7 @@ namespace
         TrieDb tdb;
         vm::VM vm;
         BlockState block_state;
+        monad::fiber::PriorityPool pool{2, 4}; // 2 threads, 4 fibers
 
         StateAtFixture()
             : dbname{[] {
@@ -79,7 +81,6 @@ namespace
             , tdb{db}
             , block_state{tdb, vm}
         {
-            // tdb.set_block_and_prefix(0);
         }
 
         ~StateAtFixture()
@@ -93,10 +94,12 @@ namespace
 
     Transaction StateAtFixture::make_tx(std::optional<Address> to)
     {
+        MonadDevnet devnet;
         Transaction tx;
         tx.gas_limit = 100'000'000;
         tx.nonce = next_tx_nonce++;
         tx.to = to;
+        tx.sc = SignatureAndChain{1, 1, devnet.get_chain_id(), 1};
         return tx;
     }
 
@@ -128,14 +131,51 @@ namespace
         return auths;
     }
 
-    std::vector<std::optional<Address>> senders(size_t n)
+    std::vector<Address> senders(size_t n)
     {
-        std::vector<std::optional<Address>> s(n, addr1);
+        std::vector<Address> s(n, addr1);
         return s;
+    }
+
+    std::pair<
+        std::vector<nlohmann::json>,
+        std::vector<std::unique_ptr<trace::StateTracer>>>
+    make_state_tracers(size_t n, enum monad_tracer_config config)
+    {
+        std::vector<nlohmann::json> trace_containers(n, nlohmann::json{});
+        std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
+        state_tracers.reserve(n);
+        for (size_t i = 0; i < n; ++i) {
+            state_tracers.push_back([&] -> std::unique_ptr<trace::StateTracer> {
+                switch (config) {
+                case NOOP_TRACER:
+                    return std::unique_ptr<trace::StateTracer>{
+                        std::make_unique<trace::StateTracer>(std::monostate{})};
+                case CALL_TRACER:
+                    MONAD_ASSERT(false);
+                    break;
+                case PRESTATE_TRACER:
+                    return std::unique_ptr<trace::StateTracer>{
+                        std::make_unique<trace::StateTracer>(
+                            trace::PrestateTracer{trace_containers[i]})};
+                case STATEDIFF_TRACER:
+                    return std::unique_ptr<trace::StateTracer>{
+                        std::make_unique<trace::StateTracer>(
+                            trace::StateDiffTracer{trace_containers[i]})};
+                }
+                MONAD_ASSERT(false);
+            }());
+        }
+        MONAD_ASSERT(state_tracers.size() == n);
+        MONAD_ASSERT(trace_containers.size() == state_tracers.size());
+        return std::pair<
+            std::vector<nlohmann::json>,
+            std::vector<std::unique_ptr<trace::StateTracer>>>{
+            std::move(trace_containers), std::move(state_tracers)};
     }
 }
 
-TEST_F(StateAtFixture, simple)
+TEST_F(StateAtFixture, check_nonce)
 {
     State state{block_state, Incarnation{0, 0}};
     state.create_contract(addr1);
@@ -146,21 +186,21 @@ TEST_F(StateAtFixture, simple)
     block_state.merge(std::move(state));
 
     BlockHeader header{.number = 1};
-    NoopCallTracer call_tracer{};
-    trace::StateTracer state_tracer = std::monostate{};
     std::vector<Transaction> txns{make_tx(addr1), make_tx(addr1)};
+    auto [trace_containers, state_tracers] =
+        make_state_tracers(txns.size(), NOOP_TRACER);
 
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 0);
     state_after_transactions<traits>(
         chain,
         header,
-        buffer,
-        call_tracer,
-        state_tracer,
-        block_state,
+        txns,
         ::senders(txns.size()),
         ::authorities(txns.size()),
-        txns);
+        block_state,
+        buffer,
+        pool,
+        state_tracers);
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 2);
 }
 
@@ -177,9 +217,9 @@ TEST_F(StateAtFixture, counter_contract)
     deploy_counter_contract(1);
 
     BlockHeader header{.number = 2};
-    NoopCallTracer call_tracer{};
-    trace::StateTracer state_tracer = std::monostate{};
     std::vector<Transaction> txns{make_tx(counter_addr), make_tx(counter_addr)};
+    auto [trace_containers, state_tracers] =
+        make_state_tracers(txns.size(), NOOP_TRACER);
 
     bytes32_t const value_slot{};
     EXPECT_EQ(
@@ -188,13 +228,13 @@ TEST_F(StateAtFixture, counter_contract)
     state_after_transactions<traits>(
         chain,
         header,
-        buffer,
-        call_tracer,
-        state_tracer,
-        block_state,
+        txns,
         ::senders(txns.size()),
         ::authorities(txns.size()),
-        txns);
+        block_state,
+        buffer,
+        pool,
+        state_tracers);
 
     bytes32_t const expected_value = to_bytes(to_big_endian(uint256_t{2}));
     EXPECT_EQ(

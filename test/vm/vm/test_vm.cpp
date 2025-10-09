@@ -109,11 +109,15 @@ namespace
 }
 
 BlockchainTestVM::BlockchainTestVM(
-    Implementation impl, native::EmitterHook post_hook)
+    Implementation impl, native::EmitterHook post_hook, std::function<void(evmc_message const *msg)> execute_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
-    , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
+    , execute_hook_{execute_hook}
+    , base_config{
+          .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
+          .max_code_size_offset = code_size_t::max(),
+          .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
     , memory_allocator_{}
 {
@@ -130,15 +134,15 @@ evmc::Result BlockchainTestVM::execute(
         memory_allocator_, host, context, msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
+    if (execute_hook_) {
+        execute_hook_(msg);
+    }
+
     auto res = [&] {
-        if (msg->sender == SYSTEM_ADDRESS) {
+        if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2 ||
+            msg->sender == SYSTEM_ADDRESS) {
             return evmc::Result{evmone_vm_.execute(
                 &evmone_vm_, host, context, rev, msg, code, code_size)};
-        }
-        else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
-            SWITCH_EVM_TRAITS(
-                monad_vm_.execute_bytecode_raw, *rt_ctx_, {code, code_size});
-            MONAD_VM_ASSERT(false);
         }
         else if (impl_ == Implementation::Evmone) {
             return execute_evmone(host, context, rev, msg, code, code_size);

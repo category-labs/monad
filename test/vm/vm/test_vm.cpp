@@ -116,10 +116,11 @@ namespace
 }
 
 BlockchainTestVM::BlockchainTestVM(
-    Implementation impl, native::EmitterHook post_hook)
+    Implementation impl, native::EmitterHook post_hook, std::function<void(evmc_message const *msg)> execute_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
+    , execute_hook_{execute_hook}
     , base_config{
           .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
           .max_code_size_offset = code_size_t::max(),
@@ -133,6 +134,9 @@ evmc::Result BlockchainTestVM::execute(
     evmc_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
+    if (execute_hook_) {
+        execute_hook_(msg);
+    }
     if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2 ||
         msg->sender == SYSTEM_ADDRESS) {
         return evmc::Result{evmone_vm_.execute(

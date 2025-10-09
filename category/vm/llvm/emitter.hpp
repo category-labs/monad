@@ -140,7 +140,7 @@ namespace monad::vm::llvm
 
             std::vector<Constant *> vals(sz);
 
-            for (byte_offset i = 0; i <= sz; ++i) {
+            for (byte_offset i = 0; i < sz; ++i) {
                 vals[i] = llvm.block_address(lookup_jumpdest(
                     static_cast<uint256_t>(i + jumptable_min_offset)));
             }
@@ -481,8 +481,8 @@ namespace monad::vm::llvm
             if (indirectbr_lbl_v == nullptr) {
                 return;
             }
-            SaveInsert const _unused(llvm);
             init_jumptable();
+            SaveInsert const _unused(llvm);
             llvm.insert_at(indirectbr_lbl_v);
             Value *indirectbr_phi = llvm.phi(llvm.word_ty, indirectbr_phis);
 

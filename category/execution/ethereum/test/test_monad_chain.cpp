@@ -45,29 +45,19 @@
 
 using namespace monad;
 
-TEST(MonadChain, compute_gas_refund)
+TYPED_TEST(MonadRevisionTest, compute_gas_refund)
 {
-    MonadTestnet monad_chain;
-    Transaction tx{.gas_limit = 21'000};
-
-    BlockHeader before_fork{.number = 0, .timestamp = 0};
-    BlockHeader after_fork{.number = 1, .timestamp = 1739559600};
-
-    auto const before_rev =
-        monad_chain.get_monad_revision(before_fork.timestamp);
-    auto const after_rev = monad_chain.get_monad_revision(after_fork.timestamp);
-
-    auto const refund_before_fork = [&, rev = before_rev] {
-        SWITCH_MONAD_TRAITS(compute_gas_refund, tx, 20'000, 1000);
-        MONAD_ASSERT(false);
-    }();
-
-    auto const refund_after_fork = [&, rev = after_rev] {
-        SWITCH_MONAD_TRAITS(compute_gas_refund, tx, 20'000, 1000);
-        MONAD_ASSERT(false);
-    }();
-
-    EXPECT_EQ(20'200, refund_before_fork - refund_after_fork);
+    uint64_t const refund = compute_gas_refund<typename TestFixture::Trait>(
+        Transaction{.gas_limit = 21'000}, 20'000, 1'000);
+    if constexpr (TestFixture::REV >= MONAD_FIVE) {
+        EXPECT_EQ(refund, 1'000);
+    }
+    else if constexpr (TestFixture::REV >= MONAD_ONE) {
+        EXPECT_EQ(refund, 0);
+    }
+    else {
+        EXPECT_EQ(refund, 20'200);
+    }
 }
 
 TEST(MonadChain, Genesis)

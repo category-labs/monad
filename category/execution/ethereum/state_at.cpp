@@ -57,8 +57,7 @@ void state_after_transactions(
 
     // TODO(dhil): Probably worth being able to replay up
     // to a bound.
-
-    // preprocess block
+    preprocess_block<traits>(block_state, header);
     BlockMetrics metrics{};
     Result<std::vector<Receipt>> result = execute_block_transactions<traits>(
         chain,
@@ -73,10 +72,6 @@ void state_after_transactions(
         noop_call_tracers,
         state_tracers);
     (void)result;
-
-    // State state{block_state, Incarnation{0, Incarnation::LAST_TX}};
-    // MONAD_ASSERT(block_state.can_merge(state));
-    // block_state.merge(state);
 }
 
 EXPLICIT_TRAITS(state_after_transactions)

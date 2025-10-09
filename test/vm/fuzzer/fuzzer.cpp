@@ -794,6 +794,30 @@ static bool try_run(arguments const &args, Run const &run)
     }
 }
 
+static void print_run_summary(Run const &run)
+{
+    size_t basic_block_count = 0;
+    size_t deploy_count = 0;
+    size_t message_count = 0;
+    for (auto const &step : run) {
+        std::visit(
+            monad::vm::Cases{
+                [&](DeployContract const &) {
+                    deploy_count++;
+                    basic_block_count +=
+                        std::get<DeployContract>(step).contract.size();
+                },
+                [&](SendMessage const &) { message_count++; },
+                [&](auto const &) {},
+            },
+            step);
+    }
+    std::cerr << "===== Run summary =====\n";
+    std::cerr << "Contracts: " << deploy_count << "\n";
+    std::cerr << "Messages: " << message_count << "\n";
+    std::cerr << "Total basic blocks: " << basic_block_count << "\n";
+}
+
 void print_message(evmc_message const &msg)
 {
     static auto kind_map = std::map<evmc_call_kind, std::string>{
@@ -1062,17 +1086,24 @@ static Run shrink_complete_run(
 
     (void)failed_iteration_index;
 
-    // // First trim the steps after failed_iteration_index
-    // current_run.erase(current_run.begin() +
-    // static_cast<ptrdiff_t>(failed_iteration_index) + 1, current_run.end());
+    // First trim the steps after failed_iteration_index
+    current_run.erase(
+        current_run.begin() + static_cast<ptrdiff_t>(failed_iteration_index) +
+            1,
+        current_run.end());
 
     // // Make sure the final shrunken run still fails
     FUZZER_ASSERT(!try_run(args, run));
 
+    print_run_summary(current_run);
     current_run = shrink_remove_steps(args, engine, current_run);
+    print_run_summary(current_run);
     current_run = shrink_steps(args, engine, current_run);
+    print_run_summary(current_run);
     current_run = shrink_remove_steps(args, engine, current_run);
+    print_run_summary(current_run);
     current_run = shrink_steps(args, engine, current_run);
+    print_run_summary(current_run);
 
     // Make sure the final shrunken run still fails
     FUZZER_ASSERT(!try_run(args, run));

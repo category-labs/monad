@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <monad/test/monad_revision_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -115,8 +116,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
 }
 
-template <Traits traits>
-static void test_monad_top_level_create()
+TYPED_TEST(MonadRevisionTest, TopLevelCreate)
 {
     using intx::operator""_u256;
 
@@ -164,7 +164,7 @@ static void test_monad_top_level_create()
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
-    auto const receipt = ExecuteTransaction<traits>(
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
         0,
         tx,
@@ -177,17 +177,12 @@ static void test_monad_top_level_create()
         prev,
         noop_call_tracer)();
 
-    ASSERT_TRUE(!receipt.has_error());
-}
-
-TEST(TransactionProcessor, monad_three_top_level_create)
-{
-    test_monad_top_level_create<MonadTraits<MONAD_THREE>>();
-}
-
-TEST(TransactionProcessor, monad_four_top_level_create)
-{
-    test_monad_top_level_create<MonadTraits<MONAD_FOUR>>();
+    if constexpr (TestFixture::REV >= MONAD_TWO) {
+        ASSERT_TRUE(!receipt.has_error());
+    }
+    else {
+        ASSERT_TRUE(receipt.has_error());
+    }
 }
 
 TEST(TransactionProcessor, monad_five_refunds_delete)

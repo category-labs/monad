@@ -490,14 +490,6 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
 }
 
-// Coin toss, biased whenever p != 0.5
-template <typename Engine>
-static bool toss(Engine &engine, double p)
-{
-    std::bernoulli_distribution dist(p);
-    return dist(engine);
-}
-
 static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;

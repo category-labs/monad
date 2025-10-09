@@ -142,10 +142,12 @@ namespace
         std::vector<std::unique_ptr<trace::StateTracer>>>
     make_state_tracers(size_t n, enum monad_tracer_config config)
     {
-        std::vector<nlohmann::json> trace_containers(n, nlohmann::json{});
+        std::vector<nlohmann::json> trace_containers{};
+        trace_containers.reserve(n);
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(n);
         for (size_t i = 0; i < n; ++i) {
+            trace_containers.push_back(nlohmann::json{});
             state_tracers.push_back([&] -> std::unique_ptr<trace::StateTracer> {
                 switch (config) {
                 case NOOP_TRACER:
@@ -219,7 +221,7 @@ TEST_F(StateAtFixture, counter_contract)
     BlockHeader header{.number = 2};
     std::vector<Transaction> txns{make_tx(counter_addr), make_tx(counter_addr)};
     auto [trace_containers, state_tracers] =
-        make_state_tracers(txns.size(), NOOP_TRACER);
+        make_state_tracers(txns.size(), STATEDIFF_TRACER);
 
     bytes32_t const value_slot{};
     EXPECT_EQ(
@@ -240,4 +242,54 @@ TEST_F(StateAtFixture, counter_contract)
     EXPECT_EQ(
         block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
         expected_value);
+
+    std::string const expected_trace1 = R"({
+  "post": {
+    "0x6363636363636363636363636363636363636363": {
+      "storage": {
+        "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      }
+    },
+    "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+      "nonce": 1
+    }
+  },
+  "pre": {
+    "0x6363636363636363636363636363636363636363": {
+      "balance": "0x0",
+      "code": "0x60015f54015f55"
+    },
+    "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+      "balance": "0xf4240"
+    }
+  }
+})";
+    EXPECT_EQ(trace_containers[0].dump(2), expected_trace1);
+
+    std::string const expected_trace2 = R"({
+  "post": {
+    "0x6363636363636363636363636363636363636363": {
+      "storage": {
+        "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000002"
+      }
+    },
+    "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+      "nonce": 2
+    }
+  },
+  "pre": {
+    "0x6363636363636363636363636363636363636363": {
+      "balance": "0x0",
+      "code": "0x60015f54015f55",
+      "storage": {
+        "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      }
+    },
+    "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+      "balance": "0xf4240",
+      "nonce": 1
+    }
+  }
+})";
+    EXPECT_EQ(trace_containers[1].dump(2), expected_trace2);
 }

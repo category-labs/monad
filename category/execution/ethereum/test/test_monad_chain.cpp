@@ -37,6 +37,7 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/switch_traits.hpp>
+#include <monad/test/monad_revision_test.hpp>
 
 #include <bitset>
 
@@ -67,31 +68,6 @@ TEST(MonadChain, compute_gas_refund)
     }();
 
     EXPECT_EQ(20'200, refund_before_fork - refund_after_fork);
-}
-
-TEST(MonadChain, get_max_code_size)
-{
-    MonadTestnet const chain;
-
-    auto const before_rev = chain.get_monad_revision(1739559600);
-    auto const after_rev = chain.get_monad_revision(1741978800);
-
-    constexpr auto get_max_code_size = []<Traits traits>() constexpr {
-        return traits::max_code_size();
-    };
-
-    auto const max_code_size_before_fork = [&, rev = before_rev] {
-        SWITCH_MONAD_TRAITS(get_max_code_size.template operator());
-        MONAD_ASSERT(false);
-    }();
-
-    auto const max_code_size_after_fork = [&, rev = after_rev] {
-        SWITCH_MONAD_TRAITS(get_max_code_size.template operator());
-        MONAD_ASSERT(false);
-    }();
-
-    EXPECT_EQ(max_code_size_before_fork, constants::MAX_CODE_SIZE_EIP170);
-    EXPECT_EQ(max_code_size_after_fork, constants::MAX_CODE_SIZE_MONAD_TWO);
 }
 
 TEST(MonadChain, Genesis)

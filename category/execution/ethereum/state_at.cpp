@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_at.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -34,44 +35,48 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 void state_after_transactions(
     Chain const &chain, BlockHeader const &header,
-    BlockHashBuffer const &buffer, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, BlockState &block_state,
-    std::vector<std::optional<Address>> const &senders,
+    std::vector<Transaction> const &transactions,
+    std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
-    std::vector<Transaction> const
-        &txns) // TODO(dhil): Probably worth being able to replay up to a bound.
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    fiber::PriorityPool &fiber_pool,
+    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers)
 {
-    MONAD_ASSERT(txns.size() == senders.size());
-    MONAD_ASSERT(txns.size() == authorities.size());
+    MONAD_ASSERT(transactions.size() == senders.size());
+    MONAD_ASSERT(transactions.size() == authorities.size());
+    MONAD_ASSERT(transactions.size() == state_tracers.size());
 
-    for (size_t i = 0; i < txns.size(); ++i) {
-        Transaction const txn = txns[i];
-        Address const sender = [&senders, i]() -> Address {
-            if (senders[i].has_value()) {
-                return *senders[i];
-            }
-            // TODO(dhil): any possible "default" sender?
-            MONAD_ABORT("Failed to recover sender");
-        }();
-        ExecuteTransactionNoValidation<traits> execute_tx(
-            chain, txn, sender, authorities[i], header, i);
-        State state{
-            block_state, Incarnation{header.number, static_cast<uint64_t>(i)}};
-        evmc_tx_context tx_context =
-            get_tx_context<traits>(txn, sender, header, chain.get_chain_id());
-        EvmcHost<traits> host{chain, call_tracer, tx_context, buffer, state};
-        evmc::Result result = execute_tx(state, host);
-        if (result.status_code != EVMC_SUCCESS &&
-            result.status_code != EVMC_REVERT) {
-            // TODO(dhil): proper error handling
-            MONAD_ABORT_PRINTF(
-                "Transaction execution failed: %d", result.status_code);
-        }
-        trace::run_tracer(
-            state_tracer, state); // TODO(dhil): glue state traces together
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
+    std::vector<std::unique_ptr<CallTracerBase>> noop_call_tracers{};
+    noop_call_tracers.reserve(transactions.size());
+
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        noop_call_tracers.emplace_back(std::unique_ptr<NoopCallTracer>{
+            std::make_unique<NoopCallTracer>()});
     }
+    MONAD_ASSERT(noop_call_tracers.size() == transactions.size());
+
+    // TODO(dhil): Probably worth being able to replay up
+    // to a bound.
+
+    // preprocess block
+    BlockMetrics metrics{};
+    Result<std::vector<Receipt>> result = execute_block_transactions<traits>(
+        chain,
+        header,
+        transactions,
+        senders,
+        authorities,
+        block_state,
+        block_hash_buffer,
+        fiber_pool,
+        metrics,
+        noop_call_tracers,
+        state_tracers);
+    (void)result;
+
+    // State state{block_state, Incarnation{0, Incarnation::LAST_TX}};
+    // MONAD_ASSERT(block_state.can_merge(state));
+    // block_state.merge(state);
 }
 
 EXPLICIT_TRAITS(state_after_transactions)

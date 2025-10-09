@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/core/assert.h>
 #include <category/vm/evm/delegation.hpp>
 
 #include <evmc/bytes.hpp>
@@ -68,11 +69,18 @@ namespace monad::vm::evm
             indicator_size + sizeof(evmc_address);
         static_assert(expected_code_size == 23);
 
+        auto const code_size = host->get_code_size(ctx, &addr);
+        if (code_size != expected_code_size) {
+            return std::nullopt;
+        }
+
         uint8_t code_buffer[expected_code_size];
         auto const actual_code_size =
             host->copy_code(ctx, &addr, 0, code_buffer, expected_code_size);
 
+        MONAD_VM_ASSERT(actual_code_size == expected_code_size);
         std::span const code{code_buffer, actual_code_size};
+
         if (!is_delegated(code)) {
             return std::nullopt;
         }

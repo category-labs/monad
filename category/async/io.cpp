@@ -301,18 +301,26 @@ AsyncIO::~AsyncIO()
     ::close(fds_.msgwrite);
 }
 
-void AsyncIO::submit_request_(
+void AsyncIO::account_read_()
+{
+    if (++records_.inflight_rd > records_.max_inflight_rd) {
+        records_.max_inflight_rd = records_.inflight_rd;
+    }
+    ++records_.nreads;
+}
+
+void AsyncIO::submit_request_sqe_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
     MONAD_DEBUG_ASSERT(uring_data != nullptr);
     MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
     MONAD_DEBUG_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
+
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
 #endif
 
-    poll_uring_while_submission_queue_full_();
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
 
@@ -339,6 +347,15 @@ void AsyncIO::submit_request_(
 
     io_uring_sqe_set_data(sqe, uring_data);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+}
+
+void AsyncIO::submit_request_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    poll_uring_while_submission_queue_full_();
+
+    submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
 }
 
 void AsyncIO::submit_request_(
@@ -493,34 +510,21 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     auto *const other_ring = &uring_.get_ring();
     auto *const wr_ring =
         (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : nullptr;
+
     auto dequeue_concurrent_read_ios_pending = [&]() {
         if (concurrent_read_io_limit_ > 0) {
-            auto const max_cq_entries =
-                eager_completions_ ? 0 : (*other_ring->cq.kring_entries >> 1);
-            for (auto *state = concurrent_read_ios_pending_.first;
-                 state != nullptr;
-                 state = concurrent_read_ios_pending_.first) {
-                if (records_.inflight_rd >= concurrent_read_io_limit_ ||
-                    io_uring_sq_space_left(other_ring) == 0 ||
-                    io_uring_cq_ready(other_ring) > max_cq_entries) {
-                    break;
-                }
-                auto *next =
-                    erased_connected_operation::rbtree_node_traits::get_right(
-                        state);
-                if (next == nullptr) {
-                    MONAD_DEBUG_ASSERT(concurrent_read_ios_pending_.count == 1);
-                    concurrent_read_ios_pending_.first =
-                        concurrent_read_ios_pending_.last = nullptr;
-                }
-                else {
-                    concurrent_read_ios_pending_.first = next;
-                }
-                concurrent_read_ios_pending_.count--;
-                state->reinitiate();
+            while (!concurrent_read_ios_pending_.empty() &&
+                   records_.inflight_rd < concurrent_read_io_limit_ &&
+                   io_uring_sq_space_left(other_ring) != 0) {
+                auto &read = concurrent_read_ios_pending_.front();
+                submit_request_sqe_(
+                    read.buffer, read.offset, read.op, read.op->io_priority());
+                account_read_();
+                concurrent_read_ios_pending_.pop_front();
             }
         }
     };
+
     dequeue_concurrent_read_ios_pending();
 
     io_uring *ring = nullptr;

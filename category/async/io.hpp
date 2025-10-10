@@ -29,6 +29,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -105,11 +106,16 @@ private:
     IORecord records_;
     unsigned concurrent_read_io_limit_{0};
 
-    struct
+    struct deferred_read
     {
-        unsigned count{0};
-        erased_connected_operation *first{nullptr}, *last{nullptr};
-    } concurrent_read_ios_pending_;
+        erased_connected_operation *op;
+        std::span<std::byte> buffer;
+        chunk_offset_t offset;
+    };
+
+    // Reads which could not be submitted immediately because the limit on
+    // concurrent reads was reached.
+    std::deque<deferred_read> concurrent_read_ios_pending_;
 
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
@@ -120,7 +126,14 @@ private:
     void submit_request_(
         std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
+
+    // Submit request, guaranteed to have sqe available
+    void submit_request_sqe_(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(timed_invocation_state *state, void *uring_data);
+
+    void account_read_();
 
     void poll_uring_while_submission_queue_full_();
     size_t poll_uring_(bool blocking, unsigned poll_rings_mask);
@@ -175,7 +188,8 @@ public:
 
     unsigned io_in_flight() const noexcept
     {
-        return records_.inflight_rd + concurrent_read_ios_pending_.count +
+        return records_.inflight_rd +
+               static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
                records_.inflight_rd_scatter + records_.inflight_wr +
                records_.inflight_tm +
                records_.inflight_ts.load(std::memory_order_relaxed) +
@@ -184,7 +198,8 @@ public:
 
     unsigned reads_in_flight() const noexcept
     {
-        return records_.inflight_rd + concurrent_read_ios_pending_.count;
+        return records_.inflight_rd +
+               static_cast<unsigned>(concurrent_read_ios_pending_.size());
     }
 
     unsigned max_reads_in_flight() const noexcept
@@ -333,40 +348,19 @@ public:
         std::span<std::byte> buffer, chunk_offset_t offset,
         erased_connected_operation *uring_data)
     {
-        if (concurrent_read_io_limit_ > 0) {
-            if (records_.inflight_rd >= concurrent_read_io_limit_) {
-                auto *state = (erased_connected_operation *)uring_data;
-                erased_connected_operation::rbtree_node_traits::set_right(
-                    state, nullptr);
-                if (concurrent_read_ios_pending_.last == nullptr) {
-                    MONAD_DEBUG_ASSERT(
-                        concurrent_read_ios_pending_.first == nullptr);
-                    concurrent_read_ios_pending_.first =
-                        concurrent_read_ios_pending_.last = state;
-                    MONAD_DEBUG_ASSERT(concurrent_read_ios_pending_.count == 0);
-                }
-                else {
-                    MONAD_DEBUG_ASSERT(
-                        erased_connected_operation::rbtree_node_traits::
-                            get_right(concurrent_read_ios_pending_.last) ==
-                        nullptr);
-                    erased_connected_operation::rbtree_node_traits::set_right(
-                        concurrent_read_ios_pending_.last, state);
-                    concurrent_read_ios_pending_.last = state;
-                }
-                concurrent_read_ios_pending_.count++;
-                return size_t(-1); // we never complete immediately
-            }
-        }
-
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_rd > records_.max_inflight_rd) {
-            records_.max_inflight_rd = records_.inflight_rd;
+
+        if (concurrent_read_io_limit_ > 0 &&
+            records_.inflight_rd >= concurrent_read_io_limit_) {
+            concurrent_read_ios_pending_.emplace_back(
+                deferred_read{uring_data, buffer, offset});
+            return size_t(-1); // we never complete immediately
         }
-        ++records_.nreads;
+
+        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
+        account_read_();
         return size_t(-1); // we never complete immediately
     }
 
@@ -668,7 +662,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 224);
+static_assert(sizeof(AsyncIO) == 280);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

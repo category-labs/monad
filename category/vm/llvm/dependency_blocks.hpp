@@ -97,7 +97,7 @@ namespace monad::vm::dependency_blocks
     {
         InstrIdx insert_instr(Instr instr)
         {
-            InstrIdx idx = blk_instrs.size();
+            InstrIdx idx = static_cast<InstrIdx>(blk_instrs.size());
             blk_instrs.push_back(instr);
             blk_instrs_evaluated.push_back(false);
             return idx;
@@ -137,10 +137,10 @@ namespace monad::vm::dependency_blocks
 
         bool is_evaluated(InstrIdx i)
         {
-            return (i == -1 || blk_instrs_evaluated[i]);
+            return (i == -1 || blk_instrs_evaluated[static_cast<size_t>(i)]);
         }
 
-        void evaluate(InstrIdx i)
+        void evaluate(size_t i)
         {
             blk_instrs_evaluated[i] = true;
             Instr instr = blk_instrs[i];
@@ -179,7 +179,7 @@ namespace monad::vm::dependency_blocks
             return (-i - 1);
         }
 
-        std::vector<InstrIdx> unevaluated_deps_of(InstrIdx i)
+        std::vector<InstrIdx> unevaluated_deps_of(size_t i)
         {
             std::vector<InstrIdx> deps;
 
@@ -352,10 +352,10 @@ namespace monad::vm::dependency_blocks
                     continue;
                 }
 
-                std::vector<InstrIdx> needed_deps = unevaluated_deps_of(v);
+                std::vector<InstrIdx> needed_deps = unevaluated_deps_of(static_cast<size_t>(v));
 
                 if (needed_deps.empty()) {
-                    evaluate(v);
+                    evaluate(static_cast<size_t>(v));
                     dependencies.pop_back();
                     continue;
                 }

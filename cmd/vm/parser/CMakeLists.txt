@@ -24,8 +24,12 @@ target_include_directories(parser-tool
 
 target_link_libraries(parser-tool
   PRIVATE monad_execution
+  PRIVATE monad-vm-llvm
   PRIVATE evmc::evmc
   PRIVATE CLI11::CLI11
 )
+
+monad_link_llvm(parser-tool)
+
 
 monad_compile_options(parser-tool)

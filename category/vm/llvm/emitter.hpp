@@ -91,7 +91,7 @@ namespace monad::vm::llvm
             std::visit<void>(
                 Cases{
                     [&](uint256_t const &c) { val = llvm.lit_word(c); },
-                    [&](InstrIdx const &j) { val = value_tbl[j]; },
+                    [&](InstrIdx const &j) { val = value_tbl[static_cast<size_t>(j)]; },
                 },
                 arg);
             return val;
@@ -187,7 +187,7 @@ namespace monad::vm::llvm
                         return;
                     },
                     [&](InstrIdx const &i) {
-                        auto *isz = llvm.eq(value_tbl[i], llvm.lit_word(0));
+                        auto *isz = llvm.eq(value_tbl[static_cast<size_t>(i)], llvm.lit_word(0));
 
                         BasicBlock *else_lbl = std::visit(
                             Cases{
@@ -247,9 +247,9 @@ namespace monad::vm::llvm
             };
         };
 
-        void insert_value(InstrIdx i, Value *v)
+        void insert_value(size_t i, Value *v)
         {
-            if (static_cast<InstrIdx>(value_tbl.size()) <= i) {
+            if (value_tbl.size() <= i) {
                 value_tbl.resize(i + 1);
             }
             value_tbl[i] = v;
@@ -344,7 +344,7 @@ namespace monad::vm::llvm
                                 Value *v = llvm.load(
                                     llvm.word_ty,
                                     stacktop_offset(stack_top, ui.idx));
-                                insert_value(i, v);
+                                insert_value(static_cast<size_t>(i), v);
                             },
                             [&](struct SpillInstr const &si) {
                                 llvm.store(
@@ -577,7 +577,7 @@ namespace monad::vm::llvm
             }
 
             llvm.phi_add_incoming(
-                indirectbr_phi, value_tbl[i], llvm.get_insert());
+                indirectbr_phi, value_tbl[static_cast<size_t>(i)], llvm.get_insert());
 
             return indirectbr_lbl_v;
         }
@@ -684,7 +684,7 @@ namespace monad::vm::llvm
 
             args.push_back(g_ctx_ref);
 
-            auto *g = llvm.lit(64, ei.remaining_block_base_gas);
+            auto *g = llvm.lit(64, static_cast<uint64_t>(ei.remaining_block_base_gas));
             args.push_back(g);
 
             if (ei.instr.opcode() == Gas) {
@@ -697,7 +697,7 @@ namespace monad::vm::llvm
 
             if (ei.instr.increases_stack()) {
                 auto v = llvm.call(f, args, to_register_name(blkId, i));
-                insert_value(i, v);
+                insert_value(static_cast<size_t>(i), v);
             }
             else {
                 llvm.call_void(f, args);

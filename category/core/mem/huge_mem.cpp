@@ -13,13 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <features.h>
+
 #include <category/core/mem/huge_mem.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 
-#include <category/core/assert.h>
-
 #include <sys/mman.h>
+
+#if defined(__GNU_LIBRARY__) && __GLIBC__ == 2 && __GLIBC_MINOR__ < 40
+    // Before glibc 2.40, <sys/mman.h> did not have the MAP_HUGE_<SIZE> macros;
+    // this can be removed when we don't need Ubuntu 24.04 LTS anymore (it has
+    // glibc 2.39)
+    #include <linux/mman.h>
+#endif
 
 #include <cstddef>
 

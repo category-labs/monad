@@ -116,7 +116,8 @@ namespace
 }
 
 BlockchainTestVM::BlockchainTestVM(
-    Implementation impl, native::EmitterHook post_hook, std::function<void(evmc_message const *msg)> execute_hook)
+    Implementation impl, native::EmitterHook post_hook,
+    std::function<void(evmc_message const *msg)> execute_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}

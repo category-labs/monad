@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/db_error.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -63,6 +64,7 @@
 #include <fstream>
 #include <functional>
 #include <istream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -883,6 +885,91 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     ProposalTraverseMachine traverse(block_ids);
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
     return block_ids;
+}
+
+Result<std::vector<Transaction>> get_transactions(
+    mpt::Db &db, uint64_t const block_number, bytes32_t const &block_id)
+{
+    class TransactionTraverseMachine final : public TraverseMachine
+    {
+        std::map<unsigned, Transaction> &txs_;
+        Nibbles path_;
+
+    public:
+        explicit TransactionTraverseMachine(
+            std::map<unsigned, Transaction> &txs)
+            : txs_(txs)
+            , path_()
+        {
+        }
+
+        TransactionTraverseMachine(TransactionTraverseMachine const &other) =
+            default;
+
+        virtual bool down(unsigned char const branch, Node const &node) override
+        {
+            if (branch == INVALID_BRANCH) {
+                MONAD_ASSERT(path_.nibble_size() == 0);
+                return true;
+            }
+
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+            if (node.has_value()) {
+                MONAD_ASSERT(
+                    (path_.nibble_size() & 1) == 0); // nibble size is even
+                if (path_.nibble_size() != path_.data_size() * 2) {
+                    path_ = path_.substr(0);
+                    MONAD_ASSERT(path_.nibble_size() == path_.data_size() * 2);
+                }
+                // convert nibbles to byte_string
+                byte_string_view raw{path_.data(), path_.data_size()};
+                auto const index_res = rlp::decode_unsigned<unsigned>(raw);
+                MONAD_ASSERT(index_res.has_value());
+                auto encoded_tx = node.value();
+                auto const tx_res = decode_transaction_db(encoded_tx);
+                MONAD_ASSERT(tx_res.has_value());
+                txs_.emplace(index_res.value(), tx_res.value().first);
+            }
+            return true;
+        }
+
+        virtual void up(unsigned char const branch, Node const &node) override
+        {
+            auto const path_view = NibblesView{path_};
+            unsigned const prefix_size =
+                branch == INVALID_BRANCH
+                    ? 0
+                    : path_view.nibble_size() - node.path_nibbles_len() - 1;
+            path_ = path_view.substr(0, prefix_size);
+        }
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<TransactionTraverseMachine>(*this);
+        }
+    };
+
+    auto const prefix =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    auto res =
+        db.find(concat(NibblesView{prefix}, TRANSACTION_NIBBLE), block_number);
+    if (res.has_error()) {
+        return DbError(res.error().value());
+    }
+    // traverse from cursor
+    std::map<unsigned, Transaction> txs;
+    TransactionTraverseMachine traverse(txs);
+    auto const cursor = res.value();
+    if (db.traverse(cursor, traverse, block_number) == false) {
+        MONAD_ASSERT(!db.load_root_for_version(block_number).is_valid());
+        return DbError::version_no_longer_exist;
+    }
+    std::vector<Transaction> ret;
+    ret.reserve(txs.size());
+    for (auto const &[_, tx] : txs) {
+        ret.push_back(std::move(tx));
+    }
+    return ret;
 }
 
 std::optional<BlockHeader> read_eth_header(

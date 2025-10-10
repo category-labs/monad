@@ -67,10 +67,10 @@ ARG GIT_COMMIT_HASH
 RUN test -n "$GIT_COMMIT_HASH"
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
+RUN CC=gcc-15 CXX=g++-15 cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-  -DCMAKE_TOOLCHAIN_FILE:STRING=category/core/toolchains/temp-strip-release.cmake \
-  -DCMAKE_BUILD_TYPE:STRING=Release \
+  -DCMAKE_TOOLCHAIN_FILE:STRING=category/core/toolchains/gcc-avx2.cmake \
+  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
   -B build \
   -G Ninja
 

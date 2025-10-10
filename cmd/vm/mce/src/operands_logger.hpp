@@ -114,17 +114,19 @@ namespace
                 auto const &block_metadata = blocks_metadata[i];
                 nlohmann::json block_json;
                 block_json["instructions"] = nlohmann::json::array();
-                block_json["is_jump_dest"] = ir.jump_dests().contains(block.offset);
+                block_json["is_jump_dest"] =
+                    ir.jump_dests().contains(block.offset);
                 block_json["offset"] = block.offset;
-                block_json["terminator"] =
-                    std::format("{}", block.terminator);
+                block_json["terminator"] = std::format("{}", block.terminator);
                 size_t start_contract_code_size = contract_code_size;
 
                 if (block.fallthrough_dest != INVALID_BLOCK_ID) {
                     block_json["fallthrough_dest"] = block.fallthrough_dest;
                 }
 
-                for (auto const &[instr, opnds, outputs, before_size, after_size] : block_metadata) {
+                for (auto const
+                         &[instr, opnds, outputs, before_size, after_size] :
+                     block_metadata) {
                     nlohmann::json instr_json;
                     auto opcode = instr.opcode();
                     instr_json["opcode"] = opcode;
@@ -143,7 +145,8 @@ namespace
                     block_json["instructions"].push_back(instr_json);
                     contract_code_size = after_size;
                 }
-                block_json["code_size"] = contract_code_size - start_contract_code_size;
+                block_json["code_size"] =
+                    contract_code_size - start_contract_code_size;
                 basic_blocks.push_back(block_json);
             }
             nlohmann::json contract_json;
@@ -173,45 +176,51 @@ namespace
 
     auto operands_logger_make_hooks(OperandsLoggerState &state)
     {
-        auto pre_hook =
-            [&state](auto &emitter, auto block_ix, auto instr_ix, auto &instr) {
-                (void)instr_ix; // Avoid unused variable warning
+        auto pre_hook = [&state](
+                            auto &emitter,
+                            auto block_ix,
+                            auto instr_ix,
+                            auto &instr) {
+            (void)instr_ix; // Avoid unused variable warning
 
-                std::optional<std::vector<OperandLocations>> instr_args =
-                    peek_stack(emitter, instr.stack_args());
+            std::optional<std::vector<OperandLocations>> instr_args =
+                peek_stack(emitter, instr.stack_args());
 
-                if (!instr_args) {
-                    std::cerr << "Error: peek_stack returned nullopt. "
-                                 "instr.stack_args() = "
-                              << instr.stack_args()
-                              << ", emit.get_stack().top_index() = "
-                              << emitter.get_stack().top_index() << std::endl;
-                }
-                else {
-                    state.blocks_metadata[block_ix].push_back(
-                        InstructionMetadata{instr, instr_args.value(), {}, emitter.estimate_size(), 0});
-                }
-            };
+            if (!instr_args) {
+                std::cerr << "Error: peek_stack returned nullopt. "
+                             "instr.stack_args() = "
+                          << instr.stack_args()
+                          << ", emit.get_stack().top_index() = "
+                          << emitter.get_stack().top_index() << std::endl;
+            }
+            else {
+                state.blocks_metadata[block_ix].push_back(InstructionMetadata{
+                    instr, instr_args.value(), {}, emitter.estimate_size(), 0});
+            }
+        };
 
-        auto post_hook =
-            [&state](auto &emitter, auto block_ix, auto instr_ix, auto &instr) {
-                std::optional<std::vector<OperandLocations>> instr_results =
-                    peek_stack(emitter, instr.stack_increase());
+        auto post_hook = [&state](
+                             auto &emitter,
+                             auto block_ix,
+                             auto instr_ix,
+                             auto &instr) {
+            std::optional<std::vector<OperandLocations>> instr_results =
+                peek_stack(emitter, instr.stack_increase());
 
-                if (!instr_results) {
-                    std::cerr << "Error: peek_stack returned nullopt. "
-                                 "instr.stack_increase() = "
-                              << instr.stack_increase()
-                              << ", emit.get_stack().top_index() = "
-                              << emitter.get_stack().top_index() << std::endl;
-                }
-                else {
-                    state.blocks_metadata[block_ix][instr_ix].result_locations =
-                        instr_results.value();
-                    state.blocks_metadata[block_ix][instr_ix].contract_size_after =
-                        emitter.estimate_size();
-                }
-            };
+            if (!instr_results) {
+                std::cerr << "Error: peek_stack returned nullopt. "
+                             "instr.stack_increase() = "
+                          << instr.stack_increase()
+                          << ", emit.get_stack().top_index() = "
+                          << emitter.get_stack().top_index() << std::endl;
+            }
+            else {
+                state.blocks_metadata[block_ix][instr_ix].result_locations =
+                    instr_results.value();
+                state.blocks_metadata[block_ix][instr_ix].contract_size_after =
+                    emitter.estimate_size();
+            }
+        };
         return std::tuple{pre_hook, post_hook};
     }
 }

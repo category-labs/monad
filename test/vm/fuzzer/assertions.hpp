@@ -24,22 +24,34 @@ namespace monad::vm::fuzzing
     class FuzzerAssertFailure : public std::runtime_error
     {
     public:
-        FuzzerAssertFailure(std::string const &msg, char const *funsig, char const *file, long line)
-          : std::runtime_error(msg), function_signature(funsig), file_name(file), line_number(line)
-        {}
+        FuzzerAssertFailure(
+            std::string const &msg, char const *funsig, char const *file,
+            long line)
+            : std::runtime_error(msg)
+            , function_signature(funsig)
+            , file_name(file)
+            , line_number(line)
+        {
+        }
 
         char const *function_signature;
         char const *file_name;
         long line_number;
     };
 
-    #define FUZZER_ASSERT(b)                                                   \
-        if (MONAD_VM_UNLIKELY(!(b))) { /* likeliest */                            \
-            throw FuzzerAssertFailure(                                         \
-                std::format("{}:{}:{} Assertion failed: {}",                  \
-                    __PRETTY_FUNCTION__, __FILE__, __LINE__, #b),              \
-                __PRETTY_FUNCTION__, __FILE__, __LINE__);                      \
-        }
+#define FUZZER_ASSERT(b)                                                       \
+    if (MONAD_VM_UNLIKELY(!(b))) { /* likeliest */                             \
+        throw FuzzerAssertFailure(                                             \
+            std::format(                                                       \
+                "{}:{}:{} Assertion failed: {}",                               \
+                __PRETTY_FUNCTION__,                                           \
+                __FILE__,                                                      \
+                __LINE__,                                                      \
+                #b),                                                           \
+            __PRETTY_FUNCTION__,                                               \
+            __FILE__,                                                          \
+            __LINE__);                                                         \
+    }
 
     void assert_equal(
         evmone::state::StorageValue const &a,

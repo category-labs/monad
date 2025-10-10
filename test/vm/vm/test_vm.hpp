@@ -57,7 +57,8 @@ public:
     BlockchainTestVM(
         Implementation impl,
         monad::vm::compiler::native::EmitterHook post_instruction_emit_hook =
-            nullptr, std::function<void(evmc_message const *msg)> execute_hook = nullptr);
+            nullptr,
+        std::function<void(evmc_message const *msg)> execute_hook = nullptr);
 
     evmc::Result execute(
         evmc_host_interface const *host, evmc_host_context *context,

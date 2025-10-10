@@ -101,6 +101,7 @@ namespace
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
         uint64_t block_id_;
+        Node::SharedPtr root_;
 
     public:
         BinaryDbLoader(
@@ -109,11 +110,12 @@ namespace
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
             , block_id_{block_id}
+            , root_{nullptr}
         {
             MONAD_ASSERT(buf_size >= CHUNK_SIZE);
         };
 
-        void load(std::istream &accounts, std::istream &code)
+        Node::SharedPtr load(std::istream &accounts, std::istream &code)
         {
             load(
                 accounts,
@@ -139,8 +141,12 @@ namespace
                         .version = static_cast<int64_t>(block_id_),
                     };
                     finalized_updates.push_front(finalized);
-                    db_.upsert(
-                        std::move(finalized_updates), block_id_, false, false);
+                    root_ = db_.upsert(
+                        std::move(root_),
+                        std::move(finalized_updates),
+                        block_id_,
+                        false,
+                        false);
                     db_.update_finalized_version(block_id_);
 
                     update_alloc_.clear();
@@ -170,12 +176,17 @@ namespace
                         .version = static_cast<int64_t>(block_id_),
                     };
                     finalized_updates.push_front(finalized);
-                    db_.upsert(
-                        std::move(finalized_updates), block_id_, false, false);
+                    root_ = db_.upsert(
+                        std::move(root_),
+                        std::move(finalized_updates),
+                        block_id_,
+                        false,
+                        false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
                 });
+            return root_;
         }
 
     private:
@@ -764,21 +775,17 @@ void write_to_file(
             std::chrono::steady_clock::now() - start_time));
 }
 
-void load_from_binary(
+Node::SharedPtr load_from_binary(
     mpt::Db &db, std::istream &accounts, std::istream &code,
     uint64_t const init_block_number, size_t const buf_size)
 {
-    if (db.root().is_valid()) {
-        throw std::runtime_error(
-            "Unable to load snapshot to an existing db, truncate the "
-            "existing db to empty and try again");
-    }
     BinaryDbLoader loader{
         db, buf_size, db.is_on_disk() ? init_block_number : 0};
-    loader.load(accounts, code);
+    return loader.load(accounts, code);
 }
 
-void load_header(mpt::Db &db, BlockHeader const &header)
+Node::SharedPtr
+load_header(Node::SharedPtr root, mpt::Db &db, BlockHeader const &header)
 {
     using namespace mpt;
 
@@ -801,8 +808,12 @@ void load_header(mpt::Db &db, BlockHeader const &header)
         .next = std::move(header_updates),
         .version = static_cast<int64_t>(n)};
     ls.push_front(u);
-    db.upsert(
-        std::move(ls), n, false /* compaction */, true /* write_to_fast */);
+    return db.upsert(
+        std::move(root),
+        std::move(ls),
+        n,
+        false /* compaction */,
+        true /* write_to_fast */);
 }
 
 mpt::Nibbles proposal_prefix(bytes32_t const &block_id)
@@ -883,20 +894,6 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     ProposalTraverseMachine traverse(block_ids);
     db.traverse(db.load_root_for_version(block_number), traverse, block_number);
     return block_ids;
-}
-
-std::optional<BlockHeader> read_eth_header(
-    mpt::Db const &db, uint64_t const block, mpt::NibblesView prefix)
-{
-    auto const query_res =
-        db.get(mpt::concat(prefix, BLOCKHEADER_NIBBLE), block);
-    if (MONAD_UNLIKELY(!query_res.has_value())) {
-        return std::nullopt;
-    }
-    byte_string_view view{query_res.value()};
-    auto const decoded = rlp::decode_block_header(view);
-    MONAD_ASSERT(decoded.has_value());
-    return decoded.value();
 }
 
 bool for_each_code(

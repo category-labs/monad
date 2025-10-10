@@ -83,6 +83,10 @@ add_executable(benchmark_io_test "test/benchmark_io_test.cpp")
 monad_compile_options(benchmark_io_test)
 target_link_libraries(benchmark_io_test PUBLIC monad_core CLI11::CLI11
                                                monad_async)
+add_executable(reentrant_io_test "test/reentrant_io_test.cpp")
+monad_compile_options(reentrant_io_test)
+target_link_libraries(reentrant_io_test PUBLIC monad_core CLI11::CLI11
+                                               monad_async)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   pkg_check_modules(cap IMPORTED_TARGET libcap)
   target_compile_definitions(benchmark_io_test PRIVATE MONAD_HAVE_LIBCAP=1)

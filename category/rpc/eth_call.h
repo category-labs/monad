@@ -94,6 +94,30 @@ struct monad_eth_call_pool_config
     unsigned queue_limit;
 };
 
+struct monad_eth_call_pool_state
+{
+    // Number of fibers in the pool.
+    unsigned num_fibers;
+
+    // Number of fibers currently executing requests.
+    unsigned executing_count;
+
+    // Number of requests in queue.
+    unsigned queued_count;
+
+    // Maximum number of requests in the queue.
+    unsigned queue_limit;
+
+    // Number of queue full conditions.
+    uint64_t queue_full_count;
+};
+
+struct monad_eth_call_executor_state
+{
+    struct monad_eth_call_pool_state low_gas_pool_state;
+    struct monad_eth_call_pool_state high_gas_pool_state;
+};
+
 struct monad_eth_call_executor *monad_eth_call_executor_create(
     struct monad_eth_call_pool_config low_pool_conf,
     struct monad_eth_call_pool_config high_pool_conf, uint64_t node_lru_max_mem,
@@ -109,6 +133,9 @@ void monad_eth_call_executor_submit(
     struct monad_state_override const *,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     enum monad_tracer_config, bool gas_specified);
+
+struct monad_eth_call_executor_state
+monad_eth_call_executor_get_state(struct monad_eth_call_executor *);
 
 #ifdef __cplusplus
 }

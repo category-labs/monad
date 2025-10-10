@@ -50,7 +50,7 @@ bool BlockDb::get(uint64_t const num, Block &block) const
         return false;
     }
     auto const view = to_byte_string_view(result.value());
-    size_t brotli_size = std::max(result->size() * 100, 1ul << 20); // TODO
+    size_t brotli_size = std::max(result->size() * 100, 1ul << 22); // TODO
     byte_string brotli_buffer;
     brotli_buffer.resize(brotli_size);
     auto const brotli_result = BrotliDecoderDecompress(

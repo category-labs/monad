@@ -39,7 +39,7 @@ void state_after_transactions(
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState & /* inout */, BlockHashBuffer const &, fiber::PriorityPool &,
-    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers);
+    std::vector<std::unique_ptr<trace::StateTracer>> &);
 
 //     template <Traits traits>
 // Result<std::vector<Receipt>> execute_block_transactions(

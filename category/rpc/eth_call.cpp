@@ -993,22 +993,25 @@ struct monad_eth_call_executor
 
                     // TODO(dhil): Load transactions
                     std::vector<Transaction> transactions{};
-                    std::vector<std::optional<Address>> recovered_senders =
-                        monad::recover_senders(transactions, fiber_pool->pool);
-                    MONAD_ASSERT(
-                        recovered_senders.size() == transactions.size());
                     std::vector<Address> senders;
-                    senders.reserve(transactions.size());
-                    for (size_t i = 0; i < recovered_senders.size(); i++) {
-                        if (!recovered_senders[i].has_value()) {
-                            result->status_code = EVMC_REJECTED;
-                            result->message =
-                                strdup("Failed to recover sender");
-                            MONAD_ASSERT(result->message);
-                            complete(result, user);
-                            return;
+                    {
+                        std::vector<std::optional<Address>> recovered_senders =
+                            monad::recover_senders(
+                                transactions, fiber_pool->pool);
+                        MONAD_ASSERT(
+                            recovered_senders.size() == transactions.size());
+                        senders.reserve(transactions.size());
+                        for (size_t i = 0; i < recovered_senders.size(); i++) {
+                            if (!recovered_senders[i].has_value()) {
+                                result->status_code = EVMC_REJECTED;
+                                result->message =
+                                    strdup("Failed to recover sender");
+                                MONAD_ASSERT(result->message);
+                                complete(result, user);
+                                return;
+                            }
+                            senders[i] = *recovered_senders[i];
                         }
-                        senders[i] = *recovered_senders[i];
                     }
                     std::vector<std::vector<std::optional<Address>>>
                         authorities = monad::recover_authorities(

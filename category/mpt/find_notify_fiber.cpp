@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -209,11 +210,12 @@ namespace
 void find_notify_fiber_future(
     UpdateAuxImpl &aux, inflight_map_t &inflights,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
-    NodeCursor const &root, NibblesView const key)
+    NodeCursor const &root, NibblesView const key, FindTimePoints tp)
 {
     if (!root.is_valid()) {
+        tp.find_end_t = std::chrono::steady_clock::now();
         promise.set_value(
-            {NodeCursor{}, find_result::root_node_is_null_failure});
+            {NodeCursor{}, find_result::root_node_is_null_failure, tp});
         return;
     }
     unsigned prefix_index = 0;
@@ -222,22 +224,27 @@ void find_notify_fiber_future(
     for (; node_prefix_index < node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
+            tp.find_end_t = std::chrono::steady_clock::now();
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
-                 find_result::key_ends_earlier_than_node_failure});
+                 find_result::key_ends_earlier_than_node_failure,
+                 tp});
             return;
         }
         if (key.get(prefix_index) !=
             node->path_nibble_view().get(node_prefix_index)) {
+            tp.find_end_t = std::chrono::steady_clock::now();
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
-                 find_result::key_mismatch_failure});
+                 find_result::key_mismatch_failure,
+                 tp});
             return;
         }
     }
     if (prefix_index == key.nibble_size()) {
+        tp.find_end_t = std::chrono::steady_clock::now();
         promise.set_value(
-            {NodeCursor{node, node_prefix_index}, find_result::success});
+            {NodeCursor{node, node_prefix_index}, find_result::success, tp});
         return;
     }
     MONAD_ASSERT(prefix_index < key.nibble_size());
@@ -249,20 +256,24 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
-            find_notify_fiber_future(aux, inflights, promise, next, next_key);
+            find_notify_fiber_future(
+                aux, inflights, promise, next, next_key, tp);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
+            tp.find_end_t = std::chrono::steady_clock::now();
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
-                 find_result::need_to_continue_in_io_thread});
+                 find_result::need_to_continue_in_io_thread,
+                 tp});
             return;
         }
         chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
+        tp.num_async_reads++;
+        auto cont = [&aux, &inflights, &promise, next_key, tp](
                         NodeCursor const &node_cursor) -> result<void> {
             find_notify_fiber_future(
-                aux, inflights, promise, std::move(node_cursor), next_key);
+                aux, inflights, promise, std::move(node_cursor), next_key, tp);
             return success();
         };
         if (auto lt = inflights.find(offset); lt != inflights.end()) {
@@ -275,9 +286,11 @@ void find_notify_fiber_future(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }
     else {
+        tp.find_end_t = std::chrono::steady_clock::now();
         promise.set_value(
             {NodeCursor{node, node_prefix_index},
-             find_result::branch_not_exist_failure});
+             find_result::branch_not_exist_failure,
+             tp});
     }
 }
 

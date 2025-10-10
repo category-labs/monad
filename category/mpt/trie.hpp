@@ -46,6 +46,7 @@
 
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -1053,11 +1054,37 @@ enum class find_result : uint8_t
     key_ends_earlier_than_node_failure,
     need_to_continue_in_io_thread
 };
+
+using timepoint_t = std::chrono::steady_clock::time_point;
+using duration_t = std::chrono::steady_clock::duration;
+
+struct FindTimePoints
+{
+    timepoint_t enqueue_t{};
+    timepoint_t find_start_t{};
+    timepoint_t find_end_t{};
+    unsigned num_async_reads{0};
+};
 template <class T>
 using find_result_type = std::pair<T, find_result>;
 
-using find_cursor_result_type = find_result_type<NodeCursor>;
 using find_owning_cursor_result_type = find_result_type<CacheNodeCursor>;
+
+struct find_cursor_result_type
+{
+    NodeCursor cursor;
+    find_result result;
+    FindTimePoints tp;
+
+    find_cursor_result_type(
+        NodeCursor const &cursor, find_result const res,
+        FindTimePoints const &tp = {})
+        : cursor(cursor)
+        , result(res)
+        , tp(tp)
+    {
+    }
+};
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
@@ -1078,9 +1105,10 @@ struct fiber_find_request_t
     threadsafe_boost_fibers_promise<find_cursor_result_type> *promise;
     NodeCursor start{};
     NibblesView key{};
+    timepoint_t enqueue_t{};
 };
 
-static_assert(sizeof(fiber_find_request_t) == 48);
+static_assert(sizeof(fiber_find_request_t) == 56);
 static_assert(alignof(fiber_find_request_t) == 8);
 
 class NodeCache;
@@ -1091,7 +1119,7 @@ class NodeCache;
 void find_notify_fiber_future(
     UpdateAuxImpl &, inflight_map_t &,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &,
-    NodeCursor const &start, NibblesView key);
+    NodeCursor const &start, NibblesView key, FindTimePoints tp = {});
 
 // rodb
 void find_owning_notify_fiber_future(

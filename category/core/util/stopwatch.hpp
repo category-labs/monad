@@ -30,6 +30,7 @@ class Stopwatch final
     char const *const name_;
     int64_t const min_;
     std::chrono::time_point<std::chrono::steady_clock> const begin_;
+    bool ignore_result_{false};
 
 public:
     Stopwatch(char const *const name, int64_t const min = 0)
@@ -41,12 +42,20 @@ public:
 
     ~Stopwatch()
     {
+        if (ignore_result_) {
+            return;
+        }
         auto const end = std::chrono::steady_clock::now();
         auto const duration =
             std::chrono::duration_cast<Duration>(end - begin_);
         if (duration.count() >= min_) {
-            LOG_INFO("{} {}", name_, duration);
+            LOG_DEBUG("{} {}", name_, duration);
         }
+    }
+
+    void ignore()
+    {
+        ignore_result_ = true;
     }
 };
 

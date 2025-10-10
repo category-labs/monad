@@ -36,6 +36,8 @@ MONAD_NAMESPACE_BEGIN
 
 struct Db
 {
+    bool capture_read_latencies_{false};
+
     virtual std::optional<Account> read_account(Address const &) = 0;
 
     virtual bytes32_t

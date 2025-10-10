@@ -117,7 +117,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
             for (unsigned idx = 0; idx < root->number_of_children(); ++idx) {
                 root->move_next(idx).reset();
             }
-            auto [node_cursor, res] =
+            auto [node_cursor, res, _] =
                 find_blocking(ro_aux, NodeCursor{root}, key, latest_version);
             if (res != find_result::success) {
                 ASSERT_EQ(res, find_result::version_no_longer_exist);

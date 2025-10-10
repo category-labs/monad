@@ -687,7 +687,7 @@ int main(int argc, char *argv[])
                     aux,
                     aux.get_latest_root_offset(),
                     aux.db_history_max_version());
-                auto [res, errc] = find_blocking(
+                auto [res, errc, _] = find_blocking(
                     aux, root, state_nibbles, aux.db_history_max_version());
                 MONAD_ASSERT(errc == find_result::success);
                 state_start = res;
@@ -834,8 +834,13 @@ int main(int argc, char *argv[])
                             monad::mpt::find_cursor_result_type>
                             promise;
                         find_notify_fiber_future(
-                            *aux, inflights, promise, state_start, key);
-                        auto const [node_cursor, errc] =
+                            *aux,
+                            inflights,
+                            promise,
+                            state_start,
+                            key,
+                            FindTimePoints{});
+                        auto const [node_cursor, errc, _] =
                             promise.get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
                         MONAD_ASSERT(errc == monad::mpt::find_result::success);
@@ -923,7 +928,7 @@ int main(int argc, char *argv[])
                             .key = key};
                         request.promise->reset();
                         req.enqueue(request);
-                        auto const [node_cursor, errc] =
+                        auto const [node_cursor, errc, _] =
                             request.promise->get_future().get();
                         MONAD_ASSERT(node_cursor.is_valid());
                         MONAD_ASSERT(errc == monad::mpt::find_result::success);
@@ -954,7 +959,8 @@ int main(int argc, char *argv[])
                                 inflights,
                                 *request.promise,
                                 request.start,
-                                request.key);
+                                request.key,
+                                FindTimePoints{});
                         }
                     }
                 };
@@ -990,7 +996,8 @@ int main(int argc, char *argv[])
                             inflights,
                             *request.promise,
                             request.start,
-                            request.key);
+                            request.key,
+                            FindTimePoints{});
                     }
                 }
                 std::cout << "   Joining threads 2 ..." << std::endl;

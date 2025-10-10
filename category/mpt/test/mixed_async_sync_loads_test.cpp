@@ -85,7 +85,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     // Synchronously load the same key
     EXPECT_EQ(
         find_blocking(aux, NodeCursor{root}, key, latest_version)
-            .first.node->value(),
+            .cursor.node->value(),
         value);
 
     // Let the async find of that key complete

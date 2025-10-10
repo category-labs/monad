@@ -126,53 +126,53 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
 
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[0].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[2].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[2].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[3].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[3].second);
 
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[0].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[2].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[2].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[3].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[3].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[4].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[4].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[5].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[5].second);
 
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[6].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[6].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[7].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[7].second);
 
     EXPECT_EQ(this->root->mask, 0b11);
@@ -242,15 +242,15 @@ TYPED_TEST(PlainTrieTest, mismatch)
         make_update(kv[2].first, kv[2].second));
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[0].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[2].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[2].second);
 
     EXPECT_EQ(this->root->mask, 0b11000);
@@ -277,19 +277,19 @@ TYPED_TEST(PlainTrieTest, mismatch)
         make_update(kv[4].first, kv[4].second));
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[2].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[2].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[3].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[3].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[4].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[4].second);
 
     EXPECT_EQ(this->root->mask, 0b11000);
@@ -387,16 +387,16 @@ TYPED_TEST(PlainTrieTest, delete_with_incarnation)
     }
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[0].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(
             this->aux, this->root, kv[1].first + nested_kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         nested_kv[0].second);
 
     {
@@ -412,21 +412,21 @@ TYPED_TEST(PlainTrieTest, delete_with_incarnation)
     }
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[0].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[0].second);
     EXPECT_EQ(
         find_blocking(this->aux, this->root, kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(
             this->aux, this->root, kv[1].first + nested_kv[1].first, version)
-            .first.node->value(),
+            .cursor.node->value(),
         nested_kv[1].second);
     EXPECT_EQ(
         find_blocking(
             this->aux, this->root, kv[1].first + nested_kv[0].first, version)
-            .second,
+            .result,
         find_result::key_mismatch_failure);
 }
 
@@ -450,7 +450,7 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        auto [leaf_it, res] =
+        auto [leaf_it, res, _] =
             find_blocking(this->aux, this->root, key1, version);
         auto &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
@@ -461,7 +461,7 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        auto [leaf_it, res] =
+        auto [leaf_it, res, _] =
             find_blocking(this->aux, this->root, key2, version);
         auto &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
@@ -480,7 +480,7 @@ TYPED_TEST(PlainTrieTest, large_values)
                ::boost::fibers::future_status::ready) {
             this->aux.io->wait_until_done();
         }
-        auto [leaf_it, res] = fut.get();
+        auto [leaf_it, res, _] = fut.get();
         auto &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
@@ -498,7 +498,7 @@ TYPED_TEST(PlainTrieTest, large_values)
                ::boost::fibers::future_status::ready) {
             this->aux.io->wait_until_done();
         }
-        auto [leaf_it, res] = fut.get();
+        auto [leaf_it, res, _] = fut.get();
         auto &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
@@ -539,7 +539,7 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
             std::move(this->root),
             make_update(prefix, top_value, false, std::move(updates)));
         // find blocking on multi-level trie
-        auto [begin, errc] =
+        auto [begin, errc, _] =
             find_blocking(this->aux, this->root, prefix, version);
         EXPECT_EQ(errc, find_result::success);
         EXPECT_EQ(begin.node->number_of_children(), 2);
@@ -547,15 +547,15 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
 
         EXPECT_EQ(
             find_blocking(this->aux, begin, kv[0].first, version)
-                .first.node->value(),
+                .cursor.node->value(),
             kv[0].second);
         EXPECT_EQ(
             find_blocking(this->aux, begin, kv[1].first, version)
-                .first.node->value(),
+                .cursor.node->value(),
             kv[1].second);
         EXPECT_EQ(
             find_blocking(this->aux, begin, kv[2].first, version)
-                .first.node->value(),
+                .cursor.node->value(),
             kv[2].second);
     };
 

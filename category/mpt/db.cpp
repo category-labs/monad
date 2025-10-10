@@ -29,6 +29,7 @@
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/result.hpp>
+#include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
@@ -213,18 +214,20 @@ public:
         uint64_t const version) override
     {
         if (!root.is_valid()) {
-            return {NodeCursor{}, find_result::root_node_is_null_failure};
+            return find_cursor_result_type(
+                NodeCursor{}, find_result::root_node_is_null_failure);
         }
         // the root we last loaded does not contain the version we want to find
         if (!aux().version_is_valid_ondisk(version)) {
-            return {NodeCursor{}, find_result::version_no_longer_exist};
+            return find_cursor_result_type(
+                NodeCursor{}, find_result::version_no_longer_exist);
         }
         auto const res = find_blocking(aux(), root, key, version);
         // verify version still valid in history after success
         return aux().version_is_valid_ondisk(version)
                    ? res
-                   : find_cursor_result_type{
-                         NodeCursor{}, find_result::version_no_longer_exist};
+                   : find_cursor_result_type(
+                         NodeCursor{}, find_result::version_no_longer_exist);
     }
 
     virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
@@ -595,12 +598,16 @@ struct OnDiskWithWorkerThreadImpl
                         // emptied when its future gets destroyed.
                         find_promises.emplace_back(std::move(*req->promise));
                         req->promise = &find_promises.back();
+                        FindTimePoints tp{
+                            .enqueue_t = req->enqueue_t,
+                            .find_start_t = std::chrono::steady_clock::now()};
                         find_notify_fiber_future(
                             aux,
                             inflights,
                             *req->promise,
                             req->start,
-                            req->key);
+                            req->key,
+                            std::move(tp));
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
@@ -848,7 +855,10 @@ public:
     {
         threadsafe_boost_fibers_promise<find_cursor_result_type> promise;
         fiber_find_request_t req{
-            .promise = &promise, .start = start, .key = key};
+            .promise = &promise,
+            .start = start,
+            .key = key,
+            .enqueue_t = std::chrono::steady_clock::now()};
         auto fut = promise.get_future();
         comms_.enqueue(req);
         // promise is racily emptied after this point
@@ -856,7 +866,22 @@ public:
             std::unique_lock const g(lock_);
             cond_.notify_one();
         }
-        return fut.get();
+        auto const res = fut.get();
+        if (aux().io->capture_io_latencies() && res.tp.num_async_reads > 0) {
+            auto const &tp = res.tp;
+            auto const end_t = std::chrono::steady_clock::now();
+            LOG_DEBUG(
+                "mpt::Db find key={}: success={}, num_reads={}, dequeue={}, "
+                "find={}, notify_fiber={}, total={}",
+                to_hex(req.key),
+                res.result == find_result::success,
+                tp.num_async_reads,
+                tp.find_start_t - tp.enqueue_t,
+                tp.find_end_t - tp.find_start_t,
+                end_t - tp.find_end_t,
+                end_t - tp.enqueue_t);
+        }
+        return res;
     }
 
     // threadsafe
@@ -1192,7 +1217,8 @@ Result<NodeCursor> Db::find(
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
-    auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
+    auto const [it, result, _] =
+        impl_->find_fiber_blocking(root, key, block_id);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }

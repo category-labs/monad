@@ -27,6 +27,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -369,6 +370,13 @@ inline std::ostream &operator<<(std::ostream &s, NibblesView const &v)
 inline std::ostream &operator<<(std::ostream &s, Nibbles const &v)
 {
     return s << NibblesView(v);
+}
+
+inline std::string to_hex(NibblesView const &v)
+{
+    std::ostringstream oss;
+    oss << v;
+    return oss.str();
 }
 
 MONAD_MPT_NAMESPACE_END

@@ -50,7 +50,7 @@ namespace
             promise;
         find_notify_fiber_future(
             *aux, *inflights, promise, NodeCursor{root}, key);
-        auto const [it, errc] = promise.get_future().get();
+        auto const [it, errc, _] = promise.get_future().get();
         ASSERT_TRUE(it.is_valid());
         EXPECT_EQ(errc, monad::mpt::find_result::success);
         EXPECT_EQ(it.node->value(), value);

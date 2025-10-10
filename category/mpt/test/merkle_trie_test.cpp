@@ -242,34 +242,40 @@ TYPED_TEST(TrieTest, insert_unrelated_leaves_then_read)
         this->root_hash(),
         0xd339cf4033aca65996859d35da4612b642664cc40734dbdd40738aa47f1e3e44_hex);
 
-    auto [leaf_it, res] =
-        find_blocking(this->aux, this->root, kv[0].first, version);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[0].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[1].first, version);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[1].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[2].first, version);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[2].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[3].first, version);
-    EXPECT_EQ(res, monad::mpt::find_result::success);
-    EXPECT_EQ(
-        (monad::byte_string_view{
-            leaf_it.node->value_data(), leaf_it.node->value_len}),
-        kv[3].second);
+    {
+        auto [leaf_it, res, _] =
+            find_blocking(this->aux, this->root, kv[0].first, version);
+        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[0].second);
+    }
+    {
+        auto [leaf_it, res, tp] =
+            find_blocking(this->aux, this->root, kv[1].first, version);
+        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[1].second);
+        auto [leaf_it2, res2, _] =
+            find_blocking(this->aux, this->root, kv[2].first, version);
+        EXPECT_EQ(res2, monad::mpt::find_result::success);
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it2.node->value_data(), leaf_it2.node->value_len}),
+            kv[2].second);
+    }
+    {
+        auto const [leaf_it, res, _] =
+            find_blocking(this->aux, this->root, kv[3].first, version);
+        EXPECT_EQ(res, monad::mpt::find_result::success);
+        EXPECT_EQ(
+            (monad::byte_string_view{
+                leaf_it.node->value_data(), leaf_it.node->value_len}),
+            kv[3].second);
+    }
 }
 
 TYPED_TEST(TrieTest, inserts_shorter_leaf_data)
@@ -597,7 +603,7 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
             std::move(ul_prefix),
             block_id,
             true /*compaction*/);
-        auto [state_it, res] =
+        auto [state_it, res, _] =
             find_blocking(this->aux, this->root, prefix, block_id);
         EXPECT_EQ(res, find_result::success);
         EXPECT_EQ(
@@ -681,13 +687,14 @@ TYPED_TEST(TrieTest, variable_length_trie)
 
     // find
     {
-        auto [node0, res] = find_blocking(this->aux, this->root, key0, version);
+        auto [node0, res, _] =
+            find_blocking(this->aux, this->root, key0, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node0.node->value(), long_value);
     }
 
     {
-        auto [node_long, res] =
+        auto [node_long, res, _] =
             find_blocking(this->aux, this->root, keylong, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node_long.node->value(), long_value);
@@ -732,14 +739,14 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 
     // find
     {
-        auto [node0, res] =
+        auto [node0, res, _] =
             find_blocking(this->aux, this->root, prefix + key0, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node0.node->value(), value);
     }
 
     {
-        auto [node_long, res] =
+        auto [node_long, res, _] =
             find_blocking(this->aux, this->root, prefix + keylong, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node_long.node->value(), value);

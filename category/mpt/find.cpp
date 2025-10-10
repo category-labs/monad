@@ -33,7 +33,7 @@ find_cursor_result_type find_blocking(
 {
     auto g(aux.shared_lock());
     if (!root.is_valid()) {
-        return {NodeCursor{}, find_result::root_node_is_null_failure};
+        return {NodeCursor{}, find_result::root_node_is_null_failure, {}};
     }
     Node::SharedPtr node = root.node;
     unsigned node_prefix_index = root.prefix_index;
@@ -44,7 +44,8 @@ find_cursor_result_type find_blocking(
             if (!(node->mask & (1u << nibble))) {
                 return {
                     NodeCursor{node, node_prefix_index},
-                    find_result::branch_not_exist_failure};
+                    find_result::branch_not_exist_failure,
+                    {}};
             }
             // go to node's matched child
             if (auto const idx = node->to_child_index(nibble);
@@ -56,7 +57,9 @@ find_cursor_result_type find_blocking(
                         read_node_blocking(aux, node->fnext(idx), version);
                     if (!next_node_ondisk) {
                         return {
-                            NodeCursor{}, find_result::version_no_longer_exist};
+                            NodeCursor{},
+                            find_result::version_no_longer_exist,
+                            {}};
                     }
                     node->set_next(idx, std::move(next_node_ondisk));
                 }
@@ -71,7 +74,8 @@ find_cursor_result_type find_blocking(
             // return the last matched node and first mismatch prefix index
             return {
                 NodeCursor{node, node_prefix_index},
-                find_result::key_mismatch_failure};
+                find_result::key_mismatch_failure,
+                {}};
         }
         // nibble is matched
         ++prefix_index;
@@ -81,9 +85,10 @@ find_cursor_result_type find_blocking(
         // prefix key exists but no leaf ends at `key`
         return {
             NodeCursor{node, node_prefix_index},
-            find_result::key_ends_earlier_than_node_failure};
+            find_result::key_ends_earlier_than_node_failure,
+            {}};
     }
-    return {NodeCursor{node, node_prefix_index}, find_result::success};
+    return {NodeCursor{node, node_prefix_index}, find_result::success, {}};
 }
 
 MONAD_MPT_NAMESPACE_END

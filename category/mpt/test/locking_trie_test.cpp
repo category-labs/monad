@@ -212,7 +212,7 @@ TEST_F(LockingTrieTest, works)
     // downgrade back to shared, release
     {
         aux.lock().clear();
-        auto [leaf_it, res] =
+        auto [leaf_it, res, _] =
             find_blocking(aux, root, keys.back().first, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_NE(leaf_it.node, nullptr);
@@ -230,7 +230,7 @@ TEST_F(LockingTrieTest, works)
     // Now the node is in cache, no exclusive lock should get taken
     {
         aux.lock().clear();
-        auto [leaf_it, res] =
+        auto [leaf_it, res, _] =
             find_blocking(aux, root, keys.back().first, version);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_NE(leaf_it.node, nullptr);

@@ -127,7 +127,7 @@ Node::SharedPtr copy_trie_impl(
     uint64_t const src_version, Node::SharedPtr root, NibblesView const dest,
     uint64_t const dest_version)
 {
-    auto [src_cursor, res] =
+    auto [src_cursor, res, tp] =
         find_blocking(aux, src_root, src_prefix, src_version);
     MONAD_ASSERT(res == find_result::success);
     Node &src_node = *src_cursor.node;

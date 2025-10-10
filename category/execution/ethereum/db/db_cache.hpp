@@ -19,8 +19,11 @@
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
+#include <category/core/util/stopwatch.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -77,6 +80,9 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
+        auto const name = fmt::format("DbCache read_account {}", address);
+        Stopwatch sw{name.c_str()};
+
         bool truncated = false; // ancestors truncated
         std::optional<Account> result;
         if (proposals_.try_read_account(address, result, truncated)) {
@@ -88,6 +94,7 @@ public:
                 return acc->second.value_;
             }
         }
+        sw.ignore(); // not found in dbcache
         return db_.read_account(address);
     }
 
@@ -95,6 +102,10 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
+        auto const name =
+            fmt::format("DbCache read_storage addr={}, key={}", address, key);
+        Stopwatch sw{name.c_str()};
+
         bool truncated = false;
         bytes32_t result;
         if (proposals_.try_read_storage(
@@ -108,6 +119,7 @@ public:
                 return acc->second.value_;
             }
         }
+        sw.ignore(); // not found in dbcache
         return db_.read_storage(address, incarnation, key);
     }
 

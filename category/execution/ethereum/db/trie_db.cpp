@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
+#include <category/core/util/stopwatch.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
@@ -105,6 +106,8 @@ TrieDb::~TrieDb() = default;
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
+    auto const name = fmt::format("DB read_account {}", addr);
+    Stopwatch sw{name.c_str()};
     auto const value = db_.get(
         concat(
             prefix_,
@@ -126,6 +129,8 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
+    auto const name = fmt::format("DB read_storage addr={}, key={}", addr, key);
+    Stopwatch sw{name.c_str()};
     auto const value = db_.get(
         concat(
             prefix_,
@@ -146,6 +151,8 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
+    auto const name = fmt::format("DB read_code code_hash={}", code_hash);
+    Stopwatch sw{name.c_str()};
     // TODO read intercode object
     auto const value = db_.get(
         concat(

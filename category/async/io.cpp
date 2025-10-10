@@ -83,9 +83,6 @@ MONAD_ASYNC_NAMESPACE_BEGIN
 
 namespace detail
 {
-    // diseased dead beef in hex, last bit set so won't be a pointer
-    static void *const ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC =
-        (void *)(uintptr_t)0xd15ea5eddeadbeef;
 
     struct AsyncIO_per_thread_state_t::within_completions_holder
     {
@@ -167,26 +164,6 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         ts.instance == nullptr,
         "currently cannot create more than one AsyncIO per thread at a time");
     ts.instance = this;
-
-    // create and register the message type pipe for threadsafe communications
-    // read side is nonblocking, write side is blocking
-    auto *ring = &uring_.get_ring();
-    if (!(ring->flags & IORING_SETUP_IOPOLL)) {
-        MONAD_ASSERT_PRINTF(
-            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
-            "failed due to %s",
-            std::strerror(errno));
-        MONAD_ASSERT_PRINTF(
-            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1,
-            "failed due to %s",
-            std::strerror(errno));
-        struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-        MONAD_ASSERT(sqe);
-        io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
-        io_uring_sqe_set_data(
-            sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-        MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
-    }
 
     // TODO(niall): In the future don't activate all the chunks, as
     // theoretically zoned storage may enforce a maximum open zone count in
@@ -522,9 +499,6 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     erased_connected_operation *state = nullptr;
     result<size_t> res(success(0));
     auto get_cqe = [&] {
-        auto const inflight_ts =
-            records_.inflight_ts.load(std::memory_order_acquire);
-
         if (wr_ring != nullptr && records_.inflight_wr > 0 &&
             (poll_rings_mask & 2) == 0) {
             ring = wr_ring;
@@ -539,8 +513,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             }
             io_uring_peek_cqe(wr_ring, &cqe);
             if ((poll_rings_mask & 1) != 0) {
-                if (blocking && inflight_ts == 0 &&
-                    detail::AsyncIO_per_thread_state().empty()) {
+                if (blocking && detail::AsyncIO_per_thread_state().empty()) {
                     MONAD_ASYNC_IO_URING_RETRYABLE(
                         io_uring_wait_cqe(ring, &cqe));
                 }
@@ -560,64 +533,24 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 // code, this will do it.
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
             }
-            if (blocking && inflight_ts == 0 && records_.inflight_wr == 0 &&
+            if (blocking && records_.inflight_wr == 0 &&
                 detail::AsyncIO_per_thread_state().empty()) {
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_wait_cqe(ring, &cqe));
             }
             else {
-                // If nothing in io_uring and there are no threadsafe ops in
-                // flight, return false
-                if (0 != io_uring_peek_cqe(ring, &cqe) && inflight_ts == 0) {
+                // If nothing in io_uring, return false
+                if (0 != io_uring_peek_cqe(ring, &cqe)) {
                     return false;
                 }
             }
         }
 
-        void *data = (cqe != nullptr)
-                         ? io_uring_cqe_get_data(cqe)
-                         : detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC;
-        MONAD_ASSERT(data);
-        if (data == detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC) {
-            // MSG_READ pipe has a message for us. It is simply the pointer to
-            // the connected operation state for us to complete.
-            MONAD_ASSERT(cqe == nullptr || cqe->res == POLLIN);
-            if (cqe != nullptr && !(cqe->flags & IORING_CQE_F_MORE)) {
-                // Rearm the poll
-                struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-                MONAD_ASSERT(sqe);
-                io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
-                io_uring_sqe_set_data(
-                    sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
-            }
-            auto readed = ::read(
-                fds_.msgread, &state, sizeof(erased_connected_operation *));
-            if (readed >= 0) {
-                MONAD_ASSERT(sizeof(erased_connected_operation *) == readed);
-                // Writes flushed in the submitting thread must be acquired now
-                // before state can be dereferenced
-                std::atomic_thread_fence(std::memory_order_acquire);
-            }
-            else {
-                if (EAGAIN == errno || EWOULDBLOCK == errno) {
-                    // Spurious wakeup
-                    if (cqe != nullptr) {
-                        io_uring_cqe_seen(ring, cqe);
-                        cqe = nullptr;
-                    }
-                    return true;
-                }
-                else {
-                    MONAD_ASSERT(readed >= 0);
-                }
-            }
-        }
-        else {
+        if (cqe != nullptr) {
+            void *const data = io_uring_cqe_get_data(cqe);
+            MONAD_ASSERT(data);
             state = reinterpret_cast<erased_connected_operation *>(data);
             res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
                                  : result<size_t>(cqe->res);
-        }
-        if (cqe != nullptr) {
             io_uring_cqe_seen(ring, cqe);
             cqe = nullptr;
         }
@@ -664,12 +597,6 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         else if (state->is_write()) {
             --records_.inflight_wr;
             is_read_or_write = true;
-        }
-        else if (state->is_timeout()) {
-            --records_.inflight_tm;
-        }
-        else if (state->is_threadsafeop()) {
-            records_.inflight_ts.fetch_sub(1, std::memory_order_acq_rel);
         }
         else if (state->is_read_scatter()) {
             --records_.inflight_rd_scatter;

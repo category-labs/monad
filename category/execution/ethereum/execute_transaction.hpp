@@ -19,6 +19,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
@@ -91,6 +92,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
+    trace::StateTracer &state_tracer_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -101,6 +103,7 @@ public:
         std::vector<std::optional<Address>> const &, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
+        trace::StateTracer &,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
     ~ExecuteTransaction() = default;

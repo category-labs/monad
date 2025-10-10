@@ -13,26 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
-#include "state.hpp"
+#pragma once
 
-#include <evmc/evmc.hpp>
+#include <category/vm/interpreter/types.hpp>
+#include <category/vm/runtime/types.hpp>
+#include <category/vm/runtime/uint256.hpp>
 
-namespace monad::vm::fuzzing
+#include <test/vm/untyped_ir_interpreter/intercode_untyped_ir.hpp>
+
+#include <array>
+#include <cstdint>
+
+namespace monad::vm::interpreter
 {
-    void assert_equal(
-        evmone::state::StorageValue const &a,
-        evmone::state::StorageValue const &b);
+    using InstrEvalUntypedIR = void MONAD_VM_INSTRUCTION_CALL (*)(
+        runtime::Context &, IntercodeUntypedIR const &,
+        runtime::uint256_t const *, runtime::uint256_t *, std::int64_t, bool,
+        std::uint8_t const *);
 
-    void assert_equal(
-        evmone::state::Account const &a, evmone::state::Account const &b,
-        bool check_tstorage);
-
-    void assert_equal(
-        evmone::state::State const &a, evmone::state::State const &b,
-        bool check_tstorage);
-
-    void assert_equal(
-        evmc::Result const &evmone_result, evmc::Result const &compiler_result,
-        bool strict_out_of_gas);
+    using InstrTableUntypedIR = std::array<InstrEvalUntypedIR, 256>;
 }

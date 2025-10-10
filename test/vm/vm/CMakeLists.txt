@@ -36,7 +36,9 @@ target_link_libraries(blockchain-test-vm
         evmc::evmc
         monad-vm::monad-vm
         monad-vm::monad-vm-compiler
+        monad-vm::monad-vm-evm
         monad-vm::monad-vm-interpreter
+        monad-vm::monad-vm-untyped-ir-interpreter
 )
 
 target_include_directories(blockchain-test-vm

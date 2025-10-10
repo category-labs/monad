@@ -20,9 +20,11 @@
 
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/vm.hpp>
+#include <test/vm/untyped_ir_interpreter/execute.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -44,6 +46,7 @@ public:
     {
         Compiler,
         Interpreter,
+        UntypedIR,
         Evmone,
 #ifdef MONAD_COMPILER_LLVM
         LLVM,
@@ -71,6 +74,8 @@ public:
         switch (impl) {
         case Implementation::Interpreter:
             return "interpreter";
+        case Implementation::UntypedIR:
+            return "untyped_ir";
         case Implementation::Compiler:
             return "compiler";
         case Implementation::Evmone:
@@ -134,6 +139,22 @@ private:
         size_t code_size);
 
     evmc::Result execute_interpreter(
+        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+        size_t code_size);
+
+    template <monad::Traits traits>
+    evmc::Result execute_untyped_ir_raw(
+        monad::vm::runtime::Context &rt_ctx,
+        monad::vm::interpreter::IntercodeUntypedIR const &icode)
+    {
+        auto const stack_ptr = monad_vm_.stack_allocator().allocate();
+        monad::vm::interpreter::untyped_ir::execute<traits>(
+            rt_ctx, icode, stack_ptr.get());
+        return rt_ctx.copy_to_evmc_result();
+    };
+
+    evmc::Result execute_untyped_ir(
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);

@@ -69,8 +69,7 @@ ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-  -DCMAKE_TOOLCHAIN_FILE:STRING=category/core/toolchains/temp-strip-release.cmake \
-  -DCMAKE_BUILD_TYPE:STRING=Release \
+  -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
   -B build \
   -G Ninja
 

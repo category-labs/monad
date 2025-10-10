@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/llvm/dependency_blocks.hpp>
 #include <category/vm/llvm/emitter.hpp>
 #include <category/vm/llvm/llvm_state.hpp>
 
@@ -34,6 +35,7 @@
 namespace monad::vm::llvm
 {
     using namespace monad::vm::runtime;
+    using namespace monad::vm::dependency_blocks;
 
     extern "C" void llvm_runtime_trampoline(
         // put contract args here and update entry.S accordingly
@@ -55,12 +57,15 @@ namespace monad::vm::llvm
         auto ptr = std::make_shared<LLVMState>();
         LLVMState &llvm = *ptr;
 
-        auto ir = unsafe_make_ir<traits>(code);
+        BasicBlocksIR ir = unsafe_make_ir<traits>(code);
+        DependencyBlocksIR dep_ir = make_DependencyBlocksIR<traits>(ir);
 
         if (dbg_nm != "") {
             std::ofstream out(std::format("{}.ir", dbg_nm));
             auto ir_str = std::format("{}", ir);
             out << ir_str;
+            auto dep_ir_str = std::format("\n{}", dep_ir);
+            out << dep_ir_str;
             out.close();
         }
 
@@ -68,7 +73,7 @@ namespace monad::vm::llvm
 
         llvm.insert_symbol("rt_EXIT", (void *)&rt_exit);
 
-        Emitter<traits> emitter{llvm, ir};
+        Emitter<traits> emitter{llvm, dep_ir};
 
         emitter.emit_contract();
 
@@ -77,6 +82,7 @@ namespace monad::vm::llvm
         }
 
         llvm.set_contract_addr(dbg_nm);
+
         return ptr;
     }
 

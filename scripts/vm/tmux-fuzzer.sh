@@ -39,8 +39,8 @@ if [ "$sub_command" = start ]; then
     fi
 fi
 
-compiler_sessions=11
-interpreter_sessions=2
+compiler_sessions=1
+interpreter_sessions=0
 
 start_command() {
     if [ -z "$base_seed" ]; then
@@ -53,7 +53,7 @@ start_command() {
     for i in `seq 1 $compiler_sessions`; do
         s=fuzzer_compiler_$i
         tmux new-session -d -s $s \
-            "$script_dir/fuzzer.sh --implementation compiler --seed $seed > \"$log_dir/$s\" 2>&1"
+            "$script_dir/fuzzer.sh --implementation llvm --seed $seed > \"$log_dir/$s\" 2>&1"
         if [ $? -ne 0 ]; then
             echo Unable to start Tmux session $s
         else

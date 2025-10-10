@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
@@ -25,14 +26,96 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class CodeStorage
+{
+    byte_string data_{};
+
+public:
+    static constexpr unsigned delegated_code_size = 23;
+
+    CodeStorage() = default;
+
+    CodeStorage(byte_string const &code_or_hash)
+        : data_(code_or_hash)
+    {
+        MONAD_DEBUG_ASSERT(byte_string_view{code_or_hash} != NULL_HASH);
+    }
+
+    CodeStorage(byte_string_view const code_or_hash)
+        : data_(code_or_hash)
+    {
+        MONAD_DEBUG_ASSERT(code_or_hash != NULL_HASH);
+    }
+
+    CodeStorage(bytes32_t const &hash)
+        : data_(hash == NULL_HASH ? byte_string{} : to_byte_string(hash))
+    {
+    }
+
+    friend bool operator==(CodeStorage const &, CodeStorage const &) = default;
+
+    size_t size() const
+    {
+        return data_.size();
+    }
+
+    bool is_hash() const
+    {
+        return data_.size() == sizeof(bytes32_t);
+    }
+
+    bool inline_delegated_code() const
+    {
+        return data_.size() == delegated_code_size;
+    }
+
+    bytes32_t get_hash() const
+    {
+        if (data_.empty()) {
+            return NULL_HASH;
+        }
+        if (is_hash()) {
+            return to_bytes(data_);
+        }
+        MONAD_ASSERT(data_.size() == delegated_code_size);
+        return to_bytes(keccak256(data_));
+    }
+
+    byte_string_view as_view() const noexcept
+    {
+        return byte_string_view{data_};
+    }
+};
+
+static_assert(sizeof(CodeStorage) == 32);
+static_assert(alignof(CodeStorage) == 8);
+
 struct Account
 {
     uint256_t balance{0}; // sigma[a]_b
-    bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
+    CodeStorage code_or_hash{}; // sigma[a]_c
     uint64_t nonce{0}; // sigma[a]_n
     Incarnation incarnation{0, 0};
 
     friend bool operator==(Account const &, Account const &) = default;
+
+    bool has_code() const
+    {
+        return !code_or_hash.as_view().empty();
+    }
+
+    // Returns true if this is a delegated account using the new format,
+    // where the delegated code is stored inline in the Account itself.
+    // Legacy delegated accounts always return false (no inline code).
+    bool inline_delegated_code() const
+    {
+        return code_or_hash.inline_delegated_code();
+    }
+
+    bytes32_t get_code_hash() const
+    {
+        return code_or_hash.get_hash();
+    }
 };
 
 static_assert(sizeof(Account) == 80);
@@ -44,8 +127,7 @@ static_assert(alignof(std::optional<Account>) == 8);
 // YP (14)
 inline constexpr bool is_empty(Account const &account)
 {
-    return account.code_hash == NULL_HASH && account.nonce == 0 &&
-           account.balance == 0;
+    return !account.has_code() && account.nonce == 0 && account.balance == 0;
 }
 
 // YP (15)

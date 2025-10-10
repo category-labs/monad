@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -213,7 +214,7 @@ bytes32_t State::get_code_hash(Address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
-        return account.value().code_hash;
+        return account.value().get_code_hash();
     }
     return NULL_HASH;
 }
@@ -321,7 +322,7 @@ void State::set_code_hash(Address const &address, bytes32_t const &hash)
 {
     auto &account = current_account(address);
     MONAD_ASSERT(account.has_value());
-    account.value().code_hash = hash;
+    account.value().code_or_hash = hash;
 }
 
 evmc_storage_status State::set_storage(
@@ -465,7 +466,12 @@ vm::SharedVarcode State::get_code(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return block_state_.read_code(NULL_HASH);
     }
-    return read_code(account.value().code_hash);
+    if (account.value().inline_delegated_code()) {
+        auto const code = account.value().code_or_hash.as_view();
+        MONAD_DEBUG_ASSERT(vm::evm::is_delegated(code));
+        return std::make_shared<vm::Varcode>(vm::make_shared_intercode(code));
+    }
+    return read_code(account.value().get_code_hash());
 }
 
 size_t State::get_code_size(Address const &address)
@@ -474,7 +480,14 @@ size_t State::get_code_size(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
+    if (!account.value().has_code()) {
+        return 0;
+    }
+    if (account.value().inline_delegated_code()) {
+        return CodeStorage::delegated_code_size;
+    }
+    bytes32_t const &code_hash = account.value().get_code_hash();
+    MONAD_ASSERT(code_hash != NULL_HASH);
     {
         auto const it = code_.find(code_hash);
         if (it != code_.end()) {
@@ -496,7 +509,12 @@ size_t State::copy_code(
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
+    if (account.value().inline_delegated_code()) {
+        auto const code = account.value().code_or_hash.as_view();
+        std::copy_n(code.data(), code.size(), buffer);
+        return CodeStorage::delegated_code_size;
+    }
+    bytes32_t const &code_hash = account.value().get_code_hash();
     vm::SharedVarcode vcode{};
     {
         auto const it = code_.find(code_hash);
@@ -524,11 +542,14 @@ void State::set_code(Address const &address, byte_string_view const code)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return;
     }
-
+    if (code.empty() || vm::evm::is_delegated(code)) {
+        account.value().code_or_hash = code;
+        return;
+    }
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] =
         vm().try_insert_varcode(code_hash, vm::make_shared_intercode(code));
-    account.value().code_hash = code_hash;
+    account.value().code_or_hash = code_hash;
 }
 
 void State::create_contract(Address const &address)
@@ -537,7 +558,7 @@ void State::create_contract(Address const &address)
     if (MONAD_UNLIKELY(account.has_value())) {
         // EIP-684
         MONAD_ASSERT(account->nonce == 0);
-        MONAD_ASSERT(account->code_hash == NULL_HASH);
+        MONAD_ASSERT(account->has_code() == false);
         // keep the balance, per chapter 7 of the YP
         account->incarnation = incarnation_;
     }
@@ -604,7 +625,7 @@ bool State::try_fix_account_mismatch(
     if (is_dead(actual)) {
         return false;
     }
-    if (original->code_hash != actual->code_hash) {
+    if (original->code_or_hash != actual->code_or_hash) {
         return false;
     }
     if (original->incarnation != actual->incarnation) {

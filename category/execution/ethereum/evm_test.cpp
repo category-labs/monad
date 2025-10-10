@@ -115,7 +115,8 @@ TEST(Evm, eip684_existing_code)
                       Account{.balance = 10'000'000'000, .nonce = 7}}}},
             {to,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}},
+                 .account =
+                     {std::nullopt, Account{.code_or_hash = code_hash}}}}},
         Code{},
         BlockHeader{});
 
@@ -318,7 +319,7 @@ TEST(Evm, create_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = good_code_hash,
+                          .code_or_hash = good_code_hash,
                       }}}},
             {bad_code_address,
              StateDelta{
@@ -326,7 +327,7 @@ TEST(Evm, create_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = bad_code_hash,
+                          .code_or_hash = bad_code_hash,
                       }}}},
         },
         Code{
@@ -410,7 +411,7 @@ TEST(Evm, create2_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = good_code_hash,
+                          .code_or_hash = good_code_hash,
                       }}}},
             {bad_code_address,
              StateDelta{
@@ -418,7 +419,7 @@ TEST(Evm, create2_op_max_initcode_size)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = bad_code_hash,
+                          .code_or_hash = bad_code_hash,
                       }}}},
         },
         Code{
@@ -616,7 +617,7 @@ TEST(Evm, create_inside_delegated_call)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash = eoa_code_hash,
                       }}}},
             {from,
              StateDelta{
@@ -631,7 +632,7 @@ TEST(Evm, create_inside_delegated_call)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
+                          .code_or_hash = delegated_code_hash,
                       }}}}},
         Code{
             {eoa_code_hash, eoa_icode},
@@ -727,7 +728,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash = eoa_code_hash,
                       }}}},
             {from,
              StateDelta{
@@ -742,7 +743,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
+                          .code_or_hash = delegated_code_hash,
                       }}}},
             {creator,
              StateDelta{
@@ -750,7 +751,7 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = creator_code_hash,
+                          .code_or_hash = creator_code_hash,
                       }}}}},
         Code{
             {eoa_code_hash, eoa_icode},
@@ -841,7 +842,7 @@ TEST(Evm, nested_call_to_delegated_precompile)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
+                          .code_or_hash = eoa_code_hash,
                       }}}},
             {from,
              StateDelta{
@@ -856,7 +857,7 @@ TEST(Evm, nested_call_to_delegated_precompile)
                      {std::nullopt,
                       Account{
                           .balance = 10'000'000'000,
-                          .code_hash = contract_code_hash,
+                          .code_or_hash = contract_code_hash,
                       }}}}},
         Code{
             {eoa_code_hash, eoa_icode},

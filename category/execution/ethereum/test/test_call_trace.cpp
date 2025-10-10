@@ -121,13 +121,13 @@ TEST(CallTrace, execute_success)
                      {std::nullopt,
                       Account{
                           .balance = 0x200000,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {ADDR_B,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+                      Account{.balance = 0, .code_or_hash = NULL_HASH}}}}},
         Code{},
         BlockHeader{});
 
@@ -194,13 +194,13 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
                      {std::nullopt,
                       Account{
                           .balance = 0x10000,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {ADDR_B,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+                      Account{.balance = 0, .code_or_hash = NULL_HASH}}}}},
         Code{},
         BlockHeader{});
 

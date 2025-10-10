@@ -68,8 +68,8 @@ namespace monad::vm::fuzzing
         }
         else {
             auto range_size_dist = std::geometric_distribution<std::size_t>(p);
-            auto range_size =
-                std::min<std::size_t>(range_size_dist(engine) + 1, vec.size() - 1);
+            auto range_size = std::min<std::size_t>(
+                range_size_dist(engine) + 1, vec.size() - 1);
             auto range_start = std::uniform_int_distribution<std::size_t>(
                 0, vec.size() - range_size)(engine);
 

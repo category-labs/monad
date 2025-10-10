@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
 #include "assertions.hpp"
+#include "account.hpp"
 #include "state.hpp"
 
 #include <category/vm/core/assert.h>
@@ -38,8 +38,7 @@ namespace monad::vm::fuzzing
 
     void assert_equal(Account const &a, Account const &b)
     {
-        FUZZER_ASSERT(
-            a.transient_storage.size() == b.transient_storage.size());
+        FUZZER_ASSERT(a.transient_storage.size() == b.transient_storage.size());
         for (auto const &[k, v] : a.transient_storage) {
             auto const found = b.transient_storage.find(k);
             FUZZER_ASSERT(found != b.transient_storage.end());

@@ -121,7 +121,14 @@ try {
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
+    enum monad_run_mode
+    {
+        RUN_MODE_REPLAY = 0,
+        RUN_MODE_LIVE_EXECUTION = 1,
+    };
+
     monad_chain_config chain_config;
+    monad_run_mode run_mode = RUN_MODE_LIVE_EXECUTION;
     fs::path block_db_path;
     uint64_t nblocks = std::numeric_limits<uint64_t>::max();
     unsigned nthreads = 4;
@@ -137,6 +144,10 @@ try {
     std::string statesync;
     auto log_level = quill::LogLevel::Info;
 
+    std::unordered_map<std::string, monad_run_mode> const RUN_MODE_MAP = {
+        {"replay", RUN_MODE_REPLAY},
+        {"live_execution", RUN_MODE_LIVE_EXECUTION}};
+
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
@@ -147,6 +158,15 @@ try {
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
         ->required();
+    cli.add_option("--run_mode", run_mode, "select replay or live execution")
+        ->transform(CLI::CheckedTransformer(RUN_MODE_MAP, CLI::ignore_case))
+        ->check([&](std::string const &) -> std::string {
+            if (run_mode == RUN_MODE_LIVE_EXECUTION &&
+                chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                return "live execution only supported on monad chain";
+            }
+            return "";
+        });
     cli.add_option("--block_db", block_db_path, "block_db directory")
         ->required();
     cli.add_option("--nblocks", nblocks, "number of blocks to execute");
@@ -422,24 +442,8 @@ try {
 
     DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
     auto const result = [&] {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return runloop_ethereum(
-                *chain,
-                block_db_path,
-                db_cache,
-                vm,
-                block_hash_buffer,
-                priority_pool,
-                block_num,
-                end_block_num,
-                stop,
-                trace_calls);
-        case CHAIN_CONFIG_MONAD_DEVNET:
-        case CHAIN_CONFIG_MONAD_TESTNET:
-        case CHAIN_CONFIG_MONAD_MAINNET:
-        case CHAIN_CONFIG_MONAD_TESTNET2:
-            return runloop_monad(
+        if (run_mode == RUN_MODE_LIVE_EXECUTION) {
+            return runloop_monad_live(
                 dynamic_cast<MonadChain const &>(*chain),
                 block_db_path,
                 db,
@@ -452,7 +456,40 @@ try {
                 stop,
                 trace_calls);
         }
-        MONAD_ABORT_PRINTF("Unsupported chain");
+        else {
+            switch (chain_config) {
+            case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                return runloop_ethereum(
+                    *chain,
+                    block_db_path,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            case CHAIN_CONFIG_MONAD_DEVNET:
+            case CHAIN_CONFIG_MONAD_TESTNET:
+            case CHAIN_CONFIG_MONAD_MAINNET:
+            case CHAIN_CONFIG_MONAD_TESTNET2:
+                return runloop_monad_replay(
+                    dynamic_cast<MonadChain const &>(*chain),
+                    block_db_path,
+                    db,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            default:
+                MONAD_ABORT_PRINTF("Unsupported chain");
+            }
+        }
     }();
 
     if (MONAD_UNLIKELY(result.has_error())) {

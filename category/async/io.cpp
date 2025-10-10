@@ -45,6 +45,8 @@
 #include <utility>
 #include <vector>
 
+#include <quill/Quill.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -625,6 +627,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         if (capture_io_latencies_) {
             state->elapsed =
                 std::chrono::steady_clock::now() - state->initiated;
+            LOG_DEBUG("IO Latency {}", state->elapsed);
         }
         return true;
     };

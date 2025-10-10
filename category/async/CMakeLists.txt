@@ -51,7 +51,7 @@ add_library(
 
 target_include_directories(monad_async PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_async)
-target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
+target_link_libraries(monad_async PUBLIC monad_core Boost::fiber quill::quill)
 
 # ##############################################################################
 # unit tests

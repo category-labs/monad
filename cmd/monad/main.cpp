@@ -128,6 +128,7 @@ try {
     unsigned nfibers = 256;
     bool no_compaction = false;
     bool trace_calls = false;
+    bool trace_io = false;
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
@@ -174,6 +175,10 @@ try {
         "--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_flag(
+        "--trace_io",
+        trace_io,
+        "enable io latency tracing, must set log level to lower than debug");
     cli.add_flag("--trace_calls", trace_calls, "enable call tracing");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
@@ -278,6 +283,7 @@ try {
                 mpt::OnDiskDbConfig{
                     .append = true,
                     .compaction = !no_compaction,
+                    .capture_io_latencies = trace_io,
                     .rewind_to_latest_finalized = true,
                     .rd_buffers = 8192,
                     .wr_buffers = 32,

@@ -887,8 +887,11 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     return block_ids;
 }
 
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
 Result<std::vector<Transaction>> get_transactions(
-    mpt::Db &db, uint64_t const block_number, bytes32_t const &block_id)
+    DBType &db, uint64_t const block_number, bytes32_t const &block_id)
 {
     class TransactionTraverseMachine final : public TraverseMachine
     {
@@ -961,7 +964,7 @@ Result<std::vector<Transaction>> get_transactions(
     TransactionTraverseMachine traverse(txs);
     auto const cursor = res.value();
     if (db.traverse(cursor, traverse, block_number) == false) {
-        MONAD_ASSERT(!db.load_root_for_version(block_number).is_valid());
+        MONAD_ASSERT(db.find({}, block_number).has_error());
         return DbError::version_no_longer_exist;
     }
     std::vector<Transaction> ret;
@@ -971,6 +974,12 @@ Result<std::vector<Transaction>> get_transactions(
     }
     return ret;
 }
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
 std::optional<BlockHeader> read_eth_header(
     mpt::Db const &db, uint64_t const block, mpt::NibblesView prefix)

@@ -167,8 +167,11 @@ mpt::Nibbles proposal_prefix(bytes32_t const &);
 
 std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
 Result<std::vector<Transaction>> get_transactions(
-    mpt::Db &, uint64_t block_number, bytes32_t const &block_id = {});
+    DBType &, uint64_t block_number, bytes32_t const &block_id = {});
 
 std::optional<BlockHeader>
 read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);

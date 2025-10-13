@@ -40,6 +40,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -678,7 +679,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_read_and_parse_transaction(second_block);
 }
 
-TYPED_TEST(DBTest, get_transactions)
+TEST_F(OnDiskDbWithFileFixture, get_transactions)
 {
     using namespace intx;
     using namespace evmc::literals;
@@ -730,6 +731,15 @@ TYPED_TEST(DBTest, get_transactions)
     EXPECT_EQ(txs.size(), transactions.size());
     for (size_t i = 0; i < txs.size(); ++i) {
         EXPECT_EQ(txs[i], transactions[i]);
+    }
+
+    mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+    auto const txs_res2 = get_transactions(rodb, block_number);
+    ASSERT_TRUE(txs_res2.has_value());
+    auto const txs2 = txs_res2.value();
+    EXPECT_EQ(txs2.size(), transactions.size());
+    for (size_t i = 0; i < txs2.size(); ++i) {
+        EXPECT_EQ(txs2[i], transactions[i]);
     }
 }
 

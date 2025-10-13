@@ -76,29 +76,22 @@ void process_withdrawal(
     }
 }
 
-void transfer_balance_dao(
-    BlockState &block_state, Incarnation const incarnation)
+void transfer_balance_dao(State &state)
 {
-    State state{block_state, incarnation};
-
     for (auto const &addr : dao::child_accounts) {
         auto const balance = intx::be::load<uint256_t>(state.get_balance(addr));
         state.add_to_balance(dao::withdraw_account, balance);
         state.subtract_from_balance(addr, balance);
     }
-
-    MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
 }
 
 // EIP-4788
-void set_beacon_root(BlockState &block_state, BlockHeader const &header)
+void set_beacon_root(State &state, BlockHeader const &header)
 {
     constexpr auto BEACON_ROOTS_ADDRESS{
         0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
-    State state{block_state, Incarnation{header.number, 0}};
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
         uint256_t timestamp{header.timestamp};
         bytes32_t k1{
@@ -109,9 +102,6 @@ void set_beacon_root(BlockState &block_state, BlockHeader const &header)
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
-
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
     }
 }
 
@@ -321,19 +311,18 @@ Result<std::vector<Receipt>> execute_block(
 
         set_block_hash_history(state, block.header);
 
+        if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+            set_beacon_root(state, block.header);
+        }
+
+        if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
+            if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
+                transfer_balance_dao(state);
+            }
+        }
+
         MONAD_ASSERT(block_state.can_merge(state));
         block_state.merge(state);
-    }
-
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-        set_beacon_root(block_state, block.header);
-    }
-
-    if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
-        if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-            transfer_balance_dao(
-                block_state, Incarnation{block.header.number, 0});
-        }
     }
 
     BOOST_OUTCOME_TRY(

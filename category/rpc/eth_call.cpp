@@ -935,7 +935,8 @@ struct monad_eth_call_executor
     void submit_eth_trace_block_or_transaction_to_pool(
         monad_chain_config const chain_config, BlockHeader const &block_header,
         uint64_t const block_number, bytes32_t const &block_id,
-        uint64_t const transaction_index, bool const trace_transaction,
+        bytes32_t const &parent_id, uint64_t const transaction_index,
+        bool const trace_transaction,
         void (*complete)(monad_eth_call_result *, void *user), void *const user,
         monad_tracer_config const tracer_config)
     {
@@ -977,12 +978,13 @@ struct monad_eth_call_executor
              chain_config = chain_config,
              complete = complete,
              &db = db_,
-             user = user,
+             fiber_pool = &high_gas_pool_,
+             parent_id = parent_id,
+             result = result,
              tracer_config = tracer_config,
              trace_transaction = trace_transaction,
              transaction_index = transaction_index,
-             result = result,
-             fiber_pool = &high_gas_pool_]() {
+             user = user]() {
                 // TODO(dhil): Batch requests can skew the count.
                 fiber_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
@@ -1016,6 +1018,8 @@ struct monad_eth_call_executor
 
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number, block_id);
+                    (void)parent_id; // TODO(dhil): Set db to `block_number -
+                                     // 1`, parent_id before replay.
 
                     // TODO(dhil): Load transactions
                     std::vector<Transaction> transactions{};
@@ -1192,7 +1196,9 @@ void monad_eth_trace_block_or_transaction_executor_submit(
     struct monad_eth_call_executor *executor,
     enum monad_chain_config chain_config, uint8_t const *rlp_header,
     size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
-    size_t rlp_block_id_len, uint64_t transaction_index, bool trace_transaction,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len, bool const trace_transaction,
+    size_t const transaction_index,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     enum monad_tracer_config tracer_config)
 {
@@ -1200,6 +1206,8 @@ void monad_eth_trace_block_or_transaction_executor_submit(
 
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    byte_string_view parent_id_view(
+        {rlp_parent_block_id, rlp_parent_block_id_len});
 
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
     MONAD_ASSERT(!block_header_result.has_error());
@@ -1211,11 +1219,17 @@ void monad_eth_trace_block_or_transaction_executor_submit(
     MONAD_ASSERT(block_id_view.empty());
     auto const block_id = block_id_result.value();
 
+    auto const parent_id_result = rlp::decode_bytes32(parent_id_view);
+    MONAD_ASSERT(!parent_id_result.has_error());
+    MONAD_ASSERT(parent_id_view.empty());
+    auto const parent_id = parent_id_result.value();
+
     executor->submit_eth_trace_block_or_transaction_to_pool(
         chain_config,
         block_header,
         block_number,
         block_id,
+        parent_id,
         transaction_index,
         trace_transaction,
         complete,
@@ -1227,7 +1241,8 @@ void monad_eth_trace_transaction_executor_submit(
     struct monad_eth_call_executor *executor,
     enum monad_chain_config chain_config, uint8_t const *rlp_header,
     size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
-    size_t rlp_block_id_len, uint64_t transaction_index,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len, uint64_t transaction_index,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     enum monad_tracer_config tracer_config)
 {
@@ -1239,6 +1254,8 @@ void monad_eth_trace_transaction_executor_submit(
         block_number,
         rlp_block_id,
         rlp_block_id_len,
+        rlp_parent_block_id,
+        rlp_parent_block_id_len,
         transaction_index,
         true,
         complete,
@@ -1250,7 +1267,8 @@ void monad_eth_trace_block_executor_submit(
     struct monad_eth_call_executor *executor,
     enum monad_chain_config chain_config, uint8_t const *rlp_header,
     size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
-    size_t rlp_block_id_len,
+    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
+    size_t rlp_parent_block_id_len,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     enum monad_tracer_config tracer_config)
 {
@@ -1263,6 +1281,8 @@ void monad_eth_trace_block_executor_submit(
         block_number,
         rlp_block_id,
         rlp_block_id_len,
+        rlp_parent_block_id,
+        rlp_parent_block_id_len,
         0,
         false,
         complete,

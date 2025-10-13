@@ -1016,13 +1016,12 @@ struct monad_eth_call_executor
                         return;
                     }
 
-                    TrieRODb tdb{db};
-                    tdb.set_block_and_prefix(block_number, block_id);
-                    (void)parent_id; // TODO(dhil): Set db to `block_number -
-                                     // 1`, parent_id before replay.
-
-                    // TODO(dhil): Load transactions
-                    std::vector<Transaction> transactions{};
+                    // Load transactions, senders, and authorities
+                    // BOOST_OUTCOME_TRY(
+                    //     std::vector<Transaction> transactions,
+                    //     get_transactions(db, block_number, block_id));
+                    (void)block_id;
+                    std::vector<Transaction> transactions;
                     std::vector<Address> senders;
                     {
                         std::vector<std::optional<Address>> recovered_senders =
@@ -1046,6 +1045,10 @@ struct monad_eth_call_executor
                     std::vector<std::vector<std::optional<Address>>>
                         authorities = monad::recover_authorities(
                             transactions, fiber_pool->pool);
+
+                    // Set db to parent block state
+                    TrieRODb tdb{db};
+                    tdb.set_block_and_prefix(block_number - 1, parent_id);
 
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {

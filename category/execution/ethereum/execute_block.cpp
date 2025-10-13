@@ -315,9 +315,12 @@ Result<std::vector<Receipt>> execute_block(
             set_beacon_root(state, block.header);
         }
 
+        // Ethereum mainnet dao fork
         if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
             if (MONAD_UNLIKELY(block.header.number == dao::dao_block_number)) {
-                transfer_balance_dao(state);
+                if (chain.get_chain_id() == 1) {
+                    transfer_balance_dao(state);
+                }
             }
         }
 

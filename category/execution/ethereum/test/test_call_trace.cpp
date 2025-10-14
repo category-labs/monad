@@ -147,11 +147,9 @@ TEST(CallTrace, execute_success)
 
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
-    EthereumMainnet chain;
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{
-        chain, call_tracer, tx_context, buffer, s};
+    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{call_tracer, tx_context, buffer, s};
 
     auto const result =
         ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
@@ -220,11 +218,9 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
 
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
-    EthereumMainnet chain;
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{
-        chain, call_tracer, tx_context, buffer, s};
+    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{call_tracer, tx_context, buffer, s};
 
     auto const result =
         ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(

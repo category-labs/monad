@@ -82,8 +82,7 @@ TEST(Evm, create_with_insufficient)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -129,8 +128,7 @@ TEST(Evm, eip684_existing_code)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
     auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -151,8 +149,7 @@ TEST(Evm, create_nonce_out_of_range)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -197,8 +194,7 @@ TEST(Evm, static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -249,8 +245,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -337,13 +332,12 @@ TEST(Evm, create_op_max_initcode_size)
 
     BlockState bs{tdb, vm};
     BlockHashBufferFinalized const block_hash_buffer;
-    EthereumMainnet chain{};
     NoopCallTracer call_tracer;
 
     auto s = State{bs, Incarnation{0, 0}};
 
     EvmcHost<MonadTraits<MONAD_FOUR>> h{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
     {
@@ -429,13 +423,12 @@ TEST(Evm, create2_op_max_initcode_size)
 
     BlockState bs{tdb, vm};
     BlockHashBufferFinalized const block_hash_buffer;
-    EthereumMainnet chain{};
     NoopCallTracer call_tracer;
 
     auto s = State{bs, Incarnation{0, 0}};
 
     EvmcHost<MonadTraits<MONAD_FOUR>> h{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
     {
@@ -652,9 +645,8 @@ TEST(Evm, create_inside_delegated_call)
     {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        EthereumMainnet chain{};
         EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
@@ -664,9 +656,8 @@ TEST(Evm, create_inside_delegated_call)
     {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_FAILURE);
@@ -772,9 +763,8 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
     {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        EthereumMainnet chain{};
         EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
@@ -784,9 +774,8 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
     {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_FAILURE);
@@ -875,9 +864,8 @@ TEST(Evm, nested_call_to_delegated_precompile)
     {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        MonadDevnet chain{};
         EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);

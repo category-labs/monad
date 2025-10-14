@@ -139,9 +139,7 @@ TEST(EvmcHost, emit_log)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evmc_host_t host{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     host.emit_log(
         from,
@@ -169,9 +167,7 @@ TEST(EvmcHost, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evmc_host_t host{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

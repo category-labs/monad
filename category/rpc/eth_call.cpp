@@ -221,7 +221,7 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
 
         // TODO: properly initialize revert_transaction?
-        EvmcHost<traits> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<traits> host{call_tracer, tx_context, buffer, state};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain, enriched_txn, sender, authorities, header, 0}(state, host);
 

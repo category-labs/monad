@@ -92,7 +92,7 @@ namespace
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         EvmcHost<Prague> host{
-            chain, call_tracer, tx_context, block_hash_buffer, state};
+            call_tracer, tx_context, block_hash_buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{
@@ -234,7 +234,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{
@@ -294,7 +294,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         evmc_message const msg{
             .kind = EVMC_CALL,
@@ -325,7 +325,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message msg{
@@ -407,7 +407,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         evmc_message const msg{
             .kind = EVMC_CALL,
@@ -443,7 +443,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{

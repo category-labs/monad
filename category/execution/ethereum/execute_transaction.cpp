@@ -333,12 +333,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     auto const tx_context =
         get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<traits> host{
-        chain_,
-        call_tracer_,
-        tx_context,
-        block_hash_buffer_,
-        state,
-        [this, &state] {
+        call_tracer_, tx_context, block_hash_buffer_, state, [this, &state] {
             return revert_transaction_(sender_, tx_, i_, state);
         }};
 

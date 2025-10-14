@@ -81,6 +81,8 @@ namespace monad::vm::compiler::untyped
         std::unordered_map<byte_offset, block_id> jumpdests;
         std::variant<std::vector<Block>, std::vector<local_stacks::Block>>
             blocks;
+
+        byte_offset last_instruction_offset(Block const &);
     };
 
     std::variant<std::vector<Block>, std::vector<local_stacks::Block>>

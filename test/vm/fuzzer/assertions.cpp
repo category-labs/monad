@@ -35,14 +35,16 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.access_status == b.access_status);
     }
 
-    void assert_equal(Account const &a, Account const &b)
+    void assert_equal(Account const &a, Account const &b, bool check_tstorage)
     {
         MONAD_VM_ASSERT(
             a.transient_storage.size() == b.transient_storage.size());
-        for (auto const &[k, v] : a.transient_storage) {
-            auto const found = b.transient_storage.find(k);
-            MONAD_VM_ASSERT(found != b.transient_storage.end());
-            MONAD_VM_ASSERT(found->second == v);
+        if (check_tstorage) {
+            for (auto const &[k, v] : a.transient_storage) {
+                auto const found = b.transient_storage.find(k);
+                MONAD_VM_ASSERT(found != b.transient_storage.end());
+                MONAD_VM_ASSERT(found->second == v);
+            }
         }
 
         MONAD_VM_ASSERT(a.storage.size() == b.storage.size());
@@ -61,7 +63,7 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.access_status == b.access_status);
     }
 
-    void assert_equal(State const &a, State const &b)
+    void assert_equal(State const &a, State const &b, bool check_tstorage)
     {
         auto const &a_accs = a.get_modified_accounts();
         auto const &b_accs = b.get_modified_accounts();
@@ -70,7 +72,7 @@ namespace monad::vm::fuzzing
         for (auto const &[k, v] : a_accs) {
             auto const found = b_accs.find(k);
             MONAD_VM_ASSERT(found != b_accs.end());
-            assert_equal(v, found->second);
+            assert_equal(v, found->second, check_tstorage);
         }
     }
 

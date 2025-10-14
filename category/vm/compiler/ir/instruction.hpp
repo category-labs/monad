@@ -124,6 +124,7 @@ namespace monad::vm::compiler
 
         constexpr runtime::uint256_t const &immediate_value() const noexcept;
         constexpr std::uint32_t pc() const noexcept;
+        constexpr std::uint32_t next() const noexcept;
         constexpr std::uint32_t static_gas_cost() const noexcept;
         constexpr OpCode opcode() const noexcept;
         constexpr std::uint8_t stack_args() const noexcept;
@@ -188,6 +189,16 @@ namespace monad::vm::compiler
     constexpr std::uint32_t Instruction::pc() const noexcept
     {
         return pc_;
+    }
+
+    constexpr std::uint32_t Instruction::next() const noexcept
+    {
+        switch (opcode_) {
+        case OpCode::Push:
+            return pc_ + index_ + 1;
+        default:
+            return pc_ + 1;
+        }
     }
 
     constexpr std::uint32_t Instruction::static_gas_cost() const noexcept

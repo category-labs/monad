@@ -35,6 +35,7 @@ if(MONAD_COMPILER_TESTING)
 endif()
 
 if(MONAD_COMPILER_BENCHMARKS OR MONAD_COMPILER_TESTING)
+  add_subdirectory(untyped_ir_interpreter)
   add_subdirectory(vm)
 endif()
 

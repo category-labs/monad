@@ -25,6 +25,7 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/vm/compiler/ir/untyped.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
@@ -253,13 +254,16 @@ static evmc::address deploy_delegated_contract(
 }
 
 static evmc::address deploy_delegated_contracts(
-    State &evmone_state, State &monad_state, evmc::address const &from,
-    evmc::address delegatee)
+    BlockchainTestVM::Implementation impl, State &evmone_state,
+    State &monad_state, evmc::address const &from, evmc::address delegatee)
 {
     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
     MONAD_VM_ASSERT(a == a1);
-    assert_equal(evmone_state, monad_state);
+    assert_equal(
+        evmone_state,
+        monad_state,
+        impl != BlockchainTestVM::Implementation::UntypedIR);
     return a;
 }
 
@@ -349,6 +353,7 @@ static arguments parse_args(int const argc, char **const argv)
     auto const impl_map =
         std::map<std::string, BlockchainTestVM::Implementation>{
             {"interpreter", BlockchainTestVM::Implementation::Interpreter},
+            {"untyped_ir", BlockchainTestVM::Implementation::UntypedIR},
             {"compiler", BlockchainTestVM::Implementation::Compiler},
         };
 
@@ -439,14 +444,20 @@ static evmc_status_code fuzz_iteration(
     }
     clean_storage(monad_state);
 
-    assert_equal(evmone_state, monad_state);
+    assert_equal(
+        evmone_state,
+        monad_state,
+        impl != BlockchainTestVM::Implementation::UntypedIR);
     return evmone_result.status_code;
 }
 
 static void
 log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
     std::unordered_map<evmc_status_code, std::size_t> const &exit_code_stats,
-    std::size_t const run_index, std::size_t const total_messages)
+    std::size_t const run_index, std::size_t const total_messages,
+    std::size_t const untyped_ir_contracts,
+    std::size_t const untyped_ir_contracts_coercions,
+    std::size_t const total_contracts)
 {
     using namespace std::chrono;
 
@@ -468,6 +479,23 @@ log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
                 100;
             std::cerr << std::format(
                 "  {:<21}: {:.2f}%\n", to_string(k), percentage);
+        }
+
+        if (untyped_ir_contracts) {
+            auto const percentage = (static_cast<double>(untyped_ir_contracts) /
+                                     static_cast<double>(total_contracts)) *
+                                    100;
+            std::cerr << std::format(
+                "  {:<21}: {:.2f}%\n", "UNTYPED_IR", percentage);
+        }
+
+        if (untyped_ir_contracts_coercions) {
+            auto const percentage =
+                (static_cast<double>(untyped_ir_contracts_coercions) /
+                 static_cast<double>(total_contracts)) *
+                100;
+            std::cerr << std::format(
+                "  {:<21}: {:.2f}%\n", "UNTYPED_IR_COERCE", percentage);
         }
     }
 }
@@ -513,22 +541,34 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
+    auto total_contracts = std::size_t{0};
+    auto untyped_ir_contracts = std::size_t{0};
+    auto untyped_ir_contracts_coercions = std::size_t{0};
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
     for (auto i = 0; i < args.iterations_per_run; ++i) {
         using monad::vm::fuzzing::GeneratorFocus;
-        auto focus = discrete_choice<GeneratorFocus>(
-            engine,
-            [](auto &) { return GeneratorFocus::Generic; },
-            Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
-            Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
+        auto focus =
+            args.implementation == BlockchainTestVM::Implementation::UntypedIR
+                ? GeneratorFocus::DynJump
+                : discrete_choice<GeneratorFocus>(
+                      engine,
+                      [](auto &) { return GeneratorFocus::Generic; },
+                      Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
+                      Choice(0.05, [](auto &) {
+                          return GeneratorFocus::DynJump;
+                      }));
 
         if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
             auto precompile =
                 monad::vm::fuzzing::generate_precompile_address(engine, rev);
             auto const a = deploy_delegated_contracts(
-                evmone_state, monad_state, genesis_address, precompile);
+                args.implementation,
+                evmone_state,
+                monad_state,
+                genesis_address,
+                precompile);
             known_addresses.push_back(a);
         }
 
@@ -545,20 +585,45 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 continue;
             }
 
+            if (args.implementation ==
+                BlockchainTestVM::Implementation::UntypedIR) {
+                ++total_contracts;
+                using namespace monad::vm::compiler;
+                auto icode = monad::vm::interpreter::IntercodeUntypedIR(
+                    std::span{contract.data(), contract.size()});
+
+                if (icode.valid_ir()) {
+                    ++untyped_ir_contracts;
+                }
+                if (icode.jump_coerce_map.empty() ||
+                    icode.fallthrough_coerce_map.empty()) {
+                    continue;
+                }
+                ++untyped_ir_contracts_coercions;
+            }
+
             auto const a =
                 deploy_contract(evmone_state, genesis_address, contract);
             auto const a1 =
                 deploy_contract(monad_state, genesis_address, contract);
             MONAD_VM_ASSERT(a == a1);
 
-            assert_equal(evmone_state, monad_state);
+            assert_equal(
+                evmone_state,
+                monad_state,
+                args.implementation !=
+                    BlockchainTestVM::Implementation::UntypedIR);
 
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
             if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
                 auto const b = deploy_delegated_contracts(
-                    evmone_state, monad_state, genesis_address, a);
+                    args.implementation,
+                    evmone_state,
+                    monad_state,
+                    genesis_address,
+                    a);
                 known_addresses.push_back(b);
             }
             break;
@@ -592,7 +657,14 @@ static void do_run(std::size_t const run_index, arguments const &args)
         }
     }
 
-    log(start_time, args, exit_code_stats, run_index, total_messages);
+    log(start_time,
+        args,
+        exit_code_stats,
+        run_index,
+        total_messages,
+        untyped_ir_contracts,
+        untyped_ir_contracts_coercions,
+        total_contracts);
 }
 
 static void run_loop(int argc, char **argv)

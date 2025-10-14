@@ -13,26 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
-#include "state.hpp"
+#pragma once
 
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/allocator.hpp>
+#include <category/vm/runtime/types.hpp>
+#include <test/vm/untyped_ir_interpreter/intercode_untyped_ir.hpp>
+
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-namespace monad::vm::fuzzing
+namespace monad::vm::interpreter::untyped_ir
 {
-    void assert_equal(
-        evmone::state::StorageValue const &a,
-        evmone::state::StorageValue const &b);
-
-    void assert_equal(
-        evmone::state::Account const &a, evmone::state::Account const &b,
-        bool check_tstorage);
-
-    void assert_equal(
-        evmone::state::State const &a, evmone::state::State const &b,
-        bool check_tstorage);
-
-    void assert_equal(
-        evmc::Result const &evmone_result, evmc::Result const &compiler_result,
-        bool strict_out_of_gas);
+    template <Traits traits>
+    void execute(
+        runtime::Context &, IntercodeUntypedIR const &,
+        std::uint8_t *stack_ptr);
 }

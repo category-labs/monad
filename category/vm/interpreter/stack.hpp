@@ -30,9 +30,8 @@ namespace monad::vm::interpreter
 
     template <std::uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
-        runtime::Context &ctx, Intercode const &,
-        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
-        std::int64_t &gas_remaining)
+        runtime::Context &ctx, runtime::uint256_t const *stack_bottom,
+        runtime::uint256_t *stack_top, std::int64_t &gas_remaining)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
@@ -71,6 +70,16 @@ namespace monad::vm::interpreter
                 }
             }
         }
+    }
+
+    template <std::uint8_t Instr, Traits traits>
+    [[gnu::always_inline]] inline void check_requirements(
+        runtime::Context &ctx, Intercode const &,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t &gas_remaining)
+    {
+        check_requirements<Instr, traits>(
+            ctx, stack_bottom, stack_top, gas_remaining);
     }
 
     [[gnu::always_inline]] inline void

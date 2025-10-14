@@ -46,6 +46,26 @@ namespace monad::vm::compiler::untyped
     {
     }
 
+    byte_offset UntypedIR::UntypedIR::last_instruction_offset(Block const &b)
+    {
+        if (b.instrs.empty()) {
+            if (jumpdests.contains(b.offset)) {
+                return b.offset + 1;
+            }
+            else {
+                return b.offset;
+            }
+        }
+        else {
+            if (std::holds_alternative<FallThrough>(b.terminator)) {
+                return b.instrs.back().pc();
+            }
+            else {
+                return b.instrs.back().next();
+            }
+        }
+    }
+
     struct Ignored
     {
     };

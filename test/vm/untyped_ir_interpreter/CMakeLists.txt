@@ -1,0 +1,70 @@
+# Copyright (C) 2025 Category Labs, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+option(MONAD_VM_INTERPRETER_DEBUG "Trace instructions executed by interpreter" OFF)
+
+add_library(monad-vm-untyped-ir-interpreter OBJECT)
+
+target_sources(monad-vm-untyped-ir-interpreter PRIVATE
+  "debug.hpp"
+  "execute.cpp"
+  "execute.hpp"
+  "instruction_table.hpp"
+  "instructions_fwd.hpp"
+  "intercode_untyped_ir.cpp"
+  "intercode_untyped_ir.hpp"
+  "push.hpp"
+  "types.hpp"
+)
+
+monad_compile_options(monad-vm-untyped-ir-interpreter)
+
+# Use -Og for debug build to reduce stack usage.
+target_compile_options(monad-vm-untyped-ir-interpreter PRIVATE $<$<CONFIG:Debug>:-Og>)
+
+# This is a workaround for a change made to LLVM between versions 18 and 19:
+# https://github.com/llvm/llvm-project/pull/78582
+#
+# The change in question restricts the default maximum predecessors and
+# successors that a basic block can have if it is to be duplicated (rather than
+# being shared). This affects the dispatch table of the interpreter by causing
+# the "load next instruction, indirect jump" block tail to be emitted as a
+# single shared block rather than being inlined into each opcode's dispatch
+# block. Doing so slows the interpreter down when compiled with Clang 19.
+# Because the LLVM change in question is for _compiler_ performance rather than
+# _runtime_ performance, we can safely disable the pessimisation by setting this
+# flag to a value we know to be large enough for our dispatch table.
+target_compile_options(
+  monad-vm-untyped-ir-interpreter
+  PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,Clang>:-mllvm -tail-dup-pred-size=256>)
+
+if(MONAD_VM_INTERPRETER_DEBUG)
+  target_compile_definitions(monad-vm-untyped-ir-interpreter PRIVATE MONAD_VM_INTERPRETER_DEBUG)
+endif()
+
+if(MONAD_VM_INTERPRETER_STATS)
+  target_compile_definitions(monad-vm-untyped-ir-interpreter PRIVATE MONAD_VM_INTERPRETER_STATS)
+endif()
+
+target_include_directories(monad-vm-untyped-ir-interpreter
+    PUBLIC .
+)
+
+target_link_libraries(monad-vm-untyped-ir-interpreter
+    PUBLIC monad-vm::monad-vm-compiler
+    PUBLIC monad-vm::monad-vm-interpreter
+)
+
+add_library(monad-vm::monad-vm-untyped-ir-interpreter ALIAS monad-vm-untyped-ir-interpreter)

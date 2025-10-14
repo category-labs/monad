@@ -334,7 +334,7 @@ struct Stake : public ::testing::Test
     Result<void> syscall_snapshot()
     {
         state.push();
-        auto res = contract.syscall_snapshot({});
+        auto res = contract.syscall_snapshot({}, 0);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -344,7 +344,7 @@ struct Stake : public ::testing::Test
     {
         auto const input = abi_encode_uint<u64_be>(epoch);
         state.push();
-        auto res = contract.syscall_on_epoch_change(input);
+        auto res = contract.syscall_on_epoch_change(input, 0);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -795,6 +795,15 @@ TEST_F(Stake, add_validator_revert_minimum_stake_not_met)
 
 TEST_F(Stake, nonpayable_functions_revert)
 {
+    // syscalls
+    EXPECT_EQ(
+        contract.syscall_snapshot({}, 5 * MON).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.syscall_on_epoch_change({}, 5 * MON).assume_error(),
+        StakingError::ValueNonZero);
+
+    // precompiles
     evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
     EXPECT_EQ(
         contract.precompile_undelegate({}, {}, value).assume_error(),

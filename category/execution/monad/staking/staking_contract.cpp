@@ -1562,8 +1562,12 @@ Result<byte_string> StakingContract::precompile_external_reward(
 //  System Calls  //
 ////////////////////
 
-Result<void> StakingContract::syscall_on_epoch_change(byte_string_view input)
+Result<void> StakingContract::syscall_on_epoch_change(
+    byte_string_view input, uint256_t const &value)
 {
+    if (MONAD_UNLIKELY(value != 0)) {
+        return StakingError::ValueNonZero;
+    }
     BOOST_OUTCOME_TRY(u64_be const next_epoch, abi_decode_fixed<u64_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
@@ -1665,8 +1669,12 @@ Result<void> StakingContract::syscall_reward(
     return outcome::success();
 }
 
-Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
+Result<void> StakingContract::syscall_snapshot(
+    byte_string_view const input, uint256_t const &value)
 {
+    if (MONAD_UNLIKELY(value != 0)) {
+        return StakingError::ValueNonZero;
+    }
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }

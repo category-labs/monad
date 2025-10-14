@@ -39,7 +39,6 @@ enum class SystemTransactionError
     Success = 0,
     SystemTxnBeforeFork,
     GasNonZero,
-    ValueNonZero,
     TypeNotLegacy,
     BadSender,
     MissingTo,

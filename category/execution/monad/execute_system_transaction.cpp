@@ -206,9 +206,9 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     case SyscallSelector::REWARD:
         return contract.syscall_reward(calldata, value);
     case SyscallSelector::SNAPSHOT:
-        return contract.syscall_snapshot(calldata);
+        return contract.syscall_snapshot(calldata, value);
     case SyscallSelector::ON_EPOCH_CHANGE:
-        return contract.syscall_on_epoch_change(calldata);
+        return contract.syscall_on_epoch_change(calldata, value);
     }
     return staking::StakingError::MethodNotSupported;
 }

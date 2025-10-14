@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
@@ -882,4 +883,48 @@ TEST(Evm, nested_call_to_delegated_precompile)
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     }
+}
+
+TEST(EvmTest, defensive_delegation_check)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    MonadDevnet chain{};
+
+    static constexpr auto falsely_delegated{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    uint8_t bad_code[50] = {0xEF, 0x01, 0x00, 0xFE};
+    auto const bad_icode = vm::make_shared_intercode(bad_code);
+    auto const bad_code_hash = to_bytes(keccak256(bad_code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {falsely_delegated,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .code_hash = bad_code_hash,
+                      }}}}},
+        Code{
+            {bad_code_hash, bad_icode},
+        },
+        BlockHeader{});
+
+    EvmcHost<MonadTraits<MONAD_FOUR>> h{
+        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    auto d = vm::evm::resolve_delegation(
+        &h.get_interface(), h.to_context(), falsely_delegated);
+    EXPECT_FALSE(d.has_value());
 }

@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <monad/test/monad_revision_test.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
@@ -48,9 +49,7 @@ using namespace monad::test;
 
 using db_t = TrieDb;
 
-using evm_host_t = EvmcHost<EvmTraits<EVMC_SHANGHAI>>;
-
-TEST(Evm, create_with_insufficient)
+TYPED_TEST(MonadEvmRevisionTest, create_with_insufficient)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -82,13 +81,14 @@ TEST(Evm, create_with_insufficient)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
-TEST(Evm, eip684_existing_code)
+TYPED_TEST(MonadEvmRevisionTest, eip684_existing_code)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -128,12 +128,13 @@ TEST(Evm, eip684_existing_code)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
-TEST(Evm, create_nonce_out_of_range)
+TYPED_TEST(MonadEvmRevisionTest, create_nonce_out_of_range)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -149,7 +150,8 @@ TEST(Evm, create_nonce_out_of_range)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -172,13 +174,13 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
 }
 
-TEST(Evm, static_precompile_execution)
+TYPED_TEST(MonadEvmRevisionTest, static_precompile_execution)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -194,7 +196,8 @@ TEST(Evm, static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -220,7 +223,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    auto const result = call<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -229,7 +232,7 @@ TEST(Evm, static_precompile_execution)
     EXPECT_NE(result.output_data, m.input_data);
 }
 
-TEST(Evm, out_of_gas_static_precompile_execution)
+TYPED_TEST(MonadEvmRevisionTest, out_of_gas_static_precompile_execution)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -245,7 +248,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evm_host_t h{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -271,7 +275,7 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    evmc::Result const result = call<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }

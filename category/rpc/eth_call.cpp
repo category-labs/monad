@@ -243,7 +243,7 @@ namespace
     }
 
     template <Traits traits>
-    Result<evmc::Result> eth_trace_block_or_transaction_impl(
+    Result<nlohmann::json> eth_trace_block_or_transaction_impl(
         Chain const &chain, BlockHeader const &header,
         std::vector<Transaction> const &transactions,
         std::vector<Address> const &senders,
@@ -257,13 +257,19 @@ namespace
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions.size());
 
-        // Trace single transaction
-        if (trace_transaction) {
+        auto const trace_entry =
+            [&](uint64_t const transaction_index) -> nlohmann::json {
             bytes32_t const tx_hash = to_bytes(keccak256(
                 rlp::encode_transaction(transactions[transaction_index])));
-            nlohmann::json trace{
+            nlohmann::json entry{
                 {"result", nlohmann::json::object()},
                 {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
+            return entry;
+        };
+
+        // Trace single transaction
+        if (trace_transaction) {
+            nlohmann::json trace = trace_entry(transaction_index);
             for (size_t i = 0; i < transactions.size(); ++i) {
                 if (i == transaction_index) {
                     if (tracer_config == PRESTATE_TRACER) {
@@ -287,7 +293,7 @@ namespace
                 }
             }
 
-            Result<std::vector<Receipt>> const result =
+            Result<std::vector<Receipt>> result =
                 state_after_transactions<traits>(
                     chain,
                     header,
@@ -299,18 +305,17 @@ namespace
                     buffer,
                     pool,
                     state_tracers);
-            (void)result;
+            if (result.has_error()) {
+                return Result<nlohmann::json>{std::move(result).as_failure()};
+            }
+            return Result<nlohmann::json>{std::move(trace)};
         }
         else {
             // Trace an entire block
             std::vector<nlohmann::json> traces{};
             traces.reserve(transactions.size());
             for (size_t i = 0; i < transactions.size(); ++i) {
-                bytes32_t const tx_hash = to_bytes(
-                    keccak256(rlp::encode_transaction(transactions[i])));
-                traces.emplace_back(nlohmann::json{
-                    {"txHash", std::format("0x{}", evmc::hex(tx_hash))},
-                    {"result", nlohmann::json::object()}});
+                traces.emplace_back(trace_entry(i));
                 if (tracer_config == PRESTATE_TRACER) {
                     state_tracers.emplace_back(
                         std::unique_ptr<trace::StateTracer>{
@@ -324,7 +329,7 @@ namespace
                                 trace::StateDiffTracer{traces[i]["result"]})});
                 }
             }
-            Result<std::vector<Receipt>> const result =
+            Result<std::vector<Receipt>> result =
                 state_after_transactions<traits>(
                     chain,
                     header,
@@ -335,14 +340,14 @@ namespace
                     buffer,
                     pool,
                     state_tracers);
+            if (result.has_error()) {
+                return Result<nlohmann::json>{std::move(result).as_failure()};
+            }
 
             // Compose state traces
             nlohmann::json result_trace{traces};
-            (void)result_trace;
-            (void)result;
+            return Result<nlohmann::json>{std::move(result_trace)};
         }
-
-        MONAD_ASSERT(false);
     }
 }
 
@@ -1111,7 +1116,7 @@ struct monad_eth_call_executor
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number - 1, parent_id);
 
-                    auto const res = [&]() -> Result<evmc::Result> {
+                    auto const res = [&]() -> Result<nlohmann::json> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
                             evmc_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
@@ -1153,6 +1158,34 @@ struct monad_eth_call_executor
                             MONAD_ASSERT(false);
                         }
                     }();
+
+                    if (MONAD_UNLIKELY(res.has_error())) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(res.error().message().c_str());
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+
+                    nlohmann::json trace = res.assume_value();
+                    result->status_code = EVMC_SUCCESS;
+                    if (trace.empty()) {
+                        result->encoded_trace = nullptr;
+                        result->encoded_trace_len = 0;
+                    }
+                    else {
+                        std::vector<uint8_t> cbor_state_trace =
+                            nlohmann::json::to_cbor(res.assume_value());
+                        result->encoded_trace =
+                            new uint8_t[cbor_state_trace.size()];
+                        result->encoded_trace_len = cbor_state_trace.size();
+                        memcpy(
+                            (uint8_t *)result->encoded_trace,
+                            cbor_state_trace.data(),
+                            cbor_state_trace.size());
+                    }
+
+                    complete(result, user);
                 }
                 catch (MonadException const &e) {
                     result->status_code = EVMC_INTERNAL_ERROR;

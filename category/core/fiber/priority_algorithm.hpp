@@ -51,6 +51,8 @@ public:
     PriorityAlgorithm &operator=(PriorityAlgorithm const &) = delete;
     PriorityAlgorithm &operator=(PriorityAlgorithm &&) = delete;
 
+    using boost::fibers::algo::algorithm_with_properties<PriorityProperties>::awakened;
+
     void awakened(context *, PriorityProperties &) noexcept override;
 
     context *pick_next() noexcept override;

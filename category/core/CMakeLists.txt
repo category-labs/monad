@@ -134,6 +134,7 @@ add_library(
   "fiber/priority_queue.cpp"
   "fiber/priority_queue.hpp"
   "fiber/priority_task.hpp"
+  "fiber/schedule_from_remote.cpp"
   # io
   "io/buffer_pool.cpp"
   "io/buffer_pool.hpp"
@@ -180,6 +181,10 @@ endif()
 
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
+#target_link_options(monad_core PUBLIC "-Wl,--undefined=boost::fibers::scheduler::schedule_from_remote")
+target_link_options(monad_core PUBLIC "-Wl,--undefined=_ZN5boost6fibers9scheduler20schedule_from_remoteEPNS0_7contextE")
+target_link_options(monad_core PUBLIC "-Wl,--undefined=_ZN5boost6fibers9scheduler8scheduleEPNS0_7contextE")
+target_link_options(monad_core PUBLIC "-Wl,--allow-multiple-definition")
 
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
   target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")

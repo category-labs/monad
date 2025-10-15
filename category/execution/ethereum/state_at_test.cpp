@@ -193,7 +193,7 @@ TEST_F(StateAtFixture, check_nonce)
         make_state_tracers(txns.size(), NOOP_TRACER);
 
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 0);
-    state_after_transactions<traits>(
+    auto const result = state_after_transactions<traits>(
         chain,
         header,
         txns,
@@ -203,6 +203,8 @@ TEST_F(StateAtFixture, check_nonce)
         buffer,
         pool,
         state_tracers);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), txns.size());
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 2);
 }
 
@@ -227,7 +229,7 @@ TEST_F(StateAtFixture, counter_contract)
     EXPECT_EQ(
         block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
         bytes32_t{});
-    state_after_transactions<traits>(
+    auto const result = state_after_transactions<traits>(
         chain,
         header,
         txns,
@@ -237,6 +239,9 @@ TEST_F(StateAtFixture, counter_contract)
         buffer,
         pool,
         state_tracers);
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), txns.size());
 
     bytes32_t const expected_value = to_bytes(to_big_endian(uint256_t{2}));
     EXPECT_EQ(

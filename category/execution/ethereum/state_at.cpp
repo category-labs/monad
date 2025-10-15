@@ -33,7 +33,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-void state_after_transactions(
+Result<std::vector<Receipt>> state_after_transactions(
     Chain const &chain, BlockHeader const &header,
     std::vector<Transaction> const &transactions,
     std::vector<Address> const &senders,
@@ -57,9 +57,9 @@ void state_after_transactions(
 
     // TODO(dhil): Probably worth being able to replay up
     // to a bound.
-    preprocess_block<traits>(block_state, header);
+    preprocess_block<traits>(chain, block_state, header);
     BlockMetrics metrics{};
-    Result<std::vector<Receipt>> result = execute_block_transactions<traits>(
+    return execute_block_transactions<traits>(
         chain,
         header,
         transactions,
@@ -71,7 +71,6 @@ void state_after_transactions(
         metrics,
         noop_call_tracers,
         state_tracers);
-    (void)result;
 }
 
 EXPLICIT_TRAITS(state_after_transactions)

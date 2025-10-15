@@ -61,7 +61,8 @@ Result<std::vector<Receipt>> execute_block(
                                      uint64_t, State &) { return false; });
 
 template <Traits traits>
-void preprocess_block(BlockState &block_state, BlockHeader const &header);
+void preprocess_block(
+    Chain const &chain, BlockState &block_state, BlockHeader const &header);
 template <Traits traits>
 void postprocess_block(BlockState &block_state, Block const &block);
 

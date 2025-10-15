@@ -34,7 +34,7 @@ struct Chain;
 struct Transaction;
 
 template <Traits traits>
-void state_after_transactions(
+Result<std::vector<Receipt>> state_after_transactions(
     Chain const &, BlockHeader const &, std::vector<Transaction> const &,
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,

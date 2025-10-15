@@ -253,39 +253,94 @@ namespace
         monad::fiber::PriorityPool &pool,
         enum monad_tracer_config tracer_config)
     {
+        BlockState block_state{tdb, vm};
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions.size());
-        std::vector<nlohmann::json> traces{};
-        traces.reserve(transactions.size());
-        for (size_t i = 0; i < transactions.size(); ++i) {
-            traces.emplace_back(nlohmann::json{});
-            if (tracer_config == PRESTATE_TRACER) {
-                state_tracers.emplace_back(std::unique_ptr<trace::StateTracer>{
-                    std::make_unique<trace::StateTracer>(
-                        trace::PrestateTracer{traces[i]})});
+
+        // Trace single transaction
+        if (trace_transaction) {
+            bytes32_t const tx_hash = to_bytes(keccak256(
+                rlp::encode_transaction(transactions[transaction_index])));
+            nlohmann::json trace{
+                {"result", nlohmann::json::object()},
+                {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
+            for (size_t i = 0; i < transactions.size(); ++i) {
+                if (i == transaction_index) {
+                    if (tracer_config == PRESTATE_TRACER) {
+                        state_tracers.emplace_back(
+                            std::unique_ptr<trace::StateTracer>{
+                                std::make_unique<trace::StateTracer>(
+                                    trace::PrestateTracer{trace["result"]})});
+                    }
+                    else {
+                        state_tracers.emplace_back(
+                            std::unique_ptr<trace::StateTracer>{
+                                std::make_unique<trace::StateTracer>(
+                                    trace::StateDiffTracer{trace["result"]})});
+                    }
+                }
+                else {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                std::monostate{})});
+                }
             }
-            else {
-                state_tracers.emplace_back(std::unique_ptr<trace::StateTracer>{
-                    std::make_unique<trace::StateTracer>(
-                        trace::StateDiffTracer{traces[i]})});
-            }
+
+            Result<std::vector<Receipt>> const result =
+                state_after_transactions<traits>(
+                    chain,
+                    header,
+                    transactions, // TODO(dhil): we need to play only up to and
+                                  // including `transaction_index`.
+                    senders,
+                    authorities,
+                    block_state,
+                    buffer,
+                    pool,
+                    state_tracers);
+            (void)result;
         }
+        else {
+            // Trace an entire block
+            std::vector<nlohmann::json> traces{};
+            traces.reserve(transactions.size());
+            for (size_t i = 0; i < transactions.size(); ++i) {
+                bytes32_t const tx_hash = to_bytes(
+                    keccak256(rlp::encode_transaction(transactions[i])));
+                traces.emplace_back(nlohmann::json{
+                    {"txHash", std::format("0x{}", evmc::hex(tx_hash))},
+                    {"result", nlohmann::json::object()}});
+                if (tracer_config == PRESTATE_TRACER) {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                trace::PrestateTracer{traces[i]["result"]})});
+                }
+                else {
+                    state_tracers.emplace_back(
+                        std::unique_ptr<trace::StateTracer>{
+                            std::make_unique<trace::StateTracer>(
+                                trace::StateDiffTracer{traces[i]["result"]})});
+                }
+            }
+            Result<std::vector<Receipt>> const result =
+                state_after_transactions<traits>(
+                    chain,
+                    header,
+                    transactions,
+                    senders,
+                    authorities,
+                    block_state,
+                    buffer,
+                    pool,
+                    state_tracers);
 
-        BlockState block_state{tdb, vm};
-        state_after_transactions<traits>(
-            chain,
-            header,
-            transactions,
-            senders,
-            authorities,
-            block_state,
-            buffer,
-            pool,
-            state_tracers);
-
-        // TODO(dhil): Compose traces.
-        (void)trace_transaction;
-        (void)transaction_index;
+            // Compose state traces
+            nlohmann::json result_trace{traces};
+            (void)result_trace;
+            (void)result;
+        }
 
         MONAD_ASSERT(false);
     }
@@ -1017,11 +1072,17 @@ struct monad_eth_call_executor
                     }
 
                     // Load transactions, senders, and authorities
-                    // BOOST_OUTCOME_TRY(
-                    //     std::vector<Transaction> transactions,
-                    //     get_transactions(db, block_number, block_id));
-                    (void)block_id;
-                    std::vector<Transaction> transactions;
+                    Result<std::vector<monad::Transaction>> maybe_transactions =
+                        get_transactions(db, block_number, block_id);
+                    if (maybe_transactions.has_error()) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup("Failed to load transactions");
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+                    std::vector<Transaction> const &transactions =
+                        maybe_transactions.value();
                     std::vector<Address> senders;
                     {
                         std::vector<std::optional<Address>> recovered_senders =

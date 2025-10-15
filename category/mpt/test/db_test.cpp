@@ -516,6 +516,65 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
 }
 
+TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
+{
+    constexpr uint64_t num_versions = DBTEST_HISTORY_LENGTH + 1;
+    // keep all historical roots in memory
+    std::array<Node::SharedPtr, num_versions> roots;
+
+    // upsert some versions until reaching the fixed history length
+    constexpr size_t nkeys = 10;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    for (uint64_t version = 0; version < num_versions; ++version) {
+        if (version == 0) {
+            roots[0] = db.upsert({}, std::move(ls), version);
+        }
+        else {
+            roots[version] = db.upsert(roots[version - 1], {}, version);
+        }
+        EXPECT_EQ(
+            db_get(db, roots[version], bytes_alloc[0], version).value(),
+            bytes_alloc[0]);
+    }
+    EXPECT_EQ(db.get_earliest_version(), 1);
+    EXPECT_EQ(db.get_latest_version(), num_versions - 1);
+
+    // concurrent find across all versions
+    monad::fiber::PriorityPool pool{1, 8};
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[num_versions]};
+    for (unsigned i = 0; i < num_versions; ++i) {
+        pool.submit(
+            0,
+            [i = i,
+             root = roots[i],
+             &db = db,
+             promises = promises,
+             kv_bytes = bytes_alloc[0]] {
+                auto const res = db.find(root, kv_bytes, i);
+                if (i == 0) {
+                    // Verify that the outdated version is no longer accessible
+                    // even with a valid in memory root
+                    ASSERT_TRUE(res.has_error());
+                    EXPECT_EQ(
+                        res.assume_error(), DbError::version_no_longer_exist);
+                }
+                else {
+                    ASSERT_TRUE(res.has_value());
+                    EXPECT_EQ(res.value().node->value(), kv_bytes);
+                }
+                promises[i].set_value();
+            });
+    }
+    for (unsigned i = 0; i < num_versions; ++i) {
+        promises[i].get_future().get();
+    }
+}
+
 TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
 {
     std::shared_ptr<boost::fibers::promise<void>[]> promises{

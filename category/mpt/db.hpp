@@ -101,11 +101,13 @@ public:
     ~Db();
 
     // The `block_id` parameter specify the version to read from, and is also
-    // used for version control validation. These calls may wait on a fiber
-    // future.
-    Result<NodeCursor>
-    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    // used for version control validation if `check_version` is set. These
+    // calls may wait on a fiber future.
+    Result<NodeCursor> find(
+        NodeCursor const &, NibblesView, uint64_t block_id,
+        bool check_version = true) const;
+    Result<NodeCursor> find(
+        NibblesView prefix, uint64_t block_id, bool check_version = true) const;
 
     Node::SharedPtr load_root_for_version(uint64_t block_id) const;
 

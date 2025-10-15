@@ -578,8 +578,11 @@ bytes32_t TrieDb::transactions_root()
 
 std::optional<bytes32_t> TrieDb::withdrawals_root()
 {
-    auto const res =
-        db_.find(curr_root_, concat(prefix_, WITHDRAWAL_NIBBLE), block_number_);
+    auto const res = db_.find(
+        curr_root_,
+        concat(prefix_, WITHDRAWAL_NIBBLE),
+        block_number_,
+        false /*ignore version check*/);
     if (res.has_error()) {
         return std::nullopt;
     }
@@ -594,7 +597,10 @@ std::optional<bytes32_t> TrieDb::withdrawals_root()
 bytes32_t TrieDb::merkle_root(Nibbles const &nibbles)
 {
     auto const res = db_.find(
-        curr_root_, concat(prefix_, NibblesView{nibbles}), block_number_);
+        curr_root_,
+        concat(prefix_, NibblesView{nibbles}),
+        block_number_,
+        false /*ignore version check*/);
     if (!res.has_value() || res.value().node->data().empty()) {
         return NULL_ROOT;
     }

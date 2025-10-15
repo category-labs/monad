@@ -85,7 +85,8 @@ struct Db::Impl
         Node::SharedPtr src_root, NibblesView src, Node::SharedPtr dest_root,
         NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+        NodeCursor const &root, NibblesView const &key, uint64_t version,
+        bool check_version = true) = 0;
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
@@ -192,9 +193,10 @@ public:
         MONAD_ABORT();
     }
 
+    // Ignore `check_version`; read-only DB always enforces version validation.
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key,
-        uint64_t const version) override
+        NodeCursor const &root, NibblesView const &key, uint64_t const version,
+        bool /* check_version */) override
     {
         if (!root.is_valid()) {
             return {NodeCursor{}, find_result::root_node_is_null_failure};
@@ -307,8 +309,8 @@ public:
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key,
-        uint64_t const version = 0) override
+        NodeCursor const &root, NibblesView const &key, uint64_t const version,
+        bool) override
     {
         return find_blocking(aux(), root, key, version);
     }
@@ -800,8 +802,14 @@ public:
 
     // threadsafe
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key, uint64_t = 0) override
+        NodeCursor const &start, NibblesView const &key, uint64_t const version,
+        bool const check_version) override
     {
+        // It's sufficient to validate the version once before starting the
+        // lookup, because RWDb never performs upserts concurrently with reads.
+        if (check_version && !aux().version_is_valid_ondisk(version)) {
+            return {NodeCursor{}, find_result::version_no_longer_exist};
+        }
         threadsafe_boost_fibers_promise<find_cursor_result_type> promise;
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};
@@ -1094,11 +1102,12 @@ Db::Db(AsyncIOContext &io_ctx)
 Db::~Db() = default;
 
 Result<NodeCursor> Db::find(
-    NodeCursor const &root, NibblesView const key,
-    uint64_t const block_id) const
+    NodeCursor const &root, NibblesView const key, uint64_t const block_id,
+    bool const check_version) const
 {
     MONAD_ASSERT(impl_);
-    auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
+    auto const [it, result] =
+        impl_->find_fiber_blocking(root, key, block_id, check_version);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
@@ -1107,13 +1116,14 @@ Result<NodeCursor> Db::find(
     return it;
 }
 
-Result<NodeCursor>
-Db::find(NibblesView const key, uint64_t const block_id) const
+Result<NodeCursor> Db::find(
+    NibblesView const key, uint64_t const block_id,
+    bool const check_version) const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(impl_->aux().is_on_disk());
     auto root = impl_->load_root_for_version(block_id);
-    return find(NodeCursor{root}, key, block_id);
+    return find(NodeCursor{root}, key, block_id, check_version);
 }
 
 Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const

@@ -308,7 +308,7 @@ public:
 
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
-        uint64_t const version = 0) override
+        uint64_t const version) override
     {
         return find_blocking(aux(), root, key, version);
     }
@@ -778,11 +778,14 @@ class Db::RWOnDisk final
     StateMachine &machine_;
     bool const compaction_;
 
+    uint64_t unflushed_version_{INVALID_BLOCK_NUM};
+
 public:
     RWOnDisk(OnDiskDbConfig const &options, StateMachine &machine)
         : OnDiskWithWorkerThreadImpl(options)
         , machine_{machine}
         , compaction_(options.compaction)
+        , unflushed_version_{INVALID_BLOCK_NUM}
     {
     }
 
@@ -800,8 +803,16 @@ public:
 
     // threadsafe
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key, uint64_t = 0) override
+        NodeCursor const &start, NibblesView const &key,
+        uint64_t const version) override
     {
+        // It's sufficient to validate the version once before starting the
+        // lookup, because RWDb never performs upserts concurrently with reads.
+        // Skip version check if looking up from an unflushed version
+        if (unflushed_version_ != version &&
+            !aux().version_is_valid_ondisk(version)) {
+            return {NodeCursor{}, find_result::version_no_longer_exist};
+        }
         threadsafe_boost_fibers_promise<find_cursor_result_type> promise;
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};
@@ -821,6 +832,16 @@ public:
         bool const enable_compaction, bool const can_write_to_fast,
         bool const write_root) override
     {
+        if (unflushed_version_ != INVALID_BLOCK_NUM &&
+            unflushed_version_ != version) {
+            LOG_WARNING_CFORMAT(
+                "Update version %lu while db hasn't flushed the last update on "
+                "version %lu, the unflushed progress will be lost after this "
+                "point",
+                version,
+                unflushed_version_);
+        }
+        unflushed_version_ = write_root ? INVALID_BLOCK_NUM : version;
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberUpsertRequest{
@@ -920,6 +941,17 @@ public:
         Node::SharedPtr dest_root, NibblesView const dest_prefix,
         uint64_t const dest_version, bool const write_root = true) override
     {
+        if (unflushed_version_ != INVALID_BLOCK_NUM &&
+            unflushed_version_ != dest_version) {
+            LOG_WARNING_CFORMAT(
+                "Update version %lu while db hasn't flushed the last update on "
+                "version %lu, the unflushed progress will be lost after this "
+                "point",
+                dest_version,
+                unflushed_version_);
+        }
+        unflushed_version_ = write_root ? INVALID_BLOCK_NUM : dest_version;
+
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
         comms_.enqueue(FiberCopyTrieRequest{

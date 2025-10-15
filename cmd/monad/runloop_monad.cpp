@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/blake3.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/keccak.hpp>
@@ -68,11 +69,13 @@ struct BlockCacheEntry
 {
     uint64_t block_number;
     bytes32_t parent_id;
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<
+        Address, BytesHashAvalanching<Address>>
+        senders_and_authorities;
 };
 
-using BlockCache =
-    ankerl::unordered_dense::segmented_map<bytes32_t, BlockCacheEntry>;
+using BlockCache = ankerl::unordered_dense::segmented_map<
+    bytes32_t, BlockCacheEntry, BytesHashAvalanching<bytes32_t>>;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -183,7 +186,9 @@ Result<BlockExecOutput> propose_block(
             return TransactionError::MissingSender;
         }
     }
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    ankerl::unordered_dense::
+        segmented_set<Address, BytesHashAvalanching<Address>>
+            senders_and_authorities;
     for (Address const &sender : senders) {
         senders_and_authorities.insert(sender);
     }
@@ -473,8 +478,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 MONAD_ASSERT(addr.has_value());
                 senders.emplace_back(addr.value());
             }
-            ankerl::unordered_dense::segmented_set<Address>
-                senders_and_authorities;
+            ankerl::unordered_dense::
+                segmented_set<Address, BytesHashAvalanching<Address>>
+                    senders_and_authorities;
             for (Address const &sender : senders) {
                 senders_and_authorities.insert(sender);
             }

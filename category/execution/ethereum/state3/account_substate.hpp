@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 
 #include <evmc/evmc.h>
@@ -28,7 +29,7 @@ MONAD_NAMESPACE_BEGIN
 class AccountSubstate
 {
     template <class Key>
-    using Set = ankerl::unordered_dense::set<Key>;
+    using Set = ankerl::unordered_dense::set<Key, BytesHashAvalanching<Key>>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t

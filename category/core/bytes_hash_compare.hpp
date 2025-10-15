@@ -38,4 +38,18 @@ struct BytesHashCompare
     }
 };
 
+// An avalanching hasher, for use by ankerl unordered maps.  The avalanching
+// field tells ankerl the hash output is high quality and doesn't require an
+// extra mixing step.
+template <class Bytes>
+struct BytesHashAvalanching
+{
+    using is_avalanching = void;
+
+    auto operator()(Bytes const &a) const noexcept -> uint64_t
+    {
+        return komihash(a.bytes, sizeof(Bytes), 0);
+    }
+};
+
 MONAD_NAMESPACE_END

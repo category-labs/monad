@@ -17,6 +17,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -43,7 +44,11 @@ class BlockState;
 class State
 {
     template <typename K, typename V>
-    using Map = ankerl::unordered_dense::segmented_map<K, V>;
+    using Map =
+        ankerl::unordered_dense::segmented_map<K, V, BytesHashAvalanching<K>>;
+
+    using BytesHash = BytesHashAvalanching<Address>;
+    using AddressHash = BytesHashAvalanching<Address>;
 
     BlockState &block_state_;
 

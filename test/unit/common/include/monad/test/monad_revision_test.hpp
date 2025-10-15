@@ -122,6 +122,16 @@ struct MonadEvmRevisionTest : public ::testing::Test
         }
     }
 
+    static consteval bool is_monad_revision() noexcept
+    {
+        return std::same_as<typename T::value_type, monad_revision>;
+    }
+
+    static consteval bool is_evmc_revision() noexcept
+    {
+        return std::same_as<typename T::value_type, evmc_revision>;
+    }
+
     using Trait = decltype(get_trait());
 };
 

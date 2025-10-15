@@ -52,12 +52,11 @@ namespace monad::vm::llvm
 
     template <Traits traits>
     std::shared_ptr<LLVMState>
-    compile_impl(std::span<uint8_t const> code, std::string const &dbg_nm = "")
+    compile_impl(BasicBlocksIR const &ir, std::string const &dbg_nm = "")
     {
         auto ptr = std::make_shared<LLVMState>();
         LLVMState &llvm = *ptr;
 
-        BasicBlocksIR ir = unsafe_make_ir<traits>(code);
         DependencyBlocksIR dep_ir = make_DependencyBlocksIR<traits>(ir);
 
         if (dbg_nm != "") {
@@ -84,6 +83,14 @@ namespace monad::vm::llvm
         llvm.set_contract_addr(dbg_nm);
 
         return ptr;
+    }
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState>
+    compile_impl(std::span<uint8_t const> code, std::string const &dbg_nm = "")
+    {
+        BasicBlocksIR ir = unsafe_make_ir<traits>(code);
+        return compile_impl<traits>(ir, dbg_nm);
     }
 
     void execute(LLVMState &llvm, Context &ctx, uint256_t *evm_stack)

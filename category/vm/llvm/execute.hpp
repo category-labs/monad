@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/llvm/llvm_state.hpp>
 
 #include <category/vm/runtime/types.hpp>
@@ -25,6 +26,7 @@ namespace monad::vm::llvm
     using namespace monad::vm::runtime;
 
     void execute(LLVMState &llvm, Context &, uint256_t *);
+    std::shared_ptr<LLVMState> compile_impl(monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir, std::string const &dbg_nm = "");
     std::shared_ptr<LLVMState> compile(
         evmc_revision rev, std::span<uint8_t const> code,
         std::string const &dbg_nm = "");

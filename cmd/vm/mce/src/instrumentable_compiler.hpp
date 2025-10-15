@@ -23,6 +23,10 @@
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#ifdef MONAD_COMPILER_LLVM
+#include <category/vm/llvm/llvm.hpp>
+#include <category/vm/llvm/execute.hpp>
+#endif
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
@@ -84,6 +88,45 @@ public:
                 rt_, ir, config_);
         }
     }
+
+#ifdef MONAD_COMPILER_LLVM
+    template <monad::Traits traits>
+    std::shared_ptr<monad::vm::llvm::LLVMState> compile_with_llvm(
+        monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir,
+        InstrumentationDevice const device)
+    {
+        switch (device) {
+        case InstrumentationDevice::Cachegrind:
+            return compile_with_llvm<traits, InstrumentationDevice::Cachegrind>(ir);
+        case InstrumentationDevice::WallClock:
+            return compile_with_llvm<traits, InstrumentationDevice::WallClock>(ir);
+        }
+        std::unreachable();
+    }
+
+    template <monad::Traits traits, InstrumentationDevice device>
+    std::shared_ptr<monad::vm::llvm::LLVMState>
+    compile_with_llvm(monad::vm::compiler::basic_blocks::BasicBlocksIR const &ir)
+    {
+        if constexpr (instrument) {
+            if constexpr (device == InstrumentationDevice::Cachegrind) {
+                CACHEGRIND_START_INSTRUMENTATION;
+                auto ans = monad::vm::llvm::compile_impl<traits>(ir);
+                CACHEGRIND_STOP_INSTRUMENTATION;
+                return ans;
+            }
+            else {
+                timer.start();
+                auto ans = monad::vm::llvm::compile_impl<traits>(ir);
+                timer.pause();
+                return ans;
+            }
+        }
+        else {
+            return monad::vm::llvm::compile_impl<traits>(ir);
+        }
+    }
+#endif
 
 private:
     asmjit::JitRuntime &rt_;

@@ -4,35 +4,11 @@ FROM ubuntu:25.04 AS base
 
 RUN apt update && apt upgrade -y
 
-RUN apt update && apt install -y apt-utils
-
-RUN apt update && apt install -y dialog
-
-RUN apt update && apt install -y \
-  ca-certificates \
-  curl \
-  gnupg \
-  software-properties-common \
-  wget
-
 COPY scripts/ubuntu-build/ /opt
-
-RUN apt update && apt install -y \
-  clang-19 \
-  gcc-15 \
-  g++-15
 
 RUN /opt/install-boost.sh
 RUN /opt/install-tools.sh
 RUN /opt/install-deps.sh
-
-RUN apt update && apt install -y \
-  libarchive-dev \
-  libbrotli-dev \
-  libcap-dev \
-  libcli11-dev \
-  libgmp-dev \
-  libzstd-dev
 
 FROM base AS build_and_test
 

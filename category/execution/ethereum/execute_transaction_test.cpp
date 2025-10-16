@@ -47,7 +47,7 @@ using namespace monad;
 
 using db_t = TrieDb;
 
-TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
+TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 {
     using intx::operator""_u256;
 
@@ -55,6 +55,18 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
+
+    static constexpr auto initial_balance = 56'000'000'000'000'000;
+    static constexpr auto actual_gas_cost = [] {
+        if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
+            return 21'000;
+        }
+        else {
+            return 53'000;
+        }
+    }();
+    static constexpr auto gas_limit = actual_gas_cost + 2'000;
+    static constexpr auto max_fee_per_gas = 10;
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -65,7 +77,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
 
     {
         State state{bs, Incarnation{0, 0}};
-        state.add_to_balance(from, 56'000'000'000'000'000);
+        state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
         bs.merge(state);
     }
@@ -77,8 +89,8 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
              .s =
                  0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
         .nonce = 25,
-        .max_fee_per_gas = 10,
-        .gas_limit = 55'000,
+        .max_fee_per_gas = max_fee_per_gas,
+        .gas_limit = gas_limit,
     };
 
     BlockHeader const header{.beneficiary = bene};
@@ -90,7 +102,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
-    auto const receipt = ExecuteTransaction<EvmTraits<EVMC_SHANGHAI>>(
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         EthereumMainnet{},
         0,
         tx,
@@ -109,17 +121,47 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(receipt.value().status, 1u);
     {
         State state{bs, Incarnation{0, 0}};
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(state.get_balance(from)),
-            uint256_t{55'999'999'999'470'000});
+        auto const final_balance_uint256 =
+            intx::be::load<uint256_t>(state.get_balance(from));
+        ASSERT_TRUE(
+            final_balance_uint256 < std::numeric_limits<uint64_t>::max());
+        auto const final_balance = static_cast<uint64_t>(final_balance_uint256);
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
+                EXPECT_EQ(
+                    final_balance,
+
+                    initial_balance - actual_gas_cost * max_fee_per_gas);
+            }
+            else {
+                EXPECT_EQ(
+                    final_balance,
+                    initial_balance - gas_limit * max_fee_per_gas);
+            }
+        }
+        else {
+            EXPECT_EQ(
+                final_balance,
+                initial_balance - actual_gas_cost * max_fee_per_gas);
+        }
+
         EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
     }
-
     // check if miner gets the right reward
-    EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
+    if constexpr (TestFixture::is_monad_trait()) {
+        if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
+            EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
+        }
+        else {
+            EXPECT_EQ(receipt.value().gas_used, gas_limit);
+        }
+    }
+    else {
+        EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
+    }
 }
 
-TYPED_TEST(MonadTraitsTest, TopLevelCreate)
+TYPED_TEST(TraitsTest, TopLevelCreate)
 {
     using intx::operator""_u256;
 
@@ -182,15 +224,25 @@ TYPED_TEST(MonadTraitsTest, TopLevelCreate)
         noop_call_tracer,
         noop_state_tracer)();
 
-    if constexpr (TestFixture::REV >= MONAD_TWO) {
-        ASSERT_TRUE(!receipt.has_error());
+    if constexpr (TestFixture::is_monad_trait()) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_TWO) {
+            ASSERT_TRUE(receipt.has_value());
+        }
+        else {
+            ASSERT_TRUE(receipt.has_error());
+        }
     }
     else {
-        ASSERT_TRUE(receipt.has_error());
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+            ASSERT_TRUE(receipt.has_error());
+        }
+        else {
+            ASSERT_TRUE(receipt.has_value());
+        }
     }
 }
 
-TEST(TransactionProcessor, refunds_delete)
+TYPED_TEST(TraitsTest, refunds_delete)
 {
     using intx::operator""_u256;
 
@@ -201,6 +253,72 @@ TEST(TransactionProcessor, refunds_delete)
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
 
+    static constexpr auto initial_balance = 56'000'000'000'000'000;
+    static constexpr auto max_fee_per_gas = 100'000'000'000;
+    static constexpr auto gas_limit_tx1 = 200'000;
+    static constexpr auto gas_limit_tx2 = 50'000;
+
+    static constexpr auto gas_charged_tx1 = [] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                // Since MONAD_ONE full gas_limit is charged
+                return gas_limit_tx1;
+            }
+        }
+
+        if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+            return 41'092;
+        }
+        else if constexpr (TestFixture::Trait::evm_rev() == EVMC_ISTANBUL) {
+            // Gas decreased due to calldata cost reduction in EIP-2028
+            // where gas per non-zero byte was reduced from 68 to 16
+            return 41'040;
+        }
+        else {
+            // Gas increased due to storage repricing in Berlin
+            return 43'140;
+        }
+    }();
+
+    static constexpr auto gas_charged_tx2 = [] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                // Since MONAD_ONE full gas_limit is charged
+                return gas_limit_tx2;
+            }
+        }
+        return 26'025;
+    }();
+
+    // X -> X -> 0
+    static constexpr auto storage_refund_tx2_evm_uncapped = [] {
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_LONDON) {
+            return 4'800;
+        }
+        else {
+            return 15'000;
+        }
+    }();
+    static constexpr auto storage_refund_tx2 = [=] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 120'000;
+            }
+            else if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                return 0;
+            }
+        }
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_LONDON) {
+            // due to EIP-3529 introduced in London revision
+            return std::min(
+                gas_charged_tx2 / 5, storage_refund_tx2_evm_uncapped);
+        }
+        else {
+            return std::min(
+                gas_charged_tx2 / 2, storage_refund_tx2_evm_uncapped);
+        }
+    }();
+
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
@@ -210,12 +328,12 @@ TEST(TransactionProcessor, refunds_delete)
 
     // Sets s[0] = 1 if passed any data, clears s[0] if data is empty.
     auto const contract_code =
-        evmc::from_hex("0x3615600a5760015f55005b5f5f55").value();
+        evmc::from_hex("0x3615600b576001600055005b6000600055").value();
 
     {
         State state{bs, Incarnation{0, 0}};
 
-        state.add_to_balance(from, 56'000'000'000'000'000);
+        state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
 
         state.create_contract(contract);
@@ -233,8 +351,8 @@ TEST(TransactionProcessor, refunds_delete)
                  .s =
                      0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
             .nonce = 25,
-            .max_fee_per_gas = 100'000'000'000,
-            .gas_limit = 157'039,
+            .max_fee_per_gas = max_fee_per_gas,
+            .gas_limit = gas_limit_tx1,
             .to = contract,
             .data = evmc::from_hex("0x01").value(),
         };
@@ -248,7 +366,7 @@ TEST(TransactionProcessor, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
+        auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
             set_tx,
@@ -262,14 +380,21 @@ TEST(TransactionProcessor, refunds_delete)
             noop_call_tracer,
             noop_state_tracer)();
 
-        ASSERT_TRUE(!receipt.has_error());
+        ASSERT_TRUE(receipt.has_value());
         EXPECT_EQ(receipt.value().status, 1u);
 
         {
             State state{bs, Incarnation{0, 0}};
+            auto const final_balance_uint256 =
+                intx::be::load<uint256_t>(state.get_balance(from));
+            ASSERT_TRUE(
+                final_balance_uint256 < std::numeric_limits<uint64_t>::max());
+            auto const final_balance =
+                static_cast<uint64_t>(final_balance_uint256);
+
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
-                uint256_t{40'296'100'000'000'000});
+                final_balance,
+                initial_balance - (gas_charged_tx1 * max_fee_per_gas));
         }
     }
 
@@ -282,8 +407,8 @@ TEST(TransactionProcessor, refunds_delete)
                  .s =
                      0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
             .nonce = 26,
-            .max_fee_per_gas = 100'000'000'000,
-            .gas_limit = 32'023,
+            .max_fee_per_gas = max_fee_per_gas,
+            .gas_limit = gas_limit_tx2,
             .to = contract,
         };
 
@@ -296,7 +421,7 @@ TEST(TransactionProcessor, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
+        auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
             zero_tx,
@@ -315,15 +440,23 @@ TEST(TransactionProcessor, refunds_delete)
 
         {
             State state{bs, Incarnation{0, 0}};
+            auto const final_balance_uint256 =
+                intx::be::load<uint256_t>(state.get_balance(from));
+            ASSERT_TRUE(
+                final_balance_uint256 < std::numeric_limits<uint64_t>::max());
+            auto const final_balance =
+                static_cast<uint64_t>(final_balance_uint256);
+
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
-                uint256_t{
-                    37'093'800'000'000'000 + (120'000 * 100'000'000'000)});
+                final_balance,
+                initial_balance -
+                    ((gas_charged_tx1 + gas_charged_tx2) * max_fee_per_gas) +
+                    (storage_refund_tx2 * max_fee_per_gas));
         }
     }
 }
 
-TEST(TransactionProcessor, refunds_delete_then_set)
+TYPED_TEST(TraitsTest, refunds_delete_then_set)
 {
     using intx::operator""_u256;
 
@@ -333,6 +466,9 @@ TEST(TransactionProcessor, refunds_delete_then_set)
         0x00000000000000000000000000000000cccccccc_address};
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
+
+    static constexpr auto initial_balance = 56'000'000'000'000'000;
+    static constexpr auto max_fee_per_gas = 100'000'000'000;
 
     static constexpr auto slot = bytes32_t{};
     auto const initial_value = intx::be::store<bytes32_t>(uint256_t{1});
@@ -345,12 +481,12 @@ TEST(TransactionProcessor, refunds_delete_then_set)
     BlockMetrics metrics;
 
     // s[0] = 0; s[0] = 1
-    auto const contract_code = evmc::from_hex("0x5f5f5560015f55").value();
+    auto const contract_code = evmc::from_hex("0x60006000556001600055").value();
 
     {
         State state{bs, Incarnation{0, 0}};
 
-        state.add_to_balance(from, 56'000'000'000'000'000);
+        state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
 
         state.create_contract(contract);
@@ -362,6 +498,10 @@ TEST(TransactionProcessor, refunds_delete_then_set)
 
     // X -> X -> 0 then X -> 0 -> X
     {
+        static constexpr auto gas_limit_tx =
+            50'000; // should be high ehough to cover actual gas used + low gas
+                    // SSTORE stipend for all revisions
+
         Transaction const set_tx{
             .sc =
                 {.r =
@@ -369,9 +509,8 @@ TEST(TransactionProcessor, refunds_delete_then_set)
                  .s =
                      0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256},
             .nonce = 25,
-            .max_fee_per_gas = 100'000'000'000,
-            .gas_limit =
-                32'109 + 2300, // actual gas used + low gas SSTORE stipend
+            .max_fee_per_gas = max_fee_per_gas,
+            .gas_limit = gas_limit_tx,
             .to = contract,
         };
 
@@ -384,7 +523,7 @@ TEST(TransactionProcessor, refunds_delete_then_set)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
+        auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
             0,
             set_tx,
@@ -403,9 +542,81 @@ TEST(TransactionProcessor, refunds_delete_then_set)
 
         {
             State state{bs, Incarnation{0, 0}};
+            auto const final_balance_uint256 =
+                intx::be::load<uint256_t>(state.get_balance(from));
+            ASSERT_TRUE(
+                final_balance_uint256 < std::numeric_limits<uint64_t>::max());
+            auto const final_balance =
+                static_cast<uint64_t>(final_balance_uint256);
+
+            static constexpr auto gas_charged = [] {
+                if constexpr (TestFixture::is_monad_trait()) {
+                    if constexpr (
+                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                        // Since MONAD_ONE full gas_limit is charged
+                        return gas_limit_tx;
+                    }
+                }
+
+                if constexpr (
+                    TestFixture::Trait::evm_rev() == EVMC_CONSTANTINOPLE) {
+                    return 26'212;
+                }
+
+                if constexpr (TestFixture::Trait::evm_rev() == EVMC_ISTANBUL) {
+                    return 26'812;
+                }
+
+                if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+                    return 46'012;
+                }
+                else {
+                    return 26'112;
+                }
+            }();
+
+            static constexpr auto storage_refund_evm_uncapped = [] {
+                if constexpr (
+                    TestFixture::Trait::evm_rev() == EVMC_CONSTANTINOPLE) {
+                    return 4800;
+                }
+                if constexpr (TestFixture::Trait::evm_rev() == EVMC_ISTANBUL) {
+                    return 4200;
+                }
+                if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+                    return 15000;
+                }
+                else {
+                    return 2800;
+                }
+            }();
+            static constexpr auto storage_refund = [=] {
+                if constexpr (TestFixture::is_monad_trait()) {
+                    if constexpr (
+                        TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                        return 2800;
+                    }
+                    else if constexpr (
+                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                        return 0;
+                    }
+                }
+                if constexpr (TestFixture::Trait::evm_rev() >= EVMC_LONDON) {
+                    // due to EIP-3529 introduced in London revision
+                    return std::min(
+                        gas_charged / 5, storage_refund_evm_uncapped);
+                }
+                else {
+                    return std::min(
+                        gas_charged / 2, storage_refund_evm_uncapped);
+                    ;
+                }
+            }();
+
             EXPECT_EQ(
-                intx::be::load<uint256_t>(state.get_balance(from)),
-                uint256_t{52'559'100'000'000'000 + (2800 * 100'000'000'000)});
+                final_balance,
+                initial_balance - (gas_charged * max_fee_per_gas) +
+                    (storage_refund * max_fee_per_gas));
         }
     }
 }

@@ -24,4 +24,5 @@ packages=(
   wget
 )
 
+apt-get update
 apt-get install -y "${packages[@]}"

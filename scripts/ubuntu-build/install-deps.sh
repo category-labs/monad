@@ -17,4 +17,5 @@ packages=(
   libzstd-dev
 )
 
+apt-get update
 apt-get install -y "${packages[@]}"

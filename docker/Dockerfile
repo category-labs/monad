@@ -60,7 +60,7 @@ RUN ./scripts/check-clang-tidy.sh
 
 FROM base AS vm_fuzz
 
-RUN apt-get install -y tmux
+RUN apt-get update && apt-get install -y tmux
 
 COPY . src
 WORKDIR src

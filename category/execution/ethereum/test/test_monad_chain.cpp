@@ -36,7 +36,8 @@
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/db.hpp>
-#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <bitset>
@@ -60,7 +61,7 @@ TYPED_TEST(MonadTraitsTest, compute_gas_refund)
     }
 }
 
-TEST(MonadChain, Genesis)
+TYPED_TEST(TraitsTest, Genesis)
 {
     {
         InMemoryMachine machine;
@@ -74,12 +75,17 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0x1436534e54a22183ea29a2273b341cb50018ed066441ffd111cd263297caba35_bytes32);
-        EXPECT_TRUE(static_validate_header<EvmTraits<EVMC_FRONTIER>>(header)
-                        .has_value());
-        // the header generated at the time was not a valid header for the
-        // cancun revision
-        EXPECT_FALSE(
-            static_validate_header<EvmTraits<EVMC_CANCUN>>(header).has_value());
+
+        auto result =
+            static_validate_header<typename TestFixture::Trait>(header);
+        if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+            EXPECT_TRUE(result.has_value());
+        }
+        else {
+            // the header generated at the time was not a valid header for the
+            // Paris revision or above
+            EXPECT_TRUE(result.has_error());
+        }
     }
 
     {
@@ -94,12 +100,16 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0xb711505d8f46fc921ae824f847f26c5c3657bf6c8b9dcf07ffdf3357a143bca9_bytes32);
-        EXPECT_TRUE(static_validate_header<EvmTraits<EVMC_FRONTIER>>(header)
-                        .has_value());
-        // the header generated at the time was not a valid header for the
-        // cancun revision
-        EXPECT_FALSE(
-            static_validate_header<EvmTraits<EVMC_CANCUN>>(header).has_value());
+        auto result =
+            static_validate_header<typename TestFixture::Trait>(header);
+        if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+            EXPECT_TRUE(result.has_value());
+        }
+        else {
+            // the header generated at the time was not a valid header for the
+            // Paris revision or above
+            EXPECT_TRUE(result.has_error());
+        }
     }
     {
         InMemoryMachine machine;
@@ -113,8 +123,17 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0x0c47353304f22b1c15706367d739b850cda80b5c87bbc335014fef3d88deaac9_bytes32);
-        EXPECT_TRUE(
-            static_validate_header<EvmTraits<EVMC_CANCUN>>(header).has_value());
+
+        auto result =
+            static_validate_header<typename TestFixture::Trait>(header);
+        if constexpr (TestFixture::Trait::evm_rev() == EVMC_CANCUN) {
+            EXPECT_TRUE(result.has_value());
+        }
+        else {
+            // the header generated at the time was only valid in the Cancun
+            // revision
+            EXPECT_TRUE(result.has_error());
+        }
     }
     {
         InMemoryMachine machine;
@@ -128,8 +147,16 @@ TEST(MonadChain, Genesis)
         EXPECT_EQ(
             hash,
             0x2a2544bf6d096df891903c8fa14e9914009e6bc9d448399585961a3044e03e50_bytes32);
-        EXPECT_TRUE(
-            static_validate_header<EvmTraits<EVMC_CANCUN>>(header).has_value());
+        auto result =
+            static_validate_header<typename TestFixture::Trait>(header);
+        if constexpr (TestFixture::Trait::evm_rev() == EVMC_CANCUN) {
+            EXPECT_TRUE(result.has_value());
+        }
+        else {
+            // the header generated at the time was only valid in the Cancun
+            // revision
+            EXPECT_TRUE(result.has_error());
+        }
     }
 }
 
@@ -148,21 +175,20 @@ constexpr uint8_t PREVENT_DIP_BITS_POWERSET_SIZE = 64;
 static_assert(
     (1 << (AuthorityInTransaction + 1)) == PREVENT_DIP_BITS_POWERSET_SIZE);
 
+template <Traits traits>
 void run_revert_transaction_test(
     uint8_t const prevent_dip_bitset, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)
 {
     constexpr uint256_t BASE_FEE_PER_GAS = 10;
     constexpr Address SENDER{1};
-    MonadDevnet const chain;
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
 
-    ASSERT_EQ(
-        monad_default_max_reserve_balance_mon(chain.get_monad_revision(0)), 10);
+    ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
 
     // Set up initial state
     {
@@ -244,9 +270,9 @@ void run_revert_transaction_test(
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = chain.revert_transaction(
-            1, // block_number
-            0, // timestamp
+        bool should_revert = revert_monad_transaction(
+            traits::monad_rev(),
+            traits::evm_rev(),
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
@@ -259,10 +285,13 @@ void run_revert_transaction_test(
     }
 }
 
-TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
+EXPLICIT_MONAD_TRAITS(run_revert_transaction_test)
+
+TYPED_TEST(
+    MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_no_value_false)
 {
     for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
-        run_revert_transaction_test(
+        run_revert_transaction_test<typename TestFixture::Trait>(
             i, // prevent_dip_bitset
             10, // initial balance (MON)
             2, // gas fee (MON)
@@ -271,7 +300,7 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
         );
 
         // now spend whole reserve
-        run_revert_transaction_test(
+        run_revert_transaction_test<typename TestFixture::Trait>(
             i, // prevent_dip_bitset
             10, // initial balance (MON)
             10, // gas fee (MON)
@@ -281,31 +310,38 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_no_value_false)
     }
 }
 
-TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_true)
+TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_true)
 {
+    constexpr auto should_revert = [] {
+        if (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }();
+
     for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
-        run_revert_transaction_test(
+        run_revert_transaction_test<typename TestFixture::Trait>(
             i, // prevent_dip_bitset
             10, // initial balance (MON)
             2, // gas fee (MON)
             1, // value (MON)
-            true // expected should_revert
-        );
+            should_revert);
 
-        run_revert_transaction_test(
+        run_revert_transaction_test<typename TestFixture::Trait>(
             i, // prevent_dip_bitset
             15, // initial balance (MON)
             5, // gas fee (MON)
             6, // value (MON)
-            true // expected should_revert
-        );
+            should_revert);
     }
 }
 
-TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_false)
+TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_false)
 {
     for (uint8_t i = 1; i < PREVENT_DIP_BITS_POWERSET_SIZE; ++i) {
-        run_revert_transaction_test(
+        run_revert_transaction_test<typename TestFixture::Trait>(
             i, // prevent_dip_bitset
             15, // initial balance (MON)
             5, // gas fee (MON)
@@ -315,9 +351,9 @@ TEST(MonadChain, revert_transaction_no_dip_gas_fee_with_value_false)
     }
 }
 
-TEST(MonadChain, revert_transaction_dip_false)
+TYPED_TEST(MonadTraitsTest, revert_transaction_dip_false)
 {
-    run_revert_transaction_test(
+    run_revert_transaction_test<typename TestFixture::Trait>(
         0, // prevent_dip_bitset
         10, // initial balance (MON)
         10, // gas fee (MON)
@@ -325,7 +361,7 @@ TEST(MonadChain, revert_transaction_dip_false)
         false // expected should_revert
     );
 
-    run_revert_transaction_test(
+    run_revert_transaction_test<typename TestFixture::Trait>(
         0, // prevent_dip_bitset
         10, // initial balance (MON)
         1, // gas fee (MON)
@@ -373,7 +409,7 @@ TEST(MonadChain, can_sender_dip_into_reserve)
     }
 }
 
-TEST(MonadChain, system_transaction_sender_is_authority)
+TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -383,10 +419,18 @@ TEST(MonadChain, system_transaction_sender_is_authority)
     State state{bs, Incarnation{0, 0}};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};
 
-    {
-        MonadDevnet chain;
-        auto const res =
-            chain.validate_transaction(0, 0, {}, {}, state, 0, authorities);
+    auto const res = validate_monad_transaction(
+        TestFixture::Trait::monad_rev(),
+        TestFixture::Trait::evm_rev(),
+        {},
+        {},
+        state,
+        0,
+        authorities);
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+        EXPECT_TRUE(res.has_value());
+    }
+    else {
         ASSERT_TRUE(res.has_error());
         EXPECT_EQ(
             res.error(),

@@ -138,3 +138,14 @@ struct TraitsTest : public ::testing::Test
 TYPED_TEST_SUITE(
     TraitsTest, ::detail::MonadEvmRevisionTypes,
     ::detail::RevisionTestNameGenerator);
+
+template <monad::Traits traits, typename T>
+consteval std::optional<T> value_since(evmc_revision rev)
+{
+    if (traits::evm_rev() >= rev) {
+        return T{};
+    }
+    else {
+        return std::nullopt;
+    }
+};

@@ -253,23 +253,23 @@ namespace
         monad::fiber::PriorityPool &pool,
         enum monad_tracer_config tracer_config)
     {
+        using json = nlohmann::json;
         BlockState block_state{tdb, vm};
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions.size());
 
-        auto const trace_entry =
-            [&](uint64_t const transaction_index) -> nlohmann::json {
+        auto const trace_entry = [&](uint64_t const transaction_index) -> json {
             bytes32_t const tx_hash = to_bytes(keccak256(
                 rlp::encode_transaction(transactions[transaction_index])));
-            nlohmann::json entry{
-                {"result", nlohmann::json::object()},
+            json entry{
+                {"result", json::object()},
                 {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
             return entry;
         };
 
         // Trace single transaction
         if (trace_transaction) {
-            nlohmann::json trace = trace_entry(transaction_index);
+            json trace = trace_entry(transaction_index);
             for (size_t i = 0; i < transactions.size(); ++i) {
                 if (i == transaction_index) {
                     if (tracer_config == PRESTATE_TRACER) {
@@ -312,7 +312,7 @@ namespace
         }
         else {
             // Trace an entire block
-            std::vector<nlohmann::json> traces{};
+            std::vector<json> traces{};
             traces.reserve(transactions.size());
             for (size_t i = 0; i < transactions.size(); ++i) {
                 traces.emplace_back(trace_entry(i));
@@ -341,12 +341,11 @@ namespace
                     pool,
                     state_tracers);
             if (result.has_error()) {
-                return Result<nlohmann::json>{std::move(result).as_failure()};
+                return Result<json>{std::move(result).as_failure()};
             }
 
             // Compose state traces
-            nlohmann::json result_trace{traces};
-            return Result<nlohmann::json>{std::move(result_trace)};
+            return Result<json>{std::move(traces)};
         }
     }
 }
@@ -1019,7 +1018,7 @@ struct monad_eth_call_executor
             return;
         }
 
-        if (!high_gas_pool_.try_enqueue()) {
+        if (!low_gas_pool_.try_enqueue()) {
             result->status_code = EVMC_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
@@ -1029,7 +1028,7 @@ struct monad_eth_call_executor
 
         auto const priority =
             call_seq_no_.fetch_add(1, std::memory_order_relaxed);
-        high_gas_pool_.pool.submit(
+        low_gas_pool_.pool.submit(
             priority,
             [this,
              block_id = block_id,
@@ -1045,8 +1044,11 @@ struct monad_eth_call_executor
              trace_transaction = trace_transaction,
              transaction_index = transaction_index,
              user = user]() {
-                // TODO(dhil): Batch requests can skew the count.
+                // TODO(dhil): These trace block calls consume a lot more
+                // resources than an eth_call request.
                 fiber_pool->queued_count.fetch_sub(
+                    1, std::memory_order_relaxed);
+                fiber_pool->executing_count.fetch_add(
                     1, std::memory_order_relaxed);
                 try {
                     auto const chain =
@@ -1089,6 +1091,7 @@ struct monad_eth_call_executor
                     std::vector<Transaction> const &transactions =
                         maybe_transactions.value();
                     std::vector<Address> senders;
+                    senders.reserve(transactions.size());
                     {
                         std::vector<std::optional<Address>> recovered_senders =
                             monad::recover_senders(
@@ -1105,8 +1108,9 @@ struct monad_eth_call_executor
                                 complete(result, user);
                                 return;
                             }
-                            senders[i] = *recovered_senders[i];
+                            senders.emplace_back(*recovered_senders[i]);
                         }
+                        MONAD_ASSERT(senders.size() == transactions.size());
                     }
                     std::vector<std::vector<std::optional<Address>>>
                         authorities = monad::recover_authorities(

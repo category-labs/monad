@@ -18,6 +18,9 @@ WORKDIR src
 ARG CC
 ARG CXX
 ARG CMAKE_BUILD_TYPE
+ARG GIT_COMMIT_HASH
+
+ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
 
@@ -75,3 +78,8 @@ RUN CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B b
 
 RUN cmake --build build -t monad-compiler-fuzzer
 RUN ./scripts/vm/ci-fuzzer.sh
+
+FROM base as runner
+COPY --from=build_and_test /src/build/category/mpt/monad_mpt /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad_cli /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/

@@ -188,7 +188,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
 {
     MONAD_ASSERT(senders.size() == transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
-    MONAD_ASSERT(senders.size() == state_tracers.size())
+    MONAD_ASSERT(senders.size() == state_tracers.size());
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};

@@ -380,5 +380,7 @@ void postprocess_block(BlockState &block_state, Block const &block)
 }
 
 EXPLICIT_TRAITS(execute_block);
+EXPLICIT_TRAITS(preprocess_block);
+EXPLICIT_TRAITS(postprocess_block);
 
 MONAD_NAMESPACE_END

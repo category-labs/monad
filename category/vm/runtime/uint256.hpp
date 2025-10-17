@@ -786,7 +786,7 @@ namespace monad::vm::runtime
         auto r = div(0, u[m - 1], v);
         quot[m - 1] = r.quot;
         for (int i = static_cast<int>(m - 2); i >= 0; i--) {
-            auto ix = static_cast<size_t>(i);
+            auto const ix = static_cast<size_t>(i);
             r = div(r.rem, u[ix], v);
             quot[ix] = r.quot;
         }
@@ -803,7 +803,7 @@ namespace monad::vm::runtime
         MONAD_VM_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
 
         for (int i = static_cast<int>(m - n); i >= 0; i--) {
-            auto ix = static_cast<size_t>(i);
+            auto const ix = static_cast<size_t>(i);
             uint128_t q_hat;
             // We diverge from the algorithms in Knuth AOCP and Hacker's Delight
             // as we need to check for potential division overflow before
@@ -1015,7 +1015,7 @@ namespace monad::vm::runtime
         for (size_t j = 0; j < uint256_t::num_words; j++) {
             uint64_t carry = 0;
             for (size_t i = 0; i < uint256_t::num_words; i++) {
-                auto p =
+                auto const p =
                     static_cast<uint128_t>(u[i]) * v[j] + carry + prod[i + j];
                 prod[i + j] = static_cast<uint64_t>(p);
                 carry = static_cast<uint64_t>(p >> 64);

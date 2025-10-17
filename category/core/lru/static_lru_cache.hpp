@@ -85,12 +85,12 @@ public:
         list_node *node = nullptr;
         if (!free_list_.empty()) {
             // allocate from free_list_
-            auto list_it = free_list_.begin();
+            auto const list_it = free_list_.begin();
             node = &*list_it;
             free_list_.erase(list_it);
         }
         else { // reuse the last node in active_list_
-            auto list_it = std::prev(active_list_.end());
+            auto const list_it = std::prev(active_list_.end());
             erased_value = list_it->val;
             map_.erase(list_it->key);
             node = &*list_it;

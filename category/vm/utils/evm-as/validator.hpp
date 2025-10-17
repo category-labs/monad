@@ -94,7 +94,7 @@ namespace monad::vm::utils::evm_as::internal
                 std::visit(
                     Cases{
                         [&labels, this](PushLabelI const &push) {
-                            auto it = labels.find(push.label);
+                            auto const it = labels.find(push.label);
                             if (it == labels.end()) {
                                 error(
                                     pos,

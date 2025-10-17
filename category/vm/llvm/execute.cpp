@@ -59,7 +59,7 @@ namespace monad::vm::llvm
 
         if (dbg_nm != "") {
             std::ofstream out(std::format("{}.ir", dbg_nm));
-            auto ir_str = std::format("{}", ir);
+            auto const ir_str = std::format("{}", ir);
             out << ir_str;
             out.close();
         }

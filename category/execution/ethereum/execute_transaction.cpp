@@ -438,6 +438,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
+            LOG_DEBUG("Transaction {} state changes before merge:", i_);
+            state.log_debug();
             block_state_.merge(state);
             return receipt;
         }
@@ -458,6 +460,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
+        LOG_DEBUG("Transaction {} state changes before merge (retry):", i_);
+        state.log_debug();
         block_state_.merge(state);
         return receipt;
     }

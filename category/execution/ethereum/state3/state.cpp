@@ -25,6 +25,8 @@
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -34,6 +36,8 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
+
+#include <quill/Quill.h>
 
 #include <evmc/evmc.h>
 
@@ -645,6 +649,92 @@ bool State::try_fix_account_mismatch(
     }
     original->balance = actual->balance;
     return true;
+}
+
+void State::log_debug()
+{
+    LOG_DEBUG("State Changes (before merge):");
+    LOG_DEBUG("  Original accounts: {}", original_.size());
+    LOG_DEBUG("  Current accounts: {}", current_.size());
+    LOG_DEBUG("  Code entries: {}", code_.size());
+    
+    for (auto const &[address, stack] : current_) {
+        if (stack.size() == 1 && stack.version() == 0) {
+            auto const &account_state = stack.recent();
+            auto const &account = account_state.account_;
+            auto const &storage = account_state.storage_;
+            
+            auto const original_it = original_.find(address);
+            auto const &original_account = (original_it != original_.end()) 
+                ? original_it->second.account_ 
+                : std::optional<Account>{};
+            
+            LOG_DEBUG("  Address: {}", address);
+            
+            if (original_account.has_value() && account.has_value()) {
+                if (original_account->nonce != account->nonce ||
+                    original_account->balance != account->balance ||
+                    original_account->code_hash != account->code_hash) {
+                    LOG_DEBUG("    Account changes:");
+                    
+                    if (original_account->nonce != account->nonce) {
+                        LOG_DEBUG("      nonce: {} -> {}", original_account->nonce, account->nonce);
+                    }
+                    if (original_account->balance != account->balance) {
+                        LOG_DEBUG("      balance: 0x{} -> 0x{}", 
+                                 intx::to_string(original_account->balance, 16),
+                                 intx::to_string(account->balance, 16));
+                    }
+                    if (original_account->code_hash != account->code_hash) {
+                        LOG_DEBUG("      code_hash: {} -> {}", 
+                                 original_account->code_hash, account->code_hash);
+                    }
+                }
+            } else if (!original_account.has_value() && account.has_value()) {
+                LOG_DEBUG("    Account created: nonce={}, balance=0x{}, code_hash={}", 
+                         account->nonce, 
+                         intx::to_string(account->balance, 16),
+                         account->code_hash);
+            } else if (original_account.has_value() && !account.has_value()) {
+                LOG_DEBUG("    Account deleted (was: nonce={}, balance=0x{})", 
+                         original_account->nonce,
+                         intx::to_string(original_account->balance, 16));
+            }
+            
+            if (!storage.empty()) {
+                std::vector<std::pair<bytes32_t, bytes32_t>> changed_storage;
+                for (auto const &[key, value] : storage) {
+                    bytes32_t original_value{};
+                    if (original_it != original_.end()) {
+                        auto const &orig_storage = original_it->second.storage_;
+                        auto const orig_storage_it = orig_storage.find(key);
+                        if (orig_storage_it != orig_storage.end()) {
+                            original_value = orig_storage_it->second;
+                        }
+                    }
+                    
+                    if (original_value != value) {
+                        changed_storage.emplace_back(key, value);
+                    }
+                }
+                
+                if (!changed_storage.empty()) {
+                    LOG_DEBUG("    Storage changes: {}", changed_storage.size());
+                    for (auto const &[key, value] : changed_storage) {
+                        bytes32_t original_value{};
+                        if (original_it != original_.end()) {
+                            auto const &orig_storage = original_it->second.storage_;
+                            auto const orig_storage_it = orig_storage.find(key);
+                            if (orig_storage_it != orig_storage.end()) {
+                                original_value = orig_storage_it->second;
+                            }
+                        }
+                        LOG_DEBUG("      {}: {} -> {}", key, original_value, value);
+                    }
+                }
+            }
+        }
+    }
 }
 
 MONAD_NAMESPACE_END

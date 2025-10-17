@@ -325,6 +325,7 @@ Result<std::vector<Receipt>> execute_block(
         }
 
         MONAD_ASSERT(block_state.can_merge(state));
+        state.log_debug();
         block_state.merge(state);
     }
 
@@ -357,6 +358,7 @@ Result<std::vector<Receipt>> execute_block(
     }
 
     MONAD_ASSERT(block_state.can_merge(state));
+    state.log_debug();
     block_state.merge(state);
 
     return retvals;

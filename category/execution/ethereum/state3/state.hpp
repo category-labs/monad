@@ -200,6 +200,10 @@ public:
     bool try_fix_account_mismatch(
         Address const &, OriginalAccountState &,
         std::optional<Account> const &actual);
+
+    ////////////////////////////////////////
+
+    void log_debug();
 };
 
 MONAD_NAMESPACE_END

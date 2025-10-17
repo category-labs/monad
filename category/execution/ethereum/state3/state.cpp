@@ -199,7 +199,7 @@ uint64_t State::get_nonce(Address const &address)
     return 0;
 }
 
-bytes32_t State::get_balance(Address const &address)
+bytes32_t State::get_current_balance_pessimistic(Address const &address)
 {
     auto const &account = recent_account(address);
     original_account_state(address).set_validate_exact_balance();
@@ -207,6 +207,11 @@ bytes32_t State::get_balance(Address const &address)
         return intx::be::store<bytes32_t>(account.value().balance);
     }
     return {};
+}
+
+bytes32_t State::get_original_balance_pessimistic(Address const &address)
+{
+    return original_account_state(address).get_balance_pessimistic();
 }
 
 bytes32_t State::get_code_hash(Address const &address)
@@ -644,7 +649,44 @@ bool State::try_fix_account_mismatch(
         }
     }
     original->balance = actual->balance;
+
+    // not necessary as can_merge() wont be called
+    // anymore, but just being defensive, and this makes
+    // it easier to write the class invariant
+    original_state.set_validate_exact_balance();
     return true;
+}
+
+bool State::record_balance_constraint_for_debit(
+    Address const &address, uint256_t const &debit)
+{
+    auto const &account = recent_account(address);
+    uint256_t const balance = account.has_value() ? account->balance : 0;
+
+    auto &original_state = original_account_state(address);
+    // RELAXED MERGE
+    // if current balance  >= `debit`, then:
+    // 1. compute the amount that current balance exceeds `debit`
+    // 2. require that the original balance at merge time is at least the
+    // original balance used during this execution less said excess
+    if (balance >= debit) {
+        uint256_t const diff = balance - debit;
+        auto const &original = original_state.account_;
+        uint256_t const original_balance =
+            original.has_value() ? original->balance : 0;
+        if (original_balance > diff) { // avoid underflow when <= diff
+            uint256_t const min_balance =
+                original_balance -
+                diff; // original balance - current balance + debit
+            original_state.set_min_balance(min_balance);
+        }
+        return true;
+    }
+
+    // otherwise require that original balance at merge time matches
+    // original balance used during this execution exactly
+    original_state.set_validate_exact_balance();
+    return false;
 }
 
 MONAD_NAMESPACE_END

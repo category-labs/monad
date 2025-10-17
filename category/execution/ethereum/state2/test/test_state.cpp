@@ -195,9 +195,9 @@ TYPED_TEST(StateTest, get_balance)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_EQ(s.get_balance(a), bytes32_t{10'000});
-    EXPECT_EQ(s.get_balance(b), bytes32_t{0});
-    EXPECT_EQ(s.get_balance(c), bytes32_t{0});
+    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{10'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{0});
+    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{0});
 }
 
 TYPED_TEST(StateTest, add_to_balance)
@@ -214,8 +214,8 @@ TYPED_TEST(StateTest, add_to_balance)
     s.add_to_balance(a, 10'000);
     s.add_to_balance(b, 20'000);
 
-    EXPECT_EQ(s.get_balance(a), bytes32_t{10'001});
-    EXPECT_EQ(s.get_balance(b), bytes32_t{20'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{10'001});
+    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{20'000});
 }
 
 TYPED_TEST(StateTest, get_nonce)
@@ -294,13 +294,13 @@ TYPED_TEST(StateTest, selfdestruct)
     s.add_to_balance(b, 28'000);
 
     EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, c));
-    EXPECT_EQ(s.get_balance(a), bytes32_t{});
-    EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
+    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
     EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, c));
 
     EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(b, c));
-    EXPECT_EQ(s.get_balance(b), bytes32_t{});
-    EXPECT_EQ(s.get_balance(c), bytes32_t{84'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{});
+    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{84'000});
     EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(b, c));
 
     s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
@@ -334,8 +334,8 @@ TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
     State s{bs, Incarnation{1, 2}};
 
     EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
-    EXPECT_EQ(s.get_balance(a), bytes32_t{});
-    EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
+    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
     EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
 
     s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
@@ -368,8 +368,8 @@ TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
     State s{bs, Incarnation{1, 1}};
 
     EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
-    EXPECT_EQ(s.get_balance(a), bytes32_t{});
-    EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
+    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
     EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
 
     s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
@@ -393,7 +393,7 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
         State s{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{});
+        EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
 
         s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
         EXPECT_FALSE(s.account_exists(a));
@@ -403,7 +403,9 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
         State s{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{18'000}); // no ether burned
+        EXPECT_EQ(
+            s.get_current_balance_pessimistic(a),
+            bytes32_t{18'000}); // no ether burned
 
         s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
         EXPECT_TRUE(s.account_exists(a));
@@ -430,7 +432,7 @@ TYPED_TEST(StateTest, selfdestruct_self_same_tx)
         State s{bs, Incarnation{1, 1}};
 
         EXPECT_TRUE(s.selfdestruct<traits>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{});
+        EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
 
         s.destruct_suicides<traits>();
         EXPECT_FALSE(s.account_exists(a));

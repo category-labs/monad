@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -105,7 +106,7 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames[1].depth, 1);
 }
 
-TEST(CallTrace, execute_success)
+TYPED_TEST(TraitsTest, execute_success)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -149,10 +150,11 @@ TEST(CallTrace, execute_success)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{call_tracer, tx_context, buffer, s};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, tx_context, buffer, s};
 
     auto const result =
-        ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
             EthereumMainnet{},
             tx,
             sender,
@@ -176,7 +178,7 @@ TEST(CallTrace, execute_success)
     EXPECT_EQ(call_frames[0], expected);
 }
 
-TEST(CallTrace, execute_reverted_insufficient_balance)
+TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -220,10 +222,11 @@ TEST(CallTrace, execute_reverted_insufficient_balance)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    EvmcHost<EvmTraits<EVMC_SHANGHAI>> host{call_tracer, tx_context, buffer, s};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, tx_context, buffer, s};
 
     auto const result =
-        ExecuteTransactionNoValidation<EvmTraits<EVMC_SHANGHAI>>(
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
             EthereumMainnet{},
             tx,
             sender,

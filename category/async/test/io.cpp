@@ -252,4 +252,64 @@ namespace
         }
         EXPECT_EQ(seq.back(), offset - monad::async::DISK_PAGE_SIZE);
     }
+
+    struct sqe_read_exhaustion_receiver
+    {
+        uint64_t *reinits;
+
+        static constexpr bool lifetime_managed_internally = false;
+
+        void set_value(
+            monad::async::erased_connected_operation *io_state,
+            monad::async::read_single_buffer_sender::result_type buf)
+        {
+            MONAD_ASSERT(buf);
+            {
+                auto _ = std::move(buf);
+            }
+            constexpr auto MAX_DEPTH = 256;
+            if (*reinits >= MAX_DEPTH) {
+                return;
+            }
+            ++*reinits;
+            for (int i = 0; i < 8; ++i) {
+                io_state->reinitiate();
+            }
+        }
+    };
+
+    TEST(AsyncIO, sqe_read_exhaustion)
+    {
+        // 1) Tiny segregated rings to force SQ pressure
+        monad::io::RingConfig rc_rd{};
+        rc_rd.entries = 4;
+        monad::io::RingConfig rc_wr{};
+        rc_wr.entries = 4;
+        monad::io::Ring rd_ring(rc_rd);
+        monad::io::Ring wr_ring(rc_wr);
+
+        auto bufs = monad::io::make_buffers_for_segregated_read_write(
+            rd_ring,
+            wr_ring,
+            2, /* read count*/
+            4, /* write count SQ=4 */
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+
+        monad::async::storage_pool pool(
+            monad::async::use_anonymous_inode_tag{});
+        monad::async::AsyncIO aio(pool, bufs);
+
+        aio.set_concurrent_read_io_limit(0);
+        aio.set_eager_completions(false);
+
+        uint64_t reinits = 0;
+        auto const op = aio.make_connected(
+            monad::async::read_single_buffer_sender{
+                {0, 0}, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE},
+            sqe_read_exhaustion_receiver{.reinits = &reinits});
+        op->initiate();
+        aio.poll_blocking(1);
+        aio.wait_until_done();
+    }
 }

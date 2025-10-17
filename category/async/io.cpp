@@ -94,6 +94,7 @@ namespace detail
         explicit within_completions_holder(AsyncIO_per_thread_state_t *parent_)
             : parent(parent_)
         {
+            MONAD_DEBUG_ASSERT(parent->within_completions_count < 20);
             parent->within_completions_count++;
         }
 
@@ -300,6 +301,22 @@ void AsyncIO::submit_request_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
+    poll_uring_while_submission_queue_full_();
+
+    submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
+}
+
+void AsyncIO::submit_request_sqe_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    if (filter_fn_ != nullptr) {
+        if (!filter_fn_(buffer, chunk_and_offset, uring_data, prio)) {
+            // don't submit this i/o
+            return;
+        }
+    }
+
     MONAD_DEBUG_ASSERT(uring_data != nullptr);
     MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
     MONAD_DEBUG_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
@@ -307,7 +324,6 @@ void AsyncIO::submit_request_(
     memset(buffer.data(), 0xff, buffer.size());
 #endif
 
-    poll_uring_while_submission_queue_full_();
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
 
@@ -500,6 +516,10 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                     io_uring_cq_ready(other_ring) > max_cq_entries) {
                     break;
                 }
+                std::cout << " dequeue_concurrent_read_ios_pending: inflight "
+                          << records_.inflight_rd << " pending "
+                          << concurrent_read_ios_pending_.count << " limit "
+                          << concurrent_read_io_limit_ << std::endl;
                 auto *next =
                     erased_connected_operation::rbtree_node_traits::get_right(
                         state);
@@ -522,6 +542,10 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     erased_connected_operation *state = nullptr;
     result<size_t> res(success(0));
     auto get_cqe = [&] {
+        if (MONAD_UNLIKELY(paused_)) {
+            return false;
+        }
+
         auto const inflight_ts =
             records_.inflight_ts.load(std::memory_order_acquire);
 
@@ -614,8 +638,23 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         }
         else {
             state = reinterpret_cast<erased_connected_operation *>(data);
-            res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
-                                 : result<size_t>(cqe->res);
+            if (cqe_filter_fn_ != nullptr) {
+                int32_t cres = cqe->res;
+                if (!cqe_filter_fn_(cqe, cres)) {
+                    // don't process this cqe
+                    if (cqe != nullptr) {
+                        io_uring_cqe_seen(ring, cqe);
+                        cqe = nullptr;
+                    }
+                    return false;
+                }
+                res = (cres < 0) ? result<size_t>(posix_code(-cres))
+                                 : result<size_t>(cres);
+            }
+            else {
+                res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
+                                     : result<size_t>(cqe->res);
+            }
         }
         if (cqe != nullptr) {
             io_uring_cqe_seen(ring, cqe);

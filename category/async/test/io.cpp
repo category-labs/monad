@@ -40,6 +40,74 @@
 
 #include <unistd.h>
 
+MONAD_ASYNC_NAMESPACE_BEGIN
+
+namespace test
+{
+    struct DelayedIO
+    {
+        std::span<std::byte> buffer;
+        chunk_offset_t chunk_and_offset;
+        void *uring_data;
+        enum erased_connected_operation::io_priority prio;
+    };
+
+    class AsyncTest
+    {
+    public:
+        AsyncTest(AsyncIO &io)
+            : io_(io)
+        {
+        }
+
+        void pause()
+        {
+            io_.paused_ = true;
+        }
+
+        void unpause()
+        {
+            io_.paused_ = false;
+        }
+
+        void delay_ios()
+        {
+            io_.filter_fn_ =
+                [this](
+                    std::span<std::byte> buffer,
+                    chunk_offset_t chunk_and_offset,
+                    void *uring_data,
+                    enum erased_connected_operation::io_priority prio) {
+                    delayed_ios_.emplace_back(
+                        DelayedIO{buffer, chunk_and_offset, uring_data, prio});
+                    return false;
+                };
+        }
+
+        void release_ios()
+        {
+            io_.filter_fn_ = nullptr;
+            for (auto &d : delayed_ios_) {
+                io_.submit_request_sqe_(
+                    d.buffer, d.chunk_and_offset, d.uring_data, d.prio);
+            }
+            delayed_ios_.clear();
+        }
+
+        void set_cqe_filter(
+            std::function<bool(struct io_uring_cqe *cqe, int32_t &res)> fn)
+        {
+            io_.cqe_filter_fn_ = std::move(fn);
+        }
+
+    private:
+        std::vector<DelayedIO> delayed_ios_;
+        AsyncIO &io_;
+    };
+} // namespace test
+
+MONAD_ASYNC_NAMESPACE_END
+
 namespace
 {
     TEST(AsyncIO, hardlink_fd_to)
@@ -251,5 +319,77 @@ namespace
             offset2 += monad::async::DISK_PAGE_SIZE;
         }
         EXPECT_EQ(seq.back(), offset - monad::async::DISK_PAGE_SIZE);
+    }
+
+    struct sqe_read_exhaustion_receiver
+    {
+        uint64_t *completions;
+
+        static constexpr bool lifetime_managed_internally = false;
+
+        void set_value(
+            monad::async::erased_connected_operation * /*io_state*/,
+            monad::async::read_single_buffer_sender::result_type /*buf*/)
+        {
+            ++(*completions);
+        }
+    };
+
+    TEST(AsyncIO, read_eagain)
+    {
+        monad::io::RingConfig rc_rd{};
+        rc_rd.entries = 4000;
+        monad::io::RingConfig rc_wr{};
+        rc_wr.entries = 4;
+        monad::io::Ring rd_ring(rc_rd);
+        monad::io::Ring wr_ring(rc_wr);
+        auto const read_buffers_count = 20000;
+
+        auto bufs = monad::io::make_buffers_for_segregated_read_write(
+            rd_ring,
+            wr_ring,
+            read_buffers_count,
+            4, /* write count SQ=4 */
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+
+        monad::async::storage_pool pool(
+            monad::async::use_anonymous_inode_tag{});
+        monad::async::AsyncIO aio(pool, bufs);
+
+        monad::async::test::AsyncTest async_test(aio);
+
+        aio.set_concurrent_read_io_limit(4096 + 2000);
+        aio.set_eager_completions(false);
+
+        int num_failures = 2000;
+
+        async_test.pause();
+        async_test.delay_ios();
+        async_test.set_cqe_filter([&](struct io_uring_cqe *, int32_t &res) {
+            // Simulate read i/o failures
+            if (num_failures > 0) {
+                --num_failures;
+                res = -EAGAIN;
+            }
+            // let this completion through
+            return true;
+        });
+
+        uint64_t completions = 0;
+        uint64_t const num_ios = 20000;
+        for (auto i = 0ul; i < num_ios; ++i) {
+            auto op = aio.make_connected(
+                monad::async::read_single_buffer_sender{
+                    {0, 0}, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE},
+                sqe_read_exhaustion_receiver{.completions = &completions});
+            op->initiate();
+            op.release();
+        }
+
+        async_test.release_ios();
+        async_test.unpause();
+        aio.wait_until_done();
+        EXPECT_EQ(completions, num_ios);
     }
 }

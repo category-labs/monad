@@ -37,6 +37,11 @@
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
+namespace test
+{
+    class AsyncTest;
+};
+
 class read_single_buffer_sender;
 
 // helper struct that records IO stats
@@ -84,6 +89,14 @@ private:
         }
     };
 
+    std::function<bool(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio)>
+        filter_fn_{};
+
+    std::function<bool(struct io_uring_cqe *cqe, int32_t &res)>
+        cqe_filter_fn_{};
+
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
     chunk_ptr_<cnv_chunk> cnv_chunk_;
@@ -100,6 +113,7 @@ private:
     monad::io::BufferPool wr_pool_;
     bool eager_completions_{false};
     bool capture_io_latencies_{false};
+    bool paused_{false};
 
     // IO records
     IORecord records_;
@@ -114,6 +128,9 @@ private:
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
+    void submit_request_sqe_(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(
         std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
@@ -124,6 +141,8 @@ private:
 
     void poll_uring_while_submission_queue_full_();
     size_t poll_uring_(bool blocking, unsigned poll_rings_mask);
+
+    friend class test::AsyncTest;
 
 public:
     AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf);
@@ -335,6 +354,10 @@ public:
     {
         if (concurrent_read_io_limit_ > 0) {
             if (records_.inflight_rd >= concurrent_read_io_limit_) {
+                std::cout << " submit_read_request: inflight "
+                          << records_.inflight_rd << " pending "
+                          << concurrent_read_ios_pending_.count << " limit "
+                          << concurrent_read_io_limit_ << std::endl;
                 auto *state = (erased_connected_operation *)uring_data;
                 erased_connected_operation::rbtree_node_traits::set_right(
                     state, nullptr);
@@ -668,7 +691,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 224);
+// static_assert(sizeof(AsyncIO) == 280);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

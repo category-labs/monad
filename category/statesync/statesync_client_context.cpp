@@ -134,8 +134,14 @@ void monad_statesync_client_context::commit()
         .version = static_cast<int64_t>(current)};
     finalized_updates.push_front(finalized);
 
-    db.upsert(std::move(finalized_updates), current, false, false);
-    tdb.set_block_and_prefix(current);
+    tdb.reset_root(
+        db.upsert(
+            tdb.get_root(),
+            std::move(finalized_updates),
+            current,
+            false,
+            false),
+        current);
     code.clear();
     deltas.clear();
 }

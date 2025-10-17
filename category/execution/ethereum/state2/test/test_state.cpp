@@ -1234,7 +1234,8 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
 
 TYPED_TEST(StateTest, commit_twice)
 {
-    load_header(this->db, BlockHeader{.number = 8});
+    this->tdb.reset_root(
+        load_header({}, this->db, BlockHeader{.number = 8}), 8);
 
     // commit to Block 9 Finalized
     this->tdb.set_block_and_prefix(8);
@@ -1315,7 +1316,7 @@ TYPED_TEST(StateTest, commit_twice)
 
 TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
 {
-    load_header(this->db, BlockHeader{.number = 9});
+    load_header({}, this->db, BlockHeader{.number = 9});
 
     // commit to block 10, round 5
     this->tdb.set_block_and_prefix(9);
@@ -1426,9 +1427,9 @@ TEST_F(OnDiskTrieDbFixture, commit_multiple_proposals)
 
 TEST_F(OnDiskTrieDbFixture, proposal_basics)
 {
-    load_header(this->db, BlockHeader{.number = 9});
+    this->tdb.reset_root(
+        load_header({}, this->db, BlockHeader{.number = 9}), 9);
     Db &db = this->tdb;
-    db.set_block_and_prefix(9);
     db.commit(
         StateDeltas{
             {a,
@@ -1463,7 +1464,7 @@ TEST_F(OnDiskTrieDbFixture, proposal_basics)
 
 TEST_F(OnDiskTrieDbFixture, undecided_proposals)
 {
-    load_header(this->db, BlockHeader{.number = 9});
+    load_header({}, this->db, BlockHeader{.number = 9});
     DbCache db_cache(this->tdb);
 
     // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
@@ -1640,14 +1641,11 @@ TEST_F(OnDiskTrieDbFixture, undecided_proposals)
     EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
 
     // check state root of previous rounds
-    auto const data_111 = this->db.get_data(
-        mpt::concat(proposal_prefix(bytes32_t{111}), STATE_NIBBLE), 11);
-    ASSERT_TRUE(data_111.has_value());
-    EXPECT_EQ(state_root_round_111, to_bytes(data_111.value()));
-    auto const data_131 = this->db.get_data(
-        mpt::concat(proposal_prefix(bytes32_t{131}), STATE_NIBBLE), 13);
-    ASSERT_TRUE(data_131.has_value());
-    EXPECT_EQ(state_root_round_131, to_bytes(data_131.value()));
+    db_cache.set_block_and_prefix(11, bytes32_t{111});
+    EXPECT_EQ(state_root_round_111, db_cache.state_root());
+
+    db_cache.set_block_and_prefix(13, bytes32_t{131});
+    EXPECT_EQ(state_root_round_131, db_cache.state_root());
 }
 
 namespace
@@ -2020,8 +2018,10 @@ namespace
 
 TEST_F(TwoOnDisk, random_proposals)
 {
-    load_header(this->db1, BlockHeader{.number = 0});
-    load_header(this->db2, BlockHeader{.number = 0});
+    this->tdb1.reset_root(
+        load_header({}, this->db1, BlockHeader{.number = 0}), 0);
+    this->tdb2.reset_root(
+        load_header({}, this->db2, BlockHeader{.number = 0}), 0);
     TrieDb &db1 = this->tdb1;
     DbCache db2(this->tdb2);
 

@@ -17,7 +17,7 @@ add_library(
   monad_unit_test_common STATIC
   ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/config.hpp
   ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/environment.hpp
-  ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/monad_revision_test.hpp
+  ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/traits_test.hpp
 )
 
 target_include_directories(

@@ -88,29 +88,29 @@ namespace detail
 }
 
 template <typename MonadRevisionT>
-struct MonadRevisionTest : public ::testing::Test
+struct MonadTraitsTest : public ::testing::Test
 {
     static constexpr monad_revision REV = MonadRevisionT::value;
     using Trait = monad::MonadTraits<REV>;
 };
 
 TYPED_TEST_SUITE(
-    MonadRevisionTest, ::detail::MonadRevisionTypes,
+    MonadTraitsTest, ::detail::MonadRevisionTypes,
     ::detail::RevisionTestNameGenerator);
 
 template <typename EvmRevisionT>
-struct EvmRevisionTest : public ::testing::Test
+struct EvmTraitsTest : public ::testing::Test
 {
     static constexpr evmc_revision REV = EvmRevisionT::value;
     using Trait = monad::EvmTraits<REV>;
 };
 
 TYPED_TEST_SUITE(
-    EvmRevisionTest, ::detail::EvmRevisionTypes,
+    EvmTraitsTest, ::detail::EvmRevisionTypes,
     ::detail::RevisionTestNameGenerator);
 
 template <typename T>
-struct MonadEvmRevisionTest : public ::testing::Test
+struct TraitsTest : public ::testing::Test
 {
     static constexpr auto get_trait()
     {
@@ -136,5 +136,5 @@ struct MonadEvmRevisionTest : public ::testing::Test
 };
 
 TYPED_TEST_SUITE(
-    MonadEvmRevisionTest, ::detail::MonadEvmRevisionTypes,
+    TraitsTest, ::detail::MonadEvmRevisionTypes,
     ::detail::RevisionTestNameGenerator);

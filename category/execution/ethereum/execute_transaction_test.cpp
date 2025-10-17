@@ -29,7 +29,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <monad/test/monad_revision_test.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -119,7 +119,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     EXPECT_EQ(receipt.value().gas_used * 10u, uint256_t{530'000});
 }
 
-TYPED_TEST(MonadRevisionTest, TopLevelCreate)
+TYPED_TEST(MonadTraitsTest, TopLevelCreate)
 {
     using intx::operator""_u256;
 

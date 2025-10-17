@@ -37,7 +37,7 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/switch_traits.hpp>
-#include <monad/test/monad_revision_test.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <bitset>
 
@@ -45,7 +45,7 @@
 
 using namespace monad;
 
-TYPED_TEST(MonadRevisionTest, compute_gas_refund)
+TYPED_TEST(MonadTraitsTest, compute_gas_refund)
 {
     uint64_t const refund = compute_gas_refund<typename TestFixture::Trait>(
         Transaction{.gas_limit = 21'000}, 20'000, 1'000);

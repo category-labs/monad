@@ -104,7 +104,6 @@ namespace monad::vm::fuzzing
         default:
             FUZZER_ASSERT(compiler_result.status_code != EVMC_SUCCESS);
             FUZZER_ASSERT(compiler_result.status_code != EVMC_REVERT);
-    std::cerr << std::format("expected status:{} actual status:{}\n", (int)evmone_result.status_code, (int)compiler_result.status_code);
 
             break;
         }
@@ -113,9 +112,6 @@ namespace monad::vm::fuzzing
             evmone_result.create_address.bytes,
             compiler_result.create_address.bytes));
 
-    if (evmone_result.gas_left != compiler_result.gas_left) {
-        std::cerr << std::format("gas_left expected: {} actual: {}\n", evmone_result.gas_left, compiler_result.gas_left);
-    }
         FUZZER_ASSERT(evmone_result.gas_left == compiler_result.gas_left);
         FUZZER_ASSERT(evmone_result.gas_refund == compiler_result.gas_refund);
 

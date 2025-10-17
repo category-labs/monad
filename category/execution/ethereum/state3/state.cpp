@@ -574,10 +574,11 @@ std::vector<Receipt::Log> const &State::logs()
     return logs_.recent();
 }
 
-void State::store_log(Receipt::Log const &log)
+size_t State::store_log(Receipt::Log const &log)
 {
     auto &logs = logs_.current(version_);
     logs.push_back(log);
+    return logs.size() - 1;
 }
 
 void State::set_to_state_incarnation(Address const &address)

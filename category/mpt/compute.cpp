@@ -35,9 +35,9 @@ unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
     byte_string_view const second, bool const has_value)
 {
-    constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
+    constexpr size_t max_compact_encode_size = KECCAK256_SIZE * 2;
 
-    MONAD_DEBUG_ASSERT(path.data_size() <= KECCAK256_SIZE);
+    MONAD_DEBUG_ASSERT(path.data_size() <= max_compact_encode_size);
 
     unsigned char path_arr[max_compact_encode_size];
     auto const first = compact_encode(path_arr, path, has_value);

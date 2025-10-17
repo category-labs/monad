@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -297,6 +298,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header, i, revert_transaction}
@@ -305,6 +307,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , block_metrics_{block_metrics}
     , prev_{prev}
     , call_tracer_{call_tracer}
+    , state_tracer_{state_tracer}
 {
 }
 
@@ -433,6 +436,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
+            trace::run_tracer(state_tracer_, state);
             block_state_.merge(state);
             return receipt;
         }
@@ -453,6 +457,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
+        trace::run_tracer(state_tracer_, state);
         block_state_.merge(state);
         return receipt;
     }

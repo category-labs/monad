@@ -74,6 +74,9 @@ public:
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
+    bool traverse(
+        CacheNodeCursor const &, TraverseMachine &, uint64_t block_id,
+        size_t concurrency_limit = 4096);
 };
 
 // RW, ROBlocking, InMemory

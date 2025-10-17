@@ -16,44 +16,29 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/core/fiber/priority_pool.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <boost/fiber/future/promise.hpp>
-
-#include <cstdint>
-#include <functional>
-#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
-class BlockMetrics;
-class BlockState;
-class State;
 struct BlockHeader;
+class BlockState;
 struct CallTracerBase;
 struct Chain;
 struct Transaction;
 
-using RevertTransactionFn = std::function<bool(
-    Address const & /* sender */, Transaction const &, uint64_t /* i */,
-    State &)>;
-
 template <Traits traits>
-Result<Receipt> dispatch_transaction(
-    Chain const &chain, uint64_t const i, Transaction const &transaction,
-    Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
-    RevertTransactionFn const &revert_transaction);
+Result<std::vector<Receipt>> state_after_transactions(
+    Chain const &, BlockHeader const &, std::vector<Transaction> const &,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    BlockState & /* inout */, BlockHashBuffer const &, fiber::PriorityPool &,
+    std::vector<std::unique_ptr<trace::StateTracer>> &);
 
 MONAD_NAMESPACE_END

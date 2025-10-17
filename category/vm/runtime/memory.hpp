@@ -49,10 +49,10 @@ namespace monad::vm::runtime
     {
         auto size = ctx->get_memory_offset(*size_ptr);
         if (*size > 0) {
-            auto src = ctx->get_memory_offset(*src_ptr);
-            auto dst = ctx->get_memory_offset(*dst_ptr);
+            auto const src = ctx->get_memory_offset(*src_ptr);
+            auto const dst = ctx->get_memory_offset(*dst_ptr);
             ctx->expand_memory(max(dst, src) + size);
-            auto size_in_words = shr_ceil<5>(size);
+            auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
             std::memmove(
                 ctx->memory.data + *dst, ctx->memory.data + *src, *size);

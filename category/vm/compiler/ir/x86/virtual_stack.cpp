@@ -371,12 +371,12 @@ namespace monad::vm::compiler::native
     StackElemRef &Stack::at(std::int32_t index)
     {
         if (index < 0) {
-            auto i = static_cast<std::size_t>(-index - 1);
+            auto const i = static_cast<std::size_t>(-index - 1);
             MONAD_VM_ASSERT(i < negative_elems_.size());
             return negative_elems_[i];
         }
         else {
-            auto i = static_cast<std::size_t>(index);
+            auto const i = static_cast<std::size_t>(index);
             MONAD_VM_ASSERT(i < positive_elems_.size());
             return positive_elems_[i];
         }
@@ -422,7 +422,7 @@ namespace monad::vm::compiler::native
         auto &dc = deferred_comparison_;
         if (dc.stack_elem == e.get()) {
             if (dc.negated_stack_elem) {
-                auto i = dc.negated_stack_elem->stack_indices_.begin();
+                auto const i = dc.negated_stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(
                     i != dc.negated_stack_elem->stack_indices_.end());
                 return at(*i);
@@ -435,7 +435,7 @@ namespace monad::vm::compiler::native
         }
         else if (dc.negated_stack_elem == e.get()) {
             if (dc.stack_elem) {
-                auto i = dc.stack_elem->stack_indices_.begin();
+                auto const i = dc.stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(i != dc.stack_elem->stack_indices_.end());
                 return at(*i);
             }

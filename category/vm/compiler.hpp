@@ -72,7 +72,7 @@ namespace monad::vm
                 case Nativecode::ErrorCode::NoError:
                     auto native_code_size_estimate =
                         *ncode->code_size_estimate();
-                    auto bytecode_size = *icode->code_size();
+                    auto const bytecode_size = *icode->code_size();
                     avg_native_code_size_.update(native_code_size_estimate);
                     avg_compiled_bytecode_size_.update(bytecode_size);
                     if (bytecode_size > 0) {

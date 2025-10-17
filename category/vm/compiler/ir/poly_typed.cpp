@@ -130,7 +130,7 @@ namespace
             if (std::holds_alternative<Any>(*k)) {
                 return;
             }
-            auto p = get_param_kind(block, x.param);
+            auto const p = get_param_kind(block, x.param);
             if (std::holds_alternative<WordCont>(*p) &&
                 !std::holds_alternative<WordCont>(*k)) {
                 if (std::holds_alternative<Word>(*k)) {

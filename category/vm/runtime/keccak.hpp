@@ -37,7 +37,7 @@ namespace monad::vm::runtime
 
             ctx->expand_memory(offset + size);
 
-            auto word_size = shr_ceil<5>(size);
+            auto const word_size = shr_ceil<5>(size);
             ctx->deduct_gas(word_size * bin<6>);
         }
 

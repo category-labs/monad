@@ -33,6 +33,13 @@
 
 using namespace monad::vm::runtime;
 
+static_assert(
+    alignof(uint256_t) == alignof(::intx::uint256),
+    "Alignment of uint256_t is incompatible with intx");
+static_assert(
+    sizeof(uint256_t) == sizeof(::intx::uint256),
+    "Size of uint256_t is incompatible with intx");
+
 TEST(uint256, signextend)
 {
     uint256_t i;
@@ -158,6 +165,16 @@ TEST(uint256, bit_width)
     return ::intx::uint256{words[0], words[1], words[2], words[3]};
 }
 
+uint256_t from_intx(::intx::uint256 const &x)
+{
+    return uint256_t{x[0], x[1], x[2], x[3]};
+}
+
+::intx::uint256 to_intx(uint256_t const &x)
+{
+    return ::intx::uint256{x[0], x[1], x[2], x[3]};
+}
+
 TEST(uint256, intx_iso)
 {
     uint64_t ONES = ~uint64_t(0);
@@ -177,8 +194,8 @@ TEST(uint256, intx_iso)
     for (auto input : inputs) {
         auto x = uint256_t{input};
         auto intx = from_words(input);
-        ASSERT_EQ(x.to_intx(), intx);
-        ASSERT_EQ(x, uint256_t(intx));
+        ASSERT_EQ(to_intx(x), intx);
+        ASSERT_EQ(x, from_intx(intx));
     }
 }
 
@@ -210,35 +227,35 @@ TEST(uint256, constructors)
 
     x = uint256_t();
     intx = 0;
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = 1;
     intx = 1;
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = 0xabcd;
     intx = 0xabcd;
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = {0xabcd, 0x1234};
     intx = {0xabcd, 0x1234};
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = {0xabcd, 0x1234, 0xdcba};
     intx = {0xabcd, 0x1234, 0xdcba};
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = {0xabcd, 0x1234, 0xdcba, 0x4321};
     intx = {0xabcd, 0x1234, 0xdcba, 0x4321};
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = -1;
     intx = -1;
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 
     x = {0xabcd, -0x1234, 0xdcba, -0x4321};
     intx = {0xabcd, -0x1234, 0xdcba, -0x4321};
-    ASSERT_EQ(x.to_intx(), intx);
+    ASSERT_EQ(to_intx(x), intx);
 }
 
 TEST(uint256, literals)
@@ -412,11 +429,11 @@ TEST(uint256, arithmetic)
 {
     for (auto const &x : test_inputs) {
         for (auto const &y : test_inputs) {
-            ASSERT_EQ(x + y, uint256_t(x.to_intx() + y.to_intx()));
-            ASSERT_EQ(x - y, uint256_t(x.to_intx() - y.to_intx()));
-            ASSERT_EQ(x * y, uint256_t(x.to_intx() * y.to_intx()));
+            ASSERT_EQ(x + y, from_intx(to_intx(x) + to_intx(y)));
+            ASSERT_EQ(x - y, from_intx(to_intx(x) - to_intx(y)));
+            ASSERT_EQ(x * y, from_intx(to_intx(x) * to_intx(y)));
             ASSERT_EQ(
-                exp(x, y), uint256_t(::intx::exp(x.to_intx(), y.to_intx())));
+                exp(x, y), from_intx(::intx::exp(to_intx(x), to_intx(y))));
 
             if (y != 0) {
                 auto const q = x / y;
@@ -425,9 +442,9 @@ TEST(uint256, arithmetic)
                 ASSERT_EQ(q * y + r, x);
 
                 auto const [sq, sr] = sdivrem(x, y);
-                auto [sqx, srx] = ::intx::sdivrem(x.to_intx(), y.to_intx());
-                ASSERT_EQ(sq, uint256_t{sqx});
-                ASSERT_EQ(sr, uint256_t{srx});
+                auto [sqx, srx] = ::intx::sdivrem(to_intx(x), to_intx(y));
+                ASSERT_EQ(sq, from_intx(sqx));
+                ASSERT_EQ(sr, from_intx(srx));
             }
 
             for (auto const &z : test_inputs) {
@@ -436,15 +453,116 @@ TEST(uint256, arithmetic)
                 }
                 ASSERT_EQ(
                     addmod(x, y, z),
-                    uint256_t(
-                        ::intx::addmod(x.to_intx(), y.to_intx(), z.to_intx())));
+                    from_intx(
+                        ::intx::addmod(to_intx(x), to_intx(y), to_intx(z))));
                 ASSERT_EQ(
                     mulmod(x, y, z),
-                    uint256_t(
-                        ::intx::mulmod(x.to_intx(), y.to_intx(), z.to_intx())));
+                    from_intx(
+                        ::intx::mulmod(to_intx(x), to_intx(y), to_intx(z))));
             }
         }
-        ASSERT_EQ(-x, uint256_t(-(x.to_intx())));
+        ASSERT_EQ(-x, from_intx(-(to_intx(x))));
+    }
+}
+
+template <size_t R, size_t M, size_t N>
+void check_truncating_mul(
+    words_t<M> const &x, words_t<N> const &y,
+    words_t<M + N> const &full) noexcept
+{
+    auto const prod_rt = truncating_mul_runtime<R>(x, y);
+    auto const prod_ce = truncating_mul_constexpr<R>(x, y);
+    for (size_t i = 0; i < R; i++) {
+        ASSERT_EQ(prod_rt[i], full[i]);
+        ASSERT_EQ(prod_ce[i], full[i]);
+    }
+}
+
+template <size_t M, size_t N>
+constexpr words_t<M + N>
+intx_umul_words(words_t<M> const &x, words_t<N> const &y) noexcept
+{
+    auto const x_intx = std::bit_cast<::intx::uint<M * 64>>(x);
+    auto const y_intx = std::bit_cast<::intx::uint<N * 64>>(y);
+    return std::bit_cast<words_t<M + N>>(::intx::umul(x_intx, y_intx));
+}
+
+TEST(uint256, multiplication)
+{
+    // 1-word x 1-word
+    constexpr uint64_t single_word_inputs[]{
+        0UL,
+        1UL,
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::min()),
+        0xff,
+        0xabcda1b2c3d41234};
+    for (auto const &x : single_word_inputs) {
+        for (auto const &y : single_word_inputs) {
+            auto const product_u128 = static_cast<uint128_t>(x) * y;
+            words_t<2> product{
+                static_cast<uint64_t>(product_u128),
+                static_cast<uint64_t>(product_u128 >> 64)};
+            check_truncating_mul<1, 1, 1>({x}, {y}, product);
+            check_truncating_mul<2, 1, 1>({x}, {y}, product);
+        }
+    }
+    // 2-word x 1-word
+    std::vector<std::array<uint64_t, 2>> two_word_inputs;
+    for (auto const &w0 : single_word_inputs) {
+        for (auto const &w1 : single_word_inputs) {
+            two_word_inputs.push_back(std::array<uint64_t, 2>{w0, w1});
+        }
+    }
+    for (auto const &x : two_word_inputs) {
+        for (auto const &y0 : single_word_inputs) {
+            // intx does not allow 64-bit numbers, we have to zero-extend y
+            words_t<2> const y{y0, 0UL};
+            auto const intx_product = intx_umul_words(x, y);
+            ASSERT_EQ(intx_product[3], 0UL);
+
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
+
+            check_truncating_mul<1>(y, x, intx_product);
+            check_truncating_mul<2>(y, x, intx_product);
+            check_truncating_mul<3>(y, x, intx_product);
+        }
+    }
+    // 2-word x 2-word
+    for (auto const &x : two_word_inputs) {
+        for (auto const &y : two_word_inputs) {
+            auto const intx_product = intx_umul_words(x, y);
+
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
+            check_truncating_mul<4>(x, y, intx_product);
+
+            check_truncating_mul<1>(y, x, intx_product);
+            check_truncating_mul<2>(y, x, intx_product);
+            check_truncating_mul<3>(y, x, intx_product);
+            check_truncating_mul<4>(y, x, intx_product);
+        }
+    }
+    // 4-word x 4-word
+    for (auto const &xi : test_inputs) {
+        for (auto const &yi : test_inputs) {
+            auto x = xi.as_words();
+            auto y = yi.as_words();
+
+            auto const intx_product = intx_umul_words(x, y);
+
+            check_truncating_mul<1>(x, y, intx_product);
+            check_truncating_mul<2>(x, y, intx_product);
+            check_truncating_mul<3>(x, y, intx_product);
+            check_truncating_mul<4>(x, y, intx_product);
+            check_truncating_mul<5>(x, y, intx_product);
+            check_truncating_mul<6>(x, y, intx_product);
+            check_truncating_mul<7>(x, y, intx_product);
+            check_truncating_mul<8>(x, y, intx_product);
+        }
     }
 }
 
@@ -531,12 +649,12 @@ TEST(uint256, predicates)
 {
     for (auto const &x : test_inputs) {
         for (auto const &y : test_inputs) {
-            ASSERT_EQ(x == y, x.to_intx() == y.to_intx());
-            ASSERT_EQ(x < y, x.to_intx() < y.to_intx());
-            ASSERT_EQ(x <= y, x.to_intx() <= y.to_intx());
-            ASSERT_EQ(x > y, x.to_intx() > y.to_intx());
-            ASSERT_EQ(x >= y, x.to_intx() >= y.to_intx());
-            ASSERT_EQ(slt(x, y), ::intx::slt(x.to_intx(), y.to_intx()));
+            ASSERT_EQ(x == y, to_intx(x) == to_intx(y));
+            ASSERT_EQ(x < y, to_intx(x) < to_intx(y));
+            ASSERT_EQ(x <= y, to_intx(x) <= to_intx(y));
+            ASSERT_EQ(x > y, to_intx(x) > to_intx(y));
+            ASSERT_EQ(x >= y, to_intx(x) >= to_intx(y));
+            ASSERT_EQ(slt(x, y), ::intx::slt(to_intx(x), to_intx(y)));
         }
     }
 }
@@ -545,11 +663,11 @@ TEST(uint256, bitwise)
 {
     for (auto const &x : test_inputs) {
         for (auto const &y : test_inputs) {
-            ASSERT_EQ(x | y, uint256_t(x.to_intx() | y.to_intx()));
-            ASSERT_EQ(x & y, uint256_t(x.to_intx() & y.to_intx()));
-            ASSERT_EQ(x ^ y, uint256_t(x.to_intx() ^ y.to_intx()));
+            ASSERT_EQ(x | y, from_intx(to_intx(x) | to_intx(y)));
+            ASSERT_EQ(x & y, from_intx(to_intx(x) & to_intx(y)));
+            ASSERT_EQ(x ^ y, from_intx(to_intx(x) ^ to_intx(y)));
         }
-        ASSERT_EQ(~x, uint256_t(~(x.to_intx())));
+        ASSERT_EQ(~x, from_intx(~(to_intx(x))));
     }
 }
 
@@ -558,14 +676,14 @@ TEST(uint256, shifts)
     for (auto const &x : test_inputs) {
         for (uint64_t shift = 0; shift <= 256; shift++) {
             auto shl = x << shift;
-            ASSERT_EQ(shl, uint256_t(x.to_intx() << shift));
+            ASSERT_EQ(shl, from_intx(to_intx(x) << shift));
 
             auto shr = x >> shift;
-            ASSERT_EQ(shr, uint256_t(x.to_intx() >> shift));
+            ASSERT_EQ(shr, from_intx(to_intx(x) >> shift));
         }
         for (auto const &y : test_inputs) {
-            ASSERT_EQ(x << y, uint256_t(x.to_intx() << y.to_intx()));
-            ASSERT_EQ(x >> y, uint256_t(x.to_intx() >> y.to_intx()));
+            ASSERT_EQ(x << y, from_intx(to_intx(x) << to_intx(y)));
+            ASSERT_EQ(x >> y, from_intx(to_intx(x) >> to_intx(y)));
         }
     }
 }

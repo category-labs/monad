@@ -624,7 +624,7 @@ public:
     //! the receiver
     initiation_result reinitiate() noexcept
     {
-        return do_possibly_deferred_initiate_(true, true);
+        return do_possibly_deferred_initiate_(false, true);
     }
 
     void reset()

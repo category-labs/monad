@@ -43,9 +43,8 @@ void account_update(
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
 
     if (acct.has_value()) {
-        auto const &hash = acct.value().code_hash;
-        if (hash != NULL_HASH) {
-            ctx.seen_code.emplace(hash);
+        if (acct.value().code_or_hash.is_hash()) { // code is not null or inline
+            ctx.seen_code.emplace(to_bytes(acct.value().get_code_hash()));
         }
     }
 

@@ -367,6 +367,9 @@ static arguments parse_args(int const argc, char **const argv)
         std::map<std::string, BlockchainTestVM::Implementation>{
             {"interpreter", BlockchainTestVM::Implementation::Interpreter},
             {"compiler", BlockchainTestVM::Implementation::Compiler},
+#ifdef MONAD_COMPILER_LLVM
+            {"llvm", BlockchainTestVM::Implementation::LLVM},
+#endif
         };
 
     app.add_option(

@@ -100,8 +100,13 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(EvmcHostBase) == 112);
+static_assert(alignof(EvmcHostBase) == 16);
+#else
 static_assert(sizeof(EvmcHostBase) == 88);
 static_assert(alignof(EvmcHostBase) == 8);
+#endif
 
 template <Traits traits>
 struct EvmcHost final : public EvmcHostBase
@@ -182,7 +187,12 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 112);
+static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 16);
+#else
 static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 88);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
+#endif
 
 MONAD_NAMESPACE_END

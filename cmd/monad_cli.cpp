@@ -62,7 +62,6 @@
 #include <numeric>
 #include <ranges>
 #include <span>
-#include <spanstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -92,13 +91,20 @@ bool is_numeric(std::string_view str)
 
 std::vector<std::string> tokenize(std::string_view input, char delim = ' ')
 {
-    std::ispanstream iss(input);
     std::vector<std::string> tokens;
-    std::string token;
-    while (std::getline(iss, token, delim)) {
-        if (!token.empty()) {
-            tokens.emplace_back(std::move(token));
+    size_t start = 0;
+    while (start < input.size()) {
+        size_t const next = input.find(delim, start);
+        size_t const count =
+            (next == std::string_view::npos) ? input.size() - start
+                                             : next - start;
+        if (count != 0) {
+            tokens.emplace_back(input.substr(start, count));
         }
+        if (next == std::string_view::npos) {
+            break;
+        }
+        start = next + 1;
     }
     return tokens;
 }

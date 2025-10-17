@@ -116,7 +116,8 @@ Result<Receipt::Log> decode_log(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(log.address, decode_address(payload));
     BOOST_OUTCOME_TRY(log.topics, decode_topics(payload));
-    BOOST_OUTCOME_TRY(log.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto data_view, decode_string(payload));
+    log.data = to_byte_string(data_view);
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

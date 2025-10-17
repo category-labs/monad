@@ -21,6 +21,9 @@ project(monad)
 
 set(CATEGORY_MAIN_DIR ${PROJECT_SOURCE_DIR})
 
+set(CMAKE_CXX_FLAGS
+    "${CMAKE_CXX_FLAGS} -include ${PROJECT_SOURCE_DIR}/category/core/char_traits.hpp")
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
     message(FATAL_ERROR "GCC version 15 or higher is required.")
@@ -56,6 +59,18 @@ if(NOT DEFINED BUILD_SHARED_LIBS)
 endif()
 
 include(cmake/test.cmake)
+
+if(NOT TARGET backtrace)
+  if(DEFINED LIBBACKTRACE_ROOT
+     AND EXISTS "${LIBBACKTRACE_ROOT}/lib/libbacktrace.a"
+     AND EXISTS "${LIBBACKTRACE_ROOT}/include/backtrace.h")
+    add_library(backtrace STATIC IMPORTED)
+    set_target_properties(
+      backtrace PROPERTIES
+      IMPORTED_LOCATION "${LIBBACKTRACE_ROOT}/lib/libbacktrace.a"
+      INTERFACE_INCLUDE_DIRECTORIES "${LIBBACKTRACE_ROOT}/include")
+  endif()
+endif()
 
 # ##############################################################################
 # deps
@@ -217,7 +232,7 @@ function(monad_add_test2 target)
     ${target}
     PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
+  target_link_libraries(${target} monad_execution GTest::gtest GTest::gtest_main)
   if("${target}" MATCHES "test_statesync")
     gtest_discover_tests(
       ${target} DISCOVERY_MODE PRE_TEST

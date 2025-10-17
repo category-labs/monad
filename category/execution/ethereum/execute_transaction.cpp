@@ -174,10 +174,11 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         // 8. Set the code of authority to be 0xef0100 || address. This is a
         // delegation indicator.
         if (auth_entry.address) {
-            auto const new_code =
-                byte_string(vm::evm::delegation_indicator_prefix()) +
-                byte_string(
-                    auth_entry.address.bytes, auth_entry.address.bytes + 20);
+            auto new_code =
+                to_byte_string(vm::evm::delegation_indicator_prefix());
+            append_bytes(
+                new_code,
+                byte_string_view{auth_entry.address.bytes, 20});
             state.set_code(*authority, new_code);
         }
         else {

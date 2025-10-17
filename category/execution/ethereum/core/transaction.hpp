@@ -95,7 +95,11 @@ struct Transaction
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(Transaction) == 376);
+#else
 static_assert(sizeof(Transaction) == 384);
+#endif
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

@@ -184,17 +184,21 @@ namespace
             serialize_secp_pubkey_uncompressed(secp_pubkey));
 
         byte_string message;
-        message += to_byte_string_view(secp_pubkey_serialized);
-        message += to_byte_string_view(bls_pubkey_serialized);
-        message += to_byte_string_view(auth_address.bytes);
-        message += to_byte_string_view(intx::be::store<bytes32_t>(stake).bytes);
-        message += to_byte_string_view(u256_be{commission}.bytes);
+        append_bytes(message, to_byte_string_view(secp_pubkey_serialized));
+        append_bytes(message, to_byte_string_view(bls_pubkey_serialized));
+        append_bytes(message, to_byte_string_view(auth_address.bytes));
+        auto const stake_bytes = intx::be::store<bytes32_t>(stake);
+        append_bytes(message, to_byte_string_view(stake_bytes));
+        auto const commission_bytes = u256_be{commission};
+        append_bytes(message, to_byte_string_view(commission_bytes.bytes));
 
         // sign with both keys
-        byte_string const secp_sig{
-            to_byte_string_view(sign_secp(message, secp_seckey))};
-        byte_string const bls_sig{
-            to_byte_string_view(sign_bls(message, bls_seckey))};
+        auto const secp_sig_raw = sign_secp(message, secp_seckey);
+        byte_string const secp_sig =
+            to_byte_string(to_byte_string_view(secp_sig_raw));
+        auto const bls_sig_raw = sign_bls(message, bls_seckey);
+        byte_string const bls_sig =
+            to_byte_string(to_byte_string_view(bls_sig_raw));
 
         return {message, secp_sig, bls_sig, sign_address};
     }
@@ -4800,11 +4804,14 @@ TEST_F(Stake, events)
     byte_string data_blob;
     byte_string topics_blob;
     for (auto const &log : state.logs()) {
-        topics_blob += abi_encode_uint<u64_be>(log.topics.size());
+        auto const encoded_topic_count =
+            abi_encode_uint<u64_be>(log.topics.size());
+        append_bytes(topics_blob, to_byte_string_view(encoded_topic_count));
         for (bytes32_t const &topic : log.topics) {
-            topics_blob += byte_string{topic};
+            append_bytes(topics_blob, to_byte_string_view(topic));
         }
-        data_blob += abi_encode_uint<u64_be>(log.data.size());
+        auto const encoded_size = abi_encode_uint<u64_be>(log.data.size());
+        append_bytes(data_blob, to_byte_string_view(encoded_size));
         data_blob += log.data;
     }
     auto const data_hash = to_bytes(blake3(data_blob));

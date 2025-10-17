@@ -121,8 +121,10 @@ Result<CallFrame> decode_call_frame(byte_string_view &enc)
     BOOST_OUTCOME_TRY(call_frame.value, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(call_frame.gas, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(call_frame.gas_used, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(call_frame.input, decode_string(payload));
-    BOOST_OUTCOME_TRY(call_frame.output, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto input_view, decode_string(payload));
+    call_frame.input = to_byte_string(input_view);
+    BOOST_OUTCOME_TRY(auto output_view, decode_string(payload));
+    call_frame.output = to_byte_string(output_view);
     BOOST_OUTCOME_TRY(
         auto const status, decode_unsigned<unsigned char>(payload));
     call_frame.status = static_cast<enum evmc_status_code>(status);

@@ -28,7 +28,12 @@ struct PriorityTask
     std::function<void()> task{};
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(PriorityTask) == 64);
+static_assert(alignof(PriorityTask) == 16);
+#else
 static_assert(sizeof(PriorityTask) == 40);
 static_assert(alignof(PriorityTask) == 8);
+#endif
 
 MONAD_FIBER_NAMESPACE_END

@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
@@ -1188,7 +1189,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
     emit_validator_created_event(val_id, auth_address, commission);
 
     BOOST_OUTCOME_TRY(delegate(val_id, stake, auth_address));
-    return byte_string{abi_encode_uint(val_id)};
+    return to_byte_string(abi_encode_uint(val_id));
 }
 
 Result<void> StakingContract::delegate(
@@ -1290,7 +1291,7 @@ Result<byte_string> StakingContract::precompile_delegate(
     if (MONAD_LIKELY(stake != 0)) {
         BOOST_OUTCOME_TRY(delegate(val_id, stake, msg_sender));
     }
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 Result<byte_string> StakingContract::precompile_undelegate(
@@ -1309,7 +1310,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
     auto amount = stake.native();
 
     if (MONAD_UNLIKELY(amount == 0)) {
-        return byte_string{abi_encode_bool(true)};
+        return to_byte_string(abi_encode_bool(true));
     }
 
     auto val = vars.val_execution(val_id);
@@ -1380,7 +1381,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
         linked_list_remove(static_cast<Address>(msg_sender), val_id);
     }
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 // TODO: No compounds allowed if auth_address is under sufficent amount.
@@ -1410,7 +1411,7 @@ Result<byte_string> StakingContract::precompile_compound(
         BOOST_OUTCOME_TRY(delegate(val_id, rewards, msg_sender));
     }
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 Result<byte_string> StakingContract::precompile_withdraw(
@@ -1460,7 +1461,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
 
     emit_withdraw_event(val_id, msg_sender, withdrawal_id, withdrawal_amount);
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 Result<byte_string> StakingContract::precompile_claim_rewards(
@@ -1483,7 +1484,7 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
         emit_claim_rewards_event(val_id, msg_sender, rewards);
     }
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 Result<byte_string> StakingContract::precompile_change_commission(
@@ -1519,7 +1520,7 @@ Result<byte_string> StakingContract::precompile_change_commission(
         emit_commission_changed_event(val_id, old_commission, new_commission);
     }
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 Result<byte_string> StakingContract::precompile_external_reward(
@@ -1555,7 +1556,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
     BOOST_OUTCOME_TRY(
         apply_reward(val_id, sender, external_reward, active_stake));
 
-    return byte_string{abi_encode_bool(true)};
+    return to_byte_string(abi_encode_bool(true));
 }
 
 ////////////////////

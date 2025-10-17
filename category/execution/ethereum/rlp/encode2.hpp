@@ -39,7 +39,7 @@ inline byte_string_view zeroless_view(byte_string_view const string_view)
 inline byte_string to_big_compact(unsigned_integral auto n)
 {
     n = intx::to_big_endian(n);
-    return byte_string(
+    return to_byte_string(
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
@@ -48,18 +48,20 @@ inline byte_string encode_string2(byte_string_view const string_view)
     byte_string result;
     uint32_t const size = static_cast<uint32_t>(string_view.size());
     if (size == 1 && string_view[0] <= 0x7f) {
-        result = string_view;
+        result.assign(string_view.begin(), string_view.end());
     }
     else if (size > 55) {
         auto const size_str = to_big_compact(size);
         MONAD_ASSERT(size_str.size() <= 8u);
-        result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
-        result += size_str;
-        result += string_view;
+        result.push_back(
+            static_cast<unsigned char>(0xb7 + size_str.size()));
+        append_bytes(result, to_byte_string_view(size_str));
+        append_bytes(result, string_view);
     }
     else {
-        result.push_back(0x80 + static_cast<unsigned char>(size));
-        result += string_view;
+        result.push_back(
+            static_cast<unsigned char>(0x80 + size));
+        append_bytes(result, string_view);
     }
     return result;
 }
@@ -73,13 +75,17 @@ byte_string encode_list2(Args const &...args)
     if (size > 55) {
         auto const size_str = to_big_compact(size);
         MONAD_ASSERT(size_str.size() <= 8u);
-        result += (0xf7 + static_cast<unsigned char>(size_str.size()));
-        result += size_str;
+        result.push_back(
+            static_cast<unsigned char>(0xf7 + size_str.size()));
+        append_bytes(result, to_byte_string_view(size_str));
     }
     else {
-        result += (0xc0 + static_cast<unsigned char>(size));
+        result.push_back(
+            static_cast<unsigned char>(0xc0 + size));
     }
-    ([&] { result += args; }(), ...);
+    ([&] {
+        result.insert(result.end(), args.begin(), args.end());
+    }(), ...);
     return result;
 }
 

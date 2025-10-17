@@ -1263,6 +1263,11 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     };
     EXPECT_EQ(call_frames.value()[2], b_to_d);
 
+    auto const log_data_bytes =
+        intx::be::store<bytes32_t>(
+            std::numeric_limits<uint256_t>::max() - 1);
+    byte_string const log_data = to_byte_string(log_data_bytes);
+
     auto const a_to_c = CallFrame{
         .type = CallType::CALL,
         .flags = 0,
@@ -1277,8 +1282,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .depth = 1,
         .logs = std::vector{CallFrame::Log{
             .log =
-                {.data = byte_string{intx::be::store<bytes32_t>(
-                     std::numeric_limits<uint256_t>::max() - 1)},
+                {.data = log_data,
                  .topics = {intx::be::store<bytes32_t, uint256_t>(1)},
                  .address = c_address},
             .position = 0,
@@ -1328,7 +1332,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
                             // intrinsic_gas + 3000 (precompile gas)
         .value = 0,
         .to = precompile_address,
-        .data = byte_string(data),
+        .data = to_byte_string(data),
     };
     auto const &from = ADDR_A;
 
@@ -1376,7 +1380,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         .value = 0,
         .gas = 22000,
         .gas_used = 22000,
-        .input = byte_string(data),
+        .input = to_byte_string(data),
         .status = EVMC_OUT_OF_GAS,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},

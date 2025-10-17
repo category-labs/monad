@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -39,7 +40,8 @@ Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
     BOOST_OUTCOME_TRY(header.number, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(header.gas_limit, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(header.timestamp, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(header.extra_data, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto extra_data_view, decode_string(payload));
+    header.extra_data = to_byte_string(extra_data_view);
     BOOST_OUTCOME_TRY(header.prev_randao, decode_bytes32(payload));
     BOOST_OUTCOME_TRY(header.nonce, decode_byte_string_fixed<8>(payload));
     BOOST_OUTCOME_TRY(
@@ -114,7 +116,8 @@ Result<MonadQuorumCertificate> decode_quorum_certificate(byte_string_view &enc)
         qc.signatures.signer_map.num_bits,
         decode_unsigned<uint32_t>(signer_map_payload));
     BOOST_OUTCOME_TRY(
-        qc.signatures.signer_map.bitmap, decode_string(signer_map_payload));
+        auto signer_bitmap_view, decode_string(signer_map_payload));
+    qc.signatures.signer_map.bitmap = to_byte_string(signer_bitmap_view);
     BOOST_OUTCOME_TRY(
         qc.signatures.aggregate_signature,
         decode_byte_string_fixed<96>(signatures_payload));

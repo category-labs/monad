@@ -56,6 +56,11 @@ constexpr bytes32_t abi_encode_uint(I const &i)
     return output;
 }
 
+inline void append_bytes32(byte_string &dest, bytes32_t const &value)
+{
+    append_bytes(dest, byte_string_view{value.bytes, sizeof value.bytes});
+}
+
 constexpr bytes32_t abi_encode_bool(bool const b)
 {
     u64_be as_int = b ? 1 : 0;
@@ -68,8 +73,9 @@ inline byte_string abi_encode_bytes(byte_string_view const input)
     u256_be const size{input.size()};
     size_t const padding =
         round_up(input.size(), sizeof(bytes32_t)) - input.size();
-    output += abi_encode_uint(size);
-    output += input;
+    auto const encoded_size = abi_encode_uint(size);
+    append_bytes32(output, encoded_size);
+    append_bytes(output, input);
     output = output.append(padding, 0);
     return output;
 }
@@ -79,9 +85,11 @@ inline byte_string abi_encode_uint_array(std::vector<I> const &arr)
 {
     byte_string output{};
     u64_be const len_be{arr.size()};
-    output += abi_encode_uint(len_be);
+    auto const encoded_len = abi_encode_uint(len_be);
+    append_bytes32(output, encoded_len);
     for (auto const &e : arr) {
-        output += abi_encode_uint(e);
+        auto const encoded_elem = abi_encode_uint(e);
+        append_bytes32(output, encoded_elem);
     }
 
     return output;
@@ -91,9 +99,11 @@ inline byte_string abi_encode_address_array(std::vector<Address> const &arr)
 {
     byte_string output{};
     u64_be const len_be{arr.size()};
-    output += abi_encode_uint(len_be);
+    auto const encoded_len = abi_encode_uint(len_be);
+    append_bytes32(output, encoded_len);
     for (Address const &e : arr) {
-        output += abi_encode_address(e);
+        auto const encoded_addr = abi_encode_address(e);
+        append_bytes32(output, encoded_addr);
     }
 
     return output;
@@ -113,13 +123,13 @@ class AbiEncoder
 
     void add_static(bytes32_t data)
     {
-        head_ += data;
+        append_bytes32(head_, data);
     }
 
     void add_dynamic(byte_string data)
     {
         unresolved_offsets_.emplace_back(head_.size(), tail_.size());
-        head_ += bytes32_t{};
+        append_bytes32(head_, bytes32_t{});
         tail_ += data;
     }
 

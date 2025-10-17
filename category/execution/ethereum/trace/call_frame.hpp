@@ -87,8 +87,11 @@ struct CallFrame
 
     friend bool operator==(CallFrame const &, CallFrame const &) = default;
 };
-
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(CallFrame) == 200);
+#else
 static_assert(sizeof(CallFrame) == 216);
+#endif
 static_assert(alignof(CallFrame) == 8);
 
 nlohmann::json to_json(CallFrame const &);

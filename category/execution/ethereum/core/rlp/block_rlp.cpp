@@ -157,7 +157,8 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
         block_header.gas_used, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
         block_header.timestamp, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(block_header.extra_data, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto extra_data_view, decode_string(payload));
+    block_header.extra_data = to_byte_string(extra_data_view);
     if (block_header.extra_data.size() > EXTRA_DATA_MAX_LENGTH) {
         return DecodeError::Overflow;
     }

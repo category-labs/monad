@@ -69,7 +69,7 @@ namespace monad::test
     class fuzztest_input_filler
     {
         std::span<uint8_t const> const input_;
-        std::span<uint8_t const>::const_iterator cursor_;
+        std::span<uint8_t const>::iterator cursor_;
 
         void fill_(uint8_t &what, uint8_t min = 0, uint8_t max = 255)
         {

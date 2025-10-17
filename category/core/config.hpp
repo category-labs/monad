@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/char_traits.hpp>
+
 #include <bit>
 #include <climits>
 

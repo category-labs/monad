@@ -1141,6 +1141,10 @@ namespace monad::vm::runtime
 namespace std
 
 {
+#if defined(__clang__) && defined(_LIBCPP_VERSION)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
     template <>
     struct numeric_limits<monad::vm::runtime::uint256_t>
     {
@@ -1215,6 +1219,9 @@ namespace std
             return 0;
         }
     };
+#if defined(__clang__) && defined(_LIBCPP_VERSION)
+#    pragma clang diagnostic pop
+#endif
 }
 
 namespace monad::vm::runtime

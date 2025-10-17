@@ -290,7 +290,8 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto data_view, decode_string(payload));
+    txn.data = to_byte_string(data_view);
     BOOST_OUTCOME_TRY(txn.sc, decode_sc(payload));
     BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
@@ -329,7 +330,8 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(auto data_view, decode_string(payload));
+    txn.data = to_byte_string(data_view);
     BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(payload));
 
     if (txn.type == TransactionType::eip4844) {

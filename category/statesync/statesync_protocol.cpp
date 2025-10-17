@@ -187,7 +187,9 @@ bool StatesyncProtocolV1::handle_upsert(
     byte_string_view raw{val, size};
     if (type == SYNC_TYPE_UPSERT_CODE) {
         // code is immutable once inserted - no deletions
-        ctx->code.emplace(std::bit_cast<bytes32_t>(keccak256(raw)), raw);
+        ctx->code.emplace(
+            std::bit_cast<bytes32_t>(keccak256(raw)),
+            to_byte_string(raw));
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);

@@ -33,7 +33,7 @@ include("cmake/find_our_dependency.cmake")
 
 find_package(
   Boost CONFIG REQUIRED
-  COMPONENTS context fiber stacktrace_basic
+  COMPONENTS context fiber stacktrace_basic stacktrace_addr2line
   OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)
@@ -173,6 +173,17 @@ endif()
 target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   target_sources(monad_core PRIVATE "keccak_impl.S")
+  string(REGEX MATCH "-m(arch|cpu)=[^ ]+"
+         MONAD_CORE_ASM_ARCH_FLAG "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS}")
+  if(MONAD_CORE_ASM_ARCH_FLAG)
+    set(MONAD_CORE_ASM_FLAGS "${MONAD_CORE_ASM_ARCH_FLAG}")
+  elseif(DEFINED ENV{ASMFLAGS})
+    set(MONAD_CORE_ASM_FLAGS "$ENV{ASMFLAGS}")
+  else()
+    set(MONAD_CORE_ASM_FLAGS "-march=haswell")
+  endif()
+  target_compile_options(
+    monad_core PRIVATE $<$<COMPILE_LANGUAGE:ASM>:${MONAD_CORE_ASM_FLAGS}>)
 else()
   target_sources(monad_core
                  PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
@@ -190,6 +201,10 @@ if(TARGET Boost::stacktrace_backtrace)
   target_compile_definitions(monad_core
                              PRIVATE BOOST_STACKTRACE_USE_BACKTRACE=1)
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_backtrace)
+elseif(TARGET Boost::stacktrace_addr2line)
+  target_compile_definitions(monad_core
+                             PRIVATE BOOST_STACKTRACE_USE_ADDR2LINE=1)
+  target_link_libraries(monad_core PRIVATE Boost::stacktrace_addr2line)
 else()
   message(WARNING "using suboptimal basic backtrace library")
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
@@ -220,10 +235,6 @@ target_link_libraries(monad_core_disas PUBLIC monad_core)
 # ##############################################################################
 # tests
 # ##############################################################################
-
-enable_testing()
-
-find_package(GTest REQUIRED)
 
 add_subdirectory("test")
 

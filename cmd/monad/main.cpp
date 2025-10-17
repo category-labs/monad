@@ -58,6 +58,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -337,7 +338,12 @@ try {
     }();
 
     std::unique_ptr<monad_statesync_server_context> ctx;
+#if defined(__cpp_lib_jthread)
     std::jthread sync_thread;
+#else
+    std::thread sync_thread;
+    std::atomic<bool> sync_stop{false};
+#endif
     monad_statesync_server *sync = nullptr;
     if (!statesync.empty()) {
         ctx = std::make_unique<monad_statesync_server_context>(triedb);
@@ -347,18 +353,29 @@ try {
             &statesync_server_recv,
             &statesync_server_send_upsert,
             &statesync_server_send_done);
-        sync_thread = std::jthread([&](std::stop_token const token) {
+        auto run_sync_body = [&](auto &&should_stop) {
             pthread_setname_np(pthread_self(), "statesync thread");
             mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
                 .sq_thread_cpu = ro_sq_thread_cpu,
                 .dbname_paths = dbname_paths}};
             mpt::Db ro{io_ctx};
             ctx->ro = &ro;
-            while (!token.stop_requested()) {
+            while (!should_stop()) {
                 monad_statesync_server_run_once(sync);
             }
             ctx->ro = nullptr;
+        };
+
+#if defined(__cpp_lib_jthread)
+        sync_thread = std::jthread([&](std::stop_token const token) {
+            run_sync_body([&]() { return token.stop_requested(); });
         });
+#else
+        sync_thread = std::thread([&]() {
+            run_sync_body(
+                [&]() { return sync_stop.load(std::memory_order_acquire); });
+        });
+#endif
     }
 
     LOG_INFO(
@@ -485,8 +502,14 @@ try {
     }
 
     if (sync != nullptr) {
+#if defined(__cpp_lib_jthread)
         sync_thread.request_stop();
-        sync_thread.join();
+#else
+        sync_stop.store(true, std::memory_order_release);
+#endif
+        if (sync_thread.joinable()) {
+            sync_thread.join();
+        }
         monad_statesync_server_destroy(sync);
     }
 

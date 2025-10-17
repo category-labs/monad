@@ -151,7 +151,7 @@ namespace
             min,
             max,
             [&chunks](NibblesView const path, byte_string_view const value) {
-                chunks.emplace_back(path, value);
+                chunks.emplace_back(path, to_byte_string(value));
             }};
         db.traverse(db.root(), machine, block_number);
         MONAD_ASSERT(!chunks.empty());

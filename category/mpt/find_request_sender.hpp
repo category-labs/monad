@@ -129,7 +129,11 @@ public:
     }
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(find_request_sender<byte_string>) == 120);
+#else
 static_assert(sizeof(find_request_sender<byte_string>) == 128);
+#endif
 static_assert(alignof(find_request_sender<byte_string>) == 8);
 static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender<byte_string>>);
 
@@ -236,8 +240,10 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
         }
         if (prefix_index == key_.nibble_size()) {
             if constexpr (std::is_same_v<T, byte_string>) {
+                auto const node_bytes =
+                    return_value_ ? node->value() : node->data();
                 res_ = {
-                    byte_string{return_value_ ? node->value() : node->data()},
+                    to_byte_string(node_bytes),
                     find_result::success};
             }
             else {

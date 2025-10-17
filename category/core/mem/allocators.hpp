@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <concepts>
 #include <memory>
 #include <span>

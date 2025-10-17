@@ -154,13 +154,9 @@ namespace monad::vm::compiler::test
             bytes32_from_uint256(balance);
     }
 
-    std::basic_string_view<uint8_t> RuntimeTest::result_data()
+    std::span<uint8_t const> RuntimeTest::result_data()
     {
-        auto output_size = call_return_data_.size();
-        auto *output_data =
-            reinterpret_cast<std::uint8_t *>(std::malloc(output_size));
-        std::memcpy(output_data, call_return_data_.data(), output_size);
-        return {output_data, output_size};
+        return {call_return_data_.data(), call_return_data_.size()};
     }
 
     void

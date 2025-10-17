@@ -37,7 +37,10 @@ namespace monad::test
         // compute leaf data as - concat(input_leaf, hash);
         static byte_string compute(Node const &node)
         {
-            return byte_string{node.value()} + byte_string{node.data()};
+            auto result = to_byte_string(node.value());
+            auto suffix = to_byte_string(node.data());
+            result.insert(result.end(), suffix.begin(), suffix.end());
+            return result;
         }
     };
 

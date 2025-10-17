@@ -15,10 +15,6 @@
 
 include(GoogleTest)
 
-if(MONAD_COMPILER_TESTING)
-    find_package(GTest REQUIRED)
-endif()
-
 if(MONAD_COMPILER_BENCHMARKS)
     find_package(benchmark REQUIRED)
 endif()

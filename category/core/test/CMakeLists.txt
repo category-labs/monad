@@ -16,7 +16,7 @@
 function(monad_add_test target)
   add_executable(${target} ${ARGN})
   monad_compile_options(${target})
-  target_link_libraries(${target} monad_core GTest::GTest GTest::Main)
+  target_link_libraries(${target} monad_core GTest::gtest GTest::gtest_main)
   add_test(NAME ${target} COMMAND $<TARGET_FILE:${target}>)
 endfunction()
 

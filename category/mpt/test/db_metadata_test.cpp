@@ -43,12 +43,14 @@ TEST(db_metadata, DISABLED_copy)
         free(metadata[2]);
     });
     std::atomic<int> latch{-1};
-    std::jthread thread([&](std::stop_token tok) {
-        while (!tok.stop_requested()) {
+#if defined(__cpp_lib_jthread)
+    std::jthread worker([&](std::stop_token tok) {
+        auto const should_stop = [&]() { return tok.stop_requested(); };
+        while (!should_stop()) {
             int expected = 0;
             while (!latch.compare_exchange_strong(
                        expected, 1, std::memory_order_acq_rel) &&
-                   !tok.stop_requested()) {
+                   !should_stop()) {
                 std::this_thread::yield();
                 expected = 0;
             }
@@ -61,6 +63,30 @@ TEST(db_metadata, DISABLED_copy)
             latch.store(-1, std::memory_order_release);
         }
     });
+#else
+    std::atomic<bool> stop_flag{false};
+    std::thread worker([&]() {
+        auto const should_stop = [&]() {
+            return stop_flag.load(std::memory_order_acquire);
+        };
+        while (!should_stop()) {
+            int expected = 0;
+            while (!latch.compare_exchange_strong(
+                       expected, 1, std::memory_order_acq_rel) &&
+                   !should_stop()) {
+                std::this_thread::yield();
+                expected = 0;
+            }
+            db_copy(
+                metadata[0],
+                metadata[1],
+                sizeof(monad::mpt::detail::db_metadata));
+            MONAD_ASSERT(
+                !metadata[0]->is_dirty().load(std::memory_order_acquire));
+            latch.store(-1, std::memory_order_release);
+        }
+    });
+#endif
     metadata[1]->chunk_info_count = 6;
     metadata[1]->capacity_in_free_list = 6;
     unsigned count = 0;
@@ -88,8 +114,12 @@ TEST(db_metadata, DISABLED_copy)
         }
         while (latch.load(std::memory_order_acquire) != -1);
     }
-    thread.request_stop();
-    thread.join();
+#if defined(__cpp_lib_jthread)
+    worker.request_stop();
+#else
+    stop_flag.store(true, std::memory_order_release);
+#endif
+    worker.join();
     EXPECT_GT(count, 0);
     std::cout << count << std::endl;
 }

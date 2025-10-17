@@ -71,7 +71,11 @@ struct MonadSignerMap
     operator==(MonadSignerMap const &, MonadSignerMap const &) = default;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadSignerMap) == 32);
+#else
 static_assert(sizeof(MonadSignerMap) == 40);
+#endif
 static_assert(alignof(MonadSignerMap) == 8);
 
 struct MonadSignatures
@@ -83,7 +87,11 @@ struct MonadSignatures
     operator==(MonadSignatures const &, MonadSignatures const &) = default;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadSignatures) == 128);
+#else
 static_assert(sizeof(MonadSignatures) == 136);
+#endif
 static_assert(alignof(MonadSignatures) == 8);
 
 template <typename MonadVote>
@@ -100,10 +108,18 @@ struct MonadQuorumCertificate
 using MonadQuorumCertificateV0 = MonadQuorumCertificate<MonadVoteV0>;
 using MonadQuorumCertificateV1 = MonadQuorumCertificate<MonadVoteV1>;
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadQuorumCertificateV0) == 216);
+#else
 static_assert(sizeof(MonadQuorumCertificateV0) == 224);
+#endif
 static_assert(alignof(MonadQuorumCertificateV0) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadQuorumCertificateV1) == 176);
+#else
 static_assert(sizeof(MonadQuorumCertificateV1) == 184);
+#endif
 static_assert(alignof(MonadQuorumCertificateV1) == 8);
 
 template <class MonadQuorumCertificate>
@@ -146,13 +162,25 @@ struct MonadConsensusBlockHeaderV2 : MonadConsensusBlockHeaderV1
         MonadConsensusBlockHeaderV2 const &) = default;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockHeaderV0) == 1200);
+#else
 static_assert(sizeof(MonadConsensusBlockHeaderV0) == 1216);
+#endif
 static_assert(alignof(MonadConsensusBlockHeaderV0) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockHeaderV1) == 1160);
+#else
 static_assert(sizeof(MonadConsensusBlockHeaderV1) == 1176);
+#endif
 static_assert(alignof(MonadConsensusBlockHeaderV1) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockHeaderV2) == 1184);
+#else
 static_assert(sizeof(MonadConsensusBlockHeaderV2) == 1200);
+#endif
 static_assert(alignof(MonadConsensusBlockHeaderV2) == 8);
 
 struct MonadConsensusBlockBody
@@ -183,13 +211,25 @@ using MonadConsensusBlockV0 = MonadConsensusBlock<MonadConsensusBlockHeaderV0>;
 using MonadConsensusBlockV1 = MonadConsensusBlock<MonadConsensusBlockHeaderV1>;
 using MonadConsensusBlockV2 = MonadConsensusBlock<MonadConsensusBlockHeaderV2>;
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockV0) == 1272);
+#else
 static_assert(sizeof(MonadConsensusBlockV0) == 1288);
+#endif
 static_assert(alignof(MonadConsensusBlockV0) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockV1) == 1232);
+#else
 static_assert(sizeof(MonadConsensusBlockV1) == 1248);
+#endif
 static_assert(alignof(MonadConsensusBlockV1) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(MonadConsensusBlockV2) == 1256);
+#else
 static_assert(sizeof(MonadConsensusBlockV2) == 1272);
+#endif
 static_assert(alignof(MonadConsensusBlockV2) == 8);
 
 MONAD_NAMESPACE_END

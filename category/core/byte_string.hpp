@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/char_traits.hpp>
 
 #include <evmc/bytes.hpp>
 
@@ -46,6 +47,21 @@ constexpr byte_string_view to_byte_string_view(std::array<T, N> const &a)
 inline byte_string_view to_byte_string_view(std::string const &s)
 {
     return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
+}
+
+inline byte_string_view to_byte_string_view(byte_string const &s)
+{
+    return {s.data(), s.size()};
+}
+
+inline byte_string to_byte_string(byte_string_view view)
+{
+    return byte_string(view.begin(), view.end());
+}
+
+inline void append_bytes(byte_string &dest, byte_string_view view)
+{
+    dest.insert(dest.end(), view.begin(), view.end());
 }
 
 MONAD_NAMESPACE_END

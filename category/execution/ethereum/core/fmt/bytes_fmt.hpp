@@ -18,6 +18,8 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/bytes.hpp>
 
+#include <span>
+
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>
 

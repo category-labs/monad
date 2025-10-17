@@ -46,7 +46,16 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     monad::mpt::UpdateAux aux_writer{};
     std::atomic<bool> io_set = false;
+#if defined(__cpp_lib_jthread)
     std::jthread rw_asyncio([&](std::stop_token token) {
+        auto const should_stop = [&]() { return token.stop_requested(); };
+#else
+    std::atomic<bool> stop_flag{false};
+    std::thread rw_asyncio([&]() {
+        auto const should_stop = [&]() {
+            return stop_flag.load(std::memory_order_acquire);
+        };
+#endif
         monad::io::Ring ring1;
         monad::io::Ring ring2;
         monad::io::Buffers testbuf =
@@ -61,7 +70,7 @@ TEST(update_aux_test, set_io_reader_dirty)
         aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
         io_set = true;
 
-        while (!token.stop_requested()) {
+        while (!should_stop()) {
             std::this_thread::sleep_for(10ms);
         }
         aux_writer.unset_io();
@@ -137,6 +146,13 @@ TEST(update_aux_test, set_io_reader_dirty)
     TestAux aux_reader(aux_writer);
     EXPECT_NO_THROW(aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH));
     EXPECT_TRUE(aux_reader.was_dirty) << "target codepath not exercised";
+
+#if defined(__cpp_lib_jthread)
+    rw_asyncio.request_stop();
+#else
+    stop_flag.store(true, std::memory_order_release);
+#endif
+    rw_asyncio.join();
 }
 
 TEST(update_aux_test, root_offsets_fast_slow)

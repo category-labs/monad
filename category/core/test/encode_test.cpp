@@ -140,15 +140,25 @@ TEST(rlp, encode_string)
 
     result = monad::rlp::encode_string(buf, byte_string(55, 1));
     EXPECT_EQ(result.data() - buf, 56);
-    EXPECT_TRUE(
-        byte_string_view(buf, result.data()) ==
-        byte_string({183}) + byte_string(55, 1));
+    {
+        auto expected = byte_string({183});
+        auto suffix = byte_string(55, 1);
+        expected.insert(expected.end(), suffix.begin(), suffix.end());
+        EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string_view(
+                                                           expected.data(),
+                                                           expected.size()));
+    }
 
     result = monad::rlp::encode_string(buf, byte_string(56, 1));
     EXPECT_EQ(result.data() - buf, 58);
-    EXPECT_TRUE(
-        byte_string_view(buf, result.data()) ==
-        byte_string({184, 56}) + byte_string(56, 1));
+    {
+        auto expected = byte_string({184, 56});
+        auto suffix = byte_string(56, 1);
+        expected.insert(expected.end(), suffix.begin(), suffix.end());
+        EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string_view(
+                                                           expected.data(),
+                                                           expected.size()));
+    }
 }
 
 TEST(rlp, list_length)
@@ -191,13 +201,23 @@ TEST(rlp, encode_list)
 
     result = monad::rlp::encode_list(buf, byte_string(55, 1));
     EXPECT_EQ(result.data() - buf, 56);
-    EXPECT_TRUE(
-        byte_string_view(buf, result.data()) ==
-        byte_string({247}) + byte_string(55, 1));
+    {
+        auto expected = byte_string({247});
+        auto suffix = byte_string(55, 1);
+        expected.insert(expected.end(), suffix.begin(), suffix.end());
+        EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string_view(
+                                                           expected.data(),
+                                                           expected.size()));
+    }
 
     result = monad::rlp::encode_list(buf, byte_string(56, 1));
     EXPECT_EQ(result.data() - buf, 58);
-    EXPECT_TRUE(
-        byte_string_view(buf, result.data()) ==
-        byte_string({248, 56}) + byte_string(56, 1));
+    {
+        auto expected = byte_string({248, 56});
+        auto suffix = byte_string(56, 1);
+        expected.insert(expected.end(), suffix.begin(), suffix.end());
+        EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string_view(
+                                                           expected.data(),
+                                                           expected.size()));
+    }
 }

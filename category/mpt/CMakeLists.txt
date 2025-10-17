@@ -29,7 +29,6 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Boost 1.83 # 1.83 really is the minimum
              CONFIG REQUIRED COMPONENTS context fiber json thread)
-find_package(GTest)
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(archive REQUIRED IMPORTED_TARGET libarchive)
@@ -94,7 +93,7 @@ function(add_trie_test)
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
   target_link_libraries(
     ${ADD_TRIE_TEST_TARGET}
-    PUBLIC monad_execution GTest::GTest monad_unit_test_common
+    PUBLIC monad_execution GTest::gtest monad_unit_test_common
            ${ADD_TRIE_TEST_LINK_LIBRARIES})
   gtest_discover_tests(
     ${ADD_TRIE_TEST_TARGET}

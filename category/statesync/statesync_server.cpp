@@ -29,6 +29,7 @@
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/format.h>
 
+#include <algorithm>
 #include <chrono>
 #include <fcntl.h>
 #include <mutex>
@@ -83,7 +84,8 @@ bool send_deletion(
         auto const &[addr, key] = deletion;
         auto const hash = keccak256(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
-        if (!view.starts_with(prefix)) {
+        if (view.size() < prefix.size() ||
+            !std::equal(prefix.begin(), prefix.end(), view.begin())) {
             return;
         }
         if (!key.has_value()) {

@@ -1,8 +1,18 @@
 enable_testing()
 
-find_package(GTest REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(gmock REQUIRED IMPORTED_TARGET gmock)
+include(FetchContent)
+
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz)
+
+set(gtest_force_shared_crt OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+list(APPEND CMAKE_PREFIX_PATH "${googletest_SOURCE_DIR}" "${googletest_BINARY_DIR}")
+include_directories(
+  SYSTEM
+    "${googletest_SOURCE_DIR}/googletest/include"
+    "${googletest_SOURCE_DIR}/googlemock/include")
 
 include(GoogleTest)
 

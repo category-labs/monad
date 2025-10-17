@@ -46,7 +46,7 @@ public:
     // Add a non-indexed parameter
     EventBuilder &&add_data(byte_string_view const data) &&
     {
-        event_.data += data;
+        append_bytes(event_.data, data);
         return std::move(*this);
     }
 

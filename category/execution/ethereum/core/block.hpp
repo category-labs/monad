@@ -70,10 +70,18 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(BlockHeader) == 752);
+#else
 static_assert(sizeof(BlockHeader) == 760);
+#endif
 static_assert(alignof(BlockHeader) == 8);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(Block) == 832);
+#else
 static_assert(sizeof(Block) == 840);
+#endif
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

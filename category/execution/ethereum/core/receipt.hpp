@@ -49,7 +49,11 @@ struct Receipt
 
 void populate_bloom(Receipt::Bloom &, Receipt::Log const &);
 
+#if defined(_LIBCPP_VERSION)
+static_assert(sizeof(Receipt::Log) == 72);
+#else
 static_assert(sizeof(Receipt::Log) == 80);
+#endif
 static_assert(alignof(Receipt::Log) == 8);
 
 static_assert(sizeof(Receipt) == 304);

@@ -1223,7 +1223,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         monad::Result<monad::byte_string_view> const res =
             rodb.get({}, block_id - 1);
         ASSERT_TRUE(res.has_value());
-        monad::byte_string const result_before{res.value()};
+        auto const result_before = monad::to_byte_string(res.value());
         auto const [fast_n_1, slow_n_1] = get_release_offsets(result_before);
         EXPECT_GE(fast_n, fast_n_1);
         EXPECT_GE(slow_n, slow_n_1);
@@ -1242,10 +1242,10 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         // offsets remain the same after the second upsert
         EXPECT_EQ(result_before, result_after.value());
         // convert to byte_string so that both data are in scope
-        monad::byte_string const data_n_1{
-            rodb.get_data({prefix}, block_id - 1).value()};
-        monad::byte_string const data_n{
-            rodb.get_data({prefix}, block_id).value()};
+        auto const data_n_1 =
+            monad::to_byte_string(rodb.get_data({prefix}, block_id - 1).value());
+        auto const data_n =
+            monad::to_byte_string(rodb.get_data({prefix}, block_id).value());
         EXPECT_EQ(data_n_1, data_n) << block_id;
         // prepare for upserting N+1 on top of N
         db.load_root_for_version(block_id);
@@ -1810,7 +1810,7 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
     updates.push_front(top_update);
     this->db.upsert(std::move(updates), version);
     auto const src_prefix_data =
-        monad::byte_string{this->db.get_data(src_prefix, version).value()};
+        monad::to_byte_string(this->db.get_data(src_prefix, version).value());
 
     auto verify_dest_state = [&](Db &db, monad::byte_string const prefix) {
         EXPECT_EQ(db.get_latest_version(), version);

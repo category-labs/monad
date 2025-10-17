@@ -96,13 +96,27 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
 
-    // Create a promise/future pair to track completion
     std::promise<int> completion_promise;
     std::future<int> completion_future = completion_promise.get_future();
     std::mutex lock;
     std::condition_variable cond;
 
-    auto find_loop = [&](std::stop_token const stop_token) {
+#if !defined(__cpp_lib_jthread)
+    std::atomic<bool> stop_flag{false};
+#endif
+
+    auto make_find_loop = [&]() {
+#if defined(__cpp_lib_jthread)
+        return [&](std::stop_token const stop_token) {
+            auto const should_stop = [&]() {
+                return stop_token.stop_requested();
+            };
+#else
+        return [&]() {
+            auto const should_stop = [&]() {
+                return stop_flag.load(std::memory_order_acquire);
+            };
+#endif
         // Read only aux
         auto pool = state()->pool.clone_as_read_only();
         monad::io::Ring ring{monad::io::RingConfig{2}};
@@ -112,7 +126,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
         monad::test::UpdateAux<void> ro_aux{&io};
 
         int count = 0;
-        while (!stop_token.stop_requested()) {
+        while (!should_stop()) {
             // clear all in memory nodes under root
             for (unsigned idx = 0; idx < root->number_of_children(); ++idx) {
                 root->move_next(idx).reset();
@@ -132,9 +146,15 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
                 cond.notify_one();
             }
         }
+        };
     };
 
-    std::jthread reader{find_loop};
+#if defined(__cpp_lib_jthread)
+    std::jthread reader{make_find_loop()};
+#else
+    auto find_loop = make_find_loop();
+    std::thread reader{[&]() { find_loop(); }};
+#endif
 
     // Erase the version when the first read finishes
     {
@@ -156,6 +176,13 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     EXPECT_GT(nfinished_finds, 0);
     std::cout << "Did " << nfinished_finds << " successful finds at version "
               << latest_version << " before it gets erased." << std::endl;
+
+#if defined(__cpp_lib_jthread)
+    reader.request_stop();
+#else
+    stop_flag.store(true, std::memory_order_release);
+#endif
+    reader.join();
 }
 
 struct DbConcurrencyTest2
@@ -180,7 +207,22 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     std::mutex lock;
     std::condition_variable cond;
 
-    auto traverse_loop = [&](std::stop_token const stop_token) {
+#if !defined(__cpp_lib_jthread)
+    std::atomic<bool> stop_flag_traverse{false};
+#endif
+
+    auto make_traverse_loop = [&]() {
+#if defined(__cpp_lib_jthread)
+        return [&](std::stop_token const stop_token) {
+            auto const should_stop = [&]() {
+                return stop_token.stop_requested();
+            };
+#else
+        return [&]() {
+            auto const should_stop = [&]() {
+                return stop_flag_traverse.load(std::memory_order_acquire);
+            };
+#endif
         // Read only aux
         auto pool = state()->pool.clone_as_read_only();
         monad::io::Ring ring{monad::io::RingConfig{2}};
@@ -191,7 +233,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
 
         DummyTraverseMachine traverse{};
         int count = 0;
-        while (!stop_token.stop_requested()) {
+        while (!should_stop()) {
             if (!preorder_traverse_blocking(
                     ro_aux, *root, traverse, latest_version)) {
                 std::cout << "Traverse loop ends due to version being erased "
@@ -206,9 +248,15 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
                 cond.notify_one();
             }
         }
+        };
     };
 
-    std::jthread reader{traverse_loop};
+#if defined(__cpp_lib_jthread)
+    std::jthread reader{make_traverse_loop()};
+#else
+    auto traverse_loop = make_traverse_loop();
+    std::thread reader{[&]() { traverse_loop(); }};
+#endif
     // Erase the version when the first traverse finishes
     {
         std::unique_lock g(lock);
@@ -229,4 +277,11 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     std::cout << "Did " << nfinished_traversals
               << " successful traversals at version " << latest_version
               << " before it gets erased." << std::endl;
+
+#if defined(__cpp_lib_jthread)
+    reader.request_stop();
+#else
+    stop_flag_traverse.store(true, std::memory_order_release);
+#endif
+    reader.join();
 }

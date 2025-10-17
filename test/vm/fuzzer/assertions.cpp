@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <span>
+#include <iostream>
 
 using namespace evmone::state;
 
@@ -78,18 +79,6 @@ namespace monad::vm::fuzzing
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,
         bool const strict_out_of_gas)
     {
-        FUZZER_ASSERT(std::ranges::equal(
-            evmone_result.create_address.bytes,
-            compiler_result.create_address.bytes));
-
-        FUZZER_ASSERT(evmone_result.gas_left == compiler_result.gas_left);
-        FUZZER_ASSERT(evmone_result.gas_refund == compiler_result.gas_refund);
-
-        FUZZER_ASSERT(std::ranges::equal(
-            std::span(evmone_result.output_data, evmone_result.output_size),
-            std::span(
-                compiler_result.output_data, compiler_result.output_size)));
-
         switch (evmone_result.status_code) {
         case EVMC_SUCCESS:
         case EVMC_REVERT:
@@ -115,8 +104,26 @@ namespace monad::vm::fuzzing
         default:
             FUZZER_ASSERT(compiler_result.status_code != EVMC_SUCCESS);
             FUZZER_ASSERT(compiler_result.status_code != EVMC_REVERT);
+    std::cerr << std::format("expected status:{} actual status:{}\n", (int)evmone_result.status_code, (int)compiler_result.status_code);
+
             break;
         }
+
+        FUZZER_ASSERT(std::ranges::equal(
+            evmone_result.create_address.bytes,
+            compiler_result.create_address.bytes));
+
+    if (evmone_result.gas_left != compiler_result.gas_left) {
+        std::cerr << std::format("gas_left expected: {} actual: {}\n", evmone_result.gas_left, compiler_result.gas_left);
+    }
+        FUZZER_ASSERT(evmone_result.gas_left == compiler_result.gas_left);
+        FUZZER_ASSERT(evmone_result.gas_refund == compiler_result.gas_refund);
+
+        FUZZER_ASSERT(std::ranges::equal(
+            std::span(evmone_result.output_data, evmone_result.output_size),
+            std::span(
+                compiler_result.output_data, compiler_result.output_size)));
+
     }
 
 }

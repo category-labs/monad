@@ -31,6 +31,20 @@
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/storage.hpp>
 
+void print_stuff(Context *ctx, int64_t *gas_p, uint256_t *stack_begin, uint256_t *stack_top)
+{
+    std::cerr << std::format("gas {}\n", *gas_p);
+    std::cerr << std::format("gas price {}\n", intx::hex(intx::be::load<intx::uint256>(ctx->env.tx_context.tx_gas_price)));
+    std::cerr << std::format("stack:\n", *stack_begin);
+    int i = 0;
+    while (stack_begin < stack_top)
+    {
+        std::cerr << std::format("{}: {}\n", i, *stack_begin);
+        stack_begin++;
+        i++;
+    }
+}
+
 namespace monad::vm::llvm
 {
     using namespace monad::vm::compiler;
@@ -203,8 +217,8 @@ namespace monad::vm::llvm
                                 [&](uint256_t const &c) {
                                     return lookup_jumpdest(c);
                                 },
-                                [&](InstrIdx const &) {
-                                    return indirectbr_lbl(i);
+                                [&](InstrIdx const &j) {
+                                    return indirectbr_lbl(j);
                                 },
                             },
                             else_v);
@@ -266,7 +280,7 @@ namespace monad::vm::llvm
         Value *stacktop_offset(Value *stack_top, StackIdx i)
         {
             return llvm.gep(
-                llvm.ptr_ty(llvm.word_ty),
+                llvm.word_ty,
                 stack_top,
                 {llvm.i32(i)},
                 "stacktop_offset");
@@ -274,6 +288,10 @@ namespace monad::vm::llvm
 
         void check_and_update_gas(int64_t const blk_gas_update)
         {
+        if (blk_gas_update == 0)
+        {
+            return;
+        }
 
             if (check_and_update_gas_f == nullptr) {
                 SaveInsert const _unused(llvm);
@@ -305,7 +323,7 @@ namespace monad::vm::llvm
                 llvm.condbr(gas_lt_zero, gas_err_lbl, gas_ok_lbl);
 
                 llvm.insert_at(gas_err_lbl);
-                exit_(ctx_ref, StatusCode::Error);
+                exit_(ctx_ref, StatusCode::OutOfGas);
 
                 llvm.insert_at(gas_ok_lbl);
                 llvm.ret_void();
@@ -327,6 +345,7 @@ namespace monad::vm::llvm
             for (DependencyBlock const &blk : dep_ir.blocks) {
                 auto *lbl = get_block_lbl(blk.offset);
                 llvm.insert_at(lbl);
+            emit_print_stuff();
 
                 check_and_update_gas(blk.block_gas_update);
 
@@ -374,6 +393,7 @@ namespace monad::vm::llvm
                         ? error_lbl()
                         : get_block_lbl(
                               dep_ir.blocks[blk.fallthrough_dest].offset);
+            emit_print_stuff();
                 terminate_block(
                     blk.terminator, blk.terminator_args, fallthrough_lbl);
             }
@@ -405,6 +425,7 @@ namespace monad::vm::llvm
         Type *context_ty = llvm.void_ty;
 
         Function *exit_f = init_exit();
+        Function *print_stuff_f = nullptr;
         Function *selfdestruct_f = nullptr;
         Function *check_and_update_gas_f = nullptr;
         Function *check_stack_underflow_f = nullptr;
@@ -632,6 +653,20 @@ namespace monad::vm::llvm
                 llvm.call_void(f, args);
             }
         };
+
+        void emit_print_stuff()
+        {
+        return; // BAL:
+        if (print_stuff_f == nullptr)
+        {
+            auto f = declare_symbol("print_stuff", (void *)(print_stuff), llvm.void_ty, {llvm.ptr_ty(context_ty), llvm.ptr_ty(llvm.int_ty(64)), llvm.ptr_ty(llvm.word_ty), llvm.ptr_ty(llvm.word_ty)});
+            print_stuff_f = f;
+        }
+        Value *stack_top = load_stack_top_p();
+            llvm.call_void(
+                print_stuff_f,
+                {g_ctx_ref, g_ctx_gas_ref, evm_stack_begin, stack_top});
+        }
 
         Function *init_exit()
         {

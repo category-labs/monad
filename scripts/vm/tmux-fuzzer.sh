@@ -39,7 +39,7 @@ if [ "$sub_command" = start ]; then
     fi
 fi
 
-compiler_sessions=1
+compiler_sessions=12
 interpreter_sessions=0
 
 start_command() {

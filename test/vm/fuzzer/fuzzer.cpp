@@ -1199,6 +1199,10 @@ static void run_loop(int argc, char **argv)
             auto const &shrunk_run = shrink_run(args, run, iteration_index);
             std::cerr << "Counter-example found by fuzzer:\n";
             print_run(shrunk_run);
+
+            std::cerr << "running example:\n";
+            std::cerr << try_run(args, shrunk_run);
+
             std::exit(1);
         }
         args.seed = random_engine_t(args.seed)();

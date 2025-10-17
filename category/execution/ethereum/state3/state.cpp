@@ -83,6 +83,9 @@ AccountState &State::current_account_state(Address const &address)
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
     }
+    if (!dirty_.empty()) {
+        dirty_.back().emplace(address);
+    }
     return it->second.current(version_);
 }
 
@@ -122,15 +125,26 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
 
 void State::push()
 {
+    MONAD_ASSERT(dirty_.size() == version_);
+
     ++version_;
+    dirty_.emplace_back();
 }
 
 void State::pop_accept()
 {
     MONAD_ASSERT(version_);
+    MONAD_ASSERT(dirty_.size() == version_);
 
-    for (auto &it : current_) {
-        it.second.pop_accept(version_);
+    auto accounts = std::move(dirty_.back());
+    dirty_.pop_back();
+    for (auto const &dirty_address : accounts) {
+        auto const it = current_.find(dirty_address);
+        MONAD_ASSERT(it != current_.end());
+        it->second.pop_accept(version_);
+        if (!dirty_.empty()) {
+            dirty_.back().emplace(dirty_address);
+        }
     }
 
     logs_.pop_accept(version_);
@@ -141,12 +155,16 @@ void State::pop_accept()
 void State::pop_reject()
 {
     MONAD_ASSERT(version_);
+    MONAD_ASSERT(dirty_.size() == version_);
 
     std::vector<Address> removals;
-
-    for (auto &it : current_) {
-        if (it.second.pop_reject(version_)) {
-            removals.push_back(it.first);
+    auto accounts = std::move(dirty_.back());
+    dirty_.pop_back();
+    for (auto const &dirty_address : accounts) {
+        auto const it = current_.find(dirty_address);
+        MONAD_ASSERT(it != current_.end());
+        if (it->second.pop_reject(version_)) {
+            removals.push_back(it->first);
         }
     }
 

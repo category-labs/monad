@@ -25,6 +25,8 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -40,9 +42,141 @@ struct EvmcHost;
 class State;
 struct Transaction;
 
-using RevertTransactionFn = std::function<bool(
-    Address const & /* sender */, Transaction const &, uint64_t /* i */,
-    State &)>;
+class RevertTransactionFn
+{
+public:
+    RevertTransactionFn() noexcept;
+
+    template <typename F>
+    RevertTransactionFn(F &&fn)
+        : storage_(new std::decay_t<F>(std::forward<F>(fn)))
+        , vtable_(&vtable<std::decay_t<F>>())
+    {
+    }
+
+    RevertTransactionFn(RevertTransactionFn const &);
+    RevertTransactionFn &operator=(RevertTransactionFn const &);
+    RevertTransactionFn(RevertTransactionFn &&) noexcept;
+    RevertTransactionFn &operator=(RevertTransactionFn &&) noexcept;
+    ~RevertTransactionFn();
+
+    bool operator()(
+        Address const &, Transaction const &, uint64_t, State &) const;
+
+private:
+    struct VTable
+    {
+        bool (*call)(
+            void *, Address const &, Transaction const &, uint64_t, State &);
+        void *(*clone)(void const *);
+        void (*destroy)(void *);
+    };
+
+    template <typename T>
+    static VTable const &vtable()
+    {
+        static VTable const instance{
+            [](void *ptr,
+               Address const &address,
+               Transaction const &tx,
+               uint64_t const index,
+               State &state) -> bool {
+                return (*static_cast<T *>(ptr))(address, tx, index, state);
+            },
+            [](void const *ptr) -> void * {
+                return new T(*static_cast<T const *>(ptr));
+            },
+            [](void *ptr) {
+                delete static_cast<T *>(ptr);
+            }};
+        return instance;
+    }
+
+    static VTable const &default_vtable()
+    {
+        static VTable const instance{
+            [](void *,
+               Address const &,
+               Transaction const &,
+               uint64_t,
+               State &) -> bool { return false; },
+            [](void const *) -> void * { return nullptr; },
+            [](void *) {}};
+        return instance;
+    }
+
+    friend void swap(RevertTransactionFn &, RevertTransactionFn &) noexcept;
+
+    void *storage_;
+    VTable const *vtable_;
+};
+
+inline RevertTransactionFn::RevertTransactionFn() noexcept
+    : storage_(nullptr)
+    , vtable_(&default_vtable())
+{
+}
+
+inline RevertTransactionFn::RevertTransactionFn(
+    RevertTransactionFn const &other)
+    : storage_(
+          other.storage_ != nullptr
+              ? other.vtable_->clone(other.storage_)
+              : nullptr)
+    , vtable_(other.vtable_)
+{
+}
+
+inline RevertTransactionFn &
+RevertTransactionFn::operator=(RevertTransactionFn const &other)
+{
+    if (this != &other) {
+        RevertTransactionFn temp(other);
+        swap(*this, temp);
+    }
+    return *this;
+}
+
+inline RevertTransactionFn::RevertTransactionFn(
+    RevertTransactionFn &&other) noexcept
+    : storage_(other.storage_)
+    , vtable_(other.vtable_)
+{
+    other.storage_ = nullptr;
+    other.vtable_ = &default_vtable();
+}
+
+inline RevertTransactionFn &
+RevertTransactionFn::operator=(RevertTransactionFn &&other) noexcept
+{
+    if (this != &other) {
+        swap(*this, other);
+    }
+    return *this;
+}
+
+inline RevertTransactionFn::~RevertTransactionFn()
+{
+    if (storage_ != nullptr) {
+        vtable_->destroy(storage_);
+    }
+}
+
+inline bool RevertTransactionFn::operator()(
+    Address const &address,
+    Transaction const &tx,
+    uint64_t const index,
+    State &state) const
+{
+    return vtable_->call(storage_, address, tx, index, state);
+}
+
+inline void swap(RevertTransactionFn &lhs, RevertTransactionFn &rhs) noexcept
+{
+    using std::swap;
+    swap(lhs.storage_, rhs.storage_);
+    swap(lhs.vtable_, rhs.vtable_);
+}
 
 template <Traits traits>
 class ExecuteTransactionNoValidation
@@ -65,8 +199,7 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::vector<std::optional<Address>> const &, BlockHeader const &,
         uint64_t i,
-        RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                         uint64_t, State &) { return false; });
+        RevertTransactionFn const & = RevertTransactionFn{});
 
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
@@ -101,8 +234,7 @@ public:
         std::vector<std::optional<Address>> const &, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
-        RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                         uint64_t, State &) { return false; });
+        RevertTransactionFn const & = RevertTransactionFn{});
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

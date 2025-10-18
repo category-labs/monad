@@ -25,7 +25,6 @@
 #include <boost/fiber/future/promise.hpp>
 
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -39,10 +38,6 @@ struct BlockHeader;
 struct CallTracerBase;
 struct Chain;
 struct Transaction;
-
-using RevertTransactionFn = std::function<bool(
-    Address const & /* sender */, Transaction const &, uint64_t /* i */,
-    State &)>;
 
 template <Traits traits>
 Result<Receipt> dispatch_transaction(

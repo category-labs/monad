@@ -47,8 +47,19 @@ monad_add_test_folder(".")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   add_executable(fuzz_statesync "${PROJECT_SOURCE_DIR}/test/fuzz_statesync.cpp")
-  target_compile_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
-  target_link_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
+  if(LIBFUZZER_RUNTIME_PATH AND EXISTS "${LIBFUZZER_RUNTIME_PATH}")
+    target_compile_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer-no-link")
+  else()
+    message(
+      STATUS
+        "Using default libFuzzer runtime for target fuzz_statesync; set LIBFUZZER_RUNTIME_PATH to use a libc++ build"
+    )
+    target_compile_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
+    target_link_options(fuzz_statesync PRIVATE "-fsanitize=fuzzer")
+  endif()
   monad_compile_options(fuzz_statesync)
   target_link_libraries(fuzz_statesync PUBLIC monad_execution)
+  if(LIBFUZZER_RUNTIME_PATH AND EXISTS "${LIBFUZZER_RUNTIME_PATH}")
+    target_link_libraries(fuzz_statesync PRIVATE "${LIBFUZZER_RUNTIME_PATH}")
+  endif()
 endif()

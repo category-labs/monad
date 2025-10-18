@@ -24,6 +24,11 @@ set(CATEGORY_MAIN_DIR ${PROJECT_SOURCE_DIR})
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -include ${PROJECT_SOURCE_DIR}/category/core/char_traits.hpp")
 
+if(CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+  set(CMAKE_CXX_STANDARD_LIBRARIES
+      "${CMAKE_CXX_STANDARD_LIBRARIES} -lc++ -lc++abi")
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
     message(FATAL_ERROR "GCC version 15 or higher is required.")
@@ -59,6 +64,11 @@ if(NOT DEFINED BUILD_SHARED_LIBS)
 endif()
 
 include(cmake/test.cmake)
+
+set(
+  LIBFUZZER_RUNTIME_PATH
+  "$ENV{HOME}/libfuzzer-libcxx/lib/linux/libclang_rt.fuzzer-x86_64.a"
+  CACHE FILEPATH "Path to libc++ libfuzzer runtime archive")
 
 if(NOT TARGET backtrace)
   if(DEFINED LIBBACKTRACE_ROOT
@@ -302,7 +312,7 @@ add_subdirectory("category/vm")
 
 # Assemble all the object libraries into complete monad runtime library,
 # monad_execution
-add_library(monad_execution)
+add_library(monad_execution STATIC)
 target_link_libraries(
   monad_execution
   PUBLIC monad_core

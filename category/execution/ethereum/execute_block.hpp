@@ -46,8 +46,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
-    RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                     uint64_t, State &) { return false; });
+    RevertTransactionFn const & = RevertTransactionFn{});
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
@@ -55,8 +54,7 @@ Result<std::vector<Receipt>> execute_block(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
-    RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                     uint64_t, State &) { return false; });
+    RevertTransactionFn const & = RevertTransactionFn{});
 
 std::vector<std::optional<Address>>
 recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);

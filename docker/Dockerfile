@@ -79,7 +79,7 @@ RUN CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B b
 RUN cmake --build build -t monad-compiler-fuzzer
 RUN ./scripts/vm/ci-fuzzer.sh
 
-FROM base as runner
+FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad_mpt /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/

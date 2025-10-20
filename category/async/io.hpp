@@ -25,6 +25,8 @@
 
 #include <category/core/mem/allocators.hpp>
 
+#include <linux/ioprio.h>
+
 #include <atomic>
 #include <cassert>
 #include <concepts>
@@ -46,6 +48,7 @@ struct IORecord
     unsigned inflight_rd{0};
     unsigned inflight_rd_scatter{0};
     unsigned inflight_wr{0};
+    unsigned inflight_fsync{0};
     unsigned inflight_tm{0};
     std::atomic<unsigned> inflight_ts{0};
 
@@ -191,9 +194,16 @@ public:
         return records_.inflight_rd +
                static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
                records_.inflight_rd_scatter + records_.inflight_wr +
-               records_.inflight_tm +
+               records_.inflight_fsync + records_.inflight_tm +
                records_.inflight_ts.load(std::memory_order_relaxed) +
                deferred_initiations_in_flight();
+    }
+
+    unsigned rw_io_inflight() const noexcept
+    {
+        return records_.inflight_rd +
+               static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
+               records_.inflight_rd_scatter + records_.inflight_wr;
     }
 
     unsigned reads_in_flight() const noexcept
@@ -331,9 +341,21 @@ public:
         }
     }
 
+    void wait_until_rw_done()
+    {
+        while (rw_io_inflight() > 0) {
+            poll_blocking(size_t(-1));
+        }
+    }
+
     void flush()
     {
         wait_until_done();
+    }
+
+    void flush_rw()
+    {
+        wait_until_rw_done();
     }
 
     void reset_records()
@@ -392,6 +414,10 @@ public:
             records_.max_inflight_wr = records_.inflight_wr;
         }
     }
+
+    void submit_sync_file_request(
+        chunk_offset_t chunk_and_offset, unsigned nbytes,
+        erased_connected_operation *uring_data);
 
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
     get i/o buffers into which to place connected i/o states.
@@ -501,7 +527,7 @@ public:
 private:
     unsigned char *poll_uring_while_no_io_buffers_(bool is_write);
 
-    template <bool is_write, class F>
+    template <class F>
     auto make_connected_impl_(F &&connect)
     {
         using connected_type = decltype(connect());
@@ -513,14 +539,22 @@ private:
         MONAD_ASSERT_PRINTF(
             mem != nullptr, "failed due to %s", strerror(errno));
         MONAD_DEBUG_ASSERT(((void)mem[0], true));
-        auto ret = std::unique_ptr<
+        return std::unique_ptr<
             connected_type,
             io_connected_operation_unique_ptr_deleter>(
             new (mem) connected_type(connect()));
+    }
+
+    template <operation_type op_type, class F>
+        requires(
+            op_type == operation_type::read || op_type == operation_type::write)
+    auto make_connected_impl_rw_(F &&connect)
+    {
+        auto ret = make_connected_impl_(std::forward<F>(connect));
         // Did you accidentally pass in a foreign buffer to use?
         // Can't do that, must use buffer returned.
         MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
-        if constexpr (is_write) {
+        if constexpr (op_type == operation_type::write) {
             MONAD_DEBUG_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
             auto buffer = std::move(ret->sender()).buffer();
             buffer.set_write_buffer(get_write_buffer());
@@ -546,11 +580,10 @@ public:
             })
     auto make_connected(Sender &&sender, Receiver &&receiver)
     {
-        return make_connected_impl_ < Sender::my_operation_type ==
-               operation_type::write > ([&] {
-                   return connect<Sender, Receiver>(
-                       *this, std::move(sender), std::move(receiver));
-               });
+        return make_connected_impl_rw_<Sender::my_operation_type>([&] {
+            return connect<Sender, Receiver>(
+                *this, std::move(sender), std::move(receiver));
+        });
     }
 
     //! Construct into internal memory a connected state for an i/o read
@@ -572,14 +605,26 @@ public:
         std::piecewise_construct_t _, std::tuple<SenderArgs...> &&sender_args,
         std::tuple<ReceiverArgs...> &&receiver_args)
     {
-        return make_connected_impl_ < Sender::my_operation_type ==
-               operation_type::write > ([&] {
-                   return connect<Sender, Receiver>(
-                       *this,
-                       _,
-                       std::move(sender_args),
-                       std::move(receiver_args));
-               });
+        return make_connected_impl_<Sender::my_operation_type>([&] {
+            return connect<Sender, Receiver>(
+                *this, _, std::move(sender_args), std::move(receiver_args));
+        });
+    }
+
+    template <sender Sender, receiver Receiver>
+        requires(
+            Sender::my_operation_type == operation_type::fsync &&
+            requires(
+                Receiver r, erased_connected_operation *o,
+                typename Sender::result_type x) {
+                r.set_value(o, std::move(x));
+            })
+    auto make_connected(Sender &&sender, Receiver &&receiver)
+    {
+        return make_connected_impl_([&] {
+            return connect<Sender, Receiver>(
+                *this, std::move(sender), std::move(receiver));
+        });
     }
 
     template <class Base, sender Sender, receiver Receiver>
@@ -662,7 +707,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 280);
+static_assert(sizeof(AsyncIO) == 288);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

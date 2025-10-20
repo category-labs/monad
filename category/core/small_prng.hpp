@@ -94,7 +94,8 @@ template <class RandomIt>
 void random_shuffle(
     RandomIt first, RandomIt last, small_prng &r = thread_local_prng())
 {
-    typename std::iterator_traits<RandomIt>::difference_type i, n;
+    typename std::iterator_traits<RandomIt>::difference_type i;
+    typename std::iterator_traits<RandomIt>::difference_type n;
     n = last - first;
     for (i = n - 1; i > 0; --i) {
         using std::swap;

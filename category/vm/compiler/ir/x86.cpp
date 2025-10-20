@@ -388,7 +388,7 @@ namespace
         asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
         code_size_t contract_code_size, CompilerConfig const &config)
     {
-        auto ir =
+        auto const ir =
             basic_blocks::make_ir<traits>(contract_code, contract_code_size);
         return compile_basic_blocks<traits>(rt, ir, config);
     }

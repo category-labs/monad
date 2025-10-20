@@ -43,7 +43,7 @@ namespace monad::vm::compiler
         void push_checkpoint(K const &k)
         {
             if (!checkpoints.empty()) {
-                auto it = current.find(k);
+                auto const it = current.find(k);
                 if (it != current.end()) {
                     journal.emplace_back(k, std::move(it->second));
                 }
@@ -75,7 +75,7 @@ namespace monad::vm::compiler
 
         V find_or_default(K const &k) const
         {
-            auto it = find(k);
+            auto const it = find(k);
             if (it == end()) {
                 return V();
             }

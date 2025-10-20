@@ -30,7 +30,7 @@ namespace monad::vm::runtime
         }
 
         Memory::Offset offset;
-        auto size = ctx->get_memory_offset(size_word);
+        auto const size = ctx->get_memory_offset(size_word);
 
         if (*size > 0) {
             offset = ctx->get_memory_offset(offset_word);

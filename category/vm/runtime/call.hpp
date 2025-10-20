@@ -51,13 +51,13 @@ namespace monad::vm::runtime
     {
         ctx->env.clear_return_data();
 
-        auto args_size = ctx->get_memory_offset(args_size_word);
-        auto args_offset = (*args_size > 0)
-                               ? ctx->get_memory_offset(args_offset_word)
-                               : bin<0>;
+        auto const args_size = ctx->get_memory_offset(args_size_word);
+        auto const args_offset = (*args_size > 0)
+                                     ? ctx->get_memory_offset(args_offset_word)
+                                     : bin<0>;
 
-        auto ret_size = ctx->get_memory_offset(ret_size_word);
-        auto ret_offset =
+        auto const ret_size = ctx->get_memory_offset(ret_size_word);
+        auto const ret_offset =
             (*ret_size > 0) ? ctx->get_memory_offset(ret_offset_word) : bin<0>;
 
         ctx->expand_memory(max(args_offset + args_size, ret_offset + ret_size));
@@ -65,7 +65,7 @@ namespace monad::vm::runtime
         auto const dest_address = address_from_uint256(address);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->gas_remaining -= traits::cold_account_cost();
@@ -91,12 +91,13 @@ namespace monad::vm::runtime
             return dest_address;
         }();
 
-        auto recipient = (call_kind == EVMC_CALL || static_call)
-                             ? dest_address
-                             : ctx->env.recipient;
+        auto const recipient = (call_kind == EVMC_CALL || static_call)
+                                   ? dest_address
+                                   : ctx->env.recipient;
 
-        auto sender = (call_kind == EVMC_DELEGATECALL) ? ctx->env.sender
-                                                       : ctx->env.recipient;
+        auto const sender = (call_kind == EVMC_DELEGATECALL)
+                                ? ctx->env.sender
+                                : ctx->env.recipient;
 
         if (has_value) {
             ctx->gas_remaining -= 9000;
@@ -105,7 +106,7 @@ namespace monad::vm::runtime
         if (call_kind == EVMC_CALL) {
             if (MONAD_VM_UNLIKELY(
                     has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
-                auto error_code =
+                auto const error_code =
                     ctx->gas_remaining + remaining_block_base_gas < 0
                         ? StatusCode::OutOfGas
                         : StatusCode::Error;
@@ -122,7 +123,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto gas_left_here = ctx->gas_remaining + remaining_block_base_gas;
+        auto const gas_left_here =
+            ctx->gas_remaining + remaining_block_base_gas;
 
         if (MONAD_VM_UNLIKELY(gas_left_here < 0)) {
             ctx->exit(StatusCode::OutOfGas);
@@ -148,7 +150,7 @@ namespace monad::vm::runtime
             return 0;
         }
 
-        auto message = evmc_message{
+        auto const message = evmc_message{
             .kind = call_kind,
             .flags = message_flags(
                 ctx->env.evmc_flags, static_call, dest_address != code_address),
@@ -166,7 +168,7 @@ namespace monad::vm::runtime
             .code_size = 0,
         };
 
-        auto result = ctx->host->call(ctx->context, &message);
+        auto const result = ctx->host->call(ctx->context, &message);
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 
@@ -177,7 +179,7 @@ namespace monad::vm::runtime
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
 
-        auto copy_size =
+        auto const copy_size =
             std::min(static_cast<std::size_t>(*ret_size), result.output_size);
         std::copy_n(
             result.output_data, copy_size, ctx->memory.data + *ret_offset);

@@ -140,8 +140,9 @@ namespace monad::vm::compiler::untyped
     {
         std::vector<size_t> coersions;
         for (size_t i = 0; i < output_stack_kind.size(); i++) {
-            auto current = current_type(input_stack_kind, output_stack, i);
-            auto expected =
+            auto const current =
+                current_type(input_stack_kind, output_stack, i);
+            auto const expected =
                 expected_jumpdest_type(dest_block_kind, output_stack_kind, i);
             if (!std::holds_alternative<Ignored>(expected)) {
                 if (std::holds_alternative<Word>(current) &&
@@ -254,12 +255,12 @@ namespace monad::vm::compiler::untyped
                 poly_typed::FallThrough const &fallthrough =
                     std::get<poly_typed::FallThrough>(tb.terminator);
 
-                auto padded_output_stack = pad_output_stack(
+                auto const padded_output_stack = pad_output_stack(
                     fallthrough.fallthrough_kind->front,
                     tb.output,
                     tb.min_params);
 
-                auto coerce_to_addr = collect_coercions(
+                auto const coerce_to_addr = collect_coercions(
                     tb.kind->front,
                     typed_blocks[fallthrough.fallthrough_dest].kind->front,
                     fallthrough.fallthrough_kind->front,
@@ -269,7 +270,7 @@ namespace monad::vm::compiler::untyped
             }
             else {
                 MONAD_VM_ASSERT(tb.output.size() > 0);
-                auto &jump_dest_value = tb.output.front();
+                auto const &jump_dest_value = tb.output.front();
                 std::optional<poly_typed::ContKind> jump_dest_kind;
                 JumpDest jump_dest;
 
@@ -307,7 +308,7 @@ namespace monad::vm::compiler::untyped
                         jump_dest_kind = std::nullopt;
                     }
                     else {
-                        if (auto block_offset_id = jumpdests.find(
+                        if (auto const block_offset_id = jumpdests.find(
                                 static_cast<size_t>(jump_dest_value.literal));
                             block_offset_id != jumpdests.end()) {
                             jump_dest = block_offset_id->second;
@@ -329,15 +330,15 @@ namespace monad::vm::compiler::untyped
                         std::get<poly_typed::Jump>(tb.terminator);
                     std::span<poly_typed::Value> const output_tail(
                         tb.output.data() + 1, tb.output.size() - 1);
-                    auto padded_output_stack = pad_output_stack(
+                    auto const padded_output_stack = pad_output_stack(
                         jump.jump_kind->front, output_tail, tb.min_params);
-                    auto coerce_to_addr = jump_dest_kind
-                                              ? collect_coercions(
-                                                    tb.kind->front,
-                                                    (*jump_dest_kind)->front,
-                                                    jump.jump_kind->front,
-                                                    padded_output_stack)
-                                              : std::vector<size_t>{};
+                    auto const coerce_to_addr =
+                        jump_dest_kind ? collect_coercions(
+                                             tb.kind->front,
+                                             (*jump_dest_kind)->front,
+                                             jump.jump_kind->front,
+                                             padded_output_stack)
+                                       : std::vector<size_t>{};
 
                     t = Jump{coerce_to_addr, jump_dest};
                 }
@@ -346,23 +347,24 @@ namespace monad::vm::compiler::untyped
                         std::get<poly_typed::JumpI>(tb.terminator);
                     std::span<poly_typed::Value> const output_tail(
                         tb.output.data() + 2, tb.output.size() - 2);
-                    auto padded_output_stack = pad_output_stack(
+                    auto const padded_output_stack = pad_output_stack(
                         jumpi.jump_kind->front, output_tail, tb.min_params);
-                    auto coerce_to_addr = jump_dest_kind
-                                              ? collect_coercions(
-                                                    tb.kind->front,
-                                                    (*jump_dest_kind)->front,
-                                                    jumpi.jump_kind->front,
-                                                    padded_output_stack)
-                                              : std::vector<size_t>{};
+                    auto const coerce_to_addr =
+                        jump_dest_kind ? collect_coercions(
+                                             tb.kind->front,
+                                             (*jump_dest_kind)->front,
+                                             jumpi.jump_kind->front,
+                                             padded_output_stack)
+                                       : std::vector<size_t>{};
                     MONAD_VM_ASSERT(
                         jumpi.fallthrough_dest < typed_blocks.size());
 
-                    auto padded_output_stack_fallthrough = pad_output_stack(
-                        jumpi.fallthrough_kind->front,
-                        output_tail,
-                        tb.min_params);
-                    auto fallthrough_coerce_to_addr = collect_coercions(
+                    auto const padded_output_stack_fallthrough =
+                        pad_output_stack(
+                            jumpi.fallthrough_kind->front,
+                            output_tail,
+                            tb.min_params);
+                    auto const fallthrough_coerce_to_addr = collect_coercions(
                         tb.kind->front,
                         typed_blocks[jumpi.fallthrough_dest].kind->front,
                         jumpi.fallthrough_kind->front,

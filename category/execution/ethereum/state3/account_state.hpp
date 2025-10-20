@@ -25,10 +25,8 @@
 #include <category/execution/ethereum/state3/account_substate.hpp>
 
 #include <evmc/evmc.h>
-
+#include <immer/map.hpp>
 #include <intx/intx.hpp>
-
-#include <ankerl/unordered_dense.h>
 
 #include <cstdint>
 #include <optional>
@@ -39,9 +37,8 @@ MONAD_NAMESPACE_BEGIN
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<
-        Key, T, BytesHashAvalanching<Key>>;
+    template <class K, class V>
+    using Map = immer::map<K, V, BytesHashAvalanching<K>>;
 
     std::optional<Account> account_{};
     Map<bytes32_t, bytes32_t> storage_{};
@@ -73,9 +70,9 @@ public:
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
-        auto const it = transient_storage_.find(key);
-        if (MONAD_LIKELY(it != transient_storage_.end())) {
-            return it->second;
+        auto *const it = transient_storage_.find(key);
+        if (MONAD_LIKELY(it != nullptr)) {
+            return *it;
         }
         return {};
     }
@@ -86,9 +83,9 @@ public:
     {
         bytes32_t current_value = original_value;
         {
-            auto const it = storage_.find(key);
-            if (it != storage_.end()) {
-                current_value = it->second;
+            auto *const it = storage_.find(key);
+            if (it != nullptr) {
+                current_value = *it;
             }
         }
         if (value == bytes32_t{}) {
@@ -99,9 +96,11 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_[key] = value;
+        transient_storage_ = transient_storage_.insert({key, value});
     }
 };
+
+static_assert(sizeof(AccountState) == 144);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

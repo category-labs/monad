@@ -27,32 +27,47 @@
 
 namespace detail
 {
+    template <template <auto> class T, std::size_t... Is>
+    constexpr auto make_monad_revision_types(std::index_sequence<Is...>)
+    {
+        return ::testing::Types<T<static_cast<monad_revision>(Is)>...>{};
+    }
+
+    template <template <auto> class T, std::size_t... Is>
+    constexpr auto make_evm_revision_types(std::index_sequence<Is...>)
+    {
+        return ::testing::Types<T<static_cast<evmc_revision>(Is)>...>{};
+    }
+}
+
+template <template <auto> class T>
+constexpr auto make_monad_revision_types()
+{
+    return ::detail::make_monad_revision_types<T>(
+        std::make_index_sequence<MONAD_COUNT>{});
+}
+
+template <template <auto> class T>
+constexpr auto make_evm_revision_types()
+{
+    // Skip over EVMC_REVISION which is EVMC_EXPERIMENTAL
+    return ::detail::make_evm_revision_types<T>(
+        std::make_index_sequence<EVMC_MAX_REVISION>{});
+}
+
+namespace detail
+{
     template <monad_revision rev>
     using MonadRevisionConstant = std::integral_constant<monad_revision, rev>;
 
     template <evmc_revision rev>
     using EvmRevisionConstant = std::integral_constant<evmc_revision, rev>;
 
-    template <std::size_t... Is>
-    constexpr auto make_monad_revision_types(std::index_sequence<Is...>)
-    {
-        return ::testing::Types<
-            MonadRevisionConstant<static_cast<monad_revision>(Is)>...>{};
-    }
+    using MonadRevisionTypes =
+        decltype(::make_monad_revision_types<MonadRevisionConstant>());
 
-    template <std::size_t... Is>
-    constexpr auto make_evm_revision_types(std::index_sequence<Is...>)
-    {
-        return ::testing::Types<
-            EvmRevisionConstant<static_cast<evmc_revision>(Is)>...>{};
-    }
-
-    using MonadRevisionTypes = decltype(make_monad_revision_types(
-        std::make_index_sequence<MONAD_COUNT>{}));
-
-    // Skip over EVMC_REVISION which is EVMC_EXPERIMENTAL
-    using EvmRevisionTypes = decltype(make_evm_revision_types(
-        std::make_index_sequence<EVMC_MAX_REVISION>{}));
+    using EvmRevisionTypes =
+        decltype(::make_evm_revision_types<EvmRevisionConstant>());
 
     // Helper to concatenate two ::testing::Types
     template <typename... Ts>

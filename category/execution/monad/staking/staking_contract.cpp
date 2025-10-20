@@ -33,6 +33,7 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
@@ -348,7 +349,9 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
+template <Traits traits>
+StakingContract<traits>::StakingContract(
+    State &state, CallTracerBase &call_tracer)
     : state_{state}
     , call_tracer_{call_tracer}
     , vars{state}
@@ -358,7 +361,8 @@ StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
 /////////////
 // Events //
 /////////////
-void StakingContract::emit_validator_rewarded_event(
+template <Traits traits>
+void StakingContract<traits>::emit_validator_rewarded_event(
     u64_be const val_id, Address const &from, u256_be const &amount)
 {
     constexpr bytes32_t signature = abi_encode_event_signature(
@@ -376,7 +380,8 @@ void StakingContract::emit_validator_rewarded_event(
     emit_log(event);
 }
 
-void StakingContract::emit_validator_created_event(
+template <Traits traits>
+void StakingContract<traits>::emit_validator_created_event(
     u64_be const val_id, Address const &auth_delegator,
     u256_be const &commission)
 
@@ -395,7 +400,8 @@ void StakingContract::emit_validator_created_event(
     emit_log(event);
 }
 
-void StakingContract::emit_validator_status_changed_event(
+template <Traits traits>
+void StakingContract<traits>::emit_validator_status_changed_event(
     u64_be const val_id, u64_be const flags)
 {
     constexpr bytes32_t signature =
@@ -411,7 +417,8 @@ void StakingContract::emit_validator_status_changed_event(
     emit_log(event);
 }
 
-void StakingContract::emit_delegation_event(
+template <Traits traits>
+void StakingContract<traits>::emit_delegation_event(
     u64_be const val_id, Address const &delegator, u256_be const &amount,
     u64_be const active_epoch)
 
@@ -431,7 +438,8 @@ void StakingContract::emit_delegation_event(
     emit_log(event);
 }
 
-void StakingContract::emit_undelegate_event(
+template <Traits traits>
+void StakingContract<traits>::emit_undelegate_event(
     u64_be const val_id, Address const &delegator, u8_be const withdrawal_id,
     u256_be const &amount, u64_be const activation_epoch)
 {
@@ -451,7 +459,8 @@ void StakingContract::emit_undelegate_event(
     emit_log(event);
 }
 
-void StakingContract::emit_withdraw_event(
+template <Traits traits>
+void StakingContract<traits>::emit_withdraw_event(
     u64_be const val_id, Address const &delegator, u8_be const withdrawal_id,
     u256_be const &amount)
 {
@@ -472,7 +481,8 @@ void StakingContract::emit_withdraw_event(
     emit_log(event);
 }
 
-void StakingContract::emit_claim_rewards_event(
+template <Traits traits>
+void StakingContract<traits>::emit_claim_rewards_event(
     u64_be const val_id, Address const &delegator, u256_be const &amount)
 {
     constexpr bytes32_t signature = abi_encode_event_signature(
@@ -490,7 +500,8 @@ void StakingContract::emit_claim_rewards_event(
     emit_log(event);
 }
 
-void StakingContract::emit_commission_changed_event(
+template <Traits traits>
+void StakingContract<traits>::emit_commission_changed_event(
     u64_be const val_id, u256_be const &old_commission,
     u256_be const &new_commission)
 {
@@ -508,7 +519,8 @@ void StakingContract::emit_commission_changed_event(
     emit_log(event);
 }
 
-void StakingContract::emit_epoch_changed_event(
+template <Traits traits>
+void StakingContract<traits>::emit_epoch_changed_event(
     u64_be const old_epoch, u64_be const new_epoch)
 {
     constexpr bytes32_t signature =
@@ -528,32 +540,39 @@ void StakingContract::emit_epoch_changed_event(
 // Helpers //
 //////////////
 
-void StakingContract::mint_tokens(uint256_t const &amount)
+template <Traits traits>
+void StakingContract<traits>::mint_tokens(uint256_t const &amount)
 {
     state_.add_to_balance(STAKING_CA, amount);
 }
 
-void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
+template <Traits traits>
+void StakingContract<traits>::send_tokens(
+    Address const &to, uint256_t const &amount)
 {
     state_.add_to_balance(to, amount);
     state_.subtract_from_balance(STAKING_CA, amount);
 }
 
-uint64_t StakingContract::get_activation_epoch() const noexcept
+template <Traits traits>
+uint64_t StakingContract<traits>::get_activation_epoch() const noexcept
 {
     auto const epoch = vars.epoch.load().native();
     return vars.in_epoch_delay_period.load_checked().has_value() ? epoch + 2
                                                                  : epoch + 1;
 }
 
-bool StakingContract::is_epoch_active(
+template <Traits traits>
+bool StakingContract<traits>::is_epoch_active(
     uint64_t const active_epoch) const noexcept
 {
     auto const current_epoch = vars.epoch.load().native();
     return active_epoch != 0 && active_epoch <= current_epoch;
 }
 
-void StakingContract::increment_accumulator_refcount(u64_be const val_id)
+template <Traits traits>
+void StakingContract<traits>::increment_accumulator_refcount(
+    u64_be const val_id)
 {
     auto const epoch = get_activation_epoch();
     auto acc_storage = vars.accumulated_reward_per_token(epoch, val_id);
@@ -564,7 +583,8 @@ void StakingContract::increment_accumulator_refcount(u64_be const val_id)
     acc_storage.store(acc);
 }
 
-u256_be StakingContract::decrement_accumulator_refcount(
+template <Traits traits>
+u256_be StakingContract<traits>::decrement_accumulator_refcount(
     u64_be const epoch, u64_be const val_id)
 {
     auto acc_storage = vars.accumulated_reward_per_token(epoch, val_id);
@@ -589,7 +609,8 @@ u256_be StakingContract::decrement_accumulator_refcount(
     return value;
 }
 
-bool StakingContract::add_to_valset(u64_be const val_id)
+template <Traits traits>
+bool StakingContract<traits>::add_to_valset(u64_be const val_id)
 {
     uint256_t set = vars.val_bitset_bucket(val_id).load().native();
     uint256_t const mask = 1_u256 << (val_id.native() & 0xFF);
@@ -599,7 +620,8 @@ bool StakingContract::add_to_valset(u64_be const val_id)
     return inserted;
 }
 
-void StakingContract::remove_from_valset(u64_be const val_id)
+template <Traits traits>
+void StakingContract<traits>::remove_from_valset(u64_be const val_id)
 {
     uint256_t set = vars.val_bitset_bucket(val_id).load().native();
     uint256_t const mask = ~(1_u256 << (val_id.native() & 0xFF));
@@ -622,8 +644,9 @@ void promote_delta(Delegator &del)
     del.set_next_delta_epoch(0);
 }
 
+template <Traits traits>
 Result<uint256_t>
-StakingContract::apply_compound(u64_be const val_id, Delegator &del)
+StakingContract<traits>::apply_compound(u64_be const val_id, Delegator &del)
 {
     auto const epoch_acc =
         decrement_accumulator_refcount(del.get_delta_epoch(), val_id);
@@ -643,8 +666,9 @@ StakingContract::apply_compound(u64_be const val_id, Delegator &del)
     return rewards;
 }
 
-Result<void>
-StakingContract::reward_invariant(ValExecution &val, uint256_t const &rewards)
+template <Traits traits>
+Result<void> StakingContract<traits>::reward_invariant(
+    ValExecution &val, uint256_t const &rewards)
 {
     bool const is_solvent = val.unclaimed_rewards().load().native() >= rewards;
 
@@ -660,8 +684,9 @@ StakingContract::reward_invariant(ValExecution &val, uint256_t const &rewards)
     return outcome::success();
 }
 
-Result<void>
-StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
+template <Traits traits>
+Result<void> StakingContract<traits>::pull_delegator_up_to_date(
+    u64_be const val_id, Delegator &del)
 {
     // move up next_delta_epoch
     if (can_promote_delta(del, vars.epoch.load())) {
@@ -716,7 +741,8 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
     return outcome::success();
 }
 
-Result<void> StakingContract::apply_reward(
+template <Traits traits>
+Result<void> StakingContract<traits>::apply_reward(
     u64_be const val_id, Address const &from, uint256_t const &new_rewards,
     uint256_t const &active_stake)
 {
@@ -752,8 +778,9 @@ Result<void> StakingContract::apply_reward(
 //  Precompiles  //
 ///////////////////
 
-std::pair<StakingContract::PrecompileFunc, uint64_t>
-StakingContract::precompile_dispatch(byte_string_view &input)
+template <Traits traits>
+std::pair<typename StakingContract<traits>::PrecompileFunc, uint64_t>
+StakingContract<traits>::precompile_dispatch(byte_string_view &input)
 {
     if (MONAD_UNLIKELY(input.size() < 4)) {
         return make_pair(&StakingContract::precompile_fallback, 40000);
@@ -840,7 +867,9 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     }
 }
 
-std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
+template <Traits traits>
+std::tuple<bool, u32_be, std::vector<u64_be>>
+StakingContract<traits>::get_valset(
     StorageArray<u64_be> const &valset, uint32_t const start_index,
     uint32_t const limit)
 {
@@ -856,23 +885,26 @@ std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
     return {done, static_cast<uint32_t>(i), std::move(valids)};
 }
 
+template <Traits traits>
 std::tuple<bool, Address, std::vector<Address>>
-StakingContract::get_delegators_for_validator(
+StakingContract<traits>::get_delegators_for_validator(
     u64_be val_id, Address const &start_delegator, uint32_t const limit)
 {
     return linked_list_traverse<u64_be, Address>(
         val_id, start_delegator, limit);
 }
 
+template <Traits traits>
 std::tuple<bool, u64_be, std::vector<u64_be>>
-StakingContract::get_validators_for_delegator(
+StakingContract<traits>::get_validators_for_delegator(
     Address const &delegator, u64_be const start_val_id, uint32_t const limit)
 {
     return linked_list_traverse<Address, u64_be>(
         delegator, start_val_id, limit);
 }
 
-Result<byte_string> StakingContract::precompile_get_validator(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_validator(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -907,7 +939,8 @@ Result<byte_string> StakingContract::precompile_get_validator(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_delegator(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_delegator(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -936,7 +969,8 @@ Result<byte_string> StakingContract::precompile_get_delegator(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::get_valset(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::get_valset(
     byte_string_view input, StorageArray<u64_be> const &valset)
 {
     BOOST_OUTCOME_TRY(auto const start_index, abi_decode_fixed<u32_be>(input));
@@ -962,7 +996,8 @@ Result<byte_string> StakingContract::get_valset(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_consensus_valset(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_consensus_valset(
     byte_string_view const input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -970,7 +1005,8 @@ Result<byte_string> StakingContract::precompile_get_consensus_valset(
     return get_valset(input, vars.valset_consensus);
 }
 
-Result<byte_string> StakingContract::precompile_get_snapshot_valset(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_snapshot_valset(
     byte_string_view const input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -978,7 +1014,8 @@ Result<byte_string> StakingContract::precompile_get_snapshot_valset(
     return get_valset(input, vars.valset_snapshot);
 }
 
-Result<byte_string> StakingContract::precompile_get_execution_valset(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_execution_valset(
     byte_string_view const input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -987,7 +1024,8 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
     return get_valset(input, valset);
 }
 
-Result<byte_string> StakingContract::precompile_get_delegations(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_delegations(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -1009,7 +1047,8 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_delegators(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_delegators(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -1032,7 +1071,8 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_epoch(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_epoch(
     byte_string_view const, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -1044,7 +1084,8 @@ Result<byte_string> StakingContract::precompile_get_epoch(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_get_withdrawal_request(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_get_withdrawal_request(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -1067,14 +1108,15 @@ Result<byte_string> StakingContract::precompile_get_withdrawal_request(
     return encoder.encode_final();
 }
 
-Result<byte_string> StakingContract::precompile_fallback(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_fallback(
     byte_string_view const, evmc_address const &, evmc_uint256be const &)
 {
     return StakingError::MethodNotSupported;
 }
 
-// TODO: Track solvency
-Result<byte_string> StakingContract::precompile_add_validator(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_add_validator(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
 {
@@ -1191,7 +1233,8 @@ Result<byte_string> StakingContract::precompile_add_validator(
     return byte_string{abi_encode_uint(val_id)};
 }
 
-Result<void> StakingContract::delegate(
+template <Traits traits>
+Result<void> StakingContract<traits>::delegate(
     u64_be const val_id, uint256_t const &stake, Address const &address)
 {
     auto val = vars.val_execution(val_id);
@@ -1277,7 +1320,8 @@ Result<void> StakingContract::delegate(
     return outcome::success();
 }
 
-Result<byte_string> StakingContract::precompile_delegate(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_delegate(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1293,7 +1337,8 @@ Result<byte_string> StakingContract::precompile_delegate(
     return byte_string{abi_encode_bool(true)};
 }
 
-Result<byte_string> StakingContract::precompile_undelegate(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_undelegate(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1383,8 +1428,8 @@ Result<byte_string> StakingContract::precompile_undelegate(
     return byte_string{abi_encode_bool(true)};
 }
 
-// TODO: No compounds allowed if auth_address is under sufficent amount.
-Result<byte_string> StakingContract::precompile_compound(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_compound(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1413,7 +1458,8 @@ Result<byte_string> StakingContract::precompile_compound(
     return byte_string{abi_encode_bool(true)};
 }
 
-Result<byte_string> StakingContract::precompile_withdraw(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_withdraw(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1463,7 +1509,8 @@ Result<byte_string> StakingContract::precompile_withdraw(
     return byte_string{abi_encode_bool(true)};
 }
 
-Result<byte_string> StakingContract::precompile_claim_rewards(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_claim_rewards(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1486,7 +1533,8 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
     return byte_string{abi_encode_bool(true)};
 }
 
-Result<byte_string> StakingContract::precompile_change_commission(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_change_commission(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
 {
@@ -1522,7 +1570,8 @@ Result<byte_string> StakingContract::precompile_change_commission(
     return byte_string{abi_encode_bool(true)};
 }
 
-Result<byte_string> StakingContract::precompile_external_reward(
+template <Traits traits>
+Result<byte_string> StakingContract<traits>::precompile_external_reward(
     byte_string_view input, evmc_address const &sender,
     evmc_uint256be const &msg_value)
 {
@@ -1562,7 +1611,8 @@ Result<byte_string> StakingContract::precompile_external_reward(
 //  System Calls  //
 ////////////////////
 
-Result<void> StakingContract::syscall_on_epoch_change(
+template <Traits traits>
+Result<void> StakingContract<traits>::syscall_on_epoch_change(
     byte_string_view input, uint256_t const &value)
 {
     if (MONAD_UNLIKELY(value != 0)) {
@@ -1619,8 +1669,8 @@ Result<void> StakingContract::syscall_on_epoch_change(
     return outcome::success();
 }
 
-// update rewards for leader only if in active validator set
-Result<void> StakingContract::syscall_reward(
+template <Traits traits>
+Result<void> StakingContract<traits>::syscall_reward(
     byte_string_view input, uint256_t const &raw_reward)
 {
     BOOST_OUTCOME_TRY(
@@ -1669,7 +1719,8 @@ Result<void> StakingContract::syscall_reward(
     return outcome::success();
 }
 
-Result<void> StakingContract::syscall_snapshot(
+template <Traits traits>
+Result<void> StakingContract<traits>::syscall_snapshot(
     byte_string_view const input, uint256_t const &value)
 {
     if (MONAD_UNLIKELY(value != 0)) {
@@ -1836,13 +1887,16 @@ struct LinkedListTrait<Address, u64_be>
         return n.inext;
     }
 
-    static auto load_node(StakingContract &c, Key const &k, Ptr const &p)
+    template <Traits traits>
+    static auto
+    load_node(StakingContract<traits> &c, Key const &k, Ptr const &p)
     {
         return c.vars.delegator(p, k).list_node().load(); // storage(id, addr)
     }
 
-    static void
-    store_node(StakingContract &c, Key const &k, Ptr const &p, auto const &n)
+    template <Traits traits>
+    static void store_node(
+        StakingContract<traits> &c, Key const &k, Ptr const &p, auto const &n)
     {
         c.vars.delegator(p, k).list_node().store(n);
     }
@@ -1887,21 +1941,25 @@ struct LinkedListTrait<u64_be, Address>
         return n.anext;
     }
 
-    static auto load_node(StakingContract &c, Key const &k, Ptr const &p)
+    template <Traits traits>
+    static auto
+    load_node(StakingContract<traits> &c, Key const &k, Ptr const &p)
     {
         return c.vars.delegator(k, p).list_node().load(); // storage(id, addr)
     }
 
-    static void
-    store_node(StakingContract &c, Key const &k, Ptr const &p, auto const &n)
+    template <Traits traits>
+    static void store_node(
+        StakingContract<traits> &c, Key const &k, Ptr const &p, auto const &n)
     {
         c.vars.delegator(k, p).list_node().store(n);
     }
 };
 
+template <Traits traits>
 template <typename Key, typename Ptr>
 Result<void>
-StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
+StakingContract<traits>::linked_list_insert(Key const &key, Ptr const &this_ptr)
 {
     using Trait = LinkedListTrait<Key, Ptr>;
 
@@ -1935,8 +1993,10 @@ StakingContract::linked_list_insert(Key const &key, Ptr const &this_ptr)
     return outcome::success();
 }
 
+template <Traits traits>
 template <typename Key, typename Ptr>
-void StakingContract::linked_list_remove(Key const &key, Ptr const &this_ptr)
+void StakingContract<traits>::linked_list_remove(
+    Key const &key, Ptr const &this_ptr)
 {
     using Trait = LinkedListTrait<Key, Ptr>;
 
@@ -1971,8 +2031,10 @@ void StakingContract::linked_list_remove(Key const &key, Ptr const &this_ptr)
     Trait::store_node(*this, key, this_ptr, this_node);
 }
 
+template <Traits traits>
 template <typename Key, typename Ptr>
-std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
+std::tuple<bool, Ptr, std::vector<Ptr>>
+StakingContract<traits>::linked_list_traverse(
     Key const &key, Ptr const &start_ptr, uint32_t const limit)
 {
     using Trait = LinkedListTrait<Key, Ptr>;
@@ -2004,10 +2066,13 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
     return {done, ptr, std::move(results)};
 }
 
-void StakingContract::emit_log(Receipt::Log const &log)
+template <Traits traits>
+void StakingContract<traits>::emit_log(Receipt::Log const &log)
 {
     state_.store_log(log);
     call_tracer_.on_log(log);
 }
+
+EXPLICIT_MONAD_TRAITS_CLASS(StakingContract);
 
 MONAD_STAKING_NAMESPACE_END

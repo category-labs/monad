@@ -21,6 +21,7 @@
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <test_resource_data.h>
 #include <utility>
@@ -83,7 +84,7 @@ protected:
         BlockState bs{tdb, vm};
         State state{bs, Incarnation{0, 0}};
         NoopCallTracer call_tracer{};
-        StakingContract contract{state, call_tracer};
+        StakingContract<MonadTraits<MONAD_FOUR>> contract{state, call_tracer};
 
         state.add_to_balance(STAKING_CA, 0);
 
@@ -130,7 +131,7 @@ class ReadValsetBeforeBoundary : public ReadValsetBase
 
 TEST_F(ReadValsetBeforeBoundary, get_this_epoch_valset)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
+    auto const set = read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH);
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
     for (auto const &validator : set.value()) {
@@ -140,19 +141,22 @@ TEST_F(ReadValsetBeforeBoundary, get_this_epoch_valset)
 
 TEST_F(ReadValsetBeforeBoundary, get_next_epoch_valset)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
     EXPECT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetBeforeBoundary, asking_for_expired_epoch)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
     ASSERT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetBeforeBoundary, asking_for_future_epoch)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
     ASSERT_FALSE(set.has_value());
 }
 
@@ -166,7 +170,7 @@ class ReadValsetAfterBoundary : public ReadValsetBase
 
 TEST_F(ReadValsetAfterBoundary, get_this_epoch_valset)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH);
+    auto const set = read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH);
 
     // expect the snapshot view when requesting current epoch valset
     ASSERT_TRUE(set.has_value());
@@ -178,7 +182,8 @@ TEST_F(ReadValsetAfterBoundary, get_this_epoch_valset)
 
 TEST_F(ReadValsetAfterBoundary, get_next_epoch_valset)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH + 1);
 
     // expect the consensus view when requesting current epoch valset
     ASSERT_TRUE(set.has_value());
@@ -190,12 +195,14 @@ TEST_F(ReadValsetAfterBoundary, get_next_epoch_valset)
 
 TEST_F(ReadValsetAfterBoundary, asking_for_expired_epoch)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH - 1);
     EXPECT_FALSE(set.has_value());
 }
 
 TEST_F(ReadValsetAfterBoundary, asking_for_future_epoch)
 {
-    auto const set = read_valset(ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
+    auto const set =
+        read_valset(MONAD_FOUR, ro, TEST_BLOCK_NUM, TEST_EPOCH + 3);
     EXPECT_FALSE(set.has_value());
 }

@@ -29,6 +29,7 @@
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -44,6 +45,7 @@ MONAD_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
+template <Traits traits>
 class StakingContract
 {
     State &state_;

@@ -35,6 +35,7 @@
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
 #include <test_resource_data.h>
@@ -251,7 +252,7 @@ struct Stake : public ::testing::Test
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer{};
-    StakingContract contract{state, call_tracer};
+    StakingContract<MonadTraits<MONAD_FOUR>> contract{state, call_tracer};
 
     void SetUp() override
     {

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/execution/monad/staking/config.hpp>
+#include <category/vm/evm/monad/revision.h>
 
 #include <optional>
 #include <vector>
@@ -41,7 +42,8 @@ struct Validator
     evmc_uint256be stake;
 };
 
-std::optional<std::vector<Validator>>
-read_valset(mpt::Db &db, size_t block_num, uint64_t requested_epoch);
+std::optional<std::vector<Validator>> read_valset(
+    monad_revision rev, mpt::Db &db, size_t block_num,
+    uint64_t requested_epoch);
 
 MONAD_STAKING_NAMESPACE_END

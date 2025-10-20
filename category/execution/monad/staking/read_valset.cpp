@@ -24,12 +24,14 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/vm.hpp>
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-std::optional<std::vector<Validator>>
-read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
+template <Traits traits>
+std::optional<std::vector<Validator>> read_valset_impl(
+    mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
 {
     vm::VM vm;
     TrieDb tdb{db};
@@ -38,7 +40,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};
     NoopCallTracer call_tracer{};
-    staking::StakingContract contract(state, call_tracer);
+    staking::StakingContract<traits> contract(state, call_tracer);
     state.add_to_balance(staking::STAKING_CA, 0);
 
     uint64_t const contract_epoch = contract.vars.epoch.load().native();
@@ -78,6 +80,14 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
         std::memcpy(valset[i].stake.bytes, stake.bytes, 32);
     }
     return valset;
+}
+
+std::optional<std::vector<Validator>> read_valset(
+    monad_revision const rev, mpt::Db &db, size_t const block_num,
+    uint64_t const requested_epoch)
+{
+    SWITCH_MONAD_TRAITS(read_valset_impl, db, block_num, requested_epoch);
+    MONAD_ASSERT(false);
 }
 
 MONAD_STAKING_NAMESPACE_END

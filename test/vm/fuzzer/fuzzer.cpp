@@ -804,15 +804,16 @@ static void do_run(
         total_messages);
 }
 
-static bool try_run(arguments const &args, Run const &run)
+static std::optional<FuzzerAssertFailure>
+try_run(arguments const &args, Run const &run)
 {
     try {
         size_t iteration_index = 0;
         do_run(0, args, run, iteration_index);
-        return true;
+        return std::nullopt;
     }
     catch (FuzzerAssertFailure const &ex) {
-        return false;
+        return ex;
     }
 }
 
@@ -924,7 +925,7 @@ void print_run(Run const &run)
     }
 }
 
-static bool try_run_with_subcontract(
+static std::optional<FuzzerAssertFailure> try_run_with_subcontract(
     arguments const &args, Run run, std::vector<BasicBlock> subcontract,
     std::size_t subcontract_iteration_index)
 {
@@ -953,7 +954,7 @@ static std::optional<std::vector<BasicBlock>> shrink_run_contract(
     }
 
     auto [new_contract, removed_block_ix] = shrink_contract(engine, contract);
-    if (!try_run_with_subcontract(
+    if (try_run_with_subcontract(
             args, run, new_contract, contract_iteration_index)) {
         // Block was not needed
         return std::move(new_contract);
@@ -963,7 +964,7 @@ static std::optional<std::vector<BasicBlock>> shrink_run_contract(
         // First try with ranges of instructions
         // Idea if that fails: Substitute instructions with simpler ones?
         auto new_contract2 = shrink_block(engine, contract, removed_block_ix);
-        if (!try_run_with_subcontract(
+        if (try_run_with_subcontract(
                 args, run, new_contract2, contract_iteration_index)) {
             return std::move(new_contract2);
         }
@@ -975,7 +976,7 @@ static std::optional<std::vector<BasicBlock>> shrink_run_contract(
         auto [new_contract, shrunk_contract] =
             propagate_jumpdest(contract, removed_block_ix);
         if (shrunk_contract &&
-            !try_run_with_subcontract(
+            try_run_with_subcontract(
                 args, run, new_contract, contract_iteration_index)) {
             return std::move(new_contract);
         }
@@ -993,7 +994,7 @@ static Run make_singleton_run(
         SendMessage{failed_message}};
 }
 
-static bool try_singleton_run(
+static std::optional<FuzzerAssertFailure> try_singleton_run(
     arguments const &args, seed_t contract_hook_seed,
     std::vector<BasicBlock> contract, evmc::address contract_address,
     evmc_message failed_message)
@@ -1026,7 +1027,7 @@ static Run shrink_singleton_run(
     }
 
     // Make sure the final shrunken contract still fails
-    FUZZER_ASSERT(!try_run(args, run));
+    FUZZER_ASSERT(try_run(args, run));
 
     return run;
 }
@@ -1046,7 +1047,7 @@ shrink_remove_steps(arguments const &args, Engine &engine, Run const &run)
         // Try to remove 10% of the steps
         auto const new_run = erase_range(engine, current_run, 0.1);
 
-        if (!try_run(args, new_run)) {
+        if (try_run(args, new_run)) {
             current_run = std::move(new_run);
             iteration_count = 0;
         }
@@ -1115,7 +1116,7 @@ static Run shrink_complete_run(
         current_run.end());
 
     // // Make sure the final shrunken run still fails
-    FUZZER_ASSERT(!try_run(args, run));
+    FUZZER_ASSERT(try_run(args, run));
 
     print_run_summary(current_run);
     current_run = shrink_remove_steps(args, engine, current_run);
@@ -1128,7 +1129,7 @@ static Run shrink_complete_run(
     print_run_summary(current_run);
 
     // Make sure the final shrunken run still fails
-    FUZZER_ASSERT(!try_run(args, run));
+    FUZZER_ASSERT(try_run(args, run));
 
     return current_run;
 }
@@ -1167,7 +1168,7 @@ shrink_run(arguments const &args, Run const &run, size_t failed_iteration_index)
     }
     auto const &failed_contract = failed_contract_it->second;
 
-    if (try_singleton_run(
+    if (!try_singleton_run(
             args,
             failed_contract.second,
             failed_contract.first,
@@ -1214,7 +1215,7 @@ static void run_loop(int argc, char **argv)
             auto const deterministic_compilation_enabled =
                 args.deterministic_compilation;
             args.deterministic_compilation = true;
-            if (!deterministic_compilation_enabled && try_run(args, run)) {
+            if (!deterministic_compilation_enabled && !try_run(args, run)) {
                 args.contract_shrinking_attempts *= 10;
             }
             args.deterministic_compilation = deterministic_compilation_enabled;
@@ -1222,6 +1223,17 @@ static void run_loop(int argc, char **argv)
             auto const &shrunk_run = shrink_run(args, run, iteration_index);
             std::cerr << "Counter-example found by fuzzer:\n";
             print_run(shrunk_run);
+
+            auto const reason = try_run(args, shrunk_run);
+            if (reason) {
+                std::cerr << "Final failure reason" << std::endl;
+                std::cerr << std::format(
+                    "  Assertion failed: {}\n", reason->what());
+            }
+            else {
+                std::cerr << "ERROR: Final run succeeded unexpectedly\n";
+            }
+
             std::exit(1);
         }
         args.seed = random_engine_t(args.seed)();

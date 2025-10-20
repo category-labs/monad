@@ -287,6 +287,7 @@ target_link_libraries(
   PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak
   PUBLIC evmc
+  PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
@@ -294,6 +295,29 @@ target_link_libraries(
   PUBLIC unordered_dense
   PUBLIC TBB::tbb)
 monad_compile_options(monad_execution_ethereum)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(IMMER_CPP_DISABLED_WARNINGS
+    -Wno-unused-parameter
+    -Wno-extended-offsetof
+    -Wno-c++17-extensions
+    -Wno-sign-conversion
+    -Wno-shorten-64-to-32
+    -Wno-deprecated-declarations
+    -Wno-c++1z-extensions
+    -Wno-unknown-warning-option
+    -Wno-type-limits
+  )
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(IMMER_CPP_DISABLED_WARNINGS
+    -Wno-array-bounds
+    -Wno-unused-parameter
+    -Wno-deprecated-declarations
+    -Wno-type-limits
+    -Wno-conversion
+  )
+endif()
+target_compile_options(immer INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:${IMMER_CPP_DISABLED_WARNINGS}>")
 
 target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)
 

@@ -20,21 +20,19 @@
 #include <category/core/config.hpp>
 
 #include <evmc/evmc.h>
-
-#include <ankerl/unordered_dense.h>
+#include <immer/set.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
-    template <class Key>
-    using Set = ankerl::unordered_dense::set<Key, BytesHashAvalanching<Key>>;
+    using Set = immer::set<bytes32_t, BytesHashAvalanching<bytes32_t>>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
-    Set<bytes32_t> accessed_storage_{}; // A_K
+    Set accessed_storage_{}; // A_K
 
 public:
     AccountSubstate() = default;
@@ -56,7 +54,7 @@ public:
     }
 
     // A_K
-    Set<bytes32_t> const &get_accessed_storage() const
+    Set get_accessed_storage() const
     {
         return accessed_storage_;
     }
@@ -89,12 +87,14 @@ public:
     // A_K
     evmc_access_status access_storage(bytes32_t const &key)
     {
-        bool const inserted = accessed_storage_.emplace(key).second;
-        if (inserted) {
+        if (accessed_storage_.count(key) == 0) {
+            accessed_storage_ = accessed_storage_.insert(key);
             return EVMC_ACCESS_COLD;
         }
         return EVMC_ACCESS_WARM;
     }
 };
+
+static_assert(sizeof(AccountSubstate) == 24);
 
 MONAD_NAMESPACE_END

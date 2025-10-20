@@ -136,6 +136,10 @@ add_subdirectory("third_party/cthash")
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
+# immer
+add_library(immer INTERFACE)
+target_include_directories(immer INTERFACE "third_party/immer")
+
 # intx
 add_subdirectory("third_party/intx")
 

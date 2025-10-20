@@ -28,9 +28,11 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
-#include <evmc/evmc.h>
-
 #include <ankerl/unordered_dense.h>
+#include <evmc/evmc.h>
+#include <immer/map.hpp>
+#include <immer/set.hpp>
+#include <immer/vector.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -62,7 +64,7 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<std::vector<Receipt::Log>> logs_{{}};
+    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -197,7 +199,7 @@ public:
 
     ////////////////////////////////////////
 
-    std::vector<Receipt::Log> const &logs();
+    immer::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
 

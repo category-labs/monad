@@ -154,21 +154,21 @@ namespace monad::vm::runtime
             return EVMC_OUT_OF_GAS;
         }
 
-        auto size =
+        auto const size =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(size_word));
         if (*size == 0) {
             return std::span<std::uint8_t const>({});
         }
 
-        auto offset_word = std::bit_cast<uint256_t>(result.offset);
+        auto const offset_word = std::bit_cast<uint256_t>(result.offset);
         if (!is_bounded_by_bits<Memory::offset_bits>(offset_word)) {
             return EVMC_OUT_OF_GAS;
         }
 
-        auto offset =
+        auto const offset =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(offset_word));
 
-        auto memory_end = offset + size;
+        auto const memory_end = offset + size;
 
         // We want to avoid preallocating the output buffer: if we run out of
         // gas, then we need to immediately free the buffer if it was allocated
@@ -187,7 +187,7 @@ namespace monad::vm::runtime
             std::memcpy(output_buf, memory.data + *offset, *size);
         }
         else {
-            auto memory_cost =
+            auto const memory_cost =
                 Context::memory_cost_from_word_count(shr_ceil<5>(memory_end));
             gas_remaining -= memory_cost - memory.cost;
 
@@ -198,7 +198,7 @@ namespace monad::vm::runtime
             output_buf = allocate_output_buf();
 
             if (*offset < memory.size) {
-                auto n = memory.size - *offset;
+                auto const n = memory.size - *offset;
                 std::memcpy(output_buf, memory.data + *offset, n);
                 std::memset(output_buf + n, 0, *memory_end - memory.size);
             }

@@ -90,7 +90,7 @@ namespace monad::vm::llvm
             Block const &blk, VirtualStack &stack, Value *stack_top,
             bool const stack_top_updated)
         {
-            auto term = blk.terminator;
+            auto const term = blk.terminator;
             switch (term) {
             case Jump:
                 jump(stack, stack_top, stack_top_updated);
@@ -442,7 +442,7 @@ namespace monad::vm::llvm
 
         void emit_instr(Instruction const &instr, VirtualStack &stack)
         {
-            auto op = instr.opcode();
+            auto const op = instr.opcode();
 
             switch (op) {
             case Push:
@@ -471,9 +471,9 @@ namespace monad::vm::llvm
 
             default:
                 Function *f;
-                auto nm = instr_name(instr);
+                auto const nm = instr_name(instr);
 
-                auto item = llvm_opcode_tbl.find(nm);
+                auto const item = llvm_opcode_tbl.find(nm);
                 if (item != llvm_opcode_tbl.end()) {
                     f = item->second;
                 }
@@ -558,7 +558,7 @@ namespace monad::vm::llvm
 
         bool is_jumpdest(Block const &blk)
         {
-            auto item = ir.jump_dests().find(blk.offset);
+            auto const item = ir.jump_dests().find(blk.offset);
             return (item != ir.jump_dests().end());
         };
 
@@ -576,7 +576,7 @@ namespace monad::vm::llvm
 
         Block const &get_fallthrough_block(Block const &blk)
         {
-            auto dest = blk.fallthrough_dest;
+            auto const dest = blk.fallthrough_dest;
             MONAD_VM_ASSERT(
                 dest != INVALID_BLOCK_ID && dest < ir.blocks().size());
             return ir.blocks()[dest];
@@ -586,7 +586,7 @@ namespace monad::vm::llvm
             Block const &blk, VirtualStack const &stack, Value *stack_top,
             bool const stack_top_updated)
         {
-            auto next_blk = get_fallthrough_block(blk);
+            auto const next_blk = get_fallthrough_block(blk);
             MONAD_VM_ASSERT(is_jumpdest(next_blk));
             llvm.debug("fall through to jumpdest\n");
             stack_spill(stack, stack_top, stack_top_updated);
@@ -611,13 +611,13 @@ namespace monad::vm::llvm
             auto *b = stack.pop();
             auto *isz = llvm.eq(b, llvm.lit_word(0));
 
-            auto fallthrough_block = get_fallthrough_block(blk);
+            auto const fallthrough_block = get_fallthrough_block(blk);
             BasicBlock *then_lbl = get_block_lbl(fallthrough_block);
 
             BasicBlock *else_lbl = llvm.basic_block(
                 std::format("else_lbl_{}", blk.offset), contract);
 
-            auto fallthrough_is_jumpdest = is_jumpdest(fallthrough_block);
+            auto const fallthrough_is_jumpdest = is_jumpdest(fallthrough_block);
 
             if (fallthrough_is_jumpdest) {
                 llvm.debug("jumpi fallthrough is jumpdest, spilling prior to "
@@ -743,7 +743,7 @@ namespace monad::vm::llvm
 
         BasicBlock *get_block_lbl(Block const &blk)
         {
-            auto item = block_tbl.find(blk.offset);
+            auto const item = block_tbl.find(blk.offset);
             if (item == block_tbl.end()) {
                 auto const *nm = is_jumpdest(blk) ? "jd" : "fallthrough";
                 auto *lbl = llvm.basic_block(
@@ -1178,7 +1178,7 @@ namespace monad::vm::llvm
 
         Function *init_instr(Instruction const &instr)
         {
-            auto op = instr.opcode();
+            auto const op = instr.opcode();
             switch (op) {
             case SStore:
                 return ffi_runtime(instr, sstore<traits>);

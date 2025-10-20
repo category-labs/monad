@@ -157,14 +157,14 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_ASSERT(!stack_offset_.has_value());
         stack_offset_ = x;
-        auto removed = stack_.available_stack_offsets_.erase(x.offset);
+        auto const removed = stack_.available_stack_offsets_.erase(x.offset);
         MONAD_VM_ASSERT(removed == 1);
     }
 
     void StackElem::insert_avx_reg()
     {
         MONAD_VM_ASSERT(!avx_reg_.has_value());
-        auto x = stack_.free_avx_regs_.top();
+        auto const x = stack_.free_avx_regs_.top();
         avx_reg_ = x;
         stack_.free_avx_regs_.pop();
         MONAD_VM_ASSERT(stack_.avx_reg_stack_elems_[x.reg] == nullptr);
@@ -173,7 +173,7 @@ namespace monad::vm::compiler::native
 
     void StackElem::insert_general_reg()
     {
-        auto reg = stack_.free_general_regs_.top();
+        auto const reg = stack_.free_general_regs_.top();
         stack_.free_general_regs_.pop();
         MONAD_VM_ASSERT(!general_reg_.has_value());
         MONAD_VM_ASSERT(stack_.general_reg_stack_elems_[reg.reg] == nullptr);
@@ -185,7 +185,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_ASSERT(avx_reg_.has_value());
         stack_.free_avx_regs_.push(*avx_reg_);
-        auto reg = avx_reg_->reg;
+        auto const reg = avx_reg_->reg;
         MONAD_VM_ASSERT(stack_.avx_reg_stack_elems_[reg] == this);
         stack_.avx_reg_stack_elems_[reg] = nullptr;
     }
@@ -194,7 +194,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_ASSERT(general_reg_.has_value());
         stack_.free_general_regs_.push(*general_reg_);
-        auto reg = general_reg_->reg;
+        auto const reg = general_reg_->reg;
         MONAD_VM_ASSERT(stack_.general_reg_stack_elems_[reg] == this);
         stack_.general_reg_stack_elems_[reg] = nullptr;
     }
@@ -318,9 +318,9 @@ namespace monad::vm::compiler::native
     {
         auto const [pre_min_delta, pre_delta, pre_max_delta] =
             block.stack_deltas();
-        auto new_min_delta = std::min(delta_ + pre_min_delta, min_delta_);
-        auto new_delta = delta_ + pre_delta;
-        auto new_max_delta = std::max(delta_ + pre_max_delta, max_delta_);
+        auto const new_min_delta = std::min(delta_ + pre_min_delta, min_delta_);
+        auto const new_delta = delta_ + pre_delta;
+        auto const new_max_delta = std::max(delta_ + pre_max_delta, max_delta_);
 
         negative_elems_.reserve(static_cast<std::size_t>(-new_min_delta));
         for (auto i = min_delta_ - 1; i >= new_min_delta; --i) {
@@ -371,12 +371,12 @@ namespace monad::vm::compiler::native
     StackElemRef &Stack::at(std::int32_t index)
     {
         if (index < 0) {
-            auto i = static_cast<std::size_t>(-index - 1);
+            auto const i = static_cast<std::size_t>(-index - 1);
             MONAD_VM_ASSERT(i < negative_elems_.size());
             return negative_elems_[i];
         }
         else {
-            auto i = static_cast<std::size_t>(index);
+            auto const i = static_cast<std::size_t>(index);
             MONAD_VM_ASSERT(i < positive_elems_.size());
             return positive_elems_[i];
         }
@@ -391,7 +391,7 @@ namespace monad::vm::compiler::native
     {
         auto &e = at(top_index_);
 
-        auto rem = e->stack_indices_.erase(top_index_);
+        auto const rem = e->stack_indices_.erase(top_index_);
         MONAD_VM_DEBUG_ASSERT(rem == 1);
 
         // Note that it's valid for stack indices to become negative here.
@@ -419,10 +419,10 @@ namespace monad::vm::compiler::native
 
     StackElemRef Stack::negate_if_deferred_comparison(StackElemRef e)
     {
-        auto &dc = deferred_comparison_;
+        auto const &dc = deferred_comparison_;
         if (dc.stack_elem == e.get()) {
             if (dc.negated_stack_elem) {
-                auto i = dc.negated_stack_elem->stack_indices_.begin();
+                auto const i = dc.negated_stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(
                     i != dc.negated_stack_elem->stack_indices_.end());
                 return at(*i);
@@ -435,7 +435,7 @@ namespace monad::vm::compiler::native
         }
         else if (dc.negated_stack_elem == e.get()) {
             if (dc.stack_elem) {
-                auto i = dc.stack_elem->stack_indices_.begin();
+                auto const i = dc.stack_elem->stack_indices_.begin();
                 MONAD_VM_DEBUG_ASSERT(i != dc.stack_elem->stack_indices_.end());
                 return at(*i);
             }
@@ -469,16 +469,16 @@ namespace monad::vm::compiler::native
         auto t = top();
         auto &e = at(swap_index);
 
-        auto rem_t = t->stack_indices_.erase(top_index_);
+        auto const rem_t = t->stack_indices_.erase(top_index_);
         MONAD_VM_DEBUG_ASSERT(rem_t == 1);
 
-        auto rem_e = e->stack_indices_.erase(swap_index);
+        auto const rem_e = e->stack_indices_.erase(swap_index);
         MONAD_VM_DEBUG_ASSERT(rem_e == 1);
 
-        auto ins_t = t->stack_indices_.insert(swap_index);
+        auto const ins_t = t->stack_indices_.insert(swap_index);
         MONAD_VM_DEBUG_ASSERT(ins_t.second);
 
-        auto ins_e = e->stack_indices_.insert(top_index_);
+        auto const ins_e = e->stack_indices_.insert(top_index_);
         MONAD_VM_DEBUG_ASSERT(ins_e.second);
 
         at(top_index_) = std::move(e);
@@ -721,7 +721,7 @@ namespace monad::vm::compiler::native
         if (e.stack_offset_.has_value()) {
             return;
         }
-        auto offset = find_available_stack_offset(preferred);
+        auto const offset = find_available_stack_offset(preferred);
         e.insert_stack_offset(offset);
     }
 

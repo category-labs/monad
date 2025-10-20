@@ -33,13 +33,15 @@ namespace monad::vm::runtime
             return;
         }
 
-        auto block_number = static_cast<std::int64_t>(*block_number_ptr);
+        auto const block_number = static_cast<std::int64_t>(*block_number_ptr);
         auto const &tx_context = ctx->env.tx_context;
 
-        auto first_allowed_block = std::max(tx_context.block_number - 256, 0L);
+        auto const first_allowed_block =
+            std::max(tx_context.block_number - 256, 0L);
         if (block_number >= first_allowed_block &&
             block_number < tx_context.block_number) {
-            auto hash = ctx->host->get_block_hash(ctx->context, block_number);
+            auto const hash =
+                ctx->host->get_block_hash(ctx->context, block_number);
             *result_ptr = uint256_from_bytes32(hash);
         }
         else {
@@ -49,7 +51,7 @@ namespace monad::vm::runtime
 
     inline void selfbalance(Context *ctx, uint256_t *result_ptr)
     {
-        auto balance =
+        auto const balance =
             ctx->host->get_balance(ctx->context, &ctx->env.recipient);
         *result_ptr = uint256_from_bytes32(balance);
     }

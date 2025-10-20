@@ -65,14 +65,14 @@ namespace
         using monad::vm::Cases;
 
         std::vector<Kind> kinds;
-        for (auto &k : cont->front) {
+        for (auto const &k : cont->front) {
             kinds.push_back(refresh(state, su, k));
         }
         return std::visit(
             Cases{
                 [&state, &su, &kinds](ContVar const &cv) {
                     VarName new_v;
-                    auto it = su.cont_map.find(cv.var);
+                    auto const it = su.cont_map.find(cv.var);
                     if (it != su.cont_map.end()) {
                         new_v = it->second;
                     }
@@ -99,7 +99,7 @@ namespace
                 [](Any const &) { return any; },
                 [&state, &su](KindVar const &kv) {
                     VarName new_v;
-                    auto it = su.kind_map.find(kv.var);
+                    auto const it = su.kind_map.find(kv.var);
                     if (it != su.kind_map.end()) {
                         new_v = it->second;
                     }
@@ -144,7 +144,7 @@ namespace monad::vm::compiler::poly_typed
 
     ContKind InferState::get_type(block_id bid)
     {
-        auto it = block_types.find(bid);
+        auto const it = block_types.find(bid);
         MONAD_VM_DEBUG_ASSERT(it != block_types.end());
         PolyVarSubstMap su;
         return refresh(*this, su, it->second);
@@ -164,7 +164,7 @@ namespace monad::vm::compiler::poly_typed
 
         byte_offset const offset = static_cast<byte_offset>(value.literal[0]);
 
-        auto it = jumpdests.find(offset);
+        auto const it = jumpdests.find(offset);
         if (it == jumpdests.end()) {
             return std::nullopt;
         }

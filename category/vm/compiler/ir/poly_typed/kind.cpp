@@ -48,8 +48,8 @@ namespace
                 [](Any const &) { return true; },
                 [&su1, &su2, &k2](KindVar const &kv1) {
                     KindVar const &kv2 = std::get<KindVar>(*k2);
-                    auto it1 = su1.kind_map.find(kv1.var);
-                    auto it2 = su2.kind_map.find(kv2.var);
+                    auto const it1 = su1.kind_map.find(kv1.var);
+                    auto const it2 = su2.kind_map.find(kv2.var);
                     if (it1 == su1.kind_map.end() &&
                         it2 == su2.kind_map.end()) {
                         su1.kind_map.insert_or_assign(kv1.var, kv2.var);
@@ -101,8 +101,8 @@ namespace
             Cases{
                 [&su1, &su2, &c2](ContVar const &cv1) {
                     ContVar const &cv2 = std::get<ContVar>(c2->tail);
-                    auto it1 = su1.cont_map.find(cv1.var);
-                    auto it2 = su2.cont_map.find(cv2.var);
+                    auto const it1 = su1.cont_map.find(cv1.var);
+                    auto const it2 = su2.cont_map.find(cv2.var);
                     if (it1 == su1.cont_map.end() &&
                         it2 == su2.cont_map.end()) {
                         su1.cont_map.insert_or_assign(cv1.var, cv2.var);
@@ -134,7 +134,8 @@ namespace
         using monad::vm::Cases;
 
         if (std::holds_alternative<KindVar>(*generic)) {
-            auto new_k = su.kind_map.find(std::get<KindVar>(*generic).var);
+            auto const new_k =
+                su.kind_map.find(std::get<KindVar>(*generic).var);
             if (new_k != su.kind_map.end()) {
                 return weak_equal(new_k->second, specific);
             }
@@ -208,7 +209,7 @@ namespace
                 }
             }
             VarName const v = std::get<ContVar>(generic->tail).var;
-            auto it = su.cont_map.find(v);
+            auto const it = su.cont_map.find(v);
             if (it != su.cont_map.end()) {
                 ContKind const c = it->second;
                 if (!std::holds_alternative<ContWords>(c->tail)) {
@@ -248,7 +249,7 @@ namespace
             }
             MONAD_VM_DEBUG_ASSERT(min_size == generic->front.size());
             VarName const v = std::get<ContVar>(generic->tail).var;
-            auto it = su.cont_map.find(v);
+            auto const it = su.cont_map.find(v);
             if (it != su.cont_map.end()) {
                 ContKind const c = it->second;
                 if (c->front.size() != specific->front.size() - min_size) {

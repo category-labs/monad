@@ -226,7 +226,7 @@ namespace
         unify(state.subst_map, stack[stack.size() - 2], word);
         Kind jumpdest = stack.back();
         auto jump_stack = stack;
-        auto jump_tail = tail;
+        auto const jump_tail = tail;
         auto const &block = state.pre_blocks[bid];
         MONAD_VM_DEBUG_ASSERT(block.output.size() >= 2);
         size_t jumpix = std::numeric_limits<size_t>::max();

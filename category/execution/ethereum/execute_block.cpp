@@ -341,6 +341,72 @@ Result<std::vector<Receipt>> execute_block(
 
     execute_block_header<traits>(chain, block_state, block.header);
 
+    auto const access_list_begin = std::chrono::steady_clock::now();
+    {
+        size_t count = 0;
+        for (auto const &tx : block.transactions) {
+            count += tx.access_list.size();
+        }
+        std::shared_ptr<boost::fibers::promise<void>[]> promises{
+            new boost::fibers::promise<void>[count]};
+        size_t i = 0;
+        for (auto const &tx : block.transactions) {
+            for (auto const &ae : tx.access_list) {
+                MONAD_ASSERT(i < count);
+                priority_pool.submit(
+                    i, [promises, i, addr = ae.a, &block_state]() {
+                        block_state.read_account(addr);
+                        promises[static_cast<std::ptrdiff_t>(i)].set_value();
+                    });
+                ++i;
+            }
+        }
+        MONAD_ASSERT(i == count);
+        block_metrics.set_access_list_addrs(count);
+        for (size_t j = 0; j < count; ++j) {
+            promises[static_cast<std::ptrdiff_t>(j)].get_future().wait();
+        }
+    }
+    {
+        size_t count = 0;
+        for (auto const &tx : block.transactions) {
+            for (auto const &ae : tx.access_list) {
+                count += ae.keys.size();
+            }
+        }
+        std::shared_ptr<boost::fibers::promise<void>[]> promises{
+            new boost::fibers::promise<void>[count]};
+        size_t i = 0;
+        for (auto const &tx : block.transactions) {
+            for (auto const &ae : tx.access_list) {
+                Address const addr = ae.a;
+                auto const account = block_state.read_account(addr);
+                Incarnation const incarnation = account.has_value()
+                                                    ? account->incarnation
+                                                    : Incarnation{0, 0};
+                for (auto const &key : ae.keys) {
+                    MONAD_ASSERT(i < count);
+                    priority_pool.submit(
+                        i,
+                        [promises, i, addr, incarnation, key, &block_state]() {
+                            block_state.read_storage(addr, incarnation, key);
+                            promises[static_cast<std::ptrdiff_t>(i)]
+                                .set_value();
+                        });
+                    ++i;
+                }
+            }
+        }
+        MONAD_ASSERT(i == count);
+        block_metrics.set_access_list_keys(count);
+        for (size_t j = 0; j < count; ++j) {
+            promises[static_cast<std::ptrdiff_t>(j)].get_future().wait();
+        }
+    }
+    block_metrics.set_access_list_time(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - access_list_begin));
+
     BOOST_OUTCOME_TRY(
         auto const retvals,
         execute_block_transactions<traits>(

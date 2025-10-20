@@ -322,6 +322,7 @@ namespace
         seed_t seed = default_seed;
         std::size_t runs = std::numeric_limits<std::size_t>::max();
         bool print_stats = false;
+        bool print_shrinker_state = false;
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
         evmc_revision revision = EVMC_OSAKA;
@@ -386,6 +387,11 @@ static arguments parse_args(int const argc, char **const argv)
         "--print-stats",
         args.print_stats,
         "Print message result statistics when logging");
+
+    app.add_flag(
+        "--print-shrinker-state",
+        args.print_shrinker_state,
+        "Print size of run when shrinking");
 
     app.add_flag(
         "--deterministic-compilation",
@@ -724,8 +730,8 @@ static Run prepare_run(arguments const &args)
 }
 
 static void do_run(
-    std::size_t const run_index, arguments const &args, Run const &run,
-    size_t &iteration_index)
+    std::size_t const run_index, arguments const &args, bool const verbose,
+    Run const &run, size_t &iteration_index)
 {
     auto const rev = args.revision;
 
@@ -795,13 +801,15 @@ static void do_run(
         iteration_index++;
     }
 
-    log_run(
-        start_time,
-        args,
-        exit_code_stats,
-        run_index,
-        iteration_index,
-        total_messages);
+    if (verbose) {
+        log_run(
+            start_time,
+            args,
+            exit_code_stats,
+            run_index,
+            iteration_index,
+            total_messages);
+    }
 }
 
 static std::optional<FuzzerAssertFailure>
@@ -809,7 +817,7 @@ try_run(arguments const &args, Run const &run)
 {
     try {
         size_t iteration_index = 0;
-        do_run(0, args, run, iteration_index);
+        do_run(0, args, false, run, iteration_index);
         return std::nullopt;
     }
     catch (FuzzerAssertFailure const &ex) {
@@ -819,16 +827,19 @@ try_run(arguments const &args, Run const &run)
 
 static void print_run_summary(Run const &run)
 {
-    size_t basic_block_count = 0;
     size_t deploy_count = 0;
     size_t message_count = 0;
+    size_t basic_block_count = 0;
+    size_t instruction_count = 0;
     for (auto const &step : run) {
         std::visit(
             monad::vm::Cases{
-                [&](DeployContract const &) {
+                [&](DeployContract const &d) {
                     deploy_count++;
-                    basic_block_count +=
-                        std::get<DeployContract>(step).contract.size();
+                    basic_block_count += d.contract.size();
+                    for (BasicBlock const &bb : d.contract) {
+                        instruction_count += bb.instructions.size();
+                    }
                 },
                 [&](SendMessage const &) { message_count++; },
                 [&](auto const &) {},
@@ -839,6 +850,7 @@ static void print_run_summary(Run const &run)
     std::cerr << "Contracts: " << deploy_count << "\n";
     std::cerr << "Messages: " << message_count << "\n";
     std::cerr << "Total basic blocks: " << basic_block_count << "\n";
+    std::cerr << "Total instructions: " << instruction_count << "\n";
 }
 
 void print_message(evmc_message const &msg)
@@ -1023,6 +1035,9 @@ static Run shrink_singleton_run(
             run[0] = DeployContract{
                 contract_hook_seed, contract_address, new_contract.value()};
             iteration_count = 0;
+            if (args.print_shrinker_state) {
+                print_run_summary(run);
+            }
         }
     }
 
@@ -1050,6 +1065,9 @@ shrink_remove_steps(arguments const &args, Engine &engine, Run const &run)
         if (try_run(args, new_run)) {
             current_run = std::move(new_run);
             iteration_count = 0;
+            if (args.print_shrinker_state) {
+                print_run_summary(current_run);
+            }
         }
     }
 
@@ -1079,19 +1097,11 @@ static Run shrink_steps(arguments const &args, Engine &engine, Run const &run)
                         current_run[element_to_shrink] = DeployContract{
                             new_seed, d.contract_address, new_contract.value()};
                         iteration_count = 0;
+                        if (args.print_shrinker_state) {
+                            print_run_summary(current_run);
+                        }
                     }
                 },
-                // [&](SendMessage const &send) {
-                //     // Try to replace the message with a simpler one
-                //     auto new_message =
-                //     monad::vm::fuzzing::shrink_message(engine, send.message);
-                //     if (new_message && !try_run_with_subcontract(args,
-                //     current_run,
-                //     std::get<DeployContract>(current_run[0]).contract, 0)) {
-                //         current_run[element_to_shrink] =
-                //         SendMessage{*new_message}; iteration_count = 0;
-                //     }
-                // },
                 [&](auto const &) {
                     // Cannot shrink other steps
                 }},
@@ -1120,13 +1130,13 @@ static Run shrink_complete_run(
 
     print_run_summary(current_run);
     current_run = shrink_remove_steps(args, engine, current_run);
-    print_run_summary(current_run);
     current_run = shrink_steps(args, engine, current_run);
-    print_run_summary(current_run);
-    current_run = shrink_remove_steps(args, engine, current_run);
-    print_run_summary(current_run);
-    current_run = shrink_steps(args, engine, current_run);
-    print_run_summary(current_run);
+    // For multi-contract runs, we try to shrink a bit more in case shrinking
+    // the contracts enabled further step removals.
+    if (current_run.size() > 2) {
+        current_run = shrink_remove_steps(args, engine, current_run);
+        current_run = shrink_steps(args, engine, current_run);
+    }
 
     // Make sure the final shrunken run still fails
     FUZZER_ASSERT(try_run(args, run));
@@ -1203,7 +1213,7 @@ static void run_loop(int argc, char **argv)
         log_prepare(start_time, i, run.size());
         size_t iteration_index = 0;
         try {
-            do_run(i, args, run, iteration_index);
+            do_run(i, args, true, run, iteration_index);
         }
         catch (FuzzerAssertFailure const &ex) {
             // Disable stats printing while shrinking to reduce noise.

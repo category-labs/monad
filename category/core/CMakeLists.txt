@@ -66,8 +66,7 @@ check_if_boost_fiber_needs_ucontext_macro()
 # ##############################################################################
 
 add_library(
-  monad_core
-  OBJECT
+  monad_core OBJECT
   # config
   "config.hpp"
   # core
@@ -89,6 +88,7 @@ add_library(
   "hash.hpp"
   "hex_literal.hpp"
   "int.hpp"
+  "is_specialization_of.hpp"
   "keccak.c"
   "keccak.h"
   "keccak.hpp"

@@ -688,11 +688,11 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         auto const result = h.call(m);
         // CREATE should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
-            static_assert(TestFixture::is_evmc_revision());
+            static_assert(TestFixture::is_evm_trait());
             EXPECT_EQ(result.status_code, EVMC_SUCCESS);
         }
         else {
-            static_assert(TestFixture::is_monad_revision());
+            static_assert(TestFixture::is_monad_trait());
             EXPECT_EQ(result.status_code, EVMC_FAILURE);
         }
     }
@@ -802,11 +802,11 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         auto const result = h.call(m);
         // CREATE2 should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
-            static_assert(TestFixture::is_evmc_revision());
+            static_assert(TestFixture::is_evm_trait());
             EXPECT_EQ(result.status_code, EVMC_SUCCESS);
         }
         else {
-            static_assert(TestFixture::is_monad_revision());
+            static_assert(TestFixture::is_monad_trait());
             EXPECT_EQ(result.status_code, EVMC_FAILURE);
         }
     }

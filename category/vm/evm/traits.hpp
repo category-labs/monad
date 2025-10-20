@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/is_specialization_of.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/monad/revision.h>
 
@@ -289,4 +290,16 @@ namespace monad
         // complete.
         using evm_base = EvmTraits<MonadTraits::evm_rev()>;
     };
+
+    template <typename T>
+    inline constexpr bool is_evm_trait_v = is_specialization_of_v<EvmTraits, T>;
+
+    template <typename T>
+    inline constexpr bool is_monad_trait_v =
+        is_specialization_of_v<MonadTraits, T>;
+
+    static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_FRONTIER>> == false);
+    static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_FRONTIER>> == true);
 }

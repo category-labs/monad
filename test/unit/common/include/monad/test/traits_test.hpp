@@ -122,17 +122,17 @@ struct TraitsTest : public ::testing::Test
         }
     }
 
-    static consteval bool is_monad_revision() noexcept
-    {
-        return std::same_as<typename T::value_type, monad_revision>;
-    }
-
-    static consteval bool is_evmc_revision() noexcept
-    {
-        return std::same_as<typename T::value_type, evmc_revision>;
-    }
-
     using Trait = decltype(get_trait());
+
+    static consteval bool is_monad_trait() noexcept
+    {
+        return monad::is_monad_trait_v<Trait>;
+    }
+
+    static consteval bool is_evm_trait() noexcept
+    {
+        return monad::is_evm_trait_v<Trait>;
+    }
 };
 
 TYPED_TEST_SUITE(

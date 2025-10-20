@@ -478,8 +478,26 @@ static evmc_status_code fuzz_iteration(
     return evmone_result.status_code;
 }
 
-static void
-log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
+static void log_prepare(
+    std::chrono::high_resolution_clock::time_point start,
+    std::size_t const run_index, std::size_t const run_size)
+{
+    using namespace std::chrono;
+
+    constexpr auto ns_factor = duration_cast<nanoseconds>(1s).count();
+
+    auto const end = high_resolution_clock::now();
+    auto const diff = (end - start).count();
+    auto const per_contract = diff / static_cast<int64_t>(run_size);
+
+    std::cerr << std::format(
+        "[{}]: {:.4f}s / iteration (prepare)\n",
+        run_index + 1,
+        static_cast<double>(per_contract) / ns_factor);
+}
+
+static void log_run(
+    std::chrono::high_resolution_clock::time_point start, arguments const &args,
     std::unordered_map<evmc_status_code, std::size_t> const &exit_code_stats,
     std::size_t const run_index, std::size_t const iteration_count,
     std::size_t const total_messages)
@@ -493,7 +511,7 @@ log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
     auto const per_contract = diff / static_cast<int64_t>(iteration_count);
 
     std::cerr << std::format(
-        "[{}]: {:.4f}s / iteration\n",
+        "[{}]: {:.4f}s / iteration (run)\n",
         run_index + 1,
         static_cast<double>(per_contract) / ns_factor);
 
@@ -777,7 +795,8 @@ static void do_run(
         iteration_index++;
     }
 
-    log(start_time,
+    log_run(
+        start_time,
         args,
         exit_code_stats,
         run_index,
@@ -1178,7 +1197,9 @@ static void run_loop(int argc, char **argv)
         std::cerr << std::format(
             "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);
 
+        auto const start_time = std::chrono::high_resolution_clock::now();
         auto const &run = prepare_run(args);
+        log_prepare(start_time, i, run.size());
         size_t iteration_index = 0;
         try {
             do_run(i, args, run, iteration_index);

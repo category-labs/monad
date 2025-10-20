@@ -292,6 +292,7 @@ target_link_libraries(
   PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak
   PUBLIC evmc
+  PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill

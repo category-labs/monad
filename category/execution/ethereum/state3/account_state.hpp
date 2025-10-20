@@ -27,7 +27,10 @@
 
 #include <intx/intx.hpp>
 
-#include <ankerl/unordered_dense.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#include <immer/map.hpp>
+#pragma GCC diagnostic pop
 
 #include <cstdint>
 #include <optional>
@@ -47,8 +50,8 @@ namespace trace
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
+    using StorageMap = immer::map<
+        bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
 protected:
     std::optional<Account> account_{};
@@ -64,8 +67,8 @@ private:
     friend struct trace::StateDiffTracer;
 
 public:
-    Map<bytes32_t, bytes32_t> storage_{};
-    Map<bytes32_t, bytes32_t> transient_storage_{};
+    StorageMap storage_{};
+    StorageMap transient_storage_{};
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -86,9 +89,9 @@ public:
     {
     }
 
-    AccountState(AccountState &&) = default;
+    AccountState(AccountState &&) noexcept = default;
     AccountState(AccountState const &) = default;
-    AccountState &operator=(AccountState &&) = default;
+    AccountState &operator=(AccountState &&) noexcept = default;
     AccountState &operator=(AccountState const &) = default;
 
     [[nodiscard]] bool has_account() const
@@ -122,9 +125,9 @@ public:
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
-        auto const it = transient_storage_.find(key);
-        if (MONAD_LIKELY(it != transient_storage_.end())) {
-            return it->second;
+        auto const *const it = transient_storage_.find(key);
+        if (MONAD_LIKELY(it != nullptr)) {
+            return *it;
         }
         return {};
     }
@@ -135,9 +138,9 @@ public:
     {
         bytes32_t current_value = original_value;
         {
-            auto const it = storage_.find(key);
-            if (it != storage_.end()) {
-                current_value = it->second;
+            auto const *const it = storage_.find(key);
+            if (it != nullptr) {
+                current_value = *it;
             }
         }
         if (value == bytes32_t{}) {
@@ -148,9 +151,11 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_[key] = value;
+        transient_storage_ = transient_storage_.insert({key, value});
     }
 };
+
+static_assert(sizeof(AccountState) == 144);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

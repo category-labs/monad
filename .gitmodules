@@ -53,3 +53,6 @@
 [submodule "third_party/cthash"]
 	path = third_party/cthash
 	url = https://github.com/hanickadot/cthash.git
+[submodule "third_party/immer"]
+	path = third_party/immer
+	url = https://github.com/arximboldi/immer.git

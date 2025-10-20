@@ -907,6 +907,7 @@ void print_run(Run const &run)
                         program.size());
 
                     // FIXME: Use revision from args
+                    // What are chain traits?
                     auto const &ir =
                         monad::vm::compiler::basic_blocks::unsafe_make_ir<
                             EvmTraits<EVMC_LATEST_STABLE_REVISION>>(program);
@@ -974,9 +975,8 @@ static std::optional<std::vector<BasicBlock>> shrink_run_contract(
         return std::move(new_contract);
     }
     else if (contract[removed_block_ix].instructions.size() > 0) {
-        // Try to remove instructions from the block instead
-        // First try with ranges of instructions
-        // Idea if that fails: Substitute instructions with simpler ones?
+        // Try to remove instructions from the block or substitute instructions
+        // for simpler ones instead.
         auto new_contract2 = shrink_block(engine, contract, removed_block_ix);
         if (try_run_with_subcontract(
                 args, run, new_contract2, contract_iteration_index)) {

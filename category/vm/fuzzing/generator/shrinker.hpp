@@ -112,19 +112,126 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
+    Instruction simplify_non_terminator(
+        Engine &engine, NonTerminator const &nt)
+    {
+        // Simplify the following instructions:
+        //  - Dup{N}: Replace with Dup{N-1}
+        //  - Swap{N}: Replace with Swap{N-1}
+        //  - Instructions that push a value by reading some external state
+        if (nt.opcode >= DUP2 && nt.opcode <= DUP16) {
+            return NonTerminator{static_cast<uint8_t>(nt.opcode - 1), {}};
+        }
+        else if (nt.opcode >= SWAP2 && nt.opcode <= SWAP16) {
+            return NonTerminator{static_cast<uint8_t>(nt.opcode - 1), {}};
+        }
+        else if (nt.opcode == CODESIZE) {
+            return NonTerminator{static_cast<uint8_t>(CODESIZE), {}};
+        } else if (nt.opcode == GASPRICE) {
+            return random_constant(engine);
+        }
+        else {
+            // Other non-terminators are not simplified
+            return nt;
+        }
+    }
+
+    template <typename Engine>
+    Push simplify_push(Engine &engine, Push const &p)
+    {
+        return std::visit(
+            Cases{
+                [&](ValidAddress const &) -> Push {
+                    return random_constant(engine);
+                },
+                [&](ValidJumpDest const &) -> Push {
+                    return random_constant(engine);
+                },
+                [&](Constant const &c) -> Push {
+                    // Half of the time, generate a smaller constant or divide
+                    // the current value by 2.
+                    if (toss(engine, 0.5)) {
+                        auto const new_const = random_constant(engine);
+                        return new_const.value < c.value ? new_const : c;
+                    } else {
+                        return Constant{c.value >> 1};
+                    }
+                },
+            },
+            p);
+    }
+
+    template <typename Engine>
+    Instruction substitute_instruction(Engine &engine, Instruction const &instr)
+    {
+        // Simplify the following instructions:
+        //  - Push: Shift the constant down to a small value
+        //  - Dup{N}: Replace with Dup{N-1}
+        //  - Swap{N}: Replace with Swap{N-1}
+        //  - Instructions that read a value from memory, call data or the chain state
+        return std::visit(
+            Cases{
+                [&](NonTerminator const &nt) -> Instruction {
+                    return simplify_non_terminator(engine, nt);
+                },
+                [&](Push const &p) -> Instruction {
+                    return simplify_push(engine, p);
+                },
+                [&instr](auto const &) -> Instruction { return instr; }
+            },
+            instr);
+    }
+
+    // To shrink a block, there are 2 strategies:
+    // - remove ranges of instructions
+    // - substitute instructions with simpler ones
+    //
+    // The substitution is particularly important, since dup and swap operations
+    // force the stack to have a minimum height, which often prevents removing
+    // other instructions. This problem manifests itself primarily when
+    // shrinking a block with less than 32 instructions, since dup and swap
+    // only operate on the first 32 stack elements.
+    // To account for the following pattern:
+    //  PUSH {Some important value}
+    //  Push {Dummy value}
+    //  Dup2 ; <- prevents removing the dummy value
+    //
+    // The substitution and removal strategies are interleaved a few times.
+    template <typename Engine>
     std::vector<BasicBlock> shrink_block(
         Engine &engine, std::vector<BasicBlock> blocks,
         std::size_t block_to_shrink)
     {
-        MONAD_VM_ASSERT(blocks.size() != 0);
+        MONAD_VM_ASSERT(blocks.size() > block_to_shrink);
         auto block = blocks[block_to_shrink];
         MONAD_VM_ASSERT(block.instructions.size() != 0);
-
-        auto new_instructions =
-            erase_range(engine, std::move(block.instructions), 0.1);
-        block.instructions = new_instructions;
+        block.instructions = erase_range(engine, std::move(block.instructions), 0.1);
         blocks[block_to_shrink] = block;
         return blocks;
+
+        if (block.instructions.size() >= 40) {
+            // 32 + some margin
+            block.instructions = erase_range(engine, std::move(block.instructions), 0.1);
+            blocks[block_to_shrink] = block;
+            return blocks;
+        } else {
+            // Pick a number from 1 to 5
+            auto const iterations = std::uniform_int_distribution<size_t>(1, 5)(engine);
+            for (auto i = 0u; i < iterations && !block.instructions.empty(); ++i) {
+                if (toss(engine, 0.2)) {
+                    // Substitute an instruction
+                    auto const instr_to_substitute =
+                        std::uniform_int_distribution<size_t>(0, block.instructions.size() - 1)(engine);
+                    std::cerr << std::format("substitute_instruction: {}\n", instr_to_substitute);
+                    block.instructions[instr_to_substitute] = substitute_instruction(engine, block.instructions[instr_to_substitute]);
+                } else {
+                    std::cerr << std::format("erase_element\n");
+                    block.instructions = erase_element(engine, std::move(block.instructions)).first;
+                }
+            }
+            blocks[block_to_shrink] = block;
+            return blocks;
+        }
     }
 
     // Set the jumpdest flag of the basic block following jumpdest_block_ix

@@ -50,6 +50,8 @@ namespace
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    static constexpr std::vector<std::optional<Address>> authorities_empty{};
 }
 
 TEST(CallFrame, to_json)
@@ -158,7 +160,9 @@ TYPED_TEST(TraitsTest, execute_success)
             EthereumMainnet{},
             tx,
             sender,
-            BlockHeader{.beneficiary = beneficiary})(s, host);
+            authorities_empty,
+            BlockHeader{.beneficiary = beneficiary},
+            0)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -230,7 +234,9 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
             EthereumMainnet{},
             tx,
             sender,
-            BlockHeader{.beneficiary = beneficiary})(s, host);
+            authorities_empty,
+            BlockHeader{.beneficiary = beneficiary},
+            0)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 

@@ -90,14 +90,6 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
 {
 }
 
-template <Traits traits>
-ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
-    Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &header)
-    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header, 0}
-{
-}
-
 // EIP-7702
 template <Traits traits>
 uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(

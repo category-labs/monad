@@ -69,10 +69,6 @@ public:
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
 
-    ExecuteTransactionNoValidation(
-        Chain const &, Transaction const &, Address const &,
-        BlockHeader const &);
-
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
 

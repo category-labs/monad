@@ -94,7 +94,13 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     BlockHeader const &header)
-    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header, 0}
+    : ExecuteTransactionNoValidation{
+          chain,
+          tx,
+          sender,
+          ExecuteTransactionNoValidation::authorities_empty,
+          header,
+          0}
 {
 }
 

@@ -37,7 +37,6 @@
 #include <intx/intx.hpp>
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 
@@ -196,14 +195,32 @@ evmc::Result create(
     call_tracer.on_enter(msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        if constexpr (is_monad_trait_v<traits>) {
+            /**
+             * for Ethereum, at depth = 0, the sender always has sufficient
+             * balance here as the transaction would be invalid otherwise
+             *
+             * for Monad, at depth = 0, this is not necessarily the case because
+             * Monad has delayed execution with a reserve balance concept -
+             * therefore we must be sure to increment the sender nonce if the
+             * sender does not have sufficient balance
+             */
+            if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+                if (!msg.depth) {
+                    uint64_t const nonce = state.get_nonce(msg.sender);
+                    MONAD_ASSERT(nonce != UINT64_MAX);
+                    state.set_nonce(msg.sender, nonce + 1);
+                }
+            }
+        }
         evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
 
     auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
-        // overflow
+    if (nonce == UINT64_MAX) {
+        // this overflow can only happen for msg.depth != 0
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
         call_tracer.on_exit(result);
         return result;

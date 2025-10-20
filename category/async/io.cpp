@@ -98,11 +98,16 @@ namespace detail
         }
 
         within_completions_holder(within_completions_holder const &) = delete;
-        within_completions_holder(within_completions_holder &&) = default;
+
+        within_completions_holder(within_completions_holder &&other) noexcept
+            : parent(other.parent)
+        {
+            other.parent = nullptr;
+        }
 
         ~within_completions_holder()
         {
-            if (0 == --parent->within_completions_count) {
+            if (parent && 0 == --parent->within_completions_count) {
                 parent->within_completions_reached_zero();
             }
         }

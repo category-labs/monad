@@ -75,6 +75,7 @@ enum class operation_type : uint8_t
     unknown,
     read,
     write,
+    fsync,
     timeout,
     threadsafeop,
     read_scatter
@@ -542,6 +543,11 @@ public:
     bool is_write() const noexcept
     {
         return operation_type_ == operation_type::write;
+    }
+
+    bool is_fsync() const noexcept
+    {
+        return operation_type_ == operation_type::fsync;
     }
 
     bool is_timeout() const noexcept

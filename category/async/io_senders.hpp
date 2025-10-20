@@ -405,4 +405,46 @@ static_assert(sizeof(write_single_buffer_sender) == 48);
 static_assert(alignof(write_single_buffer_sender) == 8);
 static_assert(sender<write_single_buffer_sender>);
 
+struct sync_file_sender
+{
+private:
+    chunk_offset_t offset_;
+    unsigned bytes_;
+
+public:
+    using result_type = result<void>;
+
+    static constexpr operation_type my_operation_type = operation_type::fsync;
+
+    constexpr sync_file_sender(
+        chunk_offset_t const offset, unsigned const bytes_to_sync)
+        : offset_(offset)
+        , bytes_(bytes_to_sync)
+    {
+    }
+
+    result<void> operator()(erased_connected_operation *io_state) noexcept
+    {
+        io_state->executor()->submit_sync_file_request(
+            offset_, bytes_, io_state);
+        return success();
+    }
+
+    result_type
+    completed(erased_connected_operation *, result<void> result) noexcept
+    {
+        if (result.has_error()) {
+            fprintf(
+                stderr,
+                "ERROR: Sync file of %u bytes to chunk %u offset %llu failed "
+                "with error '%s'\n",
+                bytes_,
+                offset_.id,
+                file_offset_t(offset_.offset),
+                result.assume_error().message().c_str());
+        }
+        return result;
+    }
+};
+
 MONAD_ASYNC_NAMESPACE_END

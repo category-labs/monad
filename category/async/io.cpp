@@ -301,6 +301,38 @@ void AsyncIO::account_read_()
     ++records_.nreads;
 }
 
+void AsyncIO::submit_sync_file_request(
+    chunk_offset_t const chunk_and_offset, unsigned const nbytes,
+    erased_connected_operation *const uring_data)
+{
+    MONAD_DEBUG_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT(!rwbuf_.is_read_only());
+    MONAD_ASSERT(
+        chunk_and_offset.offset + nbytes <=
+        chunk_capacity(chunk_and_offset.id));
+
+    if (capture_io_latencies_) {
+        uring_data->initiated = std::chrono::steady_clock::now();
+    }
+    auto *const wr_ring =
+        (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : &uring_.get_ring();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(wr_ring);
+    MONAD_ASSERT(sqe);
+
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    io_uring_prep_fsync(sqe, ci.io_uring_write_fd, IORING_FSYNC_DATASYNC);
+    // auto const offset = ci.ptr->write_fd(0).second;
+    sqe->flags |= IOSQE_FIXED_FILE;
+    sqe->flags |= IOSQE_ASYNC;
+    // sqe->off = offset;
+    // sqe->len = nbytes;
+    io_uring_sqe_set_data(sqe, (void *)uring_data);
+
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
+    printf("submitted fsync\n");
+    ++records_.inflight_fsync;
+}
+
 void AsyncIO::submit_request_sqe_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
@@ -526,7 +558,8 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         auto const inflight_ts =
             records_.inflight_ts.load(std::memory_order_acquire);
 
-        if (wr_ring != nullptr && records_.inflight_wr > 0 &&
+        if (wr_ring != nullptr &&
+            (records_.inflight_wr + records_.inflight_fsync) > 0 &&
             (poll_rings_mask & 2) == 0) {
             ring = wr_ring;
             if (wr_uring_->must_call_uring_submit() ||
@@ -562,6 +595,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
             }
             if (blocking && inflight_ts == 0 && records_.inflight_wr == 0 &&
+                records_.inflight_fsync == 0 &&
                 detail::AsyncIO_per_thread_state().empty()) {
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_wait_cqe(ring, &cqe));
             }
@@ -665,6 +699,10 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         else if (state->is_write()) {
             --records_.inflight_wr;
             is_read_or_write = true;
+        }
+        else if (state->is_fsync()) {
+            printf("completed fsync\n");
+            --records_.inflight_fsync;
         }
         else if (state->is_timeout()) {
             --records_.inflight_tm;

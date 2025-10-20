@@ -44,6 +44,8 @@
     #pragma clang diagnostic pop
 #endif
 
+#include <quill/Quill.h>
+
 #include <atomic>
 #include <bit>
 #include <cstdint>
@@ -64,15 +66,53 @@ concept lockable_or_void = std::is_void_v<T> || requires(T x) {
 
 class Node;
 
+struct sync_file_operation_io_receiver
+{
+    chunk_offset_t offset;
+    unsigned bytes;
+
+    explicit constexpr sync_file_operation_io_receiver(
+        chunk_offset_t const offset_, unsigned const bytes_)
+        : offset(offset_)
+        , bytes(bytes_)
+    {
+    }
+
+    void set_value(
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
+        MONAD_ASYNC_NAMESPACE::sync_file_sender::result_type res)
+    {
+        MONAD_ASSERT_PRINTF(
+            res,
+            "fsync of offset {%d, %d}, %u bytes failed: %s",
+            offset.id,
+            offset.offset,
+            bytes,
+            res.assume_error().message().c_str());
+        LOG_INFO(
+            "Finish fsync {} bytes at chunk offset {},{}",
+            bytes,
+            (file_offset_t)offset.id,
+            (file_offset_t)offset.offset);
+    }
+};
+
 struct write_operation_io_receiver
 {
+    static std::chrono::steady_clock::time_point last_fsync_time;
+
+    MONAD_ASYNC_NAMESPACE::AsyncIO *io;
+    chunk_offset_t offset;
     size_t should_be_written;
 
     // Node *parent{nullptr};
 
     explicit constexpr write_operation_io_receiver(
+        MONAD_ASYNC_NAMESPACE::AsyncIO *const io_, chunk_offset_t const offset_,
         size_t const should_be_written_)
-        : should_be_written(should_be_written_)
+        : io(io_)
+        , offset(offset_)
+        , should_be_written(should_be_written_)
     {
     }
 
@@ -90,6 +130,21 @@ struct write_operation_io_receiver
         //     parent->current_process_updates_sender_
         //         ->notify_write_operation_completed_(rawstate);
         // }
+        auto const now = std::chrono::steady_clock::now();
+        if (last_fsync_time != std::chrono::steady_clock::time_point::min() &&
+            now - last_fsync_time <= std::chrono::seconds(3)) {
+            return;
+        }
+        last_fsync_time = now;
+
+        MONAD_ASSERT(should_be_written <= std::numeric_limits<unsigned>::max());
+        auto conn = io->make_connected(
+            MONAD_ASYNC_NAMESPACE::sync_file_sender{
+                offset, (unsigned)should_be_written},
+            sync_file_operation_io_receiver{
+                offset, (unsigned)should_be_written});
+        conn->initiate();
+        conn.release();
     }
 
     void reset(size_t const should_be_written_)
@@ -97,6 +152,10 @@ struct write_operation_io_receiver
         should_be_written = should_be_written_;
     }
 };
+
+inline std::chrono::steady_clock::time_point
+    write_operation_io_receiver::last_fsync_time =
+        std::chrono::steady_clock::time_point::min();
 
 using node_writer_unique_ptr_type =
     MONAD_ASYNC_NAMESPACE::AsyncIO::connected_operation_unique_ptr_type<

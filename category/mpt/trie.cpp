@@ -157,7 +157,7 @@ Node::SharedPtr upsert(
                     std::move(updates));
             }
             if (sentinel->npending) {
-                aux.io->flush();
+                aux.io->flush_rw();
                 MONAD_ASSERT(sentinel->npending == 0);
             }
         }
@@ -1450,7 +1450,8 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{
             offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
-        write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
+        write_operation_io_receiver{
+            aux.io, offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE});
     reentrancy_detection.count--;
     MONAD_ASSERT(reentrancy_detection.count >= 0);
     // The deepest-most reentrancy must succeed, and all less deep reentrancies
@@ -1505,7 +1506,8 @@ node_writer_unique_ptr_type replace_node_writer(
         (size_t)(chunk_capacity - offset_of_next_writer.offset));
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{offset_of_next_writer, bytes_to_write},
-        write_operation_io_receiver{bytes_to_write});
+        write_operation_io_receiver{
+            aux.io, offset_of_next_writer, bytes_to_write});
     if (node_writer.get() != node_writer_ptr) {
         // We reentered, please retry
         return {};
@@ -1691,7 +1693,7 @@ void flush_buffered_writes(UpdateAuxImpl &aux)
         // replace slow node writer
         replace(aux.node_writer_slow);
     }
-    aux.io->flush();
+    aux.io->flush_rw();
 }
 
 // return root physical offset

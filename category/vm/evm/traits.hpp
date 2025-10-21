@@ -42,7 +42,6 @@ namespace monad
     concept Traits = requires() {
         requires sizeof(T) == 1;
         { T::evm_rev() } -> std::same_as<evmc_revision>;
-        { T::monad_rev() } -> std::same_as<monad_revision>;
 
         // Feature flags
         { T::eip_2929_active() } -> std::same_as<bool>;
@@ -78,12 +77,6 @@ namespace monad
         static consteval evmc_revision evm_rev() noexcept
         {
             return Rev;
-        }
-
-        static consteval monad_revision monad_rev() noexcept
-        {
-            static_assert(false, "Calling monad_rev() on an EVM trait type");
-            std::unreachable();
         }
 
         static consteval bool eip_2929_active() noexcept

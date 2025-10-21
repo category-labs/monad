@@ -67,7 +67,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     };
 
     uint64_t const length = contract_valset.length();
-    MONAD_ASSERT(length <= ACTIVE_VALSET_SIZE)
+    MONAD_ASSERT(length <= Limits::active_valset_size())
     std::vector<Validator> valset(length);
     for (uint64_t i = 0; i < length; i += 1) {
         auto const val_id = contract_valset.get(i).load();

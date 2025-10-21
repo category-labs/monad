@@ -29,6 +29,7 @@
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -526,6 +527,7 @@ private:
     //  1. add_validator
     //  2. delegate
     //  1. compound
+    template <Traits traits>
     Result<void> delegate(u64_be, uint256_t const &, Address const &);
 
     // Helper function for getting a valset. used by the three valset getters.
@@ -550,6 +552,8 @@ public:
     /////////////////
     // Precompiles //
     /////////////////
+
+    template <Traits traits>
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
@@ -574,12 +578,16 @@ public:
 
     Result<byte_string> precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_add_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_delegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_undelegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_compound(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_withdraw(

@@ -35,7 +35,9 @@
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <test_resource_data.h>
 
@@ -242,8 +244,12 @@ namespace
     }
 }
 
-struct Stake : public ::testing::Test
+template <typename MonadRevisionT>
+struct StakeTraits : public ::testing::Test
 {
+    static constexpr monad_revision REV = MonadRevisionT::value;
+    using Trait = MonadTraits<REV>;
+
     OnDiskMachine machine;
     vm::VM vm;
     mpt::Db db{machine};
@@ -252,6 +258,24 @@ struct Stake : public ::testing::Test
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer{};
     StakingContract contract{state, call_tracer};
+
+    // test constants
+    static constexpr uint256_t MIN_VALIDATE_STAKE =
+        Limits::min_auth_address_stake();
+
+    static constexpr uint256_t ACTIVE_VALIDATOR_STAKE =
+        Limits::active_validator_stake<Trait>();
+
+    static constexpr uint256_t ACTIVE_VALSET_SIZE =
+        Limits::active_valset_size();
+
+    static constexpr uint256_t DUST_THRESHOLD = Limits::dust_threshold();
+
+    static constexpr uint256_t MIN_EXTERNAL_REWARD =
+        Limits::min_external_reward();
+
+    static constexpr uint256_t MAX_EXTERNAL_REWARD =
+        Limits::max_external_reward();
 
     void SetUp() override
     {
@@ -370,8 +394,8 @@ struct Stake : public ::testing::Test
             craft_add_validator_input(auth_address, stake, commission, secret);
         auto const msg_value = intx::be::store<evmc_uint256be>(stake);
         state.push();
-        auto res =
-            contract.precompile_add_validator(input, auth_address, msg_value);
+        auto res = contract.precompile_add_validator<Trait>(
+            input, auth_address, msg_value);
         post_call(res.has_error());
         BOOST_OUTCOME_TRY(auto const id_output, std::move(res));
         u64_be val_id = 0;
@@ -386,7 +410,8 @@ struct Stake : public ::testing::Test
         auto const input = abi_encode_uint<u64_be>(val_id);
         auto const msg_value = intx::be::store<evmc_uint256be>(stake);
         state.push();
-        auto res = contract.precompile_delegate(input, del_address, msg_value);
+        auto res =
+            contract.precompile_delegate<Trait>(input, del_address, msg_value);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         state.add_to_balance(STAKING_CA, stake);
@@ -400,7 +425,7 @@ struct Stake : public ::testing::Test
         auto const input =
             craft_undelegate_input(val_id, amount, withdrawal_id);
         state.push();
-        auto res = contract.precompile_undelegate(input, address, {});
+        auto res = contract.precompile_undelegate<Trait>(input, address, {});
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -421,7 +446,7 @@ struct Stake : public ::testing::Test
     {
         auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
-        auto res = contract.precompile_compound(input, address, {});
+        auto res = contract.precompile_compound<Trait>(input, address, {});
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -474,14 +499,31 @@ struct Stake : public ::testing::Test
     }
 };
 
-TEST_F(Stake, invoke_fallback)
+// StakeLatest is tests running on the latest revision. These tests are
+// independent of fork.
+using StakeLatest = StakeTraits<::detail::MonadRevisionConstant<MONAD_NEXT>>;
+
+// Used by any tests that specifically require `MONAD_FOUR` constants
+using StakeBeforeActiveValidatorStakeFork =
+    StakeTraits<::detail::MonadRevisionConstant<MONAD_FOUR>>;
+
+// The StakeAllRevisions alias is for using TYPED_TEST to run against all
+// revisions
+template <typename MonadRevisionT>
+using StakeAllRevisions = StakeTraits<MonadRevisionT>;
+
+TYPED_TEST_SUITE(
+    StakeAllRevisions, ::detail::MonadRevisionTypes,
+    ::detail::RevisionTestNameGenerator);
+
+TEST_F(StakeLatest, invoke_fallback)
 {
     auto const sender = 0xdeadbeef_address;
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
     byte_string_fixed<8> const signature_bytes = {0xff, 0xff, 0xff, 0xff};
     auto signature = to_byte_string_view(signature_bytes);
-    auto const [func, cost] = contract.precompile_dispatch(signature);
+    auto const [func, cost] = contract.precompile_dispatch<Trait>(signature);
     EXPECT_EQ(cost, 40000);
 
     auto const res = (contract.*func)(byte_string_view{}, sender, value);
@@ -490,7 +532,7 @@ TEST_F(Stake, invoke_fallback)
 
 // Check that accumulator is monotonically increasing - Done
 // Check that accumulator is updating principle + reward amount correctly
-TEST_F(Stake, accumulator_is_monotonic_again)
+TEST_F(StakeLatest, accumulator_is_monotonic_again)
 {
     // Add validator
     auto const val = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
@@ -548,7 +590,7 @@ TEST_F(Stake, accumulator_is_monotonic_again)
 //////////////////////
 // Commission Tests //
 //////////////////////
-TEST_F(Stake, revert_if_commission_too_high)
+TEST_F(StakeLatest, revert_if_commission_too_high)
 {
     auto const auth_address = 0xababab_address;
     constexpr auto bad_commission = 2000000000000000000_u256;
@@ -565,7 +607,7 @@ TEST_F(Stake, revert_if_commission_too_high)
     EXPECT_EQ(res3.assume_error(), StakingError::CommissionTooHigh);
 }
 
-TEST_F(Stake, non_auth_attempts_to_change_commission)
+TEST_F(StakeLatest, non_auth_attempts_to_change_commission)
 {
     // add a validator with no commission. have a random sender try to change
     // the commission.
@@ -581,7 +623,7 @@ TEST_F(Stake, non_auth_attempts_to_change_commission)
 }
 
 class StakeCommission
-    : public Stake
+    : public StakeLatest
     , public ::testing::WithParamInterface<std::tuple<uint64_t, uint256_t>>
 {
 };
@@ -634,7 +676,7 @@ TEST_P(StakeCommission, validator_has_commission)
         expected_commission + expected_delegator_reward);
 }
 
-TEST_F(Stake, validator_changes_commission)
+TEST_F(StakeLatest, validator_changes_commission)
 {
     uint256_t const starting_commission = MON / 20; // 5% commission
     auto const auth_address = 0xdeadbeef_address;
@@ -710,23 +752,24 @@ TEST_F(Stake, validator_changes_commission)
 // Input Validation Tests //
 ////////////////////////////
 
-TEST_F(Stake, add_validator_revert_invalid_input_size)
+TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
 {
     auto const sender = 0xdeadbeef_address;
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
     byte_string_view too_short{};
-    auto res = contract.precompile_add_validator(too_short, sender, value);
+    auto res =
+        contract.precompile_add_validator<Trait>(too_short, sender, value);
     EXPECT_EQ(res.assume_error(), AbiDecodeError::InputTooShort);
 
     auto [too_long, _] =
         craft_add_validator_input(sender, MIN_VALIDATE_STAKE, 0);
     too_long.append({0xFF});
-    res = contract.precompile_add_validator(too_long, sender, value);
+    res = contract.precompile_add_validator<Trait>(too_long, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
-TEST_F(Stake, add_validator_revert_bad_signature)
+TEST_F(StakeLatest, add_validator_revert_bad_signature)
 {
     auto const [message, good_secp_sig, good_bls_sig, _] =
         craft_add_validator_input_raw(0xababab_address, MIN_VALIDATE_STAKE);
@@ -741,7 +784,7 @@ TEST_F(Stake, add_validator_revert_bad_signature)
         encoder.add_bytes(message);
         encoder.add_bytes(to_byte_string_view(bad_secp_sig));
         encoder.add_bytes(good_bls_sig);
-        auto const res = contract.precompile_add_validator(
+        auto const res = contract.precompile_add_validator<Trait>(
             encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::SecpSignatureVerificationFailed);
@@ -756,44 +799,47 @@ TEST_F(Stake, add_validator_revert_bad_signature)
         encoder.add_bytes(message);
         encoder.add_bytes(good_secp_sig);
         encoder.add_bytes(to_byte_string_view(bad_bls_sig));
-        auto const res = contract.precompile_add_validator(
+        auto const res = contract.precompile_add_validator<Trait>(
             encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::BlsSignatureVerificationFailed);
     }
 }
 
-TEST_F(Stake, add_validator_revert_msg_value_not_signed)
+TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
 {
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, 2 * MIN_VALIDATE_STAKE);
-    auto const res = contract.precompile_add_validator(input, address, value);
+    auto const res =
+        contract.precompile_add_validator<Trait>(input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
-TEST_F(Stake, add_validator_revert_already_exists)
+TEST_F(StakeLatest, add_validator_revert_already_exists)
 {
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, MIN_VALIDATE_STAKE);
-    EXPECT_FALSE(
-        contract.precompile_add_validator(input, address, value).has_error());
+    EXPECT_FALSE(contract.precompile_add_validator<Trait>(input, address, value)
+                     .has_error());
     EXPECT_EQ(
-        contract.precompile_add_validator(input, address, value).assume_error(),
+        contract.precompile_add_validator<Trait>(input, address, value)
+            .assume_error(),
         StakingError::ValidatorExists);
 }
 
-TEST_F(Stake, add_validator_revert_minimum_stake_not_met)
+TEST_F(StakeLatest, add_validator_revert_minimum_stake_not_met)
 {
     auto const value = intx::be::store<evmc_uint256be>(uint256_t{1});
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, uint256_t{1});
-    auto const res = contract.precompile_add_validator(input, address, value);
+    auto const res =
+        contract.precompile_add_validator<Trait>(input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InsufficientStake);
 }
 
-TEST_F(Stake, nonpayable_functions_revert)
+TEST_F(StakeLatest, nonpayable_functions_revert)
 {
     // syscalls
     EXPECT_EQ(
@@ -806,10 +852,10 @@ TEST_F(Stake, nonpayable_functions_revert)
     // precompiles
     evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
     EXPECT_EQ(
-        contract.precompile_undelegate({}, {}, value).assume_error(),
+        contract.precompile_undelegate<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_compound({}, {}, value).assume_error(),
+        contract.precompile_compound<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.precompile_withdraw({}, {}, value).assume_error(),
@@ -850,7 +896,7 @@ TEST_F(Stake, nonpayable_functions_revert)
         StakingError::ValueNonZero);
 }
 
-TEST_F(Stake, auth_address_conflicts_with_linked_list)
+TEST_F(StakeLatest, auth_address_conflicts_with_linked_list)
 {
     // empty pointer
     Address empty{};
@@ -862,7 +908,7 @@ TEST_F(Stake, auth_address_conflicts_with_linked_list)
     EXPECT_TRUE(add_validator(sentinel, ACTIVE_VALIDATOR_STAKE).has_error());
 }
 
-TEST_F(Stake, linked_list_removal_state_override)
+TEST_F(StakeLatest, linked_list_removal_state_override)
 {
     // even though the empty address and the sentinel address are banned during
     // delegate, a user could state override and trigger unreachable code
@@ -896,7 +942,7 @@ TEST_F(Stake, linked_list_removal_state_override)
 // Add Validator Tests //
 /////////////////////////
 
-TEST_F(Stake, add_validator_sufficent_balance)
+TEST_F(StakeLatest, add_validator_sufficent_balance)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -948,7 +994,7 @@ TEST_F(Stake, add_validator_sufficent_balance)
     EXPECT_EQ(contract.vars.val_execution(2).commission().load().native(), 0);
 }
 
-TEST_F(Stake, add_validator_insufficent_balance)
+TEST_F(StakeLatest, add_validator_insufficent_balance)
 {
     auto const auth_address = 0xdeadbeef_address;
 
@@ -1005,7 +1051,7 @@ TEST_F(Stake, add_validator_insufficent_balance)
 // validator tests
 /////////////////////
 
-TEST_F(Stake, validator_delegate_before_active)
+TEST_F(StakeLatest, validator_delegate_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1053,7 +1099,7 @@ TEST_F(Stake, validator_delegate_before_active)
     check_delegator_c_state(val2.value(), other_address, MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(Stake, validator_undelegate_before_delegator_active)
+TEST_F(StakeLatest, validator_undelegate_before_delegator_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1085,7 +1131,7 @@ TEST_F(Stake, validator_undelegate_before_delegator_active)
     EXPECT_FALSE(undelegate(val2.value().id, auth_address, 1, 50).has_error());
 }
 
-TEST_F(Stake, validator_compound_before_active)
+TEST_F(StakeLatest, validator_compound_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1133,7 +1179,7 @@ TEST_F(Stake, validator_compound_before_active)
     check_delegator_c_state(val2, other_address, MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(Stake, validator_withdrawal_before_active)
+TEST_F(StakeLatest, validator_withdrawal_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1176,7 +1222,7 @@ TEST_F(Stake, validator_withdrawal_before_active)
         StakingError::UnknownWithdrawalId);
 }
 
-TEST_F(Stake, validator_joins_in_epoch_delay_period)
+TEST_F(StakeLatest, validator_joins_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
     EXPECT_FALSE(syscall_snapshot().has_error());
@@ -1191,7 +1237,7 @@ TEST_F(Stake, validator_joins_in_epoch_delay_period)
     EXPECT_EQ(contract.vars.valset_consensus.get(0).load(), val.id);
 }
 
-TEST_F(Stake, validator_undelegates_and_redelegates_in_epoch_delay_period)
+TEST_F(StakeLatest, validator_undelegates_and_redelegates_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -1223,7 +1269,7 @@ TEST_F(Stake, validator_undelegates_and_redelegates_in_epoch_delay_period)
     EXPECT_EQ(contract.vars.valset_consensus.get(0).load(), val.id);
 }
 
-TEST_F(Stake, validator_activation_via_delegate)
+TEST_F(StakeLatest, validator_activation_via_delegate)
 {
     auto const auth_address = 0xdeadbeef_address;
 
@@ -1256,7 +1302,7 @@ TEST_F(Stake, validator_activation_via_delegate)
     EXPECT_TRUE(contract.vars.this_epoch_valset().empty());
 }
 
-TEST_F(Stake, validator_multiple_delegations)
+TEST_F(StakeLatest, validator_multiple_delegations)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -1300,7 +1346,7 @@ TEST_F(Stake, validator_multiple_delegations)
 }
 
 // compound a validator before and after snapshot
-TEST_F(Stake, validator_compound)
+TEST_F(StakeLatest, validator_compound)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -1335,7 +1381,7 @@ TEST_F(Stake, validator_compound)
         val, auth_address, ACTIVE_VALIDATOR_STAKE + 2 * REWARD, 0);
 }
 
-TEST_F(Stake, validator_undelegate)
+TEST_F(StakeLatest, validator_undelegate)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1401,7 +1447,7 @@ TEST_F(Stake, validator_undelegate)
     check_delegator_c_state(val2, other_address, MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(Stake, validator_exit_via_validator)
+TEST_F(StakeLatest, validator_exit_via_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1460,7 +1506,7 @@ TEST_F(Stake, validator_exit_via_validator)
     EXPECT_FALSE(withdraw(val2.id, other_address, withdrawal_id).has_error());
 }
 
-TEST_F(Stake, validator_exit_via_delegator)
+TEST_F(StakeLatest, validator_exit_via_delegator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1512,7 +1558,9 @@ TEST_F(Stake, validator_exit_via_delegator)
     EXPECT_FALSE(withdraw(val2.id, auth_address, withdrawal_id).has_error());
 }
 
-TEST_F(Stake, validator_exit_multiple_delegations)
+// this test uses hardcoded values to sanity check rounding errors and relies on
+// MONAD_FOUR active stake.
+TEST_F(StakeBeforeActiveValidatorStakeFork, validator_exit_multiple_delegations)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1590,7 +1638,11 @@ TEST_F(Stake, validator_exit_multiple_delegations)
             996015936254980079);
 }
 
-TEST_F(Stake, validator_exit_multiple_delegations_full_withdrawal)
+// this test uses hardcoded values to sanity check rounding errors and relies on
+// MONAD_FOUR active stake.
+TEST_F(
+    StakeBeforeActiveValidatorStakeFork,
+    validator_exit_multiple_delegations_full_withdrawal)
 {
     constexpr auto smaller_stake = 1'000'000 * MON;
     auto const auth_address = 0xdeadbeef_address;
@@ -1701,7 +1753,7 @@ TEST_F(Stake, validator_exit_multiple_delegations_full_withdrawal)
             ACTIVE_VALIDATOR_STAKE - smaller_stake - 1);
 }
 
-TEST_F(Stake, validator_exit_claim_rewards)
+TEST_F(StakeLatest, validator_exit_claim_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1749,7 +1801,7 @@ TEST_F(Stake, validator_exit_claim_rewards)
     EXPECT_EQ(get_balance(other_address), 19607843137254901);
 }
 
-TEST_F(Stake, validator_exit_compound)
+TEST_F(StakeLatest, validator_exit_compound)
 {
     constexpr auto smaller_stake = 1'000'000 * MON;
     constexpr auto larger_stake = 50'000'000 * MON;
@@ -1814,7 +1866,7 @@ TEST_F(Stake, validator_exit_compound)
     check_delegator_c_state(val1, auth_address, smaller_stake + reward - 1, 0);
 }
 
-TEST_F(Stake, validator_removes_self)
+TEST_F(StakeLatest, validator_removes_self)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
@@ -1862,7 +1914,7 @@ TEST_F(Stake, validator_removes_self)
         StakingError::NotInValidatorSet);
 }
 
-TEST_F(Stake, two_validators_remove_self)
+TEST_F(StakeLatest, two_validators_remove_self)
 {
     auto compare_sets = [](StorageArray<u64_be> &state_valset,
                            std::vector<u64_be> &expected_valset) {
@@ -1922,7 +1974,7 @@ TEST_F(Stake, two_validators_remove_self)
     compare_sets(contract.vars.valset_consensus, expected_full_valset);
 }
 
-TEST_F(Stake, validator_constant_validator_set)
+TEST_F(StakeLatest, validator_constant_validator_set)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -1982,7 +2034,7 @@ TEST_F(Stake, validator_constant_validator_set)
     EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
 }
 
-TEST_F(Stake, validator_joining_boundary_rewards)
+TEST_F(StakeLatest, validator_joining_boundary_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(
@@ -2027,7 +2079,7 @@ TEST_F(Stake, validator_joining_boundary_rewards)
 }
 
 // consensus misses a snapshot, validator cant join
-TEST_F(Stake, validator_miss_snapshot_miss_activation)
+TEST_F(StakeLatest, validator_miss_snapshot_miss_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(
@@ -2049,7 +2101,7 @@ TEST_F(Stake, validator_miss_snapshot_miss_activation)
 }
 
 // consensus misses a snapshot, validator cant leave
-TEST_F(Stake, validator_miss_snapshot_miss_deactivation)
+TEST_F(StakeLatest, validator_miss_snapshot_miss_deactivation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2073,7 +2125,7 @@ TEST_F(Stake, validator_miss_snapshot_miss_deactivation)
     EXPECT_EQ(contract.vars.val_execution(1).stake().load().native(), 0);
 }
 
-TEST_F(Stake, validator_external_rewards_failure_conditions)
+TEST_F(StakeLatest, validator_external_rewards_failure_conditions)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2105,7 +2157,7 @@ TEST_F(Stake, validator_external_rewards_failure_conditions)
     EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
 }
 
-TEST_F(Stake, validator_external_rewards_uniform_reward_pool)
+TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2140,7 +2192,7 @@ TEST_F(Stake, validator_external_rewards_uniform_reward_pool)
 // delegate tests
 /////////////////////
 
-TEST_F(Stake, delegator_none_init)
+TEST_F(StakeLatest, delegator_none_init)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const delegator = 1337_address;
@@ -2177,7 +2229,7 @@ TEST_F(Stake, delegator_none_init)
     EXPECT_EQ(get_balance(delegator), 0);
 }
 
-TEST_F(Stake, random_delegator_not_allocated_state)
+TEST_F(StakeLatest, random_delegator_not_allocated_state)
 {
     auto const auth_address = 0xdeadbeef_address;
 
@@ -2195,7 +2247,7 @@ TEST_F(Stake, random_delegator_not_allocated_state)
     check_delegator_zero(val.id, 0xaaaabbbb_address);
 }
 
-TEST_F(Stake, delegator_state_cleared_after_withdraw)
+TEST_F(StakeLatest, delegator_state_cleared_after_withdraw)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const delegator = 1337_address;
@@ -2242,7 +2294,7 @@ TEST_F(Stake, delegator_state_cleared_after_withdraw)
         del.rewards().load().native());
 }
 
-TEST_F(Stake, delegate_noop_add_zero_stake)
+TEST_F(StakeLatest, delegate_noop_add_zero_stake)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2267,7 +2319,7 @@ TEST_F(Stake, delegate_noop_add_zero_stake)
         REWARD);
 }
 
-TEST_F(Stake, delegate_noop_subsequent_zero_stake)
+TEST_F(StakeLatest, delegate_noop_subsequent_zero_stake)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
@@ -2318,7 +2370,7 @@ TEST_F(Stake, delegate_noop_subsequent_zero_stake)
     }
 }
 
-TEST_F(Stake, delegate_revert_unknown_validator)
+TEST_F(StakeLatest, delegate_revert_unknown_validator)
 {
     auto const d0 = 0xaaaabbbb_address;
     EXPECT_EQ(
@@ -2326,7 +2378,7 @@ TEST_F(Stake, delegate_revert_unknown_validator)
         StakingError::UnknownValidator);
 }
 
-TEST_F(Stake, delegate_init)
+TEST_F(StakeLatest, delegate_init)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2381,7 +2433,7 @@ TEST_F(Stake, delegate_init)
     }
 }
 
-TEST_F(Stake, delegate_redelegate_before_activation)
+TEST_F(StakeLatest, delegate_redelegate_before_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
@@ -2488,7 +2540,7 @@ TEST_F(Stake, delegate_redelegate_before_activation)
                      .has_value());
 }
 
-TEST_F(Stake, delegate_redelegate_after_activation)
+TEST_F(StakeLatest, delegate_redelegate_after_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2611,7 +2663,7 @@ TEST_F(Stake, delegate_redelegate_after_activation)
     }
 }
 
-TEST_F(Stake, delegate_undelegate_withdraw_redelegate)
+TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2729,7 +2781,7 @@ TEST_F(Stake, delegate_undelegate_withdraw_redelegate)
     }
 }
 
-TEST_F(Stake, delegator_delegates_in_epoch_delay_period)
+TEST_F(StakeLatest, delegator_delegates_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2770,7 +2822,7 @@ TEST_F(Stake, delegator_delegates_in_epoch_delay_period)
         0);
 }
 
-TEST_F(Stake, delegate_redelegation_refcount_before_activation)
+TEST_F(StakeLatest, delegate_redelegation_refcount_before_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2822,7 +2874,7 @@ TEST_F(Stake, delegate_redelegation_refcount_before_activation)
     EXPECT_EQ(acc.refcount.native(), 0);
 }
 
-TEST_F(Stake, delegate_redelegation_refcount_after_activation)
+TEST_F(StakeLatest, delegate_redelegation_refcount_after_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2885,7 +2937,7 @@ TEST_F(Stake, delegate_redelegation_refcount_after_activation)
 // zero
 // 3. delegator join in different snapshot window as validator and acc is
 // non zero
-TEST_F(Stake, delegator_epoch_accumulator_same_snapshot)
+TEST_F(StakeLatest, delegator_epoch_accumulator_same_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -2931,7 +2983,7 @@ TEST_F(Stake, delegator_epoch_accumulator_same_snapshot)
             .refcount.native());
 }
 
-TEST_F(Stake, delegator_epoch_accumulator_diff_snapshot)
+TEST_F(StakeLatest, delegator_epoch_accumulator_diff_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3004,7 +3056,7 @@ TEST_F(Stake, delegator_epoch_accumulator_diff_snapshot)
         0);
 }
 
-TEST_F(Stake, delegator_epoch_nz_accumulator_diff_snapshot)
+TEST_F(StakeLatest, delegator_epoch_nz_accumulator_diff_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3085,7 +3137,7 @@ TEST_F(Stake, delegator_epoch_nz_accumulator_diff_snapshot)
     }
 }
 
-TEST_F(Stake, validator_exit_delegator_boundary_nz_accumulator)
+TEST_F(StakeLatest, validator_exit_delegator_boundary_nz_accumulator)
 {
     // Scenario:
     // Add a validator in epoch N. Validator is active in epoch N+1.  During the
@@ -3141,7 +3193,7 @@ TEST_F(Stake, validator_exit_delegator_boundary_nz_accumulator)
     EXPECT_EQ(val_acc, epoch_acc.value.native());
 }
 
-TEST_F(Stake, snapshot_set_same_order_as_consensus_set)
+TEST_F(StakeLatest, snapshot_set_same_order_as_consensus_set)
 {
     // Add five validators
     auto const auth_address = 0xdeadbeef_address;
@@ -3175,7 +3227,7 @@ TEST_F(Stake, snapshot_set_same_order_as_consensus_set)
 // compound / redelegate tests
 /////////////////////
 
-TEST_F(Stake, delegate_inter_compound_rewards)
+TEST_F(StakeLatest, delegate_inter_compound_rewards)
 { // epoch 1 - add validator and 2 delegators
     auto const auth_address = 0xdeadbeef_address;
     auto const reward_decimal_rounding = 999999999999999999;
@@ -3262,7 +3314,7 @@ TEST_F(Stake, delegate_inter_compound_rewards)
         2 * reward_decimal_rounding + 3 * REWARD / 4);
 }
 
-TEST_F(Stake, delegate_intra_compound_rewards)
+TEST_F(StakeLatest, delegate_intra_compound_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const reward_decimal_rounding = 999999999999999999;
@@ -3347,7 +3399,7 @@ TEST_F(Stake, delegate_intra_compound_rewards)
         2 * reward_decimal_rounding + 3 * REWARD / 5);
 }
 
-TEST_F(Stake, delegate_compound_boundary)
+TEST_F(StakeLatest, delegate_compound_boundary)
 {
     // Epoch 1 - Add validator
     auto const auth_address = 0xdeadbeef_address;
@@ -3401,7 +3453,7 @@ TEST_F(Stake, delegate_compound_boundary)
 }
 
 // compound delegators before and after snapshots
-TEST_F(Stake, delegate_compound)
+TEST_F(StakeLatest, delegate_compound)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3546,7 +3598,7 @@ TEST_F(Stake, delegate_compound)
 
 // compound delegators before and after snapshots then withdraw, val remains
 // active
-TEST_F(Stake, undelegate_compound)
+TEST_F(StakeLatest, undelegate_compound)
 {
     auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
@@ -3622,7 +3674,7 @@ TEST_F(Stake, undelegate_compound)
     EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE + ((reward / 3)));
 }
 
-TEST_F(Stake, undelegate_compound_partial)
+TEST_F(StakeLatest, undelegate_compound_partial)
 {
     auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
@@ -3721,7 +3773,7 @@ TEST_F(Stake, undelegate_compound_partial)
 // undelegate tests
 /////////////////////
 
-TEST_F(Stake, undelegate_revert_insufficent_funds)
+TEST_F(StakeLatest, undelegate_revert_insufficent_funds)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
@@ -3751,7 +3803,7 @@ TEST_F(Stake, undelegate_revert_insufficent_funds)
     EXPECT_EQ(get_balance(del_address), 0);
 }
 
-TEST_F(Stake, undelegate_boundary_pool)
+TEST_F(StakeLatest, undelegate_boundary_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
@@ -3818,7 +3870,7 @@ TEST_F(Stake, undelegate_boundary_pool)
     EXPECT_EQ(get_balance(del_address), ACTIVE_VALIDATOR_STAKE + REWARD / 2);
 }
 
-TEST_F(Stake, undelegate_snapshot_boundary_pool)
+TEST_F(StakeLatest, undelegate_snapshot_boundary_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
@@ -3881,7 +3933,7 @@ TEST_F(Stake, undelegate_snapshot_boundary_pool)
 // withdraw tests
 /////////////////////
 
-TEST_F(Stake, double_withdraw)
+TEST_F(StakeLatest, double_withdraw)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
@@ -3901,7 +3953,7 @@ TEST_F(Stake, double_withdraw)
     EXPECT_EQ(get_balance(auth_address), MIN_VALIDATE_STAKE);
 }
 
-TEST_F(Stake, withdraw_reusable_id)
+TEST_F(StakeLatest, withdraw_reusable_id)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
@@ -3932,7 +3984,7 @@ TEST_F(Stake, withdraw_reusable_id)
 // claim_rewards tests
 /////////////////////
 
-TEST_F(Stake, claim_rewards)
+TEST_F(StakeLatest, claim_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3944,7 +3996,7 @@ TEST_F(Stake, claim_rewards)
     EXPECT_EQ(get_balance(auth_address), REWARD);
 }
 
-TEST_F(Stake, claim_noop)
+TEST_F(StakeLatest, claim_noop)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3955,7 +4007,7 @@ TEST_F(Stake, claim_noop)
     EXPECT_EQ(get_balance(auth_address), 0);
 }
 
-TEST_F(Stake, claim_rewards_compound)
+TEST_F(StakeLatest, claim_rewards_compound)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -3988,7 +4040,7 @@ TEST_F(Stake, claim_rewards_compound)
 // sys_call_reward tests
 ////////////////////////
 
-TEST_F(Stake, reward_unknown_validator)
+TEST_F(StakeLatest, reward_unknown_validator)
 {
     auto const unknown = Address{0xabcdef};
     EXPECT_EQ(
@@ -3996,7 +4048,7 @@ TEST_F(Stake, reward_unknown_validator)
         StakingError::NotInValidatorSet);
 }
 
-TEST_F(Stake, reward_crash_no_snapshot_missing_validator)
+TEST_F(StakeLatest, reward_crash_no_snapshot_missing_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -4011,7 +4063,7 @@ TEST_F(Stake, reward_crash_no_snapshot_missing_validator)
 // sys_call_snapshot tests
 ////////////////////////
 
-TEST_F(Stake, multiple_snapshot_error)
+TEST_F(StakeLatest, multiple_snapshot_error)
 {
     EXPECT_FALSE(syscall_snapshot().has_error());
     EXPECT_TRUE(syscall_snapshot().has_error());
@@ -4019,7 +4071,7 @@ TEST_F(Stake, multiple_snapshot_error)
     EXPECT_FALSE(syscall_snapshot().has_error());
 }
 
-TEST_F(Stake, valset_exceeds_n)
+TEST_F(StakeLatest, valset_exceeds_n)
 {
     auto const auth_address = 0xdeadbeef_address;
     static_assert(ACTIVE_VALSET_SIZE < 1000);
@@ -4074,7 +4126,7 @@ TEST_F(Stake, valset_exceeds_n)
 // sys_call_epoch_change tests
 ////////////////////////
 
-TEST_F(Stake, epoch_goes_backwards)
+TEST_F(StakeLatest, epoch_goes_backwards)
 {
     EXPECT_FALSE(syscall_on_epoch_change(3).has_error());
     EXPECT_TRUE(syscall_on_epoch_change(1).has_error());
@@ -4083,7 +4135,7 @@ TEST_F(Stake, epoch_goes_backwards)
     EXPECT_FALSE(syscall_on_epoch_change(4).has_error());
 }
 
-TEST_F(Stake, contract_bootstrap)
+TEST_F(StakeLatest, contract_bootstrap)
 {
     // This test simulates the bootstrap flow for a live chain.
     //
@@ -4162,7 +4214,7 @@ TEST_F(Stake, contract_bootstrap)
     EXPECT_EQ(acc2.value.native(), 0);
 }
 
-TEST_F(Stake, zero_reward_epochs)
+TEST_F(StakeLatest, zero_reward_epochs)
 {
     auto const auth_address = 0xdeadbeef_address;
     std::array<Address, 4> delegators{
@@ -4234,13 +4286,13 @@ TEST_F(Stake, zero_reward_epochs)
 // Getter Tests //
 //////////////////
 
-TEST_F(Stake, get_valset_empty)
+TEST_F(StakeLatest, get_valset_empty)
 {
     EXPECT_FALSE(get_valset(0).has_error());
     EXPECT_FALSE(get_valset(std::numeric_limits<uint32_t>::max()).has_error());
 }
 
-TEST_F(Stake, empty_get_delegators_for_validator_getter)
+TEST_F(StakeLatest, empty_get_delegators_for_validator_getter)
 {
     {
         // validator doesn't exist
@@ -4266,7 +4318,7 @@ TEST_F(Stake, empty_get_delegators_for_validator_getter)
     }
 }
 
-TEST_F(Stake, empty_get_validators_for_delegator_getter)
+TEST_F(StakeLatest, empty_get_validators_for_delegator_getter)
 {
     {
         // validator doesn't exist
@@ -4294,7 +4346,7 @@ TEST_F(Stake, empty_get_validators_for_delegator_getter)
     }
 }
 
-TEST_F(Stake, get_delegators_for_validator)
+TEST_F(StakeLatest, get_delegators_for_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -4348,7 +4400,7 @@ TEST_F(Stake, get_delegators_for_validator)
     }
 }
 
-TEST_F(Stake, get_validators_for_delegator)
+TEST_F(StakeLatest, get_validators_for_delegator)
 {
     auto const auth_address = 0xdeadbeef_address;
     std::unordered_set<uint64_t> validators;
@@ -4402,7 +4454,7 @@ TEST_F(Stake, get_validators_for_delegator)
     }
 }
 
-TEST_F(Stake, get_valset_paginated_reads)
+TEST_F(StakeLatest, get_valset_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
     for (uint32_t i = 0; i < 999; ++i) {
@@ -4438,7 +4490,7 @@ TEST_F(Stake, get_valset_paginated_reads)
     EXPECT_TRUE(valset_paginated == valset_one_read);
 }
 
-TEST_F(Stake, get_delegators_for_validator_paginated_reads)
+TEST_F(StakeLatest, get_delegators_for_validator_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -4486,7 +4538,7 @@ TEST_F(Stake, get_delegators_for_validator_paginated_reads)
 // Solvency Tests //
 ////////////////////
 
-TEST_F(Stake, validator_insolvent)
+TEST_F(StakeLatest, validator_insolvent)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(auth_address, MIN_VALIDATE_STAKE);
@@ -4503,7 +4555,7 @@ TEST_F(Stake, validator_insolvent)
         StakingError::SolvencyError);
 }
 
-TEST_F(Stake, withdrawal_insolvent)
+TEST_F(StakeLatest, withdrawal_insolvent)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -4526,7 +4578,7 @@ TEST_F(Stake, withdrawal_insolvent)
         StakingError::SolvencyError);
 }
 
-TEST_F(Stake, withdrawal_state_override)
+TEST_F(StakeLatest, withdrawal_state_override)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
@@ -4551,7 +4603,7 @@ TEST_F(Stake, withdrawal_state_override)
 // Dust Tests //
 ////////////////
 
-TEST_F(Stake, dust_hunter)
+TEST_F(StakeLatest, dust_hunter)
 {
     // This test binary searches the space between [0, 10e18] and finds the
     // largest value that produces 0 rewards.
@@ -4606,7 +4658,7 @@ TEST_F(Stake, dust_hunter)
     EXPECT_GE(DUST_THRESHOLD, needle);
 }
 
-TEST_F(Stake, delegate_dust)
+TEST_F(StakeLatest, delegate_dust)
 {
     auto const delegator = 0xaaaa_address;
     auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
@@ -4644,7 +4696,7 @@ TEST_F(Stake, delegate_dust)
     EXPECT_FALSE(compound(val.id, delegator).has_error());
 }
 
-TEST_F(Stake, undelegate_dust)
+TEST_F(StakeLatest, undelegate_dust)
 {
     auto const delegator = 0xaaaa_address;
     auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
@@ -4689,7 +4741,7 @@ TEST_F(Stake, undelegate_dust)
 // Events Tests //
 //////////////////
 
-TEST_F(Stake, events)
+TYPED_TEST(StakeAllRevisions, events)
 {
     auto const auth = 0xdeadbeef_address;
 
@@ -4697,109 +4749,112 @@ TEST_F(Stake, events)
     //   1. Validator created
     //   2. Validator status changed to active.
     //   3. Delegate event
-    auto const res = add_validator(auth, ACTIVE_VALIDATOR_STAKE);
+    auto const res = this->add_validator(auth, this->ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     size_t seen_events = 0;
-    EXPECT_EQ(state.logs().size(), 3);
+    EXPECT_EQ(this->state.logs().size(), 3);
     seen_events += 3;
 
     // Change to new commission
     //  1. Commission changed event
-    ASSERT_FALSE(change_commission(val.id, auth, MON * 25 / 100).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    ASSERT_FALSE(
+        this->change_commission(val.id, auth, MON * 25 / 100).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // Change to the same commission. No events emitted
-    ASSERT_FALSE(change_commission(val.id, auth, MON * 25 / 100).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events);
+    ASSERT_FALSE(
+        this->change_commission(val.id, auth, MON * 25 / 100).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events);
 
     // Epoch change
     //  1. Epoch changed event
-    skip_to_next_epoch();
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // Undelegate, setting validator inactive
     //   1. Undelegate event
     //   2. Validator status changed to inactive
-    ASSERT_FALSE(undelegate(val.id, auth, 1, 50 * MON).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    ASSERT_FALSE(this->undelegate(val.id, auth, 1, 50 * MON).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 2);
     seen_events += 2;
 
     // Undelegate without changing validator state
     //   1. Undelegate event
-    ASSERT_FALSE(undelegate(val.id, auth, 2, 10 * MON).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    ASSERT_FALSE(this->undelegate(val.id, auth, 2, 10 * MON).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // Delegate without changing validator state
     //  1. Delegate event
-    ASSERT_FALSE(delegate(val.id, auth, 10 * MON).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    ASSERT_FALSE(this->delegate(val.id, auth, 10 * MON).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // Delegate, setting validator active
     //  1. Delegate event
     //  2. Validator status changed
-    ASSERT_FALSE(delegate(val.id, auth, 50 * MON).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    ASSERT_FALSE(this->delegate(val.id, auth, 50 * MON).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 2);
     seen_events += 2;
 
     // Claim with no rewards. No events emitted
-    ASSERT_FALSE(claim_rewards(val.id, auth).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events);
+    ASSERT_FALSE(this->claim_rewards(val.id, auth).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events);
 
     // Reward syscall
     //  1. Reward originating from the contract
-    ASSERT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
-    EXPECT_EQ(state.logs().back().topics[2], abi_encode_address(SYSTEM_SENDER));
+    ASSERT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
+    EXPECT_EQ(
+        this->state.logs().back().topics[2], abi_encode_address(SYSTEM_SENDER));
     seen_events += 1;
 
     // Claim with nonzero rewards.
     //   1. Claim event
-    ASSERT_FALSE(claim_rewards(val.id, auth).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    ASSERT_FALSE(this->claim_rewards(val.id, auth).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // External reward
     //  1. Reward originating from the sender
-    ASSERT_FALSE(external_reward(val.id, auth, 5 * MON).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
-    EXPECT_EQ(state.logs().back().topics[2], abi_encode_address(auth));
+    ASSERT_FALSE(this->external_reward(val.id, auth, 5 * MON).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
+    EXPECT_EQ(this->state.logs().back().topics[2], abi_encode_address(auth));
     seen_events += 1;
 
     // Compound without changing validator state
     //  1. Claim event
     //  2. Delegate event
-    ASSERT_FALSE(compound(val.id, auth).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 2);
+    ASSERT_FALSE(this->compound(val.id, auth).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 2);
     seen_events += 2;
 
     // Compound with no rewards.  Note that all reward for `auth` were just
     // compounded in the last step. No events emitted.
-    ASSERT_FALSE(compound(val.id, auth).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events);
+    ASSERT_FALSE(this->compound(val.id, auth).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events);
 
     // Withdraw one of the pending delegations
     //   1. Withdraw event
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
     seen_events += 2; // two epoch changed events
-    ASSERT_FALSE(withdraw(val.id, auth, 1).has_error());
-    EXPECT_EQ(state.logs().size(), seen_events + 1);
+    ASSERT_FALSE(this->withdraw(val.id, auth, 1).has_error());
+    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
     seen_events += 1;
 
     // All logs should come from the staking contract
-    for (auto const &log : state.logs()) {
+    for (auto const &log : this->state.logs()) {
         EXPECT_EQ(log.address, STAKING_CA);
     }
 
     // compute data hash and topics hash
     byte_string data_blob;
     byte_string topics_blob;
-    for (auto const &log : state.logs()) {
+    for (auto const &log : this->state.logs()) {
         topics_blob += abi_encode_uint<u64_be>(log.topics.size());
         for (bytes32_t const &topic : log.topics) {
             topics_blob += byte_string{topic};

@@ -41,7 +41,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
-        staking::StakingContract::precompile_dispatch(input);
+        staking::StakingContract::precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }

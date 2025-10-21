@@ -50,7 +50,12 @@ public:
         return std::move(*this);
     }
 
-    Receipt::Log &&build() &&
+    // noinline is here for gcc only. The optimizer inlines this method, and
+    // then errors out because the call to memmove appears to exceed the size of
+    // the object. Once inlined, it doesn't realize the Receipt::Log object has
+    // a byte_string, which has an SSO buffer. Blocking inlining gives gcc
+    // enough context to realize this move is perfectly safe.
+    [[gnu::noinline]] Receipt::Log &&build() &&
     {
         return std::move(event_);
     }

@@ -1047,6 +1047,28 @@ TEST_F(StakeLatest, add_validator_insufficent_balance)
     EXPECT_EQ(contract.vars.val_execution(2).commission().load().native(), 2);
 }
 
+TYPED_TEST(StakeAllRevisions, add_validator_active_stake_fork)
+{
+    auto const val = this->add_validator(0xdeadbeef_address, 15'000'000 * MON);
+    EXPECT_FALSE(val.has_error());
+    this->skip_to_next_epoch();
+
+    if constexpr (TestFixture::REV >= MONAD_FIVE) {
+        EXPECT_EQ(this->contract.vars.valset_execution.length(), 1);
+        EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
+        EXPECT_EQ(
+            this->contract.vars.val_execution(val.value().id).get_flags(),
+            ValidatorFlagsOk);
+    }
+    else {
+        EXPECT_EQ(this->contract.vars.valset_execution.length(), 0);
+        EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
+        EXPECT_EQ(
+            this->contract.vars.val_execution(val.value().id).get_flags(),
+            ValidatorFlagsStakeTooLow);
+    }
+}
+
 /////////////////////
 // validator tests
 /////////////////////
@@ -4867,12 +4889,24 @@ TYPED_TEST(StakeAllRevisions, events)
 
     // If intentionally bumping the hashes, this script tidies the gtest output:
     // awk '{gsub(/[- ]/, ""); print}'
-    EXPECT_EQ(
-        data_hash,
-        0x963BADF92D0C30030E575232A2FDF1333D60D7DE3B6FB275E61451C108F0E2D3_bytes32)
-        << "Staking event change requires a hardfork!";
-    EXPECT_EQ(
-        topics_hash,
-        0x698CB2EE95A576037A3D5EDDA5FFA5ABC8741E6DB69883C899CC93C0EBB55AB6_bytes32)
-        << "Staking event change requires a hardfork!";
+    if constexpr (TestFixture::REV >= MONAD_FIVE) {
+        EXPECT_EQ(
+            data_hash,
+            0x5CB7B14B95EAEBED9F9C5A0D7EB0F0BF28A209CA329950E5F6325447D6DC08B0_bytes32)
+            << "Staking event change requires a hardfork!";
+        EXPECT_EQ(
+            topics_hash,
+            0x698CB2EE95A576037A3D5EDDA5FFA5ABC8741E6DB69883C899CC93C0EBB55AB6_bytes32)
+            << "Staking event change requires a hardfork!";
+    }
+    else {
+        EXPECT_EQ(
+            data_hash,
+            0x963BADF92D0C30030E575232A2FDF1333D60D7DE3B6FB275E61451C108F0E2D3_bytes32)
+            << "Staking event change requires a hardfork!";
+        EXPECT_EQ(
+            topics_hash,
+            0x698CB2EE95A576037A3D5EDDA5FFA5ABC8741E6DB69883C899CC93C0EBB55AB6_bytes32)
+            << "Staking event change requires a hardfork!";
+    }
 }

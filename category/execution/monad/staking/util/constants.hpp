@@ -62,6 +62,9 @@ struct Limits
     template <Traits traits>
     static constexpr uint256_t active_validator_stake()
     {
+        if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+            return 10'000'000 * MON;
+        }
         return 25'000'000 * MON;
     }
 

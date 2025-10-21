@@ -498,7 +498,7 @@ TEST_F(EvmTest, EthCallOutOfGas)
 
 TEST_F(EvmTest, Int32BlockGasOverflow)
 {
-    using traits = monad::MonadTraits<MONAD_FIVE>;
+    using traits = monad::MonadTraits<MONAD_NEXT>;
 
     std::vector<uint8_t> code;
     for (size_t i = 0; i < 14 * 1024; ++i) {

@@ -190,7 +190,7 @@ TYPED_TEST(MonadTraitsTest, TopLevelCreate)
     }
 }
 
-TEST(TransactionProcessor, monad_five_refunds_delete)
+TEST(TransactionProcessor, refunds_delete)
 {
     using intx::operator""_u256;
 
@@ -248,7 +248,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
             set_tx,
@@ -296,7 +296,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
             zero_tx,
@@ -323,7 +323,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete)
     }
 }
 
-TEST(TransactionProcessor, monad_five_refunds_delete_then_set)
+TEST(TransactionProcessor, refunds_delete_then_set)
 {
     using intx::operator""_u256;
 
@@ -384,7 +384,7 @@ TEST(TransactionProcessor, monad_five_refunds_delete_then_set)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_FIVE>>(
+        auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
             set_tx,

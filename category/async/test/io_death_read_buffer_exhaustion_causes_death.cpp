@@ -76,7 +76,7 @@ namespace
                     {0, 0}, monad::async::DISK_PAGE_SIZE),
                 empty_receiver{bufs}));
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         };
         for (size_t n = 0; n < 512; n++) {
             make();

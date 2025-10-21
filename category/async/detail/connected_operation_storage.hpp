@@ -121,6 +121,7 @@ namespace detail
        If set by the receiver, AsyncIO cleans these up after completion
        if a read or write op. Otherwise operator delete is called.
     */
+    // NOLINTBEGIN(bugprone-non-zero-enum-to-bool-conversion)
     template <sender Sender, receiver Receiver>
     inline constexpr bool lifetime_managed_internally_default = []() constexpr {
         if constexpr (requires { Receiver::lifetime_managed_internally; }) {
@@ -134,6 +135,8 @@ namespace detail
                    sender_operation_type<Sender> == operation_type::write;
         }
     }();
+
+    // NOLINTEND(bugprone-non-zero-enum-to-bool-conversion)
 
     template <class Base, sender Sender, receiver Receiver>
     struct connected_operation_storage : public Base
@@ -149,8 +152,8 @@ namespace detail
         Sender sender_;
         Receiver receiver_;
 
-        virtual initiation_result do_possibly_deferred_initiate_(
-            bool never_defer, bool is_retry) noexcept override
+        virtual initiation_result
+        do_possibly_deferred_initiate_(bool never_defer, bool is_retry) override
         {
             (void)
                 is_retry; // useful to know how this initiation is coming about
@@ -184,7 +187,7 @@ namespace detail
                         this->completed(success());
                     }
                     else {
-                        nested_sender_errc_with_payload_code sec(
+                        nested_sender_errc_with_payload_code const sec(
                             std::move(r).assume_error());
                         std::visit(
                             [&](auto &v) {
@@ -385,7 +388,7 @@ namespace detail
         //! If successful do NOT modify anything after
         //! this until after completion, it may cause a silent page
         //! copy-on-write.
-        initiation_result initiate() noexcept
+        initiation_result initiate()
         {
             // NOTE Keep this in sync with the one in
             // erased_connected_operation. This is here to aid devirtualisation.

@@ -244,6 +244,7 @@ inline void receiver_t::set_value(
     }
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char *argv[])
 {
     CLI::App cli("Tool for benchmarking the i/o engine", "benchmark_io_test");

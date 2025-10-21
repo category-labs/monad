@@ -76,7 +76,7 @@ private:
 
         constexpr chunk_ptr_() = default;
 
-        constexpr chunk_ptr_(std::shared_ptr<T> ptr_)
+        constexpr explicit(false) chunk_ptr_(std::shared_ptr<T> ptr_)
             : ptr(std::move(ptr_))
             , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
             , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
@@ -432,7 +432,7 @@ public:
         ConnectedOperationType state[0];
 #pragma GCC diagnostic pop
 
-        constexpr registered_io_buffer_with_connected_operation() {}
+        constexpr registered_io_buffer_with_connected_operation() = default;
     };
     friend struct io_connected_operation_unique_ptr_deleter;
 
@@ -555,7 +555,9 @@ public:
         return make_connected_impl_ < Sender::my_operation_type ==
                operation_type::write > ([&] {
                    return connect<Sender, Receiver>(
-                       *this, std::move(sender), std::move(receiver));
+                       *this,
+                       std::forward<Sender>(sender),
+                       std::forward<Receiver>(receiver));
                });
     }
 

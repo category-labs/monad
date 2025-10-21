@@ -150,6 +150,24 @@ namespace monad::vm::compiler::native
         Comparison comparison_;
     };
 
+    struct OperandLocations
+    {
+        std::optional<Literal> literal;
+        std::optional<StackOffset> stack_offset;
+        std::optional<AvxReg> avx_reg;
+        std::optional<GeneralReg> general_reg;
+        bool is_deferred_comparison;
+
+        bool operator==(OperandLocations const &other) const
+        {
+            return literal == other.literal &&
+                   stack_offset == other.stack_offset &&
+                   avx_reg == other.avx_reg &&
+                   general_reg == other.general_reg &&
+                   is_deferred_comparison == other.is_deferred_comparison;
+        }
+    };
+
     /**
      * A stack element. It can store its word value in up to 4 locations at the
      * same time. The 4 locations are: `StackOffset`, `AvxReg`, `GeneralReg`,
@@ -204,6 +222,8 @@ namespace monad::vm::compiler::native
         {
             return !stack_indices_.empty();
         }
+
+        bool is_deferred_comparison() const;
 
         // Remember to match this with a call to `unreserve_avx_reg`.
         void reserve_avx_reg()
@@ -771,6 +791,23 @@ namespace monad::vm::compiler::native
         std::int32_t top_index() const
         {
             return top_index_;
+        }
+
+        std::int32_t bottom_index() const
+        {
+            return -static_cast<std::int32_t>(negative_elems_.size()) -
+                   1; // minus 1 because 1-indexed
+        }
+
+        OperandLocations get_stack_elem_locations(std::int32_t index)
+        {
+            StackElemRef const elem = at(index);
+            return {
+                elem->literal(),
+                elem->stack_offset(),
+                elem->avx_reg(),
+                elem->general_reg(),
+                elem->is_deferred_comparison()};
         }
 
     private:

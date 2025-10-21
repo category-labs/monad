@@ -53,10 +53,6 @@ namespace monad
         { T::should_refund_reduce_gas_used() } -> std::same_as<bool>;
         { T::eip_7702_refund_active() } -> std::same_as<bool>;
 
-        // Pricing version 1 activates the changes in:
-        // Monad specification §4: Opcode Gas Costs and Gas Refunds
-        { T::monad_pricing_version() } -> std::same_as<uint8_t>;
-
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
         { T::max_initcode_size() } -> std::same_as<size_t>;
@@ -97,13 +93,6 @@ namespace monad
         static consteval bool can_create_inside_delegated() noexcept
         {
             return true;
-        }
-
-        static consteval uint8_t monad_pricing_version() noexcept
-        {
-            static_assert(
-                false, "Calling monad_pricing_version() on an EVM trait type");
-            std::unreachable();
         }
 
         static consteval bool should_refund_reduce_gas_used() noexcept
@@ -203,6 +192,8 @@ namespace monad
             return false;
         }
 
+        // Pricing version 1 activates the changes in:
+        // Monad specification §4: Opcode Gas Costs and Gas Refunds
         static consteval uint8_t monad_pricing_version() noexcept
         {
             if constexpr (Rev >= MONAD_FIVE) {

@@ -90,6 +90,69 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
+// Test that CREATE transactions that fail due to insufficient balance
+// do not bump nonce prior to MONAD_FIVE but do bump it after
+TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t initial_nonce = 5;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .nonce = initial_nonce}}}}},
+        Code{},
+        BlockHeader{});
+
+    evmc_message m{
+        .kind = EVMC_CREATE,
+        .depth = 0, // top-level transaction
+        .gas = 20'000,
+        .sender = from,
+    };
+    uint256_t const v{70'000'000'000'000'000}; // too much balance required
+    intx::be::store(m.value.bytes, v);
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+
+    EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
+
+    auto const final_nonce = s.get_nonce(from);
+    if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FIVE) {
+            EXPECT_EQ(final_nonce, initial_nonce + 1);
+        }
+        else {
+            EXPECT_EQ(final_nonce, initial_nonce);
+        }
+    }
+    else {
+        // Asserting expected behavior here but noting that this test is
+        // unrealistic for ethereum since the sender balance is always
+        // sufficient to pay for the gas + value
+        EXPECT_EQ(final_nonce, initial_nonce);
+    }
+}
+
 TYPED_TEST(TraitsTest, eip684_existing_code)
 {
     InMemoryMachine machine;

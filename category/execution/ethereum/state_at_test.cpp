@@ -177,6 +177,35 @@ namespace
     }
 }
 
+TEST_F(StateAtFixture, empty_list_of_transactions)
+{
+    State state{block_state, Incarnation{0, 0}};
+    state.create_contract(addr1);
+    state.add_to_balance(addr1, 1'000'000);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(std::move(state));
+
+    BlockHeader header{.number = 1};
+    std::vector<Transaction> txns{};
+    auto [trace_containers, state_tracers] =
+        make_state_tracers(txns.size(), NOOP_TRACER);
+
+    EXPECT_EQ(block_state.read_account(addr1).value().nonce, 0);
+    auto const result = state_after_transactions<traits>(
+        chain,
+        header,
+        txns,
+        ::senders(txns.size()),
+        ::authorities(txns.size()),
+        block_state,
+        buffer,
+        pool,
+        state_tracers);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), txns.size());
+    EXPECT_EQ(block_state.read_account(addr1).value().nonce, 0);
+}
+
 TEST_F(StateAtFixture, check_nonce)
 {
     State state{block_state, Incarnation{0, 0}};
@@ -208,7 +237,83 @@ TEST_F(StateAtFixture, check_nonce)
     EXPECT_EQ(block_state.read_account(addr1).value().nonce, 2);
 }
 
-TEST_F(StateAtFixture, counter_contract)
+TEST_F(StateAtFixture, counter_contract_prestate_trace)
+{
+    State state{block_state, Incarnation{0, 0}};
+    state.create_contract(addr1);
+    state.add_to_balance(addr1, 1'000'000);
+    state.create_contract(addr2);
+    state.add_to_balance(addr2, 1'000'000);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(std::move(state));
+
+    deploy_counter_contract(1);
+
+    BlockHeader header{.number = 2};
+    std::vector<Transaction> txns{make_tx(counter_addr), make_tx(counter_addr)};
+    auto [trace_containers, state_tracers] =
+        make_state_tracers(txns.size(), PRESTATE_TRACER);
+
+    bytes32_t const value_slot{};
+    EXPECT_EQ(
+        block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
+        bytes32_t{});
+    auto const result = state_after_transactions<traits>(
+        chain,
+        header,
+        txns,
+        ::senders(txns.size()),
+        ::authorities(txns.size()),
+        block_state,
+        buffer,
+        pool,
+        state_tracers);
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), txns.size());
+
+    bytes32_t const expected_value = to_bytes(to_big_endian(uint256_t{2}));
+    EXPECT_EQ(
+        block_state.read_storage(counter_addr, Incarnation{1, 0}, value_slot),
+        expected_value);
+
+    std::string const expected_trace1 = R"({
+  "0x0000000000000000000000000000000000000000": {
+    "balance": "0x0"
+  },
+  "0x6363636363636363636363636363636363636363": {
+    "balance": "0x0",
+    "code": "0x60015f54015f55",
+    "storage": {
+      "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+    "balance": "0xf4240"
+  }
+})";
+    EXPECT_EQ(trace_containers[0].dump(2), expected_trace1);
+
+    std::string const expected_trace2 = R"({
+  "0x0000000000000000000000000000000000000000": {
+    "balance": "0x0"
+  },
+  "0x6363636363636363636363636363636363636363": {
+    "balance": "0x0",
+    "code": "0x60015f54015f55",
+    "storage": {
+      "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    }
+  },
+  "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+    "balance": "0xf4240",
+    "nonce": 1
+  }
+})";
+    EXPECT_EQ(trace_containers[1].dump(2), expected_trace2);
+}
+
+TEST_F(StateAtFixture, counter_contract_statediff_trace)
 {
     State state{block_state, Incarnation{0, 0}};
     state.create_contract(addr1);

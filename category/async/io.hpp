@@ -45,8 +45,6 @@ struct IORecord
     unsigned inflight_rd{0};
     unsigned inflight_rd_scatter{0};
     unsigned inflight_wr{0};
-    unsigned inflight_tm{0};
-    std::atomic<unsigned> inflight_ts{0};
 
     unsigned max_inflight_rd{0};
     unsigned max_inflight_rd_scatter{0};
@@ -177,8 +175,6 @@ public:
     {
         return records_.inflight_rd + concurrent_read_ios_pending_.count +
                records_.inflight_rd_scatter + records_.inflight_wr +
-               records_.inflight_tm +
-               records_.inflight_ts.load(std::memory_order_relaxed) +
                deferred_initiations_in_flight();
     }
 
@@ -212,17 +208,7 @@ public:
         return records_.max_inflight_wr;
     }
 
-    unsigned timers_in_flight() const noexcept
-    {
-        return records_.inflight_tm;
-    }
-
     unsigned deferred_initiations_in_flight() const noexcept;
-
-    unsigned threadsafeops_in_flight() const noexcept
-    {
-        return records_.inflight_ts.load(std::memory_order_relaxed);
-    }
 
     unsigned concurrent_read_io_limit() const noexcept
     {
@@ -668,7 +654,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 224);
+static_assert(sizeof(AsyncIO) == 216);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

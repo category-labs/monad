@@ -957,13 +957,13 @@ Result<byte_string> StakingContract::get_valset(
             valset.length() > std::numeric_limits<uint32_t>::max())) {
         // Both consensus set and snapshot set are bounded. The execution set is
         // theoretically unbounded, but to be a candidate, you need to put
-        // Limits::min_auth_address_stake(). This amount prevents that valset
+        // limits::min_auth_address_stake(). This amount prevents that valset
         // from exceeding u32_max in practice.
         return StakingError::InternalError;
     }
 
-    auto const [done, next_index, valids] =
-        get_valset(valset, start_index.native(), PAGINATED_RESULTS_SIZE);
+    auto const [done, next_index, valids] = get_valset(
+        valset, start_index.native(), limits::paginated_results_size());
     AbiEncoder encoder;
     encoder.add_bool(done);
     encoder.add_uint(next_index);
@@ -1009,7 +1009,7 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     }
 
     auto const [done, next_val_id, vals_page] = get_validators_for_delegator(
-        delegator, start_val_id, PAGINATED_RESULTS_SIZE);
+        delegator, start_val_id, limits::paginated_results_size());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1032,7 +1032,7 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     }
 
     auto const [done, next_del_addr, dels_page] = get_delegators_for_validator(
-        val_id, start_delegator_address, PAGINATED_RESULTS_SIZE);
+        val_id, start_delegator_address, limits::paginated_results_size());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1133,7 +1133,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     auto const stake = intx::be::load<uint256_t>(msg_value);
-    if (MONAD_UNLIKELY(stake < Limits::min_auth_address_stake())) {
+    if (MONAD_UNLIKELY(stake < limits::min_auth_address_stake())) {
         return StakingError::InsufficientStake;
     }
 
@@ -1165,7 +1165,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
         return StakingError::BlsSignatureVerificationFailed;
     }
 
-    if (MONAD_UNLIKELY(commission.native() > Limits::max_commission())) {
+    if (MONAD_UNLIKELY(commission.native() > limits::max_commission())) {
         return StakingError::CommissionTooHigh;
     }
 
@@ -1211,7 +1211,7 @@ Result<void> StakingContract::delegate(
         return StakingError::UnknownValidator;
     }
 
-    if (MONAD_UNLIKELY(stake < Limits::dust_threshold())) {
+    if (MONAD_UNLIKELY(stake < limits::dust_threshold())) {
         // Each individual delegation must be greater than a dust threshold.
         // While it may seem more intuitive to fail only if the delegator's
         // total stake less than the dust threshold. But a delegator could, for
@@ -1262,12 +1262,12 @@ Result<void> StakingContract::delegate(
 
     // does total val stake exceed the minimum threshold?
     auto const oldflags = val.get_flags();
-    if (new_val_stake >= Limits::active_validator_stake<traits>()) {
+    if (new_val_stake >= limits::active_validator_stake<traits>()) {
         val.clear_flag(ValidatorFlagsStakeTooLow);
     }
     // did the auth delegator reactivate?
     if (val.auth_address() == address &&
-        del.get_next_epoch_stake() >= Limits::min_auth_address_stake()) {
+        del.get_next_epoch_stake() >= limits::min_auth_address_stake()) {
         val.clear_flag(ValidatorFlagWithdrawn);
     }
     if (val.get_flags() != oldflags) {
@@ -1353,7 +1353,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     BOOST_OUTCOME_TRY(val_stake, checked_sub(val_stake, amount));
     BOOST_OUTCOME_TRY(del_stake, checked_sub(del_stake, amount));
-    if (MONAD_UNLIKELY(del_stake < Limits::dust_threshold())) {
+    if (MONAD_UNLIKELY(del_stake < limits::dust_threshold())) {
         // if all that remains is dust, send the rest of the delegator's balance
         // with this withdrawal.
         BOOST_OUTCOME_TRY(amount, checked_add(amount, del_stake));
@@ -1366,10 +1366,10 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     auto const oldflags = val.get_flags();
     if (msg_sender == val.auth_address() &&
-        del.get_next_epoch_stake() < Limits::min_auth_address_stake()) {
+        del.get_next_epoch_stake() < limits::min_auth_address_stake()) {
         val.set_flag(ValidatorFlagWithdrawn);
     }
-    if (val_stake < Limits::active_validator_stake<traits>()) {
+    if (val_stake < limits::active_validator_stake<traits>()) {
         val.set_flag(ValidatorFlagsStakeTooLow);
     }
     if (val.get_flags() != oldflags) {
@@ -1457,7 +1457,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
     withdrawal_request_storage.clear();
 
     bool const ready = is_epoch_active(
-        withdrawal_request->epoch.native() + Limits::withdrawal_delay());
+        withdrawal_request->epoch.native() + limits::withdrawal_delay());
     if (MONAD_UNLIKELY(!ready)) {
         return StakingError::WithdrawalNotReady;
     }
@@ -1531,7 +1531,7 @@ Result<byte_string> StakingContract::precompile_change_commission(
         return StakingError::RequiresAuthAddress;
     }
 
-    if (MONAD_UNLIKELY(new_commission.native() > Limits::max_commission())) {
+    if (MONAD_UNLIKELY(new_commission.native() > limits::max_commission())) {
         return StakingError::CommissionTooHigh;
     }
 
@@ -1567,10 +1567,10 @@ Result<byte_string> StakingContract::precompile_external_reward(
     }
 
     // 2. Apply bounds checks
-    if (MONAD_UNLIKELY(external_reward < Limits::min_external_reward())) {
+    if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {
         return StakingError::ExternalRewardTooSmall;
     }
-    if (MONAD_UNLIKELY(external_reward > Limits::max_external_reward())) {
+    if (MONAD_UNLIKELY(external_reward > limits::max_external_reward())) {
         return StakingError::ExternalRewardTooLarge;
     }
 
@@ -1770,7 +1770,7 @@ Result<void> StakingContract::syscall_snapshot(
         return a.first.native() < b.first.native();
     };
     uint64_t const n =
-        std::min(candidates.size(), Limits::active_valset_size());
+        std::min(candidates.size(), limits::active_valset_size());
     std::partial_sort(
         candidates.begin(),
         candidates.begin() + static_cast<std::ptrdiff_t>(n),

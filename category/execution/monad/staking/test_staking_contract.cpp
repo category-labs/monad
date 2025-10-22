@@ -261,21 +261,24 @@ struct StakeTraits : public ::testing::Test
 
     // test constants
     static constexpr uint256_t MIN_VALIDATE_STAKE =
-        Limits::min_auth_address_stake();
+        limits::min_auth_address_stake();
 
     static constexpr uint256_t ACTIVE_VALIDATOR_STAKE =
-        Limits::active_validator_stake<Trait>();
+        limits::active_validator_stake<Trait>();
 
     static constexpr uint256_t ACTIVE_VALSET_SIZE =
-        Limits::active_valset_size();
+        limits::active_valset_size();
 
-    static constexpr uint256_t DUST_THRESHOLD = Limits::dust_threshold();
+    static constexpr uint256_t DUST_THRESHOLD = limits::dust_threshold();
 
     static constexpr uint256_t MIN_EXTERNAL_REWARD =
-        Limits::min_external_reward();
+        limits::min_external_reward();
 
     static constexpr uint256_t MAX_EXTERNAL_REWARD =
-        Limits::max_external_reward();
+        limits::max_external_reward();
+
+    static constexpr uint64_t PAGINATED_RESULTS_SIZE =
+        limits::paginated_results_size();
 
     void SetUp() override
     {

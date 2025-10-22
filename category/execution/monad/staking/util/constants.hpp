@@ -43,24 +43,21 @@ inline constexpr uint256_t MON{1000000000000000000_u256};
 inline constexpr uint256_t UNIT_BIAS{
     1000000000000000000000000000000000000_u256}; // 1e36
 
-// Results for get_valset, get_delegators_for_validator, and
-// get_validators_for_delegator are paginated
-inline constexpr uint64_t PAGINATED_RESULTS_SIZE{100};
-
-struct Limits
+// the limits namespace denotes constants that can be forked in future releases.
+namespace limits
 {
-    static constexpr uint256_t dust_threshold()
+    constexpr uint256_t dust_threshold()
     {
         return 1000000000; // 1e9
     }
 
-    static constexpr uint256_t max_commission()
+    constexpr uint256_t max_commission()
     {
         return MON; // 1e18
     }
 
     template <Traits traits>
-    static constexpr uint256_t active_validator_stake()
+    constexpr uint256_t active_validator_stake()
     {
         if constexpr (traits::monad_rev() >= MONAD_FIVE) {
             return 10'000'000 * MON;
@@ -68,27 +65,34 @@ struct Limits
         return 25'000'000 * MON;
     }
 
-    static constexpr uint256_t min_auth_address_stake()
+    constexpr uint256_t min_auth_address_stake()
     {
         return 100'000 * MON;
     }
 
-    static constexpr uint256_t min_external_reward()
+    constexpr uint256_t min_external_reward()
     {
         return dust_threshold();
     }
 
-    static constexpr uint256_t max_external_reward()
+    constexpr uint256_t max_external_reward()
     {
         return 10000000000000000000000000_u256; // 1e25
     };
 
-    static constexpr uint64_t active_valset_size()
+    constexpr uint64_t active_valset_size()
     {
         return 200;
     }
 
-    static constexpr uint64_t withdrawal_delay()
+    // Results for get_valset, get_delegators_for_validator, and
+    // get_validators_for_delegator are paginated
+    constexpr uint64_t paginated_results_size()
+    {
+        return 100;
+    };
+
+    constexpr uint64_t withdrawal_delay()
     {
         return 1;
     }
@@ -96,7 +100,7 @@ struct Limits
 
 // sanity check: commission rate doesn't exceed 100% (1e18)
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18
-static_assert(Limits::max_commission() <= MON);
+static_assert(limits::max_commission() <= MON);
 
 enum
 {

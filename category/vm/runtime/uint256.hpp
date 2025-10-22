@@ -32,7 +32,7 @@
 #endif
 
 #ifndef __BMI2__
-#  error "Target architecture must support BMI2 (for MULX)"
+    #error "Target architecture must support BMI2 (for MULX)"
 #endif
 
 // GCC's overeager SLP vectorizer sometimes pessimizes code. For functions that
@@ -732,36 +732,40 @@ namespace monad::vm::runtime
     }
 
     [[gnu::always_inline]]
-    inline constexpr std::pair<uint64_t, uint64_t>
-    mulx_constexpr(uint64_t const x, uint64_t const y) noexcept
+    inline constexpr void mulx_constexpr(
+        uint64_t const x, uint64_t const y, uint64_t &r_hi,
+        uint64_t &r_lo) noexcept
     {
-        uint128_t const prod = static_cast<uint128_t>(x) * static_cast<uint128_t>(y);
-        uint64_t const hi = static_cast<uint64_t>(prod >> uint128_t{64});
-        uint64_t const lo = static_cast<uint64_t>(prod);
-        return {hi, lo};
+        uint128_t const prod =
+            static_cast<uint128_t>(x) * static_cast<uint128_t>(y);
+        r_hi = static_cast<uint64_t>(prod >> uint128_t{64});
+        r_lo = static_cast<uint64_t>(prod);
     }
 
     [[gnu::always_inline]]
-    inline std::pair<uint64_t, uint64_t>
-    mulx_intrinsic(uint64_t const x, uint64_t const y) noexcept
+    inline void mulx_intrinsic(
+        uint64_t const x, uint64_t const y, uint64_t &r_hi,
+        uint64_t &r_lo) noexcept
     {
+        /*
         uint64_t hi;
         uint64_t lo;
+        */
         asm("mulx %[x], %[lo], %[hi]"
-            : [hi] "=r"(hi), [lo] "=r"(lo)
+            : [hi] "=r"(r_hi), [lo] "=r"(r_lo)
             : [x] "r"(x), [y] "d"(y));
-        return {hi, lo};
     }
 
     [[gnu::always_inline]]
-    inline constexpr std::pair<uint64_t, uint64_t>
-    mulx(uint64_t const x, uint64_t const y) noexcept
+    inline constexpr void mulx(
+        uint64_t const x, uint64_t const y, uint64_t &r_hi,
+        uint64_t &r_lo) noexcept
     {
         if consteval {
-            return mulx_constexpr(x, y);
+            return mulx_constexpr(x, y, r_hi, r_lo);
         }
         else {
-            return mulx_intrinsic(x, y);
+            return mulx_intrinsic(x, y, r_hi, r_lo);
         }
     }
 
@@ -769,47 +773,48 @@ namespace monad::vm::runtime
     using words_t = std::array<uint64_t, M>;
 
     [[gnu::always_inline]]
-    inline std::tuple<uint64_t, uint64_t, uint64_t> adc_3(
-        std::tuple<uint64_t, uint64_t, uint64_t> const x,
-        std::tuple<uint64_t, uint64_t> const y) noexcept
+    inline void adc_3(
+        uint64_t x_2, uint64_t x_1, uint64_t x_0, uint64_t const y_1,
+        uint64_t const y_0, uint64_t &r_2, uint64_t &r_1,
+        uint64_t &r_0) noexcept
     {
-        auto [x_2, x_1, x_0] = x;
-        auto [y_1, y_0] = y;
         asm("addq %[y_0], %[x_0]\n"
             "adcq %[y_1], %[x_1]\n"
             "adcq $0, %[x_2]"
             : [x_0] "+r"(x_0), [x_1] "+r"(x_1), [x_2] "+r"(x_2)
             : [y_0] "r"(y_0), [y_1] "r"(y_1)
             : "cc");
-        return {x_2, x_1, x_0};
+        r_2 = x_2;
+        r_1 = x_1;
+        r_0 = x_0;
     }
 
     [[gnu::always_inline]]
-    inline std::pair<uint64_t, uint64_t>
-    adc_2(std::pair<uint64_t, uint64_t> const x, uint64_t const y_0) noexcept
+    inline void adc_2(
+        uint64_t x_1, uint64_t x_0, uint64_t const y_0, uint64_t &r_1,
+        uint64_t &r_0) noexcept
     {
-        auto [x_1, x_0] = x;
         asm("addq %[y_0], %[x_0]\n"
             "adcq $0, %[x_1]"
             : [x_0] "+r"(x_0), [x_1] "+r"(x_1)
             : [y_0] "r"(y_0)
             : "cc");
-        return {x_1, x_0};
+        r_1 = x_1;
+        r_0 = x_0;
     }
 
     [[gnu::always_inline]]
-    inline std::pair<uint64_t, uint64_t> adc_2(
-        std::pair<uint64_t, uint64_t> const x,
-        std::pair<uint64_t, uint64_t> const y) noexcept
+    inline void adc_2(
+        uint64_t x_1, uint64_t x_0, uint64_t const y_1, uint64_t const y_0,
+        uint64_t &r_1, uint64_t &r_0) noexcept
     {
-        auto [x_1, x_0] = x;
-        auto [y_1, y_0] = y;
         asm("addq %[y_0], %[x_0]\n"
             "adcq %[y_1], %[x_1]"
             : [x_0] "+r"(x_0), [x_1] "+r"(x_1)
             : [y_0] "r"(y_0), [y_1] "r"(y_1)
             : "cc");
-        return {x_1, x_0};
+        r_1 = x_1;
+        r_0 = x_0;
     }
 
     template <size_t I, size_t R, size_t M>
@@ -820,8 +825,18 @@ namespace monad::vm::runtime
     {
         if constexpr (I < std::min(R, M)) {
             if constexpr (I + 1 < R) {
-                auto const [hi, lo] = mulx(x[I], y);
-                std::tie(carry, result[I]) = adc_2({hi, lo}, carry);
+                uint64_t hi;
+                uint64_t lo;
+                mulx(x[I], y, hi, lo);
+                adc_2(
+                    // Input 1
+                    hi,
+                    lo,
+                    // Input 2
+                    carry,
+                    // Output
+                    carry,
+                    result[I]);
                 mul_line_recur<I + 1, R, M>(x, y, result, carry);
             }
             else {
@@ -841,7 +856,7 @@ namespace monad::vm::runtime
         words_t<R> &__restrict__ result) noexcept
     {
         uint64_t carry;
-        std::tie(carry, result[0]) = mulx(y, x[0]);
+        mulx(y, x[0], carry, result[0]);
 
         mul_line_recur<1, R, M>(x, y, result, carry);
     }
@@ -855,15 +870,35 @@ namespace monad::vm::runtime
         if constexpr (J + 1 < M && I + J < R) {
             if constexpr (I + J + 2 < R) {
                 // We need c_lo, c_hi
-                auto const [hi, lo] = mulx(x[J + 1], y_i);
-                std::tie(c_hi, c_lo, result[I + J]) =
-                    adc_3({hi, lo, result[I + J]}, {c_hi, c_lo});
+                uint64_t hi;
+                uint64_t lo;
+                mulx(x[J + 1], y_i, hi, lo);
+                adc_3(
+                    // Input 1
+                    hi,
+                    lo,
+                    result[I + J],
+                    // Input 2
+                    c_hi,
+                    c_lo,
+                    // Result
+                    c_hi,
+                    c_lo,
+                    result[I + J]);
             }
             else if constexpr (I + J + 1 < R) {
                 // We only need c_lo
                 uint64_t const lo = x[J + 1] * y_i;
-                std::tie(c_lo, result[I + J]) =
-                    adc_2({lo, result[I + J]}, {c_hi, c_lo});
+                adc_2(
+                    // Input 1
+                    lo,
+                    result[I + J],
+                    // Input 2
+                    c_hi,
+                    c_lo,
+                    // Output
+                    c_lo,
+                    result[I + J]);
             }
             else {
                 // We're done, we don't need subsequent results
@@ -873,9 +908,16 @@ namespace monad::vm::runtime
         }
         else {
             if constexpr (I + M < R) {
-                auto [hi, lo] = adc_2({c_hi, c_lo}, result[I + M - 1]);
-                result[I + M - 1] = lo;
-                result[I + M] = hi;
+
+                adc_2(
+                    // Input 1
+                    c_hi,
+                    c_lo,
+                    // Input 2
+                    result[I + M - 1],
+                    // Output
+                    result[I + M],
+                    result[I + M - 1]);
             }
             else if constexpr (I + M < R + 1) {
                 result[I + M - 1] += c_lo;
@@ -904,7 +946,7 @@ namespace monad::vm::runtime
         uint64_t c_lo;
 
         if constexpr (I + 1 < R) {
-            std::tie(c_hi, c_lo) = mulx(x[0], y_i);
+            mulx(x[0], y_i, c_hi, c_lo);
         }
         else {
             c_hi = 0;
@@ -947,7 +989,9 @@ namespace monad::vm::runtime
         for (size_t j = 0; j < N; j++) {
             uint64_t carry = 0;
             for (size_t i = 0; i < M && i + j < R; i++) {
-                auto const [hi, lo] = mulx(x[i], y[j]);
+                uint64_t hi;
+                uint64_t lo;
+                mulx(x[i], y[j], hi, lo);
 
                 auto const [s0, c0] = addc(lo, result[i + j], false);
                 auto const [s1, c1] = addc(s0, carry, false);

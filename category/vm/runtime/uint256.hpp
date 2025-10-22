@@ -206,8 +206,8 @@ namespace monad::vm::runtime
         }
     }
 
-    typedef unsigned __int128 uint128_t;
-    typedef __int128 int128_t;
+    using uint128_t = unsigned __int128;
+    using int128_t = __int128;
 
     template <typename Q, typename R = Q>
     struct div_result

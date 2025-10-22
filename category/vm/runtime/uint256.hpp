@@ -31,6 +31,10 @@
     #error "Target architecture must support AVX2"
 #endif
 
+#ifndef __BMI2__
+#  error "Target architecture must support BMI2 (for MULX)"
+#endif
+
 // GCC's overeager SLP vectorizer sometimes pessimizes code. For functions that
 // are particularly sensitive about this (such as multiplication), the
 // vectorizer can be turned off with the MONAD_VM_NO_VECTORIZE pragma.
@@ -731,9 +735,9 @@ namespace monad::vm::runtime
     inline constexpr std::pair<uint64_t, uint64_t>
     mulx_constexpr(uint64_t const x, uint64_t const y) noexcept
     {
-        auto const prod = static_cast<uint128_t>(x) * y;
-        auto const hi = static_cast<uint64_t>(prod >> 64);
-        auto const lo = static_cast<uint64_t>(prod);
+        uint128_t const prod = static_cast<uint128_t>(x) * static_cast<uint128_t>(y);
+        uint64_t const hi = static_cast<uint64_t>(prod >> uint128_t{64});
+        uint64_t const lo = static_cast<uint64_t>(prod);
         return {hi, lo};
     }
 
@@ -970,10 +974,10 @@ namespace monad::vm::runtime
         requires(0 < R && 0 < M && 0 < N && R <= M + N)
     {
         if consteval {
-            return truncating_mul_constexpr<R>(x, y);
+            return truncating_mul_constexpr<R, M, N>(x, y);
         }
         else {
-            return truncating_mul_runtime<R>(x, y);
+            return truncating_mul_runtime<R, M, N>(x, y);
         }
     }
 

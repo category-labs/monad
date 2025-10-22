@@ -78,7 +78,7 @@ TEST(Validation, validate_deployed_code)
     Transaction const tx{.gas_limit = 60'500};
     Account const sender_account{
         .balance = 56'939'568'773'815'811,
-        .code_hash = some_non_null_hash,
+        .code_or_hash = some_non_null_hash,
         .nonce = 24};
 
     auto const result =
@@ -87,23 +87,34 @@ TEST(Validation, validate_deployed_code)
 }
 
 // EIP-7702
-TEST(Validation, validate_deployed_code_delegated)
+TEST(Validation, validate_deployed_code_delegated_old_account_format)
 {
-    static constexpr auto some_non_null_hash{
-        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-
     Transaction const tx{.gas_limit = 60'500};
+    byte_string const eoa_code{0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+                               0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
+                               0x44, 0x55, 0x11, 0x22, 0x33, 0x44, 0x55};
     Account const sender_account{
-        .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
+        .balance = 56'939'568'773'815'811,
+        .code_or_hash = to_bytes(keccak256(eoa_code))};
 
     auto const result = validate_transaction<EvmTraits<EVMC_PRAGUE>>(
-        tx,
-        sender_account,
-        std::vector<uint8_t>{
-            0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
-            0x44, 0x55, 0x11, 0x22, 0x33, 0x44, 0x55,
-        });
+        tx, sender_account, eoa_code);
+    EXPECT_FALSE(result.has_error());
+}
+
+// EIP-7702
+TEST(Validation, validate_deployed_code_delegated)
+{
+    Transaction const tx{.gas_limit = 60'500};
+    byte_string const eoa_code{0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+                               0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
+                               0x44, 0x55, 0x11, 0x22, 0x33, 0x44, 0x55};
+    // account stores delegated code inline
+    Account const sender_account{
+        .balance = 56'939'568'773'815'811, .code_or_hash = eoa_code};
+
+    auto const result = validate_transaction<EvmTraits<EVMC_PRAGUE>>(
+        tx, sender_account, sender_account.code_view());
     EXPECT_FALSE(result.has_error());
 }
 

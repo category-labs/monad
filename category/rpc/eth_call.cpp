@@ -72,14 +72,14 @@ struct monad_state_override
 {
     struct monad_state_override_object
     {
-        std::optional<byte_string> balance{std::nullopt};
+        std::optional<uint256_t> balance{std::nullopt};
         std::optional<uint64_t> nonce{std::nullopt};
         std::optional<byte_string> code{std::nullopt};
-        std::map<byte_string, byte_string> state{};
-        std::map<byte_string, byte_string> state_diff{};
+        std::map<bytes32_t, bytes32_t> state{};
+        std::map<bytes32_t, bytes32_t> state_diff{};
     };
 
-    std::map<byte_string, monad_state_override_object> override_sets;
+    std::map<Address, monad_state_override_object> override_sets;
 };
 
 namespace
@@ -196,7 +196,8 @@ void add_override_address(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
 
     MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
     m->override_sets.emplace(address, StateOverrideObj{});
@@ -211,11 +212,13 @@ void set_override_balance(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
-    byte_string const b{balance, balance + balance_len};
+    MONAD_ASSERT(balance_len == sizeof(uint256_t));
+    uint256_t const b = intx::be::unsafe::load<uint256_t>(balance);
     m->override_sets[address].balance = std::move(b);
 }
 
@@ -227,7 +230,8 @@ void set_override_nonce(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     m->override_sets[address].nonce = nonce;
@@ -241,7 +245,8 @@ void set_override_code(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(code);
@@ -258,15 +263,19 @@ void set_override_state_diff(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    byte_string const k{key, key + key_len};
+    bytes32_t k;
+    std::memcpy(k.bytes, key, sizeof(bytes32_t));
 
     MONAD_ASSERT(value);
-    byte_string const v{value, value + value_len};
+    MONAD_ASSERT(value_len == sizeof(bytes32_t));
+    bytes32_t v;
+    std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
     auto &state_object = m->override_sets[address].state_diff;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
@@ -282,15 +291,19 @@ void set_override_state(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    byte_string const k{key, key + key_len};
+    bytes32_t k;
+    std::memcpy(k.bytes, key, sizeof(bytes32_t));
 
     MONAD_ASSERT(value);
-    byte_string const v{value, value + value_len};
+    MONAD_ASSERT(value_len == sizeof(bytes32_t));
+    bytes32_t v;
+    std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
     auto &state_object = m->override_sets[address].state;
     MONAD_ASSERT(state_object.find(k) == state_object.end());

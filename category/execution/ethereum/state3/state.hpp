@@ -82,11 +82,7 @@ public:
         , incarnation_{incarnation}
         , relaxed_validation_{relaxed_validation}
     {
-        for (auto const &[addr, state_delta] : state_overrides) {
-            // address
-            Address address{};
-            std::memcpy(address.bytes, addr.data(), sizeof(Address));
-
+        for (auto const &[address, state_delta] : state_overrides) {
             OriginalAccountState &original_account_state =
                 this->original_account_state(address);
             if (!original_account_state.account_.has_value()) {
@@ -96,9 +92,7 @@ public:
             Account &account = original_account_state.account_.value();
 
             if (state_delta.balance.has_value()) {
-                auto const balance = intx::be::unsafe::load<uint256_t>(
-                    state_delta.balance.value().data());
-                account.balance = balance;
+                account.balance = state_delta.balance.value();
             }
 
             if (state_delta.nonce.has_value()) {
@@ -106,9 +100,7 @@ public:
             }
 
             if (state_delta.code.has_value()) {
-                byte_string const code{
-                    state_delta.code.value().data(),
-                    state_delta.code.value().size()};
+                auto const code = state_delta.code.value();
                 auto const code_hash = to_bytes(keccak256(code));
                 code_[code_hash] = block_state_.vm().try_insert_varcode(
                     code_hash, vm::make_shared_intercode(code));
@@ -116,19 +108,10 @@ public:
             }
 
             auto const update_state =
-                [&](std::map<byte_string, byte_string> const &diff) {
+                [&](std::map<bytes32_t, bytes32_t> const &diff) {
                     for (auto const &[key, value] : diff) {
-                        bytes32_t storage_key;
-                        bytes32_t storage_value;
-                        std::memcpy(
-                            storage_key.bytes, key.data(), sizeof(bytes32_t));
-                        std::memcpy(
-                            storage_value.bytes,
-                            value.data(),
-                            sizeof(bytes32_t));
-
                         (void)original_account_state.set_storage(
-                            storage_key, storage_value, bytes32_t{});
+                            key, value, bytes32_t{});
                     }
                 };
 

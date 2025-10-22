@@ -43,6 +43,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -197,6 +198,11 @@ void execute_block_header(
                 transfer_balance_dao(state);
             }
         }
+    }
+
+    // TODO: move to execute_monad_block eventually
+    if constexpr (is_monad_trait_v<traits>) {
+        staking::execute_block_prelude<traits>(state);
     }
 
     MONAD_ASSERT(block_state.can_merge(state));

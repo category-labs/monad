@@ -232,6 +232,8 @@ add_library(
   "monad/validate_system_transaction.hpp"
   # monad/staking
   "monad/staking/config.hpp"
+  "monad/staking/execute_block_prelude.cpp"
+  "monad/staking/execute_block_prelude.hpp"
   "monad/staking/read_valset.cpp"
   "monad/staking/read_valset.hpp"
   "monad/staking/staking_contract.cpp"

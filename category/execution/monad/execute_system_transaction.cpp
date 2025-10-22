@@ -204,7 +204,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
 
     switch (signature) {
     case SyscallSelector::REWARD:
-        return contract.syscall_reward(calldata, value);
+        return contract.syscall_reward<traits>(calldata, value);
     case SyscallSelector::SNAPSHOT:
         return contract.syscall_snapshot(calldata, value);
     case SyscallSelector::ON_EPOCH_CHANGE:

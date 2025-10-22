@@ -19,8 +19,10 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp> // NOLINT
@@ -382,7 +384,7 @@ struct StakeTraits : public ::testing::Test
     {
         auto const input = abi_encode_address(address);
         state.push();
-        auto res = contract.syscall_reward(input, raw_reward);
+        auto res = contract.syscall_reward<Trait>(input, raw_reward);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -494,6 +496,11 @@ struct StakeTraits : public ::testing::Test
     {
         return contract.precompile_get_consensus_valset(
             abi_encode_uint<u32_be>(start_index), {}, {});
+    }
+
+    Result<byte_string> get_proposer_val_id()
+    {
+        return contract.precompile_get_proposer_val_id({}, {}, {});
     }
 
     uint256_t get_balance(Address const &account)
@@ -896,6 +903,9 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.precompile_get_epoch({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        contract.precompile_get_proposer_val_id({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
 }
 
@@ -4084,6 +4094,43 @@ TEST_F(StakeLatest, reward_crash_no_snapshot_missing_validator)
         StakingError::NotInValidatorSet);
 }
 
+TYPED_TEST(StakeAllRevisions, reward_sets_block_proposer)
+{
+    std::vector<typename TestFixture::ValResult> vals;
+
+    for (uint64_t i = 0; i < 3; ++i) {
+        auto const val = this->add_validator(
+            0xdeadbeef_address,
+            this->ACTIVE_VALIDATOR_STAKE,
+            0 /* commission */,
+            bytes32_t{i + 1} /* key seed */);
+        ASSERT_FALSE(val.has_error());
+        vals.emplace_back(std::move(val.value()));
+    }
+
+    this->skip_to_next_epoch();
+
+    for (auto const &v : vals) {
+        ASSERT_FALSE(this->syscall_reward(v.sign_address).has_error());
+
+        auto const expected_slot_val_id =
+            this->contract.vars.proposer_val_id.load();
+        auto const getter_res = this->get_proposer_val_id();
+        ASSERT_FALSE(getter_res.has_error());
+        byte_string_view view = getter_res.value();
+        auto const decode_res = abi_decode_fixed<u64_be>(view);
+        ASSERT_FALSE(decode_res.has_error());
+        if constexpr (TestFixture::REV >= MONAD_FIVE) {
+            EXPECT_EQ(decode_res.value().native(), v.id);
+            EXPECT_EQ(expected_slot_val_id.native(), v.id);
+        }
+        else {
+            EXPECT_EQ(decode_res.value().native(), 0);
+            EXPECT_EQ(expected_slot_val_id.native(), 0);
+        }
+    }
+}
+
 ////////////////////////
 // sys_call_snapshot tests
 ////////////////////////
@@ -4557,6 +4604,29 @@ TEST_F(StakeLatest, get_delegators_for_validator_paginated_reads)
     // what we expect using internal calls.
     EXPECT_EQ(delegators_paginated.size(), delegators_one_read.size());
     EXPECT_TRUE(delegators_paginated == delegators_one_read);
+}
+
+TYPED_TEST(StakeAllRevisions, get_proposer_val_id_fork)
+{
+    auto const res =
+        this->add_validator(0xdeadbeef_address, this->ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+
+    this->skip_to_next_epoch();
+
+    u32_be const payload = abi_encode_selector("getProposerValId()");
+    byte_string_view view = to_byte_string_view(payload.bytes);
+    auto const [func, cost] =
+        this->contract
+            .template precompile_dispatch<typename TestFixture::Trait>(view);
+    if constexpr (TestFixture::REV >= MONAD_FIVE) {
+        EXPECT_EQ(func, &StakingContract::precompile_get_proposer_val_id);
+        EXPECT_EQ(cost, 100);
+    }
+    else {
+        EXPECT_EQ(func, &StakingContract::precompile_fallback);
+        EXPECT_EQ(cost, 40'000);
+    }
 }
 
 ////////////////////

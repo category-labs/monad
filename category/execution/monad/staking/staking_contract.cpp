@@ -69,6 +69,8 @@ struct PrecompileSelector
     static constexpr uint32_t EXTERNAL_REWARD =
         abi_encode_selector("externalReward(uint64)");
     static constexpr uint32_t GET_EPOCH = abi_encode_selector("getEpoch()");
+    static constexpr uint32_t GET_PROPOSER_VAL_ID =
+        abi_encode_selector("getProposerValId()");
     static constexpr uint32_t GET_VALIDATOR =
         abi_encode_selector("getValidator(uint64)");
     static constexpr uint32_t GET_DELEGATOR =
@@ -96,6 +98,7 @@ static_assert(PrecompileSelector::CLAIM_REWARDS == 0xa76e2ca5);
 static_assert(PrecompileSelector::CHANGE_COMMISSION == 0x9bdcc3c8);
 static_assert(PrecompileSelector::EXTERNAL_REWARD == 0xe4b3303b);
 static_assert(PrecompileSelector::GET_EPOCH == 0x757991a8);
+static_assert(PrecompileSelector::GET_PROPOSER_VAL_ID == 0xfbacb0be);
 static_assert(PrecompileSelector::GET_VALIDATOR == 0x2b6d639a);
 static_assert(PrecompileSelector::GET_DELEGATOR == 0x573c1ce0);
 static_assert(PrecompileSelector::GET_WITHDRAWAL_REQUEST == 0x56fa2045);
@@ -238,6 +241,15 @@ constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(OpCount{
     .events = 1,
     .transfers = 0});
 
+constexpr uint64_t GET_PROPOSER_VAL_ID_OP_COST = compute_costs(OpCount{
+    .warm_sloads = 1,
+    .cold_sloads = 0,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0});
+
 constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(OpCount{
     .warm_sloads = 2,
     .cold_sloads = 0,
@@ -303,6 +315,7 @@ static_assert(CLAIM_REWARDS_OP_COST == 155375);
 static_assert(CHANGE_COMMISSION_OP_COST == 39475);
 static_assert(EXTERNAL_REWARDS_OP_COST == 66575);
 static_assert(GET_EPOCH_OP_COST == 200);
+static_assert(GET_PROPOSER_VAL_ID_OP_COST == 100);
 static_assert(GET_VALIDATOR_OP_COST == 97200);
 static_assert(GET_DELEGATOR_OP_COST == 184900);
 static_assert(GET_WITHDRAWAL_REQUEST_OP_COST == 24300);
@@ -804,6 +817,16 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case PrecompileSelector::GET_EPOCH:
         // [0, 2, 0, 0, 0, 0, 0]
         return {&StakingContract::precompile_get_epoch, GET_EPOCH_OP_COST};
+    case PrecompileSelector::GET_PROPOSER_VAL_ID:
+        // [0, 1, 0, 0, 0, 0, 0]
+        if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+            return {
+                &StakingContract::precompile_get_proposer_val_id,
+                GET_PROPOSER_VAL_ID_OP_COST};
+        }
+        else {
+            return {&StakingContract::precompile_fallback, 40000};
+        }
     case PrecompileSelector::GET_VALIDATOR:
         // [0, 12, 0, 0, 0, 0, 0]
         return {
@@ -1050,6 +1073,16 @@ Result<byte_string> StakingContract::precompile_get_epoch(
     AbiEncoder encoder;
     encoder.add_uint(vars.epoch.load());
     encoder.add_bool(vars.in_epoch_delay_period.load());
+    return encoder.encode_final();
+}
+
+Result<byte_string> StakingContract::precompile_get_proposer_val_id(
+    byte_string_view, evmc_address const &, evmc_uint256be const &msg_value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
+    AbiEncoder encoder;
+    encoder.add_uint(vars.proposer_val_id.load());
     return encoder.encode_final();
 }
 
@@ -1643,6 +1676,7 @@ Result<void> StakingContract::syscall_on_epoch_change(
 }
 
 // update rewards for leader only if in active validator set
+template <Traits traits>
 Result<void> StakingContract::syscall_reward(
     byte_string_view input, uint256_t const &raw_reward)
 {
@@ -1689,8 +1723,15 @@ Result<void> StakingContract::syscall_reward(
     BOOST_OUTCOME_TRY(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
+    // 6. Store the proposer validator id for other contracts to query.
+    if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+        vars.proposer_val_id.store(val_id.value());
+    }
+
     return outcome::success();
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward)
 
 Result<void> StakingContract::syscall_snapshot(
     byte_string_view const input, uint256_t const &value)

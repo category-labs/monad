@@ -79,9 +79,8 @@ void log_tps(
 
 // Process a single historical Ethereum block
 template <Traits traits>
-Result<void> process_ethereum_block(
-    Chain const &chain, Db &db, vm::VM &vm,
-    BlockHashBufferFinalized &block_hash_buffer,
+Result<BlockHeader> process_ethereum_block(
+    Chain const &chain, Db &db, vm::VM &vm, BlockHashBuffer &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
@@ -164,7 +163,7 @@ Result<void> process_ethereum_block(
             std::chrono::steady_clock::now() - commit_begin);
 
     // Post-commit validation of header, with Merkle root fields filled in
-    auto const output_header = db.read_eth_header();
+    BlockHeader const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
 
@@ -172,9 +171,6 @@ Result<void> process_ethereum_block(
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    auto const eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(output_header)));
-    block_hash_buffer.set(block.header.number, eth_block_hash);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -209,7 +205,7 @@ Result<void> process_ethereum_block(
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
 
-    return outcome_e::success();
+    return output_header;
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -245,7 +241,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         evmc_revision const rev =
             chain.get_revision(block.header.number, block.header.timestamp);
 
-        BOOST_OUTCOME_TRY([&] {
+        BOOST_OUTCOME_TRY(BlockHeader const output_header, [&] {
             SWITCH_EVM_TRAITS(
                 process_ethereum_block,
                 chain,
@@ -259,6 +255,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 enable_tracing);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
+
+        bytes32_t const eth_block_hash =
+            to_bytes(keccak256(rlp::encode_block_header(output_header)));
+        block_hash_buffer.set(block.header.number, eth_block_hash);
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

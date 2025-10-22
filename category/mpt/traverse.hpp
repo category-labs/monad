@@ -74,20 +74,29 @@ namespace detail
             --traverse.level;
             return true;
         }
-        for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
-            if (traverse.should_visit(node, branch)) {
+        for (auto const [idx, next_branch] : NodeChildrenRange(node.mask)) {
+            if (traverse.should_visit(node, next_branch)) {
                 if (Node::SharedPtr const &next = node.next(idx);
                     next != nullptr) {
-                    preorder_traverse_blocking_impl(
-                        aux, branch, *next, traverse, version);
+                    if (!preorder_traverse_blocking_impl(
+                            aux, next_branch, *next, traverse, version)) {
+                        --traverse.level;
+                        traverse.up(branch, node);
+                        return false;
+                    }
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
                 Node::UniquePtr next_node_ondisk =
                     read_node_blocking(aux, node.fnext(idx), version);
-                if (!next_node_ondisk ||
-                    !preorder_traverse_blocking_impl(
-                        aux, branch, *next_node_ondisk, traverse, version)) {
+                if (!next_node_ondisk || !preorder_traverse_blocking_impl(
+                                             aux,
+                                             next_branch,
+                                             *next_node_ondisk,
+                                             traverse,
+                                             version)) {
+                    --traverse.level;
+                    traverse.up(branch, node);
                     return false;
                 }
             }
@@ -368,8 +377,10 @@ inline bool preorder_traverse_blocking(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
     uint64_t const version)
 {
-    return detail::preorder_traverse_blocking_impl(
+    auto const ret = detail::preorder_traverse_blocking_impl(
         aux, INVALID_BRANCH, node, traverse, version);
+    MONAD_ASSERT(traverse.level == 0);
+    return ret;
 }
 
 inline bool preorder_traverse_ondisk(

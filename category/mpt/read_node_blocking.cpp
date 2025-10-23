@@ -67,7 +67,7 @@ Node::SharedPtr read_node_blocking(
             strerror(errno));
     }
     return aux.version_is_valid_ondisk(version)
-               ? deserialize_node_from_buffer<Node>(
+               ? deserialize_node_from_buffer(
                      buffer + buffer_off, size_t(bytes_read) - buffer_off)
                : Node::SharedPtr{};
 }

@@ -708,13 +708,13 @@ int main(int argc, char *argv[])
                     bool &done;
                     unsigned const n_slices;
                     find_bytes_request_sender *sender{nullptr};
-                    CacheNodeCursor state_start;
+                    NodeCursor state_start;
                     monad::small_prng rand;
                     monad::byte_string key;
 
                     explicit receiver_t(
                         uint64_t &ops_, bool &done_, unsigned n_slices_,
-                        CacheNodeCursor begin, uint32_t id)
+                        NodeCursor begin, uint32_t id)
                         : ops(ops_)
                         , done(done_)
                         , n_slices(n_slices_)
@@ -755,8 +755,7 @@ int main(int argc, char *argv[])
                 NodeCache node_cache{1000 * NodeCache::AVERAGE_NODE_SIZE};
                 std::vector<std::unique_ptr<connected_state_type>> states;
                 states.reserve(random_read_benchmark_threads);
-                std::shared_ptr<CacheNode> start_node =
-                    copy_node<CacheNode>(state_start.node.get());
+                std::shared_ptr<Node> start_node = state_start.node;
                 for (uint32_t n = 0; n < random_read_benchmark_threads; n++) {
                     states.emplace_back(new auto(connect(
                         *aux.io,
@@ -764,7 +763,7 @@ int main(int argc, char *argv[])
                             aux,
                             node_cache,
                             inflights,
-                            CacheNodeCursor{start_node},
+                            NodeCursor{start_node},
                             aux.db_history_max_version(),
                             NibblesView{},
                             true},
@@ -772,7 +771,7 @@ int main(int argc, char *argv[])
                             ops,
                             signal_done,
                             n_slices,
-                            CacheNodeCursor{start_node},
+                            NodeCursor{start_node},
                             n))));
                 }
 

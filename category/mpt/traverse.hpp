@@ -174,7 +174,7 @@ namespace detail
                 }
                 else { // version is valid after reading the buffer
                     auto const next_node_on_disk =
-                        deserialize_node_from_receiver_result<Node>(
+                        deserialize_node_from_receiver_result(
                             std::move(buffer_), buffer_off, io_state);
                     sender->within_recursion_count++;
                     async_parallel_preorder_traverse_impl(

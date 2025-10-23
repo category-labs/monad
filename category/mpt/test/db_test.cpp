@@ -628,10 +628,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value(), kv[1].second);
             });
-        async_get<std::shared_ptr<CacheNode>>(
+        async_get<std::shared_ptr<Node>>(
             make_get_node_sender(
                 ctx.get(), prefix + kv[0].first, starting_block_id),
-            [&](result_t<std::shared_ptr<CacheNode>> res) {
+            [&](result_t<std::shared_ptr<Node>> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value()->value(), kv[0].second);
             });
@@ -643,9 +643,9 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
                     res.value(),
                     0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
             });
-        async_get<std::shared_ptr<CacheNode>>(
+        async_get<std::shared_ptr<Node>>(
             make_get_node_sender(ctx.get(), prefix, starting_block_id),
-            [&](result_t<std::shared_ptr<CacheNode>> res) {
+            [&](result_t<std::shared_ptr<Node>> res) {
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value()->data(),
@@ -1084,7 +1084,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
     // async get traverse root
     struct GetNodeReceiver
     {
-        using ResultType = monad::async::result<std::shared_ptr<CacheNode>>;
+        using ResultType = monad::async::result<std::shared_ptr<Node>>;
 
         detail::TraverseSender traverse_sender;
         TraverseResult &result;
@@ -1102,8 +1102,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
                 result.traverse_success = false;
             }
             else {
-                traverse_sender.traverse_root =
-                    copy_node<Node>(res.assume_value().get());
+                traverse_sender.traverse_root = res.assume_value();
                 // issue async traverse
                 auto *traverse_state = new auto(monad::async::connect(
                     std::move(traverse_sender), TraverseReceiver{result}));

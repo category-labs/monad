@@ -97,6 +97,7 @@ add_library(
   "ethereum/db/db_snapshot.h"
   "ethereum/db/db_snapshot_filesystem.cpp"
   "ethereum/db/db_snapshot_filesystem.h"
+  "ethereum/db/db_traits_test.hpp"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
   "ethereum/db/trie_db.cpp"

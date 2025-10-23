@@ -24,6 +24,8 @@ add_executable(
   monad/event.hpp
   monad/file_io.hpp
   monad/file_io.cpp
+  monad/revert_transaction_generator.cpp
+  monad/revert_transaction_generator.hpp
   monad/runloop_ethereum.cpp
   monad/runloop_ethereum.hpp
   monad/runloop_monad.cpp

@@ -33,10 +33,10 @@ MONAD_MPT_NAMESPACE_BEGIN
 struct inflight_node_hasher
 {
     constexpr size_t operator()(
-        std::pair<virtual_chunk_offset_t, CacheNode *> const &v) const noexcept
+        std::pair<virtual_chunk_offset_t, Node *> const &v) const noexcept
     {
         return virtual_chunk_offset_t_hasher{}(v.first) ^
-               fnv1a_hash<CacheNode *>()(v.second);
+               fnv1a_hash<Node *>()(v.second);
     }
 };
 
@@ -47,14 +47,13 @@ struct inflight_node_hasher
 // having a pointer to parent as key ensures requests share the same root node
 // as well.
 using AsyncInflightNodes = ankerl::unordered_dense::segmented_map<
-    std::pair<virtual_chunk_offset_t, CacheNode *>,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(CacheNodeCursor)>>,
+    std::pair<virtual_chunk_offset_t, Node *>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
     inflight_node_hasher>;
 
 template <class T>
 concept return_type =
-    std::same_as<T, byte_string> || std::same_as<T, std::shared_ptr<CacheNode>>;
+    std::same_as<T, byte_string> || std::same_as<T, std::shared_ptr<Node>>;
 
 /*! \brief Sender to perform the asynchronous finding of a node.
  */
@@ -67,7 +66,7 @@ private:
 
     UpdateAuxImpl &aux_;
     NodeCache &node_cache_;
-    CacheNodeCursor root_;
+    NodeCursor root_;
     uint64_t version_;
     NibblesView key_;
     AsyncInflightNodes &inflights_;
@@ -77,7 +76,7 @@ private:
 
     MONAD_ASYNC_NAMESPACE::result<void> resume_(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
-        CacheNodeCursor root)
+        NodeCursor root)
     {
         if (!root.is_valid()) {
             // Version invalidated during async read
@@ -95,7 +94,7 @@ public:
 
     constexpr find_request_sender(
         UpdateAuxImpl &aux, NodeCache &node_cache,
-        AsyncInflightNodes &inflights, CacheNodeCursor root, uint64_t version,
+        AsyncInflightNodes &inflights, NodeCursor root, uint64_t version,
         NibblesView const key, bool const return_value)
         : aux_(aux)
         , node_cache_(node_cache)
@@ -108,7 +107,7 @@ public:
         MONAD_ASSERT(root_.is_valid());
     }
 
-    void reset(CacheNodeCursor root, NibblesView key)
+    void reset(NodeCursor root, NibblesView key)
     {
         root_ = root;
         key_ = key;
@@ -133,10 +132,10 @@ static_assert(sizeof(find_request_sender<byte_string>) == 128);
 static_assert(alignof(find_request_sender<byte_string>) == 8);
 static_assert(MONAD_ASYNC_NAMESPACE::sender<find_request_sender<byte_string>>);
 
-static_assert(sizeof(find_request_sender<std::shared_ptr<CacheNode>>) == 112);
-static_assert(alignof(find_request_sender<std::shared_ptr<CacheNode>>) == 8);
-static_assert(MONAD_ASYNC_NAMESPACE::sender<
-              find_request_sender<std::shared_ptr<CacheNode>>>);
+static_assert(sizeof(find_request_sender<std::shared_ptr<Node>>) == 112);
+static_assert(alignof(find_request_sender<std::shared_ptr<Node>>) == 8);
+static_assert(
+    MONAD_ASYNC_NAMESPACE::sender<find_request_sender<std::shared_ptr<Node>>>);
 
 template <return_type T>
 struct find_request_sender<T>::find_receiver
@@ -185,13 +184,11 @@ struct find_request_sender<T>::find_receiver
         MONAD_ASSERT(sender->root_.is_valid());
         auto const next_offset = sender->root_.node->fnext(branch_index);
         auto const virt_offset = sender->aux_.physical_to_virtual(next_offset);
-        std::shared_ptr<CacheNode> sp;
+        std::shared_ptr<Node> sp;
         if (this->virt_offset == virt_offset) {
-            sp = detail::deserialize_node_from_receiver_result<CacheNode>(
+            sp = detail::deserialize_node_from_receiver_result(
                 std::move(buffer_), buffer_off, io_state);
-            auto cache_it = sender->node_cache_.insert(virt_offset, sp);
-            auto *const list_node = &*cache_it->second;
-            sender->root_.node->set_next(branch_index, list_node);
+            sender->node_cache_.insert(virt_offset, sp);
         }
         auto key = std::pair(this->virt_offset, sender->root_.node.get());
         auto it = sender->inflights_.find(key);
@@ -199,7 +196,7 @@ struct find_request_sender<T>::find_receiver
             auto const pendings = std::move(it->second);
             sender->inflights_.erase(it);
             for (auto const &invoc : pendings) {
-                MONAD_ASSERT(invoc(CacheNodeCursor{sp}));
+                MONAD_ASSERT(invoc(NodeCursor{sp}));
             }
         }
     }
@@ -254,8 +251,6 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             key_ = key_.substr(static_cast<unsigned char>(prefix_index) + 1u);
             auto const child_index = node->to_child_index(branch);
             NodeCache::ConstAccessor acc;
-            auto *p = reinterpret_cast<NodeCache::list_node *>(
-                node->next(child_index));
             auto const offset = node->fnext(child_index);
             virtual_chunk_offset_t const virt_offset =
                 aux_.physical_to_virtual(offset);
@@ -265,17 +260,9 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 io_state->completed(success());
                 return success();
             }
-            if (p != nullptr && p->key == virt_offset) {
-                // found cache entry with the desired key
-                root_ = {p->val.first};
-                MONAD_ASSERT(root_.is_valid());
-                continue;
-            }
             if (node_cache_.find(acc, virt_offset)) {
-                auto *const list_node = &*acc->second;
-                node->set_next(child_index, list_node);
                 // found in LRU - no IO necessary
-                root_ = {list_node->val.first};
+                root_ = {acc->second->val.first};
                 MONAD_ASSERT(root_.is_valid());
                 continue;
             }
@@ -287,7 +274,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 }
                 tid_checked_ = true;
             }
-            auto cont = [this, io_state](CacheNodeCursor root) -> result<void> {
+            auto cont = [this, io_state](NodeCursor root) -> result<void> {
                 return this->resume_(io_state, root);
             };
             auto const offset_node = std::pair(virt_offset, node);

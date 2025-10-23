@@ -69,13 +69,13 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     monad::mpt::AsyncInflightNodes inflights;
     monad::mpt::NodeCache node_cache{
         1000 * monad::mpt::NodeCache::AVERAGE_NODE_SIZE};
-    std::shared_ptr<CacheNode> cache_root = copy_node<CacheNode>(root.get());
+    std::shared_ptr<Node> cache_root = root;
     auto state = monad::async::connect(
         monad::mpt::find_request_sender<>(
             aux,
             node_cache,
             inflights,
-            CacheNodeCursor{cache_root},
+            NodeCursor{cache_root},
             latest_version,
             key,
             true),

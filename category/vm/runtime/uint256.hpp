@@ -438,10 +438,10 @@ namespace monad::vm::runtime
         uint256_t const &x, uint256_t const &y) noexcept                       \
     {                                                                          \
         return uint256_t{                                                      \
-            x[0] op_name y[0],                                                 \
-            x[1] op_name y[1],                                                 \
-            x[2] op_name y[2],                                                 \
-            x[3] op_name y[3]};                                                \
+            force(x[0] op_name y[0]),                                          \
+            force(x[1] op_name y[1]),                                          \
+            force(x[2] op_name y[2]),                                          \
+            force(x[3] op_name y[3])};                                         \
     }
         BITWISE_BINOP(uint256_t, &);
         BITWISE_BINOP(uint256_t, |);

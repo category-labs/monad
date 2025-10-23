@@ -83,8 +83,9 @@ void log_tps(
 template <Traits traits>
 Result<BlockHeader> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm, BlockHashBuffer &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    fiber::PriorityPool &priority_pool, Block const &block,
+    bytes32_t const &block_id, bytes32_t const &parent_block_id,
+    bool const enable_tracing)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();

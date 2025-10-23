@@ -27,6 +27,8 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -132,6 +134,7 @@ Result<BlockHeader> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -145,6 +148,7 @@ Result<BlockHeader> process_ethereum_block(
             block_metrics,
             call_tracers,
             state_tracers));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

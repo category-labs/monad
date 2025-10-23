@@ -1574,16 +1574,6 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     auto executor = create_executor(dbname.string());
     auto state_override = monad_state_override_create();
 
-    std::string deployed_code =
-        "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
-        "01600081602082378035828234f58015156039578182fd5b8082525050506014600cf"
-        "3";
-    byte_string deployed_code_bytes = from_hex(deployed_code);
-
-    std::vector<uint8_t> deployed_code_vec = {
-        deployed_code_bytes.data(),
-        deployed_code_bytes.data() + deployed_code_bytes.size()};
-
     struct callback_context prestate_ctx;
     struct callback_context statediff_ctx;
 
@@ -1713,16 +1703,10 @@ TEST_F(EthCallFixture, prestate_state_overrides)
         sizeof(Address),
         (0xFFFF_bytes32).bytes,
         sizeof(bytes32_t));
-
-    std::string deployed_code =
-        "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe036"
-        "01600081602082378035828234f58015156039578182fd5b8082525050506014600cf"
-        "3";
-    byte_string deployed_code_bytes = from_hex(deployed_code);
-
-    std::vector<uint8_t> deployed_code_vec = {
-        deployed_code_bytes.data(),
-        deployed_code_bytes.data() + deployed_code_bytes.size()};
+    set_override_nonce(state_override, from.bytes, sizeof(Address), 1024);
+    uint8_t code[] = {0x00, 0x01, 0x02, 0x03, 0x04};
+    set_override_code(
+        state_override, from.bytes, sizeof(Address), code, sizeof(code));
 
     struct callback_context prestate_ctx;
     struct callback_context statediff_ctx;
@@ -1757,8 +1741,14 @@ TEST_F(EthCallFixture, prestate_state_overrides)
                 prestate_ctx.result->encoded_trace_len);
 
         auto const expected = R"({
-            "0x0000000000000000000000000000000000000000":{"balance":"0xffff"},
-            "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{"balance":"0x0"}
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0xffff",
+                "code": "0x0001020304",
+                "nonce": 1024
+            },
+            "0x8f40531f4fd16955712e2a83bdc817515853b9ea": {
+                "balance": "0x0"
+            }
         })";
         EXPECT_EQ(
             nlohmann::json::parse(expected),
@@ -1797,9 +1787,9 @@ TEST_F(EthCallFixture, prestate_state_overrides)
         auto const expected = R"({
             "post":{
                 "0x0000000000000000000000000000000000000000":{
-                    "nonce": 1
+                    "nonce": 1025
                 },
-                "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{
+                "0x8f40531f4fd16955712e2a83bdc817515853b9ea":{
                     "balance": "0x0",
                     "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
                     "nonce": 1
@@ -1807,7 +1797,9 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             },
             "pre":{
                 "0x0000000000000000000000000000000000000000":{
-                    "balance": "0xffff"
+                    "balance": "0xffff",
+                    "code": "0x0001020304",
+                    "nonce": 1024
                 }
             }
         })";

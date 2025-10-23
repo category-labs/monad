@@ -40,6 +40,9 @@ struct Block;
 struct Chain;
 
 template <Traits traits>
+void execute_block_header(Chain const &, BlockState &, BlockHeader const &);
+
+template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &, BlockHeader const &, std::vector<Transaction> const &,
     std::vector<Address> const &senders,

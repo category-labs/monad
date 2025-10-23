@@ -184,6 +184,7 @@ Result<BlockExecOutput> propose_block(
         }
     }
 
+    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
     auto [entry, success] = block_cache.emplace(
         block_id,
         BlockCacheEntry{
@@ -202,7 +203,6 @@ Result<BlockExecOutput> propose_block(
             }
         }
     }
-    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
 
     // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};

@@ -139,8 +139,7 @@ bool can_sender_dip_into_reserve(
     }
 
     // check pending blocks
-    for (ankerl::unordered_dense::segmented_set<Address> const
-             *const senders_and_authorities :
+    for (MonadChainContext::AddressSet const *const senders_and_authorities :
          {ctx.grandparent_senders_and_authorities,
           ctx.parent_senders_and_authorities}) {
         if (senders_and_authorities &&

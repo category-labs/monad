@@ -188,7 +188,9 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
-    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
+    ankerl::unordered_dense::
+        segmented_set<bytes32_t, BytesHashAvalanching<bytes32_t>>
+            code_hashes;
 
     auto const &current = state.current();
     for (auto const &[address, stack] : current) {

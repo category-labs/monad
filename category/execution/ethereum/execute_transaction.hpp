@@ -52,6 +52,8 @@ class ExecuteTransactionNoValidation
 
     uint64_t process_authorizations(State &, EvmcHost<traits> &);
 
+    static constexpr std::vector<std::optional<Address>> authorities_empty{};
+
 protected:
     Chain const &chain_;
     Transaction const &tx_;

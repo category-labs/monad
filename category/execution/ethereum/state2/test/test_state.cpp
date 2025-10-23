@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/db_traits_test.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -92,22 +93,6 @@ namespace
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
     auto const icode2 = vm::make_shared_intercode(code2);
 
-    struct InMemoryTrieDbFixture : public ::testing::Test
-    {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
-        TrieDb tdb{db};
-        vm::VM vm;
-    };
-
-    struct OnDiskTrieDbFixture : public ::testing::Test
-    {
-        OnDiskMachine machine;
-        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
-        TrieDb tdb{db};
-        vm::VM vm;
-    };
-
     struct TwoOnDisk : public ::testing::Test
     {
         OnDiskMachine machine;
@@ -119,15 +104,7 @@ namespace
     };
 }
 
-template <typename TDB>
-struct StateTest : public TDB
-{
-};
-
-using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
-TYPED_TEST_SUITE(StateTest, DBTypes);
-
-TYPED_TEST(StateTest, access_account)
+TYPED_TEST(DBTest, access_account)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -147,7 +124,7 @@ TYPED_TEST(StateTest, access_account)
     EXPECT_EQ(s.access_account(b), EVMC_ACCESS_WARM);
 }
 
-TYPED_TEST(StateTest, account_exists)
+TYPED_TEST(DBTest, account_exists)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -167,7 +144,7 @@ TYPED_TEST(StateTest, account_exists)
     EXPECT_FALSE(s.account_exists(b));
 }
 
-TYPED_TEST(StateTest, create_contract)
+TYPED_TEST(DBTest, create_contract)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -181,7 +158,7 @@ TYPED_TEST(StateTest, create_contract)
     EXPECT_TRUE(s.account_exists(b));
 }
 
-TYPED_TEST(StateTest, get_balance)
+TYPED_TEST(DBTest, get_balance)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -200,7 +177,7 @@ TYPED_TEST(StateTest, get_balance)
     EXPECT_EQ(s.get_balance(c), bytes32_t{0});
 }
 
-TYPED_TEST(StateTest, add_to_balance)
+TYPED_TEST(DBTest, add_to_balance)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -218,7 +195,7 @@ TYPED_TEST(StateTest, add_to_balance)
     EXPECT_EQ(s.get_balance(b), bytes32_t{20'000});
 }
 
-TYPED_TEST(StateTest, get_nonce)
+TYPED_TEST(DBTest, get_nonce)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -235,7 +212,7 @@ TYPED_TEST(StateTest, get_nonce)
     EXPECT_EQ(s.get_nonce(c), 0);
 }
 
-TYPED_TEST(StateTest, set_nonce)
+TYPED_TEST(DBTest, set_nonce)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -245,7 +222,7 @@ TYPED_TEST(StateTest, set_nonce)
     EXPECT_EQ(s.get_nonce(b), 1);
 }
 
-TYPED_TEST(StateTest, get_code_hash)
+TYPED_TEST(DBTest, get_code_hash)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -264,7 +241,7 @@ TYPED_TEST(StateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(c), NULL_HASH);
 }
 
-TYPED_TEST(StateTest, set_code_hash)
+TYPED_TEST(DBTest, set_code_hash)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -275,7 +252,7 @@ TYPED_TEST(StateTest, set_code_hash)
     EXPECT_EQ(s.get_code_hash(b), hash1);
 }
 
-TYPED_TEST(StateTest, selfdestruct)
+TYPED_TEST(DBTraitsTest, selfdestruct)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -293,22 +270,27 @@ TYPED_TEST(StateTest, selfdestruct)
     s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
-    EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, c));
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, c));
+    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
-    EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(b, c));
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(b, c));
     EXPECT_EQ(s.get_balance(b), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{84'000});
-    EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(b, c));
+    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(b, c));
 
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
-    EXPECT_FALSE(s.account_exists(a));
+    s.destruct_suicides<typename TestFixture::Trait>();
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        EXPECT_TRUE(s.account_exists(a));
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
     EXPECT_FALSE(s.account_exists(b));
 }
 
-TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
+TYPED_TEST(DBTraitsTest, selfdestruct_separate_tx)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -333,16 +315,21 @@ TYPED_TEST(StateTest, selfdestruct_cancun_separate_tx)
 
     State s{bs, Incarnation{1, 2}};
 
-    EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
+    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
-    s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
-    EXPECT_TRUE(s.account_exists(a));
+    s.destruct_suicides<typename TestFixture::Trait>();
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        EXPECT_TRUE(s.account_exists(a));
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
 }
 
-TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
+TYPED_TEST(DBTraitsTest, selfdestruct_same_tx)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -367,16 +354,16 @@ TYPED_TEST(StateTest, selfdestruct_cancun_same_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
     EXPECT_EQ(s.get_balance(a), bytes32_t{});
     EXPECT_EQ(s.get_balance(c), bytes32_t{56'000});
-    EXPECT_FALSE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, c));
+    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
-    s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
 }
 
-TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
+TYPED_TEST(DBTraitsTest, selfdestruct_self_separate_tx)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -388,29 +375,26 @@ TYPED_TEST(StateTest, selfdestruct_self_separate_tx)
         Code{},
         BlockHeader{});
 
-    {
+    State s{bs, Incarnation{1, 1}};
+
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
+    auto balance_after_selfdestruct = s.get_balance(a);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_CANCUN) {
         // Pre-cancun behavior
-        State s{bs, Incarnation{1, 1}};
-
-        EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{});
-
-        s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        EXPECT_EQ(balance_after_selfdestruct, bytes32_t{});
         EXPECT_FALSE(s.account_exists(a));
     }
-    {
+    else {
         // Post-cancun behavior
-        State s{bs, Incarnation{1, 1}};
-
-        EXPECT_TRUE(s.selfdestruct<EvmTraits<EVMC_CANCUN>>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{18'000}); // no ether burned
-
-        s.destruct_suicides<EvmTraits<EVMC_CANCUN>>();
+        EXPECT_EQ(
+            balance_after_selfdestruct, bytes32_t{18'000}); // no ether burned
         EXPECT_TRUE(s.account_exists(a));
     }
 }
 
-TYPED_TEST(StateTest, selfdestruct_self_same_tx)
+TYPED_TEST(DBTraitsTest, selfdestruct_self_same_tx)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -426,21 +410,17 @@ TYPED_TEST(StateTest, selfdestruct_self_same_tx)
         Code{},
         BlockHeader{});
 
-    auto run = [&]<Traits traits>() {
-        State s{bs, Incarnation{1, 1}};
+    State s{bs, Incarnation{1, 1}};
 
-        EXPECT_TRUE(s.selfdestruct<traits>(a, a));
-        EXPECT_EQ(s.get_balance(a), bytes32_t{});
-
-        s.destruct_suicides<traits>();
-        EXPECT_FALSE(s.account_exists(a));
-    };
     // Behavior doesn't change in cancun if in same txn
-    run.template operator()<EvmTraits<EVMC_SHANGHAI>>();
-    run.template operator()<EvmTraits<EVMC_CANCUN>>();
+    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
+    EXPECT_EQ(s.get_balance(a), bytes32_t{});
+
+    s.destruct_suicides<typename TestFixture::Trait>();
+    EXPECT_FALSE(s.account_exists(a));
 }
 
-TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
+TYPED_TEST(DBTraitsTest, selfdestruct_merge_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -455,21 +435,26 @@ TYPED_TEST(StateTest, selfdestruct_merge_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, a);
-        s1.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
 
         EXPECT_TRUE(bs.can_merge(s1));
         bs.merge(s1);
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        EXPECT_FALSE(s2.account_exists(a));
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+            EXPECT_TRUE(s2.account_exists(a));
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
         s2.create_contract(a);
         EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
     }
 }
 
-TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
+TYPED_TEST(DBTraitsTest, selfdestruct_merge_create_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -484,15 +469,20 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, b);
-        s1.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
 
         EXPECT_TRUE(bs.can_merge(s1));
         bs.merge(s1);
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        EXPECT_FALSE(s2.account_exists(a));
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+            EXPECT_TRUE(s2.account_exists(a));
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
         s2.create_contract(a);
         EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
 
@@ -513,7 +503,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_incarnation)
     }
 }
 
-TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
+TYPED_TEST(DBTraitsTest, selfdestruct_merge_commit_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -528,8 +518,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, a);
-        s1.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
 
         EXPECT_TRUE(bs.can_merge(s1));
         bs.merge(s1);
@@ -556,7 +546,7 @@ TYPED_TEST(StateTest, selfdestruct_merge_commit_incarnation)
     }
 }
 
-TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
+TYPED_TEST(DBTraitsTest, selfdestruct_merge_create_commit_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -573,8 +563,8 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
     {
         State s1{bs, Incarnation{1, 1}};
 
-        s1.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, a);
-        s1.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
 
         EXPECT_TRUE(bs.can_merge(s1));
         bs.merge(s1);
@@ -603,13 +593,24 @@ TYPED_TEST(StateTest, selfdestruct_merge_create_commit_incarnation)
         this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
-        EXPECT_EQ(
-            this->tdb.state_root(),
-            0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+            EXPECT_EQ(
+                this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
+
+            EXPECT_EQ(
+                this->tdb.state_root(),
+                0x425AE06EDEDEC27A17412E8A2BC2F148A4AF94EE510FFB7AEA81E1ABF5450768_bytes32);
+        }
+        else {
+            EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key3), null);
+            EXPECT_EQ(
+                this->tdb.state_root(),
+                0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
+        }
     }
 }
 
-TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
+TYPED_TEST(DBTraitsTest, selfdestruct_create_destroy_create_commit_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     {
@@ -617,8 +618,8 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
 
         s1.create_contract(a);
         s1.set_storage(a, key1, value1);
-        s1.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(a, b);
-        s1.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
 
         EXPECT_TRUE(bs.can_merge(s1));
         bs.merge(s1);
@@ -650,7 +651,7 @@ TYPED_TEST(StateTest, selfdestruct_create_destroy_create_commit_incarnation)
     }
 }
 
-TYPED_TEST(StateTest, create_conflict_address_incarnation)
+TYPED_TEST(DBTest, create_conflict_address_incarnation)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -672,7 +673,7 @@ TYPED_TEST(StateTest, create_conflict_address_incarnation)
     EXPECT_EQ(s1.get_storage(a, key2), value2);
 }
 
-TYPED_TEST(StateTest, destruct_touched_dead)
+TYPED_TEST(DBTraitsTest, destruct_touched_dead)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -687,37 +688,37 @@ TYPED_TEST(StateTest, destruct_touched_dead)
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
     s.destruct_touched_dead();
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_TRUE(s.account_exists(a));
     EXPECT_TRUE(s.account_exists(b));
 
     s.subtract_from_balance(a, 10'000);
     s.destruct_touched_dead();
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
 
     EXPECT_FALSE(s.account_exists(a));
     EXPECT_TRUE(s.account_exists(b));
 
     s.touch(b);
     s.destruct_touched_dead();
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(b));
 
     s.add_to_balance(a, 0);
     EXPECT_TRUE(s.account_exists(a));
     s.destruct_touched_dead();
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
 
     s.subtract_from_balance(a, 0);
     EXPECT_TRUE(s.account_exists(a));
     s.destruct_touched_dead();
-    s.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
 }
 
 // Storage
-TYPED_TEST(StateTest, access_storage)
+TYPED_TEST(DBTest, access_storage)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -732,7 +733,7 @@ TYPED_TEST(StateTest, access_storage)
     EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
 }
 
-TYPED_TEST(StateTest, get_storage)
+TYPED_TEST(DBTest, get_storage)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -762,7 +763,7 @@ TYPED_TEST(StateTest, get_storage)
     EXPECT_EQ(s.get_storage(b, key3), null);
 }
 
-TYPED_TEST(StateTest, set_storage_modified)
+TYPED_TEST(DBTest, set_storage_modified)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -782,7 +783,7 @@ TYPED_TEST(StateTest, set_storage_modified)
     EXPECT_EQ(s.get_storage(a, key2), value3);
 }
 
-TYPED_TEST(StateTest, set_storage_deleted)
+TYPED_TEST(DBTest, set_storage_deleted)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -806,7 +807,7 @@ TYPED_TEST(StateTest, set_storage_deleted)
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
-TYPED_TEST(StateTest, set_storage_added)
+TYPED_TEST(DBTest, set_storage_added)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -825,7 +826,7 @@ TYPED_TEST(StateTest, set_storage_added)
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
-TYPED_TEST(StateTest, set_storage_different_assigned)
+TYPED_TEST(DBTest, set_storage_different_assigned)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -847,7 +848,7 @@ TYPED_TEST(StateTest, set_storage_different_assigned)
     EXPECT_EQ(s.get_storage(a, key2), value1);
 }
 
-TYPED_TEST(StateTest, set_storage_unchanged_assigned)
+TYPED_TEST(DBTest, set_storage_unchanged_assigned)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -867,7 +868,7 @@ TYPED_TEST(StateTest, set_storage_unchanged_assigned)
     EXPECT_EQ(s.get_storage(a, key2), value2);
 }
 
-TYPED_TEST(StateTest, set_storage_added_deleted)
+TYPED_TEST(DBTest, set_storage_added_deleted)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -884,7 +885,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted)
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
-TYPED_TEST(StateTest, set_storage_added_deleted_null)
+TYPED_TEST(DBTest, set_storage_added_deleted_null)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -901,7 +902,7 @@ TYPED_TEST(StateTest, set_storage_added_deleted_null)
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
-TYPED_TEST(StateTest, set_storage_modify_delete)
+TYPED_TEST(DBTest, set_storage_modify_delete)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -922,7 +923,7 @@ TYPED_TEST(StateTest, set_storage_modify_delete)
     EXPECT_EQ(s.get_storage(b, key2), null);
 }
 
-TYPED_TEST(StateTest, set_storage_delete_restored)
+TYPED_TEST(DBTest, set_storage_delete_restored)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -943,7 +944,7 @@ TYPED_TEST(StateTest, set_storage_delete_restored)
     EXPECT_EQ(s.get_storage(b, key2), value2);
 }
 
-TYPED_TEST(StateTest, set_storage_modified_restored)
+TYPED_TEST(DBTest, set_storage_modified_restored)
 {
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
@@ -965,7 +966,7 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 }
 
 // Code
-TYPED_TEST(StateTest, get_code_size)
+TYPED_TEST(DBTest, get_code_size)
 {
     BlockState bs{this->tdb, this->vm};
     Account acct{.code_hash = code_hash1};
@@ -979,7 +980,7 @@ TYPED_TEST(StateTest, get_code_size)
     EXPECT_EQ(s.get_code_size(a), code1.size());
 }
 
-TYPED_TEST(StateTest, copy_code)
+TYPED_TEST(DBTest, copy_code)
 {
     BlockState bs{this->tdb, this->vm};
     Account acct_a{.code_hash = code_hash1};
@@ -1031,7 +1032,7 @@ TYPED_TEST(StateTest, copy_code)
     }
 }
 
-TYPED_TEST(StateTest, get_code)
+TYPED_TEST(DBTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
@@ -1059,7 +1060,7 @@ TYPED_TEST(StateTest, get_code)
     }
 }
 
-TYPED_TEST(StateTest, set_code)
+TYPED_TEST(DBTest, set_code)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -1076,7 +1077,7 @@ TYPED_TEST(StateTest, set_code)
         byte_string_view(b_icode->code(), b_icode->size()), byte_string{});
 }
 
-TYPED_TEST(StateTest, can_merge_same_account_different_storage)
+TYPED_TEST(DBTest, can_merge_same_account_different_storage)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -1111,7 +1112,7 @@ TYPED_TEST(StateTest, can_merge_same_account_different_storage)
     bs.merge(cs);
 }
 
-TYPED_TEST(StateTest, cant_merge_colliding_storage)
+TYPED_TEST(DBTest, cant_merge_colliding_storage)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -1147,7 +1148,7 @@ TYPED_TEST(StateTest, cant_merge_colliding_storage)
     }
 }
 
-TYPED_TEST(StateTest, merge_txn0_and_txn1)
+TYPED_TEST(DBTraitsTest, merge_txn0_and_txn1)
 {
     BlockState bs{this->tdb, this->vm};
 
@@ -1183,13 +1184,13 @@ TYPED_TEST(StateTest, merge_txn0_and_txn1)
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_TRUE(cs.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(c, a));
-    cs.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+    EXPECT_TRUE(cs.selfdestruct<typename TestFixture::Trait>(c, a));
+    cs.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
 }
 
-TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
+TYPED_TEST(DBTest, commit_storage_and_account_together_regression)
 {
     BlockState bs{this->tdb, this->vm};
     State as{bs, Incarnation{1, 1}};
@@ -1216,7 +1217,7 @@ TYPED_TEST(StateTest, commit_storage_and_account_together_regression)
     EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 1}, key1), value1);
 }
 
-TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
+TYPED_TEST(DBTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
     BlockState bs{this->tdb, this->vm};
@@ -1232,7 +1233,7 @@ TYPED_TEST(StateTest, set_and_then_clear_storage_in_same_commit)
         this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
 }
 
-TYPED_TEST(StateTest, commit_twice)
+TYPED_TEST(DBTraitsTest, commit_twice)
 {
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 8}), 8);
@@ -1289,8 +1290,8 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
-        EXPECT_TRUE(cs.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(c, a));
-        cs.destruct_suicides<EvmTraits<EVMC_SHANGHAI>>();
+        EXPECT_TRUE(cs.selfdestruct<typename TestFixture::Trait>(c, a));
+        cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
         bs.commit(
@@ -1298,9 +1299,15 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
-            monad::bytes32_t{});
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+            EXPECT_EQ(
+                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+        }
+        else {
+            EXPECT_EQ(
+                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                monad::bytes32_t{});
+        }
 
         // verify finalized state is the same as round 6
         this->tdb.finalize(11, bytes32_t{11});
@@ -1308,9 +1315,15 @@ TYPED_TEST(StateTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key2),
-            monad::bytes32_t{});
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+            EXPECT_EQ(
+                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+        }
+        else {
+            EXPECT_EQ(
+                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                monad::bytes32_t{});
+        }
     }
 }
 

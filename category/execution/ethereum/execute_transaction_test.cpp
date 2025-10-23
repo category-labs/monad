@@ -90,6 +90,7 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
+    State state{bs, Incarnation{header.number, 1}};
     auto const receipt = ExecuteTransaction<EvmTraits<EVMC_SHANGHAI>>(
         EthereumMainnet{},
         0,
@@ -98,11 +99,10 @@ TEST(TransactionProcessor, irrevocable_gas_and_refund_new_contract)
         {},
         header,
         block_hash_buffer,
-        bs,
         metrics,
         prev,
         noop_call_tracer,
-        noop_state_tracer)();
+        noop_state_tracer)(state);
 
     ASSERT_TRUE(!receipt.has_error());
 
@@ -168,6 +168,7 @@ TYPED_TEST(MonadTraitsTest, TopLevelCreate)
     boost::fibers::promise<void> prev{};
     prev.set_value();
 
+    State state{bs, Incarnation{header.number, 1}};
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
         0,
@@ -176,11 +177,10 @@ TYPED_TEST(MonadTraitsTest, TopLevelCreate)
         {},
         header,
         block_hash_buffer,
-        bs,
         metrics,
         prev,
         noop_call_tracer,
-        noop_state_tracer)();
+        noop_state_tracer)(state);
 
     if constexpr (TestFixture::REV >= MONAD_TWO) {
         ASSERT_TRUE(!receipt.has_error());
@@ -248,6 +248,7 @@ TEST(TransactionProcessor, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
@@ -256,11 +257,10 @@ TEST(TransactionProcessor, refunds_delete)
             {},
             header,
             block_hash_buffer,
-            bs,
             metrics,
             prev,
             noop_call_tracer,
-            noop_state_tracer)();
+            noop_state_tracer)(state);
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -296,6 +296,7 @@ TEST(TransactionProcessor, refunds_delete)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
@@ -304,11 +305,10 @@ TEST(TransactionProcessor, refunds_delete)
             {},
             header,
             block_hash_buffer,
-            bs,
             metrics,
             prev,
             noop_call_tracer,
-            noop_state_tracer)();
+            noop_state_tracer)(state);
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -384,6 +384,7 @@ TEST(TransactionProcessor, refunds_delete_then_set)
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
+        State state{bs, Incarnation{header.number, 1}};
         auto const receipt = ExecuteTransaction<MonadTraits<MONAD_NEXT>>(
             MonadDevnet{},
             0,
@@ -392,11 +393,10 @@ TEST(TransactionProcessor, refunds_delete_then_set)
             {},
             header,
             block_hash_buffer,
-            bs,
             metrics,
             prev,
             noop_call_tracer,
-            noop_state_tracer)();
+            noop_state_tracer)(state);
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);

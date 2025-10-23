@@ -33,7 +33,7 @@ MONAD_NAMESPACE_BEGIN
 class BlockHashBuffer;
 class BlockMetrics;
 struct BlockHeader;
-class BlockState;
+class BlockMetrics;
 struct CallTracerBase;
 struct Chain;
 template <Traits traits>
@@ -88,7 +88,6 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::revert_transaction_;
 
     BlockHashBuffer const &block_hash_buffer_;
-    BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
@@ -101,14 +100,14 @@ public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::vector<std::optional<Address>> const &, BlockHeader const &,
-        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        BlockHashBuffer const &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         trace::StateTracer &,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
     ~ExecuteTransaction() = default;
 
-    Result<Receipt> operator()();
+    Result<Receipt> operator()(State &);
 };
 
 uint64_t g_star(

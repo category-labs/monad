@@ -23,11 +23,15 @@
 #include <optional>
 #include <span>
 
+enum monad_exec_account_access_context : uint8_t;
+
 MONAD_NAMESPACE_BEGIN
 
 struct CallFrame;
 struct Receipt;
 struct Transaction;
+
+class State;
 
 /// Record the transaction header events (TXN_HEADER_START, the EIP-2930
 /// and EIP-7702 events, and TXN_HEADER_END), followed by the TXN_EVM_OUTPUT,
@@ -37,6 +41,11 @@ struct Transaction;
 void record_txn_events(
     uint32_t txn_num, Transaction const &, Address const &sender,
     std::span<std::optional<Address> const> authorities,
-    Result<Receipt> const &, std::span<CallFrame const>);
+    Result<Receipt> const &, std::span<CallFrame const>, State const &);
+
+/// Record all account state accesses (both reads and writes) described by a
+/// State object
+void record_account_access_events(
+    monad_exec_account_access_context, State const &);
 
 MONAD_NAMESPACE_END

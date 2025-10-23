@@ -22,20 +22,19 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-template <node_type NodeType>
-struct NodeCursorBase
+struct NodeCursor
 {
-    std::shared_ptr<NodeType> node{nullptr};
+    std::shared_ptr<Node> node{nullptr};
     unsigned prefix_index{0};
 
-    constexpr NodeCursorBase()
+    constexpr NodeCursor()
         : node{nullptr}
         , prefix_index{0}
     {
     }
 
-    constexpr NodeCursorBase(
-        std::shared_ptr<NodeType> node_, unsigned prefix_index_ = 0)
+    constexpr NodeCursor(
+        std::shared_ptr<Node> node_, unsigned prefix_index_ = 0)
         : node{std::move(node_)}
         , prefix_index{prefix_index_}
     {
@@ -47,13 +46,7 @@ struct NodeCursorBase
     }
 };
 
-using NodeCursor = NodeCursorBase<Node>;
-using CacheNodeCursor = NodeCursorBase<CacheNode>;
-
 static_assert(sizeof(NodeCursor) == 24);
 static_assert(alignof(NodeCursor) == 8);
-
-static_assert(sizeof(CacheNodeCursor) == 24);
-static_assert(alignof(CacheNodeCursor) == 8);
 
 MONAD_MPT_NAMESPACE_END

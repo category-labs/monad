@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -40,8 +41,6 @@
 using namespace monad;
 
 using db_t = TrieDb;
-
-using evmc_host_t = EvmcHost<EvmTraits<EVMC_SHANGHAI>>;
 
 bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
 {
@@ -72,7 +71,7 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
                sizeof(evmc_bytes32));
 }
 
-TEST(EvmcHost, get_tx_context)
+TYPED_TEST(TraitsTest, get_tx_context)
 {
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -96,7 +95,7 @@ TEST(EvmcHost, get_tx_context)
         .sc = {.chain_id = chain_id}, .max_fee_per_gas = base_fee_per_gas};
 
     auto const result =
-        get_tx_context<EvmTraits<EVMC_SHANGHAI>>(tx, from, hdr, 1);
+        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1);
     evmc_tx_context ctx{
         .tx_origin = from,
         .block_coinbase = bene,
@@ -112,7 +111,7 @@ TEST(EvmcHost, get_tx_context)
 
     hdr.difficulty = 0;
     auto const pos_result =
-        get_tx_context<EvmTraits<EVMC_SHANGHAI>>(tx, from, hdr, 1);
+        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1);
     std::memcpy(
         ctx.block_prev_randao.bytes,
         hdr.prev_randao.bytes,
@@ -120,7 +119,7 @@ TEST(EvmcHost, get_tx_context)
     EXPECT_EQ(pos_result, ctx);
 }
 
-TEST(EvmcHost, emit_log)
+TYPED_TEST(TraitsTest, emit_log)
 {
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -139,7 +138,8 @@ TEST(EvmcHost, emit_log)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     host.emit_log(
         from,
@@ -157,7 +157,7 @@ TEST(EvmcHost, emit_log)
     EXPECT_EQ(logs[0].topics[1], topic1);
 }
 
-TEST(EvmcHost, access_precompile)
+TYPED_TEST(TraitsTest, access_precompile)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -167,7 +167,8 @@ TEST(EvmcHost, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    evmc_host_t host{call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

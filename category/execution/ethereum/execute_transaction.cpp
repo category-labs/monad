@@ -436,7 +436,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
-            trace::run_tracer(state_tracer_, state);
+            trace::run_tracer<traits>(state_tracer_, state);
             block_state_.merge(state);
             return receipt;
         }
@@ -457,7 +457,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
-        trace::run_tracer(state_tracer_, state);
+        trace::run_tracer<traits>(state_tracer_, state);
         block_state_.merge(state);
         return receipt;
     }

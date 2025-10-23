@@ -109,7 +109,9 @@ public:
 
     uint64_t get_nonce(Address const &);
 
-    bytes32_t get_balance(Address const &);
+    bytes32_t get_current_balance_pessimistic(Address const &);
+
+    bytes32_t get_original_balance_pessimistic(Address const &);
 
     bytes32_t get_code_hash(Address const &);
 
@@ -200,6 +202,18 @@ public:
     bool try_fix_account_mismatch(
         Address const &, OriginalAccountState &,
         std::optional<Account> const &actual);
+
+    /**
+     * Checks whether the account currently has enough balance to cover `debit`
+     * and records the relaxed-merge constraints needed for that debit.
+     *
+     * NOTE: This method mutates the account's OriginalAccountState by either
+     * tightening the recorded `min_balance` or demanding exact balance
+     * validation when the balance is insufficient. Callers should treat it as
+     * a stateful helper rather than a pure predicate.
+     */
+    bool record_balance_constraint_for_debit(
+        Address const &, uint256_t const &debit);
 };
 
 MONAD_NAMESPACE_END

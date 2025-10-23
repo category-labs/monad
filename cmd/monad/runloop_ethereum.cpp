@@ -171,11 +171,6 @@ Result<BlockHeader> process_ethereum_block(
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
 
-    // Commit prologue: database finalization, computation of the Ethereum
-    // block hash to append to the circular hash buffer
-    db.finalize(block.header.number, block_id);
-    db.update_verified_block(block.header.number);
-
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -260,6 +255,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
+        // Commit prologue: database finalization, computation of the Ethereum
+        // block hash to append to the circular hash buffer
+        db.finalize(block.header.number, block_id);
+        db.update_verified_block(block.header.number);
         bytes32_t const eth_block_hash =
             to_bytes(keccak256(rlp::encode_block_header(output_header)));
         block_hash_buffer.set(block.header.number, eth_block_hash);

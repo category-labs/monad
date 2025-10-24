@@ -150,7 +150,7 @@ bool validate_delayed_execution_results(
 template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
-    MonadConsensusBlockHeader const &consensus_header, Block block,
+    MonadConsensusBlockHeader const &consensus_header, Block const &block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache)

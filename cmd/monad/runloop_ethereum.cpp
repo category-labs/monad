@@ -27,6 +27,8 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -81,8 +83,9 @@ void log_tps(
 template <Traits traits>
 Result<BlockHeader> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm, BlockHashBuffer &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    fiber::PriorityPool &priority_pool, Block const &block,
+    bytes32_t const &block_id, bytes32_t const &parent_block_id,
+    bool const enable_tracing)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -132,6 +135,7 @@ Result<BlockHeader> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -145,6 +149,7 @@ Result<BlockHeader> process_ethereum_block(
             block_metrics,
             call_tracers,
             state_tracers));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -166,11 +171,6 @@ Result<BlockHeader> process_ethereum_block(
     BlockHeader const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
-
-    // Commit prologue: database finalization, computation of the Ethereum
-    // block hash to append to the circular hash buffer
-    db.finalize(block.header.number, block_id);
-    db.update_verified_block(block.header.number);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -256,6 +256,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
+        // Commit prologue: database finalization, computation of the Ethereum
+        // block hash to append to the circular hash buffer
+        db.finalize(block.header.number, block_id);
+        db.update_verified_block(block.header.number);
         bytes32_t const eth_block_hash =
             to_bytes(keccak256(rlp::encode_block_header(output_header)));
         block_hash_buffer.set(block.header.number, eth_block_hash);

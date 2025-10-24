@@ -66,29 +66,25 @@ public:
 private:
     friend class read_single_buffer_sender;
     using _storage_pool = class storage_pool;
-    using cnv_chunk = _storage_pool::cnv_chunk;
-    using seq_chunk = _storage_pool::seq_chunk;
+    using chunk_t = _storage_pool::chunk_t;
 
-    template <class T>
-    struct chunk_ptr_
+    struct chunk_ref_
     {
-        std::shared_ptr<T> ptr;
+        chunk_t &chunk;
         int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
 
-        constexpr chunk_ptr_() = default;
-
-        constexpr chunk_ptr_(std::shared_ptr<T> ptr_)
-            : ptr(std::move(ptr_))
-            , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
-            , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
+        constexpr chunk_ref_(chunk_t &chunk_)
+            : chunk{chunk_}
+            , io_uring_read_fd{chunk.read_fd().first}
+            , io_uring_write_fd{chunk.write_fd(0).first}
         {
         }
     };
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ptr_<cnv_chunk> cnv_chunk_;
-    std::vector<chunk_ptr_<seq_chunk>> seq_chunks_;
+    chunk_ref_ cnv_chunk_;
+    std::vector<chunk_ref_> seq_chunks_;
 
     struct
     {
@@ -177,7 +173,7 @@ public:
             "id %zu seq chunks size %zu",
             id,
             seq_chunks_.size());
-        return seq_chunks_[id].ptr->capacity();
+        return seq_chunks_[id].chunk.capacity();
     }
 
     //! The instance for this thread
@@ -662,7 +658,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 280);
+static_assert(sizeof(AsyncIO) == 272);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

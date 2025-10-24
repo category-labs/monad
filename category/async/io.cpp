@@ -148,6 +148,8 @@ namespace detail
 
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     : owning_tid_(get_tl_tid())
+    , storage_pool_{std::addressof(pool)}
+    , cnv_chunk_{pool.chunk(storage_pool::cnv, 0)}
     , fds_{-1, -1}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
@@ -193,34 +195,22 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
     }
 
-    // TODO(niall): In the future don't activate all the chunks, as
-    // theoretically zoned storage may enforce a maximum open zone count in
-    // hardware. I cannot find any current zoned storage implementation that
-    // does not implement infinite open zones so I went ahead and have been lazy
-    // here, and we open everything all at once. It also means I can avoid
-    // dynamic fd registration with io_uring, which simplifies implementation.
-    storage_pool_ = &pool;
-    cnv_chunk_ = std::static_pointer_cast<storage_pool::cnv_chunk>(
-        pool.activate_chunk(storage_pool::cnv, 0));
     auto count = pool.chunks(storage_pool::seq);
-    seq_chunks_.reserve(count);
     std::vector<int> fds;
     fds.reserve(count * 2 + 2);
     fds.push_back(cnv_chunk_.io_uring_read_fd);
     fds.push_back(cnv_chunk_.io_uring_write_fd);
     for (size_t n = 0; n < count; n++) {
         seq_chunks_.emplace_back(
-            std::static_pointer_cast<storage_pool::seq_chunk>(
-                pool.activate_chunk(
-                    storage_pool::seq, static_cast<uint32_t>(n))));
+            pool.chunk(storage_pool::seq, static_cast<uint32_t>(n)));
         MONAD_ASSERT_PRINTF(
-            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
+            seq_chunks_.back().chunk.capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
             "sequential chunk capacity %llu must equal or exceed i/o buffer "
             "size %zu",
-            seq_chunks_.back().ptr->capacity(),
+            seq_chunks_.back().chunk.capacity(),
             MONAD_IO_BUFFERS_WRITE_SIZE);
         MONAD_ASSERT(
-            (seq_chunks_.back().ptr->capacity() %
+            (seq_chunks_.back().chunk.capacity() %
              MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
         fds.push_back(seq_chunks_[n].io_uring_read_fd);
         fds.push_back(seq_chunks_[n].io_uring_write_fd);
@@ -330,7 +320,7 @@ void AsyncIO::submit_request_sqe_(
         ci.io_uring_read_fd,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
-        ci.ptr->read_fd().second + chunk_and_offset.offset,
+        ci.chunk.read_fd().second + chunk_and_offset.offset,
         0);
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -382,7 +372,7 @@ void AsyncIO::submit_request_(
             ci.io_uring_read_fd,
             buffers.front().iov_base,
             static_cast<unsigned int>(buffers.front().iov_len),
-            ci.ptr->read_fd().second + chunk_and_offset.offset);
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
     }
     else {
         io_uring_prep_readv(
@@ -390,7 +380,7 @@ void AsyncIO::submit_request_(
             ci.io_uring_read_fd,
             buffers.data(),
             static_cast<unsigned int>(buffers.size()),
-            ci.ptr->read_fd().second + chunk_and_offset.offset);
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
     }
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -419,7 +409,7 @@ void AsyncIO::submit_request_(
     MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto offset = ci.ptr->write_fd(buffer.size()).second;
+    auto offset = ci.chunk.write_fd(buffer.size()).second;
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
@@ -774,7 +764,7 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
     MONAD_ASSERT_PRINTF(
         tofd != -1, "creat failed due to %s", std::strerror(errno));
     auto untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
-    auto fromfd = seq_chunks_[which].ptr->read_fd();
+    auto fromfd = seq_chunks_[which].chunk.read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
     off64_t off_in = static_cast<off64_t>(fromfd.second);
     off64_t off_out = 0;
@@ -783,7 +773,7 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
         &off_in,
         tofd,
         &off_out,
-        seq_chunks_[which].ptr->size(),
+        seq_chunks_[which].chunk.size(),
         0);
     MONAD_ASSERT_PRINTF(
         copied != -1, "copy_file_range failed due to %s", std::strerror(errno));

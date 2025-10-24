@@ -27,6 +27,8 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -34,6 +36,9 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/validate_monad_block.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -77,12 +82,18 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
 // Process a single historical Ethereum block
 template <Traits traits>
 Result<BlockHeader> process_ethereum_block(
-    Chain const &chain, Db &db, vm::VM &vm, BlockHashBuffer &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    Chain const &chain, Db &db, vm::VM &vm,
+    BlockHashBuffer const &block_hash_buffer,
+    fiber::PriorityPool &priority_pool, Block const &block,
+    bytes32_t const &block_id, bytes32_t const &parent_block_id,
+    bool const enable_tracing, BlockCache *const block_cache)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -132,6 +143,89 @@ Result<BlockHeader> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+
+    // Build the revert transaction function
+    RevertTransactionFn revert_transaction =
+        [](Address const &, Transaction const &, uint64_t, State &) {
+            return false;
+        };
+    if constexpr (is_monad_trait_v<traits>) {
+        // Monad-specific revert transaction logic
+        BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
+
+        // Update the BlockCache with this block's senders and authorities
+        MONAD_ASSERT(block_cache, "block_cache required for Monad traits");
+        auto [entry, success] = block_cache->emplace(
+            block_id,
+            BlockCacheEntry{
+                .block_number = block.header.number,
+                .parent_id = parent_block_id,
+                .senders_and_authorities = {}});
+        MONAD_ASSERT(success, "should never be processing duplicate block");
+        for (Address const &sender : senders) {
+            entry->second.senders_and_authorities.insert(sender);
+        }
+        for (std::vector<std::optional<Address>> const &authorities :
+             recovered_authorities) {
+            for (std::optional<Address> const &authority : authorities) {
+                if (authority.has_value()) {
+                    entry->second.senders_and_authorities.insert(
+                        authority.value());
+                }
+            }
+        }
+
+        // Make the chain context, providing the parent and grandparent
+        MonadChainContext chain_context{
+            .grandparent_senders_and_authorities = nullptr,
+            .parent_senders_and_authorities = nullptr,
+            .senders_and_authorities =
+                block_cache->at(block_id).senders_and_authorities,
+            .senders = senders,
+            .authorities = recovered_authorities};
+
+        if (block.header.number > 1) {
+            MONAD_ASSERT(
+                block_cache->contains(parent_block_id),
+                "block cache must contain parent");
+            BlockCacheEntry const &parent_entry =
+                block_cache->at(parent_block_id);
+            chain_context.parent_senders_and_authorities =
+                &parent_entry.senders_and_authorities;
+            if (block.header.number > 2) {
+                bytes32_t const &grandparent_id = parent_entry.parent_id;
+                MONAD_ASSERT(
+                    block_cache->contains(grandparent_id),
+                    "block cache must contain grandparent");
+                BlockCacheEntry const &grandparent_entry =
+                    block_cache->at(grandparent_id);
+                chain_context.grandparent_senders_and_authorities =
+                    &grandparent_entry.senders_and_authorities;
+            }
+        }
+
+        // Capture chain reference for the revert transaction function
+        MonadChain const *const monad_chain =
+            dynamic_cast<MonadChain const *>(&chain);
+        MONAD_ASSERT(monad_chain, "chain must be a MonadChain");
+        revert_transaction = [monad_chain, &block, chain_context](
+                                 Address const &sender,
+                                 Transaction const &tx,
+                                 uint64_t const i,
+                                 State &state) {
+            return monad_chain->revert_transaction(
+                block.header.number,
+                block.header.timestamp,
+                sender,
+                tx,
+                block.header.base_fee_per_gas.value_or(0),
+                i,
+                state,
+                chain_context);
+        };
+    }
+
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -144,7 +238,9 @@ Result<BlockHeader> process_ethereum_block(
             priority_pool,
             block_metrics,
             call_tracers,
-            state_tracers));
+            state_tracers,
+            revert_transaction));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -166,11 +262,6 @@ Result<BlockHeader> process_ethereum_block(
     BlockHeader const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         chain.validate_output_header(block.header, output_header));
-
-    // Commit prologue: database finalization, computation of the Ethereum
-    // block hash to append to the circular hash buffer
-    db.finalize(block.header.number, block_id);
-    db.update_verified_block(block.header.number);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -208,9 +299,7 @@ Result<BlockHeader> process_ethereum_block(
     return output_header;
 }
 
-MONAD_ANONYMOUS_NAMESPACE_END
-
-MONAD_NAMESPACE_BEGIN
+EXPLICIT_TRAITS(process_ethereum_block);
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
@@ -256,6 +345,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
+        // Commit prologue: database finalization, computation of the Ethereum
+        // block hash to append to the circular hash buffer
+        db.finalize(block.header.number, block_id);
+        db.update_verified_block(block.header.number);
         bytes32_t const eth_block_hash =
             to_bytes(keccak256(rlp::encode_block_header(output_header)));
         block_hash_buffer.set(block.header.number, eth_block_hash);

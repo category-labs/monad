@@ -30,7 +30,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
-#include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -598,9 +597,6 @@ struct monad_eth_call_executor
             return;
         }
 
-        auto const authorities = recover_authorities({txn}, active_pool.pool);
-        MONAD_ASSERT(authorities.size() == 1);
-
         active_pool.pool.submit(
             eth_call_seq_no,
             [this,
@@ -613,7 +609,6 @@ struct monad_eth_call_executor
              block_id = block_id,
              &db = db_,
              sender = sender,
-             authorities = authorities[0],
              result = result,
              complete = complete,
              user = user,
@@ -640,6 +635,15 @@ struct monad_eth_call_executor
                         complete(result, user);
                         return;
                     }
+
+                    std::vector<std::optional<Address>> authorities(
+                        orig_txn.authorization_list.size());
+                    for (auto j = 0u; j < orig_txn.authorization_list.size();
+                         ++j) {
+                        authorities[j] =
+                            recover_authority(orig_txn.authorization_list[j]);
+                    }
+
                     auto transaction = orig_txn;
 
                     bool const override_with_low_gas_retry_if_oog =

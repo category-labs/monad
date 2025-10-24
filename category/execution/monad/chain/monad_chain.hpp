@@ -49,6 +49,9 @@ struct MonadChainContext
     std::vector<std::vector<std::optional<Address>>> const &authorities;
 };
 
+static_assert(sizeof(MonadChainContext) == 40);
+static_assert(alignof(MonadChainContext) == 8);
+
 struct MonadChain : Chain
 {
     virtual evmc_revision

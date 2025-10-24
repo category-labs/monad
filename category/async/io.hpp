@@ -66,27 +66,25 @@ public:
 private:
     friend class read_single_buffer_sender;
     using _storage_pool = class storage_pool;
-    using chunk = _storage_pool::chunk_t;
+    using chunk_t = _storage_pool::chunk_t;
 
-    struct chunk_ptr_
+    struct chunk_ref_
     {
-        chunk *ptr;
+        chunk_t &chunk;
         int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
 
-        constexpr chunk_ptr_() = default;
-
-        constexpr chunk_ptr_(chunk *ptr_)
-            : ptr(ptr_)
-            , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
-            , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
+        constexpr chunk_ref_(chunk_t &chunk_)
+            : chunk{chunk_}
+            , io_uring_read_fd{chunk.read_fd().first}
+            , io_uring_write_fd{chunk.write_fd(0).first}
         {
         }
     };
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ptr_ cnv_chunk_;
-    std::vector<chunk_ptr_> seq_chunks_;
+    chunk_ref_ cnv_chunk_;
+    std::vector<chunk_ref_> seq_chunks_;
 
     struct
     {
@@ -175,7 +173,7 @@ public:
             "id %zu seq chunks size %zu",
             id,
             seq_chunks_.size());
-        return seq_chunks_[id].ptr->capacity();
+        return seq_chunks_[id].chunk.capacity();
     }
 
     //! The instance for this thread

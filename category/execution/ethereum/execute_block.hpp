@@ -40,6 +40,12 @@ class State;
 struct Block;
 struct Chain;
 
+namespace fiber
+{
+    class FiberGroup;
+    class PriorityPool;
+} // namespace fiber
+
 template <Traits traits>
 void execute_block_header(Chain const &, BlockState &, BlockHeader const &);
 
@@ -48,8 +54,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &, BlockHeader const &, std::span<Transaction const>,
     std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
-    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::span<std::unique_ptr<CallTracerBase>>,
+    BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
+    std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
@@ -58,8 +64,8 @@ template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &, Block const &, std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
-    BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::span<std::unique_ptr<CallTracerBase>>,
+    BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
+    std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });

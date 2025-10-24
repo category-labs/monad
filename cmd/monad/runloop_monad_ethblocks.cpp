@@ -179,7 +179,7 @@ Result<void> process_monad_block(
             recovered_authorities,
             block_state,
             block_hash_buffer,
-            priority_pool,
+            priority_pool.fiber_group(),
             block_metrics,
             call_tracers,
             state_tracers,

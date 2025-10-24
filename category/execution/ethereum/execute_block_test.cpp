@@ -193,7 +193,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             recovered_authorities,
             bs,
             block_hash_buffer,
-            pool,
+            pool.fiber_group(),
             metrics,
             call_tracers,
             state_tracers);
@@ -313,7 +313,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
             recovered_authorities,
             bs,
             block_hash_buffer,
-            pool,
+            pool.fiber_group(),
             metrics,
             call_tracers,
             state_tracers);
@@ -426,7 +426,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             recovered_authorities,
             bs,
             block_hash_buffer,
-            pool,
+            pool.fiber_group(),
             metrics,
             call_tracers,
             state_tracers);

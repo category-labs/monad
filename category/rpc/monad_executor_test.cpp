@@ -104,8 +104,14 @@ namespace
     auto create_executor(std::string const &dbname)
     {
         monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
+        unsigned const tx_exec_num_fibers = 10;
         return monad_executor_create(
-            conf, conf, conf, node_lru_max_mem, dbname.c_str());
+            conf,
+            conf,
+            conf,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            dbname.c_str());
     }
 
     std::vector<uint8_t> to_vec(byte_string const &bs)

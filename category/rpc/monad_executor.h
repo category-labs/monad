@@ -123,7 +123,7 @@ struct monad_executor *monad_executor_create(
     struct monad_executor_pool_config low_pool_conf,
     struct monad_executor_pool_config high_pool_conf,
     struct monad_executor_pool_config block_pool_conf,
-    uint64_t node_lru_max_mem, char const *dbpath);
+    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath);
 
 void monad_executor_destroy(struct monad_executor *);
 

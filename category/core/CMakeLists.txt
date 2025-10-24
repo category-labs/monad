@@ -126,6 +126,10 @@ add_library(
   "event/test_event_ctypes_metadata.c"
   # fiber
   "fiber/config.hpp"
+  "fiber/fiber_group.cpp"
+  "fiber/fiber_group.hpp"
+  "fiber/fiber_thread_pool.cpp"
+  "fiber/fiber_thread_pool.hpp"
   "fiber/priority_algorithm.cpp"
   "fiber/priority_algorithm.hpp"
   "fiber/priority_pool.cpp"

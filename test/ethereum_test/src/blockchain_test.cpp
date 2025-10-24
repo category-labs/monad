@@ -317,7 +317,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
             recovered_authorities,
             block_state,
             block_hash_buffer,
-            *pool_,
+            pool_->fiber_group(),
             metrics,
             call_tracers,
             state_tracers));

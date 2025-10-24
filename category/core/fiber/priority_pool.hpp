@@ -16,35 +16,25 @@
 #pragma once
 
 #include <category/core/fiber/config.hpp>
-#include <category/core/fiber/priority_queue.hpp>
-#include <category/core/fiber/priority_task.hpp>
+#include <category/core/fiber/fiber_group.hpp>
+#include <category/core/fiber/fiber_thread_pool.hpp>
 
-#include <boost/fiber/buffered_channel.hpp>
-#include <boost/fiber/condition_variable.hpp>
-#include <boost/fiber/mutex.hpp>
-
-#include <future>
-#include <thread>
-#include <utility>
+#include <functional>
+#include <memory>
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
+/// PriorityPool is a convenience wrapper that combines a dedicated
+/// FiberThreadPool with a single FiberGroup.
+///
+/// This provides a simple interface for creating an isolated pool of threads
+/// and fibers for executing prioritized tasks. For scenarios where multiple
+/// fiber groups should share threads, use FiberThreadPool::create_fiber_group()
+/// directly.
 class PriorityPool final
 {
-    PriorityQueue queue_{};
-
-    bool done_{false};
-
-    boost::fibers::mutex mutex_{};
-    boost::fibers::condition_variable cv_{};
-
-    std::vector<std::thread> threads_{};
-
-    boost::fibers::buffered_channel<PriorityTask> channel_{1024};
-
-    std::vector<boost::fibers::fiber> fibers_{};
-
-    std::promise<void> start_{};
+    std::unique_ptr<FiberThreadPool> thread_pool_;
+    std::unique_ptr<FiberGroup> fiber_group_;
 
 public:
     PriorityPool(
@@ -53,16 +43,26 @@ public:
     PriorityPool(PriorityPool const &) = delete;
     PriorityPool &operator=(PriorityPool const &) = delete;
 
-    ~PriorityPool();
+    ~PriorityPool() = default;
 
     unsigned num_fibers() const
     {
-        return static_cast<unsigned>(fibers_.size());
+        return fiber_group_->num_fibers();
+    }
+
+    unsigned num_threads() const
+    {
+        return thread_pool_->num_threads();
     }
 
     void submit(uint64_t const priority, std::function<void()> task)
     {
-        channel_.push({priority, std::move(task)});
+        fiber_group_->submit(priority, std::move(task));
+    }
+
+    FiberGroup &fiber_group()
+    {
+        return *fiber_group_;
     }
 };
 

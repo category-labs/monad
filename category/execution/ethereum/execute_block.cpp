@@ -17,6 +17,7 @@
 #include <category/core/config.hpp>
 #include <category/core/cpu_relax.h>
 #include <category/core/event/event_recorder.h>
+#include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -217,7 +218,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<Address const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
+    fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
@@ -322,15 +323,13 @@ Result<std::vector<Receipt>> execute_block_transactions(
     return retvals;
 }
 
-EXPLICIT_TRAITS(execute_block_transactions);
-
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block const &block,
     std::span<Address const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
+    fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
@@ -379,6 +378,8 @@ Result<std::vector<Receipt>> execute_block(
     return retvals;
 }
 
+// Explicit instantiations using EXPLICIT_TRAITS macro
+EXPLICIT_TRAITS(execute_block_transactions);
 EXPLICIT_TRAITS(execute_block);
 
 MONAD_NAMESPACE_END

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -33,12 +34,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
-class BlockState;
 
 class State
 {
@@ -73,6 +73,62 @@ private:
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
+
+    template <typename It>
+    State(
+        BlockState &block_state, Incarnation incarnation,
+        bool relaxed_validation, It const state_overrides)
+        : block_state_{block_state}
+        , incarnation_{incarnation}
+        , relaxed_validation_{relaxed_validation}
+    {
+        for (auto const &[address, state_delta] : state_overrides) {
+            OriginalAccountState &original_account_state =
+                this->original_account_state(address);
+            if (!original_account_state.account_.has_value()) {
+                original_account_state.account_ =
+                    Account{.incarnation = incarnation};
+            }
+            Account &account = original_account_state.account_.value();
+
+            if (state_delta.balance.has_value()) {
+                account.balance = state_delta.balance.value();
+            }
+
+            if (state_delta.nonce.has_value()) {
+                account.nonce = state_delta.nonce.value();
+            }
+
+            if (state_delta.code.has_value()) {
+                auto const code = state_delta.code.value();
+                auto const code_hash = to_bytes(keccak256(code));
+                code_[code_hash] = block_state_.vm().try_insert_varcode(
+                    code_hash, vm::make_shared_intercode(code));
+                account.code_hash = code_hash;
+            }
+
+            auto const update_state =
+                [&](std::map<bytes32_t, bytes32_t> const &diff) {
+                    for (auto const &[key, value] : diff) {
+                        (void)original_account_state.set_storage(
+                            key, value, bytes32_t{});
+                    }
+                };
+
+            // Remove single storage
+            if (!state_delta.state_diff.empty()) {
+                // we need to access the account first before accessing its
+                // storage
+                update_state(state_delta.state_diff);
+            }
+
+            // Remove all override
+            if (!state_delta.state.empty()) {
+                account.incarnation = incarnation;
+                update_state(state_delta.state);
+            }
+        }
+    }
 
     State(State &&) = delete;
     State(State const &) = delete;

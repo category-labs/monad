@@ -18,6 +18,7 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/hex_literal.hpp>
+#include <category/core/unordered_map.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -154,9 +155,11 @@ static_assert(INVALID_VIRTUAL_OFFSET.in_fast_list());
 
 struct virtual_chunk_offset_t_hasher
 {
-    constexpr size_t operator()(virtual_chunk_offset_t v) const noexcept
+    using is_avalanching = void;
+
+    constexpr size_t operator()(virtual_chunk_offset_t const v) const noexcept
     {
-        return fnv1a_hash<file_offset_t>()(v.hasher_raw());
+        return ankerl::unordered_dense::hash<file_offset_t>{}(v.hasher_raw());
     }
 };
 

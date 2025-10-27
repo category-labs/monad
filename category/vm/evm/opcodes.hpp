@@ -817,10 +817,7 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_NEXT>>()
     {
-        auto table = make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
-        table[CREATE].min_gas = 160'000;
-        table[CREATE2].min_gas = 160'000;
-        return table;
+        return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
     }
 
     /**

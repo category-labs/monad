@@ -301,10 +301,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
     }();
     static constexpr auto storage_refund_tx2 = [=] {
         if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
-                return 120'000;
-            }
-            else if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
                 return 0;
             }
         }
@@ -593,10 +590,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             static constexpr auto storage_refund = [=] {
                 if constexpr (TestFixture::is_monad_trait()) {
                     if constexpr (
-                        TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
-                        return 2800;
-                    }
-                    else if constexpr (
                         TestFixture::Trait::monad_rev() > MONAD_ZERO) {
                         return 0;
                     }

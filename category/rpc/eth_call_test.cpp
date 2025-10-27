@@ -522,7 +522,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 137'137);
+    EXPECT_EQ(ctx.result->gas_used, 68'137);
 
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);

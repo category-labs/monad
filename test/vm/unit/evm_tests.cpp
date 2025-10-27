@@ -559,51 +559,8 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
     }
 }
 
-TYPED_TEST(VMTraitsTest, Int32BlockGasOverflow)
-{
-
-    std::vector<uint8_t> code;
-    for (size_t i = 0; i < 14 * 1024; ++i) {
-        code.push_back(PUSH0);
-        code.push_back(PUSH0);
-        code.push_back(CODESIZE);
-        code.push_back(CREATE);
-        code.push_back(POP);
-    }
-
-    auto const ir =
-        basic_blocks::BasicBlocksIR::unsafe_from<typename TestFixture::Trait>(
-            code);
-    ASSERT_EQ(ir.blocks().size(), 1);
-    // gas cost overflows int32 due to re-pricing changes of CREATE in
-    // MONAD_NEXT
-    if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
-            ASSERT_GT(
-                block_base_gas<typename TestFixture::Trait>(ir.blocks()[0]),
-                std::numeric_limits<int32_t>::max());
-        }
-    }
-
-    auto const icode = make_shared_intercode(code);
-    auto const ncode =
-        this->vm_.compiler().template compile<typename TestFixture::Trait>(
-            icode);
-
-    TestFixture::pre_execute(20'000'000, {});
-    this->result_ = evmc::Result{this->vm_.execute_native_entrypoint_raw(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        icode,
-        ncode->entrypoint())};
-
-    EXPECT_EQ(this->result_.status_code, EVMC_FAILURE);
-}
-
 namespace
 {
-
     static auto regression_tests =
         std::views::cartesian_product(
             fs::directory_iterator(monad::test_resource::regression_tests_dir),

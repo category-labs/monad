@@ -567,9 +567,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(
-            r2.gas_left,
-            gas - TestFixture::Trait::code_deposit_cost() * sizeof(code));
+        EXPECT_EQ(r2.gas_left, gas - 200 * sizeof(code));
         EXPECT_EQ(r2.create_address, a);
         auto const icode = s.get_code(a)->intercode();
         EXPECT_EQ(
@@ -964,6 +962,97 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     }
+}
+
+TYPED_TEST(TraitsTest, cold_account_access)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto contract{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    // push cold address; BALANCE
+    auto const code =
+        evmc::from_hex("0x7300000000000000000000000000000000aaaaaaaa31")
+            .value();
+    auto const icode = vm::make_shared_intercode(code);
+    auto const code_hash = to_bytes(keccak256(code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .code_hash = code_hash,
+                      }}}}},
+        Code{
+            {code_hash, icode},
+        },
+        BlockHeader{});
+
+    constexpr auto gas_limit = 1'000'000;
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .gas = gas_limit,
+        .recipient = contract,
+        .sender = from,
+        .code_address = contract,
+    };
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = h.call(m);
+    auto const gas_used = gas_limit - result.gas_left;
+
+    constexpr auto balance_gas = [] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 10100;
+            }
+            else {
+                return 2600;
+            }
+        }
+        else {
+            if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+                return 2600;
+            }
+            else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
+                return 700;
+            }
+            else if constexpr (
+                TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
+                return 400;
+            }
+            else {
+                return 20;
+            }
+        }
+    }();
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(gas_used, balance_gas + 3); // +3 for PUSH20
 }
 
 #undef PUSH3

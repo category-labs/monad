@@ -25,7 +25,4 @@ template <Traits traits>
 uint64_t compute_gas_refund(
     Transaction const &, uint64_t gas_remaining, uint64_t refund);
 
-template <Traits traits>
-uint256_t refund_gas_price(Transaction const &, uint256_t const &);
-
 MONAD_NAMESPACE_END

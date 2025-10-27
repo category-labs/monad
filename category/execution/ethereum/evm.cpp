@@ -103,8 +103,7 @@ evmc::Result deploy_contract_code(
         }
     }
 
-    auto const deploy_cost =
-        static_cast<int64_t>(result.output_size) * traits::code_deposit_cost();
+    auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
 
     if (result.gas_left < deploy_cost) {
         if constexpr (traits::evm_rev() == EVMC_FRONTIER) {

@@ -232,11 +232,6 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    if constexpr (!traits::eip_7702_refund_active()) {
-        // monad doesn't give authorization refunds
-        auth_refund = 0;
-    }
-
     // EIP-3651
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         host.access_account(header_.beneficiary);
@@ -349,26 +344,17 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const refund_gas_cost =
-        refund_gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, refund_gas_cost * gas_refund);
+    auto const gas_cost =
+        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+    state.add_to_balance(sender_, gas_cost * gas_refund);
 
-    auto gas_used = tx_.gas_limit;
-
-    // Monad specification §2.3: Payment Rule for User:
-    // The storage refund does not reduce the gas consumption of the
-    // transaction.
-    if constexpr (traits::should_refund_reduce_gas_used()) {
-        gas_used -= gas_refund;
-    }
+    auto gas_used = tx_.gas_limit - gas_refund;
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
-            auto const gas_cost =
-                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
             state.subtract_from_balance(sender_, gas_cost * delta);
 
             gas_used = floor_gas;

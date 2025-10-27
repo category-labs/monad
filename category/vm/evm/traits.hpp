@@ -49,16 +49,11 @@ namespace monad
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
-        // Monad specification §2.3: Payment Rule for User
-        { T::should_refund_reduce_gas_used() } -> std::same_as<bool>;
-        { T::eip_7702_refund_active() } -> std::same_as<bool>;
-
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
         { T::max_initcode_size() } -> std::same_as<size_t>;
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
-        { T::code_deposit_cost() } -> std::same_as<int64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -95,16 +90,6 @@ namespace monad
             return true;
         }
 
-        static consteval bool should_refund_reduce_gas_used() noexcept
-        {
-            return true;
-        }
-
-        static consteval bool eip_7702_refund_active() noexcept
-        {
-            return Rev >= EVMC_PRAGUE;
-        }
-
         static consteval size_t max_code_size() noexcept
         {
             if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
@@ -139,11 +124,6 @@ namespace monad
             }
 
             std::unreachable();
-        }
-
-        static consteval int64_t code_deposit_cost() noexcept
-        {
-            return 200;
         }
 
         static consteval uint64_t id() noexcept
@@ -203,16 +183,6 @@ namespace monad
             return 0;
         }
 
-        static consteval bool should_refund_reduce_gas_used() noexcept
-        {
-            return Rev < MONAD_NEXT;
-        }
-
-        static consteval bool eip_7702_refund_active() noexcept
-        {
-            return false;
-        }
-
         static consteval size_t max_code_size() noexcept
         {
             if constexpr (Rev >= MONAD_TWO) {
@@ -253,15 +223,6 @@ namespace monad
             }
 
             std::unreachable();
-        }
-
-        static consteval int64_t code_deposit_cost() noexcept
-        {
-            if constexpr (monad_pricing_version() >= 1) {
-                return 1200;
-            }
-
-            return 200;
         }
 
         static consteval uint64_t id() noexcept

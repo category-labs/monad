@@ -73,8 +73,12 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 bool is_precompile(Address const &address)
 {
-    return is_eth_precompile<traits>(address) ||
-           (address == staking::STAKING_CA);
+    auto const is_eth = is_eth_precompile<traits>(address);
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+        return is_eth;
+    }
+
+    return is_eth || (address == staking::STAKING_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);

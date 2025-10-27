@@ -183,9 +183,8 @@ void execute_block_header(
 
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         deploy_block_hash_history_contract(state);
+        set_block_hash_history(state, header);
     }
-
-    set_block_hash_history(state, header);
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         set_beacon_root(state, header);

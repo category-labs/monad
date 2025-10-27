@@ -1119,10 +1119,10 @@ find_cursor_result_type find_blocking(
 
 /* This function reads a node from the specified physical offset `node_offset`,
 where the spare bits indicate the number of pages to read. It returns a valid
-`Node::UniquePtr` on success, and returns `nullptr` if the specified version
+`Node::SharedPtr` on success, and returns `nullptr` if the specified version
 becomes invalid.
 */
-Node::UniquePtr read_node_blocking(
+Node::SharedPtr read_node_blocking(
     UpdateAuxImpl const &, chunk_offset_t node_offset, uint64_t version);
 
 //////////////////////////////////////////////////////////////////////////////

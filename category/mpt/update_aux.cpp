@@ -1160,7 +1160,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
 void UpdateAuxImpl::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
-    Node::UniquePtr min_valid_root = read_node_blocking(
+    auto min_valid_root = read_node_blocking(
         *this,
         get_root_offset_at_version(min_valid_version),
         min_valid_version);

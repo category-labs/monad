@@ -594,7 +594,7 @@ TYPED_TEST(PlainTrieTest, node_version)
     EXPECT_EQ(this->root->version, 2);
 
     auto read_child = [&](Node &parent,
-                          unsigned const index) -> Node::UniquePtr {
+                          unsigned const index) -> Node::SharedPtr {
         return read_node_blocking(this->aux, parent.fnext(index), 0);
     };
     if (this->root->next(0)) {

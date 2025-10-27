@@ -52,7 +52,7 @@ find_cursor_result_type find_blocking(
                 MONAD_ASSERT(aux.is_on_disk());
                 auto g2(g.upgrade());
                 if (g2.upgrade_was_atomic() || !node->next(idx)) {
-                    Node::UniquePtr next_node_ondisk =
+                    auto next_node_ondisk =
                         read_node_blocking(aux, node->fnext(idx), version);
                     if (!next_node_ondisk) {
                         return {

@@ -343,7 +343,7 @@ public:
 // Create Node
 /////////////////////////////////////////////////////
 
-std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
+std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode)
 {
     MONAD_ASSERT(tnode->node);
@@ -366,7 +366,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
                 [aux = &aux,
                  sm = sm.clone(),
                  tnode = std::move(tnode),
-                 child_branch](Node::UniquePtr read_node) mutable {
+                 child_branch](Node::SharedPtr read_node) mutable {
                     auto new_node = make_node(
                         *read_node,
                         concat(
@@ -464,7 +464,7 @@ std::pair<bool, Node::UniquePtr> create_node_with_expired_branches(
     return {true, std::move(node)};
 }
 
-Node::UniquePtr create_node_from_children_if_any(
+Node::SharedPtr create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
     uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const leaf_data,
@@ -476,7 +476,7 @@ Node::UniquePtr create_node_from_children_if_any(
     if (number_of_children == 0) {
         return leaf_data.has_value()
                    ? make_node(0, {}, path, leaf_data.value(), {}, version)
-                   : Node::UniquePtr{};
+                   : Node::SharedPtr{};
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
@@ -559,7 +559,7 @@ void create_node_compute_data_possibly_async(
             }
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                    Node::UniquePtr read_node) mutable {
+                    Node::SharedPtr read_node) mutable {
                     auto *parent = tnode->parent;
                     MONAD_DEBUG_ASSERT(parent);
                     auto &entry = parent->children[tnode->child_index()];
@@ -788,7 +788,7 @@ void upsert_(
              prefix_index = prefix_index,
              sm = sm.clone(),
              parent = &parent,
-             updates = std::move(updates)](Node::UniquePtr read_node) mutable {
+             updates = std::move(updates)](Node::SharedPtr read_node) mutable {
                 // continue recurse down the trie starting from `old`
                 upsert_(
                     *aux,
@@ -1097,7 +1097,7 @@ void expire_(
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
         node_receiver_t recv{
             [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                Node::UniquePtr read_node) mutable {
+                Node::SharedPtr read_node) mutable {
                 tnode->update_after_async_read(std::move(read_node));
                 auto *parent = tnode->parent;
                 MONAD_ASSERT(parent);
@@ -1247,7 +1247,7 @@ void compact_(
              node_offset,
              aux = &aux,
              sm = sm.clone(),
-             tnode = std::move(tnode)](Node::UniquePtr read_node) mutable {
+             tnode = std::move(tnode)](Node::SharedPtr read_node) mutable {
                 tnode->update_after_async_read(std::move(read_node));
                 auto *parent = tnode->parent;
                 compact_(

@@ -87,7 +87,7 @@ namespace detail
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
-                Node::UniquePtr next_node_ondisk =
+                auto next_node_ondisk =
                     read_node_blocking(aux, node.fnext(idx), version);
                 if (!next_node_ondisk || !preorder_traverse_blocking_impl(
                                              aux,

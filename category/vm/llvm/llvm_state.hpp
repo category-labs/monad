@@ -172,7 +172,7 @@ namespace monad::vm::llvm
         void insert_symbol(std::string const &nm, void const *f)
         {
             JITTargetAddress const jit_addr = pointerToJITTargetAddress(f);
-            auto esd = ExecutorSymbolDef(
+            auto const esd = ExecutorSymbolDef(
                 ExecutorAddr(jit_addr), JITSymbolFlags::Callable);
             opcode_syms.insert({mangle(nm), esd});
         }
@@ -439,8 +439,8 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys,
             bool is_external)
         {
-            auto linkage = is_external ? Function::ExternalLinkage
-                                       : Function::InternalLinkage;
+            auto const linkage = is_external ? Function::ExternalLinkage
+                                             : Function::InternalLinkage;
             auto *fty = FunctionType::get(ty, tys, false);
             return Function::Create(fty, linkage, nm, m);
         }
@@ -449,7 +449,7 @@ namespace monad::vm::llvm
         function_definition_params(Function *f, std::vector<Type *> const &tys)
         {
             std::vector<Value *> params;
-            auto args = f->args();
+            auto const args = f->args();
             auto *arg_iter = args.begin();
 
             for (size_t i = 0; i < tys.size(); ++i) {
@@ -465,7 +465,7 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys)
         {
             Function *f = declare_function(nm, ty, tys, false);
-            auto params = function_definition_params(f, tys);
+            auto const params = function_definition_params(f, tys);
 
             return std::make_tuple(f, params);
         }
@@ -475,7 +475,7 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys)
         {
             Function *f = declare_function(nm, ty, tys, true);
-            auto params = function_definition_params(f, tys);
+            auto const params = function_definition_params(f, tys);
             return std::make_tuple(f, params);
         }
 

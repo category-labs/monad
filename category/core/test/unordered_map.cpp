@@ -126,21 +126,21 @@ TEST(UnorderedSets, DISABLED_quick_comparative_benchmark)
             using cont = typename decltype(tag2)::type;
             std::cout << "   Testing " << desc2 << " with " << desc << " ... "
                       << std::flush;
-            auto begin = std::chrono::steady_clock::now();
+            auto const begin = std::chrono::steady_clock::now();
             {
                 cont c;
-                for (auto i : values) {
+                for (auto const i : values) {
                     c.insert(i);
                 }
                 for (size_t n = 0; n < 10; n++) {
-                    for (auto i : values) {
-                        auto volatile it = c.find(i);
+                    for (auto const i : values) {
+                        auto const volatile it = c.find(i);
                         (void)it;
                     }
                 }
             }
-            auto end = std::chrono::steady_clock::now();
-            auto diff =
+            auto const end = std::chrono::steady_clock::now();
+            auto const diff =
                 static_cast<double>(
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         end - begin)

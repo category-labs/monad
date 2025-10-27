@@ -51,7 +51,7 @@ namespace monad::vm::llvm
         evmc_revision rev, evmc::bytes32 const &code_hash, uint8_t const *code,
         size_t code_size)
     {
-        auto item = cached_llvm_code_[rev].find(code_hash);
+        auto const item = cached_llvm_code_[rev].find(code_hash);
         if (item != cached_llvm_code_[rev].end()) {
             return item->second;
         }
@@ -83,7 +83,7 @@ namespace monad::vm::llvm
         auto const stack_ptr = stack_allocator_.allocate();
         uint256_t *evm_stack = reinterpret_cast<uint256_t *>(stack_ptr.get());
 
-        auto llvm = cache_llvm(rev, code_hash, code, code_size);
+        auto const llvm = cache_llvm(rev, code_hash, code, code_size);
 
         monad::vm::llvm::execute(*llvm, ctx, evm_stack);
 

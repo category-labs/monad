@@ -57,7 +57,7 @@ namespace monad::vm::runtime
         ctx->env.clear_return_data();
 
         Memory::Offset offset;
-        auto size = ctx->get_memory_offset(size_word);
+        auto const size = ctx->get_memory_offset(size_word);
 
         if (*size > 0) {
             offset = ctx->get_memory_offset(offset_word);
@@ -70,10 +70,10 @@ namespace monad::vm::runtime
             }
         }
 
-        auto min_words = shr_ceil<5>(size);
-        auto word_cost = (kind == EVMC_CREATE2)
-                             ? create2_code_word_cost(traits::evm_rev())
-                             : create_code_word_cost(traits::evm_rev());
+        auto const min_words = shr_ceil<5>(size);
+        auto const word_cost = (kind == EVMC_CREATE2)
+                                   ? create2_code_word_cost(traits::evm_rev())
+                                   : create_code_word_cost(traits::evm_rev());
 
         ctx->deduct_gas(min_words * word_cost);
 
@@ -86,7 +86,7 @@ namespace monad::vm::runtime
             gas = gas - (gas / 64);
         }
 
-        auto message = evmc_message{
+        auto const message = evmc_message{
             .kind = kind,
             .flags = 0,
             .depth = ctx->env.depth + 1,
@@ -102,7 +102,7 @@ namespace monad::vm::runtime
             .code_size = 0,
         };
 
-        auto result = ctx->host->call(ctx->context, &message);
+        auto const result = ctx->host->call(ctx->context, &message);
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

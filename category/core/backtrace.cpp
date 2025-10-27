@@ -142,7 +142,7 @@ struct stack_backtrace_impl final : public stack_backtrace
             // NOTE: sprintf may call malloc, and is not guaranteed async
             // signal safe. Chances are very good it will be async signal
             // safe for how we're using it here.
-            auto written = std::min(
+            auto const written = std::min(
                 size_t(::vsnprintf(buffer, sizeof(buffer), fmt, args)),
                 sizeof(buffer));
             if (-1 == ::write(fd, buffer, written)) {

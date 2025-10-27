@@ -131,9 +131,9 @@ namespace monad::vm::runtime
     exp(Context *ctx, uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *exponent_ptr) noexcept
     {
-        auto exponent_byte_size = count_significant_bytes(*exponent_ptr);
+        auto const exponent_byte_size = count_significant_bytes(*exponent_ptr);
 
-        auto exponent_cost = exp_dynamic_gas_cost_multiplier<traits>();
+        auto const exponent_cost = exp_dynamic_gas_cost_multiplier<traits>();
 
         ctx->deduct_gas(exponent_byte_size * exponent_cost);
 

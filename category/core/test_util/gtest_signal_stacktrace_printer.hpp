@@ -73,7 +73,7 @@ namespace monad::test
 
             auto const *old_signal_handler = [&] {
                 using handler_t = struct sigaction const *;
-                auto it = signal_handlers.find(signo);
+                auto const it = signal_handlers.find(signo);
                 if (it == signal_handlers.end()) {
                     return handler_t{nullptr};
                 }
@@ -87,7 +87,7 @@ namespace monad::test
                 // NOTE: sprintf may call malloc, and is not guaranteed async
                 // signal safe. Chances are very good it will be async signal
                 // safe for how we're using it here.
-                auto written = std::min(
+                auto const written = std::min(
                     size_t(::vsnprintf(buffer, 1024, fmt, args)), size_t(1024));
                 if (-1 == ::write(2, buffer, written)) {
                     abort();

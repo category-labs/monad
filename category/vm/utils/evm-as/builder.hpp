@@ -140,20 +140,20 @@ namespace monad::vm::utils::evm_as
                 n = 1;
                 i = 0;
             }
-            auto pushop =
+            auto const pushop =
                 PushI{static_cast<compiler::EvmOpCode>(0x60 + (n - 1)), i};
             return insert(std::move(pushop));
         }
 
         EvmBuilder &push(std::string const &label) noexcept
         {
-            auto pushop = PushLabelI{label};
+            auto const pushop = PushLabelI{label};
             return insert(std::move(pushop));
         }
 
         EvmBuilder &jumpdest(std::string const &label) noexcept
         {
-            auto jumpdestop = JumpdestI{label};
+            auto const jumpdestop = JumpdestI{label};
             return insert(std::move(jumpdestop));
         }
 

@@ -225,9 +225,9 @@ namespace monad::vm::runtime
     constexpr inline div_result<uint64_t>
     div_constexpr(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
-        auto u = (static_cast<uint128_t>(u_hi) << 64) | u_lo;
-        auto quot = static_cast<uint64_t>(u / v);
-        auto rem = static_cast<uint64_t>(u % v);
+        auto const u = (static_cast<uint128_t>(u_hi) << 64) | u_lo;
+        auto const quot = static_cast<uint64_t>(u / v);
+        auto const rem = static_cast<uint64_t>(u % v);
         return {.quot = quot, .rem = rem};
     }
 
@@ -307,10 +307,10 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         inline constexpr explicit operator bool() const noexcept
         {
-            auto w0 = force(words_[0]);
-            auto w1 = force(words_[1]);
-            auto w2 = force(words_[2]);
-            auto w3 = force(words_[3]);
+            auto const w0 = force(words_[0]);
+            auto const w1 = force(words_[1]);
+            auto const w2 = force(words_[2]);
+            auto const w3 = force(words_[3]);
             return force(w0 | w1) | force(w2 | w3);
         }
 
@@ -453,10 +453,10 @@ namespace monad::vm::runtime
         [[gnu::always_inline]] friend inline constexpr bool
         operator==(uint256_t const &x, uint256_t const &y) noexcept
         {
-            auto e0 = force(x[0] ^ y[0]);
-            auto e1 = force(x[1] ^ y[1]);
-            auto e2 = force(x[2] ^ y[2]);
-            auto e3 = force(x[3] ^ y[3]);
+            auto const e0 = force(x[0] ^ y[0]);
+            auto const e1 = force(x[1] ^ y[1]);
+            auto const e2 = force(x[2] ^ y[2]);
+            auto const e3 = force(x[3] ^ y[3]);
             return !(force(e0 | e1) | force(e2 | e3));
         }
 
@@ -1050,7 +1050,7 @@ namespace monad::vm::runtime
         auto r = div(0, u[m - 1], v);
         quot[m - 1] = r.quot;
         for (int i = static_cast<int>(m - 2); i >= 0; i--) {
-            auto ix = static_cast<size_t>(i);
+            auto const ix = static_cast<size_t>(i);
             r = div(r.rem, u[ix], v);
             quot[ix] = r.quot;
         }
@@ -1067,7 +1067,7 @@ namespace monad::vm::runtime
         MONAD_VM_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
 
         for (int i = static_cast<int>(m - n); i >= 0; i--) {
-            auto ix = static_cast<size_t>(i);
+            auto const ix = static_cast<size_t>(i);
             uint128_t q_hat;
             // We diverge from the algorithms in Knuth AOCP and Hacker's Delight
             // as we need to check for potential division overflow before
@@ -1226,7 +1226,7 @@ namespace monad::vm::runtime
     [[gnu::always_inline]] constexpr inline div_result<uint256_t>
     udivrem(uint256_t const &u, uint256_t const &v) noexcept
     {
-        auto r = udivrem(u.as_words(), v.as_words());
+        auto const r = udivrem(u.as_words(), v.as_words());
         return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
     }
 
@@ -1303,7 +1303,7 @@ namespace monad::vm::runtime
 
         auto const quot_neg = x_neg ^ y_neg;
 
-        auto result = udivrem(x_abs, y_abs);
+        auto const result = udivrem(x_abs, y_abs);
 
         return {
             uint256_t{quot_neg ? -result.quot : result.quot},

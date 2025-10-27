@@ -33,14 +33,14 @@ namespace monad::vm::runtime
         auto key = bytes32_from_uint256(*key_ptr);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status = ctx->host->access_storage(
+            auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
         }
 
-        auto value =
+        auto const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
 
         *result_ptr = uint256_from_bytes32(value);
@@ -74,7 +74,7 @@ namespace monad::vm::runtime
                 ctx->context, &ctx->env.recipient, &key);
         }
 
-        auto storage_status = ctx->host->set_storage(
+        auto const storage_status = ctx->host->set_storage(
             ctx->context, &ctx->env.recipient, &key, &value);
 
         auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
@@ -100,7 +100,7 @@ namespace monad::vm::runtime
     {
         auto key = bytes32_from_uint256(*key_ptr);
 
-        auto value = ctx->host->get_transient_storage(
+        auto const value = ctx->host->get_transient_storage(
             ctx->context, &ctx->env.recipient, &key);
 
         *result_ptr = uint256_from_bytes32(value);

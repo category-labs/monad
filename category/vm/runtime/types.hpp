@@ -210,7 +210,7 @@ namespace monad::vm::runtime
         static constexpr int64_t
         memory_cost_from_word_count(Bin<32> const word_count) noexcept
         {
-            auto c = static_cast<uint64_t>(*word_count);
+            auto const c = static_cast<uint64_t>(*word_count);
             return static_cast<int64_t>((c * c) / 512 + (3 * c));
         }
 
@@ -219,7 +219,7 @@ namespace monad::vm::runtime
         void expand_memory(Bin<30> min_size)
         {
             if (memory.size < *min_size) {
-                auto wsize = shr_ceil<5>(min_size);
+                auto const wsize = shr_ceil<5>(min_size);
                 std::int64_t const new_cost =
                     memory_cost_from_word_count(wsize);
                 Bin<31> const new_size = shl<5>(wsize);

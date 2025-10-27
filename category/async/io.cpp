@@ -27,6 +27,8 @@
 #include <category/core/tl_tid.h>
 #include <category/core/unordered_map.hpp>
 
+#include <boost/container/small_vector.hpp>
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -720,10 +722,12 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         result<size_t> res{success(0)};
     };
 
-    std::vector<completion_t> completions;
+    constexpr size_t COMPLETIONS_STACK_CAPACITY = 64;
+    boost::container::small_vector<completion_t, COMPLETIONS_STACK_CAPACITY>
+        completions;
     completions.reserve(
-        2 + io_uring_sq_ready(other_ring) +
-        ((wr_ring != nullptr) ? io_uring_sq_ready(wr_ring) : 0));
+        2 + io_uring_cq_ready(other_ring) +
+        ((wr_ring != nullptr) ? io_uring_cq_ready(wr_ring) : 0));
     for (;;) {
         ring = nullptr;
         state = nullptr;

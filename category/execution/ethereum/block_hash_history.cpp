@@ -26,7 +26,7 @@
 
 #include <cstdint>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 constexpr uint8_t BLOCK_HISTORY_CODE[] = {
     0x33, 0x73, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -37,17 +37,24 @@ constexpr uint8_t BLOCK_HISTORY_CODE[] = {
     0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3, 0x5b, 0x5f, 0x5f, 0xfd, 0x5b, 0x5f,
     0x35, 0x61, 0x1f, 0xff, 0x60, 0x01, 0x43, 0x03, 0x06, 0x55, 0x00};
 
+constexpr auto BLOCK_HISTORY_CODE_HASH{
+    0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d_bytes32};
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
 void deploy_block_hash_history_contract(State &state)
 {
     if (MONAD_LIKELY(state.account_exists(BLOCK_HISTORY_ADDRESS))) {
         return;
     }
 
-    bytes32_t const code_hash = to_bytes(keccak256(BLOCK_HISTORY_CODE));
-
     state.create_contract(BLOCK_HISTORY_ADDRESS);
-    state.set_code_hash(BLOCK_HISTORY_ADDRESS, code_hash);
-    state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
+    state.set_code(
+        BLOCK_HISTORY_ADDRESS, to_byte_string_view(BLOCK_HISTORY_CODE));
+    MONAD_ASSERT(
+        state.get_code_hash(BLOCK_HISTORY_ADDRESS) == BLOCK_HISTORY_CODE_HASH);
     state.set_nonce(BLOCK_HISTORY_ADDRESS, 1);
 }
 

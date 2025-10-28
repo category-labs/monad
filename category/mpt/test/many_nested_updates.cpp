@@ -82,7 +82,9 @@ inline monad::byte_string const &to_byte_string(std::string_view s)
     std::string key(s);
     auto it = storage.find(key);
     if (it == storage.end()) {
-        it = storage.emplace(std::move(key), monad::from_hex(s)).first;
+        auto const res = evmc::from_hex(s);
+        MONAD_ASSERT(res.has_value());
+        it = storage.emplace(std::move(key), std::move(res.value())).first;
     }
     return it->second;
 }

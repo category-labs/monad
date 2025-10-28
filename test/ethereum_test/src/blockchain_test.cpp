@@ -274,7 +274,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
 {
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block.to_input_view()));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
@@ -312,7 +312,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
         receipts,
         execute_block<traits>(
             chain,
-            block,
+            block.to_input_view(),
             senders,
             recovered_authorities,
             block_state,
@@ -340,7 +340,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, exec_output.eth_header));
+        validate_output_header(block.header, exec_output.eth_header));
 
     return exec_output;
 }

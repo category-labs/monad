@@ -31,7 +31,7 @@ class ExecuteSystemTransaction
     uint64_t i_;
     Transaction const &tx_;
     Address const &sender_;
-    BlockHeader const &header_;
+    ExecutionInputs const &execution_inputs_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
@@ -40,7 +40,7 @@ class ExecuteSystemTransaction
 public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
-        BlockHeader const &, BlockState &, BlockMetrics &,
+        ExecutionInputs const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &);
 
     Result<Receipt> operator()();

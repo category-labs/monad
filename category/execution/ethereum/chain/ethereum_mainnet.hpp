@@ -42,10 +42,7 @@ struct EthereumMainnet : Chain
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual Result<void>
-    static_validate_header(BlockHeader const &) const override;
-
-    virtual Result<void> validate_output_header(
-        BlockHeader const &input, BlockHeader const &output) const override;
+    static_validate_header(ExecutionInputs const &) const override;
 
     virtual GenesisState get_genesis_state() const override;
 

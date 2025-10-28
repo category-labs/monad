@@ -78,13 +78,13 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, uint64_t const i,
+    ExecutionInputs const &execution_inputs, uint64_t const i,
     RevertTransactionFn const &revert_transaction)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , authorities_{authorities}
-    , header_{header}
+    , execution_inputs_{execution_inputs}
     , i_{i}
     , revert_transaction_{revert_transaction}
 {
@@ -93,8 +93,8 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &header)
-    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header, 0}
+    ExecutionInputs const &execution_inputs)
+    : ExecuteTransactionNoValidation{chain, tx, sender, {}, execution_inputs, 0}
 {
 }
 
@@ -231,8 +231,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         state,
         tx_,
         sender_,
-        header_.base_fee_per_gas.value_or(0),
-        header_.excess_blob_gas.value_or(0));
+        execution_inputs_.base_fee_per_gas.value_or(0),
+        execution_inputs_.excess_blob_gas.value_or(0));
 
     // EIP-7702
     uint64_t auth_refund = 0u;
@@ -247,7 +247,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     // EIP-3651
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
-        host.access_account(header_.beneficiary);
+        host.access_account(execution_inputs_.beneficiary);
     }
 
     state.access_account(sender_);
@@ -295,13 +295,13 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
+    ExecutionInputs const &execution_inputs,
+    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header, i, revert_transaction}
+          traits>{chain, tx, sender, authorities, execution_inputs, i, revert_transaction}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
@@ -316,12 +316,12 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
     auto const validate_lambda = [this, &state] {
         auto result = chain_.validate_transaction(
-            header_.number,
-            header_.timestamp,
+            execution_inputs_.number,
+            execution_inputs_.timestamp,
             tx_,
             sender_,
             state,
-            header_.base_fee_per_gas.value_or(0),
+            execution_inputs_.base_fee_per_gas.value_or(0),
             authorities_);
         if (!result) {
             // RELAXED MERGE
@@ -333,8 +333,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     };
     BOOST_OUTCOME_TRY(validate_lambda());
 
-    auto const tx_context =
-        get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
+    auto const tx_context = get_tx_context<traits>(
+        tx_, sender_, execution_inputs_, chain_.get_chain_id());
     EvmcHost<traits> host{
         call_tracer_, tx_context, block_hash_buffer_, state, [this, &state] {
             return revert_transaction_(sender_, tx_, i_, state);
@@ -357,8 +357,8 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const refund_gas_cost =
-        refund_gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+    auto const refund_gas_cost = refund_gas_price<traits>(
+        tx_, execution_inputs_.base_fee_per_gas.value_or(0));
     state.add_to_balance(sender_, refund_gas_cost * gas_refund);
 
     auto gas_used = tx_.gas_limit;
@@ -375,8 +375,8 @@ Receipt ExecuteTransaction<traits>::execute_final(
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
-            auto const gas_cost =
-                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+            auto const gas_cost = gas_price<traits>(
+                tx_, execution_inputs_.base_fee_per_gas.value_or(0));
             state.subtract_from_balance(sender_, gas_cost * delta);
 
             gas_used = floor_gas;
@@ -384,8 +384,8 @@ Receipt ExecuteTransaction<traits>::execute_final(
     }
 
     auto const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    state.add_to_balance(header_.beneficiary, reward);
+        tx_, execution_inputs_.base_fee_per_gas.value_or(0), gas_used);
+    state.add_to_balance(execution_inputs_.beneficiary, reward);
 
     // finalize state, Eqn. 77-79
     state.destruct_suicides<traits>();
@@ -409,16 +409,18 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
-    BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-        tx_,
-        header_.base_fee_per_gas,
-        header_.excess_blob_gas,
-        chain_.get_chain_id()));
+    BOOST_OUTCOME_TRY(
+        static_validate_transaction<traits>(
+            tx_,
+            execution_inputs_.base_fee_per_gas,
+            execution_inputs_.excess_blob_gas,
+            chain_.get_chain_id()));
 
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_, Incarnation{execution_inputs_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -445,7 +447,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_, Incarnation{execution_inputs_.number, i_ + 1}};
 
         call_tracer_.reset();
 

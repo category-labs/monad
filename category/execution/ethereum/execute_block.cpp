@@ -87,14 +87,14 @@ void transfer_balance_dao(State &state)
 }
 
 // EIP-4788
-void set_beacon_root(State &state, BlockHeader const &header)
+void set_beacon_root(State &state, ExecutionInputs const &inputs)
 {
     constexpr auto BEACON_ROOTS_ADDRESS{
         0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{header.timestamp};
+        uint256_t timestamp{inputs.timestamp};
         bytes32_t k1{
             to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
         bytes32_t k2{to_bytes(to_big_endian(
@@ -102,7 +102,7 @@ void set_beacon_root(State &state, BlockHeader const &header)
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
         state.set_storage(
-            BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
+            BEACON_ROOTS_ADDRESS, k2, inputs.parent_beacon_block_root.value());
     }
 }
 
@@ -177,22 +177,22 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 
 template <Traits traits>
 void execute_block_header(
-    Chain const &chain, BlockState &block_state, BlockHeader const &header)
+    Chain const &chain, BlockState &block_state, ExecutionInputs const &inputs)
 {
-    State state{block_state, Incarnation{header.number, 0}};
+    State state{block_state, Incarnation{inputs.number, 0}};
 
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         deploy_block_hash_history_contract(state);
-        set_block_hash_history(state, header);
+        set_block_hash_history(state, inputs);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-        set_beacon_root(state, header);
+        set_beacon_root(state, inputs);
     }
 
     // Ethereum mainnet dao fork
     if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
-        if (MONAD_UNLIKELY(header.number == dao::dao_block_number)) {
+        if (MONAD_UNLIKELY(inputs.number == dao::dao_block_number)) {
             if (chain.get_chain_id() == 1) {
                 transfer_balance_dao(state);
             }
@@ -212,7 +212,7 @@ EXPLICIT_TRAITS(execute_block_header);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
-    Chain const &chain, BlockHeader const &header,
+    Chain const &chain, ExecutionInputs const &execution_inputs,
     std::vector<Transaction> const &transactions,
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
@@ -246,7 +246,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &transaction = transactions[i],
              &sender = senders[i],
              &authorities = authorities[i],
-             &header = header,
+             &execution_inputs = execution_inputs,
              &block_hash_buffer = block_hash_buffer,
              &block_state,
              &block_metrics,
@@ -262,7 +262,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         transaction,
                         sender,
                         authorities,
-                        header,
+                        execution_inputs,
                         block_hash_buffer,
                         block_state,
                         block_metrics,
@@ -330,7 +330,8 @@ EXPLICIT_TRAITS(execute_block_transactions);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, Block const &block, std::vector<Address> const &senders,
+    Chain const &chain, InputBlockView const block,
+    std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
@@ -344,13 +345,13 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    execute_block_header<traits>(chain, block_state, block.header);
+    execute_block_header<traits>(chain, block_state, block.execution_inputs);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,
         execute_block_transactions<traits>(
             chain,
-            block.header,
+            block.execution_inputs,
             block.transactions,
             senders,
             authorities,
@@ -363,7 +364,8 @@ Result<std::vector<Receipt>> execute_block(
             revert_transaction));
 
     State state{
-        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+        block_state,
+        Incarnation{block.execution_inputs.number, Incarnation::LAST_TX}};
 
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);

@@ -29,7 +29,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
-struct BlockHeader;
+struct ExecutionInputs;
 struct Receipt;
 struct Transaction;
 
@@ -42,10 +42,7 @@ struct Chain
     virtual evmc_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
 
-    virtual Result<void> static_validate_header(BlockHeader const &) const;
-
-    virtual Result<void> validate_output_header(
-        BlockHeader const &input, BlockHeader const &output) const = 0;
+    virtual Result<void> static_validate_header(ExecutionInputs const &) const;
 
     virtual GenesisState get_genesis_state() const = 0;
 

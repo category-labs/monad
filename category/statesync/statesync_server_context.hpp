@@ -129,7 +129,7 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual void commit(
         monad::StateDeltas const &state_deltas, monad::Code const &code,
-        monad::bytes32_t const &block_id, monad::BlockHeader const &,
+        monad::bytes32_t const &block_id, monad::ExecutionInputs const &,
         std::vector<monad::Receipt> const &receipts = {},
         std::vector<std::vector<monad::CallFrame>> const & = {},
         std::vector<monad::Address> const & = {},

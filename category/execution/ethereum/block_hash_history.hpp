@@ -22,7 +22,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct BlockHeader;
+struct ExecutionInputs;
 class State;
 
 constexpr Address BLOCK_HISTORY_ADDRESS{
@@ -32,7 +32,7 @@ constexpr uint64_t BLOCK_HISTORY_LENGTH{8191};
 
 void deploy_block_hash_history_contract(State &);
 
-void set_block_hash_history(State &, BlockHeader const &);
+void set_block_hash_history(State &, ExecutionInputs const &);
 
 bytes32_t get_block_hash_history(State &, uint64_t block_number);
 

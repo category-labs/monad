@@ -30,7 +30,6 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/execution/monad/chain/monad_testnet2.hpp>
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -124,29 +123,6 @@ TYPED_TEST(TraitsTest, Genesis)
             hash,
             0x0c47353304f22b1c15706367d739b850cda80b5c87bbc335014fef3d88deaac9_bytes32);
 
-        auto result =
-            static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() == EVMC_CANCUN) {
-            EXPECT_TRUE(result.has_value());
-        }
-        else {
-            // the header generated at the time was only valid in the Cancun
-            // revision
-            EXPECT_TRUE(result.has_error());
-        }
-    }
-    {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
-        TrieDb tdb{db};
-        MonadTestnet2 const chain;
-        load_genesis_state(chain.get_genesis_state(), tdb);
-        BlockHeader const header = tdb.read_eth_header();
-        bytes32_t const hash =
-            to_bytes(keccak256(rlp::encode_block_header(header)));
-        EXPECT_EQ(
-            hash,
-            0x2a2544bf6d096df891903c8fa14e9914009e6bc9d448399585961a3044e03e50_bytes32);
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
         if constexpr (TestFixture::Trait::evm_rev() == EVMC_CANCUN) {

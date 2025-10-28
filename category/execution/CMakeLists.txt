@@ -197,9 +197,6 @@ add_library(
   "monad/chain/monad_testnet.cpp"
   "monad/chain/monad_testnet.hpp"
   "monad/chain/monad_testnet_alloc.hpp"
-  "monad/chain/monad_testnet2.cpp"
-  "monad/chain/monad_testnet2.hpp"
-  "monad/chain/monad_testnet2_alloc.hpp"
   # monad/core
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"

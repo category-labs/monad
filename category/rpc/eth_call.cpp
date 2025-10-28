@@ -42,7 +42,6 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/execution/monad/chain/monad_testnet2.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
@@ -663,8 +662,6 @@ struct monad_eth_call_executor
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
                             return std::make_unique<MonadMainnet>();
-                        case CHAIN_CONFIG_MONAD_TESTNET2:
-                            return std::make_unique<MonadTestnet2>();
                         }
                         MONAD_ASSERT(false);
                     }();

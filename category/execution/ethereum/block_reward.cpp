@@ -66,10 +66,10 @@ constexpr uint256_t calculate_block_reward(
 }
 
 constexpr uint256_t const calculate_ommer_reward(
-    uint256_t const &reward, uint64_t const header_number,
+    uint256_t const &reward, uint64_t header_number,
     uint64_t const ommer_number)
 {
-    auto const subtrahend = ((header_number - ommer_number) * reward) / 8;
+    auto subtrahend = ((header_number - ommer_number) * reward) / 8;
     return reward - subtrahend;
 }
 

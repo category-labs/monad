@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -23,19 +24,18 @@
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <evmc/evmc.h>
+#include <evmc/hex.hpp>
 
 #include <cstdint>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-constexpr uint8_t BLOCK_HISTORY_CODE[] = {
-    0x33, 0x73, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x14, 0x60,
-    0x46, 0x57, 0x60, 0x20, 0x36, 0x03, 0x60, 0x42, 0x57, 0x5f, 0x35, 0x60,
-    0x01, 0x43, 0x03, 0x81, 0x11, 0x60, 0x42, 0x57, 0x61, 0x1f, 0xff, 0x81,
-    0x43, 0x03, 0x11, 0x60, 0x42, 0x57, 0x61, 0x1f, 0xff, 0x90, 0x06, 0x54,
-    0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3, 0x5b, 0x5f, 0x5f, 0xfd, 0x5b, 0x5f,
-    0x35, 0x61, 0x1f, 0xff, 0x60, 0x01, 0x43, 0x03, 0x06, 0x55, 0x00};
+byte_string const BLOCK_HISTORY_CODE =
+    evmc::from_hex(
+        "0x3373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f"
+        "35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5f"
+        "fd5b5f35611fff60014303065500")
+        .value();
 
 constexpr auto BLOCK_HISTORY_CODE_HASH{
     0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d_bytes32};
@@ -51,8 +51,7 @@ void deploy_block_hash_history_contract(State &state)
     }
 
     state.create_contract(BLOCK_HISTORY_ADDRESS);
-    state.set_code(
-        BLOCK_HISTORY_ADDRESS, to_byte_string_view(BLOCK_HISTORY_CODE));
+    state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
     MONAD_ASSERT(
         state.get_code_hash(BLOCK_HISTORY_ADDRESS) == BLOCK_HISTORY_CODE_HASH);
     state.set_nonce(BLOCK_HISTORY_ADDRESS, 1);

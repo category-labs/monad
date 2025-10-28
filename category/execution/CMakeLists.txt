@@ -30,14 +30,16 @@ project(monad_execution)
 add_library(
   monad_execution_ethereum OBJECT
   # ethereum/chain
-  "ethereum/chain/chain_config.h"
   "ethereum/chain/chain.cpp"
   "ethereum/chain/chain.hpp"
+  "ethereum/chain/chain_config.h"
   "ethereum/chain/ethereum_mainnet.cpp"
   "ethereum/chain/ethereum_mainnet.hpp"
   "ethereum/chain/ethereum_mainnet_alloc.hpp"
   "ethereum/chain/genesis_state.cpp"
   "ethereum/chain/genesis_state.hpp"
+  "ethereum/chain/patch_output_header.cpp"
+  "ethereum/chain/patch_output_header.hpp"
   # ethereum/core
   "ethereum/core/account.hpp"
   "ethereum/core/address.hpp"

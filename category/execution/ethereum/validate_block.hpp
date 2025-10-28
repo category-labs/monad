@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -58,20 +59,20 @@ enum class BlockError
     WrongMerkleRoot
 };
 
-struct Block;
-struct BlockHeader;
-
 Receipt::Bloom compute_bloom(std::vector<Receipt> const &);
 
 bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
 
 template <Traits traits>
-Result<void> static_validate_header(BlockHeader const &);
+Result<void> static_validate_header(BlockHeaderInputs const &);
 
 template <Traits traits>
-Result<void> static_validate_block(Block const &);
+Result<void> static_validate_block(InputBlock);
 
-Result<void> static_validate_block(evmc_revision, Block const &);
+Result<void> static_validate_block(evmc_revision, InputBlock);
+
+Result<void>
+validate_output_header(BlockHeader const &input, BlockHeader const &output);
 
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output);

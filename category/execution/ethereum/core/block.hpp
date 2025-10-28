@@ -29,27 +29,19 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct BlockHeader
+struct BlockHeaderInputs
 {
-    Receipt::Bloom logs_bloom{}; // H_b
     bytes32_t parent_hash{}; // H_p
     bytes32_t ommers_hash{NULL_LIST_HASH}; // H_o
-    bytes32_t state_root{NULL_ROOT}; // H_r
+    Address beneficiary{}; // H_c
     bytes32_t transactions_root{NULL_ROOT}; // H_t
-    bytes32_t receipts_root{NULL_ROOT}; // H_e
-    bytes32_t prev_randao{}; // H_a
     uint256_t difficulty{}; // H_d
-
     uint64_t number{0}; // H_i
     uint64_t gas_limit{0}; // H_l
-    uint64_t gas_used{0}; // H_g
     uint64_t timestamp{0}; // H_s
-
-    byte_string_fixed<8> nonce{}; // H_n
     byte_string extra_data{}; // H_x
-
-    Address beneficiary{}; // H_c
-
+    bytes32_t prev_randao{}; // H_a
+    byte_string_fixed<8> nonce{}; // H_n
     std::optional<uint256_t> base_fee_per_gas{std::nullopt}; // H_f
     std::optional<bytes32_t> withdrawals_root{std::nullopt}; // H_w
     std::optional<uint64_t> blob_gas_used{std::nullopt}; // EIP-4844
@@ -57,7 +49,25 @@ struct BlockHeader
     std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788
     std::optional<bytes32_t> requests_hash{std::nullopt}; // EIP-7685
 
+    friend bool
+    operator==(BlockHeaderInputs const &, BlockHeaderInputs const &) = default;
+};
+
+struct BlockHeader : public BlockHeaderInputs
+{
+    Receipt::Bloom logs_bloom{}; // H_b
+    bytes32_t state_root{NULL_ROOT}; // H_r
+    bytes32_t receipts_root{NULL_ROOT}; // H_e
+    uint64_t gas_used{0}; // H_g
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
+};
+
+struct InputBlock
+{
+    BlockHeaderInputs const &header_inputs;
+    std::vector<Transaction> const &transactions;
+    std::vector<BlockHeader> const &ommers;
+    std::optional<std::vector<Withdrawal>> const &withdrawals;
 };
 
 struct Block
@@ -68,6 +78,15 @@ struct Block
     std::optional<std::vector<Withdrawal>> withdrawals{std::nullopt};
 
     friend bool operator==(Block const &, Block const &) = default;
+
+    InputBlock to_view() const noexcept
+    {
+        return InputBlock{
+            .header_inputs = static_cast<BlockHeaderInputs const &>(header),
+            .transactions = transactions,
+            .ommers = ommers,
+            .withdrawals = withdrawals};
+    }
 };
 
 static_assert(sizeof(BlockHeader) == 760);

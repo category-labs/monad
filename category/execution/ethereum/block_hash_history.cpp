@@ -77,7 +77,7 @@ void deploy_block_hash_history_contract(State &state)
 EXPLICIT_TRAITS(deploy_block_hash_history_contract);
 
 template <Traits traits>
-void set_block_hash_history(State &state, BlockHeader const &header)
+void set_block_hash_history(State &state, BlockHeaderInputs const &inputs)
 {
     if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
         return;
@@ -90,15 +90,15 @@ void set_block_hash_history(State &state, BlockHeader const &header)
         }
     }
 
-    if (MONAD_UNLIKELY(!header.number)) {
+    if (MONAD_UNLIKELY(!inputs.number)) {
         return;
     }
 
     if (MONAD_LIKELY(state.account_exists(BLOCK_HISTORY_ADDRESS))) {
-        uint64_t const parent_number = header.number - 1;
+        uint64_t const parent_number = inputs.number - 1;
         uint256_t const index{parent_number % BLOCK_HISTORY_LENGTH};
         bytes32_t const key{to_bytes(to_big_endian(index))};
-        state.set_storage(BLOCK_HISTORY_ADDRESS, key, header.parent_hash);
+        state.set_storage(BLOCK_HISTORY_ADDRESS, key, inputs.parent_hash);
     }
 }
 

@@ -59,13 +59,14 @@ public:
     void merge(State const &);
 
     void commit(
-        bytes32_t const &block_id, BlockHeader const &,
+        bytes32_t const &block_id, BlockHeaderInputs const &,
         std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = {});
+        std::optional<std::vector<Withdrawal>> const & = {},
+        OutputHeaderPatchFn = {});
 
     void log_debug();
 };

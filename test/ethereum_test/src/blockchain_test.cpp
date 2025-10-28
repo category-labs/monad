@@ -30,6 +30,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/chain/patch_output_header.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -274,7 +275,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
 {
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block.to_view()));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
@@ -312,7 +313,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
         receipts,
         execute_block<traits>(
             chain,
-            block,
+            block.to_view(),
             senders,
             recovered_authorities,
             block_state,
@@ -331,7 +332,11 @@ Result<BlockExecOutput> BlockchainTest::execute(
         senders,
         block.transactions,
         block.ommers,
-        block.withdrawals);
+        block.withdrawals,
+        [&chain = chain,
+         &input_header = block.header](BlockHeader &output_header) {
+            patch_output_header(chain, input_header, output_header);
+        });
     db.finalize(block.header.number, bytes32_t{block.header.number});
 
     BlockExecOutput exec_output;
@@ -490,7 +495,8 @@ void BlockchainTest::TestBody()
                 {} /* senders */,
                 {} /* transactions */,
                 {} /* ommers */,
-                withdrawals);
+                withdrawals,
+                {});
             tdb.finalize(0, NULL_HASH_BLAKE3);
             ASSERT_EQ(
                 to_bytes(

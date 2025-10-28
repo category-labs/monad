@@ -26,10 +26,10 @@ Result<Receipt> dispatch_transaction(
     Chain const &chain, uint64_t const i, Transaction const &transaction,
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
+    BlockHeaderInputs const &header_inputs,
+    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
+    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
 {
     if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
@@ -41,7 +41,7 @@ Result<Receipt> dispatch_transaction(
             i,
             transaction,
             sender,
-            header,
+            header_inputs,
             block_state,
             block_metrics,
             prev,
@@ -54,7 +54,7 @@ Result<Receipt> dispatch_transaction(
             transaction,
             sender,
             authorities,
-            header,
+            header_inputs,
             block_hash_buffer,
             block_state,
             block_metrics,

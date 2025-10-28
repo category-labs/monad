@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -26,6 +27,6 @@ struct Block;
 class State;
 
 template <Traits traits>
-void apply_block_reward(State &, Block const &);
+void apply_block_reward(State &, InputBlock);
 
 MONAD_NAMESPACE_END

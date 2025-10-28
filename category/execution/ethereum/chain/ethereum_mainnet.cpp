@@ -89,13 +89,13 @@ evmc_revision EthereumMainnet::get_revision(
 }
 
 Result<void>
-EthereumMainnet::static_validate_header(BlockHeader const &header) const
+EthereumMainnet::static_validate_header(BlockHeaderInputs const &inputs) const
 {
     // EIP-779
     if (MONAD_UNLIKELY(
-            header.number >= dao::dao_block_number &&
-            header.number <= dao::dao_block_number + 9 &&
-            header.extra_data != dao::extra_data)) {
+            inputs.number >= dao::dao_block_number &&
+            inputs.number <= dao::dao_block_number + 9 &&
+            inputs.extra_data != dao::extra_data)) {
         return BlockError::WrongDaoExtraData;
     }
     return success();

@@ -61,14 +61,14 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 template <Traits traits>
 ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
-    Address const &sender, BlockHeader const &header, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer)
+    Address const &sender, BlockHeaderInputs const &header_inputs,
+    BlockState &block_state, BlockMetrics &block_metrics,
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
     , sender_{sender}
-    , header_{header}
+    , header_inputs_{header_inputs}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
@@ -87,17 +87,19 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         Transaction tx = tx_;
         tx.gas_limit =
             2'000'000; // required to pass intrinsic gas validation check
-        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-            tx,
-            std::nullopt /* 0 base fee to pass validation */,
-            std::nullopt /* 0 blob fee to pass validation */,
-            chain_.get_chain_id()));
+        BOOST_OUTCOME_TRY(
+            static_validate_transaction<traits>(
+                tx,
+                std::nullopt /* 0 base fee to pass validation */,
+                std::nullopt /* 0 blob fee to pass validation */,
+                chain_.get_chain_id()));
     }
 
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_, Incarnation{header_inputs_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -127,7 +129,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_, Incarnation{header_inputs_.number, i_ + 1}};
 
         call_tracer_.reset();
 

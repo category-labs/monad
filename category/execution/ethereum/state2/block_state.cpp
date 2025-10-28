@@ -237,7 +237,7 @@ void BlockState::merge(State const &state)
 }
 
 void BlockState::commit(
-    bytes32_t const &block_id, BlockHeader const &header,
+    bytes32_t const &block_id, ExecutionInputs const &execution_inputs,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Address> const &senders,
@@ -249,7 +249,7 @@ void BlockState::commit(
         std::move(state_),
         code_,
         block_id,
-        header,
+        execution_inputs,
         receipts,
         call_frames,
         senders,

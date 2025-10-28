@@ -176,7 +176,7 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
-    bytes32_t const &block_id, BlockHeader const &header,
+    bytes32_t const &block_id, ExecutionInputs const &execution_inputs,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Address> const &senders,
@@ -184,14 +184,15 @@ void TrieDb::commit(
     std::vector<BlockHeader> const &ommers,
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
-    MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
+    MONAD_ASSERT(
+        execution_inputs.number <= std::numeric_limits<int64_t>::max());
 
     auto const parent_hash = [&]() {
-        if (MONAD_UNLIKELY(header.number == 0)) {
+        if (MONAD_UNLIKELY(execution_inputs.number == 0)) {
             return bytes32_t{};
         }
         else {
-            auto const n = header.number - 1;
+            auto const n = execution_inputs.number - 1;
             auto const res = db_.find(
                 (n == block_number_) ? curr_root_
                                      : db_.load_root_for_version(n),
@@ -207,19 +208,19 @@ void TrieDb::commit(
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
-            MONAD_ASSERT(header.number != block_number_);
+            MONAD_ASSERT(execution_inputs.number != block_number_);
             curr_root_ = db_.copy_trie(
                 curr_root_,
                 prefix_,
-                db_.load_root_for_version(header.number),
+                db_.load_root_for_version(execution_inputs.number),
                 dest_prefix,
-                header.number,
+                execution_inputs.number,
                 false);
         }
         proposal_block_id_ = block_id;
         prefix_ = dest_prefix;
     }
-    block_number_ = header.number;
+    block_number_ = execution_inputs.number;
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -427,8 +428,8 @@ void TrieDb::commit(
     curr_root_ = db_.upsert(
         std::move(curr_root_), std::move(ls), block_number_, true, true, false);
 
-    BlockHeader complete_header = header;
-    if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {
+    BlockHeader complete_header{execution_inputs}; // fixme
+    if (MONAD_LIKELY(complete_header.receipts_root == NULL_ROOT)) {
         // TODO: TrieDb does not calculate receipts root correctly before the
         // BYZANTIUM fork. However, for empty receipts our receipts root
         // calculation is correct.

@@ -330,7 +330,8 @@ EXPLICIT_TRAITS(execute_block_transactions);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, Block const &block, std::vector<Address> const &senders,
+    Chain const &chain, InputBlockView const block,
+    std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
@@ -344,13 +345,13 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    execute_block_header<traits>(chain, block_state, block.header);
+    execute_block_header<traits>(chain, block_state, block.execution_inputs);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,
         execute_block_transactions<traits>(
             chain,
-            static_cast<ExecutionInputs const &>(block.header),
+            block.execution_inputs,
             block.transactions,
             senders,
             authorities,
@@ -363,7 +364,8 @@ Result<std::vector<Receipt>> execute_block(
             revert_transaction));
 
     State state{
-        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+        block_state,
+        Incarnation{block.execution_inputs.number, Incarnation::LAST_TX}};
 
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);

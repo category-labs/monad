@@ -52,7 +52,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block const &, std::vector<Address> const &senders,
+    Chain const &, InputBlockView, std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
     BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,

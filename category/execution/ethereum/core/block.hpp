@@ -53,7 +53,6 @@ struct ExecutionInputs
 };
 
 struct BlockHeader : public ExecutionInputs
-
 {
     Receipt::Bloom logs_bloom{}; // H_b
     bytes32_t parent_hash{}; // H_p
@@ -61,6 +60,14 @@ struct BlockHeader : public ExecutionInputs
     bytes32_t receipts_root{NULL_ROOT}; // H_e
     uint64_t gas_used{0}; // H_g
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
+};
+
+struct InputBlockView
+{
+    ExecutionInputs const &execution_inputs;
+    std::vector<Transaction> const &transactions;
+    std::vector<BlockHeader> const &ommers;
+    std::optional<std::vector<Withdrawal>> const &withdrawals;
 };
 
 struct Block
@@ -71,6 +78,15 @@ struct Block
     std::optional<std::vector<Withdrawal>> withdrawals{std::nullopt};
 
     friend bool operator==(Block const &, Block const &) = default;
+
+    InputBlockView to_input_view() const noexcept
+    {
+        return InputBlockView{
+            .execution_inputs = static_cast<ExecutionInputs const &>(header),
+            .transactions = transactions,
+            .ommers = ommers,
+            .withdrawals = withdrawals};
+    }
 };
 
 static_assert(sizeof(BlockHeader) == 760);

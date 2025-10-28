@@ -114,6 +114,26 @@ bool has_executed(
     return db.find(prefix, header.seqno).has_value();
 }
 
+Result<void>
+validate_output_header(ExecutionInputs const &input, BlockHeader const &output)
+{
+    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
+        return BlockError::WrongOmmersHash;
+    }
+    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+
+    // YP eq. 56
+    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
+        return BlockError::GasAboveLimit;
+    }
+    return outcome::success();
+}
+
 bool validate_delayed_execution_results(
     BlockHashBuffer const &block_hash_buffer,
     std::vector<BlockHeader> const &execution_results)
@@ -150,9 +170,10 @@ bool validate_delayed_execution_results(
 template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
-    MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
-    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
+    MonadConsensusBlockHeader const &consensus_header,
+    InputBlockView const block, BlockHashChain &block_hash_chain,
+    MonadChain const &chain, Db &db, vm::VM &vm,
+    fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
@@ -162,7 +183,7 @@ Result<BlockExecOutput> propose_block(
 
     // Block input validation
     BOOST_OUTCOME_TRY(static_validate_consensus_header(consensus_header));
-    BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
+    BOOST_OUTCOME_TRY(chain.static_validate_header(block.execution_inputs));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
     // Sender and EIP-7702 authorities recovery
@@ -199,7 +220,7 @@ Result<BlockExecOutput> propose_block(
                      .emplace(
                          block_id,
                          BlockCacheEntry{
-                             .block_number = block.header.number,
+                             .block_number = block.execution_inputs.number,
                              .parent_id = consensus_header.parent_id(),
                              .senders_and_authorities =
                                  std::move(senders_and_authorities)})
@@ -231,13 +252,13 @@ Result<BlockExecOutput> propose_block(
         .senders = senders,
         .authorities = recovered_authorities};
 
-    if (block.header.number > 1) {
+    if (block.execution_inputs.number > 1) {
         bytes32_t const &parent_id = consensus_header.parent_id();
         MONAD_ASSERT(block_cache.contains(parent_id));
         BlockCacheEntry const &parent_entry = block_cache.at(parent_id);
         chain_context.parent_senders_and_authorities =
             &parent_entry.senders_and_authorities;
-        if (block.header.number > 2) {
+        if (block.execution_inputs.number > 2) {
             bytes32_t const &grandparent_id = parent_entry.parent_id;
             MONAD_ASSERT(block_cache.contains(grandparent_id));
             BlockCacheEntry const &grandparent_entry =
@@ -250,7 +271,7 @@ Result<BlockExecOutput> propose_block(
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
     db.set_block_and_prefix(
-        block.header.number - 1,
+        block.execution_inputs.number - 1,
         is_first_block ? bytes32_t{} : consensus_header.parent_id());
 
     BlockExecOutput exec_output;
@@ -276,11 +297,11 @@ Result<BlockExecOutput> propose_block(
                 uint64_t const i,
                 State &state) {
                 return chain.revert_transaction(
-                    block.header.number,
-                    block.header.timestamp,
+                    block.execution_inputs.number,
+                    block.execution_inputs.timestamp,
                     sender,
                     tx,
-                    block.header.base_fee_per_gas.value_or(0),
+                    block.execution_inputs.base_fee_per_gas.value_or(0),
                     i,
                     state,
                     chain_context);
@@ -307,7 +328,7 @@ Result<BlockExecOutput> propose_block(
     // Post-commit validation of header, with Merkle root fields filled in
     exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, exec_output.eth_header));
+        validate_output_header(block.execution_inputs, exec_output.eth_header));
 
     // Commit prologue: computation of the Ethereum block hash to append to
     // the circular hash buffer
@@ -315,7 +336,7 @@ Result<BlockExecOutput> propose_block(
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_chain.propose(
         exec_output.eth_block_hash,
-        block.header.number,
+        block.execution_inputs.number,
         block_id,
         consensus_header.parent_id());
 
@@ -328,7 +349,7 @@ Result<BlockExecOutput> propose_block(
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
         ",gas={:9},gpse={:4},gps={:3}{}{}{}",
-        block.header.number,
+        block.execution_inputs.number,
         block_id,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             block_start.time_since_epoch())
@@ -637,11 +658,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     propose_block,
                     block_id,
                     header,
-                    Block{
-                        .header = header.execution_inputs,
-                        .transactions = std::move(body.transactions),
-                        .ommers = std::move(body.ommers),
-                        .withdrawals = std::move(body.withdrawals)},
+                    InputBlockView{
+                        .execution_inputs = header.execution_inputs,
+                        .transactions = body.transactions,
+                        .ommers = body.ommers,
+                        .withdrawals = body.withdrawals},
                     block_hash_chain,
                     chain,
                     db,

@@ -90,7 +90,7 @@ Result<void> process_ethereum_block(
 
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block.to_input_view()));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
@@ -137,7 +137,7 @@ Result<void> process_ethereum_block(
         auto const receipts,
         execute_block<traits>(
             chain,
-            block,
+            block.to_input_view(),
             senders,
             recovered_authorities,
             block_state,
@@ -165,8 +165,7 @@ Result<void> process_ethereum_block(
 
     // Post-commit validation of header, with Merkle root fields filled in
     auto const output_header = db.read_eth_header();
-    BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+    BOOST_OUTCOME_TRY(validate_output_header(block.header, output_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer

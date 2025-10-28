@@ -89,61 +89,15 @@ evmc_revision EthereumMainnet::get_revision(
 }
 
 Result<void>
-EthereumMainnet::static_validate_header(BlockHeader const &header) const
+EthereumMainnet::static_validate_header(ExecutionInputs const &inputs) const
 {
     // EIP-779
     if (MONAD_UNLIKELY(
-            header.number >= dao::dao_block_number &&
-            header.number <= dao::dao_block_number + 9 &&
-            header.extra_data != dao::extra_data)) {
+            inputs.number >= dao::dao_block_number &&
+            inputs.number <= dao::dao_block_number + 9 &&
+            inputs.extra_data != dao::extra_data)) {
         return BlockError::WrongDaoExtraData;
     }
-    return success();
-}
-
-Result<void> EthereumMainnet::validate_output_header(
-    BlockHeader const &input, BlockHeader const &output) const
-{
-    // First, validate execution inputs.
-    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
-        return BlockError::WrongOmmersHash;
-    }
-    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-
-    // Second, validate execution outputs known before commit.
-
-    // YP eq. 170
-    if (MONAD_UNLIKELY(input.gas_used != output.gas_used)) {
-        return BlockError::InvalidGasUsed;
-    }
-
-    // YP eq. 56
-    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
-        return BlockError::GasAboveLimit;
-    }
-
-    // YP eq. 33
-    if (MONAD_UNLIKELY(input.logs_bloom != output.logs_bloom)) {
-        return BlockError::WrongLogsBloom;
-    }
-
-    if (MONAD_UNLIKELY(input.parent_hash != output.parent_hash)) {
-        return BlockError::WrongParentHash;
-    }
-
-    // Lastly, validate execution outputs only known after commit.
-    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-
     return success();
 }
 

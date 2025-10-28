@@ -434,8 +434,8 @@ TYPED_TEST(PlainTrieTest, large_values)
 {
     constexpr uint64_t version = 0;
     // make sure leaves are not cached
-    auto const key1 = 0x0000112_hex;
-    auto const key2 = 0x0000123_hex;
+    Nibbles const key1 = Nibbles(0x00000112_hex).substr(1);
+    Nibbles const key2 = Nibbles(0x00000123_hex).substr(1);
     auto const value1 = monad::byte_string(100 * 1024 * 1024, 0xf); // 100 MB
     auto const value2 = monad::byte_string(255 * 1024 * 1024, 0x3); // 255 MB
 

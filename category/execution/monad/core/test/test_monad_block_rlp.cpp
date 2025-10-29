@@ -15,7 +15,6 @@
 
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
@@ -147,11 +146,11 @@ TEST(Rlp_Block, MonadConsensusBlock)
         EXPECT_EQ(
             vote.id,
             to_bytes(
-                0x0000000000000000000000000000000000000000000000000000000000000000_hex));
+                0x0000000000000000000000000000000000000000000000000000000000000000_bytes));
         EXPECT_EQ(
             vote.parent_id,
             to_bytes(
-                0x0000000000000000000000000000000000000000000000000000000000000000_hex));
+                0x0000000000000000000000000000000000000000000000000000000000000000_bytes));
         EXPECT_EQ(vote.epoch, 1);
         EXPECT_EQ(vote.round, 0);
         EXPECT_EQ(vote.parent_round, 0);

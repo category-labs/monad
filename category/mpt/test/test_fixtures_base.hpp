@@ -289,46 +289,46 @@ namespace monad::test
     namespace fixed_updates
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex},
-            {0x1234567822345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_hex},
-            {0x1234567832345678123456781234567812345678123456781234567812345671_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_hex},
-            {0x1234567832345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_hex}};
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes},
+            {0x1234567822345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_bytes},
+            {0x1234567832345678123456781234567812345678123456781234567812345671_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_bytes},
+            {0x1234567832345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_bytes}};
     };
 
     namespace unrelated_leaves
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x0234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex},
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_hex},
-            {0x2234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_hex},
-            {0x3234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_hex}};
+            {0x0234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes},
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_bytes},
+            {0x2234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_bytes},
+            {0x3234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_bytes}};
     };
 
     namespace var_len_values
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x0234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdead_hex}, // 0
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xbeef_hex}, // 1
-            {0x2234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xba_hex}, // 2
-            {0x3234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeef_hex}, // 3
-            {0x1234567822345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafe_hex}, // 4
-            {0x1234567832345678123456781234567812345678123456781234567812345671_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedead_hex}, // 5
-            {0x1234567832345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedead_hex}}; // 6
+            {0x0234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdead_bytes}, // 0
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xbeef_bytes}, // 1
+            {0x2234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xba_bytes}, // 2
+            {0x3234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeef_bytes}, // 3
+            {0x1234567822345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafe_bytes}, // 4
+            {0x1234567832345678123456781234567812345678123456781234567812345671_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedead_bytes}, // 5
+            {0x1234567832345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedead_bytes}}; // 6
     };
 
     // merkle tries
@@ -599,7 +599,7 @@ namespace monad::test
                     for (size_t n = 0; n < Config.updates_per_block; n++) {
                         {
                             monad::byte_string key(
-                                0x1234567812345678123456781234567812345678123456781234567812345678_hex);
+                                0x1234567812345678123456781234567812345678123456781234567812345678_bytes);
                             for (size_t n = 0; n < key.size(); n += 4) {
                                 *(uint32_t *)(key.data() + n) = rand();
                             }

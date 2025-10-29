@@ -470,7 +470,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     static constexpr auto from = Address{};
 
     byte_string const tx_data =
-        0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_hex;
+        0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
     Transaction tx{.gas_limit = 200000u, .data = tx_data};
     BlockHeader header{.number = 256};
@@ -508,7 +508,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     f.get();
 
     byte_string const deployed_code_bytes =
-        0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_hex;
+        0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
     std::vector<uint8_t> deployed_code_vec = {
         deployed_code_bytes.data(),
@@ -620,7 +620,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
     // PUSH1 addr3
     // GAS
     // CALL
-    auto const code2 = 0x59595959600260FF5AF1_hex;
+    auto const code2 = 0x59595959600260FF5AF1_bytes;
     auto const hash2 = to_bytes(keccak256(code2));
     auto const icode2 = vm::make_shared_intercode(code2);
 
@@ -699,7 +699,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
 
 TEST_F(EthCallFixture, loop_out_of_gas)
 {
-    auto const code = 0x5B5F56_hex;
+    auto const code = 0x5B5F56_bytes;
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = monad::vm::make_shared_intercode(code);
 
@@ -836,7 +836,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         BlockHeader{.number = 0});
 
     auto const data =
-        0x56cde25b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004e20_hex;
+        0x56cde25b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004e20_bytes;
     Transaction tx{.gas_limit = 30'000'000u, .to = ca, .data = data};
 
     BlockHeader header{.number = 0};
@@ -885,7 +885,7 @@ TEST_F(EthCallFixture, from_contract_account)
     using namespace intx;
 
     auto const code =
-        0x6000600155600060025560006003556000600455600060055500_hex;
+        0x6000600155600060025560006003556000600455600060055500_bytes;
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = monad::vm::make_shared_intercode(code);
 
@@ -902,7 +902,7 @@ TEST_F(EthCallFixture, from_contract_account)
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_hex};
+    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
 
     BlockHeader header{.number = 0};
 
@@ -954,7 +954,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
     for (uint64_t i = 0; i < 300; ++i) {
         if (i == 200) {
             auto const code =
-                0x6000600155600060025560006003556000600455600060055500_hex;
+                0x6000600155600060025560006003556000600455600060055500_bytes;
             auto const code_hash = to_bytes(keccak256(code));
             auto const icode = monad::vm::make_shared_intercode(code);
 
@@ -976,7 +976,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         }
     }
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_hex};
+    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
 
     auto executor = create_executor(dbname.string());
 
@@ -1055,7 +1055,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     static constexpr auto a_address =
         0x00000000000000000000000000000000aaaaaaaa_address;
     auto const a_code =
-        0x600160025f5fa25f5f5f5f5f7300000000000000000000000000000000bbbbbbbb5af115604d575f5f5f5f5f7300000000000000000000000000000000cccccccc5af115604d5760035f5fa1005bfe_hex;
+        0x600160025f5fa25f5f5f5f5f7300000000000000000000000000000000bbbbbbbb5af115604d575f5f5f5f5f7300000000000000000000000000000000cccccccc5af115604d5760035f5fa1005bfe_bytes;
     auto const a_code_hash = to_bytes(keccak256(a_code));
     auto const a_icode = monad::vm::make_shared_intercode(a_code);
 
@@ -1063,21 +1063,21 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     static constexpr auto b_address =
         0x00000000000000000000000000000000bbbbbbbb_address;
     auto const b_code =
-        0x5f5f5f5f5f7300000000000000000000000000000000dddddddd5af1_hex;
+        0x5f5f5f5f5f7300000000000000000000000000000000dddddddd5af1_bytes;
     auto const b_code_hash = to_bytes(keccak256(b_code));
     auto const b_icode = monad::vm::make_shared_intercode(b_code);
 
     // MSTORE(0, 0xFF...FE); LOG1(1, 0, 32)
     static constexpr auto c_address =
         0x00000000000000000000000000000000cccccccc_address;
-    auto const c_code = 0x60025f035f52600160205fa1_hex;
+    auto const c_code = 0x60025f035f52600160205fa1_bytes;
     auto const c_code_hash = to_bytes(keccak256(c_code));
     auto const c_icode = monad::vm::make_shared_intercode(c_code);
 
     // STOP
     static constexpr auto d_address =
         0x00000000000000000000000000000000dddddddd_address;
-    auto const d_code = 0x00_hex;
+    auto const d_code = 0x00_bytes;
     auto const d_code_hash = to_bytes(keccak256(d_code));
     auto const d_icode = monad::vm::make_shared_intercode(d_code);
 
@@ -1537,7 +1537,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     static constexpr auto from = Address{};
 
     byte_string const tx_data =
-        0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_hex;
+        0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
     Transaction tx{.gas_limit = 200000u, .data = tx_data};
     BlockHeader header{.number = 256};
@@ -1554,7 +1554,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     auto state_override = monad_state_override_create();
 
     byte_string deployed_code_bytes =
-        0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_hex;
+        0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
     std::vector<uint8_t> deployed_code_vec = {
         deployed_code_bytes.data(),

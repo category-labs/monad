@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 
 #include <evmc/bytes.hpp>
+#include <evmc/hex.hpp>
 
 #include <array>
 #include <cstddef>
@@ -47,5 +48,13 @@ inline byte_string_view to_byte_string_view(std::string const &s)
 {
     return {reinterpret_cast<unsigned char const *>(&s[0]), s.size()};
 }
+
+namespace literals
+{
+    inline byte_string operator""_bytes(char const *s)
+    {
+        return evmc::from_hex(s).value();
+    }
+};
 
 MONAD_NAMESPACE_END

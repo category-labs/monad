@@ -16,16 +16,15 @@
 #include <gtest/gtest.h>
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 using namespace ::monad::literals;
 
 TEST(LiteralTest, variable_length_hex)
 {
-    EXPECT_EQ((0x123456781234567812345678_hex).size(), 12);
+    EXPECT_EQ((0x123456781234567812345678_bytes).size(), 12);
     EXPECT_EQ(
-        0x123456781234567812345678_hex,
+        0x123456781234567812345678_bytes,
         monad::byte_string({
             0x12,
             0x34,
@@ -42,9 +41,9 @@ TEST(LiteralTest, variable_length_hex)
         }));
 
     EXPECT_EQ(
-        (0x123456781234567812345678123456781234567812345678_hex).size(), 24);
+        (0x123456781234567812345678123456781234567812345678_bytes).size(), 24);
     EXPECT_EQ(
-        0x123456781234567812345678123456781234567812345678_hex,
+        0x123456781234567812345678123456781234567812345678_bytes,
         monad::byte_string({
             0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78,
             0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78,
@@ -52,11 +51,11 @@ TEST(LiteralTest, variable_length_hex)
         }));
 
     EXPECT_EQ(
-        (0x1234567812345678123456781234567812345678123456781234567812345678_hex)
+        (0x1234567812345678123456781234567812345678123456781234567812345678_bytes)
             .size(),
         32);
     EXPECT_EQ(
-        0x1234567812345678123456781234567812345678123456781234567812345678_hex,
+        0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
         monad::byte_string({
             0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56,
             0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34,
@@ -65,11 +64,11 @@ TEST(LiteralTest, variable_length_hex)
 
     // without 0x prefix
     EXPECT_EQ(
-        (1234567812345678123456781234567812345678123456781234567812345678_hex)
+        (1234567812345678123456781234567812345678123456781234567812345678_bytes)
             .size(),
         32);
     EXPECT_EQ(
-        1234567812345678123456781234567812345678123456781234567812345678_hex,
+        1234567812345678123456781234567812345678123456781234567812345678_bytes,
         monad::byte_string({
             0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56,
             0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34,

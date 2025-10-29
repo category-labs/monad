@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -60,8 +59,8 @@ struct DummyCompute final : Compute
     }
 };
 
-auto const value = 0x12345678_hex;
-auto const path = 0xabcdabcdabcdabcd_hex;
+auto const value = 0x12345678_bytes;
+auto const path = 0xabcdabcdabcdabcd_bytes;
 
 TEST(NodeTest, leaf)
 {

@@ -34,7 +34,6 @@
 
 #ifdef MONAD_COMPILER_LLVM
     #include <category/vm/llvm/llvm.hpp>
-void init_llvm();
 #endif
 
 class BlockchainTestVM : public evmc_vm

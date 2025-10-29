@@ -13,9 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "test_vm.hpp"
-#include "hash_utils.hpp"
-#include "test_state.hpp"
+#include <category/vm/interpreter/intercode.hpp>
+#include <hash_utils.hpp>
+#include <test_state.hpp>
+#include <test_vm.hpp>
 
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -27,7 +28,6 @@
 
 #ifdef MONAD_COMPILER_LLVM
     #include <category/vm/llvm/llvm.hpp>
-    #include <llvm-c/Target.h>
 #endif
 
 #include <evmc/evmc.h>
@@ -41,7 +41,6 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -52,14 +51,6 @@ using namespace monad::vm::interpreter;
 using namespace evmc::literals;
 
 namespace fs = std::filesystem;
-
-#ifdef MONAD_COMPILER_LLVM
-void init_llvm()
-{
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-}
-#endif
 
 namespace
 {

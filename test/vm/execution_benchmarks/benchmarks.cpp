@@ -324,8 +324,6 @@ namespace
 
 int main(int argc, char **argv)
 {
-    init_llvm();
-
     auto const all_bms = benchmarks();
 
     for (auto const &bm : all_bms) {

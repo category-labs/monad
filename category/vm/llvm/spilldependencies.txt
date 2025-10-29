@@ -1,0 +1,188 @@
+Dependency Blocks
+
+The goal of this algorithm is to reduce memory traffic.  The basic concept is that by performing memory reads (i.e. reads from the run-time stack) as late as possible in a block and memory writes (i.e. writes to the run-time stack) as early as possible this will reduce the amount of time a value is needed in the block and allow for more efficient use of limited registers.
+
+Other pleasant side-effects of this transformation is that it eliminates run-time stack opcodes (i.e. PUSH, POP, DUP, SWAP) and it eliminates "pure" opcodes that aren't needed to produce the result (while still accounting for gas).  Straightforward extensions can implement constant folding and common sub-expression elimination.
+
+This pass could benefit both the compiler and llvm backends, allowing them to share rewrites that aren't implementation specific.
+
+Definitions:
+
+An instruction identifier is an integer reference to an instruction.  Instruction identifiers are denoted with a '$', e.g. $12 is the instruction identifier 12.
+
+Literals are denoted with a '#', e.g. #42 denotes the literal number 42.
+
+A value is either an instruction identifier or a literal or an unspill.
+
+An instruction is one of:
+  An EVM instruction and the values it depends on, e.g. Add #42 $12 is the instruction computed by adding the literal 42 to the value computed by instruction identifier 12.
+
+  An Unspill instruction describes a value to be read from the run-time stack.  The negative offset given is relative to the stack top, e.g. Unspill -3 reads the value at run-time stack offset 3 from the top.
+
+  A Spill instruction describing a value to be written to the run-time stack, e.g. Spill #42 -3 writes the literal value 42 to run-time stack offset 3 from the top.
+
+A basic block consists of a list of evm opcodes followed by an evm terminator, e.g.
+  block 1:
+      PUSH 1
+      ADD
+      SSTORE
+      PUSH 42
+      PUSH 12
+      JUMP
+
+The goal of the algorithm is to translate basic blocks into dependency blocks where each instruction is labeled with its dependencies and spills/unspills are explicit, e.g. The block above should be translated to:
+  dependency block 1:
+    $0 = Unspill -1
+    $2 = Add #1 $0
+    $1 = Unspill -2
+    $3 = SStore $2 $1
+    $4 = Spill #42 -3
+    Jump #12
+
+epilogue updates the run-time stack using the delta ... BAL:
+
+Algorithm:
+
+In order to translate basic blocks into dependency blocks we will maintain a virtual stack of values, "vstack", and record instructions and their dependencies in "instrs" list.
+
+To begin, initialize the virtual stack using the "low" value of the basic block, e.g. low = -2 results in:
+
+instrs:
+  0: Unspill -1
+  1: Unspill -2
+
+vstack: [$1, $0]
+(the top element is to the right)
+
+for each opcode in the basic block modify vstack and instrs as needed.
+  opcodes that only modify the stack operate in the standard way, e.g.
+    PUSH 7: vstack => vstack : #7
+    POP: vstack : a => vstack
+    SWAP 1: vstack : a : b => vstack : b : a
+    DUP 1: vstack : a => vstack : a : a
+
+  other evm opcodes will update the instrs and the vstack, e.g. (using the above instrs and vstack as an initial state)
+    Add:
+      instrs:
+        0: Unspill -1
+        1: Unspill -2
+        2: Add $0 $1
+      vstack: [$2]
+
+    SStore:
+      instrs:
+        0: Unspill -1
+        1: Unspill -2
+        2: SStore $0 $1
+      vstack: []
+
+  terminators that don't require spilling anything from the stack can simply be rewritten with values from the vstack, e.g.
+    Return: Return $0 $1
+    Revert: Revert $0 $1
+    SelfDestruct: SelfDestruct $0
+    InvalidInstruction: InvalidInstruction
+    Stop: Stop
+
+  the other terminators must also spill any leftover values on the vstack, e.g.
+    Jump:
+      Jump $0
+      instrs:
+        2: Spill $1 -2
+
+note that we haven't yet ordered them BAL:
+
+  At this point we can leverage the dependencies for each instruction to build an ordered list of instructions that must be evaluated for a given block.  We must be careful to include all of the following in our initial dependency list:
+    - All Spill instructions
+    - All "impure" instructions.  These should be in the same order they appear in the initial basic block.  These include any instructions that modify the evm state (e.g. SStore) or contain variable gas computations (e.g. EXP).  Note:  instructions that contain variable gas computations but are otherwise "pure" may have this requirement relaxed in the future.
+    - Any instruction ids from the terminator
+
+Once the initial dependency list is created the ordered instruction list can be created as follows:
+  until no more dependencies:
+    let the top dependency = v
+    if v is already evaluated:
+      pop v and continue
+    let deps = the unevaluated dependencies of v
+    if deps is empty:
+      let i = the instruction computing v
+      push i to the ordered instruction list
+      mark i as evaluated
+      pop v and continue
+    otherwise:
+      push deps to top of dependencies
+      continue
+
+Note that care must be taken when pushing a Spill instruction to the instruction list.  If the value at the given stack location is needed by later instructions it must first be read and stored in a temporary location for later use.
+
+SWAP1:
+$0 = Unspill -1
+$1 = Unspill -2
+$2 = Spill $1 -1
+$3 = Spill $0 -2
+
+DUP1:
+$0 = Unspill -1
+$1 = Spill $0 0
+$2 = Spill $0 -1 // eliminate this one
+
+DUP1
+PUSH1 34
+ADD
+PUSH0
+MSTORE
+
+$0 = Unspill -1
+copy $0 to temp
+Spill ??? -1
+
+...
+
+$0 = load temp
+Add $0 ..
+..
+// DUP1
+// PUSH1 34
+$1 = ADD $0 #34
+// PUSH0
+$2 = MSTORE #0 $1
+// PUSH1 12
+$3 = ADD #12 $0
+$4 = Spill $3 -1
+
+$0 = Unspill -1
+invalidate $0? so we have to unspill again
+
+$3 = ADD #12 $0
+$4 = Spill $3 -1
+
+*run-time calls trash the registers...
+
+only one value live across run-time calls (one register won't get clobbered)
+
+
+
+
+$2 = Add (unspill -1) (unspill -1)
+MSTORE
+.. $2 ...
+
+
+
+$1 = ADD ...
+spill $1 stack[23]
+MSTORE ...
+$2 = SUB $1 #43
+
+$1 = ADD ...
+spill $1 stack[23]
+>> llvm store $1 
+MSTORE ...
+>> $1 = load (llvm store $1)
+$2 = SUB $1 #43
+
+$1 = ADD ...
+spill $1 stack[23]
+MSTORE ...
+$1 = load stack[23]
+$2 = SUB $1 #43
+
+

@@ -495,8 +495,6 @@ int main(int argc, char **argv)
 {
     auto const args = parse_command_arguments(argc, argv);
 
-    init_llvm();
-
     BenchmarkBuilder(
         args,
         {.title = "BASIC_UNA_MATH, constant input",

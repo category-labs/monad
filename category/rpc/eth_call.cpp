@@ -292,26 +292,23 @@ namespace
                 if (i == transaction_index) {
                     if (tracer_config == PRESTATE_TRACER) {
                         state_tracers.emplace_back(
-                            std::unique_ptr<trace::StateTracer>{
-                                std::make_unique<trace::StateTracer>(
-                                    trace::PrestateTracer{trace["result"]})});
+                            std::make_unique<trace::StateTracer>(
+                                trace::PrestateTracer{trace["result"]}));
                     }
                     else {
                         state_tracers.emplace_back(
-                            std::unique_ptr<trace::StateTracer>{
-                                std::make_unique<trace::StateTracer>(
-                                    trace::StateDiffTracer{trace["result"]})});
+                            std::make_unique<trace::StateTracer>(
+                                trace::StateDiffTracer{trace["result"]}));
                     }
                 }
                 else {
                     state_tracers.emplace_back(
-                        std::unique_ptr<trace::StateTracer>{
-                            std::make_unique<trace::StateTracer>(
-                                std::monostate{})});
+                        std::make_unique<trace::StateTracer>(std::monostate{}));
                 }
             }
 
-            Result<std::vector<Receipt>> result =
+            BOOST_OUTCOME_TRY(
+                auto result,
                 execute_block_transactions<traits>(
                     chain,
                     header,
@@ -324,10 +321,7 @@ namespace
                     pool,
                     metrics,
                     noop_call_tracers,
-                    state_tracers);
-            if (result.has_error()) {
-                return Result<nlohmann::json>{std::move(result).as_failure()};
-            }
+                    state_tracers));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -338,18 +332,17 @@ namespace
                 traces.emplace_back(trace_entry(i));
                 if (tracer_config == PRESTATE_TRACER) {
                     state_tracers.emplace_back(
-                        std::unique_ptr<trace::StateTracer>{
-                            std::make_unique<trace::StateTracer>(
-                                trace::PrestateTracer{traces[i]["result"]})});
+                        std::make_unique<trace::StateTracer>(
+                            trace::PrestateTracer{traces[i]["result"]}));
                 }
                 else {
                     state_tracers.emplace_back(
-                        std::unique_ptr<trace::StateTracer>{
-                            std::make_unique<trace::StateTracer>(
-                                trace::StateDiffTracer{traces[i]["result"]})});
+                        std::make_unique<trace::StateTracer>(
+                            trace::StateDiffTracer{traces[i]["result"]}));
                 }
             }
-            Result<std::vector<Receipt>> result =
+            BOOST_OUTCOME_TRY(
+                auto result,
                 execute_block_transactions<traits>(
                     chain,
                     header,
@@ -361,10 +354,7 @@ namespace
                     pool,
                     metrics,
                     noop_call_tracers,
-                    state_tracers);
-            if (result.has_error()) {
-                return Result<json>{std::move(result).as_failure()};
-            }
+                    state_tracers));
 
             // Compose state traces
             return Result<json>{std::move(traces)};
@@ -1048,6 +1038,11 @@ struct monad_eth_call_executor
 
         auto const priority =
             call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        // TODO(dhil): I don't think retry semantics makes any sense here, as
+        // there is no gas limit to specify, and the transaction replays should
+        // be guaranteed to complete as there is no notion of state override
+        // here. However, the question remains: should we use the low or high
+        // gas pool, or some separate pool here? The executor
         low_gas_pool_.pool.submit(
             priority,
             [this,
@@ -1064,7 +1059,7 @@ struct monad_eth_call_executor
              trace_transaction = trace_transaction,
              transaction_index = transaction_index,
              user = user]() {
-                // TODO(dhil): These trace block calls consume a lot more
+                // TODO(dhil): These trace block calls can consume a lot more
                 // resources than an eth_call request.
                 fiber_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
@@ -1082,8 +1077,6 @@ struct monad_eth_call_executor
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
                             return std::make_unique<MonadMainnet>();
-                        case CHAIN_CONFIG_MONAD_TESTNET2:
-                            return std::make_unique<MonadTestnet2>();
                         }
                         MONAD_ASSERT(false);
                     }();
@@ -1200,7 +1193,6 @@ struct monad_eth_call_executor
                     }
 
                     nlohmann::json trace = res.assume_value();
-                    result->status_code = EVMC_SUCCESS;
                     if (trace.empty()) {
                         result->encoded_trace = nullptr;
                         result->encoded_trace_len = 0;
@@ -1361,59 +1353,6 @@ void monad_eth_trace_block_or_transaction_executor_submit(
         parent_id,
         trace_transaction,
         transaction_index,
-        complete,
-        user,
-        tracer_config);
-}
-
-void monad_eth_trace_transaction_executor_submit(
-    struct monad_eth_call_executor *executor,
-    enum monad_chain_config chain_config, uint8_t const *rlp_header,
-    size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
-    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
-    size_t rlp_parent_block_id_len, uint64_t const transaction_index,
-    void (*complete)(monad_eth_call_result *, void *user), void *user,
-    enum monad_tracer_config tracer_config)
-{
-    monad_eth_trace_block_or_transaction_executor_submit(
-        executor,
-        chain_config,
-        rlp_header,
-        rlp_header_len,
-        block_number,
-        rlp_block_id,
-        rlp_block_id_len,
-        rlp_parent_block_id,
-        rlp_parent_block_id_len,
-        true,
-        transaction_index,
-        complete,
-        user,
-        tracer_config);
-}
-
-void monad_eth_trace_block_executor_submit(
-    struct monad_eth_call_executor *executor,
-    enum monad_chain_config chain_config, uint8_t const *rlp_header,
-    size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
-    size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
-    size_t rlp_parent_block_id_len,
-    void (*complete)(monad_eth_call_result *, void *user), void *user,
-    enum monad_tracer_config tracer_config)
-{
-
-    monad_eth_trace_block_or_transaction_executor_submit(
-        executor,
-        chain_config,
-        rlp_header,
-        rlp_header_len,
-        block_number,
-        rlp_block_id,
-        rlp_block_id_len,
-        rlp_parent_block_id,
-        rlp_parent_block_id_len,
-        false,
-        0,
         complete,
         user,
         tracer_config);

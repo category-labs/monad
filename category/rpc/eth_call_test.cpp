@@ -1746,7 +1746,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     // PreState trace
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
-        monad_eth_trace_block_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -1756,6 +1756,8 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            false,
+            0,
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER);
@@ -1810,7 +1812,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     // StateDelta Trace
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
-        monad_eth_trace_block_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -1820,6 +1822,8 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            false,
+            0,
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER);
@@ -1983,7 +1987,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     // PreState trace
     {
         boost::fibers::future<void> f_1 = prestate_ctx_1.promise.get_future();
-        monad_eth_trace_transaction_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -1993,6 +1997,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            true,
             0,
             complete_callback,
             (void *)&prestate_ctx_1,
@@ -2029,7 +2034,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             nlohmann::json::from_cbor(encoded_pre_state_trace_1));
 
         boost::fibers::future<void> f_2 = prestate_ctx_2.promise.get_future();
-        monad_eth_trace_transaction_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -2039,6 +2044,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            true,
             1,
             complete_callback,
             (void *)&prestate_ctx_2,
@@ -2078,7 +2084,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     // StateDelta Trace
     {
         boost::fibers::future<void> f_1 = statediff_ctx_1.promise.get_future();
-        monad_eth_trace_transaction_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -2088,6 +2094,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            true,
             0,
             complete_callback,
             (void *)&statediff_ctx_1,
@@ -2133,7 +2140,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             nlohmann::json::from_cbor(encoded_state_diff_trace_1));
 
         boost::fibers::future<void> f_2 = statediff_ctx_2.promise.get_future();
-        monad_eth_trace_transaction_executor_submit(
+        monad_eth_trace_block_or_transaction_executor_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_header.data(),
@@ -2143,6 +2150,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             rlp_block_id.size(),
             rlp_parent_id.data(),
             rlp_parent_id.size(),
+            true,
             1,
             complete_callback,
             (void *)&statediff_ctx_2,

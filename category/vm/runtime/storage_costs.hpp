@@ -334,6 +334,12 @@ namespace monad::vm::runtime
     };
 
     template <>
+    struct StorageCostTable<MonadTraits<MONAD_SIX>>
+        : StorageCostTable<MonadTraits<MONAD_SIX>::evm_base>
+    {
+    };
+
+    template <>
     struct StorageCostTable<MonadTraits<MONAD_NEXT>>
     {
         // Derived from the algorithm in:

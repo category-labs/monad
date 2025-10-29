@@ -434,7 +434,6 @@ public:
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
             MONAD_ASSERT(v <= max_key);
             n->key = v & max_key;
-            MONAD_ASSERT(n->key == v);
         }
 
         static erased_connected_operation *
@@ -483,7 +482,6 @@ public:
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
             MONAD_ASSERT(v <= max_key);
             n->rbtree_.key = v & max_key;
-            MONAD_ASSERT(n->rbtree_.key == v);
         }
 
         static node_ptr to_node_ptr(erased_connected_operation *n)

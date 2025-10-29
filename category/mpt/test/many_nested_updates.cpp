@@ -16,10 +16,8 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
-#include <category/core/byte_string.hpp>
-
 #include <category/core/assert.h>
-#include <category/core/hex_literal.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/update.hpp>
 
@@ -192,11 +190,12 @@ inline void do_erase_corpus(State *self, ::boost::json::object const &updates)
 TYPED_TEST(ManyNestedUpdates, simple_fixed_test_not_from_json)
 {
     auto const key1 =
-        0xac4c09c28206e7e35594aa6b342f5d0a3a5e4842fab428f762e6e282e5c1657c_hex;
-    auto const val1 = 0xb36711eb3906a7c8603d71d409e7a54d87bdc1f70442027a5b_hex;
+        0xac4c09c28206e7e35594aa6b342f5d0a3a5e4842fab428f762e6e282e5c1657c_bytes;
+    auto const val1 =
+        0xb36711eb3906a7c8603d71d409e7a54d87bdc1f70442027a5b_bytes;
     auto const key2 =
-        0x212b86b49e656acf0641169a0b59f4e629439f25d9d4654fec8d4819fb40d6ba_hex;
-    auto const val2 = 0x1c441ae6_hex;
+        0x212b86b49e656acf0641169a0b59f4e629439f25d9d4654fec8d4819fb40d6ba_bytes;
+    auto const val2 = 0x1c441ae6_bytes;
 
     this->root = upsert_updates(
         this->aux,
@@ -206,7 +205,7 @@ TYPED_TEST(ManyNestedUpdates, simple_fixed_test_not_from_json)
         make_update(key2, val2));
     EXPECT_EQ(
         this->root_hash(),
-        0x0d203b1bed203d355d6201a703774018a182975fc4fcae0dae19825cd40ccd17_hex);
+        0x0d203b1bed203d355d6201a703774018a182975fc4fcae0dae19825cd40ccd17_bytes);
 }
 
 TYPED_TEST(ManyNestedUpdates, test_corpus_simple_flat)
@@ -218,7 +217,7 @@ TYPED_TEST(ManyNestedUpdates, test_corpus_simple_flat)
     do_erase_corpus(this, updates.at("updates").as_object());
     EXPECT_EQ(
         this->root_hash(),
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex /* null hash */);
+        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes /* null hash */);
 }
 
 TYPED_TEST(ManyNestedUpdates, test_corpus_0)
@@ -230,7 +229,7 @@ TYPED_TEST(ManyNestedUpdates, test_corpus_0)
     do_erase_corpus(this, updates.at("updates").as_object());
     EXPECT_EQ(
         this->root_hash(),
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex /* null hash */);
+        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes /* null hash */);
 }
 
 TYPED_TEST(ManyNestedUpdates, test_corpus_1)
@@ -242,5 +241,5 @@ TYPED_TEST(ManyNestedUpdates, test_corpus_1)
     do_erase_corpus(this, updates.at("updates").as_object());
     EXPECT_EQ(
         this->root_hash(),
-        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex /* null hash */);
+        0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes /* null hash */);
 }

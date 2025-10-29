@@ -23,7 +23,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/result.hpp>
@@ -191,19 +190,19 @@ namespace
 
     {
         uint64_t const block_id{0x123};
-        monad::byte_string const prefix{0x00_hex};
+        monad::byte_string const prefix{0x00_bytes};
 
         using DbBase::db;
 
         DbTraverseFixture()
             : DbBase()
         {
-            auto const k1 = 0x12345678_hex;
-            auto const v1 = 0xcafebabe_hex;
-            auto const k2 = 0x12346678_hex;
-            auto const v2 = 0xdeadbeef_hex;
-            auto const k3 = 0x12445678_hex;
-            auto const v3 = 0xdeadbabe_hex;
+            auto const k1 = 0x12345678_bytes;
+            auto const v1 = 0xcafebabe_bytes;
+            auto const k2 = 0x12346678_bytes;
+            auto const v2 = 0xdeadbeef_bytes;
+            auto const k3 = 0x12445678_bytes;
+            auto const v3 = 0xdeadbabe_bytes;
             auto u1 = make_update(k1, v1);
             auto u2 = make_update(k2, v2);
             auto u3 = make_update(k3, v3);
@@ -363,7 +362,7 @@ TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const starting_block_id = 0x0;
 
     root = upsert_updates_flat_list(
@@ -389,7 +388,7 @@ TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
             kv[1].second);
         EXPECT_EQ(
             db_get_data(db, root, prefix, starting_block_id).value(),
-            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
     };
     verify_read(rodb1);
     verify_read(rodb2);
@@ -399,7 +398,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const first_block_id = 0x123;
     uint64_t const second_block_id = first_block_id + 1;
 
@@ -420,7 +419,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         kv[1].second);
     EXPECT_EQ(
         db_get_data(db, root, prefix, first_block_id).value(),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
@@ -434,7 +433,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         kv[1].second);
     EXPECT_EQ(
         db_get_data(ro_db, ro_root, prefix, first_block_id).value(),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 
     root = upsert_updates_flat_list(
         std::move(root),
@@ -453,7 +452,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(db, root, prefix, second_block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     // Verify RO database can read new data
     ro_root = ro_db.load_root_for_version(second_block_id);
@@ -465,7 +464,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(ro_db, ro_root, prefix, second_block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     // Can still read data at previous block id
     ro_root = ro_db.load_root_for_version(first_block_id);
@@ -477,7 +476,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         kv[1].second);
     EXPECT_EQ(
         db_get_data(ro_db, ro_root, prefix, first_block_id).value(),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 }
 
 TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
@@ -591,7 +590,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const starting_block_id = 0x0;
 
     root = upsert_updates_flat_list(
@@ -642,7 +641,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value(),
-                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
             });
         async_get<std::shared_ptr<CacheNode>>(
             make_get_node_sender(ctx.get(), prefix, starting_block_id),
@@ -650,7 +649,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(
                     res.value()->data(),
-                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+                    0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
             });
     }
 
@@ -696,7 +695,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
     // erasing outdated ones. Meanwhile spwan a read thread that queries
     // historical states.
     std::atomic<bool> done{false};
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
 
     auto upsert_new_version = [&](Db &db, uint64_t const version) {
         UpdateList ul;
@@ -782,8 +781,8 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
     Db ro_db{io_ctx};
 
     // upsert not write root, rodb reads nothing
-    auto const k1 = 0x12345678_hex;
-    auto const k2 = 0x22345678_hex;
+    auto const k1 = 0x12345678_bytes;
+    auto const k2 = 0x22345678_bytes;
     auto u1 = make_update(k1, k1);
     UpdateList ul;
     ul.push_front(u1);
@@ -1238,7 +1237,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
             monad::unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t))};
     };
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     constexpr unsigned keys_per_version = 5;
     uint64_t block_id = 0;
     uint64_t n = 0;
@@ -1306,7 +1305,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     auto const [fast_n, slow_n] = get_release_offsets(result_n.value());
     EXPECT_EQ(
         db_get_data(rodb, ro_root, {prefix}, block_id - 1).value(),
-        0x03786bcd10037502a4e08158de71f8078a40ce46c93ba13db90cb11841679f5e_hex);
+        0x03786bcd10037502a4e08158de71f8078a40ce46c93ba13db90cb11841679f5e_bytes);
     EXPECT_GT(fast_n, 0);
 }
 
@@ -1314,7 +1313,7 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const block_id = 0x123;
 
     {
@@ -1344,7 +1343,7 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         kv[1].second);
     EXPECT_EQ(
         db_get_data(this->db, this->root, prefix, block_id).value(),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 
     {
         auto u1 = make_update(kv[2].first, kv[2].second);
@@ -1374,7 +1373,7 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(this->db, this->root, prefix, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     auto res = this->db.find(this->root, prefix, block_id);
     ASSERT_TRUE(res.has_value());
@@ -1391,19 +1390,19 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(this->db, root_under_prefix, {}, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
     EXPECT_EQ(
         db_get_data(this->db, this->root, prefix, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
-    EXPECT_FALSE(this->db.find(this->root, 0x01_hex, block_id).has_value());
+    EXPECT_FALSE(this->db.find(this->root, 0x01_bytes, block_id).has_value());
 }
 
 TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t block_id = 0x123;
 
     this->root = upsert_updates_flat_list(
@@ -1421,7 +1420,7 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         kv[1].second);
     EXPECT_EQ(
         db_get_data(this->db, this->root, prefix, block_id).value(),
-        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+        0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 
     ++block_id;
     this->root = upsert_updates_flat_list(
@@ -1440,7 +1439,7 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(this->db, this->root, prefix, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     auto res = this->db.find(this->root, NibblesView{prefix}, block_id);
     ASSERT_TRUE(res.has_value());
@@ -1457,13 +1456,13 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(this->db, root_under_prefix, {}, block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
     EXPECT_EQ(
         db_get_data(this->db, this->root, NibblesView{prefix}, block_id)
             .value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
-    EXPECT_FALSE(this->db.find(this->root, 0x01_hex, block_id).has_value());
+    EXPECT_FALSE(this->db.find(this->root, 0x01_bytes, block_id).has_value());
 }
 
 template <typename TFixture>
@@ -1524,7 +1523,7 @@ TYPED_TEST(DbTraverseTest, traverse)
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.value(), 0xdeadbabe_hex);
+                EXPECT_EQ(node.value(), 0xdeadbabe_bytes);
                 EXPECT_TRUE(node.has_path());
                 EXPECT_EQ(
                     node.path_nibble_view(),
@@ -1534,7 +1533,7 @@ TYPED_TEST(DbTraverseTest, traverse)
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.value(), 0xcafebabe_hex);
+                EXPECT_EQ(node.value(), 0xcafebabe_bytes);
                 EXPECT_TRUE(node.has_path());
                 EXPECT_EQ(
                     node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
@@ -1543,7 +1542,7 @@ TYPED_TEST(DbTraverseTest, traverse)
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.value(), 0xdeadbeef_hex);
+                EXPECT_EQ(node.value(), 0xdeadbeef_bytes);
                 EXPECT_TRUE(node.has_path());
                 EXPECT_EQ(
                     node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
@@ -1664,7 +1663,7 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
 {
     auto const &kv = fixed_updates::kv;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const block_id = 0;
 
     auto write = [&](monad::byte_string_view k,
@@ -1737,7 +1736,7 @@ TEST(DbTest, auto_expire_large_set)
     Db db{machine, config};
     Node::SharedPtr root;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     monad::byte_string const value(256 * 1024, 0);
     std::vector<monad::byte_string> keys;
     std::vector<monad::byte_string> values;
@@ -1802,7 +1801,7 @@ TEST(DbTest, auto_expire)
     Db db{machine, config};
     Node::SharedPtr root;
 
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     // insert 10 keys
     std::vector<monad::byte_string> keys;
     for (uint64_t i = 0; i < 10; ++i) {
@@ -1873,10 +1872,10 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
     // insert random updates under a src prefix
     constexpr unsigned nkeys = 20;
     auto [kv_alloc, updates_alloc] = prepare_random_updates(nkeys);
-    auto const src_prefix = 0x00_hex;
-    auto const dest_prefix = 0x01_hex;
-    auto const dest_prefix2 = 0x02_hex;
-    auto const long_dest_prefix = 0x1010_hex;
+    auto const src_prefix = 0x00_bytes;
+    auto const dest_prefix = 0x01_bytes;
+    auto const dest_prefix2 = 0x02_bytes;
+    auto const long_dest_prefix = 0x1010_bytes;
     uint64_t const version = 0;
     UpdateList ls;
     for (auto &u : updates_alloc) {
@@ -1935,11 +1934,11 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
     for (size_t i = 0; i < 10; ++i) {
         kv_alloc.emplace_back(keccak_int_to_string(i));
     }
-    auto const prefix = 0x0012_hex;
-    auto const prefix0 = 0x001233_hex;
-    auto const prefix1 = 0x001235_hex;
-    auto const prefix2 = 0x001239_hex;
-    auto const last_prefix = 0x10_hex;
+    auto const prefix = 0x0012_bytes;
+    auto const prefix0 = 0x001233_bytes;
+    auto const prefix1 = 0x001235_bytes;
+    auto const prefix2 = 0x001239_bytes;
+    auto const last_prefix = 0x10_bytes;
     uint64_t const block_id = 0;
     root = upsert_updates_flat_list(
         std::move(root),
@@ -2052,7 +2051,7 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 
 TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
 {
-    auto const prefix = 0x0012_hex;
+    auto const prefix = 0x0012_bytes;
     std::deque<monad::byte_string> kv_alloc;
     for (size_t i = 0; i < 10; ++i) {
         kv_alloc.emplace_back(keccak_int_to_string(i));
@@ -2116,7 +2115,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
     // continuous upsert() and move_trie_version_forward() leads to
     // discontinuity in history
     auto const &kv = fixed_updates::kv;
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t block_id = 0;
 
     // Upsert the same data in block 0 - 10
@@ -2141,7 +2140,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
             kv[1].second);
         EXPECT_EQ(
             db_get_data(ro_db, ro_root, prefix, block_id).value(),
-            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
     }
     block_id = 10;
     EXPECT_EQ(ro_db.get_earliest_version(), 0);
@@ -2165,7 +2164,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
             kv[3].second);
         EXPECT_EQ(
             db_get_data(ro_db, ro_root, prefix, block_id).value(),
-            0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+            0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
     }
     EXPECT_EQ(ro_db.get_earliest_version(), 0);
     EXPECT_EQ(ro_db.get_latest_version(), block_id);
@@ -2200,7 +2199,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
             kv[1].second);
         EXPECT_EQ(
             db_get_data(ro_db, ro_root, prefix, i).value(),
-            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_hex);
+            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
     }
 
     // More empty upserts to invalidate the version at front
@@ -2219,7 +2218,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
             prefix,
             max_block_id)
             .value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
     EXPECT_EQ(ro_db.get_earliest_version(), dest_block_id);
     EXPECT_EQ(ro_db.get_latest_version(), max_block_id);
 
@@ -2235,7 +2234,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
         kv[3].second);
     EXPECT_EQ(
         db_get_data(db, root, prefix, far_dest_block_id).value(),
-        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_hex);
+        0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     // only history version
     EXPECT_EQ(ro_db.get_latest_version(), far_dest_block_id);
@@ -2250,7 +2249,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t block_id = 0;
     uint64_t const max_block_id = 10;
 
@@ -2290,7 +2289,7 @@ TEST_F(
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t block_id = 0;
 
     // Upsert the same data in block 0 - 10
@@ -2336,7 +2335,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     std::atomic<bool> done{false};
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db ro_db{io_ctx};
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
 
     // fille rwdb with some blocks
     auto const &kv = fixed_updates::kv;
@@ -2417,7 +2416,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     // Insert more than history length number of blocks
     auto const &kv = fixed_updates::kv;
-    auto const prefix = 0x00_hex;
+    auto const prefix = 0x00_bytes;
     uint64_t const max_block_id = MPT_TEST_HISTORY_LENGTH + 10;
     for (uint64_t block_id = 0; block_id <= max_block_id; ++block_id) {
         root = upsert_updates_flat_list(

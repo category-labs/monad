@@ -17,7 +17,6 @@
 #include "test_fixtures_gtest.hpp"
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -123,8 +122,8 @@ struct StateMachineTestFixture : public Base
         this->sm = std::make_unique<TestStateMachine>(
             down_calls, up_calls, compute_calls, cache_calls);
 
-        auto const key1 = 0x1111_hex;
-        auto const key2 = 0x1122_hex;
+        auto const key1 = 0x1111_bytes;
+        auto const key2 = 0x1122_bytes;
 
         this->root = upsert_updates(
             this->aux,
@@ -214,7 +213,7 @@ TYPED_TEST(StateMachineTest, modify_existing)
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(0x1122_hex, monad::byte_string_view{}));
+        make_update(0x1122_bytes, monad::byte_string_view{}));
 
     this->validate_down_calls(
         DownCalls{{{}, {1}}, {{1}, 1}, {{1, 1}, 2}, {{1, 1, 2}, 2}});
@@ -240,7 +239,7 @@ TYPED_TEST(StateMachineTest, mismatch)
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(0x1222_hex, monad::byte_string_view{}));
+        make_update(0x1222_bytes, monad::byte_string_view{}));
 
     this->validate_down_calls(
         DownCalls{{{}, {1}}, {{1}, 2}, {{1, 2}, 2}, {{1, 2, 2}, 2}, {{1}, 1}});
@@ -266,7 +265,7 @@ TYPED_TEST(StateMachineTest, mismatch_with_extension)
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(0x2222_hex, monad::byte_string_view{}));
+        make_update(0x2222_bytes, monad::byte_string_view{}));
 
     this->validate_down_calls(DownCalls{
         {{}, {2}}, {{2}, 2}, {{2, 2}, 2}, {{2, 2, 2}, 2}, {{}, 1}, {{1}, 1}});
@@ -291,7 +290,7 @@ TYPED_TEST(StateMachineTest, add_to_branch)
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(0x1133_hex, monad::byte_string_view{}));
+        make_update(0x1133_bytes, monad::byte_string_view{}));
 
     this->validate_down_calls(
         DownCalls{{{}, 1}, {{1}, 1}, {{1, 1}, 3}, {{1, 1, 3}, 3}});

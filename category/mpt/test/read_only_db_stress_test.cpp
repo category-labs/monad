@@ -16,7 +16,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/db.hpp>
@@ -185,7 +184,7 @@ int main(int argc, char *const argv[])
             rw_root = rw_db.upsert(std::move(rw_root), std::move(ul), version);
         };
 
-        auto const prefix = 0x00_hex;
+        auto const prefix = 0x00_bytes;
 
         auto upsert_new_version = [&](uint64_t const version) {
             UpdateList ul;

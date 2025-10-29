@@ -264,7 +264,7 @@ namespace monad::test
 
             MONAD_ASSERT(
                 root_hash() ==
-                0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_hex);
+                0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes);
         }
 
         void GeneratedKv(

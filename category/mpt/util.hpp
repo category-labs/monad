@@ -17,7 +17,7 @@
 
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/hex_literal.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -48,7 +48,7 @@ static constexpr uint64_t MIN_HISTORY_LENGTH = 257;
 
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;
-    return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex;
+    return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes;
 }();
 
 struct virtual_chunk_offset_t

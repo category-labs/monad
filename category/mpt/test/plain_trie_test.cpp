@@ -17,7 +17,6 @@
 #include "test_fixtures_gtest.hpp" // NOLINT
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
@@ -47,38 +46,38 @@ namespace updates
 {
     std::vector<std::pair<monad::byte_string, monad::byte_string>> const
         var_len_kv{
-            {0x01111111_hex, 0xdead_hex}, // 0
-            {0x11111111_hex, 0xbeef_hex}, // 1
-            {0x11111111aaaa_hex, 0xdeafbeef_hex}, // 2
-            {0x11111111aacd_hex, 0xabcd_hex}, // 3
-            {0x111a1111_hex, 0xba_hex}, // 4
-            {0x111b1111_hex, 0xbabe_hex}, // 5
-            {0x111b1111aaaaaaaa_hex, 0xcafe_hex}, // 6
-            {0x111b1111bbbbbbbb_hex, 0xbe_hex}, // 7
+            {0x01111111_bytes, 0xdead_bytes}, // 0
+            {0x11111111_bytes, 0xbeef_bytes}, // 1
+            {0x11111111aaaa_bytes, 0xdeafbeef_bytes}, // 2
+            {0x11111111aacd_bytes, 0xabcd_bytes}, // 3
+            {0x111a1111_bytes, 0xba_bytes}, // 4
+            {0x111b1111_bytes, 0xbabe_bytes}, // 5
+            {0x111b1111aaaaaaaa_bytes, 0xcafe_bytes}, // 6
+            {0x111b1111bbbbbbbb_bytes, 0xbe_bytes}, // 7
         };
 
     std::vector<std::pair<monad::byte_string, monad::byte_string>> const top_kv{
-        {0x01111111_hex, 0xdead_hex}, // 0
-        {0x11111111_hex, 0xbeef_hex}, // 1
-        {0x111a1111_hex, 0xba_hex}, // 2
-        {0x111b1111_hex, 0xbabe_hex}, // 3
+        {0x01111111_bytes, 0xdead_bytes}, // 0
+        {0x11111111_bytes, 0xbeef_bytes}, // 1
+        {0x111a1111_bytes, 0xba_bytes}, // 2
+        {0x111b1111_bytes, 0xbabe_bytes}, // 3
     };
 
     std::vector<std::pair<monad::byte_string, monad::byte_string>> const
         nested_kv{
-            {0xaaaa_hex, 0xdeafbeef_hex},
-            {0xaacd_hex, 0xabcd_hex},
-            {0xaaaaaaaa_hex, 0xcafe_hex},
-            {0xbbbbbbbb_hex, 0xbe_hex},
+            {0xaaaa_bytes, 0xdeafbeef_bytes},
+            {0xaacd_bytes, 0xabcd_bytes},
+            {0xaaaaaaaa_bytes, 0xcafe_bytes},
+            {0xbbbbbbbb_bytes, 0xbe_bytes},
         };
 }
 
 TYPED_TEST(PlainTrieTest, leaf_nodes_persist)
 {
     UpdateList nested;
-    auto const prefix = 0x00_hex;
-    auto const key1 = 0x11_hex;
-    auto const key2 = 0x22_hex;
+    auto const prefix = 0x00_bytes;
+    auto const key1 = 0x11_bytes;
+    auto const key2 = 0x22_bytes;
     auto u1 = make_update(key1, monad::byte_string_view{});
     auto u2 = make_update(key2, monad::byte_string_view{});
     nested.push_front(u1);
@@ -219,11 +218,11 @@ TYPED_TEST(PlainTrieTest, mismatch)
 {
     constexpr uint64_t version = 0;
     std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-        {0x12345678_hex, 0xdead_hex}, // 0
-        {0x12346678_hex, 0xbeef_hex}, // 1
-        {0x12445678_hex, 0xdeafbeef_hex}, // 2
-        {0x12347678_hex, 0xba_hex}, // 3
-        {0x123aabcd_hex, 0xbabe_hex}, // 4
+        {0x12345678_bytes, 0xdead_bytes}, // 0
+        {0x12346678_bytes, 0xbeef_bytes}, // 1
+        {0x12445678_bytes, 0xdeafbeef_bytes}, // 2
+        {0x12347678_bytes, 0xba_bytes}, // 3
+        {0x123aabcd_bytes, 0xbabe_bytes}, // 4
     };
 
     /* insert 12345678, 12346678, 12445678
@@ -434,8 +433,8 @@ TYPED_TEST(PlainTrieTest, large_values)
 {
     constexpr uint64_t version = 0;
     // make sure leaves are not cached
-    Nibbles const key1 = Nibbles(0x00000112_hex).substr(1);
-    Nibbles const key2 = Nibbles(0x00000123_hex).substr(1);
+    auto const key1 = 0x00000112_bytes;
+    auto const key2 = 0x00000123_bytes;
     auto const value1 = monad::byte_string(100 * 1024 * 1024, 0xf); // 100 MB
     auto const value2 = monad::byte_string(255 * 1024 * 1024, 0x3); // 255 MB
 
@@ -559,18 +558,22 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
             kv[2].second);
     };
 
-    upsert_and_find_with_prefix(0x000001_hex, 0xdeadbeef_hex);
-    upsert_and_find_with_prefix(0x000002_hex, 0x0123456789_hex);
-    upsert_and_find_with_prefix(0x000003_hex, 0x9876543210_hex);
-    upsert_and_find_with_prefix(0x000004_hex, 0xdeadbeef_hex);
+    upsert_and_find_with_prefix(0x000001_bytes, 0xdeadbeef_bytes);
+    upsert_and_find_with_prefix(0x000002_bytes, 0x0123456789_bytes);
+    upsert_and_find_with_prefix(0x000003_bytes, 0x9876543210_bytes);
+    upsert_and_find_with_prefix(0x000004_bytes, 0xdeadbeef_bytes);
 }
 
 TYPED_TEST(PlainTrieTest, node_version)
 {
     // Verify node verisons after multiple upserts
     std::vector<monad::byte_string> const keys = {
-        0x000000_hex, 0x000001_hex, 0x000002_hex, 0x000010_hex, 0x000011_hex};
-    auto const value = 0xdeadbeaf_hex;
+        0x000000_bytes,
+        0x000001_bytes,
+        0x000002_bytes,
+        0x000010_bytes,
+        0x000011_bytes};
+    auto const value = 0xdeadbeaf_bytes;
 
     this->root = upsert_updates(
         this->aux,

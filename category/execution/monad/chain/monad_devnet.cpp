@@ -23,7 +23,7 @@ MONAD_NAMESPACE_BEGIN
 
 monad_revision MonadDevnet::get_monad_revision(uint64_t timestamp) const
 {
-    if (MONAD_LIKELY(timestamp >= FORK_UNIX_TS_F)) {
+    if (MONAD_LIKELY(timestamp >= 1761783870)) {
         return MONAD_NEXT;
     }
     return MONAD_THREE;

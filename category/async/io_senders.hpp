@@ -351,7 +351,7 @@ public:
 
     result<void> operator()(erased_connected_operation *io_state) noexcept
     {
-        MONAD_DEBUG_ASSERT(!!buffer_);
+        MONAD_ASSERT(!!buffer_);
         buffer_.set_bytes_transferred(size_t(append_ - buffer_.data()));
         io_state->executor()->submit_write_request(buffer_, offset_, io_state);
         return success();
@@ -379,14 +379,14 @@ public:
 
     constexpr size_t written_buffer_bytes() const noexcept
     {
-        MONAD_DEBUG_ASSERT(buffer_.data() <= append_);
+        MONAD_ASSERT(buffer_.data() <= append_);
         return static_cast<size_t>(append_ - buffer_.data());
     }
 
     constexpr size_t remaining_buffer_bytes() const noexcept
     {
         auto const *end = buffer_.data() + buffer_.size();
-        MONAD_DEBUG_ASSERT(end >= append_);
+        MONAD_ASSERT(end >= append_);
         return static_cast<size_t>(end - append_);
     }
 

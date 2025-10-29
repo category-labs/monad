@@ -305,9 +305,9 @@ void AsyncIO::submit_request_sqe_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_DEBUG_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
+    MONAD_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
 
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
@@ -354,7 +354,7 @@ void AsyncIO::submit_request_(
     std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT(uring_data != nullptr);
     assert((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
 #ifndef NDEBUG
     for (auto const &buffer : buffers) {
@@ -405,10 +405,10 @@ void AsyncIO::submit_request_(
     std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT(uring_data != nullptr);
     MONAD_ASSERT(!rwbuf_.is_read_only());
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
     auto offset = ci.chunk.write_fd(buffer.size()).second;
@@ -494,9 +494,9 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 {
     // bit 0 in poll_rings_mask blocks read completions, bit 1 blocks write
     // completions
-    MONAD_DEBUG_ASSERT((poll_rings_mask & 3) != 3);
+    MONAD_ASSERT((poll_rings_mask & 3) != 3);
     auto h = detail::AsyncIO_per_thread_state().enter_completions();
-    MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
+    MONAD_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
     auto *const other_ring = &uring_.get_ring();

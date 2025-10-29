@@ -44,7 +44,7 @@ namespace detail
         constexpr explicit read_buffer_deleter(AsyncIO *parent)
             : parent_(parent)
         {
-            MONAD_DEBUG_ASSERT(parent != nullptr);
+            MONAD_ASSERT(parent != nullptr);
         }
 
         inline void operator()(std::byte *b);
@@ -60,7 +60,7 @@ namespace detail
         constexpr explicit write_buffer_deleter(AsyncIO *parent)
             : parent_(parent)
         {
-            MONAD_DEBUG_ASSERT(parent != nullptr);
+            MONAD_ASSERT(parent != nullptr);
         }
 
         inline void operator()(std::byte *b);
@@ -352,7 +352,7 @@ protected:
         , io_(&io)
     {
 #ifndef __clang__
-        MONAD_DEBUG_ASSERT(&io != nullptr);
+        MONAD_ASSERT(&io != nullptr);
 #endif
     }
 
@@ -432,9 +432,9 @@ public:
         static void set_key(node_ptr n, file_offset_t v)
         {
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
-            MONAD_DEBUG_ASSERT(v <= max_key);
+            MONAD_ASSERT(v <= max_key);
             n->key = v & max_key;
-            MONAD_DEBUG_ASSERT(n->key == v);
+            MONAD_ASSERT(n->key == v);
         }
 
         static erased_connected_operation *
@@ -481,9 +481,9 @@ public:
         static void set_key(erased_connected_operation *n, file_offset_t v)
         {
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
-            MONAD_DEBUG_ASSERT(v <= max_key);
+            MONAD_ASSERT(v <= max_key);
             n->rbtree_.key = v & max_key;
-            MONAD_DEBUG_ASSERT(n->rbtree_.key == v);
+            MONAD_ASSERT(n->rbtree_.key == v);
         }
 
         static node_ptr to_node_ptr(erased_connected_operation *n)

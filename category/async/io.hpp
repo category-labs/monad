@@ -151,13 +151,13 @@ public:
 
     class storage_pool &storage_pool() noexcept
     {
-        MONAD_DEBUG_ASSERT(storage_pool_ != nullptr);
+        MONAD_ASSERT(storage_pool_ != nullptr);
         return *storage_pool_;
     }
 
     const class storage_pool &storage_pool() const noexcept
     {
-        MONAD_DEBUG_ASSERT(storage_pool_ != nullptr);
+        MONAD_ASSERT(storage_pool_ != nullptr);
         return *storage_pool_;
     }
 
@@ -475,7 +475,7 @@ public:
 
     read_buffer_ptr get_read_buffer(size_t bytes) noexcept
     {
-        MONAD_DEBUG_ASSERT(bytes <= READ_BUFFER_SIZE);
+        MONAD_ASSERT(bytes <= READ_BUFFER_SIZE);
         unsigned char *mem = rd_pool_.alloc();
         if (mem == nullptr) {
             mem = poll_uring_while_no_io_buffers_(false);
@@ -508,22 +508,22 @@ private:
             connected_operation_storage_pool_, 1);
         MONAD_ASSERT_PRINTF(
             mem != nullptr, "failed due to %s", strerror(errno));
-        MONAD_DEBUG_ASSERT(((void)mem[0], true));
+        MONAD_ASSERT(((void)mem[0], true));
         auto ret = std::unique_ptr<
             connected_type,
             io_connected_operation_unique_ptr_deleter>(
             new (mem) connected_type(connect()));
         // Did you accidentally pass in a foreign buffer to use?
         // Can't do that, must use buffer returned.
-        MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
+        MONAD_ASSERT(ret->sender().buffer().data() == nullptr);
         if constexpr (is_write) {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
+            MONAD_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
             auto buffer = std::move(ret->sender()).buffer();
             buffer.set_write_buffer(get_write_buffer());
             ret->sender().reset(ret->sender().offset(), std::move(buffer));
         }
         else {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
+            MONAD_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
         }
         return ret;
     }
@@ -593,7 +593,7 @@ public:
                     state);
             erased_connected_operation::rbtree_node_traits::set_key(
                 p, state->sender().offset().raw());
-            MONAD_DEBUG_ASSERT(p->key == state->sender().offset().raw());
+            MONAD_ASSERT(p->key == state->sender().offset().raw());
             extant_write_operations_::init(p);
             auto pred = [](auto const *a, auto const *b) {
                 auto get_key = [](auto const *a) {

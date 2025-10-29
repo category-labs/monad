@@ -150,7 +150,7 @@ storage_pool::chunk_t::write_fd(size_t bytes_which_shall_be_written) noexcept
         auto const *const metadata = device().metadata_;
         auto const chunk_bytes_used =
             metadata->chunk_bytes_used(device().size_of_file_);
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             bytes_which_shall_be_written <=
             std::numeric_limits<uint32_t>::max());
         auto const size =
@@ -232,8 +232,8 @@ storage_pool::chunk_t::clone_contents_into(chunk_t &other, uint32_t bytes)
 bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
 {
     bytes = std::min(uint32_t(size()), bytes);
-    MONAD_DEBUG_ASSERT(capacity_ <= std::numeric_limits<off_t>::max());
-    MONAD_DEBUG_ASSERT(offset_ <= std::numeric_limits<off_t>::max());
+    MONAD_ASSERT(capacity_ <= std::numeric_limits<off_t>::max());
+    MONAD_ASSERT(offset_ <= std::numeric_limits<off_t>::max());
     if (device().is_file()) {
         MONAD_ASSERT_PRINTF(
             -1 != ::fallocate(
@@ -288,10 +288,9 @@ bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
             range[1] -= DISK_PAGE_SIZE;
         }
         if (range[1] > 0) {
-            MONAD_DEBUG_ASSERT(
-                range[0] >= offset_ && range[0] < offset_ + capacity_);
-            MONAD_DEBUG_ASSERT(range[1] <= capacity_);
-            MONAD_DEBUG_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
+            MONAD_ASSERT(range[0] >= offset_ && range[0] < offset_ + capacity_);
+            MONAD_ASSERT(range[1] <= capacity_);
+            MONAD_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
             MONAD_ASSERT_PRINTF(
                 !ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range),
                 "failed due to %s",
@@ -390,8 +389,8 @@ storage_pool::device_t storage_pool::make_device_(
             make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const offset = round_down_align<DISK_PAGE_BITS>(
             file_offset_t(stat.st_size) - sizeof(device_t::metadata_t));
-        MONAD_DEBUG_ASSERT(offset <= std::numeric_limits<off_t>::max());
-        MONAD_DEBUG_ASSERT(static_cast<size_t>(stat.st_size) > offset);
+        MONAD_ASSERT(offset <= std::numeric_limits<off_t>::max());
+        MONAD_ASSERT(static_cast<size_t>(stat.st_size) > offset);
         auto const bytesread = ::pread(
             readwritefd,
             buffer,
@@ -443,7 +442,7 @@ storage_pool::device_t storage_pool::make_device_(
                 abort();
             }
             memset(buffer, 0, DISK_PAGE_SIZE * 2);
-            MONAD_DEBUG_ASSERT(
+            MONAD_ASSERT(
                 chunk_capacity <= std::numeric_limits<uint32_t>::max());
             for (off_t offset2 = static_cast<off_t>(
                      offset - round_up_align<DISK_PAGE_BITS>(
@@ -489,7 +488,7 @@ storage_pool::device_t storage_pool::make_device_(
     auto *const metadata = start_lifetime_as<device_t::metadata_t>(
         reinterpret_cast<std::byte *>(addr) + stat.st_size - offset -
         sizeof(device_t::metadata_t));
-    MONAD_DEBUG_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
+    MONAD_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
     if (auto const **const dev = std::get_if<1>(&dev_no_or_dev)) {
         unique_hash = (*dev)->unique_hash_;
     }
@@ -520,8 +519,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                 "Device %s has %zu chunks the minimum allowed is four.",
                 device.current_path().c_str(),
                 devicechunks);
-            MONAD_DEBUG_ASSERT(
-                devicechunks <= std::numeric_limits<uint32_t>::max());
+            MONAD_ASSERT(devicechunks <= std::numeric_limits<uint32_t>::max());
             // Take off three for the cnv chunks
             chunks.push_back(devicechunks - 3);
             total += devicechunks - 3;
@@ -612,7 +610,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
 #ifndef NDEBUG
         for (size_t n = 0; n < chunks.size(); n++) {
             auto devicechunks = devices_[n].chunks();
-            MONAD_DEBUG_ASSERT(chunks[n] == devicechunks);
+            MONAD_ASSERT(chunks[n] == devicechunks);
         }
 #endif
     }
@@ -821,7 +819,7 @@ storage_pool::chunk_t storage_pool::activate_chunk(
     uint32_t const id_within_zone)
 {
 #ifndef __clang__
-    MONAD_DEBUG_ASSERT(this != nullptr);
+    MONAD_ASSERT(this != nullptr);
 #endif
     std::unique_lock g(lock_);
     chunk_t const ret = [&]() {

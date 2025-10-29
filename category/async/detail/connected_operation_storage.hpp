@@ -46,7 +46,7 @@ namespace detail
 
         bool am_within_completions() const noexcept
         {
-            MONAD_DEBUG_ASSERT(within_completions_count >= 0);
+            MONAD_ASSERT(within_completions_count >= 0);
             return within_completions_count > 0;
         }
 
@@ -157,7 +157,7 @@ namespace detail
             // You must initiate operations on the same kernel thread as
             // the AsyncIO instance associated with this operation state
             // (except for threadsafeop)
-            MONAD_DEBUG_ASSERT(
+            MONAD_ASSERT(
                 this->executor() == nullptr || this->is_threadsafeop() ||
                 this->executor()->owning_thread_id() == get_tl_tid());
             this->being_executed_ = true;

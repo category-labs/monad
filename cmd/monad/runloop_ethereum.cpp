@@ -162,7 +162,12 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
-
+    if (commit_time > std::chrono::milliseconds(500)) {
+        LOG_WARNING(
+            "Slow block commit detected - block {}: {}",
+            block.header.number,
+            commit_time);
+    }
     // Post-commit validation of header, with Merkle root fields filled in
     auto const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(

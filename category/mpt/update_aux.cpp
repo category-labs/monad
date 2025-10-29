@@ -1155,12 +1155,6 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         curr_slow_writer_offset.offset,
         (uint32_t)compact_offset_fast,
         (uint32_t)compact_offset_slow);
-    if (duration > std::chrono::microseconds(500'000)) {
-        LOG_WARNING_CFORMAT(
-            "Upsert version %lu takes longer than 0.5 s, time elapsed: %ld us.",
-            version,
-            duration.count());
-    }
     return root;
 }
 

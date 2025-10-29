@@ -181,10 +181,8 @@ void execute_block_header(
 {
     State state{block_state, Incarnation{header.number, 0}};
 
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-        deploy_block_hash_history_contract(state);
-        set_block_hash_history(state, header);
-    }
+    deploy_block_hash_history_contract<traits>(state);
+    set_block_hash_history<traits>(state, header);
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         set_beacon_root(state, header);

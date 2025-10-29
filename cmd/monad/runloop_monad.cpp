@@ -252,6 +252,8 @@ Result<BlockExecOutput> propose_block(
     db.set_block_and_prefix(
         block.header.number - 1,
         is_first_block ? bytes32_t{} : consensus_header.parent_id());
+    block.header.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
@@ -293,7 +295,7 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
         block_id,
-        consensus_header.execution_inputs,
+        block.header,
         results,
         call_frames,
         senders,

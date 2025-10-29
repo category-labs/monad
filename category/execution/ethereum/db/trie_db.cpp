@@ -186,23 +186,6 @@ void TrieDb::commit(
 {
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
-    auto const parent_hash = [&]() {
-        if (MONAD_UNLIKELY(header.number == 0)) {
-            return bytes32_t{};
-        }
-        else {
-            auto const n = header.number - 1;
-            auto const res = db_.find(
-                (n == block_number_) ? curr_root_
-                                     : db_.load_root_for_version(n),
-                concat(prefix_, BLOCKHEADER_NIBBLE),
-                n);
-            MONAD_ASSERT(res.has_value());
-            auto const parent_header_encoded = res.value().node->value();
-            return to_bytes(keccak256(parent_header_encoded));
-        }
-    }();
-
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
@@ -441,11 +424,9 @@ void TrieDb::commit(
     complete_header.state_root = state_root();
     complete_header.withdrawals_root = withdrawals_root();
     complete_header.transactions_root = transactions_root();
-    complete_header.parent_hash = parent_hash;
     complete_header.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
     complete_header.logs_bloom = compute_bloom(receipts);
     complete_header.ommers_hash = compute_ommers_hash(ommers);
-
     auto const eth_header_rlp = rlp::encode_block_header(complete_header);
 
     UpdateList block_hash_nested_updates;

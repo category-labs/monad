@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/hex.hpp>
@@ -44,21 +45,51 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+template <Traits traits>
 void deploy_block_hash_history_contract(State &state)
 {
-    if (MONAD_LIKELY(state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
         return;
     }
 
-    state.create_contract(BLOCK_HISTORY_ADDRESS);
-    state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
-    MONAD_ASSERT(
-        state.get_code_hash(BLOCK_HISTORY_ADDRESS) == BLOCK_HISTORY_CODE_HASH);
-    state.set_nonce(BLOCK_HISTORY_ADDRESS, 1);
+    // happy path: deploy contract if it doesn't exist
+    if (MONAD_UNLIKELY(!state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+        state.create_contract(BLOCK_HISTORY_ADDRESS);
+        state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
+        MONAD_ASSERT(
+            state.get_code_hash(BLOCK_HISTORY_ADDRESS) ==
+            BLOCK_HISTORY_CODE_HASH);
+        state.set_nonce(BLOCK_HISTORY_ADDRESS, 1);
+    }
+
+    // cleanup: overwrite bad code from MONAD_FOUR
+    if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::monad_rev() >= MONAD_SIX) {
+            if (MONAD_UNLIKELY(
+                    state.get_code_hash(BLOCK_HISTORY_ADDRESS) !=
+                    BLOCK_HISTORY_CODE_HASH)) {
+                state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
+            }
+        }
+    }
 }
 
+EXPLICIT_TRAITS(deploy_block_hash_history_contract);
+
+template <Traits traits>
 void set_block_hash_history(State &state, BlockHeader const &header)
 {
+    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+        return;
+    }
+
+    // before MONAD_SIX, nothing was being written.
+    if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::monad_rev() < MONAD_SIX) {
+            return;
+        }
+    }
+
     if (MONAD_UNLIKELY(!header.number)) {
         return;
     }
@@ -70,6 +101,8 @@ void set_block_hash_history(State &state, BlockHeader const &header)
         state.set_storage(BLOCK_HISTORY_ADDRESS, key, header.parent_hash);
     }
 }
+
+EXPLICIT_TRAITS(set_block_hash_history);
 
 // Note: EIP-2935 says the get on the block hash history contract should revert
 // if the block number is outside of the block history. However, current usage

@@ -52,7 +52,7 @@ target_sources(vm-unit-tests PRIVATE
 
 if(MONAD_COMPILER_TESTING)
     target_sources(vm-unit-tests PRIVATE
-        evm_fixture.cpp
+        evm_fixture.hpp
         evm_tests.cpp
     )
 endif()

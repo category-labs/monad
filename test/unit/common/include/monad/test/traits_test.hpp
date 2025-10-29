@@ -135,6 +135,18 @@ struct TraitsTest : public ::testing::Test
     }
 };
 
+std::vector<std::variant<evmc_revision, monad_revision>> monad_evm_revisions()
+{
+    std::vector<std::variant<evmc_revision, monad_revision>> result;
+    for (auto evm_rev = 0; evm_rev < EVMC_MAX_REVISION; ++evm_rev) {
+        result.push_back(static_cast<evmc_revision>(evm_rev));
+    }
+    for (auto monad_rev = 0; monad_rev < MONAD_COUNT; ++monad_rev) {
+        result.push_back(static_cast<monad_revision>(monad_rev));
+    }
+    return result;
+}
+
 TYPED_TEST_SUITE(
     TraitsTest, ::detail::MonadEvmRevisionTypes,
     ::detail::RevisionTestNameGenerator);

@@ -29,8 +29,8 @@
 
 #include <fcntl.h> // for open
 #include <linux/magic.h> // for TMPFS_MAGIC
+#include <sys/statfs.h> // for statfs
 #include <sys/user.h> // for PAGE_SIZE
-#include <sys/vfs.h> // for statfs
 #include <unistd.h> // for unlink
 
 #if PAGE_SIZE != 4096
@@ -47,7 +47,7 @@ std::filesystem::path const &working_temporary_directory()
         auto test_path = [&](std::filesystem::path const &path) -> bool {
             int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
             if (-1 == fd && ENOTSUP == errno) {
-                auto path2 = path / "monad_XXXXXX";
+                auto const path2 = path / "monad_XXXXXX";
                 std::string path2_str = path2.native();
                 fd = mkostemp(path2_str.data(), O_DIRECT);
                 if (-1 != fd) {
@@ -139,7 +139,7 @@ int make_temporary_inode() noexcept
     if (-1 == fd && ENOTSUP == errno) {
         // O_TMPFILE is not supported on ancient Linux kernels
         // of the kind apparently Github like to run :(
-        auto buffer = working_temporary_directory() / "monad_XXXXXX";
+        auto const buffer = working_temporary_directory() / "monad_XXXXXX";
         fd = mkstemp(const_cast<char *>(buffer.native().c_str()));
         if (-1 != fd) {
             unlink(buffer.c_str());

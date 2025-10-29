@@ -63,8 +63,8 @@ namespace monad::test
             std::unique_ptr<monad::async::AsyncIO> testio = [this] {
                 auto ret =
                     std::make_unique<monad::async::AsyncIO>(pool, testrwbuf);
-                auto fd = pool.chunk(monad::async::storage_pool::seq, 0)
-                              .write_fd(TEST_FILE_SIZE);
+                auto const fd = pool.chunk(monad::async::storage_pool::seq, 0)
+                                    .write_fd(TEST_FILE_SIZE);
                 MONAD_ASSERT(
                     TEST_FILE_SIZE == ::pwrite(
                                           fd.first,

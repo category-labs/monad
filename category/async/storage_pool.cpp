@@ -35,7 +35,6 @@
 #include <limits>
 #include <mutex>
 #include <span>
-#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -503,7 +502,7 @@ storage_pool::device_t storage_pool::make_device_(
 void storage_pool::fill_chunks_(creation_flags const &flags)
 {
     auto hashshouldbe = fnv1a_hash<uint32_t>::begin();
-    for (auto &device : devices_) {
+    for (auto const &device : devices_) {
         fnv1a_hash<uint32_t>::add(hashshouldbe, uint32_t(device.unique_hash_));
         fnv1a_hash<uint32_t>::add(
             hashshouldbe, uint32_t(device.unique_hash_ >> 32));
@@ -609,7 +608,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         }
 #ifndef NDEBUG
         for (size_t n = 0; n < chunks.size(); n++) {
-            auto devicechunks = devices_[n].chunks();
+            auto const devicechunks = devices_[n].chunks();
             MONAD_ASSERT(chunks[n] == devicechunks);
         }
 #endif
@@ -789,7 +788,7 @@ storage_pool::~storage_pool()
     cleanupchunks_(seq);
     for (auto const &device : devices_) {
         if (device.metadata_ != nullptr) {
-            auto total_size =
+            auto const total_size =
                 device.metadata_->total_size(device.size_of_file_);
             ::munmap(
                 reinterpret_cast<void *>(round_down_align<CPU_PAGE_BITS>(
@@ -821,7 +820,7 @@ storage_pool::chunk_t storage_pool::activate_chunk(
 #ifndef __clang__
     MONAD_ASSERT(this != nullptr);
 #endif
-    std::unique_lock g(lock_);
+    std::unique_lock const g(lock_);
     chunk_t const ret = [&]() {
         switch (which) {
         case chunk_type::cnv:

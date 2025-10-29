@@ -27,11 +27,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
-#include <system_error>
+#include <stdio.h>
 #include <utility>
 #include <vector>
 
@@ -47,7 +47,7 @@ namespace
         std::cout << "Pool has " << pool.devices().size() << " devices:";
         for (size_t n = 0; n < pool.devices().size(); n++) {
             auto const &device = pool.devices()[n];
-            auto capacity = device.capacity();
+            auto const capacity = device.capacity();
             std::cout << "\n   " << (n + 1) << ". chunks = " << device.chunks()
                       << " capacity = " << capacity.first
                       << " used = " << capacity.second
@@ -59,13 +59,13 @@ namespace
                   << pool.chunks(storage_pool::seq);
         std::cout << "\n   First conventional chunk ";
         {
-            auto &chunk = pool.chunk(storage_pool::cnv, 0);
+            auto const &chunk = pool.chunk(storage_pool::cnv, 0);
             std::cout << "has capacity = " << chunk.capacity()
                       << " used = " << chunk.size();
         }
         std::cout << "\n   First sequential chunk ";
         {
-            auto &chunk = pool.chunk(storage_pool::seq, 0);
+            auto const &chunk = pool.chunk(storage_pool::seq, 0);
             std::cout << "has capacity = " << chunk.capacity()
                       << " used = " << chunk.size();
         }
@@ -168,7 +168,7 @@ namespace
 
         std::vector<std::byte> buffer2(buffer.size());
         auto check = [&](auto &chunk, int a, int b) {
-            auto fd = chunk.read_fd();
+            auto const fd = chunk.read_fd();
             MONAD_ASSERT(
                 -1 != ::pread(
                           fd.first,
@@ -246,7 +246,7 @@ namespace
             ({
                 std::filesystem::path const devs[] = {
                     "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-                storage_pool pool(devs, storage_pool::mode::truncate);
+                storage_pool const pool(devs, storage_pool::mode::truncate);
             }),
             "open failed");
     }
@@ -275,8 +275,8 @@ namespace
                 create_temp_file(22 * BLKSIZE),
                 create_temp_file(12 * BLKSIZE),
                 create_temp_file(7 * BLKSIZE)};
-            auto undevs = monad::make_scope_exit([&]() noexcept {
-                for (auto &p : devs) {
+            auto const undevs = monad::make_scope_exit([&]() noexcept {
+                for (auto const &p : devs) {
                     std::filesystem::remove(p);
                 }
             });
@@ -388,8 +388,8 @@ namespace
             create_temp_file(20 * BLKSIZE),
             create_temp_file(10 * BLKSIZE),
             create_temp_file(5 * BLKSIZE)};
-        auto undevs = monad::make_scope_exit([&]() noexcept {
-            for (auto &p : devs) {
+        auto const undevs = monad::make_scope_exit([&]() noexcept {
+            for (auto const &p : devs) {
                 std::filesystem::remove(p);
             }
         });
@@ -413,7 +413,7 @@ namespace
         memset(buffer1.data(), 0xee, buffer1.size());
         auto chunk1 = pool1.chunk(storage_pool::seq, 0);
         {
-            auto fd = chunk1.write_fd(buffer1.size());
+            auto const fd = chunk1.write_fd(buffer1.size());
             MONAD_ASSERT(
                 -1 != ::pwrite(
                           fd.first,
@@ -426,9 +426,9 @@ namespace
         memset(buffer2.data(), 0xcc, buffer2.size());
         auto chunk2 = pool2.chunk(storage_pool::seq, 0);
         {
-            auto cloned = chunk1.clone_contents_into(chunk2, UINT32_MAX);
+            auto const cloned = chunk1.clone_contents_into(chunk2, UINT32_MAX);
             EXPECT_EQ(cloned, buffer1.size());
-            auto fd = chunk2.read_fd();
+            auto const fd = chunk2.read_fd();
             MONAD_ASSERT(
                 -1 != ::pread(
                           fd.first,

@@ -52,7 +52,7 @@ namespace
             monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testrwbuf);
         std::vector<monad::async::read_single_buffer_sender::buffer_type> bufs;
-        auto empty_testio = monad::make_scope_exit(
+        auto const empty_testio = monad::make_scope_exit(
             [&]() noexcept { testio.wait_until_done(); });
 
         struct empty_receiver
@@ -76,7 +76,7 @@ namespace
                     {0, 0}, monad::async::DISK_PAGE_SIZE),
                 empty_receiver{bufs}));
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         };
         for (size_t n = 0; n < 512; n++) {
             make();

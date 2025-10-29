@@ -17,6 +17,7 @@
                     clang-analyzer*,
                     -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
                     -clang-analyzer-security.insecureAPI.strcpy,
+                    -clang-analyzer-optin.core.EnumCastOutOfRange,
                     google-build-explicit-make-pair,
                     google-explicit-constructor,
                     llvm-include-order,
@@ -59,7 +60,7 @@
     - key:          bugprone-string-constructor.StringNames
       value:        ::std::basic_string;::std::basic_string_view;::absl::string_view
     - key:          misc-include-cleaner.IgnoreHeaders
-      value:        gtest/|gmock/|sys/|CLI/|boost/|llvm/
+      value:        gtest/.*|gmock/.*|sys/.*|CLI/.*|boost/.*|llvm/.*|quill/.*
     - key:          modernize-use-default-member-init.UseAssignment
       value:        1
     - key:          modernize-use-transparent-functors.SafeMode
@@ -68,7 +69,7 @@
       value:        1
     - key:          modernize-loop-convert.UseCxx20ReverseRanges
       value:        false
-    - key:          misc-include-cleaner.IgnoreHeaders
-      value:        'quill/.*'
+    - key:          bugprone-unused-return-value.AllowCastToVoid
+      value:        true
 ...
 

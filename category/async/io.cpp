@@ -28,6 +28,7 @@
 #include <category/core/unordered_map.hpp>
 
 #include <boost/container/small_vector.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <atomic>
 #include <cassert>
@@ -38,12 +39,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <span>
+#include <sys/poll.h>
 #include <utility>
 #include <vector>
 
@@ -197,7 +200,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
     }
 
-    auto count = pool.chunks(storage_pool::seq);
+    auto const count = pool.chunks(storage_pool::seq);
     std::vector<int> fds;
     fds.reserve(count * 2 + 2);
     fds.push_back(cnv_chunk_.io_uring_read_fd);
@@ -224,7 +227,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     reduce to a minimum mapped set.
     */
     unordered_dense_map<int, int> fd_to_iouring_map;
-    for (auto fd : fds) {
+    for (auto const fd : fds) {
         MONAD_ASSERT(fd != -1);
         fd_to_iouring_map[fd] = -1;
     }
@@ -276,7 +279,12 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
 
 AsyncIO::~AsyncIO()
 {
-    wait_until_done();
+    try {
+        wait_until_done();
+    }
+    catch (...) {
+        std::terminate();
+    }
 
     auto &ts = detail::AsyncIO_per_thread_state();
     MONAD_ASSERT_PRINTF(
@@ -411,7 +419,7 @@ void AsyncIO::submit_request_(
     MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto offset = ci.chunk.write_fd(buffer.size()).second;
+    auto const offset = ci.chunk.write_fd(buffer.size()).second;
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
@@ -495,7 +503,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
     // bit 0 in poll_rings_mask blocks read completions, bit 1 blocks write
     // completions
     MONAD_ASSERT((poll_rings_mask & 3) != 3);
-    auto h = detail::AsyncIO_per_thread_state().enter_completions();
+    auto const h = detail::AsyncIO_per_thread_state().enter_completions();
     MONAD_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
@@ -508,7 +516,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             while (!concurrent_read_ios_pending_.empty() &&
                    records_.inflight_rd < concurrent_read_io_limit_ &&
                    io_uring_sq_space_left(other_ring) != 0) {
-                auto &read = concurrent_read_ios_pending_.front();
+                auto const &read = concurrent_read_ios_pending_.front();
                 submit_request_sqe_(
                     read.buffer, read.offset, read.op, read.op->io_priority());
                 account_read_();
@@ -591,8 +599,10 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                     sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
             }
-            auto readed = ::read(
-                fds_.msgread, &state, sizeof(erased_connected_operation *));
+            auto const readed = ::read(
+                fds_.msgread,
+                static_cast<void *>(&state),
+                sizeof(erased_connected_operation *));
             if (readed >= 0) {
                 MONAD_ASSERT(sizeof(erased_connected_operation *) == readed);
                 // Writes flushed in the submitting thread must be acquired now
@@ -697,7 +707,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         return true;
     };
     if (!eager_completions_) {
-        auto ret = get_cqe();
+        auto const ret = get_cqe();
         if (state == nullptr) {
             return ret;
         }
@@ -740,7 +750,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 
 unsigned AsyncIO::deferred_initiations_in_flight() const noexcept
 {
-    auto &ts = detail::AsyncIO_per_thread_state();
+    auto const &ts = detail::AsyncIO_per_thread_state();
     return !ts.empty() && !ts.am_within_completions();
 }
 
@@ -767,12 +777,12 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
     int const tofd = ::creat(path.c_str(), 0600);
     MONAD_ASSERT_PRINTF(
         tofd != -1, "creat failed due to %s", std::strerror(errno));
-    auto untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
-    auto fromfd = seq_chunks_[which].chunk.read_fd();
+    auto const untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
+    auto const fromfd = seq_chunks_[which].chunk.read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
     off64_t off_in = static_cast<off64_t>(fromfd.second);
     off64_t off_out = 0;
-    auto copied = copy_file_range(
+    auto const copied = copy_file_range(
         fromfd.first,
         &off_in,
         tofd,
@@ -788,7 +798,7 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
     /* Prevent any new i/o initiation as we cannot exit until an i/o
     buffer becomes freed.
     */
-    auto h = detail::AsyncIO_per_thread_state().enter_completions();
+    auto const h = detail::AsyncIO_per_thread_state().enter_completions();
     for (;;) {
         // If this assert fails, there genuinely
         // are not enough i/o buffers. This can happen if the caller

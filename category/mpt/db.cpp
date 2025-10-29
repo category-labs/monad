@@ -1451,10 +1451,7 @@ namespace detail
         uint64_t const version;
         UpdateAux<> &aux;
 
-        enum : bool
-        {
-            lifetime_managed_internally = true
-        };
+        static constexpr bool lifetime_managed_internally = true;
 
         void set_value(
             async::erased_connected_operation *const this_io_state,

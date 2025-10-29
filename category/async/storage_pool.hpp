@@ -103,13 +103,13 @@ public:
             size_t chunks(file_offset_t end_of_this_offset) const noexcept
             {
                 end_of_this_offset -= sizeof(metadata_t);
-                auto ret =
+                auto const ret =
                     end_of_this_offset / (chunk_capacity + sizeof(uint32_t));
                 // We need the front CPU_PAGE_SIZE of this metadata to not
                 // include any chunk
-                auto endofchunks =
+                auto const endofchunks =
                     round_down_align<CPU_PAGE_BITS>(ret * chunk_capacity);
-                auto startofmetadata = round_down_align<CPU_PAGE_BITS>(
+                auto const startofmetadata = round_down_align<CPU_PAGE_BITS>(
                     end_of_this_offset - ret * sizeof(uint32_t));
                 if (startofmetadata == endofchunks) {
                     return ret - 1;
@@ -123,7 +123,7 @@ public:
             {
                 static_assert(
                     sizeof(uint32_t) == sizeof(std::atomic<uint32_t>));
-                auto count = chunks(end_of_this_offset);
+                auto const count = chunks(end_of_this_offset);
                 return {
                     start_lifetime_as_array<std::atomic<uint32_t>>(
                         const_cast<std::byte *>(
@@ -136,7 +136,7 @@ public:
             // Bytes used by the pool metadata on this device
             size_t total_size(file_offset_t end_of_this_offset) const noexcept
             {
-                auto count = chunks(end_of_this_offset);
+                auto const count = chunks(end_of_this_offset);
                 return sizeof(metadata_t) + count * sizeof(uint32_t);
             }
         } *const metadata_;

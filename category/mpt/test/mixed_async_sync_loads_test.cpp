@@ -27,11 +27,31 @@
 
 using namespace MONAD_MPT_NAMESPACE;
 
-struct MixedAsyncSyncLoadsTest
-    : public monad::test::FillDBWithChunksGTest<
-          monad::test::FillDBWithChunksConfig{.chunks_to_fill = 1}>
+namespace
 {
-};
+    struct MixedAsyncSyncLoadsTest
+        : public monad::test::FillDBWithChunksGTest<
+              monad::test::FillDBWithChunksConfig{.chunks_to_fill = 1}>
+    {
+    };
+
+    struct receiver_t
+    {
+        std::optional<
+            monad::mpt::find_request_sender<>::result_type::value_type>
+            res;
+
+        static constexpr bool lifetime_managed_internally = false;
+
+        void set_value(
+            monad::async::erased_connected_operation *,
+            monad::mpt::find_request_sender<>::result_type r)
+        {
+            MONAD_ASSERT(r);
+            res = std::move(r).assume_value();
+        }
+    };
+}
 
 TEST_F(MixedAsyncSyncLoadsTest, works)
 {
@@ -44,26 +64,6 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
         aux, aux.get_root_offset_at_version(latest_version), latest_version)};
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
-
-    struct receiver_t
-    {
-        std::optional<
-            monad::mpt::find_request_sender<>::result_type::value_type>
-            res;
-
-        enum : bool
-        {
-            lifetime_managed_internally = false
-        };
-
-        void set_value(
-            monad::async::erased_connected_operation *,
-            monad::mpt::find_request_sender<>::result_type r)
-        {
-            MONAD_ASSERT(r);
-            res = std::move(r).assume_value();
-        }
-    };
 
     // Initiate an async find of a key
     monad::mpt::AsyncInflightNodes inflights;

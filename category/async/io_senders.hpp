@@ -91,8 +91,9 @@ public:
             buffer_.set_read_buffer(
                 io_state->executor()->get_read_buffer(buffer_.size()));
         }
-        size_t bytes_transferred = io_state->executor()->submit_read_request(
-            buffer_.to_mutable_span(), offset_, io_state);
+        size_t const bytes_transferred =
+            io_state->executor()->submit_read_request(
+                buffer_.to_mutable_span(), offset_, io_state);
         if (bytes_transferred != size_t(-1)) {
             // It completed early
             return make_status_code(
@@ -162,7 +163,7 @@ public:
     constexpr read_multiple_buffer_sender(
         chunk_offset_t offset, buffers_type buffers)
         : offset_(offset)
-        , buffers_(std::move(buffers))
+        , buffers_(buffers)
     {
     }
 
@@ -179,7 +180,7 @@ public:
     void reset(chunk_offset_t offset, buffers_type buffers)
     {
         offset_ = offset;
-        buffers_ = std::move(buffers);
+        buffers_ = buffers;
     }
 
     result<void> operator()(erased_connected_operation *io_state) noexcept
@@ -201,7 +202,7 @@ public:
                     }
                 }
 
-                iovecs_ = std::move(temp);
+                iovecs_ = temp;
                 auto &v = std::get<0>(iovecs_);
                 iovecs = v;
                 iovecs = iovecs.subspan(0, buffers_.size());
@@ -209,15 +210,14 @@ public:
             else {
                 std::vector<struct iovec> temp;
                 temp.reserve(buffers_.size());
-                for (size_t n = 0; n < buffers_.size(); n++) {
-                    temp.push_back(
-                        {(char *)buffers_[n].data(), buffers_[n].size()});
+                for (auto const buffer : buffers_) {
+                    temp.push_back({(char *)buffer.data(), buffer.size()});
                 }
                 iovecs_ = std::move(temp);
                 auto &v = std::get<1>(iovecs_);
                 iovecs = v;
             }
-            size_t bytes_transferred =
+            size_t const bytes_transferred =
                 io_state->executor()->submit_read_request(
                     iovecs, offset_, io_state);
             if (bytes_transferred != size_t(-1)) {
@@ -316,7 +316,7 @@ public:
         chunk_offset_t offset, buffer_type buffer)
         : offset_(offset)
         , buffer_(std::move(buffer))
-        , append_(const_cast<std::byte *>(buffer.data()))
+        , append_(const_cast<std::byte *>(buffer_.data()))
     {
     }
 

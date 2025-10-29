@@ -73,7 +73,7 @@ private:
         chunk_t &chunk;
         int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
 
-        constexpr chunk_ref_(chunk_t &chunk_)
+        constexpr explicit chunk_ref_(chunk_t &chunk_)
             : chunk{chunk_}
             , io_uring_read_fd{chunk.read_fd().first}
             , io_uring_write_fd{chunk.write_fd(0).first}
@@ -422,7 +422,7 @@ public:
         ConnectedOperationType state[0];
 #pragma GCC diagnostic pop
 
-        constexpr registered_io_buffer_with_connected_operation() {}
+        constexpr registered_io_buffer_with_connected_operation() = default;
     };
     friend struct io_connected_operation_unique_ptr_deleter;
 
@@ -473,7 +473,7 @@ public:
     using read_buffer_ptr = detail::read_buffer_ptr;
     using write_buffer_ptr = detail::write_buffer_ptr;
 
-    read_buffer_ptr get_read_buffer(size_t bytes) noexcept
+    read_buffer_ptr get_read_buffer(size_t bytes)
     {
         MONAD_ASSERT(bytes <= READ_BUFFER_SIZE);
         unsigned char *mem = rd_pool_.alloc();
@@ -484,7 +484,7 @@ public:
             (std::byte *)mem, detail::read_buffer_deleter(this));
     }
 
-    write_buffer_ptr get_write_buffer() noexcept
+    write_buffer_ptr get_write_buffer()
     {
         unsigned char *mem = wr_pool_.alloc();
         if (mem == nullptr) {
@@ -544,7 +544,9 @@ public:
         return make_connected_impl_ < Sender::my_operation_type ==
                operation_type::write > ([&] {
                    return connect<Sender, Receiver>(
-                       *this, std::move(sender), std::move(receiver));
+                       *this,
+                       std::forward<Sender>(sender),
+                       std::forward<Receiver>(receiver));
                });
     }
 

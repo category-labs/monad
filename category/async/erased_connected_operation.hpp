@@ -115,7 +115,7 @@ public:
     using base_::size_bytes;
     using base_::subspan;
 
-    constexpr filled_read_buffer() {}
+    constexpr filled_read_buffer() = default;
 
     filled_read_buffer(filled_read_buffer const &) = delete;
     filled_read_buffer(filled_read_buffer &&) = default;
@@ -206,7 +206,7 @@ public:
     using base_::size_bytes;
     using base_::subspan;
 
-    constexpr filled_write_buffer() {}
+    constexpr filled_write_buffer() = default;
 
     filled_write_buffer(filled_write_buffer const &) = delete;
     filled_write_buffer(filled_write_buffer &&) = default;
@@ -356,8 +356,8 @@ protected:
 #endif
     }
 
-    virtual initiation_result do_possibly_deferred_initiate_(
-        bool never_defer, bool is_retry) noexcept = 0;
+    virtual initiation_result
+    do_possibly_deferred_initiate_(bool never_defer, bool is_retry) = 0;
 
 public:
     union

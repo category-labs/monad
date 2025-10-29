@@ -97,9 +97,9 @@ public:
             std::reference_wrapper<filled_write_buffer>>
             payload;
 
-        constexpr value_type() noexcept {}
+        constexpr value_type() noexcept = default;
 
-        constexpr value_type(sender_errc code_) noexcept
+        constexpr explicit value_type(sender_errc code_) noexcept
             : code(code_)
         {
         }
@@ -275,11 +275,14 @@ namespace detail
 
         thread_local_sender_errc_with_payload_code_allocator() = default;
 
+        // NOLINTBEGIN(google-explicit-constructor)
         template <class U>
         constexpr thread_local_sender_errc_with_payload_code_allocator(
             thread_local_sender_errc_with_payload_code_allocator<U> const &)
         {
         }
+
+        // NOLINTEND(google-explicit-constructor)
 
         [[nodiscard]] value_type *allocate(size_type n)
         {

@@ -208,7 +208,7 @@ namespace std
             return v_.is_lock_free();
         }
 
-        constexpr atomic(value_type v) noexcept
+        constexpr explicit atomic(value_type v) noexcept
             : v_(std::bit_cast<uint64_t>(v))
         {
         }

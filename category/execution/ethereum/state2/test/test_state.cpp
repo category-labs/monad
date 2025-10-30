@@ -265,17 +265,6 @@ TYPED_TEST(StateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(c), NULL_HASH);
 }
 
-TYPED_TEST(StateTest, set_code_hash)
-{
-    BlockState bs{this->tdb, this->vm};
-
-    State s{bs, Incarnation{1, 1}};
-    s.create_contract(b);
-    s.set_code_hash(b, hash1);
-
-    EXPECT_EQ(s.get_code_hash(b), hash1);
-}
-
 TYPED_TEST(StateTest, selfdestruct)
 {
     BlockState bs{this->tdb, this->vm};

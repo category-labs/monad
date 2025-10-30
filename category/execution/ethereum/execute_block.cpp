@@ -211,7 +211,7 @@ EXPLICIT_TRAITS(execute_block_header);
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &chain, BlockHeader const &header,
-    std::vector<Transaction> const &transactions,
+    std::span<Transaction const> const transactions,
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,

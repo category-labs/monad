@@ -41,7 +41,7 @@ struct Chain;
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
-    Chain const &, BlockHeader const &, std::vector<Transaction> const &,
+    Chain const &, BlockHeader const &, std::span<Transaction const>,
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,

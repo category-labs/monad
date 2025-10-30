@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 
 #include <ankerl/unordered_dense.h>
-
+#include <immer/map.hpp>
 #include <nlohmann/json.hpp>
 
 #include <variant>
@@ -35,9 +35,11 @@ struct Transaction;
 namespace trace
 {
 
-    template <typename Key, typename Elem>
-    using Map = ankerl::unordered_dense::segmented_map<
-        Key, Elem, BytesHashAvalanching<Key>>;
+    template <typename K, typename V>
+    using Map =
+        ankerl::unordered_dense::segmented_map<K, V, BytesHashAvalanching<K>>;
+    template <typename K, typename V>
+    using IMap = immer::map<K, V, BytesHashAvalanching<K>>;
 
     struct PrestateTracer
     {
@@ -64,8 +66,8 @@ namespace trace
 
     private:
         StorageDeltas generate_storage_deltas(
-            Map<bytes32_t, bytes32_t> const &,
-            Map<bytes32_t, bytes32_t> const &);
+            IMap<bytes32_t, bytes32_t> const &,
+            IMap<bytes32_t, bytes32_t> const &);
         nlohmann::json &storage_;
     };
 

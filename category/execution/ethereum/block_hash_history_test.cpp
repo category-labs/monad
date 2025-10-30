@@ -163,13 +163,11 @@ namespace
         evm_as::compile(eb, bytecode);
 
         byte_string_view const bytecode_view{bytecode.data(), bytecode.size()};
-        bytes32_t const code_hash = to_bytes(keccak256(bytecode_view));
 
         // Deploy test contract
         static constexpr Address test_addr =
             0x0000000000000000000000000000000000000123_address;
         state.create_contract(test_addr);
-        state.set_code_hash(test_addr, code_hash);
         state.set_code(test_addr, bytecode_view);
         state.set_nonce(test_addr, 1);
     }

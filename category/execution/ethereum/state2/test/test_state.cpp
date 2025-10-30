@@ -273,17 +273,6 @@ TEST_F(InMemoryStateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(c), NULL_HASH);
 }
 
-TEST_F(InMemoryStateTest, set_code_hash)
-{
-    BlockState bs{this->tdb, this->vm};
-
-    State s{bs, Incarnation{1, 1}};
-    s.create_contract(b);
-    s.set_code_hash(b, hash1);
-
-    EXPECT_EQ(s.get_code_hash(b), hash1);
-}
-
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
 {
     BlockState bs{this->tdb, this->vm};

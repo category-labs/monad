@@ -1027,7 +1027,8 @@ void UpdateAuxImpl::reset_node_writers()
         return io ? io->make_connected(
                         write_single_buffer_sender{
                             node_writer_offset, bytes_to_write},
-                        write_operation_io_receiver{bytes_to_write})
+                        write_operation_io_receiver{
+                            io, node_writer_offset, bytes_to_write})
                   : node_writer_unique_ptr_type{};
     };
     node_writer_fast =

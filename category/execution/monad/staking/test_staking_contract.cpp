@@ -66,10 +66,9 @@ namespace
 }
 
 template <typename MonadRevisionT>
-struct StakeTraits : public ::testing::Test
+struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
 {
-    static constexpr monad_revision REV = MonadRevisionT::value;
-    using Trait = MonadTraits<REV>;
+    using Trait = MonadTraitsTest<MonadRevisionT>::Trait;
 
     OnDiskMachine machine;
     vm::VM vm;
@@ -341,9 +340,7 @@ using StakeBeforeActiveValidatorStakeFork =
 template <typename MonadRevisionT>
 using StakeAllRevisions = StakeTraits<MonadRevisionT>;
 
-TYPED_TEST_SUITE(
-    StakeAllRevisions, ::detail::MonadRevisionTypes,
-    ::detail::RevisionTestNameGenerator);
+DEFINE_MONAD_TRAITS_FIXTURE(StakeAllRevisions);
 
 TEST_F(StakeLatest, invoke_fallback)
 {

@@ -25,9 +25,11 @@
 
 using namespace monad;
 
-TYPED_TEST(MonadTraitsTest, noop_before_fork)
+template <typename MonadRevisionT>
+class MonadBlockHashHistoryFixture : public MonadTraitsTest<MonadRevisionT>
 {
-    using Trait = typename TestFixture::Trait;
+protected:
+    using Trait = MonadTraitsTest<MonadRevisionT>::Trait;
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -35,22 +37,30 @@ TYPED_TEST(MonadTraitsTest, noop_before_fork)
     vm::VM vm;
     BlockState block_state{tdb, vm};
     State state{block_state, Incarnation{0, 0}};
+};
 
-    deploy_block_hash_history_contract<Trait>(state);
+DEFINE_MONAD_TRAITS_FIXTURE(MonadBlockHashHistoryFixture);
+
+TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
+{
+    using Trait = TestFixture::Trait;
+
+    deploy_block_hash_history_contract<Trait>(this->state);
     if constexpr (Trait::evm_rev() < EVMC_PRAGUE) {
-        EXPECT_FALSE(state.account_exists(BLOCK_HISTORY_ADDRESS));
+        EXPECT_FALSE(this->state.account_exists(BLOCK_HISTORY_ADDRESS));
     }
     else {
-        EXPECT_TRUE(state.account_exists(BLOCK_HISTORY_ADDRESS));
+        EXPECT_TRUE(this->state.account_exists(BLOCK_HISTORY_ADDRESS));
     }
 
     for (size_t i = 1; i <= 128; ++i) {
         set_block_hash_history<Trait>(
-            state, BlockHeader{.parent_hash = bytes32_t{i - 1}, .number = i});
+            this->state,
+            BlockHeader{.parent_hash = bytes32_t{i - 1}, .number = i});
     }
 
     for (size_t i = 1; i < 128; ++i) {
-        bytes32_t const actual = get_block_hash_history(state, i);
+        bytes32_t const actual = get_block_hash_history(this->state, i);
         if constexpr (Trait::monad_rev() < MONAD_SIX) {
             EXPECT_EQ(actual, bytes32_t{});
         }
@@ -60,29 +70,25 @@ TYPED_TEST(MonadTraitsTest, noop_before_fork)
     }
 }
 
-TYPED_TEST(MonadTraitsTest, redeploy)
+TYPED_TEST(MonadBlockHashHistoryFixture, redeploy)
 {
-    using Trait = typename TestFixture::Trait;
-
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    TrieDb tdb{db};
-    vm::VM vm;
-    BlockState block_state{tdb, vm};
-    State state{block_state, Incarnation{0, 0}};
+    using Trait = TestFixture::Trait;
 
     // put bad code in state
-    state.create_contract(BLOCK_HISTORY_ADDRESS);
-    state.set_code(BLOCK_HISTORY_ADDRESS, to_byte_string_view("0xababab"));
-    auto const bad_code_hash = state.get_code_hash(BLOCK_HISTORY_ADDRESS);
+    this->state.create_contract(BLOCK_HISTORY_ADDRESS);
+    this->state.set_code(
+        BLOCK_HISTORY_ADDRESS, to_byte_string_view("0xababab"));
+    auto const bad_code_hash = this->state.get_code_hash(BLOCK_HISTORY_ADDRESS);
 
     // redeploy
-    deploy_block_hash_history_contract<Trait>(state);
+    deploy_block_hash_history_contract<Trait>(this->state);
 
     if constexpr (Trait::monad_rev() >= MONAD_SIX) {
-        EXPECT_NE(state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
+        EXPECT_NE(
+            this->state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
     }
     else {
-        EXPECT_EQ(state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
+        EXPECT_EQ(
+            this->state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
     }
 }

@@ -87,6 +87,24 @@ namespace detail
     };
 }
 
+#define DEFINE_MONAD_TRAITS_FIXTURE(FIXTURE_NAME)                              \
+    TYPED_TEST_SUITE(                                                          \
+        FIXTURE_NAME,                                                          \
+        ::detail::MonadRevisionTypes,                                          \
+        ::detail::RevisionTestNameGenerator)
+
+#define DEFINE_ETHEREUM_TRAITS_FIXTURE(FIXTURE_NAME)                           \
+    TYPED_TEST_SUITE(                                                          \
+        FIXTURE_NAME,                                                          \
+        ::detail::EvmRevisionTypes,                                            \
+        ::detail::RevisionTestNameGenerator)
+
+#define DEFINE_TRAITS_FIXTURE(FIXTURE_NAME)                                    \
+    TYPED_TEST_SUITE(                                                          \
+        FIXTURE_NAME,                                                          \
+        ::detail::MonadEvmRevisionTypes,                                       \
+        ::detail::RevisionTestNameGenerator)
+
 template <typename MonadRevisionT>
 struct MonadTraitsTest : public ::testing::Test
 {
@@ -94,9 +112,7 @@ struct MonadTraitsTest : public ::testing::Test
     using Trait = monad::MonadTraits<REV>;
 };
 
-TYPED_TEST_SUITE(
-    MonadTraitsTest, ::detail::MonadRevisionTypes,
-    ::detail::RevisionTestNameGenerator);
+DEFINE_MONAD_TRAITS_FIXTURE(MonadTraitsTest);
 
 template <typename EvmRevisionT>
 struct EvmTraitsTest : public ::testing::Test
@@ -105,9 +121,7 @@ struct EvmTraitsTest : public ::testing::Test
     using Trait = monad::EvmTraits<REV>;
 };
 
-TYPED_TEST_SUITE(
-    EvmTraitsTest, ::detail::EvmRevisionTypes,
-    ::detail::RevisionTestNameGenerator);
+DEFINE_ETHEREUM_TRAITS_FIXTURE(EvmTraitsTest);
 
 template <typename T>
 struct TraitsTest : public ::testing::Test
@@ -147,6 +161,4 @@ std::vector<std::variant<evmc_revision, monad_revision>> monad_evm_revisions()
     return result;
 }
 
-TYPED_TEST_SUITE(
-    TraitsTest, ::detail::MonadEvmRevisionTypes,
-    ::detail::RevisionTestNameGenerator);
+DEFINE_TRAITS_FIXTURE(TraitsTest);

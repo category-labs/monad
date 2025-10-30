@@ -1653,3 +1653,147 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     monad_state_override_destroy(state_override);
     monad_eth_call_executor_destroy(executor);
 }
+
+TEST_F(EthCallFixture, prestate_state_overrides)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from = Address{};
+
+    std::string tx_data =
+        "0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffff"
+        "ffffffffffffffffffffffffe03601600081602082378035828234f580151560395781"
+        "82fd5b8082525050506014600cf3";
+
+    Transaction tx{
+        .gas_limit = 200000u, .data = evmc::from_hex(tx_data).value()};
+    BlockHeader header{.number = 256};
+
+    commit_sequential(tdb, {}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto executor = create_executor(dbname.string());
+    auto state_override = monad_state_override_create();
+    add_override_address(state_override, from.bytes, sizeof(Address));
+    set_override_balance(
+        state_override,
+        from.bytes,
+        sizeof(Address),
+        (0xFFFF_bytes32).bytes,
+        sizeof(bytes32_t));
+    set_override_nonce(state_override, from.bytes, sizeof(Address), 1024);
+    uint8_t code[] = {0x00, 0x01, 0x02, 0x03, 0x04};
+    set_override_code(
+        state_override, from.bytes, sizeof(Address), code, sizeof(code));
+
+    struct callback_context prestate_ctx;
+    struct callback_context statediff_ctx;
+
+    // PreState trace
+    {
+        boost::fibers::future<void> f = prestate_ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&prestate_ctx,
+            PRESTATE_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace(
+            prestate_ctx.result->encoded_trace,
+            prestate_ctx.result->encoded_trace +
+                prestate_ctx.result->encoded_trace_len);
+
+        auto const expected = R"({
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0xffff",
+                "code": "0x0001020304",
+                "nonce": 1024
+            },
+            "0x8f40531f4fd16955712e2a83bdc817515853b9ea": {
+                "balance": "0x0"
+            }
+        })";
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_pre_state_trace));
+    }
+
+    // StateDelta Trace
+    {
+        boost::fibers::future<void> f = statediff_ctx.promise.get_future();
+        monad_eth_call_executor_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&statediff_ctx,
+            STATEDIFF_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_state_deltas_trace(
+            statediff_ctx.result->encoded_trace,
+            statediff_ctx.result->encoded_trace +
+                statediff_ctx.result->encoded_trace_len);
+
+        auto const expected = R"({
+            "post":{
+                "0x0000000000000000000000000000000000000000":{
+                    "nonce": 1025
+                },
+                "0x8f40531f4fd16955712e2a83bdc817515853b9ea":{
+                    "balance": "0x0",
+                    "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
+                    "nonce": 1
+                }
+            },
+            "pre":{
+                "0x0000000000000000000000000000000000000000":{
+                    "balance": "0xffff",
+                    "code": "0x0001020304",
+                    "nonce": 1024
+                }
+            }
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_state_deltas_trace));
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_eth_call_executor_destroy(executor);
+}

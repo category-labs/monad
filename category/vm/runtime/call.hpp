@@ -262,7 +262,6 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
     {
-        MONAD_VM_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
         *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,

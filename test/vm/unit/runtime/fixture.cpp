@@ -68,7 +68,7 @@ namespace monad::vm::compiler::test
         }
     }
 
-    RuntimeTest::RuntimeTest()
+    RuntimeTestBase::RuntimeTestBase()
         : blob_hashes_{bytes32_from_uint256(1), bytes32_from_uint256(2)}
         , host_{init_host(blob_hashes_)}
         , ctx_{
@@ -101,8 +101,8 @@ namespace monad::vm::compiler::test
         std::iota(call_return_data_.begin(), call_return_data_.end(), 0);
     }
 
-    evmc_result
-    RuntimeTest::success_result(std::int64_t gas_left, std::int64_t gas_refund)
+    evmc_result RuntimeTestBase::success_result(
+        std::int64_t gas_left, std::int64_t gas_refund)
     {
         auto output_data = result_data();
         return {
@@ -117,7 +117,7 @@ namespace monad::vm::compiler::test
         };
     }
 
-    evmc_result RuntimeTest::create_result(
+    evmc_result RuntimeTestBase::create_result(
         evmc_address prog_addr, std::int64_t gas_left, std::int64_t gas_refund)
     {
         auto output_data = result_data();
@@ -133,7 +133,7 @@ namespace monad::vm::compiler::test
         };
     }
 
-    evmc_result RuntimeTest::failure_result(evmc_status_code sc)
+    evmc_result RuntimeTestBase::failure_result(evmc_status_code sc)
     {
         auto output_data = result_data();
         return {
@@ -148,13 +148,13 @@ namespace monad::vm::compiler::test
         };
     }
 
-    void RuntimeTest::set_balance(uint256_t addr, uint256_t balance)
+    void RuntimeTestBase::set_balance(uint256_t addr, uint256_t balance)
     {
         host_.accounts[address_from_uint256(addr)].balance =
             bytes32_from_uint256(balance);
     }
 
-    std::basic_string_view<uint8_t> RuntimeTest::result_data()
+    std::basic_string_view<uint8_t> RuntimeTestBase::result_data()
     {
         auto output_size = call_return_data_.size();
         auto *output_data =
@@ -163,8 +163,8 @@ namespace monad::vm::compiler::test
         return {output_data, output_size};
     }
 
-    void
-    RuntimeTest::add_account_at(uint256_t addr, std::span<uint8_t> const code)
+    void RuntimeTestBase::add_account_at(
+        uint256_t addr, std::span<uint8_t> const code)
     {
         auto const contract_addr = address_from_uint256(addr);
         auto const codehash = ethash::keccak256(code.data(), code.size());

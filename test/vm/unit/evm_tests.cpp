@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <monad/test/traits_test.hpp>
+#include <monad/test/traits_test_constants.hpp>
 
 #include <test_resource_data.h>
 

@@ -132,9 +132,7 @@ void State::pop_accept()
     for (auto &it : current_) {
         it.second.pop_accept(version_);
     }
-
-    logs_.pop_accept(version_);
-
+    log_size_.pop_accept(version_);
     --version_;
 }
 
@@ -150,7 +148,9 @@ void State::pop_reject()
         }
     }
 
-    logs_.pop_reject(version_);
+    log_size_.pop_reject(version_);
+    MONAD_ASSERT(logs_.size() >= log_size_.recent());
+    logs_.resize(log_size_.recent());
 
     while (removals.size()) {
         current_.erase(removals.back());
@@ -571,13 +571,13 @@ void State::create_account_no_rollback(Address const &address)
 
 std::vector<Receipt::Log> const &State::logs()
 {
-    return logs_.recent();
+    return logs_;
 }
 
 void State::store_log(Receipt::Log const &log)
 {
-    auto &logs = logs_.current(version_);
-    logs.push_back(log);
+    log_size_.current(version_)++;
+    logs_.push_back(log);
 }
 
 void State::set_to_state_incarnation(Address const &address)

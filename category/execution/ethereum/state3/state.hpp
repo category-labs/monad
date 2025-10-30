@@ -53,7 +53,9 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<std::vector<Receipt::Log>> logs_{{}};
+    std::vector<Receipt::Log> logs_{};
+
+    VersionStack<unsigned> log_size_{0};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 

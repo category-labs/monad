@@ -211,82 +211,92 @@ namespace
         BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        State state{block_state, incarnation};
+        {
+            State state{block_state, incarnation};
 
-        for (auto const &[addr, state_delta] : state_overrides.override_sets) {
-            // address
-            Address address{};
-            std::memcpy(address.bytes, addr.data(), sizeof(Address));
+            for (auto const &[addr, state_delta] :
+                 state_overrides.override_sets) {
+                // address
+                Address address{};
+                std::memcpy(address.bytes, addr.data(), sizeof(Address));
 
-            // This would avoid seg-fault on storage override for non-existing
-            // accounts
-            auto const &account = state.recent_account(address);
-            if (MONAD_UNLIKELY(!account.has_value())) {
-                state.create_contract(address);
-            }
-
-            if (state_delta.balance.has_value()) {
-                auto const balance = intx::be::unsafe::load<uint256_t>(
-                    state_delta.balance.value().data());
-                if (balance >
-                    intx::be::load<uint256_t>(
-                        state.get_current_balance_pessimistic(address))) {
-                    state.add_to_balance(
-                        address,
-                        balance - intx::be::load<uint256_t>(
-                                      state.get_current_balance_pessimistic(
-                                          address)));
+                // This would avoid seg-fault on storage override for
+                // non-existing accounts
+                auto const &account = state.recent_account(address);
+                if (MONAD_UNLIKELY(!account.has_value())) {
+                    state.create_contract(address);
                 }
-                else {
-                    state.subtract_from_balance(
-                        address,
+
+                if (state_delta.balance.has_value()) {
+                    auto const balance = intx::be::unsafe::load<uint256_t>(
+                        state_delta.balance.value().data());
+                    if (balance >
                         intx::be::load<uint256_t>(
-                            state.get_current_balance_pessimistic(address)) -
-                            balance);
+                            state.get_current_balance_pessimistic(address))) {
+                        state.add_to_balance(
+                            address,
+                            balance - intx::be::load<uint256_t>(
+                                          state.get_current_balance_pessimistic(
+                                              address)));
+                    }
+                    else {
+                        state.subtract_from_balance(
+                            address,
+                            intx::be::load<uint256_t>(
+                                state.get_current_balance_pessimistic(
+                                    address)) -
+                                balance);
+                    }
+                }
+
+                if (state_delta.nonce.has_value()) {
+                    state.set_nonce(address, state_delta.nonce.value());
+                }
+
+                if (state_delta.code.has_value()) {
+                    byte_string const code{
+                        state_delta.code.value().data(),
+                        state_delta.code.value().size()};
+                    state.set_code(address, code);
+                }
+
+                auto const update_state =
+                    [&](std::map<byte_string, byte_string> const &diff) {
+                        for (auto const &[key, value] : diff) {
+                            bytes32_t storage_key;
+                            bytes32_t storage_value;
+                            std::memcpy(
+                                storage_key.bytes,
+                                key.data(),
+                                sizeof(bytes32_t));
+                            std::memcpy(
+                                storage_value.bytes,
+                                value.data(),
+                                sizeof(bytes32_t));
+
+                            state.set_storage(
+                                address, storage_key, storage_value);
+                        }
+                    };
+
+                // Remove single storage
+                if (!state_delta.state_diff.empty()) {
+                    // we need to access the account first before accessing its
+                    // storage
+                    (void)state.get_nonce(address);
+                    update_state(state_delta.state_diff);
+                }
+
+                // Remove all override
+                if (!state_delta.state.empty()) {
+                    state.set_to_state_incarnation(address);
+                    update_state(state_delta.state);
                 }
             }
-
-            if (state_delta.nonce.has_value()) {
-                state.set_nonce(address, state_delta.nonce.value());
-            }
-
-            if (state_delta.code.has_value()) {
-                byte_string const code{
-                    state_delta.code.value().data(),
-                    state_delta.code.value().size()};
-                state.set_code(address, code);
-            }
-
-            auto const update_state =
-                [&](std::map<byte_string, byte_string> const &diff) {
-                    for (auto const &[key, value] : diff) {
-                        bytes32_t storage_key;
-                        bytes32_t storage_value;
-                        std::memcpy(
-                            storage_key.bytes, key.data(), sizeof(bytes32_t));
-                        std::memcpy(
-                            storage_value.bytes,
-                            value.data(),
-                            sizeof(bytes32_t));
-
-                        state.set_storage(address, storage_key, storage_value);
-                    }
-                };
-
-            // Remove single storage
-            if (!state_delta.state_diff.empty()) {
-                // we need to access the account first before accessing its
-                // storage
-                (void)state.get_nonce(address);
-                update_state(state_delta.state_diff);
-            }
-
-            // Remove all override
-            if (!state_delta.state.empty()) {
-                state.set_to_state_incarnation(address);
-                update_state(state_delta.state);
-            }
+            MONAD_ASSERT(block_state.can_merge(state));
+            block_state.merge(state);
         }
+        State state{block_state, incarnation};
 
         // validate_transaction expects nonce to match.
         // However, eth_call doesn't take a nonce parameter.

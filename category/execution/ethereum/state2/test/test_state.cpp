@@ -88,6 +88,7 @@ namespace
     constexpr auto code1 =
         byte_string{0x65, 0x74, 0x68, 0x65, 0x72, 0x6d, 0x69};
     auto const icode1 = vm::make_shared_intercode(code1);
+    auto const code1_hash = to_bytes(keccak256(code1));
     constexpr auto code2 =
         byte_string{0x6e, 0x65, 0x20, 0x2d, 0x20, 0x45, 0x55, 0x31, 0x34};
     auto const icode2 = vm::make_shared_intercode(code2);
@@ -253,7 +254,7 @@ TYPED_TEST(StateTest, get_code_hash)
         StateDeltas{
             {a,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = hash1}}}}},
+                 .account = {std::nullopt, Account{.code_or_hash = hash1}}}}},
         Code{},
         BlockHeader{});
 
@@ -262,17 +263,6 @@ TYPED_TEST(StateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(a), hash1);
     EXPECT_EQ(s.get_code_hash(b), NULL_HASH);
     EXPECT_EQ(s.get_code_hash(c), NULL_HASH);
-}
-
-TYPED_TEST(StateTest, set_code_hash)
-{
-    BlockState bs{this->tdb, this->vm};
-
-    State s{bs, Incarnation{1, 1}};
-    s.create_contract(b);
-    s.set_code_hash(b, hash1);
-
-    EXPECT_EQ(s.get_code_hash(b), hash1);
 }
 
 TYPED_TEST(StateTest, selfdestruct)
@@ -968,7 +958,7 @@ TYPED_TEST(StateTest, set_storage_modified_restored)
 TYPED_TEST(StateTest, get_code_size)
 {
     BlockState bs{this->tdb, this->vm};
-    Account acct{.code_hash = code_hash1};
+    Account acct{.code_or_hash = code_hash1};
     commit_sequential(
         this->tdb,
         StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
@@ -982,8 +972,8 @@ TYPED_TEST(StateTest, get_code_size)
 TYPED_TEST(StateTest, copy_code)
 {
     BlockState bs{this->tdb, this->vm};
-    Account acct_a{.code_hash = code_hash1};
-    Account acct_b{.code_hash = code_hash2};
+    Account acct_a{.code_or_hash = code_hash1};
+    Account acct_b{.code_or_hash = code_hash2};
 
     commit_sequential(
         this->tdb,
@@ -1042,7 +1032,8 @@ TYPED_TEST(StateTest, get_code)
         StateDeltas{
             {a,
              StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
+                 .account =
+                     {std::nullopt, Account{.code_or_hash = code_hash1}}}}},
         Code{{code_hash1, vm::make_shared_intercode(contract)}},
         BlockHeader{});
 

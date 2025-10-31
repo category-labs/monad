@@ -25,6 +25,9 @@ class BlockMetrics
 {
     uint32_t n_retries_{0};
     std::chrono::microseconds tx_exec_time_{1};
+    std::chrono::microseconds access_list_time_{1};
+    size_t n_access_list_addrs_{0};
+    size_t n_access_list_keys_{0};
 
 public:
     void inc_retries()
@@ -42,9 +45,39 @@ public:
         tx_exec_time_ = exec_time;
     }
 
+    void set_access_list_time(std::chrono::microseconds const access_list_time)
+    {
+        access_list_time_ = access_list_time;
+    }
+
+    void set_access_list_addrs(size_t const count)
+    {
+        n_access_list_addrs_ = count;
+    }
+
+    void set_access_list_keys(size_t const count)
+    {
+        n_access_list_keys_ = count;
+    }
+
     std::chrono::microseconds tx_exec_time() const
     {
         return tx_exec_time_;
+    }
+
+    std::chrono::microseconds access_list_time() const
+    {
+        return access_list_time_;
+    }
+
+    size_t access_list_addrs() const
+    {
+        return n_access_list_addrs_;
+    }
+
+    size_t access_list_keys() const
+    {
+        return n_access_list_keys_;
     }
 };
 

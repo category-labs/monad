@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -39,12 +40,12 @@ class AccountState;
 
 struct MonadChainContext
 {
-    ankerl::unordered_dense::segmented_set<Address> const
-        *grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        *parent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        &senders_and_authorities;
+    using AddressSet = ankerl::unordered_dense::segmented_set<
+        Address, BytesHashAvalanching<Address>>;
+
+    AddressSet const *grandparent_senders_and_authorities;
+    AddressSet const *parent_senders_and_authorities;
+    AddressSet const &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
 };

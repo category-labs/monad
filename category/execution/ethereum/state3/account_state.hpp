@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -48,7 +49,8 @@ class AccountState : public AccountSubstate
 {
 public: // TODO
     template <class Key, class T>
-    using Map = ankerl::unordered_dense::segmented_map<Key, T>;
+    using Map = ankerl::unordered_dense::segmented_map<
+        Key, T, BytesHashAvalanching<Key>>;
 
 protected:
     std::optional<Account> account_{};

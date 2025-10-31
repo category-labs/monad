@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -35,7 +36,8 @@ namespace trace
 {
 
     template <typename Key, typename Elem>
-    using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
+    using Map = ankerl::unordered_dense::segmented_map<
+        Key, Elem, BytesHashAvalanching<Key>>;
 
     struct PrestateTracer
     {

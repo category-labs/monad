@@ -217,18 +217,15 @@ void run_revert_transaction_test(
     }
 
     // Create sets for the new MonadChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
-        grandparent_senders_and_authorities;
+    MonadChainContext::AddressSet grandparent_senders_and_authorities;
     if (prevent_dip_bitset & (1 << SenderOrAuthorityInGrandparent)) {
         grandparent_senders_and_authorities.insert(SENDER);
     }
-    ankerl::unordered_dense::segmented_set<Address>
-        parent_senders_and_authorities;
+    MonadChainContext::AddressSet parent_senders_and_authorities;
     if (prevent_dip_bitset & (1 << SenderOrAuthorityInParent)) {
         parent_senders_and_authorities.insert(SENDER);
     }
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities = {SENDER};
+    MonadChainContext::AddressSet const senders_and_authorities = {SENDER};
 
     MonadChainContext chain_context{
         .grandparent_senders_and_authorities =
@@ -350,8 +347,8 @@ TEST(MonadChain, can_sender_dip_into_reserve)
         std::vector<Address> const senders = {{Address{1}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {}};
-        ankerl::unordered_dense::segmented_set<Address> const
-            senders_and_authorities{{Address{1}}};
+        MonadChainContext::AddressSet const senders_and_authorities{
+            {Address{1}}};
         MonadChainContext const context{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,
@@ -368,8 +365,8 @@ TEST(MonadChain, can_sender_dip_into_reserve)
         std::vector<Address> const senders = {{Address{2}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {Address{1}}};
-        ankerl::unordered_dense::segmented_set<Address> const
-            senders_and_authorities{{Address{1}}};
+        MonadChainContext::AddressSet const senders_and_authorities{
+            {Address{1}}};
         MonadChainContext const context{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,

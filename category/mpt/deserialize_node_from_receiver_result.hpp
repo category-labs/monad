@@ -54,12 +54,12 @@ namespace detail
     }
 
     template <class NodeType, class ResultType>
-    inline NodeType::UniquePtr deserialize_node_from_receiver_result(
+    inline NodeType::SharedPtr deserialize_node_from_receiver_result(
         ResultType buffer_, uint16_t buffer_off,
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state)
     {
         MONAD_ASSERT(buffer_);
-        typename NodeType::UniquePtr node;
+        typename NodeType::SharedPtr node;
         if constexpr (std::is_same_v<
                           std::decay_t<ResultType>,
                           typename monad::async::read_single_buffer_sender::

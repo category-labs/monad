@@ -29,7 +29,7 @@ using namespace MONAD_ASYNC_NAMESPACE;
 
 namespace
 {
-    Node::UniquePtr make_node_of_size(unsigned const node_disk_size)
+    Node::SharedPtr make_node_of_size(unsigned const node_disk_size)
     {
         MONAD_ASSERT(node_disk_size > sizeof(Node) + Node::disk_size_bytes);
         auto const node_value_size =

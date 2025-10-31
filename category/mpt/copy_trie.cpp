@@ -33,9 +33,9 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-Node::UniquePtr create_node_add_new_branch(
+Node::SharedPtr create_node_add_new_branch(
     UpdateAuxImpl &aux, Node *const node, unsigned char const new_branch,
-    Node::UniquePtr new_child, uint64_t const new_version,
+    Node::SharedPtr new_child, uint64_t const new_version,
     std::optional<byte_string_view> opt_value)
 {
     uint16_t const mask =
@@ -80,9 +80,9 @@ Node::UniquePtr create_node_add_new_branch(
         static_cast<int64_t>(new_version));
 }
 
-Node::UniquePtr create_node_with_two_children(
+Node::SharedPtr create_node_with_two_children(
     UpdateAuxImpl &aux, NibblesView const path, unsigned char const branch0,
-    Node::UniquePtr child0, unsigned char const branch1, Node::UniquePtr child1,
+    Node::SharedPtr child0, unsigned char const branch1, Node::SharedPtr child1,
     uint64_t const new_version, std::optional<byte_string_view> opt_value)
 {
     // mismatch: split node's path: turn node to a branch node with two
@@ -158,7 +158,7 @@ Node::SharedPtr copy_trie_impl(
     Node *parent = nullptr;
     unsigned char branch = INVALID_BRANCH;
     Node::SharedPtr node = dest_root;
-    Node::UniquePtr new_node{};
+    Node::SharedPtr new_node{};
     unsigned prefix_index = 0;
     unsigned node_prefix_index = 0;
 
@@ -216,7 +216,7 @@ Node::SharedPtr copy_trie_impl(
         if (node->mask & (1u << nibble)) {
             auto const index = node->to_child_index(nibble);
             if (node->next(index) == nullptr) {
-                Node::UniquePtr next_node_ondisk =
+                auto next_node_ondisk =
                     read_node_blocking(aux, node->fnext(index), dest_version);
                 MONAD_ASSERT(next_node_ondisk != nullptr);
                 node->set_next(index, std::move(next_node_ondisk));

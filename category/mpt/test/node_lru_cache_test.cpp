@@ -33,8 +33,9 @@ TEST(NodeCache, works)
     auto make_node = [&](uint32_t v) {
         monad::byte_string value(84, 0);
         memcpy(value.data(), &v, 4);
-        std::shared_ptr<CacheNode> node = copy_node<CacheNode>(
-            monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0).get());
+        auto temp_node =
+            monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
+        std::shared_ptr<CacheNode> node = copy_node<CacheNode>(temp_node.get());
         MONAD_ASSERT(node->get_mem_size() == NodeCache::AVERAGE_NODE_SIZE);
         return node;
     };
@@ -78,8 +79,9 @@ TEST(NodeCache, works)
 
     monad::byte_string large_value(84 * 3, 0);
     memcpy(large_value.data(), "hihi", 4);
-    auto node = copy_node<CacheNode>(
-        monad::mpt::make_node(0, {}, {}, std::move(large_value), 0, 0).get());
+    auto temp_large_node =
+        monad::mpt::make_node(0, {}, {}, std::move(large_value), 0, 0);
+    auto node = copy_node<CacheNode>(temp_large_node.get());
     EXPECT_EQ(node->get_mem_size(), 272);
     node_cache.insert(virtual_chunk_offset_t(6, 0, 1), std::move(node));
     // Everything else should get evicted

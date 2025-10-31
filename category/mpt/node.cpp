@@ -456,7 +456,7 @@ void ChildData::erase()
 }
 
 void ChildData::finalize(
-    Node::UniquePtr node, Compute &compute, bool const cache)
+    Node::SharedPtr node, Compute &compute, bool const cache)
 {
     MONAD_DEBUG_ASSERT(is_valid());
     ptr = std::move(node);
@@ -488,13 +488,13 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     MONAD_DEBUG_ASSERT(is_valid());
 }
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     Node &from, NibblesView const path,
     std::optional<byte_string_view> const value, int64_t const version)
 {
     auto const value_size =
         value.transform(&byte_string_view::size).value_or(0);
-    auto node = Node::make(
+    auto node = Node::make_shared(
         calculate_node_size(
             from.number_of_children(),
             from.child_data_len(),
@@ -530,17 +530,11 @@ Node::UniquePtr make_node(
     return node;
 }
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     size_t const data_size, int64_t const version)
 {
-    MONAD_DEBUG_ASSERT(data_size <= KECCAK256_SIZE);
-    if (value.has_value()) {
-        MONAD_DEBUG_ASSERT(
-            value->size() <=
-            std::numeric_limits<decltype(Node::value_len)>::max());
-    }
     for (size_t i = 0; i < 16; ++i) {
         MONAD_DEBUG_ASSERT(
             !std::ranges::contains(children, i, &ChildData::branch) ||
@@ -558,7 +552,7 @@ Node::UniquePtr make_node(
         }
     }
 
-    auto node = Node::make(
+    auto node = Node::make_shared(
         calculate_node_size(
             number_of_children,
             total_child_data_size,
@@ -596,7 +590,7 @@ Node::UniquePtr make_node(
     return node;
 }
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     byte_string_view const data, int64_t const version)
@@ -608,7 +602,7 @@ Node::UniquePtr make_node(
 
 // all children's offset are set before creating parent
 // create node with at least one child
-Node::UniquePtr create_node_with_children(
+Node::SharedPtr create_node_with_children(
     Compute &comp, uint16_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     int64_t const version)

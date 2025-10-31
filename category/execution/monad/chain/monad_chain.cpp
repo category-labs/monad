@@ -73,7 +73,7 @@ Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
-    std::vector<std::optional<Address>> const &authorities) const
+    std::span<std::optional<Address> const> const authorities) const
 {
 
     monad_revision const monad_rev = get_monad_revision(timestamp);

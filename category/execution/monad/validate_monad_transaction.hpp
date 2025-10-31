@@ -34,7 +34,7 @@
 
 #include <initializer_list>
 #include <optional>
-#include <vector>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -52,7 +52,7 @@ enum class MonadTransactionError
 Result<void> validate_monad_transaction(
     monad_revision, evmc_revision, Transaction const &, Address const &sender,
     State &, uint256_t const &base_fee_per_gas,
-    std::vector<std::optional<Address>> const &authorities);
+    std::span<std::optional<Address> const> authorities);
 
 MONAD_NAMESPACE_END
 

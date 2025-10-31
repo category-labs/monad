@@ -77,7 +77,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
+    std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, uint64_t const i,
     RevertTransactionFn const &revert_transaction)
     : chain_{chain}
@@ -286,7 +286,7 @@ template <Traits traits>
 ExecuteTransaction<traits>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
+    std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,

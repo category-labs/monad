@@ -111,7 +111,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 std::vector<std::optional<Address>> recover_senders(
-    std::vector<Transaction> const &transactions,
+    std::span<Transaction const> const transactions,
     fiber::PriorityPool &priority_pool)
 {
     std::vector<std::optional<Address>> senders{transactions.size()};
@@ -139,7 +139,7 @@ std::vector<std::optional<Address>> recover_senders(
 }
 
 std::vector<std::vector<std::optional<Address>>> recover_authorities(
-    std::vector<Transaction> const &transactions,
+    std::span<Transaction const> const transactions,
     fiber::PriorityPool &priority_pool)
 {
     std::vector<std::vector<std::optional<Address>>> authorities{
@@ -211,13 +211,13 @@ EXPLICIT_TRAITS(execute_block_header);
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &chain, BlockHeader const &header,
-    std::vector<Transaction> const &transactions,
-    std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    std::span<Transaction const> const transactions,
+    std::span<Address const> const senders,
+    std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
-    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
+    std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
@@ -328,12 +328,13 @@ EXPLICIT_TRAITS(execute_block_transactions);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &chain, Block const &block, std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    Chain const &chain, Block const &block,
+    std::span<Address const> const senders,
+    std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::PriorityPool &priority_pool, BlockMetrics &block_metrics,
-    std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
-    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
+    std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
     TRACE_BLOCK_EVENT(StartBlock);

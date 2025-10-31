@@ -26,7 +26,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
-#include <vector>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -56,7 +56,7 @@ protected:
     Chain const &chain_;
     Transaction const &tx_;
     Address const &sender_;
-    std::vector<std::optional<Address>> const &authorities_;
+    std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
     uint64_t i_;
     RevertTransactionFn revert_transaction_;
@@ -64,7 +64,7 @@ protected:
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
         uint64_t i,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
@@ -96,7 +96,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
 public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
-        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         trace::StateTracer &,

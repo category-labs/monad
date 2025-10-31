@@ -57,6 +57,7 @@
 
 #include <quill/Quill.h>
 
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <iterator>
@@ -723,7 +724,8 @@ struct monad_eth_call_executor
             return;
         }
 
-        auto const authorities = recover_authorities({txn}, active_pool.pool);
+        auto const authorities =
+            recover_authorities(std::array{txn}, active_pool.pool);
         MONAD_ASSERT(authorities.size() == 1);
 
         active_pool.pool.submit(

@@ -19,6 +19,7 @@
 
 #include <evmc/evmc.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 
@@ -28,6 +29,11 @@ using Address = ::evmc::address;
 
 static_assert(sizeof(Address) == 20);
 static_assert(alignof(Address) == 1);
+
+constexpr bool is_zero(evmc_address const &addr)
+{
+    return std::ranges::all_of(addr.bytes, [](auto const b) { return b == 0; });
+}
 
 MONAD_NAMESPACE_END
 

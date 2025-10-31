@@ -75,8 +75,6 @@
         return f<::monad::MonadTraits<MONAD_SIX>>(__VA_ARGS__);                \
     case MONAD_NEXT:                                                           \
         return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
-    default:                                                                   \
-        break;                                                                 \
     }
 
 // NOLINTEND(bugprone-macro-parentheses)

@@ -29,8 +29,7 @@ enum monad_revision
     MONAD_FOUR = 4,
     MONAD_FIVE = 5,
     MONAD_SIX = 6,
-    MONAD_NEXT = 7,
-    MONAD_COUNT,
+    MONAD_NEXT = 7
 };
 
 inline char const *monad_revision_to_string(enum monad_revision const rev)
@@ -52,9 +51,8 @@ inline char const *monad_revision_to_string(enum monad_revision const rev)
         return "MONAD_SIX";
     case MONAD_NEXT:
         return "MONAD_NEXT";
-    default:
-        return "UNKNOWN_REVISION";
     }
+    return ""; // unreachable
 }
 
 #ifdef __cplusplus

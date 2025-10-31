@@ -48,7 +48,7 @@ namespace detail
     }
 
     using MonadRevisionTypes = decltype(make_monad_revision_types(
-        std::make_index_sequence<MONAD_COUNT>{}));
+        std::make_index_sequence<MONAD_NEXT + 1>{}));
 
     // Skip over EVMC_REVISION which is EVMC_EXPERIMENTAL
     using EvmRevisionTypes = decltype(make_evm_revision_types(
@@ -155,7 +155,7 @@ std::vector<std::variant<evmc_revision, monad_revision>> monad_evm_revisions()
     for (auto evm_rev = 0; evm_rev < EVMC_MAX_REVISION; ++evm_rev) {
         result.push_back(static_cast<evmc_revision>(evm_rev));
     }
-    for (auto monad_rev = 0; monad_rev < MONAD_COUNT; ++monad_rev) {
+    for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {
         result.push_back(static_cast<monad_revision>(monad_rev));
     }
     return result;

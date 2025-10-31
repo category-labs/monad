@@ -168,7 +168,9 @@ void CallTracer::on_exit(evmc::Result const &res)
     frame.status = res.status_code;
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
-        frame.to = res.create_address;
+        auto const is_zero = std::ranges::all_of(
+            res.create_address.bytes, [](auto b) { return b == 0; });
+        frame.to = is_zero ? std::nullopt : std::optional{res.create_address};
     }
 
     last_.pop();

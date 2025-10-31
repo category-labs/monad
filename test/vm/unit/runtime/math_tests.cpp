@@ -190,52 +190,42 @@ TEST_F(RuntimeTest, MulMod)
         9);
 }
 
-TEST_F(RuntimeTest, ExpOld)
+TYPED_TEST(RuntimeTraitsTest, Exp)
 {
-    auto f = wrap(exp<EvmTraits<EVMC_TANGERINE_WHISTLE>>);
+    auto f = TestFixture::wrap(exp<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 0;
+    this->ctx_.gas_remaining = 0;
     ASSERT_EQ(f(100, 0), 1);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 
-    ctx_.gas_remaining = 10;
+    this->ctx_.gas_remaining = 50;
     ASSERT_EQ(f(10, 2), 100);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
+        ASSERT_EQ(this->ctx_.gas_remaining, 40);
+    }
+    else {
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    }
 
-    ctx_.gas_remaining = 20;
+    this->ctx_.gas_remaining = 100;
     ASSERT_EQ(
         f(3, 256),
         0xC7ADEEB80D4FFF81FED242815E55BC8375A205DE07597D51D2105F2F0730F401_u256);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
+        ASSERT_EQ(this->ctx_.gas_remaining, 80);
+    }
+    else {
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    }
 
-    ctx_.gas_remaining = 30;
+    this->ctx_.gas_remaining = 150;
     ASSERT_EQ(
         f(5, 65536),
         0x6170C9D4CF040C5B5B784780A1BD33BA7B6BB3803AA626C24C21067A267C0001_u256);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, ExpNew)
-{
-    auto f = wrap(exp<EvmTraits<EVMC_CANCUN>>);
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(f(100, 0), 1);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-
-    ctx_.gas_remaining = 50;
-    ASSERT_EQ(f(10, 2), 100);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-
-    ctx_.gas_remaining = 100;
-    ASSERT_EQ(
-        f(3, 256),
-        0xC7ADEEB80D4FFF81FED242815E55BC8375A205DE07597D51D2105F2F0730F401_u256);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-
-    ctx_.gas_remaining = 150;
-    ASSERT_EQ(
-        f(5, 65536),
-        0x6170C9D4CF040C5B5B784780A1BD33BA7B6BB3803AA626C24C21067A267C0001_u256);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
+        ASSERT_EQ(this->ctx_.gas_remaining, 120);
+    }
+    else {
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    }
 }

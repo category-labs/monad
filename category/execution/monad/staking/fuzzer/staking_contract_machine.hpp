@@ -17,6 +17,8 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 
+#include <magic_enum.hpp>
+
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -106,9 +108,11 @@ namespace monad::staking::test
             precompile_claim_rewards,
             precompile_change_commission,
             precompile_external_reward,
-            precompile_get_delegator,
-            TRANSITION_COUNT
+            precompile_get_delegator
         };
+
+        static constexpr size_t TRANSITION_COUNT =
+            magic_enum::enum_count<Transition>();
 
         struct Config
         {

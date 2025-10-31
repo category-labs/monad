@@ -309,6 +309,7 @@ target_link_libraries(
   PUBLIC monad_trie
   PUBLIC evmc
   PUBLIC intx::intx
+  PUBLIC magic_enum::magic_enum
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 

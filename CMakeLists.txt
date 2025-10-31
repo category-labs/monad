@@ -165,6 +165,9 @@ if(MONAD_COMPILER_LLVM)
   add_definitions(-DMONAD_COMPILER_LLVM)
 endif()
 
+# magic_enum
+find_package(magic_enum REQUIRED)
+
 # nanobench
 add_subdirectory("third_party/nanobench")
 

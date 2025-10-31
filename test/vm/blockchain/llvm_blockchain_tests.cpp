@@ -32,8 +32,6 @@ int main(int argc, char **argv)
     auto const root =
         monad::test_resource::ethereum_tests_dir / "BlockchainTests";
 
-    init_llvm();
-
     auto vm =
         evmc::VM{new BlockchainTestVM(BlockchainTestVM::Implementation::LLVM)};
     blockchain_test_setup(&argc, argv);

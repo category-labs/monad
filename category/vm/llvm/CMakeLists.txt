@@ -32,7 +32,7 @@ target_sources(monad-vm-llvm PRIVATE
   "execute.cpp"
   "execute.hpp"
   "emitter.hpp"
-  "virtual_stack.hpp"
+  "dependency_blocks.hpp"
   "llvm.cpp"
   "llvm.hpp"
   "llvm_state.hpp"

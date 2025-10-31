@@ -298,6 +298,7 @@ void set_override_balance(
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
+    MONAD_ASSERT(balance_len == sizeof(uint256_t));
     byte_string const b{balance, balance + balance_len};
     m->override_sets[address].balance = std::move(b);
 }

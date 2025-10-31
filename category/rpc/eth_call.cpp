@@ -600,7 +600,8 @@ struct monad_eth_call_executor
             return;
         }
 
-        auto const authorities = recover_authorities({txn}, active_pool.pool);
+        auto const authorities =
+            recover_authorities(std::span{&txn, 1}, active_pool.pool);
         MONAD_ASSERT(authorities.size() == 1);
 
         active_pool.pool.submit(

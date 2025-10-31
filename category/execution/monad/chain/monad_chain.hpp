@@ -25,6 +25,7 @@
 #include <evmc/evmc.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -62,7 +63,7 @@ struct MonadChain : Chain
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         Address const &sender, State &, uint256_t const &base_fee_per_gas,
-        std::vector<std::optional<Address>> const &authorities) const override;
+        std::span<std::optional<Address> const> authorities) const override;
 
     bool revert_transaction(
         uint64_t block_number, uint64_t timestamp, Address const &sender,

@@ -29,6 +29,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -42,28 +43,28 @@ struct Chain;
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &, BlockHeader const &, std::span<Transaction const>,
-    std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    std::span<Address const> senders,
+    std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
-    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+    BlockMetrics &, std::span<std::unique_ptr<CallTracerBase>>,
+    std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block const &, std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    Chain const &, Block const &, std::span<Address const> senders,
+    std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::PriorityPool &,
-    BlockMetrics &, std::vector<std::unique_ptr<CallTracerBase>> &,
-    std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+    BlockMetrics &, std::span<std::unique_ptr<CallTracerBase>>,
+    std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
 
 std::vector<std::optional<Address>>
-recover_senders(std::vector<Transaction> const &, fiber::PriorityPool &);
+recover_senders(std::span<Transaction const>, fiber::PriorityPool &);
 
 std::vector<std::vector<std::optional<Address>>>
-recover_authorities(std::vector<Transaction> const &, fiber::PriorityPool &);
+recover_authorities(std::span<Transaction const>, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

@@ -201,11 +201,12 @@ namespace
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
 
-        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-            enriched_txn,
-            header.base_fee_per_gas,
-            header.excess_blob_gas,
-            chain.get_chain_id()));
+        BOOST_OUTCOME_TRY(
+            static_validate_transaction<traits>(
+                enriched_txn,
+                header.base_fee_per_gas,
+                header.excess_blob_gas,
+                chain.get_chain_id()));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
@@ -601,6 +602,7 @@ void set_override_balance(
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
+    MONAD_ASSERT(balance_len == sizeof(uint256_t));
     m->override_sets[address].balance = {balance, balance + balance_len};
 }
 

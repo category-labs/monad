@@ -32,7 +32,7 @@ Result<void> validate_monad_transaction(
     monad_revision const monad_rev, evmc_revision const rev,
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
-    std::vector<std::optional<Address>> const &authorities)
+    std::span<std::optional<Address> const> const authorities)
 {
     auto const acct = state.recent_account(sender);
     auto const &icode = state.get_code(sender)->intercode();

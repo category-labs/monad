@@ -21,9 +21,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-monad_revision MonadDevnet::get_monad_revision(uint64_t /*timestamp*/) const
+monad_revision MonadDevnet::get_monad_revision(uint64_t timestamp) const
 {
-    return MONAD_NEXT;
+    if (MONAD_LIKELY(timestamp >= FORK_UNIX_TS_S)) {
+        return MONAD_SIX;
+    }
+    return MONAD_THREE;
 }
 
 uint256_t MonadDevnet::get_chain_id() const

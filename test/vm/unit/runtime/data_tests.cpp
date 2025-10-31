@@ -32,38 +32,43 @@ using namespace monad::vm::compiler::test;
 constexpr auto addr = vm::runtime::uint256_t{678};
 constexpr auto wei = vm::runtime::uint256_t{782374};
 
-TEST_F(RuntimeTest, BalanceHomestead)
+template <typename Trait>
+constexpr auto gas_remaining_cold_access()
 {
-    using traits = EvmTraits<EVMC_HOMESTEAD>;
-    auto f = wrap(balance<traits>);
-    set_balance(addr, wei);
+    if constexpr (is_monad_trait_v<Trait>) {
+        if constexpr (Trait::monad_rev() >= MONAD_SEVEN) {
+            return 0;
+        }
+    }
+    if constexpr (Trait::evm_rev() <= EVMC_ISTANBUL) {
+        return 10'000;
+    }
+    else {
+        return 7'500;
+    }
+};
 
-    ctx_.gas_remaining = 0;
+TYPED_TEST(RuntimeTraitsTest, BalanceCold)
+{
+    using traits = TestFixture::Trait;
+    auto f = TestFixture::wrap(balance<traits>);
+    TestFixture::set_balance(addr, wei);
+
+    this->ctx_.gas_remaining = 10000;
     ASSERT_EQ(f(addr), wei);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
 }
 
-TEST_F(RuntimeTest, BalanceCancunCold)
+TYPED_TEST(RuntimeTraitsTest, BalanceWarm)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto f = wrap(balance<traits>);
-    set_balance(addr, wei);
+    auto f = TestFixture::wrap(balance<typename TestFixture::Trait>);
+    TestFixture::set_balance(addr, wei);
+    this->host_.access_account(address_from_uint256(addr));
 
-    ctx_.gas_remaining = 2500;
+    this->ctx_.gas_remaining = 0;
     ASSERT_EQ(f(addr), wei);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, BalanceCancunWarm)
-{
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto f = wrap(balance<traits>);
-    set_balance(addr, wei);
-    host_.access_account(address_from_uint256(addr));
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(f(addr), wei);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 }
 
 TEST_F(RuntimeTest, CallDataLoadInBounds)
@@ -225,74 +230,74 @@ TEST_F(RuntimeTest, CodeCopyOutOfBounds)
     }
 }
 
-TEST_F(RuntimeTest, ExtCodeCopyHomestead)
+TYPED_TEST(RuntimeTraitsTest, ExtCodeCopy)
 {
-    using traits = EvmTraits<EVMC_HOMESTEAD>;
-    auto copy = wrap(extcodecopy<traits>);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(extcodecopy<traits>);
 
-    host_.accounts[address_from_uint256(addr)].code =
-        evmc::bytes(code_.begin(), code_.end());
+    this->host_.accounts[address_from_uint256(addr)].code =
+        evmc::bytes(this->code_.begin(), this->code_.end());
 
-    ctx_.gas_remaining = 6;
+    this->ctx_.gas_remaining = 10'006;
     copy(addr, 0, 0, 32);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 32);
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
+    ASSERT_EQ(this->ctx_.memory.size, 32);
 
-    for (auto i = 0u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 127 - i);
+    for (auto i = 0u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 127 - i);
     }
 }
 
-TEST_F(RuntimeTest, ExtCodeCopyCancunOutOfBounds)
+TYPED_TEST(RuntimeTraitsTest, ExtCodeCopyOutOfBounds)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto copy = wrap(extcodecopy<traits>);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(extcodecopy<traits>);
 
-    host_.accounts[address_from_uint256(addr)].code =
-        evmc::bytes(code_.begin(), code_.end());
+    this->host_.accounts[address_from_uint256(addr)].code =
+        evmc::bytes(this->code_.begin(), this->code_.end());
 
-    ctx_.gas_remaining = 2506;
+    this->ctx_.gas_remaining = 10'006;
     copy(addr, 0, 112, 32);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 32);
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
+    ASSERT_EQ(this->ctx_.memory.size, 32);
 
     for (auto i = 0u; i < 16; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 15 - i);
+        ASSERT_EQ(this->ctx_.memory.data[i], 15 - i);
     }
 
-    for (auto i = 16u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+    for (auto i = 16u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 }
 
-TEST_F(RuntimeTest, ExtCodeSize)
+TYPED_TEST(RuntimeTraitsTest, ExtCodeSize)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto size = wrap(extcodesize<traits>);
+    using traits = TestFixture::Trait;
+    auto size = TestFixture::wrap(extcodesize<traits>);
 
-    host_.accounts[address_from_uint256(addr)].code =
-        evmc::bytes(code_.begin(), code_.end());
+    this->host_.accounts[address_from_uint256(addr)].code =
+        evmc::bytes(this->code_.begin(), this->code_.end());
 
-    ctx_.gas_remaining = 2500;
+    this->ctx_.gas_remaining = 10'000;
 
     ASSERT_EQ(size(addr), 128);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
 }
 
-TEST_F(RuntimeTest, ExtCodeHash)
+TYPED_TEST(RuntimeTraitsTest, ExtCodeHash)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto hash = wrap(extcodehash<traits>);
+    using traits = TestFixture::Trait;
+    auto hash = TestFixture::wrap(extcodehash<traits>);
 
-    host_.accounts[address_from_uint256(addr)].codehash =
+    this->host_.accounts[address_from_uint256(addr)].codehash =
         bytes32_from_uint256(713682);
 
-    ctx_.gas_remaining = 2500;
+    this->ctx_.gas_remaining = 10'000;
 
     ASSERT_EQ(hash(addr), 713682);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
 }
 
 TEST_F(RuntimeTest, ReturnDataSize)

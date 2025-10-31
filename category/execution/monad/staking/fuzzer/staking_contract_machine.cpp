@@ -681,8 +681,8 @@ namespace monad::staking::test
         case Transition::precompile_get_delegator:
             precompile_get_delegator();
             break;
-        default:
-            MONAD_ABORT();
+        case Transition::TRANSITION_COUNT:
+            MONAD_ABORT(); // invalid enum value
         }
         // Skip `WITHDRAWAL_DELAY` epochs once in a while to allow for
         // withdrawal requests become ready in a more natural way than
@@ -721,9 +721,10 @@ namespace monad::staking::test
             return "Transition::precompile_external_reward";
         case Transition::precompile_get_delegator:
             return "Transition::precompile_get_delegator";
-        default:
-            MONAD_ABORT();
+        case Transition::TRANSITION_COUNT:
+            MONAD_ABORT(); // invalid enum value
         }
+        MONAD_ABORT(); // unreachable
     }
 
     template <Traits traits>

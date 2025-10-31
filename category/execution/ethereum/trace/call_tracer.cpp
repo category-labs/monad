@@ -127,9 +127,10 @@ void CallTracer::on_enter(evmc_message const &msg)
                     return CallType::CREATE;
                 case EVMC_CREATE2:
                     return CallType::CREATE2;
-                default:
-                    MONAD_ASSERT(false);
+                case EVMC_EOFCREATE:
+                    MONAD_ABORT(); // unsupported
                 }
+                MONAD_ABORT(); // unreachable
             }(),
         .flags = msg.flags,
         .from = from,

@@ -269,9 +269,8 @@ namespace monad::vm::compiler::native
             return "StackOffset";
         case Emitter::LocationType::Literal:
             return "Literal";
-        default:
-            MONAD_VM_ASSERT(false);
         }
+        return ""; // unreachable
     }
 
     template <size_t N>

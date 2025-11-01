@@ -641,7 +641,7 @@ namespace monad::staking::test
     bool StakingContractMachine<traits>::transition(Transition t)
     {
         if (enable_trace_) {
-            std::cout << transition_string(t) << std::endl;
+            std::cout << magic_enum::enum_name(t) << std::endl;
         }
         bool ok = true;
         switch (t) {
@@ -689,38 +689,6 @@ namespace monad::staking::test
             engine_, 0.20, [&](auto &) { skip_epochs(WITHDRAWAL_DELAY); });
         assert_all_invariants();
         return ok;
-    }
-
-    template <Traits traits>
-    std::string StakingContractMachine<traits>::transition_string(Transition t)
-    {
-        switch (t) {
-        case Transition::syscall_on_epoch_change:
-            return "Transition::syscall_on_epoch_change";
-        case Transition::syscall_snapshot:
-            return "Transition::syscall_snapshot";
-        case Transition::syscall_reward:
-            return "Transition::syscall_reward";
-        case Transition::precompile_add_validator:
-            return "Transition::precompile_add_validator";
-        case Transition::precompile_delegate:
-            return "Transition::precompile_delegate";
-        case Transition::precompile_undelegate:
-            return "Transition::precompile_undelegate";
-        case Transition::precompile_compound:
-            return "Transition::precompile_compound";
-        case Transition::precompile_withdraw:
-            return "Transition::precompile_withdraw";
-        case Transition::precompile_claim_rewards:
-            return "Transition::precompile_claim_rewards";
-        case Transition::precompile_change_commission:
-            return "Transition::precompile_change_commission";
-        case Transition::precompile_external_reward:
-            return "Transition::precompile_external_reward";
-        case Transition::precompile_get_delegator:
-            return "Transition::precompile_get_delegator";
-        }
-        MONAD_ABORT(); // unreachable
     }
 
     template <Traits traits>

@@ -153,8 +153,6 @@ namespace monad::staking::test
 
         bool transition(Transition);
 
-        static std::string transition_string(Transition);
-
         void skip_epochs(uint64_t);
 
         fuzzing::seed_t gen();

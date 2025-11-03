@@ -1027,7 +1027,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     constexpr auto balance_gas = [] {
         if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
                 return 10100;
             }
             else {

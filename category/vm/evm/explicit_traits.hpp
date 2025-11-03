@@ -71,6 +71,8 @@
         f<::monad::MonadTraits<MONAD_FIVE>>;                                   \
     template decltype(f<::monad::MonadTraits<MONAD_SIX>>)                      \
         f<::monad::MonadTraits<MONAD_SIX>>;                                    \
+    template decltype(f<::monad::MonadTraits<MONAD_SEVEN>>)                    \
+        f<::monad::MonadTraits<MONAD_SEVEN>>;                                  \
     template decltype(f<::monad::MonadTraits<MONAD_NEXT>>)                     \
         f<::monad::MonadTraits<MONAD_NEXT>>;
 
@@ -105,6 +107,7 @@
     template class c<::monad::MonadTraits<MONAD_FOUR>>;                        \
     template class c<::monad::MonadTraits<MONAD_FIVE>>;                        \
     template class c<::monad::MonadTraits<MONAD_SIX>>;                         \
+    template class c<::monad::MonadTraits<MONAD_SEVEN>>;                       \
     template class c<::monad::MonadTraits<MONAD_NEXT>>;
 
 #define EXPLICIT_TRAITS_CLASS(c)                                               \
@@ -172,6 +175,8 @@
         id<::monad::MonadTraits<MONAD_FIVE>>;                                  \
     template decltype(id<::monad::MonadTraits<MONAD_SIX>>)                     \
         id<::monad::MonadTraits<MONAD_SIX>>;                                   \
+    template decltype(id<::monad::MonadTraits<MONAD_SEVEN>>)                   \
+        id<::monad::MonadTraits<MONAD_SEVEN>>;                                 \
     template decltype(id<::monad::MonadTraits<MONAD_NEXT>>)                    \
         id<::monad::MonadTraits<MONAD_NEXT>>;
 

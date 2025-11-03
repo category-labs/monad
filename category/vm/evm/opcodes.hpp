@@ -815,6 +815,13 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_SEVEN>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_SEVEN>::evm_base>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_NEXT>>()
     {
         return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();

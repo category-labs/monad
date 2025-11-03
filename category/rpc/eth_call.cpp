@@ -296,8 +296,7 @@ namespace
         noop_call_tracers.reserve(span_size);
 
         for (size_t i = 0; i < span_size; ++i) {
-            noop_call_tracers.emplace_back(std::unique_ptr<NoopCallTracer>{
-                std::make_unique<NoopCallTracer>()});
+            noop_call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
         }
         std::span<std::unique_ptr<CallTracerBase>> noop_call_tracers_view{
             noop_call_tracers.data(), span_size};
@@ -323,20 +322,18 @@ namespace
             std::span<std::unique_ptr<trace::StateTracer>> state_tracers_view{
                 state_tracers.data(), span_size};
 
-            BOOST_OUTCOME_TRYV2(
-                auto &&,
-                execute_block_transactions<traits>(
-                    chain,
-                    header,
-                    transactions_view,
-                    senders_view,
-                    authorities_view,
-                    block_state,
-                    buffer,
-                    pool,
-                    metrics,
-                    noop_call_tracers_view,
-                    state_tracers_view));
+            BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
+                chain,
+                header,
+                transactions_view,
+                senders_view,
+                authorities_view,
+                block_state,
+                buffer,
+                pool,
+                metrics,
+                noop_call_tracers_view,
+                state_tracers_view));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -360,20 +357,18 @@ namespace
             std::span<std::unique_ptr<trace::StateTracer>> state_tracers_view{
                 state_tracers.data(), span_size};
 
-            BOOST_OUTCOME_TRYV2(
-                auto &&,
-                execute_block_transactions<traits>(
-                    chain,
-                    header,
-                    transactions_view,
-                    senders_view,
-                    authorities_view,
-                    block_state,
-                    buffer,
-                    pool,
-                    metrics,
-                    noop_call_tracers_view,
-                    state_tracers_view));
+            BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
+                chain,
+                header,
+                transactions_view,
+                senders_view,
+                authorities_view,
+                block_state,
+                buffer,
+                pool,
+                metrics,
+                noop_call_tracers_view,
+                state_tracers_view));
 
             // Compose state traces
             return Result<json>{std::move(traces)};
@@ -1112,8 +1107,9 @@ struct monad_eth_call_executor
                     }
 
                     // Load transactions, senders, and authorities
-                    Result<std::vector<monad::Transaction>> maybe_transactions =
-                        get_transactions(db, block_number, block_id);
+                    Result<std::vector<monad::Transaction>> const
+                        maybe_transactions =
+                            get_transactions(db, block_number, block_id);
                     if (maybe_transactions.has_error()) {
                         result->status_code = EVMC_REJECTED;
                         result->message = strdup("Failed to load transactions");
@@ -1135,8 +1131,8 @@ struct monad_eth_call_executor
                     std::vector<Address> senders;
                     senders.reserve(transactions.size());
                     {
-                        std::vector<std::optional<Address>> recovered_senders =
-                            monad::recover_senders(
+                        std::vector<std::optional<Address>> const
+                            recovered_senders = monad::recover_senders(
                                 transactions, fiber_pool->pool);
                         MONAD_ASSERT(
                             recovered_senders.size() == transactions.size());
@@ -1154,7 +1150,7 @@ struct monad_eth_call_executor
                         }
                         MONAD_ASSERT(senders.size() == transactions.size());
                     }
-                    std::vector<std::vector<std::optional<Address>>>
+                    std::vector<std::vector<std::optional<Address>>> const
                         authorities = monad::recover_authorities(
                             transactions, fiber_pool->pool);
 

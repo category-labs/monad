@@ -59,22 +59,22 @@ namespace
             emit.sub();
             break;
         case Div:
-            emit.udiv<traits>(remaining_base_gas);
+            emit.udiv(remaining_base_gas);
             break;
         case SDiv:
-            emit.sdiv<traits>(remaining_base_gas);
+            emit.sdiv(remaining_base_gas);
             break;
         case Mod:
-            emit.umod<traits>(remaining_base_gas);
+            emit.umod(remaining_base_gas);
             break;
         case SMod:
-            emit.smod<traits>(remaining_base_gas);
+            emit.smod(remaining_base_gas);
             break;
         case AddMod:
-            emit.addmod<traits>(remaining_base_gas);
+            emit.addmod(remaining_base_gas);
             break;
         case MulMod:
-            emit.mulmod<traits>(remaining_base_gas);
+            emit.mulmod(remaining_base_gas);
             break;
         case Exp:
             emit.exp<traits>(remaining_base_gas);

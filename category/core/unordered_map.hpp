@@ -17,12 +17,7 @@
 
 #include <category/core/config.hpp>
 
-#include "robin_hood.h"
-
 #include <ankerl/unordered_dense.h>
-
-#include <unordered_map>
-#include <unordered_set>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -71,12 +66,6 @@ namespace detail
     class unordered_dense_set_disabled;
 } // namespace detail
 
-//! \brief Hash arbitrary lengths of bytes into a `size_t`. Very useful.
-inline size_t hash_bytes(void const *p, size_t len) noexcept
-{
-    return size_t(ankerl::unordered_dense::detail::wyhash::hash(p, len));
-}
-
 /*! \brief A much faster inline-storage-based alternative to
 `std::unordered_map`, usually around 5x faster.
 
@@ -93,37 +82,14 @@ Be aware:
 
 - Maximum item count is 2^32-1.
 */
-#ifdef NDEBUG
-template <
-    class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>,
-    class Allocator = std::allocator<std::pair<Key, T>>>
+template <class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>>
 using unordered_dense_map = std::conditional_t<
     sizeof(std::pair<Key, T>) <= 384,
-    ankerl::unordered_dense::segmented_map<Key, T, Hash, Compare, Allocator>,
+    ankerl::unordered_dense::segmented_map<Key, T, Hash>,
     detail::unordered_dense_map_disabled>;
-template <
-    class Key, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>, class Allocator = std::allocator<Key>>
+template <class Key, class Hash = ankerl::unordered_dense::hash<Key>>
 using unordered_dense_set = std::conditional_t<
-    sizeof(Key) <= 384,
-    ankerl::unordered_dense::segmented_set<Key, Hash, Compare, Allocator>,
+    sizeof(Key) <= 384, ankerl::unordered_dense::segmented_set<Key, Hash>,
     detail::unordered_dense_set_disabled>;
-#else
-template <
-    class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>,
-    class Allocator = std::allocator<std::pair<Key const, T>>>
-using unordered_dense_map = std::conditional_t<
-    sizeof(std::pair<Key, T>) <= 384,
-    std::unordered_map<Key, T, Hash, Compare, Allocator>,
-    detail::unordered_dense_map_disabled>;
-template <
-    class Key, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>, class Allocator = std::allocator<Key>>
-using unordered_dense_set = std::conditional_t<
-    sizeof(Key) <= 384, std::unordered_set<Key, Hash, Compare, Allocator>,
-    detail::unordered_dense_set_disabled>;
-#endif
 
 MONAD_NAMESPACE_END

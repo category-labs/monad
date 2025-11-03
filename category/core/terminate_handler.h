@@ -15,18 +15,15 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-
-#include <stdint.h>
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-uint32_t monad_statesync_version() MONAD_NOEXCEPT;
-
-bool monad_statesync_client_compatible(uint32_t version) MONAD_NOEXCEPT;
+/// Install custom terminate handler that prints exception info and backtrace
+/// before aborting. This should be called early in main() to catch exceptions
+/// that escape noexcept functions (e.g., FFI boundaries).
+void monad_set_terminate_handler();
 
 #ifdef __cplusplus
 }

@@ -351,7 +351,7 @@ struct monad_statesync_server *monad_statesync_server_create(
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
         uint64_t size2),
     void (*statesync_server_send_done)(
-        monad_statesync_server_network *, struct monad_sync_done))
+        monad_statesync_server_network *, struct monad_sync_done)) noexcept
 {
     return new monad_statesync_server(monad_statesync_server{
         .context = ctx,
@@ -361,7 +361,8 @@ struct monad_statesync_server *monad_statesync_server_create(
         .statesync_server_send_done = statesync_server_send_done});
 }
 
-void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
+void monad_statesync_server_run_once(
+    struct monad_statesync_server *const sync) noexcept
 {
     unsigned char buf[sizeof(monad_sync_request)];
     if (sync->statesync_server_recv(sync->net, buf, 1) != 1) {
@@ -382,7 +383,7 @@ void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
     monad_statesync_server_handle_request(sync, rq);
 }
 
-void monad_statesync_server_destroy(monad_statesync_server *const sync)
+void monad_statesync_server_destroy(monad_statesync_server *const sync) noexcept
 {
     delete sync;
 }

@@ -248,14 +248,14 @@ namespace monad
     quill::Logger *tracer = nullptr;
 }
 
-monad_state_override *monad_state_override_create()
+monad_state_override *monad_state_override_create() noexcept
 {
     monad_state_override *const m = new monad_state_override();
 
     return m;
 }
 
-void monad_state_override_destroy(monad_state_override *const m)
+void monad_state_override_destroy(monad_state_override *const m) noexcept
 {
     MONAD_ASSERT(m);
     delete m;
@@ -263,7 +263,7 @@ void monad_state_override_destroy(monad_state_override *const m)
 
 void add_override_address(
     monad_state_override *const m, uint8_t const *const addr,
-    size_t const addr_len)
+    size_t const addr_len) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -278,7 +278,7 @@ void add_override_address(
 void set_override_balance(
     monad_state_override *const m, uint8_t const *const addr,
     size_t const addr_len, uint8_t const *const balance,
-    size_t const balance_len)
+    size_t const balance_len) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -294,7 +294,7 @@ void set_override_balance(
 
 void set_override_nonce(
     monad_state_override *const m, uint8_t const *const addr,
-    size_t const addr_len, uint64_t const nonce)
+    size_t const addr_len, uint64_t const nonce) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -308,7 +308,8 @@ void set_override_nonce(
 
 void set_override_code(
     monad_state_override *const m, uint8_t const *const addr,
-    size_t const addr_len, uint8_t const *const code, size_t const code_len)
+    size_t const addr_len, uint8_t const *const code,
+    size_t const code_len) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -325,7 +326,7 @@ void set_override_code(
 void set_override_state_diff(
     monad_state_override *const m, uint8_t const *const addr,
     size_t const addr_len, uint8_t const *const key, size_t const key_len,
-    uint8_t const *const value, size_t const value_len)
+    uint8_t const *const value, size_t const value_len) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -349,7 +350,7 @@ void set_override_state_diff(
 void set_override_state(
     monad_state_override *const m, uint8_t const *const addr,
     size_t const addr_len, uint8_t const *const key, size_t const key_len,
-    uint8_t const *const value, size_t const value_len)
+    uint8_t const *const value, size_t const value_len) noexcept
 {
     MONAD_ASSERT(m);
 
@@ -370,7 +371,7 @@ void set_override_state(
     state_object.emplace(k, std::move(v));
 }
 
-void monad_eth_call_result_release(monad_eth_call_result *const result)
+void monad_eth_call_result_release(monad_eth_call_result *const result) noexcept
 {
     MONAD_ASSERT(result);
     if (result->output_data) {
@@ -887,7 +888,7 @@ struct monad_eth_call_executor
 monad_eth_call_executor *monad_eth_call_executor_create(
     monad_eth_call_pool_config const low_pool_conf,
     monad_eth_call_pool_config const high_pool_conf,
-    uint64_t const node_lru_max_mem, char const *const dbpath)
+    uint64_t const node_lru_max_mem, char const *const dbpath) noexcept
 {
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
@@ -898,7 +899,7 @@ monad_eth_call_executor *monad_eth_call_executor_create(
     return e;
 }
 
-void monad_eth_call_executor_destroy(monad_eth_call_executor *const e)
+void monad_eth_call_executor_destroy(monad_eth_call_executor *const e) noexcept
 {
     MONAD_ASSERT(e);
 
@@ -915,7 +916,7 @@ void monad_eth_call_executor_submit(
     monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
-    bool const gas_specified)
+    bool const gas_specified) noexcept
 {
     MONAD_ASSERT(executor);
 
@@ -961,7 +962,7 @@ void monad_eth_call_executor_submit(
 }
 
 struct monad_eth_call_executor_state
-monad_eth_call_executor_get_state(monad_eth_call_executor *const e)
+monad_eth_call_executor_get_state(monad_eth_call_executor *const e) noexcept
 {
     MONAD_ASSERT(e);
     return monad_eth_call_executor_state{

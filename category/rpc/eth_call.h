@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/trace/tracer_config.h>
 
@@ -31,34 +32,35 @@ static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 400'000;
 struct monad_state_override;
 struct monad_eth_call_executor;
 
-struct monad_state_override *monad_state_override_create();
+struct monad_state_override *monad_state_override_create() MONAD_NOEXCEPT;
 
-void monad_state_override_destroy(struct monad_state_override *);
+void monad_state_override_destroy(struct monad_state_override *) MONAD_NOEXCEPT;
 
 void add_override_address(
-    struct monad_state_override *, uint8_t const *addr, size_t addr_len);
+    struct monad_state_override *, uint8_t const *addr,
+    size_t addr_len) MONAD_NOEXCEPT;
 
 void set_override_balance(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
-    uint8_t const *balance, size_t balance_len);
+    uint8_t const *balance, size_t balance_len) MONAD_NOEXCEPT;
 
 void set_override_nonce(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
-    uint64_t nonce);
+    uint64_t nonce) MONAD_NOEXCEPT;
 
 void set_override_code(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
-    uint8_t const *code, size_t code_len);
+    uint8_t const *code, size_t code_len) MONAD_NOEXCEPT;
 
 void set_override_state_diff(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *key, size_t key_len, uint8_t const *value,
-    size_t valuen_len);
+    size_t valuen_len) MONAD_NOEXCEPT;
 
 void set_override_state(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *key, size_t key_len, uint8_t const *value,
-    size_t valuen_len);
+    size_t valuen_len) MONAD_NOEXCEPT;
 
 typedef struct monad_eth_call_result
 {
@@ -76,7 +78,7 @@ typedef struct monad_eth_call_result
     size_t encoded_trace_len;
 } monad_eth_call_result;
 
-void monad_eth_call_result_release(monad_eth_call_result *);
+void monad_eth_call_result_release(monad_eth_call_result *) MONAD_NOEXCEPT;
 
 struct monad_eth_call_pool_config
 {
@@ -121,9 +123,10 @@ struct monad_eth_call_executor_state
 struct monad_eth_call_executor *monad_eth_call_executor_create(
     struct monad_eth_call_pool_config low_pool_conf,
     struct monad_eth_call_pool_config high_pool_conf, uint64_t node_lru_max_mem,
-    char const *dbpath);
+    char const *dbpath) MONAD_NOEXCEPT;
 
-void monad_eth_call_executor_destroy(struct monad_eth_call_executor *);
+void monad_eth_call_executor_destroy(struct monad_eth_call_executor *)
+    MONAD_NOEXCEPT;
 
 void monad_eth_call_executor_submit(
     struct monad_eth_call_executor *, enum monad_chain_config,
@@ -132,10 +135,10 @@ void monad_eth_call_executor_submit(
     uint64_t block_number, uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
     void (*complete)(monad_eth_call_result *, void *user), void *user,
-    enum monad_tracer_config, bool gas_specified);
+    enum monad_tracer_config, bool gas_specified) MONAD_NOEXCEPT;
 
-struct monad_eth_call_executor_state
-monad_eth_call_executor_get_state(struct monad_eth_call_executor *);
+struct monad_eth_call_executor_state monad_eth_call_executor_get_state(
+    struct monad_eth_call_executor *) MONAD_NOEXCEPT;
 
 #ifdef __cplusplus
 }

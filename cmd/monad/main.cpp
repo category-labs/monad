@@ -24,6 +24,7 @@
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
 #include <category/core/procfs/statm.h>
+#include <category/core/terminate_handler.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -86,27 +87,6 @@ void signal_handler(int)
     stop = 1;
 }
 
-std::terminate_handler cxx_runtime_terminate_handler;
-
-extern "C" void monad_stack_backtrace_capture_and_print(
-    char *buffer, size_t size, int fd, unsigned indent,
-    bool print_async_unsafe_info);
-
-void backtrace_terminate_handler()
-{
-    char buffer[16384];
-    monad_stack_backtrace_capture_and_print(
-        buffer,
-        sizeof(buffer),
-        STDERR_FILENO,
-        /*indent*/ 3,
-        /*print_async_unsafe_info*/ true);
-
-    // Now that we've printed the trace, delegate the actual termination to the
-    // handler originally installed by the C++ runtime support library
-    cxx_runtime_terminate_handler();
-}
-
 MONAD_ANONYMOUS_NAMESPACE_END
 
 using namespace monad;
@@ -114,8 +94,8 @@ namespace fs = std::filesystem;
 
 int main(int const argc, char const *argv[])
 try {
-    cxx_runtime_terminate_handler = std::get_terminate();
-    std::set_terminate(backtrace_terminate_handler);
+    // Install custom terminate handler that prints exception info and backtrace
+    monad_set_terminate_handler();
 
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();

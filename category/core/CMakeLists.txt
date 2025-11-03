@@ -74,6 +74,8 @@ add_library(
   "assert.h"
   "backtrace.cpp"
   "backtrace.hpp"
+  "terminate_handler.cpp"
+  "terminate_handler.h"
   "basic_formatter.hpp"
   "blake3.hpp"
   "byte_string.hpp"

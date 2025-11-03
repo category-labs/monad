@@ -48,14 +48,6 @@ TEST(UnorderedDenseMap, works)
     EXPECT_EQ(map[5], 6);
 }
 
-TEST(UnorderedFlatMap, works)
-{
-    using namespace MONAD_NAMESPACE;
-    unordered_flat_map<int, int> map;
-    map[5] = 6;
-    EXPECT_EQ(map[5], 6);
-}
-
 TEST(UnorderedNodeSet, works)
 {
     using namespace MONAD_NAMESPACE;
@@ -68,14 +60,6 @@ TEST(UnorderedDenseSet, works)
 {
     using namespace MONAD_NAMESPACE;
     unordered_dense_set<int> set;
-    set.insert(5);
-    EXPECT_TRUE(set.contains(5));
-}
-
-TEST(UnorderedFlatSet, works)
-{
-    using namespace MONAD_NAMESPACE;
-    unordered_flat_set<int> set;
     set.insert(5);
     EXPECT_TRUE(set.contains(5));
 }
@@ -153,9 +137,6 @@ TEST(UnorderedSets, DISABLED_quick_comparative_benchmark)
         if constexpr (sizeof(T) <= 384) {
             do_cont(
                 tag<unordered_dense_set<T, hasher>>{}, "unordered_dense_set");
-        }
-        if constexpr (sizeof(T) <= 48) {
-            do_cont(tag<unordered_flat_set<T, hasher>>{}, "unordered_flat_set");
         }
     };
     do_test(tag<bytes<16>>{}, "16 byte values");

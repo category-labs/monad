@@ -69,8 +69,6 @@ namespace detail
 {
     class unordered_dense_map_disabled;
     class unordered_dense_set_disabled;
-    class unordered_flat_map_disabled;
-    class unordered_flat_set_disabled;
 } // namespace detail
 
 //! \brief Hash arbitrary lengths of bytes into a `size_t`. Very useful.
@@ -78,42 +76,6 @@ inline size_t hash_bytes(void const *p, size_t len) noexcept
 {
     return size_t(ankerl::unordered_dense::detail::wyhash::hash(p, len));
 }
-
-/*! \brief A much faster node-based drop in alternative to `std::unordered_map`,
-usually at least 2x faster.
-
-- Like `std::unordered_map`, references are stable to modification.
-- Like `std::unordered_map`, iterators are NOT stable to modification.
-- Much slower than `unordered_flat_map` or `unordered_dense_map`, so use
-those instead if you can.
-
-Be aware:
-
-- The current implementation does not expose its allocation for customisation.
-- The current implementation terminates the process on memory exhaustion.
-- The current implementation predates the C++ 17 map extraction extensions,
-and does not implement those.
-*/
-#ifdef NDEBUG
-template <
-    class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>>
-using unordered_node_map =
-    robin_hood::unordered_node_map<Key, T, Hash, Compare>;
-template <
-    class Key, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>>
-using unordered_node_set = robin_hood::unordered_node_set<Key, Hash, Compare>;
-#else
-template <
-    class Key, class T, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>>
-using unordered_node_map = std::unordered_map<Key, T, Hash, Compare>;
-template <
-    class Key, class Hash = ankerl::unordered_dense::hash<Key>,
-    class Compare = std::equal_to<Key>>
-using unordered_node_set = std::unordered_set<Key, Hash, Compare>;
-#endif
 
 /*! \brief A much faster inline-storage-based alternative to
 `std::unordered_map`, usually around 5x faster.

@@ -21,7 +21,6 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/unaligned.hpp>
-#include <category/core/unordered_map.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine.hpp>

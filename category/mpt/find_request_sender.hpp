@@ -46,7 +46,7 @@ struct inflight_node_hasher
 // root node to ensure proper ownership. Because nodes in cache are unique,
 // having a pointer to parent as key ensures requests share the same root node
 // as well.
-using AsyncInflightNodes = unordered_dense_map<
+using AsyncInflightNodes = ankerl::unordered_dense::segmented_map<
     std::pair<virtual_chunk_offset_t, CacheNode *>,
     std::vector<
         std::function<MONAD_ASYNC_NAMESPACE::result<void>(CacheNodeCursor)>>,

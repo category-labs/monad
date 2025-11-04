@@ -25,10 +25,11 @@
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/tl_tid.h>
-#include <category/core/unordered_map.hpp>
 
 #include <boost/container/small_vector.hpp>
 #include <boost/outcome/try.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <atomic>
 #include <cassert>
@@ -226,7 +227,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     same file descriptor for reads (and it may do so for writes depending). So
     reduce to a minimum mapped set.
     */
-    unordered_dense_map<int, int> fd_to_iouring_map;
+    ankerl::unordered_dense::segmented_map<int, int> fd_to_iouring_map;
     for (auto const fd : fds) {
         MONAD_ASSERT(fd != -1);
         fd_to_iouring_map[fd] = -1;

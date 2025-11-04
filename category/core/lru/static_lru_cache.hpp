@@ -17,9 +17,10 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/unordered_map.hpp>
 
 #include <boost/intrusive/list.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <optional>
 #include <utility>

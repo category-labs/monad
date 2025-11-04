@@ -165,7 +165,7 @@ public:
 
 struct AsyncContext
 {
-    using inflight_root_t = unordered_dense_map<
+    using inflight_root_t = ankerl::unordered_dense::segmented_map<
         uint64_t, std::vector<std::function<void(std::shared_ptr<CacheNode>)>>>;
 
     UpdateAux<> &aux;

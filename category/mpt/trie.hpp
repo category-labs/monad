@@ -33,7 +33,6 @@
 #include <category/async/io_senders.hpp>
 
 #include <category/core/tl_tid.h>
-#include <category/core/unordered_map.hpp>
 
 #ifdef __clang__
     #pragma clang diagnostic push
@@ -43,6 +42,8 @@
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
+
+#include <ankerl/unordered_dense.h>
 
 #include <atomic>
 #include <bit>
@@ -1059,13 +1060,13 @@ using find_result_type = std::pair<T, find_result>;
 using find_cursor_result_type = find_result_type<NodeCursor>;
 using find_owning_cursor_result_type = find_result_type<CacheNodeCursor>;
 
-using inflight_map_t = unordered_dense_map<
+using inflight_map_t = ankerl::unordered_dense::segmented_map<
     chunk_offset_t,
     std::vector<
         std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
     chunk_offset_t_hasher>;
 
-using inflight_map_owning_t = unordered_dense_map<
+using inflight_map_owning_t = ankerl::unordered_dense::segmented_map<
     virtual_chunk_offset_t,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
         CacheNodeCursor const &)>>,

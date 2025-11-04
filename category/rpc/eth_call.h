@@ -112,7 +112,7 @@ struct monad_executor_pool_state
     uint64_t queue_full_count;
 };
 
-struct monad_eth_call_executor_state
+struct monad_executor_state
 {
     struct monad_executor_pool_state low_gas_pool_state;
     struct monad_executor_pool_state high_gas_pool_state;
@@ -134,8 +134,7 @@ void monad_executor_eth_call_submit(
     void (*complete)(monad_eth_call_result *, void *user), void *user,
     enum monad_tracer_config, bool gas_specified);
 
-struct monad_eth_call_executor_state
-monad_eth_call_executor_get_state(struct monad_executor *);
+struct monad_executor_state monad_executor_get_state(struct monad_executor *);
 
 #ifdef __cplusplus
 }

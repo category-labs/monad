@@ -958,11 +958,10 @@ void monad_executor_eth_call_submit(
         gas_specified);
 }
 
-struct monad_eth_call_executor_state
-monad_eth_call_executor_get_state(monad_executor *const e)
+struct monad_executor_state monad_executor_get_state(monad_executor *const e)
 {
     MONAD_ASSERT(e);
-    return monad_eth_call_executor_state{
+    return monad_executor_state{
         .low_gas_pool_state = e->low_gas_pool_.get_state(),
         .high_gas_pool_state = e->high_gas_pool_.get_state(),
     };

@@ -904,7 +904,7 @@ void monad_executor_destroy(monad_executor *const e)
     delete e;
 }
 
-void monad_eth_call_executor_submit(
+void monad_executor_eth_call_submit(
     monad_executor *const executor, monad_chain_config const chain_config,
     uint8_t const *const rlp_txn, size_t const rlp_txn_len,
     uint8_t const *const rlp_header, size_t const rlp_header_len,

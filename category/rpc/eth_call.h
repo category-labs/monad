@@ -125,7 +125,7 @@ struct monad_executor *monad_executor_create(
 
 void monad_executor_destroy(struct monad_executor *);
 
-void monad_eth_call_executor_submit(
+void monad_executor_eth_call_submit(
     struct monad_executor *, enum monad_chain_config, uint8_t const *rlp_txn,
     size_t rlp_txn_len, uint8_t const *rlp_header, size_t rlp_header_len,
     uint8_t const *rlp_sender, size_t rlp_sender_len, uint64_t block_number,

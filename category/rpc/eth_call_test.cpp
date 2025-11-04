@@ -169,7 +169,7 @@ namespace
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),
@@ -254,7 +254,7 @@ TEST_F(EthCallFixture, simple_success_call)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -313,7 +313,7 @@ TEST_F(EthCallFixture, insufficient_balance)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -371,7 +371,7 @@ TEST_F(EthCallFixture, on_proposed_block)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -429,7 +429,7 @@ TEST_F(EthCallFixture, failed_to_read)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -488,7 +488,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -571,7 +571,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -667,7 +667,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -730,7 +730,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -851,7 +851,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -916,7 +916,7 @@ TEST_F(EthCallFixture, from_contract_account)
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -998,7 +998,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             to_vec(rlp::encode_address(std::make_optional(ca)));
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),
@@ -1141,7 +1141,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -1324,7 +1324,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_eth_call_executor_submit(
+    monad_executor_eth_call_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_tx.data(),
@@ -1429,7 +1429,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
 
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),
@@ -1475,7 +1475,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
 
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),
@@ -1566,7 +1566,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     // PreState trace
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),
@@ -1604,7 +1604,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     // StateDelta Trace
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
-        monad_eth_call_executor_submit(
+        monad_executor_eth_call_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_tx.data(),

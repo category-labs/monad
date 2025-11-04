@@ -63,7 +63,6 @@ MONAD_NAMESPACE_BEGIN
 namespace detail
 {
     class unordered_dense_map_disabled;
-    class unordered_dense_set_disabled;
 } // namespace detail
 
 /*! \brief A much faster inline-storage-based alternative to
@@ -87,9 +86,5 @@ using unordered_dense_map = std::conditional_t<
     sizeof(std::pair<Key, T>) <= 384,
     ankerl::unordered_dense::segmented_map<Key, T, Hash>,
     detail::unordered_dense_map_disabled>;
-template <class Key, class Hash = ankerl::unordered_dense::hash<Key>>
-using unordered_dense_set = std::conditional_t<
-    sizeof(Key) <= 384, ankerl::unordered_dense::segmented_set<Key, Hash>,
-    detail::unordered_dense_set_disabled>;
 
 MONAD_NAMESPACE_END

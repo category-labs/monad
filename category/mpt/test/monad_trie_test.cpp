@@ -30,7 +30,6 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/keccak.h>
 #include <category/core/small_prng.hpp>
-#include <category/core/unordered_map.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -42,6 +41,8 @@
 
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <quill/Quill.h>
 
@@ -220,7 +221,7 @@ void prepare_keccak(
         static constexpr uint32_t TOTAL_KEYS = 500000000;
         static double const MAX_RAND = double(monad::small_prng::max());
         monad::small_prng rand(uint32_t(key_offset / (100 * SLICE_LEN)));
-        monad::unordered_dense_set<uint32_t> seen;
+        ankerl::unordered_dense::segmented_set<uint32_t> seen;
         for (size_t i = 0; i < nkeys; ++i) {
             if ((i % SLICE_LEN) == 0) {
                 seen.clear();
@@ -253,7 +254,7 @@ void prepare_keccak(
         MONAD_ASSERT(distrib.min() == 0 && distrib.max() == MAX_NUM_KEYS - 1);
 
         size_t key;
-        monad::unordered_dense_set<size_t> keys_per_slice; // dedup
+        ankerl::unordered_dense::segmented_set<size_t> keys_per_slice; // dedup
         // prepare keccak
         for (size_t i = 0; i < nkeys; ++i) {
             if (i % SLICE_LEN == 0) {

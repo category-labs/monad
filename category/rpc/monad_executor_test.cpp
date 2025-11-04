@@ -31,6 +31,7 @@
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/monad_executor.h>
+#include <category/vm/utils/evm-as.hpp>
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>
@@ -401,6 +402,8 @@ TEST_F(EthCallFixture, on_proposed_block)
 
 TEST_F(EthCallFixture, failed_to_read)
 {
+    using namespace monad::vm::utils;
+
     // missing 256 previous blocks
     tdb.reset_root(load_header(nullptr, db, BlockHeader{.number = 1199}), 1199);
     for (uint64_t i = 1200; i < 1256; ++i) {
@@ -409,11 +412,19 @@ TEST_F(EthCallFixture, failed_to_read)
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
-    static constexpr auto to{
-        0x5353535353535353535353535353535353535353_address};
 
+    // create bytecode that is deployed and calls blockhash on 1000, which is
+    // one of the missing blocks
+    auto eb = evm_as::prague();
+    eb.push(1000).blockhash().push0().mstore().push(0x20).push0().return_();
+    std::vector<uint8_t> bytecode{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, bytecode);
     Transaction tx{
-        .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
+        .gas_limit = 100000u,
+        .to = std::nullopt,
+        .type = TransactionType::eip1559,
+        .data = byte_string{bytecode.data(), bytecode.size()}};
     BlockHeader header{.number = 1256};
 
     commit_sequential(tdb, {}, {}, header);
@@ -448,11 +459,8 @@ TEST_F(EthCallFixture, failed_to_read)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
-    EXPECT_TRUE(
-        std::strcmp(
-            ctx.result->message, "failure to initialize block hash buffer") ==
-        0);
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_STREQ(ctx.result->message, "blockhash: error querying DB");
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 0);

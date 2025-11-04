@@ -17,7 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/lru/lru_cache.hpp>
+#include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
@@ -83,9 +83,57 @@ struct monad_state_override
 
 namespace
 {
+    // eth call on latest uses eip-2935. historical eth calls use this class,
+    // which lazily loads the block header from the DB and computes BLOCKHASH.
+    // historical can always query from the finalized prefix.
+    //
+    // A thread-safe LRU is not needed. Each submitted call to the executor pool
+    // creates its own LazyBlockHash instance.
+    class LazyBlockHash : public BlockHashBuffer
+    {
+        using BlockHashBuffer::N;
+
+        mpt::RODb const &db_;
+        uint64_t const n_;
+        using Cache = static_lru_cache<uint64_t, bytes32_t>;
+        mutable Cache blockhash_cache_;
+
+    public:
+        LazyBlockHash(mpt::RODb const &db, uint64_t const n)
+            : db_{db}
+            , n_{n}
+            , blockhash_cache_{N}
+        {
+        }
+
+        ~LazyBlockHash() override = default;
+
+        uint64_t n() const override
+        {
+            return n_;
+        }
+
+        bytes32_t const &get(uint64_t const n) const override
+        {
+            MONAD_ASSERT(n < n_ && n + N >= n_);
+            if (Cache::ConstAccessor acc; blockhash_cache_.find(acc, n)) {
+                return acc->second->val;
+            }
+
+            auto const cursor_res = db_.find(
+                mpt::concat(
+                    FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
+                n);
+            MONAD_ASSERT_THROW(
+                !cursor_res.has_error(), "blockhash: error querying DB");
+            bytes32_t const blockhash =
+                to_bytes(keccak256(cursor_res.value().node->value()));
+            auto const res = blockhash_cache_.insert(n, blockhash);
+            return res.first->second->val;
+        }
+    };
+
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
-    char const *const BLOCKHASH_ERR_MSG =
-        "failure to initialize block hash buffer";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_call to thread pool: queue size exceeded";
     char const *const TIMEOUT_ERR_MSG =
@@ -98,7 +146,7 @@ namespace
         uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender,
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
-        vm::VM &vm, BlockHashBufferFinalized const buffer,
+        vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer state_tracer)
     {
@@ -454,8 +502,6 @@ namespace
 
 struct monad_executor
 {
-    using BlockHashCache = LruCache<uint64_t, bytes32_t>;
-
     Pool low_gas_pool_;
     Pool high_gas_pool_;
 
@@ -469,8 +515,6 @@ struct monad_executor
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
     vm::VM vm_{false};
-
-    BlockHashCache blockhash_cache_{7200};
 
     monad_executor(
         monad_executor_pool_config const &low_pool_config,
@@ -502,50 +546,6 @@ struct monad_executor
 
     monad_executor(monad_executor const &) = delete;
     monad_executor &operator=(monad_executor const &) = delete;
-
-    std::unique_ptr<BlockHashBufferFinalized>
-    create_blockhash_buffer(uint64_t const block_number)
-    {
-        std::unique_ptr<BlockHashBufferFinalized> buffer{
-            new BlockHashBufferFinalized{}};
-
-        auto const get_block_hash_from_db =
-            [&db = db_](uint64_t const b) -> Result<bytes32_t> {
-            BOOST_OUTCOME_TRY(
-                auto header_cursor,
-                db.find(
-                    mpt::concat(
-                        FINALIZED_NIBBLE,
-                        mpt::NibblesView{block_header_nibbles}),
-                    b));
-            return to_bytes(keccak256(header_cursor.node->value()));
-        };
-        for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
-             b < block_number;
-             ++b) {
-            {
-                BlockHashCache::ConstAccessor acc;
-                if (blockhash_cache_.find(acc, b)) {
-                    buffer->set(b, acc->second.value_);
-                    continue;
-                }
-            }
-            auto const h = get_block_hash_from_db(b);
-            if (h.has_value()) {
-                buffer->set(b, h.value());
-                blockhash_cache_.insert(b, h.value());
-            }
-            else {
-                LOG_WARNING(
-                    "Could not query block header {} from TrieRODb -- "
-                    "{}",
-                    b,
-                    h.assume_error().message().c_str());
-                return nullptr;
-            }
-        }
-        return buffer;
-    }
 
     void execute_eth_call(
         monad_chain_config const chain_config, Transaction const &txn,
@@ -669,16 +669,7 @@ struct monad_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const block_hash_buffer =
-                        create_blockhash_buffer(block_number);
-                    if (block_hash_buffer == nullptr) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(BLOCKHASH_ERR_MSG);
-                        MONAD_ASSERT(result->message);
-                        complete(result, user);
-                        return;
-                    }
-
+                    LazyBlockHash block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
@@ -716,7 +707,7 @@ struct monad_executor
                                 authorities,
                                 tdb,
                                 vm_,
-                                *block_hash_buffer,
+                                block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);
@@ -738,7 +729,7 @@ struct monad_executor
                                 authorities,
                                 tdb,
                                 vm_,
-                                *block_hash_buffer,
+                                block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer);

@@ -3249,6 +3249,62 @@ namespace monad::vm::compiler::native
         }
     }
 
+    void Emitter::mul(int64_t remaining_base_gas)
+    {
+        if (mul_optimized()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, false, runtime::mul);
+    }
+
+    void Emitter::udiv(int64_t remaining_base_gas)
+    {
+        if (div_optimized<false>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::udiv);
+    }
+
+    void Emitter::sdiv(int64_t remaining_base_gas)
+    {
+        if (div_optimized<true>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::sdiv);
+    }
+
+    void Emitter::umod(int64_t remaining_base_gas)
+    {
+        if (mod_optimized<false>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::umod);
+    }
+
+    void Emitter::smod(int64_t remaining_base_gas)
+    {
+        if (mod_optimized<true>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::smod);
+    }
+
+    void Emitter::addmod(int64_t remaining_base_gas)
+    {
+        if (addmod_opt()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::addmod);
+    }
+
+    void Emitter::mulmod(int64_t remaining_base_gas)
+    {
+        if (mulmod_opt()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::mulmod);
+    }
+
     // Discharge
     void Emitter::call_runtime_impl(RuntimeImpl &rt)
     {

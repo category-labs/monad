@@ -176,7 +176,7 @@ namespace monad
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
         static consteval uint8_t monad_pricing_version() noexcept
         {
-            if constexpr (Rev >= MONAD_NEXT) {
+            if constexpr (Rev >= MONAD_SEVEN) {
                 return 1;
             }
 

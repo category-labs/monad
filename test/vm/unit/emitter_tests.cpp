@@ -1892,10 +1892,7 @@ TEST(Emitter, udiv)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.udiv<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.udiv(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -1952,10 +1949,7 @@ TEST(Emitter, sdiv)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.sdiv<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.sdiv(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -1985,10 +1979,7 @@ TEST(Emitter, umod)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.umod<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.umod(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -2050,10 +2041,7 @@ TEST(Emitter, smod)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.smod<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.smod(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -2325,7 +2313,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2338,7 +2326,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2358,7 +2346,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2371,7 +2359,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2407,7 +2395,7 @@ TEST(Emitter, exp)
         for (int i = 0; i < rep_count; ++i) {
             emit.push(513); // some exponent over 512
             emit.push(13); // base (with popcount != 1)
-            emit.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+            emit.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                 std::numeric_limits<int32_t>::max());
             emit.pop();
             ASSERT_EQ(
@@ -2461,7 +2449,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -2471,7 +2459,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -3088,12 +3076,7 @@ TEST(Emitter, call_runtime_pure)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(
-        rt,
-        DIV,
-        [](Emitter &emit) { emit.udiv<EvmTraits<EVMC_FRONTIER>>(0); },
-        1000,
-        4,
-        250);
+        rt, DIV, [](Emitter &emit) { emit.udiv(0); }, 1000, 4, 250);
 }
 
 TEST(Emitter, call_runtime_impl)
@@ -3194,7 +3177,8 @@ TEST(Emitter, runtime_exit)
     emit.push(0);
     emit.push(300);
     emit.push(10);
-    emit.call_runtime(9, true, runtime::exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>);
+    emit.call_runtime(
+        9, true, runtime::exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);

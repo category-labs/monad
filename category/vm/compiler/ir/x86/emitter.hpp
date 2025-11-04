@@ -340,78 +340,22 @@ namespace monad::vm::compiler::native
         void mstore();
         void mstore8();
 
-        // Revision dependent instructions
-        void mul(int64_t remaining_base_gas)
-        {
-            if (mul_optimized()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, false, runtime::mul);
-        }
-
-        template <Traits traits>
-        void udiv(int64_t remaining_base_gas)
-        {
-            if (div_optimized<false>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::udiv);
-        }
-
-        template <Traits traits>
-        void sdiv(int64_t remaining_base_gas)
-        {
-            if (div_optimized<true>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::sdiv);
-        }
-
-        template <Traits traits>
-        void umod(int64_t remaining_base_gas)
-        {
-            if (mod_optimized<false>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::umod);
-        }
-
-        template <Traits traits>
-        void smod(int64_t remaining_base_gas)
-        {
-            if (mod_optimized<true>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::smod);
-        }
-
+        void mul(int64_t remaining_base_gas);
+        void udiv(int64_t remaining_base_gas);
+        void sdiv(int64_t remaining_base_gas);
+        void umod(int64_t remaining_base_gas);
+        void smod(int64_t remaining_base_gas);
         bool addmod_opt();
-
-        template <Traits traits>
-        void addmod(int64_t remaining_base_gas)
-        {
-            if (addmod_opt()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::addmod);
-        }
-
+        void addmod(int64_t remaining_base_gas);
         bool mulmod_opt();
-
-        template <Traits traits>
-        void mulmod(int64_t remaining_base_gas)
-        {
-            if (mulmod_opt()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::mulmod);
-        }
+        void mulmod(int64_t remaining_base_gas);
 
         template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 
         bool exp_optimized(int64_t, uint32_t);
 
+        // Revision dependent instructions
         template <Traits traits>
         void exp(int64_t remaining_base_gas)
         {

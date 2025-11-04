@@ -340,6 +340,12 @@ namespace monad::vm::runtime
     };
 
     template <>
+    struct StorageCostTable<MonadTraits<MONAD_SEVEN>>
+        : StorageCostTable<MonadTraits<MONAD_SEVEN>::evm_base>
+    {
+    };
+
+    template <>
     struct StorageCostTable<MonadTraits<MONAD_NEXT>>
         : StorageCostTable<MonadTraits<MONAD_NEXT>::evm_base>
     {

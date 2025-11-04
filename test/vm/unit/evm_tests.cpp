@@ -125,9 +125,9 @@ TEST_P(VMFileTest, RegressionFile)
 {
     auto const [entry, rev] = GetParam();
 
-    // TODO: this test is disabled for MONAD_NEXT until evmone has a monad
-    // revision and can execute with the same gas costs as MONAD_NEXT
-    if (rev == std::variant<evmc_revision, monad_revision>{MONAD_NEXT}) {
+    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
+    // monad revision and can execute with the same gas costs as MONAD_SEVEN
+    if (rev >= std::variant<evmc_revision, monad_revision>{MONAD_SEVEN}) {
         return;
     }
     auto file = std::ifstream{entry.path(), std::ifstream::binary};
@@ -277,10 +277,10 @@ TYPED_TEST(VMTraitsTest, MissingRemoveStackOffsetInFallthroughStack)
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    // TODO: this test is disabled for MONAD_NEXT until evmone has a monad
-    // revision and can execute with the same gas costs as MONAD_NEXT
+    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
+    // monad revision and can execute with the same gas costs as MONAD_SEVEN
     if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
             return;
         }
     }

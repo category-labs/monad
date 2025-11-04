@@ -1057,7 +1057,7 @@ template <class T>
 using find_result_type = std::pair<T, find_result>;
 
 using find_cursor_result_type = find_result_type<NodeCursor>;
-using find_owning_cursor_result_type = find_result_type<CacheNodeCursor>;
+using find_owning_cursor_result_type = find_result_type<NodeCursor>;
 
 using inflight_map_t = unordered_dense_map<
     chunk_offset_t,
@@ -1068,7 +1068,7 @@ using inflight_map_t = unordered_dense_map<
 using inflight_map_owning_t = unordered_dense_map<
     virtual_chunk_offset_t,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
-        CacheNodeCursor const &)>>,
+        NodeCursor const &)>>,
     virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread
@@ -1097,7 +1097,7 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
-    CacheNodeCursor const &start, NibblesView, uint64_t version);
+    NodeCursor const &start, NibblesView, uint64_t version);
 
 // rodb load root
 void load_root_notify_fiber_future(

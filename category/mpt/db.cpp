@@ -411,9 +411,9 @@ struct OnDiskWithWorkerThreadImpl
 
     struct RODbFiberFindOwningNodeRequest
     {
-        threadsafe_boost_fibers_promise<find_result_type<CacheNodeCursor>>
+        threadsafe_boost_fibers_promise<find_result_type<NodeCursor>>
             *promise;
-        CacheNodeCursor start;
+        NodeCursor start;
         NibblesView key;
         uint64_t version;
     };
@@ -1032,7 +1032,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
     }
 
     find_owning_cursor_result_type find_fiber_blocking(
-        CacheNodeCursor const &start, NibblesView const &key,
+        NodeCursor const &start, NibblesView const &key,
         uint64_t const version)
     {
         threadsafe_boost_fibers_promise<find_owning_cursor_result_type> promise;
@@ -1051,7 +1051,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
         return fut.get();
     }
 
-    CacheNodeCursor load_root_fiber_blocking(uint64_t version)
+    NodeCursor load_root_fiber_blocking(uint64_t version)
     {
         auto const root_offset = aux().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
@@ -1124,8 +1124,8 @@ DbError find_result_to_db_error(find_result const result) noexcept
     }
 }
 
-Result<CacheNodeCursor> RODb::find(
-    CacheNodeCursor const &node_cursor, NibblesView const key,
+Result<NodeCursor> RODb::find(
+    NodeCursor const &node_cursor, NibblesView const key,
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
@@ -1145,11 +1145,11 @@ Result<CacheNodeCursor> RODb::find(
     return cursor;
 }
 
-Result<CacheNodeCursor>
+Result<NodeCursor>
 RODb::find(NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
-    CacheNodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
+    NodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
     return find(cursor, key, block_id);
 }
 
@@ -1416,12 +1416,12 @@ namespace detail
             auto it = inflights.find(sender->block_id);
             auto pendings = std::move(it->second);
             inflights.erase(it);
-            std::shared_ptr<CacheNode> root{};
+            std::shared_ptr<Node> root{};
             bool const block_alive_after_read =
                 sender->context.aux.version_is_valid_ondisk(sender->block_id);
             if (block_alive_after_read) {
                 sender->root =
-                    detail::deserialize_node_from_receiver_result<CacheNode>(
+                    detail::deserialize_node_from_receiver_result(
                         std::move(buffer_), buffer_off, io_state);
                 root = sender->root;
                 sender->res_root = {{sender->root}, find_result::success};
@@ -1502,7 +1502,7 @@ namespace detail
                 return async::success();
             }
 
-            auto cont = [this, io_state](std::shared_ptr<CacheNode> root_) {
+            auto cont = [this, io_state](std::shared_ptr<Node> root_) {
                 if (!root_) {
                     res_root = {{}, find_result::version_no_longer_exist};
                 }
@@ -1594,7 +1594,7 @@ namespace detail
     }
 
     template struct DbGetSender<byte_string>;
-    template struct DbGetSender<std::shared_ptr<CacheNode>>;
+    template struct DbGetSender<std::shared_ptr<Node>>;
 }
 
 MONAD_MPT_NAMESPACE_END

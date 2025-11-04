@@ -78,7 +78,7 @@ typedef struct monad_eth_call_result
 
 void monad_eth_call_result_release(monad_eth_call_result *);
 
-struct monad_eth_call_pool_config
+struct monad_executor_pool_config
 {
     // Number of threads in the pool.
     unsigned num_threads;
@@ -94,7 +94,7 @@ struct monad_eth_call_pool_config
     unsigned queue_limit;
 };
 
-struct monad_eth_call_pool_state
+struct monad_executor_pool_state
 {
     // Number of fibers in the pool.
     unsigned num_fibers;
@@ -114,13 +114,13 @@ struct monad_eth_call_pool_state
 
 struct monad_eth_call_executor_state
 {
-    struct monad_eth_call_pool_state low_gas_pool_state;
-    struct monad_eth_call_pool_state high_gas_pool_state;
+    struct monad_executor_pool_state low_gas_pool_state;
+    struct monad_executor_pool_state high_gas_pool_state;
 };
 
 struct monad_executor *monad_executor_create(
-    struct monad_eth_call_pool_config low_pool_conf,
-    struct monad_eth_call_pool_config high_pool_conf, uint64_t node_lru_max_mem,
+    struct monad_executor_pool_config low_pool_conf,
+    struct monad_executor_pool_config high_pool_conf, uint64_t node_lru_max_mem,
     char const *dbpath);
 
 void monad_executor_destroy(struct monad_executor *);

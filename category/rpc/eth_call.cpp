@@ -398,7 +398,7 @@ namespace
             high
         };
 
-        Pool(Type const type, monad_eth_call_pool_config const &config)
+        Pool(Type const type, monad_executor_pool_config const &config)
             : type(type)
             , limit(config.queue_limit)
             , timeout(std::chrono::seconds(config.timeout_sec))
@@ -406,9 +406,9 @@ namespace
         {
         }
 
-        monad_eth_call_pool_state get_state() const
+        monad_executor_pool_state get_state() const
         {
-            return monad_eth_call_pool_state{
+            return monad_executor_pool_state{
                 .num_fibers = pool.num_fibers(),
                 .executing_count =
                     executing_count.load(std::memory_order_relaxed),
@@ -473,8 +473,8 @@ struct monad_executor
     BlockHashCache blockhash_cache_{7200};
 
     monad_executor(
-        monad_eth_call_pool_config const &low_pool_config,
-        monad_eth_call_pool_config const &high_pool_config,
+        monad_executor_pool_config const &low_pool_config,
+        monad_executor_pool_config const &high_pool_config,
         uint64_t const node_lru_max_mem, std::string const &triedb_path)
         : low_gas_pool_{Pool::Type::low, low_pool_config}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
@@ -884,8 +884,8 @@ struct monad_executor
 };
 
 monad_executor *monad_executor_create(
-    monad_eth_call_pool_config const low_pool_conf,
-    monad_eth_call_pool_config const high_pool_conf,
+    monad_executor_pool_config const low_pool_conf,
+    monad_executor_pool_config const high_pool_conf,
     uint64_t const node_lru_max_mem, char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);

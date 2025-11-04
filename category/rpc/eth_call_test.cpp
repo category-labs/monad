@@ -56,7 +56,7 @@ namespace
 
     auto create_executor(std::string const &dbname)
     {
-        monad_eth_call_pool_config conf = {1, 1, max_timeout, 1000};
+        monad_executor_pool_config conf = {1, 1, max_timeout, 1000};
         return monad_executor_create(
             conf, conf, node_lru_max_mem, dbname.c_str());
     }

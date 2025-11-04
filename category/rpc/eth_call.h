@@ -60,7 +60,7 @@ void set_override_state(
     uint8_t const *key, size_t key_len, uint8_t const *value,
     size_t valuen_len);
 
-typedef struct monad_eth_call_result
+typedef struct monad_executor_result
 {
     int status_code;
     int64_t gas_used;
@@ -74,9 +74,9 @@ typedef struct monad_eth_call_result
     // for trace (call, prestate, statediff)
     uint8_t *encoded_trace;
     size_t encoded_trace_len;
-} monad_eth_call_result;
+} monad_executor_result;
 
-void monad_eth_call_result_release(monad_eth_call_result *);
+void monad_executor_result_release(monad_executor_result *);
 
 struct monad_executor_pool_config
 {
@@ -131,7 +131,7 @@ void monad_executor_eth_call_submit(
     uint8_t const *rlp_sender, size_t rlp_sender_len, uint64_t block_number,
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
-    void (*complete)(monad_eth_call_result *, void *user), void *user,
+    void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config, bool gas_specified);
 
 struct monad_executor_state monad_executor_get_state(struct monad_executor *);

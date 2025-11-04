@@ -105,16 +105,16 @@ namespace
 
     struct callback_context
     {
-        monad_eth_call_result *result;
+        monad_executor_result *result;
         boost::fibers::promise<void> promise;
 
         ~callback_context()
         {
-            monad_eth_call_result_release(result);
+            monad_executor_result_release(result);
         }
     };
 
-    void complete_callback(monad_eth_call_result *result, void *user)
+    void complete_callback(monad_executor_result *result, void *user)
     {
         auto c = (callback_context *)user;
 

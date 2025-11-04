@@ -370,7 +370,7 @@ void set_override_state(
     state_object.emplace(k, std::move(v));
 }
 
-void monad_eth_call_result_release(monad_eth_call_result *const result)
+void monad_executor_result_release(monad_executor_result *const result)
 {
     MONAD_ASSERT(result);
     if (result->output_data) {
@@ -552,10 +552,10 @@ struct monad_executor
         BlockHeader const &block_header, Address const &sender,
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
-        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config, bool const gas_specified)
     {
-        monad_eth_call_result *const result = new monad_eth_call_result();
+        monad_executor_result *const result = new monad_executor_result();
 
         Pool *pool =
             gas_specified && txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT
@@ -585,10 +585,10 @@ struct monad_executor
         BlockHeader const &block_header, Address const &sender,
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
-        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config, bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
-        uint64_t const eth_call_seq_no, monad_eth_call_result *const result,
+        uint64_t const eth_call_seq_no, monad_executor_result *const result,
         Pool &active_pool)
     {
         if (!active_pool.try_enqueue()) {
@@ -802,8 +802,8 @@ struct monad_executor
 
     void call_complete(
         Transaction const &transaction, evmc::Result const &evmc_result,
-        monad_eth_call_result *const result,
-        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        monad_executor_result *const result,
+        void (*complete)(monad_executor_result *, void *user), void *const user,
         std::vector<CallFrame> const &call_frames,
         nlohmann::json const &state_trace)
     {
@@ -856,10 +856,10 @@ struct monad_executor
         BlockHeader const &block_header, Address const &sender,
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
-        void (*complete)(monad_eth_call_result *, void *user), void *const user,
+        void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
         std::chrono::steady_clock::time_point const call_begin,
-        auto const eth_call_seq_no, monad_eth_call_result *const result)
+        auto const eth_call_seq_no, monad_executor_result *const result)
     {
         // retry in high gas limit pool
         MONAD_ASSERT(orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT);
@@ -911,7 +911,7 @@ void monad_executor_eth_call_submit(
     uint8_t const *const rlp_sender, size_t const rlp_sender_len,
     uint64_t const block_number, uint8_t const *const rlp_block_id,
     size_t const rlp_block_id_len, monad_state_override const *const overrides,
-    void (*complete)(monad_eth_call_result *result, void *user),
+    void (*complete)(monad_executor_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
     bool const gas_specified)
 {

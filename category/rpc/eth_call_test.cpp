@@ -57,7 +57,7 @@ namespace
     auto create_executor(std::string const &dbname)
     {
         monad_eth_call_pool_config conf = {1, 1, max_timeout, 1000};
-        return monad_eth_call_executor_create(
+        return monad_executor_create(
             conf, conf, node_lru_max_mem, dbname.c_str());
     }
 
@@ -222,7 +222,7 @@ namespace
         EXPECT_EQ(ctx.result->gas_used, 21000);
 
         monad_state_override_destroy(state_override);
-        monad_eth_call_executor_destroy(executor);
+        monad_executor_destroy(executor);
     }
 }
 
@@ -279,7 +279,7 @@ TEST_F(EthCallFixture, simple_success_call)
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, insufficient_balance)
@@ -339,7 +339,7 @@ TEST_F(EthCallFixture, insufficient_balance)
     EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, on_proposed_block)
@@ -396,7 +396,7 @@ TEST_F(EthCallFixture, on_proposed_block)
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, failed_to_read)
@@ -458,7 +458,7 @@ TEST_F(EthCallFixture, failed_to_read)
     EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, contract_deployment_success)
@@ -525,7 +525,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_EQ(ctx.result->gas_used, 68'137);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, assertion_exception_depth1)
@@ -598,7 +598,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
     EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, assertion_exception_depth2)
@@ -694,7 +694,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
     EXPECT_EQ(ctx.result->gas_used, 0);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, loop_out_of_gas)
@@ -756,7 +756,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
     EXPECT_EQ(ctx.result->gas_used, 100000u);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, expensive_read_out_of_gas)
@@ -877,7 +877,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
     EXPECT_EQ(ctx.result->gas_used, 30'000'000u);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, from_contract_account)
@@ -942,7 +942,7 @@ TEST_F(EthCallFixture, from_contract_account)
     EXPECT_EQ(ctx.result->gas_used, 62094);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, concurrent_eth_calls)
@@ -1030,7 +1030,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         monad_state_override_destroy(state_override);
     }
 
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, transfer_success_with_call_trace)
@@ -1270,7 +1270,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     EXPECT_EQ(ctx.result->gas_used, 54'299);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
@@ -1373,7 +1373,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     EXPECT_EQ(ctx.result->gas_used, 22000);
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 // Same setup as transfer_success_with_call_trace, include both prestate &
@@ -1523,7 +1523,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     }
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }
 
 // same setup as contract_deployment_success, but with prestate and statediff
@@ -1651,5 +1651,5 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     }
 
     monad_state_override_destroy(state_override);
-    monad_eth_call_executor_destroy(executor);
+    monad_executor_destroy(executor);
 }

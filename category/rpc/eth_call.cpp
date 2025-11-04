@@ -452,7 +452,7 @@ namespace
     };
 }
 
-struct monad_eth_call_executor
+struct monad_executor
 {
     using BlockHashCache = LruCache<uint64_t, bytes32_t>;
 
@@ -472,7 +472,7 @@ struct monad_eth_call_executor
 
     BlockHashCache blockhash_cache_{7200};
 
-    monad_eth_call_executor(
+    monad_executor(
         monad_eth_call_pool_config const &low_pool_config,
         monad_eth_call_pool_config const &high_pool_config,
         uint64_t const node_lru_max_mem, std::string const &triedb_path)
@@ -500,9 +500,8 @@ struct monad_eth_call_executor
     {
     }
 
-    monad_eth_call_executor(monad_eth_call_executor const &) = delete;
-    monad_eth_call_executor &
-    operator=(monad_eth_call_executor const &) = delete;
+    monad_executor(monad_executor const &) = delete;
+    monad_executor &operator=(monad_executor const &) = delete;
 
     std::unique_ptr<BlockHashBufferFinalized>
     create_blockhash_buffer(uint64_t const block_number)
@@ -884,7 +883,7 @@ struct monad_eth_call_executor
     }
 };
 
-monad_eth_call_executor *monad_eth_call_executor_create(
+monad_executor *monad_executor_create(
     monad_eth_call_pool_config const low_pool_conf,
     monad_eth_call_pool_config const high_pool_conf,
     uint64_t const node_lru_max_mem, char const *const dbpath)
@@ -892,13 +891,13 @@ monad_eth_call_executor *monad_eth_call_executor_create(
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 
-    monad_eth_call_executor *const e = new monad_eth_call_executor(
+    monad_executor *const e = new monad_executor(
         low_pool_conf, high_pool_conf, node_lru_max_mem, triedb_path);
 
     return e;
 }
 
-void monad_eth_call_executor_destroy(monad_eth_call_executor *const e)
+void monad_executor_destroy(monad_executor *const e)
 {
     MONAD_ASSERT(e);
 
@@ -906,13 +905,12 @@ void monad_eth_call_executor_destroy(monad_eth_call_executor *const e)
 }
 
 void monad_eth_call_executor_submit(
-    monad_eth_call_executor *const executor,
-    monad_chain_config const chain_config, uint8_t const *const rlp_txn,
-    size_t const rlp_txn_len, uint8_t const *const rlp_header,
-    size_t const rlp_header_len, uint8_t const *const rlp_sender,
-    size_t const rlp_sender_len, uint64_t const block_number,
-    uint8_t const *const rlp_block_id, size_t const rlp_block_id_len,
-    monad_state_override const *const overrides,
+    monad_executor *const executor, monad_chain_config const chain_config,
+    uint8_t const *const rlp_txn, size_t const rlp_txn_len,
+    uint8_t const *const rlp_header, size_t const rlp_header_len,
+    uint8_t const *const rlp_sender, size_t const rlp_sender_len,
+    uint64_t const block_number, uint8_t const *const rlp_block_id,
+    size_t const rlp_block_id_len, monad_state_override const *const overrides,
     void (*complete)(monad_eth_call_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
     bool const gas_specified)
@@ -961,7 +959,7 @@ void monad_eth_call_executor_submit(
 }
 
 struct monad_eth_call_executor_state
-monad_eth_call_executor_get_state(monad_eth_call_executor *const e)
+monad_eth_call_executor_get_state(monad_executor *const e)
 {
     MONAD_ASSERT(e);
     return monad_eth_call_executor_state{

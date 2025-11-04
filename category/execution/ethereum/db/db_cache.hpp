@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
+#include <category/core/lru/access_map.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -28,6 +29,8 @@
 #include <category/vm/vm.hpp>
 
 #include <evmc/evmc.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <memory>
 #include <optional>
@@ -57,6 +60,22 @@ class DbCache final : public Db
                 key.bytes,
                 sizeof(bytes32_t));
         }
+
+        bool operator==(StorageKey const &other) const noexcept
+        {
+            return memcmp(bytes, other.bytes, k_bytes) == 0;
+        }
+    };
+
+    struct StorageKeyHash
+    {
+        using is_avalanching = void;
+
+        auto operator()(StorageKey const &key) const noexcept -> uint64_t
+        {
+            return ankerl::unordered_dense::detail::wyhash::hash(
+                &key.bytes, sizeof(StorageKey));
+        }
     };
 
     using AddressHashCompare = BytesHashCompare<Address>;
@@ -64,9 +83,13 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
     using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    using AccountsAccess = AccessMap<Address>;
+    using StorageAccess = AccessMap<StorageKey, StorageKeyHash>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
+    AccountsAccess accounts_access_{10'000'000};
+    StorageAccess storage_access_{10'000'000};
     Proposals proposals_;
 
 public:
@@ -173,6 +196,27 @@ public:
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const &withdrawals = {}) override
     {
+        accounts_access_.init_new_block(header.number);
+        storage_access_.init_new_block(header.number);
+        for (auto it = state_deltas->cbegin(); it != state_deltas->cend();
+             ++it) {
+            auto const &address = it->first;
+            auto const &account_delta = it->second.account;
+            accounts_access_.insert(address);
+            auto const &storage = it->second.storage;
+            auto const &account = account_delta.second;
+            if (account.has_value()) {
+                for (auto it2 = storage.cbegin(); it2 != storage.cend();
+                     ++it2) {
+                    auto const &key = it2->first;
+                    auto const incarnation = account->incarnation;
+                    storage_access_.insert(
+                        StorageKey(address, incarnation, key));
+                }
+            }
+        }
+        accounts_access_.finish_insert();
+        storage_access_.finish_insert();
         db_.commit(
             *state_deltas,
             code,
@@ -184,7 +228,6 @@ public:
             transactions,
             ommers,
             withdrawals);
-
         proposals_.commit(std::move(state_deltas), header.number, block_id);
     }
 

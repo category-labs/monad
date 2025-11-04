@@ -1140,8 +1140,8 @@ Result<CacheNodeCursor> RODb::find(
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
-    MONAD_DEBUG_ASSERT(cursor.is_valid());
-    MONAD_DEBUG_ASSERT(cursor.node->has_value());
+    MONAD_ASSERT(cursor.is_valid());
+    MONAD_ASSERT(cursor.node->has_value());
     return cursor;
 }
 
@@ -1174,7 +1174,7 @@ Db::Db(StateMachine &machine)
 Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
     : impl_{std::make_unique<RWOnDisk>(config, machine)}
 {
-    MONAD_DEBUG_ASSERT(impl_->aux().is_on_disk());
+    MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
 Db::Db(AsyncIOContext &io_ctx)
@@ -1193,8 +1193,8 @@ Result<NodeCursor> Db::find(
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
-    MONAD_DEBUG_ASSERT(it.node != nullptr);
-    MONAD_DEBUG_ASSERT(it.node->has_value());
+    MONAD_ASSERT(it.node != nullptr);
+    MONAD_ASSERT(it.node->has_value());
     return it;
 }
 
@@ -1401,7 +1401,7 @@ namespace detail
             rd_offset = offset_;
             auto const new_offset =
                 round_down_align<DISK_PAGE_BITS>(offset_.offset);
-            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
+            MONAD_ASSERT(new_offset <= chunk_offset_t::max_offset);
             rd_offset.offset = new_offset & chunk_offset_t::max_offset;
             buffer_off = uint16_t(offset_.offset - rd_offset.offset);
         }

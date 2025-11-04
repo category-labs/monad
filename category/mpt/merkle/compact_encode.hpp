@@ -27,7 +27,7 @@ MONAD_MPT_NAMESPACE_BEGIN
 inline constexpr unsigned
 compact_encode_len(unsigned const si, unsigned const ei)
 {
-    MONAD_DEBUG_ASSERT(ei >= si);
+    MONAD_ASSERT(ei >= si);
     return (ei - si) / 2 + 1;
 }
 
@@ -38,7 +38,7 @@ compact_encode_len(unsigned const si, unsigned const ei)
 {
     unsigned i = 0;
 
-    MONAD_DEBUG_ASSERT(nibbles.nibble_size() || terminating);
+    MONAD_ASSERT(nibbles.nibble_size() || terminating);
 
     // Populate first byte with the encoded nibbles type and potentially
     // also the first nibble if number of nibbles is odd

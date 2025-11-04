@@ -37,7 +37,7 @@ unsigned encode_two_pieces(
 {
     constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
 
-    MONAD_DEBUG_ASSERT(path.data_size() <= KECCAK256_SIZE);
+    MONAD_ASSERT(path.data_size() <= KECCAK256_SIZE);
 
     unsigned char path_arr[max_compact_encode_size];
     auto const first = compact_encode(path_arr, path, has_value);
@@ -55,7 +55,7 @@ unsigned encode_two_pieces(
         memcpy(result.data(), second.data(), second.size());
         return result.subspan(second.size());
     }();
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         (unsigned long)(result.data() - concat_rlp.data()) == concat_len);
 
     byte_string rlp(rlp::list_length(concat_len), 0);
@@ -77,13 +77,13 @@ std::span<unsigned char> encode_16_children(
     unsigned i = 0;
     for (auto &child : children) {
         if (child.is_valid()) {
-            MONAD_DEBUG_ASSERT(child.branch < 16);
+            MONAD_ASSERT(child.branch < 16);
             while (child.branch != i) {
                 result[0] = RLP_EMPTY_STRING;
                 result = result.subspan(1);
                 ++i;
             }
-            MONAD_DEBUG_ASSERT(i == child.branch);
+            MONAD_ASSERT(i == child.branch);
             result = (child.len < KECCAK256_SIZE)
                          ? [&] {
                                memcpy(result.data(), child.data, child.len);
@@ -107,19 +107,17 @@ encode_16_children(Node *node, std::span<unsigned char> result)
     for (unsigned i = 0, bit = 1; i < 16; ++i, bit <<= 1) {
         if (node->mask & bit) {
             auto const child_index = node->to_child_index(i);
-            MONAD_DEBUG_ASSERT(
-                node->child_data_len(child_index) <= KECCAK256_SIZE);
-            result =
-                (node->child_data_len(child_index) < KECCAK256_SIZE)
-                    ? [&] {
-                          memcpy(
-                              result.data(),
-                              node->child_data(child_index),
-                              node->child_data_len(child_index));
-                          return result.subspan(
-                              node->child_data_len(child_index));
-                      }()
-                    : rlp::encode_string(result, node->child_data_view(child_index));
+            auto const child_data = node->child_data_view(child_index);
+            MONAD_ASSERT(child_data.size() <= KECCAK256_SIZE);
+            result = (child_data.size() < KECCAK256_SIZE)
+                         ? [&] {
+                               memcpy(
+                                   result.data(),
+                                   child_data.data(),
+                                   child_data.size());
+                               return result.subspan(child_data.size());
+                           }()
+                         : rlp::encode_string(result, child_data);
         }
         else {
             result = encode_empty_string(result);

@@ -92,7 +92,7 @@ namespace monad::test
 
         virtual void up(size_t n) override
         {
-            MONAD_DEBUG_ASSERT(n <= depth);
+            MONAD_ASSERT(n <= depth);
             depth -= n;
         }
 
@@ -151,7 +151,7 @@ namespace monad::test
 
         virtual void up(size_t n) override
         {
-            MONAD_DEBUG_ASSERT(n <= depth);
+            MONAD_ASSERT(n <= depth);
             depth -= n;
         }
 
@@ -217,7 +217,7 @@ namespace monad::test
 
         virtual void up(size_t n) override
         {
-            MONAD_DEBUG_ASSERT(n <= depth);
+            MONAD_ASSERT(n <= depth);
             depth -= n;
         }
 

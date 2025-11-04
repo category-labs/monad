@@ -182,7 +182,7 @@ Node::SharedPtr copy_trie_impl(
                 ++node_prefix_index;
                 continue;
             }
-            MONAD_DEBUG_ASSERT(
+            MONAD_ASSERT(
                 prefix_index < std::numeric_limits<unsigned char>::max());
             auto const node_path = node->path_nibble_view();
             // copy children of src_node to under `dest` prefix, move the in
@@ -230,8 +230,7 @@ Node::SharedPtr copy_trie_impl(
             ++prefix_index;
             continue;
         }
-        MONAD_DEBUG_ASSERT(
-            prefix_index < std::numeric_limits<unsigned char>::max());
+        MONAD_ASSERT(prefix_index < std::numeric_limits<unsigned char>::max());
         auto dest_node = make_node(
             src_node,
             dest_prefix.substr(static_cast<unsigned char>(prefix_index) + 1u),

@@ -449,7 +449,7 @@ public:
             auto chunkid = item->index(aux.db_metadata());
             count++;
             auto &chunk = pool->chunk(pool->seq, chunkid);
-            MONAD_DEBUG_ASSERT(chunk.zone_id().second == chunkid);
+            MONAD_ASSERT(chunk.zone_id().second == chunkid);
             if constexpr (!std::is_void_v<T>) {
                 if (list != nullptr) {
                     la_int64_t const metadata =

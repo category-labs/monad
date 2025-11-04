@@ -77,10 +77,10 @@ struct virtual_chunk_offset_t
         , spare{spare_ & max_spare}
         , is_in_fast_list(is_fast_list_ & 1)
     {
-        MONAD_DEBUG_ASSERT(spare_ <= max_spare);
-        MONAD_DEBUG_ASSERT(count_ <= max_count);
-        MONAD_DEBUG_ASSERT(offset_ <= max_offset);
-        MONAD_DEBUG_ASSERT(is_fast_list_ <= 1);
+        MONAD_ASSERT(spare_ <= max_spare);
+        MONAD_ASSERT(count_ <= max_count);
+        MONAD_ASSERT(offset_ <= max_offset);
+        MONAD_ASSERT(is_fast_list_ <= 1);
     }
 
     // note that comparator ignores `spare`
@@ -194,7 +194,7 @@ public:
         virtual_chunk_offset_t const offset)
         : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
     {
-        MONAD_DEBUG_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
+        MONAD_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
     }
 
     void set_value(uint32_t v) noexcept
@@ -254,7 +254,7 @@ static constexpr compact_virtual_chunk_offset_t MIN_COMPACT_VIRTUAL_OFFSET =
 inline constexpr unsigned
 bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {
-    MONAD_DEBUG_ASSERT(i < 16);
+    MONAD_ASSERT(i < 16);
     uint16_t const filter = UINT16_MAX >> (16 - i);
     return static_cast<unsigned>(
         std::popcount(static_cast<uint16_t>(mask & filter)));

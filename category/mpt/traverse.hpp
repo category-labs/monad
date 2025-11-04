@@ -151,7 +151,7 @@ namespace detail
                 rd_offset = offset;
                 auto const new_offset =
                     round_down_align<DISK_PAGE_BITS>(offset.offset);
-                MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
+                MONAD_ASSERT(new_offset <= chunk_offset_t::max_offset);
                 rd_offset.offset = new_offset & chunk_offset_t::max_offset;
                 buffer_off = uint16_t(offset.offset - rd_offset.offset);
             }
@@ -337,7 +337,7 @@ namespace detail
                         if (this_child_read < LEFT_SIDE) {
                             priority += LEFT_SIDE - this_child_read;
                         }
-                        MONAD_DEBUG_ASSERT(priority > 0);
+                        MONAD_ASSERT(priority > 0);
                         if (priority >= sender.reads_to_initiate.size()) {
                             sender.reads_to_initiate.resize(priority + 1);
                         }

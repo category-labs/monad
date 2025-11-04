@@ -37,25 +37,25 @@ struct Requests
 
     UpdateList const &operator[](size_t i) const & noexcept
     {
-        MONAD_DEBUG_ASSERT(i < 16);
+        MONAD_ASSERT(i < 16);
         return sublists[i];
     }
 
     UpdateList &&operator[](size_t i) && noexcept
     {
-        MONAD_DEBUG_ASSERT(i < 16);
+        MONAD_ASSERT(i < 16);
         return std::move(sublists[i]);
     }
 
     constexpr unsigned char get_first_branch() const noexcept
     {
-        MONAD_DEBUG_ASSERT(mask);
+        MONAD_ASSERT(mask);
         return static_cast<unsigned char>(std::countr_zero(mask));
     }
 
     constexpr UpdateList &&first_and_only_list() && noexcept
     {
-        MONAD_DEBUG_ASSERT(std::popcount(mask) == 1);
+        MONAD_ASSERT(std::popcount(mask) == 1);
         return std::move(sublists[get_first_branch()]);
     }
 
@@ -68,7 +68,7 @@ struct Requests
     {
         mask = 0;
         opt_leaf = std::nullopt;
-        MONAD_DEBUG_ASSERT(prefix_index <= std::numeric_limits<uint8_t>::max());
+        MONAD_ASSERT(prefix_index <= std::numeric_limits<uint8_t>::max());
         prefix_len = static_cast<uint8_t>(prefix_index);
     }
 

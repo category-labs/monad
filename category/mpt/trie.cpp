@@ -221,7 +221,7 @@ struct load_all_impl_
             rd_offset = offset;
             auto const new_offset =
                 round_down_align<DISK_PAGE_BITS>(offset.offset);
-            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
+            MONAD_ASSERT(new_offset <= chunk_offset_t::max_offset);
             rd_offset.offset = new_offset & chunk_offset_t::max_offset;
             buffer_off = uint16_t(offset.offset - rd_offset.offset);
         }
@@ -292,7 +292,7 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const &root)
 void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
 {
     while (!tnode->npending && tnode->parent) {
-        MONAD_DEBUG_ASSERT(tnode->children.size()); // not a leaf
+        MONAD_ASSERT(tnode->children.empty() == false); // not a leaf
         auto *parent = tnode->parent;
         auto &entry = parent->children[tnode->child_index()];
         // put created node and compute to entry in parent
@@ -481,7 +481,7 @@ Node::UniquePtr create_node_from_children_if_any(
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
-        MONAD_DEBUG_ASSERT(children[j].ptr);
+        MONAD_ASSERT(children[j].ptr);
         auto node = std::move(children[j].ptr);
         /* Note: there's a potential superfluous extension hash recomputation
         when node coaleases upon erases, because we compute node hash when path
@@ -495,7 +495,7 @@ Node::UniquePtr create_node_from_children_if_any(
                               : std::nullopt,
             version); // node is deallocated
     }
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         number_of_children > 1 ||
         (number_of_children == 1 && leaf_data.has_value()));
     // write children to disk, free any if exceeds the cache level limit
@@ -504,20 +504,17 @@ Node::UniquePtr create_node_from_children_if_any(
             if (child.is_valid() && child.offset == INVALID_OFFSET) {
                 // write updated node or node to be compacted to disk
                 // won't duplicate write of unchanged old child
-                MONAD_DEBUG_ASSERT(child.branch < 16);
-                MONAD_DEBUG_ASSERT(child.ptr);
+                MONAD_ASSERT(child.ptr);
                 child.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
                 auto const child_virtual_offset =
                     aux.physical_to_virtual(child.offset);
-                MONAD_DEBUG_ASSERT(
-                    child_virtual_offset != INVALID_VIRTUAL_OFFSET);
                 std::tie(child.min_offset_fast, child.min_offset_slow) =
                     calc_min_offsets(*child.ptr, child_virtual_offset);
                 if (sm.compact()) {
-                    MONAD_DEBUG_ASSERT(
+                    MONAD_ASSERT(
                         child.min_offset_fast >= aux.compact_offset_fast);
-                    MONAD_DEBUG_ASSERT(
+                    MONAD_ASSERT(
                         child.min_offset_slow >= aux.compact_offset_slow);
                 }
             }
@@ -541,29 +538,15 @@ void create_node_compute_data_possibly_async(
             tnode->orig_mask,
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
         if (!child.ptr) {
-            MONAD_DEBUG_ASSERT(aux.is_on_disk());
+            MONAD_ASSERT(aux.is_on_disk());
             MONAD_ASSERT(child.offset != INVALID_OFFSET);
-            { // some sanity checks
-                auto const virtual_child_offset =
-                    aux.physical_to_virtual(child.offset);
-                MONAD_DEBUG_ASSERT(
-                    virtual_child_offset != INVALID_VIRTUAL_OFFSET);
-                // child offset is older than current node writer's start offset
-                MONAD_DEBUG_ASSERT(
-                    virtual_child_offset <
-                    aux.physical_to_virtual((virtual_child_offset.in_fast_list()
-                                                 ? aux.node_writer_fast
-                                                 : aux.node_writer_slow)
-                                                ->sender()
-                                                .offset()));
-            }
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
                     Node::UniquePtr read_node) mutable {
                     auto *parent = tnode->parent;
-                    MONAD_DEBUG_ASSERT(parent);
+                    MONAD_ASSERT(parent);
                     auto &entry = parent->children[tnode->child_index()];
-                    MONAD_DEBUG_ASSERT(entry.branch < 16);
+                    MONAD_ASSERT(entry.branch < 16);
                     auto &child = tnode->children[bitmask_index(
                         tnode->orig_mask,
                         static_cast<unsigned>(std::countr_zero(tnode->mask)))];
@@ -576,7 +559,6 @@ void create_node_compute_data_possibly_async(
                 },
                 child.offset};
             async_read(aux, std::move(recv));
-            MONAD_DEBUG_ASSERT(parent.npending);
             return;
         }
     }
@@ -589,7 +571,7 @@ void create_node_compute_data_possibly_async(
         tnode->path,
         tnode->opt_leaf_data,
         tnode->version);
-    MONAD_DEBUG_ASSERT(entry.branch < 16);
+    MONAD_ASSERT(entry.branch < 16);
     if (node) {
         parent.version = std::max(parent.version, node->version);
         entry.finalize(std::move(node), sm.get_compute(), sm.cache());
@@ -665,12 +647,12 @@ void create_new_trie_(
     }
     if (updates.size() == 1) {
         Update &update = updates.front();
-        MONAD_DEBUG_ASSERT(update.value.has_value());
+        MONAD_ASSERT(update.value.has_value());
         auto const path = update.key.substr(prefix_index);
         for (auto i = 0u; i < path.nibble_size(); ++i) {
             sm.down(path.get(i));
         }
-        MONAD_DEBUG_ASSERT(update.value.has_value());
+        MONAD_ASSERT(update.value.has_value());
         MONAD_ASSERT(
             !sm.is_variable_length() || update.next.empty(),
             "Invalid update detected: variable-length tables do not "
@@ -848,7 +830,7 @@ void upsert_(
         if (auto old_nibble = old->path_nibble_view().get(old_prefix_index);
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
-            MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
+            MONAD_ASSERT(requests.opt_leaf == std::nullopt);
             updates = std::move(requests)[old_nibble];
             sm.down(old_nibble);
             ++prefix_index;
@@ -905,8 +887,6 @@ void dispatch_updates_impl_(
         version,
         opt_leaf_data,
         opt_leaf_data.has_value() ? old_ptr : Node::SharedPtr{});
-    MONAD_DEBUG_ASSERT(
-        tnode->children.size() == size_t(std::popcount(orig_mask)));
     auto &children = tnode->children;
 
     for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
@@ -986,9 +966,9 @@ void mismatch_handler_(
 {
     MONAD_ASSERT(old_ptr);
     Node &old = *old_ptr;
-    MONAD_DEBUG_ASSERT(old.has_path());
+    MONAD_ASSERT(old.has_path());
     // Note: no leaf can be created at an existing non-leaf node
-    MONAD_DEBUG_ASSERT(!requests.opt_leaf.has_value());
+    MONAD_ASSERT(!requests.opt_leaf.has_value());
     unsigned char const old_nibble =
         old.path_nibble_view().get(old_prefix_index);
     uint16_t const orig_mask =
@@ -996,7 +976,7 @@ void mismatch_handler_(
     auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         tnode->children.size() == number_of_children && number_of_children > 0);
     auto &children = tnode->children;
 
@@ -1043,7 +1023,7 @@ void mismatch_handler_(
                 make_node(old, path_suffix, old.opt_value(), old.version),
                 sm.get_compute(),
                 sm.cache());
-            MONAD_DEBUG_ASSERT(child.offset == INVALID_OFFSET);
+            MONAD_ASSERT(child.offset == INVALID_OFFSET);
             // Note that it is possible that we recreate this node later after
             // done expiring all subtries under it
             sm.up(path_suffix.nibble_size() + 1);
@@ -1107,7 +1087,7 @@ void expire_(
                         upward_update(*aux, *sm, (UpdateTNode *)parent);
                         return;
                     }
-                    MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
+                    MONAD_ASSERT(parent->type == tnode_type::expire);
                     auto *next_parent = parent->parent;
                     MONAD_ASSERT(next_parent);
                     try_fillin_parent_after_expiration(
@@ -1182,19 +1162,15 @@ void fillin_parent_after_expiration(
             async_write_node_set_spare(aux, *new_node, true);
         auto const new_node_virtual_offset =
             aux.physical_to_virtual(new_offset);
-        MONAD_DEBUG_ASSERT(new_node_virtual_offset != INVALID_VIRTUAL_OFFSET);
         auto const &[min_offset_fast, min_offset_slow] =
             calc_min_offsets(*new_node, new_node_virtual_offset);
-        MONAD_DEBUG_ASSERT(
-            min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
-            min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
         auto const min_version = calc_min_version(*new_node);
         MONAD_ASSERT(min_version >= aux.curr_upsert_auto_expire_version);
         if (parent->type == tnode_type::update) {
             auto &child = ((UpdateTNode *)parent)->children[index];
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
             child.offset = new_offset;
-            MONAD_DEBUG_ASSERT(cache_node);
+            MONAD_ASSERT(cache_node);
             child.ptr = std::move(new_node);
             child.min_offset_fast = min_offset_fast;
             child.min_offset_slow = min_offset_slow;
@@ -1345,7 +1321,6 @@ void try_fillin_parent_with_rewritten_node(
     auto const new_offset =
         async_write_node_set_spare(aux, *tnode->node, tnode->rewrite_to_fast);
     auto const new_node_virtual_offset = aux.physical_to_virtual(new_offset);
-    MONAD_DEBUG_ASSERT(new_node_virtual_offset != INVALID_VIRTUAL_OFFSET);
     compact_virtual_chunk_offset_t const truncated_new_virtual_offset{
         new_node_virtual_offset};
     // update min offsets in subtrie
@@ -1357,13 +1332,13 @@ void try_fillin_parent_with_rewritten_node(
         min_offset_slow =
             std::min(min_offset_slow, truncated_new_virtual_offset);
     }
-    MONAD_DEBUG_ASSERT(min_offset_fast >= aux.compact_offset_fast);
-    MONAD_DEBUG_ASSERT(min_offset_slow >= aux.compact_offset_slow);
+    MONAD_ASSERT(min_offset_fast >= aux.compact_offset_fast);
+    MONAD_ASSERT(min_offset_slow >= aux.compact_offset_slow);
     auto *parent = tnode->parent;
     auto const index = tnode->index;
     if (parent->type == tnode_type::update) {
         auto *const p = reinterpret_cast<UpdateTNode *>(parent);
-        MONAD_DEBUG_ASSERT(tnode->cache_node);
+        MONAD_ASSERT(tnode->cache_node);
         auto &child = p->children[index];
         child.ptr = std::move(tnode->node);
         child.offset = new_offset;
@@ -1371,7 +1346,7 @@ void try_fillin_parent_with_rewritten_node(
         child.min_offset_slow = min_offset_slow;
     }
     else {
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             parent->type == tnode_type::compact ||
             parent->type == tnode_type::expire);
         auto &node = (parent->type == tnode_type::compact)
@@ -1411,7 +1386,7 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     // O_DIRECT i/o aligned
     auto const remaining_buffer_bytes = sender->remaining_buffer_bytes();
     auto *tozero = sender->advance_buffer_append(remaining_buffer_bytes);
-    MONAD_DEBUG_ASSERT(tozero != nullptr);
+    MONAD_ASSERT(tozero != nullptr);
     memset(tozero, 0, remaining_buffer_bytes);
 
     /* If there aren't enough write buffers, this may poll uring until a free
@@ -1511,7 +1486,7 @@ node_writer_unique_ptr_type replace_node_writer(
         return {};
     }
     if (ci_ != nullptr) {
-        MONAD_DEBUG_ASSERT(ci_ == aux.db_metadata()->free_list_end());
+        MONAD_ASSERT(ci_ == aux.db_metadata()->free_list_end());
         aux.remove(idx);
         aux.append(
             in_fast_list ? UpdateAuxImpl::chunk_list::fast
@@ -1540,7 +1515,7 @@ retry:
         ret.offset_written_to =
             sender->offset().add_to_offset(sender->written_buffer_bytes());
         auto *where_to_serialize = sender->advance_buffer_append(size);
-        MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+        MONAD_ASSERT(where_to_serialize != nullptr);
         serialize_node_to_buffer(
             (unsigned char *)where_to_serialize, size, node, size);
     }
@@ -1569,7 +1544,7 @@ retry:
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().advance_buffer_append(
                     bytes_to_append);
-            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            MONAD_ASSERT(where_to_serialize != nullptr);
             serialize_node_to_buffer(
                 where_to_serialize,
                 bytes_to_append,
@@ -1581,7 +1556,7 @@ retry:
             if (!new_node_writer) {
                 goto retry;
             }
-            MONAD_DEBUG_ASSERT(
+            MONAD_ASSERT(
                 new_node_writer->sender().offset().id ==
                 node_writer->sender().offset().id);
         }
@@ -1624,7 +1599,7 @@ retry:
                 new_node_writer = replace_node_writer(aux, node_writer);
                 if (new_node_writer) {
                     // initiate current node writer
-                    MONAD_DEBUG_ASSERT(
+                    MONAD_ASSERT(
                         node_writer->sender().written_buffer_bytes() ==
                         node_writer->sender().buffer().size());
                     node_writer->initiate();
@@ -1671,7 +1646,7 @@ void flush_buffered_writes(UpdateAuxImpl &aux)
         auto paddedup = round_up_align<DISK_PAGE_BITS>(written);
         auto const tozerobytes = paddedup - written;
         auto *tozero = sender->advance_buffer_append(tozerobytes);
-        MONAD_DEBUG_ASSERT(tozero != nullptr);
+        MONAD_ASSERT(tozero != nullptr);
         memset(tozero, 0, tozerobytes);
         // replace fast node writer
         auto new_node_writer = replace_node_writer(aux, node_writer);

@@ -209,10 +209,10 @@ namespace monad::test
                 }
 
                 auto const it = inputs.find(groups[i]);
-                MONAD_DEBUG_ASSERT(it != inputs.end());
+                MONAD_ASSERT(it != inputs.end());
 
                 auto const next = std::next(it);
-                MONAD_DEBUG_ASSERT(next != inputs.end());
+                MONAD_ASSERT(next != inputs.end());
 
                 if (mods.at(i).has_value()) {
                     // insert kv of {key[i], random generated value in mods}
@@ -244,7 +244,7 @@ namespace monad::test
             std::array<size_t, 100> const &groups,
             std::map<size_t, std::optional<monad::byte_string>> const &mods)
         {
-            MONAD_DEBUG_ASSERT(this->root.get() == nullptr);
+            MONAD_ASSERT(this->root.get() == nullptr);
             Process(one_hundred_updates, groups, mods);
 
             if (!mods.empty()) {
@@ -272,7 +272,7 @@ namespace monad::test
             std::vector<size_t> const &groups,
             std::map<size_t, std::optional<monad::byte_string>> const &mods)
         {
-            MONAD_DEBUG_ASSERT(this->root.get() == nullptr);
+            MONAD_ASSERT(this->root.get() == nullptr);
             std::vector<std::pair<monad::byte_string, monad::byte_string>>
                 transformed;
             for (auto const &p : kv) {

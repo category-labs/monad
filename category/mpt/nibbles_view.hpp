@@ -57,7 +57,7 @@ public:
         , begin_nibble_(false)
         , end_nibble_(static_cast<size_type>(end_nibble))
     {
-        MONAD_DEBUG_ASSERT(end_nibble <= std::numeric_limits<size_type>::max());
+        MONAD_ASSERT(end_nibble <= std::numeric_limits<size_type>::max());
 #ifdef __clang_analyzer__ // false positive
         memset(data_.get(), 0, (end_nibble + 1) / 2);
 #endif
@@ -132,8 +132,8 @@ public:
 
     constexpr void set(unsigned const i, unsigned char const value)
     {
-        MONAD_DEBUG_ASSERT(value <= 0xF);
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(value <= 0xF);
+        MONAD_ASSERT(
             i < static_cast<unsigned>(
                     end_nibble_ - static_cast<size_type>(begin_nibble_)));
         ::set_nibble(data_.get(), begin_nibble_ + i, value);
@@ -176,7 +176,7 @@ public:
                                : static_cast<size_type>(
                                      end_nibble - begin_nibble + begin_nibble_))
     {
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             begin_nibble <= end_nibble &&
             end_nibble <= std::numeric_limits<size_type>::max());
     }
@@ -185,8 +185,7 @@ public:
     constexpr NibblesView(byte_string_view const &s) noexcept
         : NibblesView(false, static_cast<uint8_t>(2 * s.size()), s.data())
     {
-        MONAD_DEBUG_ASSERT(
-            (s.size() * 2) <= std::numeric_limits<size_type>::max());
+        MONAD_ASSERT((s.size() * 2) <= std::numeric_limits<size_type>::max());
     }
 
     // constructor from byte_string
@@ -232,7 +231,7 @@ public:
     constexpr NibblesView
     substr(unsigned const pos, unsigned const count = npos) const
     {
-        MONAD_DEBUG_ASSERT(count == npos || count <= (nibble_size() - pos));
+        MONAD_ASSERT(count == npos || count <= (nibble_size() - pos));
         auto const begin_nibble = static_cast<unsigned>(begin_nibble_) + pos;
         return NibblesView{
             begin_nibble,
@@ -259,7 +258,7 @@ public:
         }
 
         if (nibble_size()) {
-            MONAD_DEBUG_ASSERT(data_ && other.data_);
+            MONAD_ASSERT(data_ && other.data_);
             for (auto i = 0u; i < nibble_size(); ++i) {
                 if (get(i) != other.get(i)) {
                     return false;

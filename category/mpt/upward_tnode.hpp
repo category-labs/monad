@@ -218,7 +218,7 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     static unique_ptr_type
     make(Parent *const parent, unsigned const index, Node::SharedPtr node)
     {
-        MONAD_DEBUG_ASSERT(parent);
+        MONAD_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &CompactTNode::pool>(
             parent, index, std::move(node));
     }
@@ -286,7 +286,7 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
         Parent *const parent, unsigned const branch, unsigned index,
         Node::SharedPtr node)
     {
-        MONAD_DEBUG_ASSERT(parent);
+        MONAD_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
             parent, branch, index, std::move(node));
     }

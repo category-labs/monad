@@ -38,7 +38,7 @@ Node::UniquePtr read_node_blocking(
         return {};
     }
     auto &pool = aux.io->storage_pool();
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         node_offset.spare <=
         round_up_align<DISK_PAGE_BITS>(Node::max_disk_size));
     // spare bits are number of pages needed to load node

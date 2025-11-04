@@ -58,10 +58,10 @@ NodeBase::NodeBase(
           value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
-    MONAD_DEBUG_ASSERT(
+    MONAD_ASSERT(
         value.transform(&byte_string_view::size).value_or(0) <=
         std::numeric_limits<decltype(value_len)>::max());
-    MONAD_DEBUG_ASSERT(path.begin_nibble_ <= path.end_nibble_);
+    MONAD_ASSERT(path.begin_nibble_ <= path.end_nibble_);
     bitpacked.path_nibble_index_start = path.begin_nibble_;
     bitpacked.has_value = value.has_value();
 
@@ -69,7 +69,7 @@ NodeBase::NodeBase(
     bitpacked.data_len = static_cast<uint8_t>(data_size & Node::max_data_len);
 
     if (path.data_size()) {
-        MONAD_DEBUG_ASSERT(path.data_);
+        MONAD_ASSERT(path.data_);
         std::copy_n(path.data_, path.data_size(), path_data());
     }
 
@@ -91,7 +91,7 @@ unsigned NodeBase::to_child_index(unsigned const branch) const noexcept
 {
     // convert the enabled i'th bit in a 16-bit mask into its corresponding
     // index location - index
-    MONAD_DEBUG_ASSERT(mask & (1u << branch));
+    MONAD_ASSERT(mask & (1u << branch));
     return bitmask_index(mask, branch);
 }
 
@@ -102,7 +102,7 @@ unsigned NodeBase::number_of_children() const noexcept
 
 chunk_offset_t const NodeBase::fnext(unsigned const index) const noexcept
 {
-    MONAD_DEBUG_ASSERT(index < number_of_children());
+    MONAD_ASSERT(index < number_of_children());
     return unaligned_load<chunk_offset_t>(
         fnext_data + index * sizeof(chunk_offset_t));
 }
@@ -213,7 +213,7 @@ unsigned char const *NodeBase::child_off_data() const noexcept
 
 uint16_t NodeBase::child_data_offset(unsigned const index) const noexcept
 {
-    MONAD_DEBUG_ASSERT(index <= number_of_children());
+    MONAD_ASSERT(index <= number_of_children());
     if (index == 0) {
         return 0;
     }
@@ -243,8 +243,6 @@ unsigned char const *NodeBase::path_data() const noexcept
 
 unsigned NodeBase::path_nibbles_len() const noexcept
 {
-    MONAD_DEBUG_ASSERT(
-        bitpacked.path_nibble_index_start <= path_nibble_index_end);
     return path_nibble_index_end - bitpacked.path_nibble_index_start;
 }
 
@@ -286,7 +284,7 @@ bool NodeBase::has_value() const noexcept
 
 byte_string_view NodeBase::value() const noexcept
 {
-    MONAD_DEBUG_ASSERT(has_value());
+    MONAD_ASSERT(has_value());
     return {value_data(), value_len};
 }
 
@@ -325,7 +323,7 @@ unsigned char const *NodeBase::child_data() const noexcept
 
 byte_string_view NodeBase::child_data_view(unsigned const index) const noexcept
 {
-    MONAD_DEBUG_ASSERT(index < number_of_children());
+    MONAD_ASSERT(index < number_of_children());
     return byte_string_view{
         child_data() + child_data_offset(index),
         static_cast<size_t>(child_data_len(index))};
@@ -333,7 +331,7 @@ byte_string_view NodeBase::child_data_view(unsigned const index) const noexcept
 
 unsigned char *NodeBase::child_data(unsigned const index) noexcept
 {
-    MONAD_DEBUG_ASSERT(index < number_of_children());
+    MONAD_ASSERT(index < number_of_children());
     return child_data() + child_data_offset(index);
 }
 
@@ -369,11 +367,11 @@ unsigned char const *NodeBase::next_data_aligned() const noexcept
 
 uint32_t NodeBase::get_disk_size() const noexcept
 {
-    MONAD_DEBUG_ASSERT(next_data() >= (unsigned char *)this);
+    MONAD_ASSERT(next_data() >= (unsigned char *)this);
     auto const node_disk_size =
         static_cast<uint32_t>(next_data() - (unsigned char *)this);
     uint32_t const total_disk_size = node_disk_size + NodeBase::disk_size_bytes;
-    MONAD_DEBUG_ASSERT(total_disk_size <= NodeBase::max_disk_size);
+    MONAD_ASSERT(total_disk_size <= NodeBase::max_disk_size);
     return total_disk_size;
 }
 
@@ -413,9 +411,9 @@ unsigned Node::get_mem_size() const noexcept
 {
     auto const *const end =
         next_data_aligned() + sizeof(SharedPtr) * number_of_children();
-    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
+    MONAD_ASSERT(end >= (unsigned char *)this);
     auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    MONAD_ASSERT(mem_size <= NodeBase::max_size);
     return mem_size;
 }
 
@@ -438,9 +436,9 @@ unsigned CacheNode::get_mem_size() const noexcept
 {
     auto const *const end =
         next_data_aligned() + sizeof(Node *) * number_of_children();
-    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
+    MONAD_ASSERT(end >= (unsigned char *)this);
     auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    MONAD_ASSERT(mem_size <= NodeBase::max_size);
     return mem_size;
 }
 
@@ -458,10 +456,10 @@ void ChildData::erase()
 void ChildData::finalize(
     Node::UniquePtr node, Compute &compute, bool const cache)
 {
-    MONAD_DEBUG_ASSERT(is_valid());
+    MONAD_ASSERT(is_valid());
     ptr = std::move(node);
     auto const length = compute.compute(data, ptr.get());
-    MONAD_DEBUG_ASSERT(length <= std::numeric_limits<uint8_t>::max());
+    MONAD_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;
     subtrie_min_version = calc_min_version(*ptr);
@@ -475,17 +473,15 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
-    MONAD_DEBUG_ASSERT(old_data.size() <= std::numeric_limits<uint8_t>::max());
+    MONAD_ASSERT(old_data.size() <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(old_data.size());
-    MONAD_DEBUG_ASSERT(i < 16);
+    MONAD_ASSERT(i < 16);
     branch = static_cast<uint8_t>(i);
     offset = old->fnext(index);
     min_offset_fast = old->min_offset_fast(index);
     min_offset_slow = old->min_offset_slow(index);
     subtrie_min_version = old->subtrie_min_version(index);
     cache_node = ptr != nullptr;
-
-    MONAD_DEBUG_ASSERT(is_valid());
 }
 
 Node::UniquePtr make_node(
@@ -535,14 +531,14 @@ Node::UniquePtr make_node(
     NibblesView const path, std::optional<byte_string_view> const value,
     size_t const data_size, int64_t const version)
 {
-    MONAD_DEBUG_ASSERT(data_size <= KECCAK256_SIZE);
+    MONAD_ASSERT(data_size <= KECCAK256_SIZE);
     if (value.has_value()) {
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             value->size() <=
             std::numeric_limits<decltype(Node::value_len)>::max());
     }
     for (size_t i = 0; i < 16; ++i) {
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             !std::ranges::contains(children, i, &ChildData::branch) ||
             (mask & (1u << i)));
     }
@@ -616,7 +612,7 @@ Node::UniquePtr create_node_with_children(
     MONAD_ASSERT(mask);
     auto const data_size = comp.compute_len(children, mask, path, value);
     auto node = make_node(mask, children, path, value, data_size, version);
-    MONAD_DEBUG_ASSERT(node);
+    MONAD_ASSERT(node);
     if (data_size) {
         comp.compute_branch(node->data_data(), node.get());
     }

@@ -125,10 +125,13 @@ public:
     void update_finalized_version(uint64_t version);
     void update_verified_version(uint64_t version);
     void update_voted_metadata(uint64_t version, bytes32_t const &block_id);
+    void update_proposed_metadata(uint64_t version, bytes32_t const &block_id);
     uint64_t get_latest_finalized_version() const;
     uint64_t get_latest_verified_version() const;
     bytes32_t get_latest_voted_block_id() const;
     uint64_t get_latest_voted_version() const;
+    bytes32_t get_latest_proposed_block_id() const;
+    uint64_t get_latest_proposed_version() const;
 
     // Traverse APIs: return value indicates if we have finished the full
     // traversal or not.

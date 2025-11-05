@@ -542,6 +542,12 @@ void TrieDb::update_voted_metadata(
     db_.update_voted_metadata(block_number, block_id);
 }
 
+void TrieDb::update_proposed_metadata(
+    uint64_t const block_number, bytes32_t const &block_id)
+{
+    db_.update_proposed_metadata(block_number, block_id);
+}
+
 bytes32_t TrieDb::state_root()
 {
     return merkle_root(state_nibbles);

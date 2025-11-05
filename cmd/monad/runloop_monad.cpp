@@ -663,6 +663,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 BlockExecOutput const exec_output,
                 record_block_result(propose_dispatch()));
 
+            db.update_proposed_metadata(header.seqno, block_id);
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
 
             log_tps(

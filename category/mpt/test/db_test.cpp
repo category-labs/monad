@@ -1867,6 +1867,28 @@ TEST(DbTest, auto_expire)
     }
 }
 
+TEST_F(OnDiskDbFixture, metadata)
+{
+    EXPECT_EQ(db.get_latest_finalized_version(), INVALID_BLOCK_NUM);
+    EXPECT_EQ(db.get_latest_verified_version(), INVALID_BLOCK_NUM);
+
+    db.update_finalized_version(100);
+    EXPECT_EQ(db.get_latest_finalized_version(), 100);
+
+    db.update_verified_version(100);
+    EXPECT_EQ(db.get_latest_verified_version(), 100);
+
+    monad::bytes32_t voted_block_id{10};
+    db.update_voted_metadata(101, voted_block_id);
+    EXPECT_EQ(db.get_latest_voted_version(), 101);
+    EXPECT_EQ(db.get_latest_voted_block_id(), voted_block_id);
+
+    monad::bytes32_t proposed_block_id{12};
+    db.update_proposed_metadata(102, proposed_block_id);
+    EXPECT_EQ(db.get_latest_proposed_version(), 102);
+    EXPECT_EQ(db.get_latest_proposed_block_id(), proposed_block_id);
+}
+
 TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
 {
     // insert random updates under a src prefix

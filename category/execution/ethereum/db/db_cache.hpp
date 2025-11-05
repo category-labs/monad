@@ -152,6 +152,12 @@ public:
         db_.update_voted_metadata(block_number, block_id);
     }
 
+    virtual void update_proposed_metadata(
+        uint64_t const block_number, bytes32_t const &block_id) override
+    {
+        db_.update_proposed_metadata(block_number, block_id);
+    }
+
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &,
         BlockHeader const &, std::vector<Receipt> const &,

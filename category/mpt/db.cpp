@@ -1237,6 +1237,14 @@ void Db::update_voted_metadata(
     impl_->aux().set_latest_voted(version, block_id);
 }
 
+void Db::update_proposed_metadata(
+    uint64_t const version, bytes32_t const &block_id)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk() && !is_read_only());
+    impl_->aux().set_latest_proposed(version, block_id);
+}
+
 uint64_t Db::get_latest_finalized_version() const
 {
     MONAD_ASSERT(impl_);
@@ -1263,6 +1271,20 @@ uint64_t Db::get_latest_voted_version() const
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
     return impl_->aux().get_latest_voted_version();
+}
+
+bytes32_t Db::get_latest_proposed_block_id() const
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().get_latest_proposed_block_id();
+}
+
+uint64_t Db::get_latest_proposed_version() const
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().get_latest_proposed_version();
 }
 
 uint64_t Db::get_latest_version() const

@@ -126,6 +126,8 @@ struct monad_statesync_server_context final : public monad::Db
     virtual void update_verified_block(uint64_t block_number) override;
     virtual void update_voted_metadata(
         uint64_t block_number, monad::bytes32_t const &block_id) override;
+    virtual void update_proposed_metadata(
+        uint64_t block_number, monad::bytes32_t const &block_id) override;
 
     virtual void commit(
         monad::StateDeltas const &state_deltas, monad::Code const &code,

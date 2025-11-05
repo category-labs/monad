@@ -737,10 +737,14 @@ public:
     void set_latest_finalized_version(uint64_t version) noexcept;
     void set_latest_verified_version(uint64_t version) noexcept;
     void set_latest_voted(uint64_t version, bytes32_t const &block_id) noexcept;
+    void
+    set_latest_proposed(uint64_t version, bytes32_t const &block_id) noexcept;
     uint64_t get_latest_finalized_version() const noexcept;
     uint64_t get_latest_verified_version() const noexcept;
     bytes32_t get_latest_voted_block_id() const noexcept;
     uint64_t get_latest_voted_version() const noexcept;
+    bytes32_t get_latest_proposed_block_id() const noexcept;
+    uint64_t get_latest_proposed_version() const noexcept;
 
     int64_t get_auto_expire_version_metadata() const noexcept;
 

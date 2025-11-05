@@ -56,6 +56,8 @@ struct Db
     virtual void update_verified_block(uint64_t block_number) = 0;
     virtual void
     update_voted_metadata(uint64_t block_number, bytes32_t const &block_id) = 0;
+    virtual void update_proposed_metadata(
+        uint64_t block_number, bytes32_t const &block_id) = 0;
 
     virtual uint64_t get_block_number() const = 0;
 

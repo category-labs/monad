@@ -94,10 +94,6 @@ struct Db::Impl
         size_t concurrency_limit) = 0;
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
-    virtual void update_finalized_version(uint64_t) = 0;
-    virtual void update_verified_version(uint64_t) = 0;
-    virtual uint64_t get_latest_finalized_version() const = 0;
-    virtual uint64_t get_latest_verified_version() const = 0;
 };
 
 AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
@@ -252,26 +248,6 @@ public:
 
         return read_node_blocking(aux(), root_offset, version);
     }
-
-    virtual void update_finalized_version(uint64_t) override
-    {
-        MONAD_ABORT();
-    }
-
-    virtual void update_verified_version(uint64_t) override
-    {
-        MONAD_ABORT();
-    }
-
-    virtual uint64_t get_latest_finalized_version() const override
-    {
-        return aux_.get_latest_finalized_version();
-    }
-
-    virtual uint64_t get_latest_verified_version() const override
-    {
-        return aux_.get_latest_verified_version();
-    }
 };
 
 class Db::InMemory final : public Db::Impl
@@ -338,20 +314,6 @@ public:
     virtual Node::SharedPtr load_root_for_version(uint64_t) override
     {
         return nullptr;
-    }
-
-    virtual void update_verified_version(uint64_t) override {}
-
-    virtual void update_finalized_version(uint64_t) override {}
-
-    virtual uint64_t get_latest_finalized_version() const override
-    {
-        return INVALID_BLOCK_NUM;
-    }
-
-    virtual uint64_t get_latest_verified_version() const override
-    {
-        return INVALID_BLOCK_NUM;
     }
 };
 
@@ -995,27 +957,6 @@ public:
         }
         return fut.get();
     }
-
-    virtual void update_finalized_version(uint64_t const version) override
-    {
-        aux().set_latest_finalized_version(version);
-    }
-
-    virtual void update_verified_version(uint64_t const version) override
-    {
-        MONAD_ASSERT(version <= aux().db_history_max_version());
-        aux().set_latest_verified_version(version);
-    }
-
-    virtual uint64_t get_latest_finalized_version() const override
-    {
-        return aux().get_latest_finalized_version();
-    }
-
-    virtual uint64_t get_latest_verified_version() const override
-    {
-        return aux().get_latest_verified_version();
-    }
 };
 
 struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
@@ -1272,43 +1213,55 @@ bool Db::traverse_blocking(
 void Db::update_finalized_version(uint64_t const version)
 {
     MONAD_ASSERT(impl_);
-    impl_->update_finalized_version(version);
+    MONAD_ASSERT(!is_read_only());
+    if (is_on_disk()) {
+        impl_->aux().set_latest_finalized_version(version);
+    } // noop for in memory db
 }
 
 void Db::update_verified_version(uint64_t const version)
 {
     MONAD_ASSERT(impl_);
-    impl_->update_verified_version(version);
+    MONAD_ASSERT(!is_read_only());
+    if (is_on_disk()) {
+        MONAD_ASSERT(version <= impl_->aux().db_history_max_version());
+        impl_->aux().set_latest_verified_version(version);
+    } // noop for in memory db
 }
 
 void Db::update_voted_metadata(
     uint64_t const version, bytes32_t const &block_id)
 {
     MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk() && !is_read_only());
     impl_->aux().set_latest_voted(version, block_id);
 }
 
 uint64_t Db::get_latest_finalized_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->get_latest_finalized_version();
+    return is_on_disk() ? impl_->aux().get_latest_finalized_version()
+                        : INVALID_BLOCK_NUM;
 }
 
 uint64_t Db::get_latest_verified_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->get_latest_verified_version();
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().get_latest_verified_version();
 }
 
 bytes32_t Db::get_latest_voted_block_id() const
 {
     MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
     return impl_->aux().get_latest_voted_block_id();
 }
 
 uint64_t Db::get_latest_voted_version() const
 {
     MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
     return impl_->aux().get_latest_voted_version();
 }
 

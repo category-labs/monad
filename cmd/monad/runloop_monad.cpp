@@ -286,7 +286,6 @@ Result<BlockExecOutput> propose_block(
                     i,
                     state,
                     chain_context);
-                return false;
             }));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 

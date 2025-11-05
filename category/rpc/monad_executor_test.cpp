@@ -400,6 +400,93 @@ TEST_F(EthCallFixture, on_proposed_block)
     monad_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, blockhash_before_fork)
+{
+    using namespace monad::vm::utils;
+
+    // The behavior in evmc is that, if eip-2935 is
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+
+    constexpr std::array<uint64_t, 7> blockhash_blocks{
+        0, 255, 200, 100, 180, 195, 11};
+    constexpr size_t output_buffer_size = blockhash_blocks.size() * 32;
+
+    // create a contract which, on init, invokes blockhash
+    auto eb = evm_as::prague();
+    uint64_t offset = 0;
+    for (uint64_t const b : blockhash_blocks) {
+        eb.push(b).blockhash().push(offset).mstore();
+        offset += 32;
+    }
+    eb.push(output_buffer_size).push0().return_();
+
+    std::vector<uint8_t> bytecode{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, bytecode);
+
+    Transaction tx{
+        .gas_limit = 100000u,
+        .to = std::nullopt,
+        .type = TransactionType::eip1559,
+        .data = byte_string{bytecode.data(), bytecode.size()}};
+    BlockHeader header{.number = 256};
+
+    tdb.commit({}, {}, bytes32_t{256}, header);
+    tdb.set_block_and_prefix(header.number, bytes32_t{256});
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+
+    auto executor = create_executor(dbname.string());
+    auto state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->output_data_len, output_buffer_size);
+
+    // BLOCKHASH outputs are packed in a buffer, 32 bytes each. Iterate over and
+    // check against expected. note that order matters here.
+    uint8_t const *output_ptr = ctx.result->output_data;
+    for (uint64_t const b : blockhash_blocks) {
+        auto const actual_hash = to_bytes(byte_string_view{output_ptr, 32});
+        auto const expected_hash = to_bytes(
+            keccak256(rlp::encode_block_header(BlockHeader{.number = b})));
+        EXPECT_EQ(actual_hash, expected_hash);
+        output_ptr += 32;
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
 TEST_F(EthCallFixture, failed_to_read)
 {
     using namespace monad::vm::utils;

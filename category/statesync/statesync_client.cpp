@@ -40,7 +40,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, monad_statesync_client *sync,
     void (*statesync_send_request)(
-        monad_statesync_client *, monad_sync_request))
+        monad_statesync_client *, monad_sync_request)) noexcept
 {
     std::vector<std::filesystem::path> const paths{
         dbname_paths, dbname_paths + len};
@@ -54,18 +54,18 @@ monad_statesync_client_context *monad_statesync_client_context_create(
         statesync_send_request};
 }
 
-uint8_t monad_statesync_client_prefix_bytes()
+uint8_t monad_statesync_client_prefix_bytes() noexcept
 {
     return 1;
 }
 
-size_t monad_statesync_client_prefixes()
+size_t monad_statesync_client_prefixes() noexcept
 {
     return 1 << (8 * monad_statesync_client_prefix_bytes());
 }
 
 bool monad_statesync_client_has_reached_target(
-    monad_statesync_client_context const *const ctx)
+    monad_statesync_client_context const *const ctx) noexcept
 {
     if (ctx->tgrt.number == INVALID_BLOCK_NUM) {
         return false;
@@ -82,7 +82,7 @@ bool monad_statesync_client_has_reached_target(
 
 void monad_statesync_client_handle_new_peer(
     monad_statesync_client_context *const ctx, uint64_t const prefix,
-    uint32_t const version)
+    uint32_t const version) noexcept
 {
     MONAD_ASSERT(monad_statesync_client_compatible(version));
     auto &ptr = ctx->protocol.at(prefix);
@@ -99,7 +99,7 @@ void monad_statesync_client_handle_new_peer(
 
 void monad_statesync_client_handle_target(
     monad_statesync_client_context *const ctx, unsigned char const *const data,
-    uint64_t const size)
+    uint64_t const size) noexcept
 {
     MONAD_ASSERT(std::ranges::all_of(
         ctx->protocol, [](auto const &ptr) { return ptr != nullptr; }))
@@ -131,13 +131,14 @@ void monad_statesync_client_handle_target(
 bool monad_statesync_client_handle_upsert(
     monad_statesync_client_context *const ctx, uint64_t const prefix,
     monad_sync_type const type, unsigned char const *const val,
-    uint64_t const size)
+    uint64_t const size) noexcept
 {
     return ctx->protocol.at(prefix)->handle_upsert(ctx, type, val, size);
 }
 
 void monad_statesync_client_handle_done(
-    monad_statesync_client_context *const ctx, monad_sync_done const msg)
+    monad_statesync_client_context *const ctx,
+    monad_sync_done const msg) noexcept
 {
     MONAD_ASSERT(msg.success);
 
@@ -155,7 +156,8 @@ void monad_statesync_client_handle_done(
     }
 }
 
-bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
+bool monad_statesync_client_finalize(
+    monad_statesync_client_context *const ctx) noexcept
 {
     auto const &tgrt = ctx->tgrt;
     MONAD_ASSERT(tgrt.number != INVALID_BLOCK_NUM);
@@ -222,7 +224,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 }
 
 void monad_statesync_client_context_destroy(
-    monad_statesync_client_context *const ctx)
+    monad_statesync_client_context *const ctx) noexcept
 {
     delete ctx;
 }

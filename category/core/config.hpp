@@ -35,6 +35,14 @@
     }                                                                          \
     MONAD_NAMESPACE_END
 
+// Macro for marking C++ functions as noexcept in C++ mode, empty in C mode
+// This is primarily used for extern "C" functions that should not throw
+#ifdef __cplusplus
+    #define MONAD_NOEXCEPT noexcept
+#else
+    #define MONAD_NOEXCEPT
+#endif
+
 static_assert(CHAR_BIT == 8);
 
 static_assert(

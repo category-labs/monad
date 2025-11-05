@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/config.hpp>
 #include <category/statesync/statesync_messages.h>
 
 struct monad_statesync_server;
@@ -31,8 +32,11 @@ struct monad_statesync_server *monad_statesync_server_create(
         unsigned char const *v1, uint64_t size1, unsigned char const *v2,
         uint64_t size2),
     void (*statesync_server_send_done)(
-        struct monad_statesync_server_network *, struct monad_sync_done));
+        struct monad_statesync_server_network *,
+        struct monad_sync_done)) MONAD_NOEXCEPT;
 
-void monad_statesync_server_run_once(struct monad_statesync_server *);
+void monad_statesync_server_run_once(struct monad_statesync_server *)
+    MONAD_NOEXCEPT;
 
-void monad_statesync_server_destroy(struct monad_statesync_server *);
+void monad_statesync_server_destroy(struct monad_statesync_server *)
+    MONAD_NOEXCEPT;

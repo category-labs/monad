@@ -19,12 +19,12 @@
 
 constexpr uint32_t MONAD_STATESYNC_VERSION = 1;
 
-uint32_t monad_statesync_version()
+uint32_t monad_statesync_version() noexcept
 {
     return MONAD_STATESYNC_VERSION;
 }
 
-bool monad_statesync_client_compatible(uint32_t const version)
+bool monad_statesync_client_compatible(uint32_t const version) noexcept
 {
     return version <= MONAD_STATESYNC_VERSION && version >= 1;
 }

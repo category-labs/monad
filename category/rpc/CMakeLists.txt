@@ -23,7 +23,7 @@ add_library(
   monad_rpc
   OBJECT
   # rpc
-  "eth_call.cpp" "eth_call.h")
+  "monad_executor.cpp" "monad_executor.h")
 
 target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})
 

@@ -30,7 +30,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/rpc/eth_call.h>
+#include <category/rpc/monad_executor.h>
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>

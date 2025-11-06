@@ -59,8 +59,6 @@ namespace clang
 
             Stmt const *findPointeeMutation(Expr const *Exp);
             Stmt const *findPointeeMutation(Decl const *Dec);
-            static bool isUnevaluated(
-                Stmt const *Smt, Stmt const &Stm, ASTContext &Context);
 
         private:
             using MutationFinder = Stmt const *(Analyzer::*)(Expr const *);
@@ -70,8 +68,6 @@ namespace clang
                 Memoized::ResultMap &MemoizedResults);
             Stmt const *tryEachDeclRef(Decl const *Dec, MutationFinder Finder);
             Stmt const *findMaybeRemovedIfConstexpr(Decl const *Dec);
-
-            bool isUnevaluated(Expr const *Exp);
 
             Stmt const *
             findExprMutation(ArrayRef<ast_matchers::BoundNodes> Matches);
@@ -100,6 +96,10 @@ namespace clang
             , A(Stm, Context, Memorized)
         {
         }
+
+        /// check whether stmt is unevaluated. mutation analyzer will ignore the
+        /// content in unevaluated stmt.
+        static bool isUnevaluated(const Stmt *Stm, ASTContext &Context);
 
         bool isMutated(Expr const *Exp)
         {
@@ -139,12 +139,6 @@ namespace clang
         Stmt const *findPointeeMutation(Decl const *Dec)
         {
             return A.findPointeeMutation(Dec);
-        }
-
-        static bool
-        isUnevaluated(Stmt const *Smt, Stmt const &Stm, ASTContext &Context)
-        {
-            return Analyzer::isUnevaluated(Smt, Stm, Context);
         }
 
     private:

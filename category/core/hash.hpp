@@ -38,6 +38,7 @@ struct fnv1a_hash
         static constexpr working_type prime = 1099511628211ULL;
         unsigned char const *const _v =
             reinterpret_cast<unsigned char const *>(&v);
+        // NOLINTNEXTLINE(bugprone-sizeof-expression)
         for (size_t n = 0; n < sizeof(T); n++) {
             hash ^= static_cast<working_type>(_v[n]);
             hash *= prime;

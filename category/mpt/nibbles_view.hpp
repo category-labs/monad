@@ -63,7 +63,7 @@ public:
 #endif
     }
 
-    Nibbles(NibblesView other);
+    Nibbles(NibblesView other); // NOLINT(google-explicit-constructor)
 
     Nibbles(Nibbles const &other)
     {
@@ -182,6 +182,7 @@ public:
     }
 
     // constructor from byte_string_view
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NibblesView(byte_string_view const &s) noexcept
         : NibblesView(false, static_cast<uint8_t>(2 * s.size()), s.data())
     {
@@ -190,17 +191,20 @@ public:
     }
 
     // constructor from byte_string
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NibblesView(byte_string const &s) noexcept
         : NibblesView(byte_string_view{s})
     {
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NibblesView(hash256 const &h) noexcept
         : NibblesView(0, 2 * sizeof(h.bytes), h.bytes)
     {
     }
 
     // construct from Nibbles
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NibblesView(Nibbles const &n) noexcept
         : NibblesView{n.begin_nibble_, n.end_nibble_, n.data_.get()}
     {

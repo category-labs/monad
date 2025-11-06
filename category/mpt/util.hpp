@@ -190,6 +190,7 @@ public:
     {
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr compact_virtual_chunk_offset_t(
         virtual_chunk_offset_t const offset)
         : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
@@ -209,6 +210,7 @@ public:
         return v_ >> (most_significant_bits - count_bits);
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr operator uint32_t() const noexcept
     {
         return v_;

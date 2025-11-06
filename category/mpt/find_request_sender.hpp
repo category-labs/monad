@@ -196,9 +196,9 @@ struct find_request_sender<T>::find_receiver
         auto key = std::pair(this->virt_offset, sender->root_.node.get());
         auto it = sender->inflights_.find(key);
         if (it != sender->inflights_.end()) {
-            auto pendings = std::move(it->second);
+            auto const pendings = std::move(it->second);
             sender->inflights_.erase(it);
-            for (auto &invoc : pendings) {
+            for (auto const &invoc : pendings) {
                 MONAD_ASSERT(invoc(CacheNodeCursor{sp}));
             }
         }
@@ -219,7 +219,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
         unsigned prefix_index = 0;
         unsigned node_prefix_index = root_.prefix_index;
         MONAD_ASSERT(root_.is_valid());
-        auto node = root_.node.get();
+        auto *node = root_.node.get();
         for (; node_prefix_index < node->path_nibbles_len();
              ++node_prefix_index, ++prefix_index) {
             if (prefix_index >= key_.nibble_size()) {
@@ -290,7 +290,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             auto cont = [this, io_state](CacheNodeCursor root) -> result<void> {
                 return this->resume_(io_state, root);
             };
-            auto offset_node = std::pair(virt_offset, node);
+            auto const offset_node = std::pair(virt_offset, node);
             if (auto lt = inflights_.find(offset_node);
                 lt != inflights_.end()) {
                 lt->second.emplace_back(cont);

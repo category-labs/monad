@@ -50,6 +50,7 @@ struct node_disk_pages_spare_15
         spare_type_15 spare;
         uint16_t value;
 
+        // NOLINTNEXTLINE(google-explicit-constructor)
         constexpr spare_dual(uint16_t v)
             : value(v)
         {
@@ -170,7 +171,7 @@ public:
         bool path_nibble_index_start : 1 {false};
         /* size (in byte) of intermediate cache for branch hash */
         uint8_t data_len : 6 {0};
-    } bitpacked{0};
+    } bitpacked{false};
 
     static_assert(sizeof(bitpacked) == 1);
 
@@ -302,7 +303,7 @@ public:
     using UniquePtr = std::unique_ptr<Node, Deleter>;
     using SharedPtr = std::shared_ptr<Node>;
 
-    Node(prevent_public_construction_tag);
+    explicit Node(prevent_public_construction_tag);
 
     Node(
         prevent_public_construction_tag tag, uint16_t mask,
@@ -330,7 +331,7 @@ public:
     template <class... Args>
     static SharedPtr make_shared(size_t bytes, Args &&...args)
     {
-        allocators::variable_size_allocator<Node> alloc(bytes);
+        allocators::variable_size_allocator<Node> const alloc(bytes);
         return std::allocate_shared<Node>(
             alloc,
             prevent_public_construction_tag{},
@@ -363,7 +364,7 @@ public:
     using UniquePtr = std::unique_ptr<CacheNode, Deleter>;
     using SharedPtr = std::shared_ptr<CacheNode>;
 
-    CacheNode(prevent_public_construction_tag)
+    explicit CacheNode(prevent_public_construction_tag)
         : NodeBase()
     {
     }
@@ -566,6 +567,7 @@ public:
         using pointer = void;
         using reference = value_type;
 
+        // NOLINTNEXTLINE(google-explicit-constructor)
         iterator(uint16_t mask)
             : index_(0)
             , mask_(mask)

@@ -87,7 +87,7 @@ namespace detail
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
-                auto next_node_ondisk =
+                auto const next_node_ondisk =
                     read_node_blocking(aux, node.fnext(idx), version);
                 if (!next_node_ondisk || !preorder_traverse_blocking_impl(
                                              aux,
@@ -173,7 +173,7 @@ namespace detail
                     sender->reads_to_initiate_count = 0;
                 }
                 else { // version is valid after reading the buffer
-                    auto next_node_on_disk =
+                    auto const next_node_on_disk =
                         deserialize_node_from_receiver_result<Node>(
                             std::move(buffer_), buffer_off, io_state);
                     sender->within_recursion_count++;
@@ -228,7 +228,7 @@ namespace detail
         }
 
         async::result<void>
-        operator()(async::erased_connected_operation *traverse_state) noexcept
+        operator()(async::erased_connected_operation *traverse_state)
         {
             MONAD_ASSERT(traverse_root != nullptr);
             async_parallel_preorder_traverse_init(

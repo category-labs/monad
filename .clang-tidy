@@ -71,5 +71,7 @@
       value:        false
     - key:          bugprone-unused-return-value.AllowCastToVoid
       value:        true
+    - key:          performance-move-const-arg.CheckTriviallyCopyableMove
+      value:        false
 ...
 

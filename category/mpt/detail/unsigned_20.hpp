@@ -34,6 +34,7 @@ namespace detail
         uint32_t v_;
 
     public:
+        // NOLINTNEXTLINE(google-explicit-constructor)
         constexpr unsigned_20(uint32_t v)
             : v_(v & 0xfffff)
         {

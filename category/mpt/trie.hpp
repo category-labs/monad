@@ -110,7 +110,7 @@ struct read_short_update_sender
     : MONAD_ASYNC_NAMESPACE::read_single_buffer_sender
 {
     template <receiver Receiver>
-    constexpr read_short_update_sender(Receiver const &receiver)
+    explicit constexpr read_short_update_sender(Receiver const &receiver)
         : read_single_buffer_sender(receiver.rd_offset, receiver.bytes_to_read)
     {
         MONAD_DEBUG_ASSERT(
@@ -126,7 +126,7 @@ class read_long_update_sender
 
 public:
     template <receiver Receiver>
-    read_long_update_sender(Receiver const &receiver)
+    explicit read_long_update_sender(Receiver const &receiver)
         : MONAD_ASYNC_NAMESPACE::read_multiple_buffer_sender(
               receiver.rd_offset, {&buffer_, 1})
         , buffer_(
@@ -142,10 +142,13 @@ public:
 
     read_long_update_sender(read_long_update_sender &&o) noexcept
         : MONAD_ASYNC_NAMESPACE::read_multiple_buffer_sender(std::move(o))
-        , buffer_(o.buffer_)
+        , buffer_(o.buffer_) // NOLINT(bugprone-use-after-move)
+                             // the move only affects the base class
+                             // read_multiple_buffer_sender
+                             // and leaves `o.buffer_` untouched
     {
         this->reset(this->offset(), {&buffer_, 1});
-        o.buffer_ = {};
+        o.buffer_ = {}; // NOLINT(bugprone-use-after-move) (see above)
     }
 
     read_long_update_sender &operator=(read_long_update_sender &&o) noexcept
@@ -277,7 +280,7 @@ protected:
     public:
         shared_lock_holder_(shared_lock_holder_ const &) = delete;
 
-        shared_lock_holder_(shared_lock_holder_ &&o)
+        shared_lock_holder_(shared_lock_holder_ &&o) noexcept
             : parent_(o.parent_)
             , was_atomic_(o.was_atomic_)
         {
@@ -335,7 +338,7 @@ protected:
 
                 holder2(holder2 const &) = delete;
 
-                holder2(holder2 &&o)
+                holder2(holder2 &&o) noexcept
                     : parent_(o.parent_)
                     , initial_upsert_call_count_(o.initial_upsert_call_count_)
                     , was_atomic_(o.was_atomic_)
@@ -402,7 +405,7 @@ public:
 
     detail::TrieUpdateCollectedStats stats;
 
-    UpdateAuxImpl(
+    explicit UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
         std::optional<uint64_t> const history_len = {})
     {
@@ -429,7 +432,7 @@ public:
         public:
             holder(holder const &) = delete;
 
-            holder(holder &&o)
+            holder(holder &&o) noexcept
                 : parent_(o.parent_)
             {
                 o.parent_ = nullptr;
@@ -499,7 +502,7 @@ public:
         public:
             holder(holder const &) = delete;
 
-            holder(holder &&o)
+            holder(holder &&o) noexcept
                 : parent_(o.parent_)
             {
                 o.parent_ = nullptr;
@@ -931,13 +934,14 @@ class UpdateAux final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(
+    explicit UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
         std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
     {
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     UpdateAux(
         LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
         std::optional<uint64_t> const history_len = {})
@@ -981,6 +985,7 @@ class UpdateAux<void> final : public UpdateAuxImpl
     }
 
 public:
+    // NOLINTNEXTLINE(google-explicit-constructor)
     UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
         std::optional<uint64_t> const history_len = {})
@@ -1008,8 +1013,8 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
         receiver.bytes_to_read <=
         MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
         read_short_update_sender sender(receiver);
-        auto iostate =
-            aux.io->make_connected(std::move(sender), std::move(receiver));
+        auto iostate = aux.io->make_connected(
+            std::move(sender), std::forward<Receiver>(receiver));
         iostate->initiate();
         // TEMPORARY UNTIL ALL THIS GETS BROKEN OUT: Release
         // management until i/o completes
@@ -1017,10 +1022,10 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
     }
     else {
         read_long_update_sender sender(receiver);
-        using connected_type =
-            decltype(connect(*aux.io, std::move(sender), std::move(receiver)));
-        auto *iostate = new connected_type(
-            connect(*aux.io, std::move(sender), std::move(receiver)));
+        using connected_type = decltype(connect(
+            *aux.io, std::move(sender), std::forward<Receiver>(receiver)));
+        auto *iostate = new connected_type(connect(
+            *aux.io, std::move(sender), std::forward<Receiver>(receiver)));
         iostate->initiate();
         // drop iostate
     }

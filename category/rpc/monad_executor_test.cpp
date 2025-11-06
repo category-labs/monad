@@ -13,35 +13,72 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
+#include <category/async/util.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/monad_exception.hpp>
+#include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/mpt/db.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/monad_executor.h>
+#include <category/vm/code.hpp>
 #include <category/vm/utils/evm-as.hpp>
+#include <category/vm/utils/evm-as/compiler.hpp>
+#include <category/vm/utils/evm-as/validator.hpp>
+#include <category/vm/vm.hpp>
+
 #include <test_resource_data.h>
 
 #include <boost/fiber/future/promise.hpp>
 
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
+
 #include <gtest/gtest.h>
 
+#include <intx/intx.hpp>
+
+#include <nlohmann/json_fwd.hpp>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <deque>
+#include <filesystem>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <ranges>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
 #include <vector>
+
+#include <unistd.h>
 
 using namespace monad;
 using namespace monad::test;
@@ -57,7 +94,7 @@ namespace
 
     auto create_executor(std::string const &dbname)
     {
-        monad_executor_pool_config conf = {1, 1, max_timeout, 1000};
+        monad_executor_pool_config const conf = {1, 1, max_timeout, 1000};
         return monad_executor_create(
             conf, conf, node_lru_max_mem, dbname.c_str());
     }
@@ -117,7 +154,7 @@ namespace
 
     void complete_callback(monad_executor_result *result, void *user)
     {
-        auto c = (callback_context *)user;
+        auto *c = (callback_context *)user;
 
         c->result = result;
         c->promise.set_value();
@@ -129,7 +166,7 @@ namespace
             commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
         }
 
-        BlockHeader header{.number = 256};
+        BlockHeader const header{.number = 256};
 
         commit_sequential(
             tdb,
@@ -164,8 +201,8 @@ namespace
             to_vec(rlp::encode_address(std::make_optional(from)));
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-        auto executor = create_executor(dbname.string());
-        auto state_override = monad_state_override_create();
+        auto *executor = create_executor(dbname.string());
+        auto *state_override = monad_state_override_create();
 
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
@@ -193,7 +230,7 @@ namespace
 
         byte_string const rlp_call_frames(
             ctx.result->encoded_trace, ctx.result->encoded_trace_len);
-        CallFrame expected{
+        CallFrame const expected{
             .type = CallType::CALL,
             .flags = 0,
             .from = from,
@@ -238,9 +275,9 @@ TEST_F(EthCallFixture, simple_success_call)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -250,8 +287,8 @@ TEST_F(EthCallFixture, simple_success_call)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -294,12 +331,12 @@ TEST_F(EthCallFixture, insufficient_balance)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u,
         .value = 1000000000000,
         .to = to,
         .type = TransactionType::eip1559};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -309,8 +346,8 @@ TEST_F(EthCallFixture, insufficient_balance)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -354,9 +391,9 @@ TEST_F(EthCallFixture, on_proposed_block)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     tdb.commit({}, {}, bytes32_t{256}, header);
     tdb.set_block_and_prefix(header.number, bytes32_t{256});
@@ -367,8 +404,8 @@ TEST_F(EthCallFixture, on_proposed_block)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -429,12 +466,12 @@ TEST_F(EthCallFixture, blockhash_before_fork)
     ASSERT_TRUE(evm_as::validate(eb));
     evm_as::compile(eb, bytecode);
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u,
         .to = std::nullopt,
         .type = TransactionType::eip1559,
         .data = byte_string{bytecode.data(), bytecode.size()}};
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     tdb.commit({}, {}, bytes32_t{256}, header);
     tdb.set_block_and_prefix(header.number, bytes32_t{256});
@@ -445,8 +482,8 @@ TEST_F(EthCallFixture, blockhash_before_fork)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -507,12 +544,12 @@ TEST_F(EthCallFixture, failed_to_read)
     std::vector<uint8_t> bytecode{};
     ASSERT_TRUE(evm_as::validate(eb));
     evm_as::compile(eb, bytecode);
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 100000u,
         .to = std::nullopt,
         .type = TransactionType::eip1559,
         .data = byte_string{bytecode.data(), bytecode.size()}};
-    BlockHeader header{.number = 1256};
+    BlockHeader const header{.number = 1256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -522,8 +559,8 @@ TEST_F(EthCallFixture, failed_to_read)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -567,8 +604,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
     byte_string const tx_data =
         0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
-    Transaction tx{.gas_limit = 200000u, .data = tx_data};
-    BlockHeader header{.number = 256};
+    Transaction const tx{.gas_limit = 200000u, .data = tx_data};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -578,8 +615,8 @@ TEST_F(EthCallFixture, contract_deployment_success)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -605,13 +642,13 @@ TEST_F(EthCallFixture, contract_deployment_success)
     byte_string const deployed_code_bytes =
         0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
-    std::vector<uint8_t> deployed_code_vec = {
+    std::vector<uint8_t> const deployed_code_vec = {
         deployed_code_bytes.data(),
         deployed_code_bytes.data() + deployed_code_bytes.size()};
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
 
-    std::vector<uint8_t> returned_code_vec(
+    std::vector<uint8_t> const returned_code_vec(
         ctx.result->output_data,
         ctx.result->output_data + ctx.result->output_data_len);
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
@@ -646,14 +683,14 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         Code{},
         BlockHeader{.number = 0});
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 21'000u,
         .value = 1,
         .to = to,
         .data = {},
     };
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -661,8 +698,8 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -742,14 +779,14 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         Code{{hash2, icode2}},
         BlockHeader{.number = 0});
 
-    Transaction tx{
+    Transaction const tx{
         .gas_limit = 1'000'000u,
         .value = 1,
         .to = addr2,
         .type = TransactionType::eip1559,
     };
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -757,8 +794,8 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         to_vec(rlp::encode_address(std::make_optional(addr1)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -811,17 +848,17 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = {}};
+    Transaction const tx{.gas_limit = 100000u, .to = ca, .data = {}};
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -932,17 +969,17 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
 
     auto const data =
         0x56cde25b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004e20_bytes;
-    Transaction tx{.gas_limit = 30'000'000u, .to = ca, .data = data};
+    Transaction const tx{.gas_limit = 30'000'000u, .to = ca, .data = data};
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -997,17 +1034,18 @@ TEST_F(EthCallFixture, from_contract_account)
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
+    Transaction const tx{
+        .gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
 
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender = to_vec(rlp::encode_address(std::make_optional(ca)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -1071,9 +1109,10 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         }
     }
 
-    Transaction tx{.gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
+    Transaction const tx{
+        .gas_limit = 100000u, .to = ca, .data = 0x60025560_bytes};
 
-    auto executor = create_executor(dbname.string());
+    auto *executor = create_executor(dbname.string());
 
     std::deque<std::unique_ptr<callback_context>> ctxs;
     std::deque<boost::fibers::future<void>> futures;
@@ -1085,7 +1124,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         auto *const state_override =
             state_overrides.emplace_back(monad_state_override_create());
 
-        BlockHeader header{.number = b};
+        BlockHeader const header{.number = b};
 
         auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -1213,7 +1252,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
             {d_code_hash, d_icode},
         },
         BlockHeader{.number = 0});
-    BlockHeader header{.number = 0};
+    BlockHeader const header{.number = 0};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -1230,8 +1269,8 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -1379,7 +1418,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }
 
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(
         tdb,
@@ -1413,8 +1452,8 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
@@ -1443,7 +1482,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     byte_string const rlp_call_frames(
         ctx.result->encoded_trace, ctx.result->encoded_trace_len);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = from,
@@ -1479,7 +1518,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
     }
 
-    BlockHeader header{.number = 256};
+    BlockHeader const header{.number = 256};
 
     Account const acct_from{
         .balance = 0x200000,
@@ -1514,8 +1553,8 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     struct callback_context prestate_ctx;
     struct callback_context statediff_ctx;
@@ -1551,13 +1590,13 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
                 prestate_ctx.result->encoded_trace_len);
         trace::Map<Address, OriginalAccountState> expected{};
         {
-            OriginalAccountState as_from{acct_from};
+            OriginalAccountState const as_from{acct_from};
             expected.emplace(ADDR_A, as_from);
 
-            OriginalAccountState as_to{acct_to};
+            OriginalAccountState const as_to{acct_to};
             expected.emplace(ADDR_B, as_to);
 
-            OriginalAccountState as_bene{std::nullopt};
+            OriginalAccountState const as_bene{std::nullopt};
             expected.emplace(header.beneficiary, as_bene);
         }
 
@@ -1634,8 +1673,8 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     byte_string const tx_data =
         0x604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
-    Transaction tx{.gas_limit = 200000u, .data = tx_data};
-    BlockHeader header{.number = 256};
+    Transaction const tx{.gas_limit = 200000u, .data = tx_data};
+    BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
 
@@ -1645,13 +1684,13 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto executor = create_executor(dbname.string());
-    auto state_override = monad_state_override_create();
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
 
     byte_string deployed_code_bytes =
         0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
 
-    std::vector<uint8_t> deployed_code_vec = {
+    std::vector<uint8_t> const deployed_code_vec = {
         deployed_code_bytes.data(),
         deployed_code_bytes.data() + deployed_code_bytes.size()};
 
@@ -1687,7 +1726,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             prestate_ctx.result->encoded_trace +
                 prestate_ctx.result->encoded_trace_len);
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "0x0000000000000000000000000000000000000000":{"balance":"0x0"},
             "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{"balance":"0x0"}
         })";
@@ -1725,7 +1764,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             statediff_ctx.result->encoded_trace +
                 statediff_ctx.result->encoded_trace_len);
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "post":{
                 "0x0000000000000000000000000000000000000000":{
                     "balance":"0x0",

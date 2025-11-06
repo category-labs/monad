@@ -47,12 +47,12 @@ if [ -f $CONST_CORRECTNESS_PLUGIN ]; then
                         -checks='-misc-const-correctness,misc-auto-const-correctness' )
 fi
 
-
 mapfile -t inputs < <(\
   find \
-    category/async      \
-    category/core       \
-    category/vm         \
+    category/async \
+    category/core  \
+    category/rpc   \
+    category/vm    \
     \( -name '*.cpp' -or -name '*.c' \))
 
 "${RUN_CLANG_TIDY}"                               \

@@ -135,7 +135,7 @@ private:
     void try_update_lru(ListNode *node)
     {
         if (node->check_lru_time()) {
-            std::unique_lock l(mutex_);
+            std::unique_lock const l(mutex_);
             STATS_EVENT_UPDATE_LRU();
             lru_.update_lru(node);
         }
@@ -146,7 +146,7 @@ private:
         size_t sz = size();
         bool const evicted = (sz >= max_size_) && evict();
         {
-            std::unique_lock l(mutex_);
+            std::unique_lock const l(mutex_);
             STATS_EVENT_INSERT_NEW();
             lru_.push_front(node);
         }
@@ -170,7 +170,7 @@ private:
     {
         ListNode *target;
         {
-            std::unique_lock l(mutex_);
+            std::unique_lock const l(mutex_);
             STATS_EVENT_EVICT();
             target = lru_.evict();
         }
@@ -196,9 +196,9 @@ private:
         Key key_;
         std::atomic<int64_t> lru_time_{0};
 
-        ListNode() {}
+        ListNode() = default;
 
-        ListNode(Key const &key)
+        explicit ListNode(Key const &key)
             : key_(key)
         {
         }
@@ -297,7 +297,7 @@ private:
         Value value_;
         ListNode *node_;
 
-        HashMapValue() {}
+        HashMapValue() = default;
 
         HashMapValue(Value const &value, ListNode *const node)
             : value_(value)

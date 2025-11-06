@@ -37,17 +37,17 @@ namespace detail
         [[likely]] if (
             bytes_to_read <= MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
             read_short_update_sender sender(receiver);
-            auto iostate =
-                io.make_connected(std::move(sender), std::move(receiver));
+            auto iostate = io.make_connected(
+                std::move(sender), std::forward<Receiver>(receiver));
             iostate->initiate();
             iostate.release();
         }
         else {
             read_long_update_sender sender(receiver);
-            using connected_type =
-                decltype(connect(io, std::move(sender), std::move(receiver)));
-            auto *iostate = new connected_type(
-                connect(io, std::move(sender), std::move(receiver)));
+            using connected_type = decltype(connect(
+                io, std::move(sender), std::forward<Receiver>(receiver)));
+            auto *iostate = new connected_type(connect(
+                io, std::move(sender), std::forward<Receiver>(receiver)));
             iostate->initiate();
             // drop iostate
         }
@@ -78,7 +78,7 @@ namespace detail
             // Comes from read_long_update_sender which always allocates single
             // buffer.
             MONAD_ASSERT(buffer_.assume_value().size() == 1);
-            auto &buffer = buffer_.assume_value().front();
+            auto const &buffer = buffer_.assume_value().front();
             MONAD_ASSERT(buffer.size() > buffer_off);
             // Did the Receiver forget to set lifetime_managed_internally?
             MONAD_DEBUG_ASSERT(io_state->lifetime_is_managed_internally());

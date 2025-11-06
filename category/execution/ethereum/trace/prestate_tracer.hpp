@@ -39,7 +39,7 @@ namespace trace
 
     struct PrestateTracer
     {
-        PrestateTracer(nlohmann::json &storage)
+        explicit PrestateTracer(nlohmann::json &storage)
             : storage_(storage)
         {
         }
@@ -64,7 +64,7 @@ namespace trace
 
     struct StateDiffTracer
     {
-        StateDiffTracer(nlohmann::json &storage)
+        explicit StateDiffTracer(nlohmann::json &storage)
             : storage_(storage)
         {
         }

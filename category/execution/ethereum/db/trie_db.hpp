@@ -54,7 +54,7 @@ class TrieDb final : public ::monad::Db
     ::monad::mpt::Node::SharedPtr curr_root_;
 
 public:
-    TrieDb(mpt::Db &);
+    explicit TrieDb(mpt::Db &);
     ~TrieDb();
 
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);

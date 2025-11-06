@@ -85,7 +85,7 @@ class BlockHashChain
     std::deque<Proposal> proposals_;
 
 public:
-    BlockHashChain(BlockHashBufferFinalized &);
+    explicit BlockHashChain(BlockHashBufferFinalized &);
 
     void propose(
         bytes32_t const &, uint64_t block_number, bytes32_t const &block_id,

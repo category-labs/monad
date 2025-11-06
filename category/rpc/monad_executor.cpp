@@ -13,15 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/rpc/monad_executor.h>
+
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -29,40 +35,57 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/mpt/db_error.hpp>
+#include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/mpt/util.hpp>
-#include <category/rpc/monad_executor.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
-#include <nlohmann/json.hpp>
-
-#include <quill/Quill.h>
-
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <memory>
+#include <optional>
+#include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
+
+#include <string.h>
+
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include <intx/intx.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <quill/Quill.h>
 
 using namespace monad;
 using namespace monad::vm;
@@ -336,8 +359,7 @@ void set_override_balance(
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
-    byte_string const b{balance, balance + balance_len};
-    m->override_sets[address].balance = std::move(b);
+    m->override_sets[address].balance = {balance, balance + balance_len};
 }
 
 void set_override_nonce(
@@ -366,8 +388,7 @@ void set_override_code(
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(code);
-    byte_string const c{code, code + code_len};
-    m->override_sets[address].code = std::move(c);
+    m->override_sets[address].code = {code, code + code_len};
 }
 
 void set_override_state_diff(
@@ -387,11 +408,10 @@ void set_override_state_diff(
     byte_string const k{key, key + key_len};
 
     MONAD_ASSERT(value);
-    byte_string const v{value, value + value_len};
 
     auto &state_object = m->override_sets[address].state_diff;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
-    state_object.emplace(k, std::move(v));
+    state_object.emplace(k, byte_string{value, value + value_len});
 }
 
 void set_override_state(
@@ -411,11 +431,10 @@ void set_override_state(
     byte_string const k{key, key + key_len};
 
     MONAD_ASSERT(value);
-    byte_string const v{value, value + value_len};
 
     auto &state_object = m->override_sets[address].state;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
-    state_object.emplace(k, std::move(v));
+    state_object.emplace(k, byte_string{value, value + value_len});
 }
 
 void monad_executor_result_release(monad_executor_result *const result)
@@ -916,12 +935,12 @@ void monad_executor_eth_call_submit(
     auto const tx_result = rlp::decode_transaction(rlp_tx_view);
     MONAD_ASSERT(!tx_result.has_error());
     MONAD_ASSERT(rlp_tx_view.empty());
-    auto const tx = tx_result.value();
+    auto const &tx = tx_result.value();
 
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
     MONAD_ASSERT(!block_header_result.has_error());
     MONAD_ASSERT(rlp_header_view.empty());
-    auto const block_header = block_header_result.value();
+    auto const &block_header = block_header_result.value();
 
     auto const sender_result = rlp::decode_address(rlp_sender_view);
     MONAD_ASSERT(!sender_result.has_error());

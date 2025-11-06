@@ -60,7 +60,7 @@ class RODb
     std::unique_ptr<Impl> impl_;
 
 public:
-    RODb(ReadOnlyOnDiskDbConfig const &);
+    explicit RODb(ReadOnlyOnDiskDbConfig const &);
     ~RODb();
 
     RODb(RODb const &) = delete;
@@ -93,9 +93,9 @@ private:
     std::unique_ptr<Impl> impl_;
 
 public:
-    Db(StateMachine &); // In-memory mode
+    explicit Db(StateMachine &); // In-memory mode
     Db(StateMachine &, OnDiskDbConfig const &);
-    Db(AsyncIOContext &);
+    explicit Db(AsyncIOContext &);
 
     Db(Db const &) = delete;
     Db(Db &&) = delete;
@@ -176,7 +176,7 @@ struct AsyncContext
     inflight_root_t inflight_roots;
     AsyncInflightNodes inflight_nodes;
 
-    AsyncContext(Db &db, size_t node_lru_max_mem = 16ul << 20);
+    explicit AsyncContext(Db &db, size_t node_lru_max_mem = 16ul << 20);
     ~AsyncContext() noexcept = default;
 };
 

@@ -199,7 +199,7 @@ namespace detail
 
             uint32_t index(db_metadata const *parent) const noexcept
             {
-                auto ret = uint32_t(this - parent->chunk_info);
+                auto const ret = uint32_t(this - parent->chunk_info);
                 MONAD_DEBUG_ASSERT(ret < parent->chunk_info_count);
                 return ret;
             }
@@ -361,7 +361,7 @@ namespace detail
         void append_(id_pair &list, chunk_info_t *i) noexcept
         {
             // Insertion count is assigned to chunk_info_t *i atomically
-            auto g = hold_dirty();
+            auto const g = hold_dirty();
             chunk_info_t info;
             info.in_fast_list = (&list == &fast_list);
             info.in_slow_list = (&list == &slow_list);
@@ -405,7 +405,7 @@ namespace detail
                 }
                 return free_list;
             };
-            auto g = hold_dirty();
+            auto const g = hold_dirty();
             if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID &&
                 i->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
@@ -457,20 +457,20 @@ namespace detail
 
         void free_capacity_add_(uint64_t bytes) noexcept
         {
-            auto g = hold_dirty();
+            auto const g = hold_dirty();
             capacity_in_free_list += bytes;
         }
 
         void free_capacity_sub_(uint64_t bytes) noexcept
         {
-            auto g = hold_dirty();
+            auto const g = hold_dirty();
             capacity_in_free_list -= bytes;
         }
 
         void advance_db_offsets_to_(
             db_offsets_info_t const &offsets_to_apply) noexcept
         {
-            auto g = hold_dirty();
+            auto const g = hold_dirty();
             db_offsets.store(offsets_to_apply);
         }
     };
@@ -523,8 +523,8 @@ namespace detail
         memcpy(buffer, src, sizeof(db_metadata));
         auto *intr = start_lifetime_as<db_metadata>(buffer);
         MONAD_ASSERT(intr->is_dirty().load(std::memory_order_acquire) == false);
-        auto g1 = intr->hold_dirty();
-        auto g2 = dest->hold_dirty();
+        auto const g1 = intr->hold_dirty();
+        auto const g2 = dest->hold_dirty();
         dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         auto const old_next_version = intr->root_offsets.next_version_;
         intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM

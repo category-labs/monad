@@ -48,6 +48,9 @@ template <class T>
 concept update_or_expire_tnode =
     std::same_as<T, ExpireTNode> || std::same_as<T, UpdateTNode>;
 
+// NOLINTBEGIN(bugprone-crtp-constructor-accessibility)
+// the use of the UpdateExpireCommonStorage subclass requires
+// this constructor to be non-private
 template <any_tnode Derived>
 struct UpwardTreeNodeBase
 {
@@ -61,6 +64,8 @@ struct UpwardTreeNodeBase
     }
 };
 
+// NOLINTEND(bugprone-crtp-constructor-accessibility)
+
 template <update_or_expire_tnode Derived>
 struct UpdateExpireCommonStorage : public UpwardTreeNodeBase<Derived>
 {
@@ -68,6 +73,7 @@ struct UpdateExpireCommonStorage : public UpwardTreeNodeBase<Derived>
     uint8_t const branch{INVALID_BRANCH};
     uint16_t mask{0};
 
+private:
     UpdateExpireCommonStorage(
         Derived *const parent, tnode_type const type, uint8_t const npending,
         uint8_t branch, uint16_t const mask)
@@ -76,6 +82,8 @@ struct UpdateExpireCommonStorage : public UpwardTreeNodeBase<Derived>
         , mask(mask)
     {
     }
+
+    friend Derived;
 };
 
 struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
@@ -91,7 +99,7 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
     std::optional<byte_string_view> opt_leaf_data{std::nullopt};
     int64_t version{0};
 
-    UpdateTNode(
+    explicit UpdateTNode(
         uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
         uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
         int64_t const version = 0,

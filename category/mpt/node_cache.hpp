@@ -43,7 +43,7 @@ class NodeCache final
     void evict_until_under_limit()
     {
         while (used_bytes_ > max_bytes_ && !active_list_.empty()) {
-            auto list_it = std::prev(active_list_.end());
+            auto const list_it = std::prev(active_list_.end());
             auto &node_to_erase = *list_it;
             map_.erase(list_it->key);
             used_bytes_ -= list_it->val.second;

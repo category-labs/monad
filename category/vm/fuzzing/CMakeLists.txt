@@ -25,6 +25,7 @@ target_sources(monad-vm-fuzzing PRIVATE
 monad_compile_options(monad-vm-fuzzing)
 
 target_include_directories(monad-vm-fuzzing
+  PUBLIC "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
   PUBLIC src/
 )
 

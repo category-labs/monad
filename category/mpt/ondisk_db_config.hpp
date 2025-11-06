@@ -50,6 +50,7 @@ struct ReadOnlyOnDiskDbConfig
 {
     bool disable_mismatching_storage_pool_check{
         false}; // risk of severe data loss
+    bool low_io_priority{false};
     bool capture_io_latencies{false};
     bool eager_completions{false};
     unsigned rd_buffers{1024};

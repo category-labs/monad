@@ -335,6 +335,9 @@ void AsyncIO::submit_request_sqe_(
         ci.chunk.read_fd().second + chunk_and_offset.offset,
         0);
     sqe->flags |= IOSQE_FIXED_FILE;
+    if (low_io_priority_) { // override
+        prio = erased_connected_operation::io_priority::idle;
+    }
     switch (prio) {
     case erased_connected_operation::io_priority::highest:
         sqe->ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 7);

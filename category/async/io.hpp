@@ -98,6 +98,7 @@ private:
     monad::io::BufferPool wr_pool_;
     bool eager_completions_{false};
     bool capture_io_latencies_{false};
+    bool low_io_priority_{false};
 
     // IO records
     IORecord records_;
@@ -274,6 +275,11 @@ public:
     void set_capture_io_latencies(bool v) noexcept
     {
         capture_io_latencies_ = v;
+    }
+
+    void set_low_io_priority(bool v) noexcept
+    {
+        low_io_priority_ = v;
     }
 
     // The number of submission and completion entries remaining right now. Can

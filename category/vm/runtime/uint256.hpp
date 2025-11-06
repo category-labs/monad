@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/result.hpp>
 #include <category/vm/core/assert.h>
 
 #include <algorithm>
@@ -1554,6 +1555,75 @@ namespace monad::vm::runtime
 
         return result;
     }
+
+    /* Checked operations; these raise an exception in case of overflow or
+     * division by zero. They are not optimized. */
+    enum class MathError
+    {
+        Success = 0,
+        Overflow,
+        Underflow,
+        DivisionByZero,
+    };
+}
+
+namespace system_error2
+{
+    template <>
+    struct quick_status_code_from_enum<monad::vm::runtime::MathError>
+        : quick_status_code_from_enum_defaults<monad::vm::runtime::MathError>
+    {
+        static constexpr auto const domain_name = "Math Error";
+        static constexpr auto const domain_uuid =
+            "591f43b2-d04a-40ce-8334-5d93885499b5";
+
+        static std::initializer_list<mapping> const &value_mappings();
+    };
+}
+
+namespace monad::vm::runtime
+{
+    [[gnu::always_inline]] inline constexpr Result<uint256_t>
+    checked_add(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        auto const res = addc(x, y);
+        if (MONAD_VM_UNLIKELY(res.carry)) {
+            return MathError::Overflow;
+        }
+        return res.value;
+    }
+
+    [[gnu::always_inline]] inline constexpr Result<uint256_t>
+    checked_sub(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        auto const res = subb(x, y);
+        if (MONAD_VM_UNLIKELY(res.carry)) {
+            return MathError::Underflow;
+        }
+        return res.value;
+    }
+
+    [[gnu::always_inline]] inline constexpr Result<uint256_t>
+    checked_mul(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        auto const z = truncating_mul<2 * uint256_t::num_words>(
+            x.as_words(), y.as_words());
+        auto const overflow = (z[4] | z[5]) | (z[6] | z[7]);
+        if (MONAD_VM_UNLIKELY(overflow)) {
+            return MathError::Overflow;
+        }
+        return uint256_t{z[0], z[1], z[2], z[3]};
+    }
+
+    [[gnu::always_inline]] inline constexpr Result<uint256_t>
+    checked_div(uint256_t const &x, uint256_t const &y) noexcept
+    {
+        if (MONAD_VM_UNLIKELY(y == 0)) {
+            return MathError::DivisionByZero;
+        }
+        return x / y;
+    }
+
 }
 
 template <>

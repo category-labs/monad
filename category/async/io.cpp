@@ -302,12 +302,13 @@ AsyncIO::~AsyncIO()
     ::close(fds_.msgwrite);
 }
 
-void AsyncIO::account_read_()
+void AsyncIO::account_read_(size_t size)
 {
     if (++records_.inflight_rd > records_.max_inflight_rd) {
         records_.max_inflight_rd = records_.inflight_rd;
     }
     ++records_.nreads;
+    records_.bytes_read += size;
 }
 
 void AsyncIO::submit_request_sqe_(
@@ -520,7 +521,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 auto const &read = concurrent_read_ios_pending_.front();
                 submit_request_sqe_(
                     read.buffer, read.offset, read.op, read.op->io_priority());
-                account_read_();
+                account_read_(read.buffer.size());
                 concurrent_read_ios_pending_.pop_front();
             }
         }

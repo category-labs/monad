@@ -53,9 +53,10 @@ struct IORecord
     unsigned max_inflight_rd_scatter{0};
     unsigned max_inflight_wr{0};
 
-    unsigned nreads{0};
+    uint64_t nreads{0};
     // Reads and scatter reads which got a EAGAIN and were retried
     unsigned reads_retried{0};
+    uint64_t bytes_read{0};
 };
 
 class AsyncIO final
@@ -129,7 +130,7 @@ private:
         void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(timed_invocation_state *state, void *uring_data);
 
-    void account_read_();
+    void account_read_(size_t size);
 
     void poll_uring_while_submission_queue_full_();
     size_t poll_uring_(bool blocking, unsigned poll_rings_mask);
@@ -235,6 +236,16 @@ public:
         return records_.inflight_ts.load(std::memory_order_relaxed);
     }
 
+    uint64_t total_reads_submitted() const noexcept
+    {
+        return records_.nreads;
+    }
+
+    uint64_t total_bytes_read() const noexcept
+    {
+        return records_.bytes_read;
+    }
+
     unsigned concurrent_read_io_limit() const noexcept
     {
         return concurrent_read_io_limit_;
@@ -338,6 +349,8 @@ public:
         records_.max_inflight_rd_scatter = 0;
         records_.max_inflight_wr = 0;
         records_.nreads = 0;
+        records_.bytes_read = 0;
+        records_.reads_retried = 0;
     }
 
     size_t submit_read_request(
@@ -355,8 +368,9 @@ public:
             return size_t(-1); // we never complete immediately
         }
 
+        auto const size = buffer.size();
         submit_request_(buffer, offset, uring_data, uring_data->io_priority());
-        account_read_();
+        account_read_(size);
         return size_t(-1); // we never complete immediately
     }
 
@@ -659,7 +673,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 296);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

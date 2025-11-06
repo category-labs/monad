@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/io.hpp>
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
@@ -116,7 +117,8 @@ byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 
 bool send_deletion(
     monad_statesync_server *const sync, monad_sync_request const &rq,
-    monad_statesync_server_context &ctx)
+    monad_statesync_server_context &ctx, uint64_t *const num_upserts,
+    uint64_t *const upsert_bytes)
 {
     MONAD_ASSERT(
         rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_NUM);
@@ -125,8 +127,10 @@ bool send_deletion(
         return true;
     }
 
-    auto const fn = [sync, prefix = from_prefix(rq.prefix, rq.prefix_bytes)](
-                        Deletion const &deletion) {
+    auto const fn = [sync,
+                     prefix = from_prefix(rq.prefix, rq.prefix_bytes),
+                     num_upserts,
+                     upsert_bytes](Deletion const &deletion) {
         auto const &[addr, key] = deletion;
         auto const hash = keccak256(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
@@ -141,6 +145,8 @@ bool send_deletion(
                 sizeof(addr),
                 nullptr,
                 0);
+            ++(*num_upserts);
+            *upsert_bytes += sizeof(addr);
         }
         else {
             auto const skey = rlp::encode_bytes32_compact(key.value());
@@ -151,6 +157,8 @@ bool send_deletion(
                 sizeof(addr),
                 skey.data(),
                 skey.size());
+            ++(*num_upserts);
+            *upsert_bytes += sizeof(addr) + skey.size();
         }
     };
 
@@ -165,6 +173,17 @@ bool send_deletion(
 bool statesync_server_handle_request(
     monad_statesync_server *const sync, monad_sync_request const rq)
 {
+    uint64_t disk_ios_start = 0;
+    uint64_t disk_bytes_start = 0;
+    auto const *io = monad::async::AsyncIO::thread_instance();
+    if (io != nullptr) {
+        disk_ios_start = io->total_reads_submitted();
+        disk_bytes_start = io->total_bytes_read();
+    }
+
+    uint64_t num_upserts = 0;
+    uint64_t upsert_bytes = 0;
+
     struct Traverse final : public TraverseMachine
     {
         unsigned char nibble;
@@ -174,16 +193,21 @@ bool statesync_server_handle_request(
         NibblesView prefix;
         uint64_t from;
         uint64_t until;
+        uint64_t *num_upserts;
+        uint64_t *upsert_bytes;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
-            uint64_t const from, uint64_t const until)
+            uint64_t const from, uint64_t const until,
+            uint64_t *const num_upserts, uint64_t *const upsert_bytes)
             : nibble{INVALID_BRANCH}
             , depth{0}
             , sync{sync}
             , prefix{prefix}
             , from{from}
             , until{until}
+            , num_upserts{num_upserts}
+            , upsert_bytes{upsert_bytes}
         {
         }
 
@@ -235,13 +259,11 @@ bool statesync_server_handle_request(
                                              unsigned char const *const v1 =
                                                  nullptr,
                                              uint64_t const size1 = 0) {
+                    uint64_t const size2 = node.value().size();
                     sync->statesync_server_send_upsert(
-                        sync->net,
-                        type,
-                        v1,
-                        size1,
-                        node.value().data(),
-                        node.value().size());
+                        sync->net, type, v1, size1, node.value().data(), size2);
+                    ++(*num_upserts);
+                    *upsert_bytes += size1 + size2;
                 };
 
                 if (nibble == CODE_NIBBLE) {
@@ -332,9 +354,11 @@ bool statesync_server_handle_request(
             val.size(),
             nullptr,
             0);
+        ++num_upserts;
+        upsert_bytes += val.size();
     }
 
-    if (!send_deletion(sync, rq, *ctx)) {
+    if (!send_deletion(sync, rq, *ctx, &num_upserts, &upsert_bytes)) {
         return false;
     }
 
@@ -350,11 +374,24 @@ bool statesync_server_handle_request(
     }
 
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Traverse traverse(
+        sync,
+        NibblesView{bytes},
+        rq.from,
+        rq.until,
+        &num_upserts,
+        &upsert_bytes);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         return false;
     }
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
+
+    uint64_t disk_ios_submitted = 0;
+    uint64_t disk_bytes_total = 0;
+    if (io != nullptr) {
+        disk_ios_submitted = io->total_reads_submitted() - disk_ios_start;
+        disk_bytes_total = io->total_bytes_read() - disk_bytes_start;
+    }
 
     LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "
@@ -368,6 +405,33 @@ bool statesync_server_handle_request(
         rq.old_target,
         std::chrono::duration_cast<std::chrono::microseconds>(end - start),
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin));
+
+    auto const elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start)
+            .count();
+    double disk_ios_per_sec = 0.0;
+    double disk_bytes_per_sec = 0.0;
+    double upsert_bytes_per_sec = 0.0;
+    if (elapsed_seconds > 0.0) {
+        disk_ios_per_sec =
+            static_cast<double>(disk_ios_submitted) / elapsed_seconds;
+        disk_bytes_per_sec =
+            static_cast<double>(disk_bytes_total) / elapsed_seconds;
+        upsert_bytes_per_sec =
+            static_cast<double>(upsert_bytes) / elapsed_seconds;
+    }
+
+    LOG_INFO(
+        "session metrics: disk_ios={} disk_bytes={} num_upserts={} "
+        "upsert_bytes={} | disk_ios/s={:.1f} disk_bytes/s={:.1f} "
+        "upsert_bytes/s={:.1f}",
+        disk_ios_submitted,
+        disk_bytes_total,
+        num_upserts,
+        upsert_bytes,
+        disk_ios_per_sec,
+        disk_bytes_per_sec,
+        upsert_bytes_per_sec);
 
     return true;
 }
